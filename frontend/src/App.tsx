@@ -73,6 +73,52 @@ function renderMessageContent(content: string): (string | JSX.Element)[] {
   return out;
 }
 
+const THINK_BLOCK = /<think>([\s\S]*?)<\/think>/gi;
+
+/** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
+function renderWithThinkFolding(content: string): (string | JSX.Element)[] {
+  const parts: (string | JSX.Element)[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+  THINK_BLOCK.lastIndex = 0;
+  while ((match = THINK_BLOCK.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(...renderMessageContent(content.slice(lastIndex, match.index)));
+    }
+    const thinkContent = match[1]?.trim() || "";
+    parts.push(
+      <ThinkFold key={key++} content={thinkContent} />
+    );
+    lastIndex = THINK_BLOCK.lastIndex;
+  }
+  if (lastIndex < content.length) {
+    parts.push(...renderMessageContent(content.slice(lastIndex)));
+  }
+  return parts.length > 0 ? parts : renderMessageContent(content);
+}
+
+function ThinkFold({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="my-1 rounded border border-gray-200 bg-gray-50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full px-2 py-1.5 text-left text-xs text-gray-500 hover:bg-gray-100 flex items-center gap-1"
+      >
+        <span className="inline-block transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }}>▶</span>
+        <span>{"<think> "}{open ? "收起" : "展开"}</span>
+      </button>
+      {open && (
+        <pre className="p-2 text-xs text-gray-600 whitespace-pre-wrap border-t border-gray-200 max-h-48 overflow-auto">
+          {content}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function refreshChannels(setChannels: (c: Channel[]) => void) {
   fetch(`${API}/channels`)
     .then((r) => r.json())
@@ -480,7 +526,7 @@ export default function App() {
                         )}
                         {m.created_at?.slice(0, 19) || ""}
                       </span>
-                      <div className="mt-1 whitespace-pre-wrap">{renderMessageContent(text)}</div>
+                      <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text)}</div>
                       {form && selectedId && m.sender_type === "bot" && (
                         <GuideFormBlock
                           msgId={m.msg_id}
