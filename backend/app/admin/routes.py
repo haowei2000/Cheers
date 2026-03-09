@@ -216,10 +216,10 @@ def _health_redis_sync() -> str:
 
 async def _health_guide_llm_async() -> str:
     try:
-        from app.guide.llm_client import check_connection as guide_llm_check
+        from app.guide.llm_client import CONNECTION_503_BUSY, check_connection as guide_llm_check
         ok, msg = await guide_llm_check()
         if ok:
-            return "ok"
+            return "degraded (503)" if msg == CONNECTION_503_BUSY else "ok"
         if msg == "not_configured":
             return "not_configured"
         if msg == "503":

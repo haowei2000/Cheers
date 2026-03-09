@@ -21,8 +21,13 @@ def _heading_to_id(text: str) -> str:
 
 
 def _md_to_html_with_heading_ids(md_text: str) -> str:
-    """将 Markdown 转为 HTML，并为 h2/h3 添加 id 属性."""
-    import markdown
+    """将 Markdown 转为 HTML，并为 h2/h3 添加 id 属性。无 markdown 库时做最小转义兜底。"""
+    try:
+        import markdown
+    except ImportError:
+        # 未安装 markdown 时兜底：仅做基本转义，保留换行
+        html = "<pre>" + _escape_html(md_text) + "</pre>"
+        return html
     html = markdown.markdown(md_text, extensions=["extra"])
 
     def add_id(match: re.Match) -> str:
@@ -33,6 +38,16 @@ def _md_to_html_with_heading_ids(md_text: str) -> str:
         return f'<{tag} id="{hid}">{content}</{tag}>'
     html = re.sub(r"<(h[23])>([^<]+)</\1>", add_id, html)
     return html
+
+
+def _escape_html(text: str) -> str:
+    """最小 HTML 转义."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 @router.get("/manual/{name:path}", response_class=HTMLResponse)

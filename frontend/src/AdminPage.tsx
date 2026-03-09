@@ -74,7 +74,7 @@ export default function AdminPage() {
   const [logAnalysis, setLogAnalysis] = useState("");
   const [logLoading, setLogLoading] = useState(false);
 
-  const [healthStatus, setHealthStatus] = useState<{ database: string; redis: string } | null>(null);
+  const [healthStatus, setHealthStatus] = useState<{ database: string; redis: string; guide_llm?: string } | null>(null);
 
   useEffect(() => {
     refreshChannels(setChannels);
@@ -502,6 +502,10 @@ export default function AdminPage() {
               <ul className="space-y-1 text-sm">
                 <li>数据库: <span className={healthStatus.database === "ok" ? "text-green-600" : "text-red-600"}>{healthStatus.database}</span></li>
                 <li>Redis: <span className={healthStatus.redis === "ok" ? "text-green-600" : "text-red-600"}>{healthStatus.redis}</span></li>
+                <li>引导 LLM: <span className={
+                  healthStatus.guide_llm === "ok" ? "text-green-600" :
+                  healthStatus.guide_llm === "degraded (503)" ? "text-amber-600" : "text-red-600"
+                }>{healthStatus.guide_llm ?? "—"}</span></li>
               </ul>
             ) : (
               <p className="text-gray-500">加载中…</p>

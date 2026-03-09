@@ -38,12 +38,16 @@ def _ollama_base() -> str | None:
     return base
 
 
+# 健康检查时 503 视为“可达但繁忙”，不作为完全不可用
+CONNECTION_503_BUSY = "503_busy"
+
+
 async def check_connection() -> tuple[bool, str]:
     """
     检查本地 LLM 是否可连通。
-    Ollama：先 GET /api/tags 判断服务可达即视为 ok，避免因模型忙返回 503 误报。
-    其它：发一条最小 chat 请求。
-    返回 (True, "") 表示成功；(False, "原因") 表示失败或未配置。
+    Ollama：GET /api/tags，单次请求 8s；200 或 503 均视为 ok（503 表示忙于推理），仅连不上才报错。
+    其它：发一条最小 chat 请求；503 同样视为 503_busy。
+    返回 (True, "") 表示成功；(True, "503_busy") 表示可达但繁忙；(False, "原因") 表示失败或未配置。
     """
     if not is_configured():
         return False, "not_configured"
@@ -52,13 +56,13 @@ async def check_connection() -> tuple[bool, str]:
     ollama_root = _ollama_base()
     if ollama_root:
         try:
-            # 用 /api/version 做健康检查，比 /api/tags 更轻量，不易因负载返回 503
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(f"{ollama_root}/api/version")
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(f"{ollama_root}/api/tags")
                 if r.status_code == 200:
                     return True, ""
                 if r.status_code == 503:
-                    return False, "503"
+                    # Ollama 忙于推理时返回 503，服务本身是正常的
+                    return True, ""
                 return False, f"{r.status_code}"
         except (httpx.ConnectError, httpx.ConnectTimeout):
             return False, "connection_refused"
@@ -85,7 +89,7 @@ async def check_connection() -> tuple[bool, str]:
             return False, "empty_response"
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 503:
-            return False, "503"
+            return True, CONNECTION_503_BUSY
         if e.response.status_code == 502:
             return False, "502"
         return False, f"{e.response.status_code}"
@@ -118,6 +122,11 @@ async def chat(system_prompt: str, user_message: str) -> str | None:
     if c and (c.get("api_key") or "").strip():
         headers["Authorization"] = f"Bearer {(c.get('api_key') or '').strip()}"
     try:
+        logger.info(
+            "guide llm request: model=%s user_msg=%s",
+            _model(),
+            (user_message[:80] + "…") if len(user_message) > 80 else user_message,
+        )
         async with httpx.AsyncClient(timeout=60.0) as client:
             r = await client.post(url, json=payload, headers=headers)
             r.raise_for_status()

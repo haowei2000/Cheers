@@ -1,7 +1,10 @@
 """引导 Bot 适配器：可选 LLM 或关键词匹配，根据帮助文档回复与动态表单."""
 import json
+import logging
 
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+
+logger = logging.getLogger("app.guide.adapter")
 from app.guide.help_index import (
     build_guide_content_with_form,
     get_form_for_intent,
@@ -17,8 +20,8 @@ DEFAULT_REPLY = (
 )
 
 SYSTEM_PROMPT_TEMPLATE = """你是 AgentNexus 系统的引导助手。请仅根据以下帮助文档回答用户问题，语气简洁友好。
+可根据文档用自己的话概括或精简，不必逐字照抄；关键步骤、链接与文档保持一致，不要编造文档中没有的内容。
 若用户问题与文档无关，可简要说明你能协助的范围并引导其提问。
-不要编造文档中没有的步骤或链接。
 回答请使用纯文本；若涉及《系统管理说明书》等，可用 Markdown 链接 [文字](url) 形式。
 
 帮助文档：
@@ -34,18 +37,28 @@ class GuideBotAdapter(OpenClawAdapter):
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         text = (payload.trigger_message or {}).get("text") or ""
         content = ""
+        from_llm = False
 
         if llm_configured():
             ctx = get_help_context_for_llm()
             system = SYSTEM_PROMPT_TEMPLATE.format(help_context=ctx)
             content = await llm_chat(system, text)
+            if content:
+                from_llm = True
 
         if not content:
             content = build_guide_content_with_form(text)
-
-        if not content:
-            content = DEFAULT_REPLY
+            if content:
+                logger.info(
+                    "guide_bot: reply from keyword fallback (LLM not configured or request failed), user_msg=%s",
+                    (text[:60] + "…") if len(text) > 60 else text,
+                )
+            else:
+                content = DEFAULT_REPLY
+                logger.info("guide_bot: reply = DEFAULT_REPLY (no LLM, no keyword match)")
         else:
+            logger.info("guide_bot: reply from LLM, len=%s", len(content))
+        if content:
             form = get_form_for_intent(text)
             if form:
                 blob = json.dumps(form, ensure_ascii=False)
