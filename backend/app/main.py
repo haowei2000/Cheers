@@ -1,8 +1,9 @@
 """FastAPI 应用入口."""
 import logging
 import os
+import time
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -34,6 +35,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests_for_debug(request: Request, call_next):
+    """记录 /api 请求便于排错，404 等错误写入 error.log."""
+    path = request.url.path
+    if not path.startswith("/api"):
+        return await call_next(request)
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = (time.perf_counter() - start) * 1000
+    msg = "api %s %s -> %d (%.0fms)" % (request.method, path, response.status_code, elapsed)
+    if response.status_code >= 400:
+        logger.error("请求失败 %s", msg)
+    else:
+        logger.info(msg)
+    return response
 
 
 @app.exception_handler(ConnectionRefusedError)
@@ -131,4 +149,22 @@ async def startup() -> None:
 @app.get("/health")
 def health():
     """健康检查."""
+    return {"status": "ok"}
+
+
+@app.post("/api/debug/client-error")
+async def log_client_error(request: Request) -> dict:
+    """前端上报错误信息，便于排错（不落库，仅写日志）。"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    logger.error(
+        "前端上报错误: method=%s url=%s status=%s detail=%s",
+        body.get("method", ""),
+        body.get("url", ""),
+        body.get("status", ""),
+        body.get("detail", ""),
+        extra={"client_error": body},
+    )
     return {"status": "ok"}

@@ -63,6 +63,7 @@ export default function AdminPage() {
   const [llmBindings, setLlmBindings] = useState<LLMBindings>({});
   const [llmForm, setLlmForm] = useState({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 });
   const [llmEditingId, setLlmEditingId] = useState<string | null>(null);
+  const [llmSaveLoading, setLlmSaveLoading] = useState(false);
   const [bindingGuideBot, setBindingGuideBot] = useState("");
   const [bindingSystemLlm, setBindingSystemLlm] = useState("");
   const [bindingLogAnalyze, setBindingLogAnalyze] = useState("");
@@ -85,8 +86,13 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (activeTab === "llm") {
-      fetch(`${API}/admin/settings/llm`)
-        .then((r) => r.json())
+      const url = `${API}/admin/settings/llm`;
+      console.log("[AdminPage] fetch LLM settings:", url);
+      fetch(url)
+        .then((r) => {
+          console.log("[AdminPage] fetch LLM settings response:", r.status, r.url);
+          return r.json();
+        })
         .then((d) => {
           if (d.data) {
             setLlmProviders(d.data.providers || []);
@@ -96,7 +102,9 @@ export default function AdminPage() {
             setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
           }
         })
-        .catch(console.error);
+        .catch((e) => {
+          console.error("[AdminPage] fetch LLM settings error:", e);
+        });
     }
   }, [activeTab]);
 
@@ -108,6 +116,17 @@ export default function AdminPage() {
     if (activeTab === "health") {
       fetch(`${API}/admin/health`).then((r) => r.json()).then((d) => d.data && setHealthStatus(d.data)).catch(() => setHealthStatus(null));
     }
+  }, [activeTab]);
+
+  const loadPendingRequests = () => {
+    fetch(`${API}/bots/registration-requests?status=pending`)
+      .then((r) => r.json())
+      .then((d) => setPendingRequests(d.data || []))
+      .catch(() => setPendingRequests([]));
+  };
+
+  useEffect(() => {
+    if (activeTab === "bot") loadPendingRequests();
   }, [activeTab]);
 
   const loadLogs = () => {
@@ -136,23 +155,57 @@ export default function AdminPage() {
   const saveLlmProvider = (isEdit: boolean) => {
     const { name, base_url, model, api_key, temperature, max_tokens } = llmForm;
     if (!name.trim() || !base_url.trim() || !model.trim()) { setAdminMsg("请填写名称、Base URL、Model"); return; }
+    setLlmSaveLoading(true);
+    setAdminMsg("");
     const url = isEdit && llmEditingId ? `${API}/admin/settings/llm/providers/${llmEditingId}` : `${API}/admin/settings/llm/providers`;
     const method = isEdit ? "PUT" : "POST";
+    console.log("[AdminPage] saveLlmProvider:", { method, url, name: name.trim(), base_url: base_url.trim(), model: model.trim() });
     fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: name.trim(), base_url: base_url.trim(), model: model.trim(), api_key: api_key.trim(), temperature, max_tokens }),
     })
-      .then((r) => r.json())
+      .then(async (r) => {
+        const text = await r.text();
+        console.log("[AdminPage] saveLlmProvider response:", { status: r.status, statusText: r.statusText, url: r.url, bodyPreview: text.slice(0, 300) });
+        if (!r.ok) {
+          fetch(`${API}/debug/client-error`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ method, url: r.url || url, status: r.status, statusText: r.statusText, detail: text.slice(0, 500) }),
+          }).catch(() => {});
+        }
+        let d: { status?: string; data?: { providers?: LLMProvider[] }; detail?: string | unknown };
+        try {
+          d = text ? JSON.parse(text) : {};
+        } catch {
+          throw new Error(r.ok ? "响应格式错误" : `请求失败 (${r.status}): ${text.slice(0, 200)}`);
+        }
+        if (!r.ok) {
+          const msg = typeof d.detail === "string" ? d.detail : Array.isArray(d.detail) ? JSON.stringify(d.detail) : `请求失败 (${r.status})`;
+          throw new Error(msg);
+        }
+        return d;
+      })
       .then((d) => {
         if (d.status === "success") {
           setAdminMsg(isEdit ? "已更新" : "已添加");
-          setLlmProviders(d.data.providers || []);
+          setLlmProviders(d.data?.providers || []);
           setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 });
           setLlmEditingId(null);
-        } else setAdminMsg(d.detail || "失败");
+        } else setAdminMsg(String(d.detail || "失败"));
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => {
+        console.error("[AdminPage] saveLlmProvider error:", e);
+        const errMsg = e?.message || String(e);
+        setAdminMsg("请求失败: " + errMsg);
+        fetch(`${API}/debug/client-error`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ method: "POST", url, status: errMsg, detail: errMsg }),
+        }).catch(() => {});
+      })
+      .finally(() => setLlmSaveLoading(false));
   };
 
   const deleteLlmProvider = (id: string) => {
@@ -317,18 +370,19 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               </div>
-              <div className="grid gap-2 text-sm max-w-lg">
+              <form className="grid gap-2 text-sm max-w-lg" onSubmit={(e) => e.preventDefault()}>
                 <label className="flex items-center gap-2"><span className="w-24">名称</span><input type="text" value={llmForm.name} onChange={(e) => setLlmForm((f) => ({ ...f, name: e.target.value }))} placeholder="如：Ollama 本地" className="border rounded px-2 py-1 flex-1" /></label>
                 <label className="flex items-center gap-2"><span className="w-24">Base URL</span><input type="text" value={llmForm.base_url} onChange={(e) => setLlmForm((f) => ({ ...f, base_url: e.target.value }))} placeholder="http://localhost:11434/v1" className="border rounded px-2 py-1 flex-1" /></label>
                 <label className="flex items-center gap-2"><span className="w-24">Model</span><input type="text" value={llmForm.model} onChange={(e) => setLlmForm((f) => ({ ...f, model: e.target.value }))} placeholder="llama3" className="border rounded px-2 py-1 flex-1" /></label>
-                <label className="flex items-center gap-2"><span className="w-24">API Key</span><input type="password" value={llmForm.api_key} onChange={(e) => setLlmForm((f) => ({ ...f, api_key: e.target.value }))} placeholder={llmEditingId ? "留空不修改" : "选填"} className="border rounded px-2 py-1 flex-1" /></label>
+                <label className="flex items-center gap-2"><span className="w-24">API Key</span><input type="password" value={llmForm.api_key} onChange={(e) => setLlmForm((f) => ({ ...f, api_key: e.target.value }))} placeholder={llmEditingId ? "留空不修改" : "选填"} className="border rounded px-2 py-1 flex-1" autoComplete="off" /></label>
                 <label className="flex items-center gap-2"><span className="w-24">Temperature</span><input type="number" step={0.1} value={llmForm.temperature} onChange={(e) => setLlmForm((f) => ({ ...f, temperature: Number(e.target.value) }))} className="border rounded px-2 py-1 w-20" /></label>
                 <label className="flex items-center gap-2"><span className="w-24">Max Tokens</span><input type="number" value={llmForm.max_tokens} onChange={(e) => setLlmForm((f) => ({ ...f, max_tokens: Number(e.target.value) }))} className="border rounded px-2 py-1 w-20" /></label>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => saveLlmProvider(!!llmEditingId)} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">{llmEditingId ? "保存修改" : "新增"}</button>
-                  {llmEditingId && <button type="button" onClick={() => { setLlmEditingId(null); setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 }); }} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>}
+                <div className="flex gap-2 items-center">
+                  <button type="button" onClick={() => saveLlmProvider(!!llmEditingId)} disabled={llmSaveLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-60 disabled:cursor-not-allowed">{llmSaveLoading ? "提交中…" : (llmEditingId ? "保存修改" : "新增")}</button>
+                  {llmEditingId && <button type="button" onClick={() => { setLlmEditingId(null); setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 }); }} disabled={llmSaveLoading} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>}
+                  {adminMsg && activeTab === "llm" && <span className={`text-sm ${adminMsg.includes("失败") || adminMsg.includes("请填写") ? "text-red-600" : "text-green-600"}`}>{adminMsg}</span>}
                 </div>
-              </div>
+              </form>
             </section>
 
             <section className="bg-white p-4 rounded border">
@@ -483,7 +537,10 @@ export default function AdminPage() {
               <button type="button" onClick={createBot} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button>
             </section>
             <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">待审核 Bot 申请</h3>
+              <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                待审核 Bot 申请
+                <button type="button" onClick={loadPendingRequests} className="text-xs text-blue-600 hover:underline">刷新</button>
+              </h3>
               {pendingRequests.length === 0 ? <p className="text-sm text-gray-500">暂无</p> : (
                 <table className="w-full text-sm border border-gray-200"><thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">username</th><th className="border px-2 py-1 text-left">endpoint</th><th className="border px-2 py-1 text-left">操作</th></tr></thead><tbody>
                   {pendingRequests.map((r) => (

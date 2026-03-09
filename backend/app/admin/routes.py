@@ -29,6 +29,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 @router.get("/settings/llm")
 async def get_llm_settings() -> dict:
     """获取 LLM 设定列表与功能绑定。"""
+    logger.info("GET /api/admin/settings/llm 请求")
     return {
         "status": "success",
         "data": {
@@ -50,6 +51,7 @@ class LLMProviderBody(BaseModel):
 @router.post("/settings/llm/providers")
 async def post_llm_provider(body: LLMProviderBody) -> dict:
     """新增一个 LLM 设定。"""
+    logger.info("POST /api/admin/settings/llm/providers 请求 name=%s base_url=%s model=%s", body.name, body.base_url, body.model)
     pid = create_llm_provider(
         name=body.name,
         base_url=body.base_url,
@@ -58,6 +60,7 @@ async def post_llm_provider(body: LLMProviderBody) -> dict:
         temperature=body.temperature,
         max_tokens=body.max_tokens,
     )
+    logger.info("POST /api/admin/settings/llm/providers 成功 provider_id=%s", pid)
     return {"status": "success", "data": {"id": pid, "providers": get_llm_providers_list()}}  # type: ignore[return-value]
 
 

@@ -92,6 +92,16 @@ async def check_connection() -> tuple[bool, str]:
             return True, CONNECTION_503_BUSY
         if e.response.status_code == 502:
             return False, "502"
+        try:
+            body = e.response.text
+        except Exception:
+            body = ""
+        logger.error(
+            "check_connection HTTP %d: url=%s body=%s",
+            e.response.status_code,
+            url,
+            body[:1000] if body else "(empty)",
+        )
         return False, f"{e.response.status_code}"
     except (httpx.ConnectError, httpx.ConnectTimeout):
         return False, "connection_refused"
@@ -136,6 +146,18 @@ async def chat(system_prompt: str, user_message: str) -> str | None:
                 content = choice[0].get("message", {}).get("content")
                 if isinstance(content, str) and content.strip():
                     return content.strip()
+    except httpx.HTTPStatusError as e:
+        try:
+            body = e.response.text
+        except Exception:
+            body = ""
+        logger.error(
+            "guide llm HTTP %d: url=%s body=%s",
+            e.response.status_code,
+            str(e.request.url),
+            body[:1000] if body else "(empty)",
+        )
+        logger.warning("guide llm request failed (using keyword fallback): %s", e)
     except Exception as e:
         logger.warning("guide llm request failed (using keyword fallback): %s", e)
     return None
