@@ -34,6 +34,14 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "你想自己加入：联系管理员在「管理」里把你加进项目。详见《系统管理说明书》§三。",
     ),
     HelpEntry(
+        ("拉bot进群", "拉bot", "邀请bot", "加bot到频道", "聊天加bot", "@ 没在群里", "bot不在群里"),
+        "如何在聊天里把 Bot 拉进频道（Slack 风格）",
+        "在频道内输入 @ 时，会显示全部 Bot 列表：已在频道的排前面，未加入的排后面（灰色「未加入」）。\n\n"
+        "若你选择了一个未加入的 Bot，系统会提示「是否邀请加入？」；点击「加入并 @ta」后，该 Bot 会加入本频道，"
+        "输入框会自动插入 @Bot名，你可继续输入问题并发送，不打断提问流程。\n\n"
+        "此方式无需去「管理」→「添加成员」填 ID，适合快速邀请 Bot 进群。详见《普通用户使用说明》§3.2。",
+    ),
+    HelpEntry(
         ("openclaw", "接入", "接入bot", "接入 bot", "怎么接", "注册bot", "添加bot"),
         "如何让 OpenClaw 接入",
         "接入 = 把你的 OpenClaw 变成系统里的一个 Bot，别人 @ 它就会由你的 OpenClaw 回复。\n\n"
@@ -57,15 +65,8 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "如何让外部 OpenClaw 发现并自动注册",
         "外部 OpenClaw 可通过「发现接口」获取本系统提供的注册指南（机器可读 JSON），并自动提交注册申请；"
         "管理员在「管理」→「待审核 Bot 申请」中审核通过后，该 Bot 才会被创建并可被加入项目 @。\n\n"
-<<<<<<< HEAD
         "• 发现与注册指南（GET）：后端地址/api/public/agentnexus-discovery（如 http://localhost:8000/api/public/agentnexus-discovery）\n"
         "• 提交注册申请（POST）：后端地址/api/bots/register-request，body 含 username、openclaw_endpoint、intro（必填，JSON 格式自我介绍），及选填 display_name。\n"
-=======
-        "• 发现与注册指南（GET）：后端地址/api/public/agentnexus-discovery"
-        "（如 http://localhost:8000/api/public/agentnexus-discovery）\n"
-        "• 提交注册申请（POST）：后端地址/api/bots/register-request，"
-        "body 含 username、openclaw_endpoint（及选填 display_name）。\n"
->>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
         "• 管理员入口：左侧「管理」→「待审核 Bot 申请」→ 通过/拒绝。\n\n"
         "详见 [系统管理说明书 §五](/manual/系统管理说明书#五如何让外部-openclaw-发现并自动注册需管理员审核)。",
     ),
@@ -73,7 +74,7 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         ("发消息", "聊天", "怎么发", "怎么@", "如何@", "at bot", "@"),
         "在项目里怎么用",
         "• 发消息：底部输入框输入文字，点「发送」或按 Enter。\n"
-        "• @ Bot：在消息里写 @Bot名字（如 @引导），系统会把消息转给该 Bot。\n"
+        "• @ Bot：输入 @ 会弹出 Bot 列表（频道内排前、未加入的灰色排后）；选已在频道的 Bot 直接插入，选未加入的会提示「是否邀请加入？」确认后 Bot 进群并插入 @名。\n"
         "• 上传文件：【入口】输入框旁「上传」按钮，支持 .txt、.md、.docx；上传后可随下一条消息一起发送。\n\n"
         "详见《普通用户使用说明》§三。",
     ),
@@ -87,7 +88,7 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         ("@没反应", "没反应", "bot 不回复", "不回复"),
         "@ Bot 没反应",
         "可检查：\n"
-        "1）该 Bot 是否已加入当前项目（管理员用「添加成员」把 Bot 加进项目）。\n"
+        "1）该 Bot 是否已加入当前项目；若未加入，可在输入 @ 时从列表选该 Bot，系统会提示「是否邀请加入？」确认即可拉进群。\n"
         "2）你 @ 的名字是否和 Bot 的 username 完全一致。\n"
         "3）若接的是真实服务，确认 openclaw_endpoint 为 http(s) 地址且"
         "该服务已实现 POST /execute 约定格式并已启动。\n\n"
@@ -114,12 +115,21 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "功能入口一览",
         "【前端入口】\n"
         "• 创建项目、添加/移除成员：左侧「管理」。\n"
+        "• 添加 Bot 到频道：在频道内输入 @ 选择 Bot，未加入的会提示「是否邀请加入？」；或底部「添加 Bot」弹窗。\n"
         "• 上传文件：选中频道后，输入框旁「上传」（.txt/.md/.docx）。\n"
-        "• 添加 Bot 到频道：选中频道后，底部「添加 Bot」。\n"
         "• 频道上下文（四层记忆）：选中频道后，底部「频道上下文」。\n"
         "• API 文档：左侧「管理」内「打开 API 文档」或帮助中的 /docs 链接。\n"
         "• 使用帮助：左侧「帮助」或频道内 @引导 提问。\n\n"
-        "更多可问 @引导 怎么创建项目、怎么加入项目、怎么用 等。",
+        "更多可问 @引导 怎么创建项目、怎么加入项目、怎么把 Bot 拉进群、怎么用 等。",
+    ),
+    HelpEntry(
+        ("orchestrator", "coordinator", "主控", "直接回答", "自动接手"),
+        "Orchestrator 是什么、怎么用",
+        "Orchestrator 是系统内置的业务问答 Bot（@coordinator）。\n\n"
+        "• 直接回答：管理员开启「直接回答未 @ 的问题」后，你发消息不 @ 任何人时，Orchestrator 会优先回答业务问题；系统使用类问题会建议你 @引导。\n"
+        "• 显式 @：写 @coordinator 可让 Orchestrator 聚合频道内其他 Bot 的回复，或根据问题建议你 @ 某个部门 Bot。\n"
+        "• 自动接手：管理员开启后，Orchestrator 回复中含「建议 @xxx」时，被建议的 Bot 会自动接手回答，你会看到「正在处理...」提示。\n\n"
+        "Orchestrator 需管理员加入频道后才能用；配置在「管理」→「LLM 设置」→「Orchestrator 配置」。",
     ),
     HelpEntry(
         ("帮助", "怎么用", "不会用", "说明书", "文档"),
@@ -128,8 +138,10 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "• 入口 / 功能入口 → 查看所有前端入口\n"
         "• 怎么创建项目\n"
         "• 怎么加入项目\n"
+        "• 怎么把 Bot 拉进群（聊天内 @ 邀请）\n"
         "• 怎么让 OpenClaw 接入\n"
         "• 怎么让外部 OpenClaw 发现并自动注册\n"
+        "• Orchestrator 是什么、怎么用\n"
         "• 怎么发消息 / 怎么 @ Bot\n"
         "• 左边没有项目怎么办\n"
         "• @ Bot 没反应怎么办\n"

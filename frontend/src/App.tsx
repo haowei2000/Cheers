@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
@@ -57,6 +57,23 @@ type ClarifyAnswers = {
   other_text: Record<string, string>;
 };
 const OTHER_CHOICE_ID = "__other__";
+
+/** 等待 Bot 回复时显示的动画组件 */
+function ThinkingIndicator() {
+  const [dots, setDots] = useState("");
+  useEffect(() => {
+    const id = setInterval(() => {
+      setDots((d) => (d.length >= 3 ? "" : d + "."));
+    }, 400);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="p-2 rounded bg-green-50 border-l-2 border-green-400 text-sm text-gray-600 animate-pulse">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium mr-2">Bot</span>
+      thinking{dots}
+    </div>
+  );
+}
 
 function parseGuidePayload(content: string): { text: string; form?: GuideFormSchema; clarify?: ClarifySchema } {
   let text = content;
@@ -545,17 +562,27 @@ export default function App() {
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<string | null>(null);
 
   type ChannelBot = { member_id: string; username: string };
+  type ChannelUser = { member_id: string; username: string };
   type BotItem = { bot_id: string; username: string; display_name?: string; intro?: string };
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
+  const [channelUsers, setChannelUsers] = useState<ChannelUser[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
-<<<<<<< HEAD
+  const [mentionDropdownUp, setMentionDropdownUp] = useState(true);
+  const mentionDropdownRef = useRef<HTMLUListElement | null>(null);
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [allBots, setAllBots] = useState<BotItem[]>([]);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-=======
+  const [pendingAddBot, setPendingAddBot] = useState<{
+    botId: string;
+    username: string;
+    lastAt?: number;
+    pos?: number;
+    sendContent?: string;
+    sendFileIds?: string[];
+  } | null>(null);
+  const [waitingForBotReply, setWaitingForBotReply] = useState(false);
+  const [processingBots, setProcessingBots] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
->>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
 
   function introSummary(intro: string | undefined): string {
     if (!intro) return "";
@@ -577,8 +604,11 @@ export default function App() {
     if (!selectedId) {
       setMessages([]);
       setChannelBots([]);
+      setChannelUsers([]);
       setSelectedQaIds({});
       setSummaryPreview("");
+      setWaitingForBotReply(false);
+      setProcessingBots({});
       return;
     }
     setLoading(true);
@@ -590,9 +620,19 @@ export default function App() {
             .filter((m: { member_type: string; username?: string }) => m.member_type === "bot" && m.username)
             .map((m: { member_id: string; username: string }) => ({ member_id: m.member_id, username: m.username }));
           setChannelBots(bots);
-        } else setChannelBots([]);
+          const users: ChannelUser[] = d.data
+            .filter((m: { member_type: string; username?: string }) => m.member_type === "user" && m.username)
+            .map((m: { member_id: string; username: string }) => ({ member_id: m.member_id, username: m.username }));
+          setChannelUsers(users);
+        } else {
+          setChannelBots([]);
+          setChannelUsers([]);
+        }
       })
-      .catch(() => setChannelBots([]));
+      .catch(() => {
+        setChannelBots([]);
+        setChannelUsers([]);
+      });
     fetch(`${API}/channels/${selectedId}/messages`)
       .then((r) => r.json())
       .then((d) => (d.data ? setMessages(d.data) : setMessages([])))
@@ -606,7 +646,19 @@ export default function App() {
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
+        if (msg.type === "bot_processing" && msg.data?.bot_id && msg.data?.username) {
+          setProcessingBots((prev) => ({ ...prev, [msg.data.bot_id]: msg.data.username }));
+          return;
+        }
         if (msg.type === "message" && msg.data) {
+          if (msg.data.sender_type === "bot") {
+            setWaitingForBotReply(false);
+            setProcessingBots((prev) => {
+              const next = { ...prev };
+              delete next[msg.data.sender_id];
+              return next;
+            });
+          }
           setMessages((prev) => {
             const id = msg.data.msg_id;
             if (id && prev.some((m) => m.msg_id === id)) return prev;
@@ -627,16 +679,41 @@ export default function App() {
     }
   }, [contextOpen, selectedId]);
 
+  useLayoutEffect(() => {
+    if (!showMentionDropdown || !mentionDropdownRef.current || !inputRef.current) return;
+    const inputRect = inputRef.current.getBoundingClientRect();
+    const dropdownRect = mentionDropdownRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - inputRect.bottom;
+    const spaceAbove = inputRect.top;
+    const dropdownHeight = dropdownRect.height;
+    setMentionDropdownUp(spaceBelow < dropdownHeight && spaceAbove >= spaceBelow);
+  }, [showMentionDropdown, mentionFilter, channelBots, allBots]);
+
   useEffect(() => {
-<<<<<<< HEAD
     if (addBotOpen) {
       fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
     }
   }, [addBotOpen]);
 
-  const addBotToChannel = (botId: string) => {
-    if (!selectedId) return;
-    fetch(`${API}/channels/${selectedId}/members`, {
+  useEffect(() => {
+    if (showMentionDropdown && selectedId) {
+      fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
+    }
+  }, [showMentionDropdown, selectedId]);
+
+  useEffect(() => {
+    if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
+      setPendingClarifyReplyMsgId(null);
+    }
+  }, [pendingClarifyReplyMsgId, messages]);
+
+  useEffect(() => {
+    setPendingClarifyReplyMsgId(null);
+  }, [selectedId]);
+
+  const addBotToChannel = (botId: string): Promise<boolean> => {
+    if (!selectedId) return Promise.resolve(false);
+    return fetch(`${API}/channels/${selectedId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ member_id: botId, member_type: "bot" }),
@@ -644,7 +721,7 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
-          fetch(`${API}/channels/${selectedId}/members?with_username=1`)
+          return fetch(`${API}/channels/${selectedId}/members?with_username=1`)
             .then((res) => res.json())
             .then((res) => {
               if (res.data) {
@@ -653,10 +730,70 @@ export default function App() {
                   .map((m: { member_id: string; username: string }) => ({ member_id: m.member_id, username: m.username }));
                 setChannelBots(bots);
               }
+              return true;
             });
         }
+        return false;
       })
-      .catch(console.error);
+      .catch((e) => {
+        console.error(e);
+        return false;
+      });
+  };
+
+  const confirmAddBotAndInsert = () => {
+    if (!pendingAddBot) return;
+    const { botId, username, lastAt, pos, sendContent, sendFileIds } = pendingAddBot;
+    addBotToChannel(botId).then((ok) => {
+      setPendingAddBot(null);
+      if (!ok) {
+        toast.error("加入失败，请稍后重试");
+        return;
+      }
+      toast.success(`已邀请 @${username} 加入频道`);
+
+      // 发送前置：用户手动输入了 @xxx 并点击发送，此处加入后续发送，不打断流程
+      if (sendContent && selectedId) {
+        fetch(`${API}/channels/${selectedId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: sendContent.trim(),
+            sender_id: DEV_USER_ID,
+            sender_type: "user",
+            file_ids: sendFileIds || [],
+          }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            setMessages((prev) => {
+              if (!d.data) return prev;
+              if (prev.some((m) => m.msg_id === d.data.msg_id)) return prev;
+              return [...prev, d.data];
+            });
+            setInput("");
+            setPendingFileIds([]);
+            setPendingFileNames([]);
+            if (sendContent.includes("@")) setWaitingForBotReply(true);
+          })
+          .catch(console.error);
+        return;
+      }
+
+      // 输入框插入：来自下拉选择的“未加入 Bot”
+      const el = inputRef.current;
+      if (!el) return;
+      const v = el.value;
+      const p = pos ?? (el.selectionStart ?? v.length);
+      const at = lastAt ?? v.lastIndexOf("@", p - 1);
+      if (at < 0) return;
+      const newVal = v.slice(0, at) + "@" + username + " " + v.slice(p);
+      setInput(newVal);
+      setTimeout(() => {
+        el.focus();
+        el.setSelectionRange(at + username.length + 2, at + username.length + 2);
+      }, 0);
+    });
   };
 
   const removeBotFromChannel = (memberId: string) => {
@@ -669,15 +806,7 @@ export default function App() {
         }
       })
       .catch(console.error);
-=======
-    if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
-      setPendingClarifyReplyMsgId(null);
-    }
-  }, [pendingClarifyReplyMsgId, messages]);
-
-  useEffect(() => {
-    setPendingClarifyReplyMsgId(null);
-  }, [selectedId]);
+  };
 
   const sendUserMessage = async (content: string) => {
     if (!selectedId || !content.trim()) return;
@@ -698,13 +827,25 @@ export default function App() {
       if (prev.some((m) => m.msg_id === d.data.msg_id)) return prev;
       return [...prev, d.data];
     });
->>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
   };
 
   const send = () => {
     if (!selectedId || !input.trim()) return;
+    const content = input.trim();
+    // 若用户手动输入 @xxx（未点下拉），且该 Bot 已注册但不在频道：提示邀请加入
+    const mentioned = Array.from(content.matchAll(/@([a-zA-Z0-9_\u4e00-\u9fff]+)/g)).map((m) => m[1]);
+    if (mentioned.length > 0) {
+      const inChannel = new Set(channelBots.map((b) => b.username));
+      const botByUsername = new Map(allBots.map((b) => [b.username, b]));
+      const missing = mentioned.find((u) => !inChannel.has(u) && botByUsername.has(u));
+      if (missing) {
+        const bot = botByUsername.get(missing)!;
+        setPendingAddBot({ botId: bot.bot_id, username: bot.username, sendContent: content, sendFileIds: pendingFileIds });
+        return;
+      }
+    }
     const body = {
-      content: input.trim(),
+      content,
       sender_id: DEV_USER_ID,
       sender_type: "user",
       file_ids: pendingFileIds,
@@ -724,9 +865,16 @@ export default function App() {
         setInput("");
         setPendingFileIds([]);
         setPendingFileNames([]);
+        if (content.includes("@")) setWaitingForBotReply(true);
       })
       .catch(console.error);
   };
+
+  useEffect(() => {
+    if (!waitingForBotReply) return;
+    const t = setTimeout(() => setWaitingForBotReply(false), 90000);
+    return () => clearTimeout(t);
+  }, [waitingForBotReply]);
 
   const handleClarifyContinue = (msgId: string, schema: ClarifySchema, answers: ClarifyAnswers) => {
     const lines = ["@引导 澄清回答："];
@@ -991,6 +1139,24 @@ export default function App() {
         </div>
       )}
 
+      {pendingAddBot && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30" onClick={() => setPendingAddBot(null)} aria-modal="true" role="dialog">
+          <div className="bg-white rounded-lg shadow-lg max-w-sm w-full mx-4 p-4" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm text-gray-700 mb-4">
+              <strong>@{pendingAddBot.username}</strong> 不在本频道，是否邀请加入？
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setPendingAddBot(null)} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
+                取消
+              </button>
+              <button type="button" onClick={confirmAddBotAndInsert} className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                加入并 @ta
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {addBotOpen && selectedId && (
         <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/30" onClick={() => setAddBotOpen(false)} aria-modal="true" role="dialog">
           <div className="bg-white rounded-lg shadow-lg max-w-xl w-full mx-4 p-5 text-left max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
@@ -1120,6 +1286,54 @@ export default function App() {
                   {qaLlmHint}
                 </span>
               )}
+              <span className="flex-1" />
+              <div className="flex items-center gap-2">
+                <div className="relative group">
+                  <button type="button" className="p-1 rounded hover:bg-gray-100 text-gray-500" aria-label="频道用户">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                      <circle cx="9" cy="7" r="4" />
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                  </button>
+                  <div className="hidden group-hover:block absolute right-0 top-full mt-1 bg-white border rounded shadow-lg z-30 w-64 max-h-60 overflow-auto p-2">
+                    <div className="text-xs text-gray-500 mb-1">用户（{channelUsers.length}）</div>
+                    {channelUsers.length === 0 ? (
+                      <div className="text-sm text-gray-500">暂无</div>
+                    ) : (
+                      <ul className="space-y-1">
+                        {channelUsers.map((u) => (
+                          <li key={u.member_id} className="text-sm text-gray-700">{u.username}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+                <div className="relative group">
+                  <button type="button" className="p-1 rounded hover:bg-gray-100 text-gray-500" aria-label="频道 Bot">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="10" rx="2" />
+                      <circle cx="8" cy="16" r="1" />
+                      <circle cx="16" cy="16" r="1" />
+                      <path d="M12 11V7" />
+                      <path d="M9 7h6" />
+                    </svg>
+                  </button>
+                  <div className="hidden group-hover:block absolute right-0 top-full mt-1 bg-white border rounded shadow-lg z-30 w-64 max-h-60 overflow-auto p-2">
+                    <div className="text-xs text-gray-500 mb-1">Bot（{channelBots.length}）</div>
+                    {channelBots.length === 0 ? (
+                      <div className="text-sm text-gray-500">暂无</div>
+                    ) : (
+                      <ul className="space-y-1">
+                        {channelBots.map((b) => (
+                          <li key={b.member_id} className="text-sm text-gray-700">@{b.username}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
             {summaryPreview && (
               <div className="px-4 pt-2 pb-2 border-b bg-gray-50">
@@ -1207,6 +1421,13 @@ export default function App() {
                       </div>
                     );
                   })}
+                  {waitingForBotReply && <ThinkingIndicator />}
+                  {Object.entries(processingBots).map(([botId, username]) => (
+                    <div key={botId} className="p-2 rounded bg-amber-50 border-l-2 border-amber-400 text-sm text-gray-600 animate-pulse">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 text-xs font-medium mr-2">@{username}</span>
+                      正在处理...
+                    </div>
+                  ))}
                   </>
               )}
             </div>
@@ -1257,19 +1478,30 @@ export default function App() {
                     className="w-full border rounded px-3 py-2 min-h-[44px] max-h-48 resize-y"
                   />
                   {showMentionDropdown && (() => {
-                    const matched = channelBots.filter((b) =>
-                      b.username.toLowerCase().includes(mentionFilter.toLowerCase())
-                    );
+                    const inChannelIds = new Set(channelBots.map((c) => c.member_id));
+                    const filterLower = mentionFilter.toLowerCase();
+                    const matched = allBots
+                      .filter((b) => b.username.toLowerCase().includes(filterLower))
+                      .sort((a, b) => {
+                        const aIn = inChannelIds.has(a.bot_id) ? 1 : 0;
+                        const bIn = inChannelIds.has(b.bot_id) ? 1 : 0;
+                        return bIn - aIn;
+                      });
                     return matched.length > 0 && (
                     <ul
-                      className="absolute left-0 right-0 top-full mt-1 bg-white border rounded shadow-lg z-20 max-h-40 overflow-auto"
+                      ref={mentionDropdownRef}
+                      className={`absolute left-0 right-0 bg-white border rounded shadow-lg z-20 max-h-40 overflow-auto ${
+                        mentionDropdownUp ? "bottom-full mb-1" : "top-full mt-1"
+                      }`}
                       role="listbox"
                     >
-                      {matched.map((b) => (
+                      {matched.map((b) => {
+                        const inChannel = inChannelIds.has(b.bot_id);
+                        return (
                           <li
-                            key={b.member_id}
+                            key={b.bot_id}
                             role="option"
-                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                            className={`px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm flex items-center justify-between ${!inChannel ? "text-gray-500" : ""}`}
                             onMouseDown={(e) => {
                               e.preventDefault();
                               const el = inputRef.current;
@@ -1277,18 +1509,24 @@ export default function App() {
                               const v = el.value;
                               const pos = el.selectionStart ?? v.length;
                               const lastAt = v.lastIndexOf("@", pos - 1);
-                              const newVal = v.slice(0, lastAt) + "@" + b.username + " " + v.slice(pos);
-                              setInput(newVal);
                               setShowMentionDropdown(false);
-                              setTimeout(() => {
-                                el.focus();
-                                el.setSelectionRange(lastAt + b.username.length + 2, lastAt + b.username.length + 2);
-                              }, 0);
+                              if (inChannel) {
+                                const newVal = v.slice(0, lastAt) + "@" + b.username + " " + v.slice(pos);
+                                setInput(newVal);
+                                setTimeout(() => {
+                                  el.focus();
+                                  el.setSelectionRange(lastAt + b.username.length + 2, lastAt + b.username.length + 2);
+                                }, 0);
+                              } else {
+                                setPendingAddBot({ botId: b.bot_id, username: b.username, lastAt, pos });
+                              }
                             }}
                           >
-                            @{b.username}
+                            <span>@{b.username}</span>
+                            {!inChannel && <span className="text-xs text-gray-400">未加入</span>}
                           </li>
-                        ))}
+                        );
+                      })}
                     </ul>
                     );
                   })()}

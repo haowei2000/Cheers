@@ -8,7 +8,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SQLITE_CONTEXT_PATH=data/context_store/context.db
       - DATA_DIR=data
-      # 首次启动自动写入种子数据（默认工作空间、测试项目、@引导、@小助）；可改为 0 关闭
+      # 首次启动自动写入种子数据（默认工作空间、测试项目、@引导、@coordinator）；可改为 0 关闭
       - SEED_DATA=1
     volumes:
       - agentnexus_data:/app/data

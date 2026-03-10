@@ -36,6 +36,7 @@
 | `database unavailable` / `ConnectionRefusedError` | 数据库不可达 | 检查 DATABASE_URL、数据目录权限、是否执行过迁移；见 §三 503 |
 | `unhandled exception` + 堆栈 | 未捕获异常，已记录完整堆栈 | 查看 error.log 中该条下方的 Traceback；根据堆栈定位代码或依赖 |
 | `orchestrator failed` | 消息 @ Bot 后编排器执行失败 | 查看同条日志中的 channel_id、异常类型；检查 Bot 配置、记忆/数据库 |
+| `orchestrator llm request failed` | Orchestrator 直接回答时 LLM 调用失败 | 检查「功能绑定」中 orchestrator 或 system_llm 的 LLM 配置；网络、API Key |
 | `guide llm request failed` | 引导 Bot 调用的 LLM 请求失败 | 检查 GUIDE_LLM_BASE_URL、GUIDE_LLM_MODEL、网络；系统会退回关键词匹配 |
 | `no mentioned bots in channel` / `channel_bots=[]` | 当前频道没有对应 Bot 成员 | 在「管理」中将该 Bot 加入该项目（member_id=bot_id, member_type=bot） |
 
@@ -66,7 +67,9 @@
 | **文件上传 400** | 非支持格式或缺少参数 | 确认请求含 channel_id、uploader_id、filename 及 body；格式为 .txt/.md/.docx | 按 [系统管理说明书](系统管理说明书.md) 或 API 文档修正 |
 | **文件状态为 failed** | 转换失败（格式异常、mammoth 等报错） | 查看 agentnexus.log / error.log 中与 file、convert、mammoth 相关的错误 | 确认文件未损坏、扩展名与内容一致；必要时查依赖版本 |
 | **@ Bot 无回复** | Bot 未加入该频道、username 不匹配、或真实服务不可达 | 1）GET `/api/channels/{项目ID}/members?with_username=1` 看是否有该 Bot；2）确认 @ 的名字与 bot 的 username 完全一致；3）若 endpoint 为 http(s)，确认该服务已实现 POST /execute 且可访问 | 在「管理」中将 Bot 加入该项目；或修正 @ 的名字；或检查 OpenClaw 服务与 [系统管理说明书 §4.4](/manual/系统管理说明书#44-真实调用的请求响应约定openclawendpoint-为-https-时) 约定 |
+| **@ Bot 一直 thinking 无回复** | Bot 未加入频道、或 HTTP 请求超时/不可达 | 1）查 agentnexus.log：若有 `no mentioned bots in channel` 且 mentioned 含该 Bot，说明 Bot 未加入当前频道；2）若有 `http_openclaw: POST` 但无 `response status`，说明请求超时或网络不通（后端→OpenClaw 机器）；3）确认 OpenClaw 服务在 endpoint 地址可访问 | 将 Bot 加入频道（聊天内 @ 邀请或管理端添加）；确认后端能访问 OpenClaw 的 IP:端口；检查防火墙 |
 | **@引导 无回复** | 引导 Bot 未加入当前项目、或未创建 | 1）确认是否执行过种子数据或手动创建过引导 Bot；2）GET 当前项目 members 是否含 bot-guide-001；3）查日志是否有 orchestrator/guide 相关错误 | 执行种子数据或手动添加成员（member_id=bot-guide-001, member_type=bot）；详见 [系统管理说明书 - @引导 无反应时如何排查](/manual/系统管理说明书#引导-无反应时如何排查) |
+| **未 @ 任何人无回复 / 直接回答不生效** | Orchestrator 未加入频道、或未开启直接回答 | 1）确认「管理」→「Orchestrator 配置」中「直接回答未 @ 的问题」已开启；2）GET 当前项目 members 是否含 bot-coordinator-001；3）确认已绑定 orchestrator 或 system_llm | 将 Orchestrator 加入项目（member_id=bot-coordinator-001）；开启直接回答；绑定 LLM |
 
 ---
 

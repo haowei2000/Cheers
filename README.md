@@ -54,7 +54,7 @@ npm run dev
 ```bash
 docker compose up -d
 # 前端: http://localhost:80   API: http://localhost:8000
-# 默认会写入种子数据：默认工作空间、测试项目、引导 Bot（@引导）、测试 Bot（@小助）。打开前端进入「测试项目」，输入 @引导 怎么用 即可获取使用引导。
+# 默认会写入种子数据：默认工作空间、测试项目、引导 Bot（@引导）、Orchestrator（@coordinator）。打开前端进入「测试项目」，输入 @引导 怎么用 即可获取使用引导。
 # 若需手动初始化，可设环境变量 SEED_DATA=0 并见 docs/安装部署说明.md。
 ```
 

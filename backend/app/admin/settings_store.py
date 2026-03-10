@@ -7,11 +7,16 @@ from typing import Any
 from app.config import settings
 
 ADMIN_SETTINGS_FILENAME = "admin_settings.json"
-SCOPES = ("guide_bot", "system_llm", "log_analyze", "qa_summarize")
+SCOPES = ("guide_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")
 DEFAULT_CLARIFY_SETTINGS = {
     "clarify_strict_mode": False,
     "clarify_force_rule": True,
     "clarify_threshold": 0.6,
+}
+
+DEFAULT_ORCHESTRATOR_SETTINGS = {
+    "orchestrator_direct_answer": False,
+    "orchestrator_auto_takeover": False,
 }
 
 # 与 config 一致：相对 data_dir 基于 backend 根目录（3 个 parent：app/admin -> app -> backend）
@@ -67,6 +72,12 @@ def _ensure_llm_structures(data: dict[str, Any]) -> None:
 
 def _ensure_clarify_settings(data: dict[str, Any]) -> None:
     for k, v in DEFAULT_CLARIFY_SETTINGS.items():
+        if k not in data:
+            data[k] = v
+
+
+def _ensure_orchestrator_settings(data: dict[str, Any]) -> None:
+    for k, v in DEFAULT_ORCHESTRATOR_SETTINGS.items():
         if k not in data:
             data[k] = v
 
@@ -164,7 +175,7 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
             "temperature": float(data.get("guide_llm_temperature", s.guide_llm_temperature)),
             "max_tokens": int(data.get("guide_llm_max_tokens", s.guide_llm_max_tokens)),
         }
-    if scope in ("system_llm", "log_analyze", "qa_summarize"):
+    if scope in ("system_llm", "log_analyze", "qa_summarize", "orchestrator"):
         return {
             "base_url": (data.get("system_llm_base_url") or s.system_llm_base_url or "").strip(),
             "model": (data.get("system_llm_model") or s.system_llm_model or "gpt-4o-mini").strip(),
@@ -254,6 +265,7 @@ def set_llm_bindings(
     system_llm: str | None = None,
     log_analyze: str | None = None,
     qa_summarize: str | None = None,
+    orchestrator: str | None = None,
 ) -> None:
     """更新功能绑定；传空串表示取消绑定。"""
     data = load_admin_settings()
@@ -267,6 +279,8 @@ def set_llm_bindings(
         bindings["log_analyze"] = (log_analyze or "").strip() or ""
     if qa_summarize is not None:
         bindings["qa_summarize"] = (qa_summarize or "").strip() or ""
+    if orchestrator is not None:
+        bindings["orchestrator"] = (orchestrator or "").strip() or ""
     data["llm_bindings"] = {k: v for k, v in bindings.items() if v}
     save_admin_settings(data)
 
@@ -330,3 +344,28 @@ def set_clarify_settings(
         data["clarify_threshold"] = max(0.0, min(1.0, t))
     save_admin_settings(data)
     return get_clarify_settings()
+
+
+def get_orchestrator_settings() -> dict[str, Any]:
+    """获取 Orchestrator 配置（直接回答、自动接手）。"""
+    data = load_admin_settings()
+    _ensure_orchestrator_settings(data)
+    return {
+        "orchestrator_direct_answer": bool(data.get("orchestrator_direct_answer", False)),
+        "orchestrator_auto_takeover": bool(data.get("orchestrator_auto_takeover", False)),
+    }
+
+
+def set_orchestrator_settings(
+    orchestrator_direct_answer: bool | None = None,
+    orchestrator_auto_takeover: bool | None = None,
+) -> dict[str, Any]:
+    """更新 Orchestrator 配置并返回最新值。"""
+    data = load_admin_settings()
+    _ensure_orchestrator_settings(data)
+    if orchestrator_direct_answer is not None:
+        data["orchestrator_direct_answer"] = bool(orchestrator_direct_answer)
+    if orchestrator_auto_takeover is not None:
+        data["orchestrator_auto_takeover"] = bool(orchestrator_auto_takeover)
+    save_admin_settings(data)
+    return get_orchestrator_settings()

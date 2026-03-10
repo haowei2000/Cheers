@@ -1,6 +1,6 @@
 """Agent 任务日志 API：质量监控看板数据."""
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentTask, BotAccount
@@ -77,3 +77,44 @@ async def list_tasks(
             "created_at": task.created_at.isoformat() if task.created_at else None,
         })
     return {"status": "success", "data": items}
+
+
+@router.get("/tasks/stats")
+async def get_task_stats(
+    limit_days: int = Query(7, ge=1, le=90, description="统计最近 N 天"),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """资源监控：按 Bot 汇总任务数、平均耗时（最近 N 天）。"""
+    from datetime import datetime, timedelta, timezone
+    since = datetime.now(timezone.utc) - timedelta(days=limit_days)
+    result = await session.execute(
+        select(
+            BotAccount.username,
+            BotAccount.display_name,
+            func.count(AgentTask.task_id).label("count"),
+            func.avg(AgentTask.latency_ms).label("avg_latency_ms"),
+        )
+        .outerjoin(BotAccount, AgentTask.bot_id == BotAccount.bot_id)
+        .where(AgentTask.created_at >= since)
+        .group_by(AgentTask.bot_id, BotAccount.username, BotAccount.display_name)
+    )
+    rows = result.all()
+    per_bot = []
+    total_count = 0
+    for row in rows:
+        username, display_name, cnt, avg_ms = row[0], row[1], row[2] or 0, row[3]
+        total_count += cnt
+        per_bot.append({
+            "username": username or "未知",
+            "display_name": display_name,
+            "task_count": cnt,
+            "avg_latency_ms": round(float(avg_ms), 0) if avg_ms is not None else None,
+        })
+    return {
+        "status": "success",
+        "data": {
+            "total_tasks": total_count,
+            "limit_days": limit_days,
+            "per_bot": per_bot,
+        },
+    }

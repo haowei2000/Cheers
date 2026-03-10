@@ -1,4 +1,4 @@
-"""种子数据：默认工作空间、项目、引导 Bot、测试 Bot、测试用户，便于开箱测试."""
+"""种子数据：默认工作空间、项目、引导 Bot、测试用户，便于开箱测试."""
 import asyncio
 import os
 from pathlib import Path
@@ -15,13 +15,11 @@ from app.db.models import (
     Workspace,
 )
 from app.db.session import async_session_factory
+from app.guide.constants import GUIDE_BOT_ID, ORCHESTRATOR_BOT_ID
 
 # 固定 ID，便于文档与脚本引用
 WORKSPACE_ID = "ws-default-001"
 CHANNEL_ID = "ch-seed-001"
-GUIDE_BOT_ID = "bot-guide-001"
-MOCK_BOT_ID = "bot-mock-001"
-COORDINATOR_BOT_ID = "bot-coordinator-001"
 DEV_USER_ID = "a0000000-0000-0000-0000-000000000001"
 
 
@@ -64,21 +62,6 @@ async def seed(session: AsyncSession) -> bool:
         )
         did_write = True
 
-    # 测试用 Mock Bot
-    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == MOCK_BOT_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(
-            BotAccount(
-                bot_id=MOCK_BOT_ID,
-                username="小助",
-                display_name="测试小助",
-                openclaw_endpoint="mock://test",
-                status="online",
-                intro='{"capabilities":["测试回复"],"description":"测试用 Mock Bot"}',
-            )
-        )
-        did_write = True
-
     # 开发/测试用户（与前端 DEV_USER_ID 一致）
     r = await session.execute(select(User).where(User.user_id == DEV_USER_ID))
     if r.scalar_one_or_none() is None:
@@ -105,27 +88,14 @@ async def seed(session: AsyncSession) -> bool:
         )
         did_write = True
 
-    # Mock Bot 加入测试项目
-    r = await session.execute(
-        select(ChannelMembership).where(
-            ChannelMembership.channel_id == CHANNEL_ID,
-            ChannelMembership.member_id == MOCK_BOT_ID,
-        )
-    )
-    if r.scalar_one_or_none() is None:
-        session.add(
-            ChannelMembership(channel_id=CHANNEL_ID, member_id=MOCK_BOT_ID, member_type="bot")
-        )
-        did_write = True
-
-    # Coordinator 主控 Bot（M3：@coordinator 聚合频道内其他 Bot 回复）
-    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == COORDINATOR_BOT_ID))
+    # Orchestrator/Coordinator 主控 Bot（门户阶段一：直接回答 + 建议 @部门bot；@coordinator 时聚合）
+    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == ORCHESTRATOR_BOT_ID))
     if r.scalar_one_or_none() is None:
         session.add(
             BotAccount(
-                bot_id=COORDINATOR_BOT_ID,
+                bot_id=ORCHESTRATOR_BOT_ID,
                 username="coordinator",
-                display_name="主控",
+                display_name="Orchestrator/主控",
                 openclaw_endpoint="coordinator://internal",
                 status="online",
                 intro='{"capabilities":["聚合 Bot 回复"],"description":"主控 Bot"}',
@@ -135,12 +105,12 @@ async def seed(session: AsyncSession) -> bool:
     r = await session.execute(
         select(ChannelMembership).where(
             ChannelMembership.channel_id == CHANNEL_ID,
-            ChannelMembership.member_id == COORDINATOR_BOT_ID,
+            ChannelMembership.member_id == ORCHESTRATOR_BOT_ID,
         )
     )
     if r.scalar_one_or_none() is None:
         session.add(
-            ChannelMembership(channel_id=CHANNEL_ID, member_id=COORDINATOR_BOT_ID, member_type="bot")
+            ChannelMembership(channel_id=CHANNEL_ID, member_id=ORCHESTRATOR_BOT_ID, member_type="bot")
         )
         did_write = True
 
@@ -190,4 +160,4 @@ def _ensure_data_dir() -> None:
 if __name__ == "__main__":
     _ensure_data_dir()
     asyncio.run(run_seed())
-    print("Seed done. Workspace:", WORKSPACE_ID, "Channel:", CHANNEL_ID, "Guide bot: @引导", "Mock bot: @小助")
+    print("Seed done. Workspace:", WORKSPACE_ID, "Channel:", CHANNEL_ID, "Guide bot: @引导", "Orchestrator: @coordinator")

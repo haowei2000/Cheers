@@ -75,11 +75,14 @@ async def create_message(
         d["created_at"] = msg.created_at.isoformat()
     await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": d})
 
-    # 若消息中有 @Bot，触发 Orchestrator（串行执行，回写 Bot 消息并广播）
+    # 若消息中有 @Bot 或开启 Orchestrator 直接回答，触发 Orchestrator（串行执行，回写 Bot 消息并广播）
+    async def broadcast_bot_processing(ch_id: str, bot_id: str, username: str) -> None:
+        await ws_manager.broadcast_to_channel(ch_id, {"type": "bot_processing", "data": {"bot_id": bot_id, "username": username}})
+
     bot_messages = []
     try:
         bot_messages = await run_orchestrator(
-            channel_id, msg, session, lambda bid: get_adapter_for_bot(bid, session)
+            channel_id, msg, session, lambda bid: get_adapter_for_bot(bid, session), broadcast_processing=broadcast_bot_processing
         )
     except Exception as e:
         logger.exception("orchestrator failed channel_id=%s: %s", channel_id, e)

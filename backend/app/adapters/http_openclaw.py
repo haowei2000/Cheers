@@ -1,7 +1,11 @@
 """通过 HTTP 调用真实 OpenClaw 或兼容接口的适配器。"""
+import logging
+
 import httpx
 
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+
+logger = logging.getLogger("app.adapters.http_openclaw")
 
 # 请求/响应约定：POST {openclaw_endpoint}/execute，body 为 Payload 的 JSON，响应 JSON 含 content、success、error_message
 EXECUTE_PATH = "/execute"
@@ -27,9 +31,12 @@ class HttpOpenClawAdapter(OpenClawAdapter):
             "attachments": payload.attachments,
             "process_config": payload.process_config,
         }
+        url = self._execute_url()
+        logger.info("http_openclaw: POST %s", url)
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                r = await client.post(self._execute_url(), json=body)
+                r = await client.post(url, json=body)
+                logger.info("http_openclaw: response status=%d", r.status_code)
                 r.raise_for_status()
                 data = r.json()
                 content = data.get("content", "") or ""
@@ -42,6 +49,7 @@ class HttpOpenClawAdapter(OpenClawAdapter):
                     error_message=error_message,
                 )
         except httpx.HTTPError as e:
+            logger.warning("http_openclaw: request failed url=%s error=%s", url, e)
             return AgentResponse(
                 content="",
                 task_id=payload.task_id,
@@ -49,6 +57,7 @@ class HttpOpenClawAdapter(OpenClawAdapter):
                 error_message=f"请求 OpenClaw 失败: {e!s}",
             )
         except Exception as e:
+            logger.exception("http_openclaw: unexpected error url=%s", url)
             return AgentResponse(
                 content="",
                 task_id=payload.task_id,

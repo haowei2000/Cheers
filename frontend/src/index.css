@@ -1,3 +1,16 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* 防止整页滚动条：页面采用固定高度布局，仅内部区域滚动 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+#root {
+  height: 100%;
+  overflow: hidden;
+}

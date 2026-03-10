@@ -76,6 +76,7 @@ export default function AdminPage() {
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
 
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
+  const [taskStats, setTaskStats] = useState<{ total_tasks: number; limit_days: number; per_bot: { username: string; display_name?: string; task_count: number; avg_latency_ms?: number }[] } | null>(null);
 
   const [llmProviders, setLlmProviders] = useState<LLMProvider[]>([]);
   const [llmBindings, setLlmBindings] = useState<LLMBindings>({});
@@ -86,6 +87,8 @@ export default function AdminPage() {
   const [bindingSystemLlm, setBindingSystemLlm] = useState("");
   const [bindingLogAnalyze, setBindingLogAnalyze] = useState("");
   const [bindingQaSummarize, setBindingQaSummarize] = useState("");
+  const [bindingOrchestrator, setBindingOrchestrator] = useState("");
+  const [orchestratorSettings, setOrchestratorSettings] = useState({ orchestrator_direct_answer: false, orchestrator_auto_takeover: false });
   const [clarifySettings, setClarifySettings] = useState<ClarifySettings>({
     clarify_strict_mode: false,
     clarify_force_rule: true,
@@ -106,7 +109,15 @@ export default function AdminPage() {
     fetch(`${API}/workspaces`).then((r) => r.json()).then((d) => d.data && setWorkspaces(d.data)).catch(console.error);
     fetch(`${API}/bots/registration-requests?status=pending`).then((r) => r.json()).then((d) => setPendingRequests(d.data || [])).catch(() => setPendingRequests([]));
     fetch(`${API}/tasks?limit=50`).then((r) => r.json()).then((d) => setTaskList(d.data || [])).catch(() => setTaskList([]));
+    fetch(`${API}/tasks/stats?limit_days=7`).then((r) => r.json()).then((d) => d.data && setTaskStats(d.data)).catch(() => setTaskStats(null));
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "perf") {
+      fetch(`${API}/tasks?limit=50`).then((r) => r.json()).then((d) => setTaskList(d.data || [])).catch(() => setTaskList([]));
+      fetch(`${API}/tasks/stats?limit_days=7`).then((r) => r.json()).then((d) => d.data && setTaskStats(d.data)).catch(() => setTaskStats(null));
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === "llm") {
@@ -125,6 +136,7 @@ export default function AdminPage() {
             setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
             setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
             setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
+            setBindingOrchestrator(d.data.bindings?.orchestrator ?? "");
           }
         })
         .catch((e) => {
@@ -142,6 +154,17 @@ export default function AdminPage() {
           }
         })
         .catch((e) => console.error("[AdminPage] fetch clarify settings error:", e));
+      fetch(`${API}/admin/settings/orchestrator`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.data) {
+            setOrchestratorSettings({
+              orchestrator_direct_answer: !!d.data.orchestrator_direct_answer,
+              orchestrator_auto_takeover: !!d.data.orchestrator_auto_takeover,
+            });
+          }
+        })
+        .catch((e) => console.error("[AdminPage] fetch orchestrator settings error:", e));
     }
   }, [activeTab]);
 
@@ -198,6 +221,25 @@ export default function AdminPage() {
         setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
       }
     }).catch(console.error);
+  };
+
+  const saveOrchestratorSettings = () => {
+    fetch(`${API}/admin/settings/orchestrator`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(orchestratorSettings),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success" && d.data) {
+          setOrchestratorSettings({
+            orchestrator_direct_answer: !!d.data.orchestrator_direct_answer,
+            orchestrator_auto_takeover: !!d.data.orchestrator_auto_takeover,
+          });
+          toast.success("Orchestrator 配置已保存");
+        } else toast.error(d.detail || "保存失败");
+      })
+      .catch(() => toast.error("请求失败"));
   };
 
   const saveClarifySettings = () => {
@@ -297,6 +339,7 @@ export default function AdminPage() {
         system_llm: bindingSystemLlm || null,
         log_analyze: bindingLogAnalyze || null,
         qa_summarize: bindingQaSummarize || null,
+        orchestrator: bindingOrchestrator || null,
       }),
     })
       .then((r) => r.json())
@@ -371,13 +414,8 @@ export default function AdminPage() {
     fetch(`${API}/bots`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-<<<<<<< HEAD
-        if (d.status === "success") { setAdminMsg("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); loadBots(); }
-        else setAdminMsg(d.message || d.detail || "创建失败");
-=======
-        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); }
+        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); loadBots(); }
         else toast.error(d.message || d.detail || "创建失败");
->>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
       })
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
@@ -453,12 +491,12 @@ export default function AdminPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <header className="bg-white border-b px-4 py-3 flex items-center justify-between">
+    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
+      <header className="flex-shrink-0 bg-white border-b px-4 py-3 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-gray-800">管理后台</h1>
         <Link to="/" className="text-sm text-blue-600 hover:underline">返回首页</Link>
       </header>
-      <div className="flex border-b bg-white px-4 gap-1">
+      <div className="flex-shrink-0 flex border-b bg-white px-4 gap-1">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -470,7 +508,7 @@ export default function AdminPage() {
           </button>
         ))}
       </div>
-      <main className="flex-1 p-4 overflow-auto">
+      <main className="flex-1 min-h-0 p-4 overflow-y-auto">
         {activeTab === "llm" && (
           <div className="max-w-3xl space-y-6">
             <h2 className="text-base font-medium text-gray-800">LLM 参数</h2>
@@ -537,6 +575,14 @@ export default function AdminPage() {
                   </select>
                   <span className="text-gray-500 text-xs">未选时使用系统 LLM</span>
                 </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-32">Orchestrator</span>
+                  <select value={bindingOrchestrator} onChange={(e) => setBindingOrchestrator(e.target.value)} className="border rounded px-2 py-1 flex-1 max-w-xs">
+                    <option value="">— 不绑定 —</option>
+                    {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <span className="text-gray-500 text-xs">直接回答时使用，未选时用系统 LLM</span>
+                </label>
                 <button type="button" onClick={saveLlmBindings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">保存绑定</button>
               </div>
             </section>
@@ -587,12 +633,57 @@ export default function AdminPage() {
                 </button>
               </div>
             </section>
+
+            <section className="bg-white p-4 rounded border">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Orchestrator 配置</h3>
+              <p className="text-xs text-gray-500 mb-2">Orchestrator 为系统内置 Bot，负责回答业务问题。需先将其加入频道。</p>
+              <div className="space-y-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={orchestratorSettings.orchestrator_direct_answer}
+                    onChange={(e) =>
+                      setOrchestratorSettings((prev) => ({ ...prev, orchestrator_direct_answer: e.target.checked }))
+                    }
+                  />
+                  <span>直接回答未 @ 的问题（未 @ 任何人时由 Orchestrator 回答）</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={orchestratorSettings.orchestrator_auto_takeover}
+                    onChange={(e) =>
+                      setOrchestratorSettings((prev) => ({ ...prev, orchestrator_auto_takeover: e.target.checked }))
+                    }
+                  />
+                  <span>自动接手（Orchestrator 建议 @部门bot 后，被建议 Bot 自动回答）</span>
+                </label>
+                <button type="button" onClick={saveOrchestratorSettings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">
+                  保存 Orchestrator 配置
+                </button>
+              </div>
+            </section>
           </div>
         )}
 
         {activeTab === "perf" && (
           <div>
             <h2 className="text-base font-medium text-gray-800 mb-2">性能监控</h2>
+            {taskStats && (
+              <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200 text-sm">
+                <h3 className="font-medium text-gray-700 mb-2">资源监控（最近 {taskStats.limit_days} 天）</h3>
+                <p className="text-gray-600 mb-2">总任务数：{taskStats.total_tasks}</p>
+                <div className="flex flex-wrap gap-3">
+                  {taskStats.per_bot.map((b) => (
+                    <div key={b.username} className="px-3 py-2 bg-white rounded border border-gray-200">
+                      <span className="font-medium">@{b.username}</span>
+                      <span className="text-gray-500 ml-2">任务数 {b.task_count}</span>
+                      {b.avg_latency_ms != null && <span className="text-gray-500 ml-2">平均 {Math.round(b.avg_latency_ms)}ms</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <p className="text-sm text-gray-500 mb-2">最近 Agent 任务执行记录。</p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border border-gray-200 bg-white">
@@ -721,7 +812,7 @@ export default function AdminPage() {
               )}
               {botWizardStep === 1 && (
                 <div className="space-y-2 text-sm">
-                  <div><label className="block text-gray-700">@ 用名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} placeholder="如：小助" className="border rounded px-2 py-1 w-full" /></div>
+                  <div><label className="block text-gray-700">@ 用名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} placeholder="如：mybot" className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">自我介绍 (JSON，含 capabilities 或 description)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1","能力2"],"description":"简短描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>

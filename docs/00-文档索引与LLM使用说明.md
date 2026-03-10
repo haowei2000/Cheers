@@ -14,6 +14,9 @@
 | **OpenClaw接入指南.md** | OpenClaw 开发者：发现、注册、审核流程 | 如何接入、curl 示例、常见错误（404、路径） | 一～四；完整步骤与命令 |
 | **安装部署说明.md** | 部署与首次安装：环境、Docker/本地、迁移、初始化 | 怎么安装、部署、环境要求、数据库迁移、种子数据 | 一～六；§二 Docker；§三 本地安装；§四 配置 |
 | **技术排查Q&A.md** | 故障排查：现象→原因→步骤→解决；日志与接口 | 报错、503/404、连不上、列表为空、日志在哪、如何排查 | 一～五；§二 日志与诊断；§三 现象与处理；§四 常见 Q&A |
+| **AgentNexus门户与知识平台设计.md** | 门户定位、内置 Bot 体系、记忆与知识、公共平台、分阶段实现 | Orchestrator、引导 Bot、自动接手、Bot 层级、公共平台申请 | 一～八；§二 内置 Bot；§四 记忆与知识；§七 分阶段实现 |
+| **公共平台访问申请API规范.md** | 部门 Bot 申请访问公共知识/数据平台的 API 约定 | 如何申请公共平台访问、申请 URL、请求结构 | 一～六；§二 接口约定；§五 引导 Bot 引用 |
+| **LongBOT与AgentNexus设计比较.md** | LongBOT 与 AgentNexus 设计对比、可借鉴点 | 设计对比、借鉴分析 | 一～四 |
 
 **引用建议**：回答时优先引用具体文档与章节，例如「详见《系统管理说明书》§二」「见《技术排查Q&A》§二 日志与诊断」。
 
@@ -29,6 +32,9 @@ LLM 在回答中应使用以下统一术语，与文档内表述一致。
 | **项目 / 频道（Channel）** | 协作单元，用户在此聊天、@ Bot、发文件 | 用户面称「项目」，API/DB 称 channel，channel_id 即项目 ID |
 | **成员** | 项目内的用户（user）或 Bot（bot）；须被「加入」项目后才在该项目生效 | member_id 为 user_id 或 bot_id |
 | **Bot** | 可被 @ 的 AI 助手；每个 Bot 有唯一 bot_id 与 username（@ 时使用的名字） | 引导 Bot 的 username 为「引导」，bot_id 常为 bot-guide-001 |
+| **内置 Bot** | 系统自带的 Bot，如引导 Bot、Orchestrator | 可 @ 部门 Bot 或人类；详见《AgentNexus门户与知识平台设计》§二 |
+| **外部 Bot / 部门 Bot** | 部门注册的 OpenClaw 实例 | 仅可 @ 人类，不可 @ 另一个 Bot |
+| **Orchestrator** | 系统内置的业务问答 Bot，可建议 @ 部门 Bot | 可配置：必须 @ 才回答，或直接回答未 @ 的问题 |
 | **@引导** | 在消息中 @ 名为「引导」的 Bot，用于获取使用帮助与动态表单 | 仅当引导 Bot 已加入当前项目时有效 |
 | **openclaw_endpoint** | Bot 配置中的服务地址；为 http(s) 时系统会向该地址 POST /execute 调用 | guide:// 表示引导 Bot；mock:// 为占位 |
 | **API 基础地址** | 后端服务根 URL，默认 `http://localhost:8000` | 文档中示例均以此为准，实际部署需替换 |
@@ -72,11 +78,17 @@ LLM 在回答中应使用以下统一术语，与文档内表述一致。
 | 左侧没有项目、看不到项目列表 | 《普通用户使用说明》§二、§四；《系统管理说明书》§二（需先建工作空间与项目） |
 | @ Bot 没反应 | 《普通用户使用说明》§四；《技术排查Q&A》§三 表：@ Bot 无回复 |
 | 怎么创建项目、怎么建工作空间 | 《系统管理说明书》§二 如何创建工作空间与项目 |
-| 怎么加人、怎么把别人/Bot 加进项目 | 《系统管理说明书》§三 如何管理项目成员 |
+| 怎么加人、怎么把别人/Bot 加进项目 | 《系统管理说明书》§三 如何管理项目成员；聊天内 @ 邀请 Bot 见《普通用户使用说明》§3.2.1 |
+| 怎么把 Bot 拉进群、聊天加 Bot、@ 没在群里 | 《普通用户使用说明》§3.2.1 在聊天里把 Bot 拉进群；@引导 可回答 |
 | 怎么接入 OpenClaw、怎么注册 Bot | 《系统管理说明书》§四 如何让 OpenClaw 接入；§六 速查（创建 Bot 也可在前端「管理」→ 创建 Bot） |
 | 外部 OpenClaw 怎么发现并自动注册 | 《OpenClaw接入指南》；《系统管理说明书》§五 如何让外部 OpenClaw 发现并自动注册 |
 | 待审核 Bot 申请在哪里、怎么通过/拒绝 | 《系统管理说明书》§五.4、§六 速查 |
 | 怎么安装、怎么部署、环境要求 | 《安装部署说明》§一 环境、§二 Docker、§三 本地安装 |
+| Orchestrator、引导 Bot、自动接手、Bot 层级 | 《AgentNexus门户与知识平台设计》§二 内置 Bot 体系 |
+| Orchestrator 是什么、怎么用、直接回答、@coordinator | 《普通用户使用说明》§3.0.1；@引导 可回答 |
+| Orchestrator 配置、直接回答、自动接手 | 《系统管理说明书》「Orchestrator 配置」 |
+| 资源监控、任务统计、性能监控 | 《系统管理说明书》「资源监控」；GET /api/tasks/stats |
+| 如何申请公共平台访问、申请 API | 《公共平台访问申请API规范》；@引导 可回答此问题 |
 | 数据库迁移、首次初始化、种子数据 | 《安装部署说明》§2.2/§3.3 迁移、§2.3/§3.4 初始化 |
 | 报错、503、404、连不上、列表为空 | 《技术排查Q&A》§三 故障现象与处理、§四 常见 Q&A |
 | 日志在哪、怎么查错误、error.log | 《技术排查Q&A》§二 日志与诊断；《系统管理说明书》日志文件小节 |
@@ -99,8 +111,10 @@ LLM 在回答中应使用以下统一术语，与文档内表述一致。
 | OpenClaw 发现与注册指南（机器可读） | `GET http://localhost:8000/api/public/agentnexus-discovery` |
 | 后端日志目录（默认） | 相对 backend：`data/logs`；通用日志 `agentnexus.log`，仅错误 `error.log` |
 | 引导 Bot 的 bot_id | `bot-guide-001`（加入老项目时添加成员填此 ID，类型选 bot） |
+| Orchestrator 的 bot_id | `bot-coordinator-001`（加入项目时添加成员填此 ID，类型选 bot） |
 | 数据库迁移命令 | 在 backend 目录：`alembic upgrade head`；Docker：`docker compose exec backend sh -c "cd /app && alembic upgrade head"` |
 | 种子数据（创建测试项目与 @引导） | 启动时 `SEED_DATA=1` 或执行：`cd backend && python -m app.db.seed` |
+| 资源监控 API | `GET http://localhost:8000/api/tasks/stats?limit_days=7` |
 
 ---
 
@@ -123,3 +137,6 @@ LLM 在回答中应使用以下统一术语，与文档内表述一致。
 - [OpenClaw接入指南](OpenClaw接入指南.md)（OpenClaw 开发者快速接入）
 - [安装部署说明](安装部署说明.md)
 - [技术排查Q&A](技术排查Q&A.md)
+- [AgentNexus门户与知识平台设计](AgentNexus门户与知识平台设计.md)（门户定位、内置 Bot、分阶段实现）
+- [公共平台访问申请API规范](公共平台访问申请API规范.md)（阶段二参考，引导 Bot 可引用）
+- [LongBOT与AgentNexus设计比较](LongBOT与AgentNexus设计比较.md)（设计对比与借鉴）

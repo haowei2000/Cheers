@@ -26,7 +26,7 @@ def test_extract_mentions_underscore() -> None:
 def test_extract_mentions_chinese() -> None:
     """支持中文 Bot 名（如引导 Bot）。"""
     assert extract_mentions("@引导 怎么创建项目") == ["引导"]
-    assert extract_mentions("@小助 你好") == ["小助"]
+    assert extract_mentions("@助手 你好") == ["助手"]
 
 
 def test_filter_mentioned_bots() -> None:

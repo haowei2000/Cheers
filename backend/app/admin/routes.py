@@ -13,10 +13,12 @@ from app.admin.settings_store import (
     delete_llm_provider,
     get_clarify_settings,
     get_llm_bindings,
+    get_orchestrator_settings,
     get_llm_providers_list,
     get_provider_for_scope,
     set_clarify_settings,
     set_llm_bindings,
+    set_orchestrator_settings,
     update_llm_provider,
 )
 
@@ -97,6 +99,7 @@ class LLMBindingsBody(BaseModel):
     system_llm: str | None = None
     log_analyze: str | None = None
     qa_summarize: str | None = None
+    orchestrator: str | None = None
 
 
 @router.put("/settings/llm/bindings")
@@ -107,6 +110,7 @@ async def put_llm_bindings(body: LLMBindingsBody) -> dict:
         system_llm=body.system_llm,
         log_analyze=body.log_analyze,
         qa_summarize=body.qa_summarize,
+        orchestrator=body.orchestrator,
     )
     return {"status": "success", "data": {"bindings": get_llm_bindings()}}  # type: ignore[return-value]
 
@@ -134,6 +138,35 @@ async def put_admin_clarify_settings(body: ClarifySettingsBody) -> dict:
         clarify_strict_mode=body.clarify_strict_mode,
         clarify_force_rule=body.clarify_force_rule,
         clarify_threshold=body.clarify_threshold,
+    )
+    return {
+        "status": "success",
+        "message": "updated",
+        "data": updated,
+    }
+
+
+class OrchestratorSettingsBody(BaseModel):
+    orchestrator_direct_answer: bool | None = None
+    orchestrator_auto_takeover: bool | None = None
+
+
+@router.get("/settings/orchestrator")
+async def get_admin_orchestrator_settings() -> dict:
+    """获取 Orchestrator 配置（直接回答、自动接手）。"""
+    return {
+        "status": "success",
+        "message": "ok",
+        "data": get_orchestrator_settings(),
+    }
+
+
+@router.put("/settings/orchestrator")
+async def put_admin_orchestrator_settings(body: OrchestratorSettingsBody) -> dict:
+    """更新 Orchestrator 配置。"""
+    updated = set_orchestrator_settings(
+        orchestrator_direct_answer=body.orchestrator_direct_answer,
+        orchestrator_auto_takeover=body.orchestrator_auto_takeover,
     )
     return {
         "status": "success",
