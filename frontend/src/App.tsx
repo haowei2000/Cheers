@@ -7,7 +7,6 @@ const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.h
 const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
 const API_DOCS_URL = "/docs";
 
-type Workspace = { workspace_id: string; name: string };
 type Channel = { channel_id: string; name: string; type: string };
 type Message = {
   msg_id: string;
@@ -85,11 +84,6 @@ function parseGuidePayload(content: string): { text: string; form?: GuideFormSch
   return { text: text.trim(), form, clarify };
 }
 
-// 兼容历史调用，避免旧代码路径触发 ReferenceError
-function parseGuideForm(content: string): { text: string; form?: GuideFormSchema } {
-  const parsed = parseGuidePayload(content);
-  return { text: parsed.text, form: parsed.form };
-}
 
 /** 将消息内容中的 [text](url) 转为可点击链接，仅允许 / 或 http(s) 的 url */
 function renderMessageContent(content: string, keyPrefix = ""): (string | JSX.Element)[] {
@@ -240,7 +234,7 @@ function refreshChannels(setChannels: (c: Channel[]) => void) {
 
 /** 引导动态表单：根据 schema 渲染并提交，成功后回调 */
 function GuideFormBlock({
-  msgId,
+  msgId: _msgId,
   form,
   channelId,
   onReply,
@@ -527,7 +521,6 @@ function ClarifyInlineBlock({
 
 export default function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -549,13 +542,9 @@ export default function App() {
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
-<<<<<<< HEAD
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [allBots, setAllBots] = useState<BotItem[]>([]);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-=======
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
->>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
 
   function introSummary(intro: string | undefined): string {
     if (!intro) return "";
@@ -628,7 +617,6 @@ export default function App() {
   }, [contextOpen, selectedId]);
 
   useEffect(() => {
-<<<<<<< HEAD
     if (addBotOpen) {
       fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
     }
@@ -669,7 +657,9 @@ export default function App() {
         }
       })
       .catch(console.error);
-=======
+  };
+
+  useEffect(() => {
     if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
       setPendingClarifyReplyMsgId(null);
     }
@@ -698,7 +688,6 @@ export default function App() {
       if (prev.some((m) => m.msg_id === d.data.msg_id)) return prev;
       return [...prev, d.data];
     });
->>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
   };
 
   const send = () => {

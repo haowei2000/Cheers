@@ -69,7 +69,7 @@ export default function AdminPage() {
   const [botStatus, setBotStatus] = useState("online");
   const [botIntro, setBotIntro] = useState("");
   const [botWizardStep, setBotWizardStep] = useState<0 | 1 | 2>(0);
-  const [botWizardType, setBotWizardType] = useState<"guide" | "http" | "mock">("guide");
+  const [_botWizardType, setBotWizardType] = useState<"guide" | "http" | "mock">("guide");
   const [lastCreatedBotId, setLastCreatedBotId] = useState("");
   const [botList, setBotList] = useState<BotItem[]>([]);
   const [botEditingId, setBotEditingId] = useState<string | null>(null);
@@ -78,7 +78,7 @@ export default function AdminPage() {
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
 
   const [llmProviders, setLlmProviders] = useState<LLMProvider[]>([]);
-  const [llmBindings, setLlmBindings] = useState<LLMBindings>({});
+  const [_llmBindings, setLlmBindings] = useState<LLMBindings>({});
   const [llmForm, setLlmForm] = useState({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 });
   const [llmEditingId, setLlmEditingId] = useState<string | null>(null);
   const [llmSaveLoading, setLlmSaveLoading] = useState(false);
@@ -93,7 +93,7 @@ export default function AdminPage() {
   });
 
   const [logLevel, setLogLevel] = useState("");
-  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [_logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [logExcerpt, setLogExcerpt] = useState("");
   const [logQuestion, setLogQuestion] = useState("");
   const [logAnalysis, setLogAnalysis] = useState("");
@@ -187,18 +187,6 @@ export default function AdminPage() {
       .catch(console.error);
   };
 
-  const loadLlmSettings = () => {
-    fetch(`${API}/admin/settings/llm`).then((r) => r.json()).then((d) => {
-      if (d.data) {
-        setLlmProviders(d.data.providers || []);
-        setLlmBindings(d.data.bindings || {});
-        setBindingGuideBot(d.data.bindings?.guide_bot ?? "");
-        setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
-        setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
-        setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
-      }
-    }).catch(console.error);
-  };
 
   const saveClarifySettings = () => {
     fetch(`${API}/admin/settings/clarify`, {
@@ -371,13 +359,8 @@ export default function AdminPage() {
     fetch(`${API}/bots`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-<<<<<<< HEAD
-        if (d.status === "success") { setAdminMsg("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); loadBots(); }
-        else setAdminMsg(d.message || d.detail || "创建失败");
-=======
-        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); }
+        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); loadBots(); }
         else toast.error(d.message || d.detail || "创建失败");
->>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
       })
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
@@ -393,10 +376,10 @@ export default function AdminPage() {
     fetch(`${API}/bots/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }
-        else setAdminMsg(d.detail || "更新失败");
+        if (d.status === "success") { toast.success("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }
+        else toast.error(d.detail || "更新失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const deleteBot = (id: string) => {
@@ -404,10 +387,10 @@ export default function AdminPage() {
     fetch(`${API}/bots/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("已删除"); setBotEditingId(null); loadBots(); }
-        else setAdminMsg(d.detail || "删除失败");
+        if (d.status === "success") { toast.success("已删除"); setBotEditingId(null); loadBots(); }
+        else toast.error(d.detail || "删除失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   function introSummary(intro: string | undefined): string {

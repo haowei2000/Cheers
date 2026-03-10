@@ -1,7 +1,8 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json ./
-RUN npm install
+# 使用淘宝 npm 镜像加速
+RUN npm install --include=dev --registry https://registry.npmmirror.com
 COPY . .
 RUN npm run build
 

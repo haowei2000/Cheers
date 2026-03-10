@@ -57,15 +57,8 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "如何让外部 OpenClaw 发现并自动注册",
         "外部 OpenClaw 可通过「发现接口」获取本系统提供的注册指南（机器可读 JSON），并自动提交注册申请；"
         "管理员在「管理」→「待审核 Bot 申请」中审核通过后，该 Bot 才会被创建并可被加入项目 @。\n\n"
-<<<<<<< HEAD
         "• 发现与注册指南（GET）：后端地址/api/public/agentnexus-discovery（如 http://localhost:8000/api/public/agentnexus-discovery）\n"
         "• 提交注册申请（POST）：后端地址/api/bots/register-request，body 含 username、openclaw_endpoint、intro（必填，JSON 格式自我介绍），及选填 display_name。\n"
-=======
-        "• 发现与注册指南（GET）：后端地址/api/public/agentnexus-discovery"
-        "（如 http://localhost:8000/api/public/agentnexus-discovery）\n"
-        "• 提交注册申请（POST）：后端地址/api/bots/register-request，"
-        "body 含 username、openclaw_endpoint（及选填 display_name）。\n"
->>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
         "• 管理员入口：左侧「管理」→「待审核 Bot 申请」→ 通过/拒绝。\n\n"
         "详见 [系统管理说明书 §五](/manual/系统管理说明书#五如何让外部-openclaw-发现并自动注册需管理员审核)。",
     ),
