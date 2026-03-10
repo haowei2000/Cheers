@@ -26,7 +26,12 @@ type LLMProvider = {
   temperature: number;
   max_tokens: number;
 };
-type LLMBindings = { guide_bot?: string; system_llm?: string; log_analyze?: string };
+type LLMBindings = { guide_bot?: string; system_llm?: string; log_analyze?: string; qa_summarize?: string };
+type ClarifySettings = {
+  clarify_strict_mode: boolean;
+  clarify_force_rule: boolean;
+  clarify_threshold: number;
+};
 
 function refreshChannels(setChannels: (c: Channel[]) => void) {
   fetch(`${API}/channels`).then((r) => r.json()).then((d) => d.data && setChannels(d.data)).catch(console.error);
@@ -67,6 +72,12 @@ export default function AdminPage() {
   const [bindingGuideBot, setBindingGuideBot] = useState("");
   const [bindingSystemLlm, setBindingSystemLlm] = useState("");
   const [bindingLogAnalyze, setBindingLogAnalyze] = useState("");
+  const [bindingQaSummarize, setBindingQaSummarize] = useState("");
+  const [clarifySettings, setClarifySettings] = useState<ClarifySettings>({
+    clarify_strict_mode: false,
+    clarify_force_rule: true,
+    clarify_threshold: 0.6,
+  });
 
   const [logLevel, setLogLevel] = useState("");
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
@@ -100,11 +111,24 @@ export default function AdminPage() {
             setBindingGuideBot(d.data.bindings?.guide_bot ?? "");
             setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
             setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
+            setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
           }
         })
         .catch((e) => {
           console.error("[AdminPage] fetch LLM settings error:", e);
         });
+      fetch(`${API}/admin/settings/clarify`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.data) {
+            setClarifySettings({
+              clarify_strict_mode: !!d.data.clarify_strict_mode,
+              clarify_force_rule: !!d.data.clarify_force_rule,
+              clarify_threshold: Number(d.data.clarify_threshold ?? 0.6),
+            });
+          }
+        })
+        .catch((e) => console.error("[AdminPage] fetch clarify settings error:", e));
     }
   }, [activeTab]);
 
@@ -148,8 +172,31 @@ export default function AdminPage() {
         setBindingGuideBot(d.data.bindings?.guide_bot ?? "");
         setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
         setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
+        setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
       }
     }).catch(console.error);
+  };
+
+  const saveClarifySettings = () => {
+    fetch(`${API}/admin/settings/clarify`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(clarifySettings),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success" && d.data) {
+          setClarifySettings({
+            clarify_strict_mode: !!d.data.clarify_strict_mode,
+            clarify_force_rule: !!d.data.clarify_force_rule,
+            clarify_threshold: Number(d.data.clarify_threshold ?? 0.6),
+          });
+          setAdminMsg("澄清策略已保存");
+        } else {
+          setAdminMsg(d.detail || d.message || "保存失败");
+        }
+      })
+      .catch((e) => setAdminMsg("请求失败: " + String(e)));
   };
 
   const saveLlmProvider = (isEdit: boolean) => {
@@ -213,7 +260,7 @@ export default function AdminPage() {
     fetch(`${API}/admin/settings/llm/providers/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("已删除"); setLlmProviders(d.data.providers || []); setBindingGuideBot(d.data.bindings?.guide_bot ?? ""); setBindingSystemLlm(d.data.bindings?.system_llm ?? ""); setBindingLogAnalyze(d.data.bindings?.log_analyze ?? ""); setLlmEditingId(null); }
+        if (d.status === "success") { setAdminMsg("已删除"); setLlmProviders(d.data.providers || []); setBindingGuideBot(d.data.bindings?.guide_bot ?? ""); setBindingSystemLlm(d.data.bindings?.system_llm ?? ""); setBindingLogAnalyze(d.data.bindings?.log_analyze ?? ""); setBindingQaSummarize(d.data.bindings?.qa_summarize ?? ""); setLlmEditingId(null); }
         else setAdminMsg(d.detail || "删除失败");
       })
       .catch((e) => setAdminMsg("请求失败: " + String(e)));
@@ -223,7 +270,12 @@ export default function AdminPage() {
     fetch(`${API}/admin/settings/llm/bindings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ guide_bot: bindingGuideBot || null, system_llm: bindingSystemLlm || null, log_analyze: bindingLogAnalyze || null }),
+      body: JSON.stringify({
+        guide_bot: bindingGuideBot || null,
+        system_llm: bindingSystemLlm || null,
+        log_analyze: bindingLogAnalyze || null,
+        qa_summarize: bindingQaSummarize || null,
+      }),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -412,7 +464,62 @@ export default function AdminPage() {
                   </select>
                   <span className="text-gray-500 text-xs">未选时使用系统 LLM</span>
                 </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-32">问答总结</span>
+                  <select value={bindingQaSummarize} onChange={(e) => setBindingQaSummarize(e.target.value)} className="border rounded px-2 py-1 flex-1 max-w-xs">
+                    <option value="">— 不绑定 —</option>
+                    {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <span className="text-gray-500 text-xs">未选时使用系统 LLM</span>
+                </label>
                 <button type="button" onClick={saveLlmBindings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">保存绑定</button>
+              </div>
+            </section>
+
+            <section className="bg-white p-4 rounded border">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">澄清策略</h3>
+              <p className="text-xs text-gray-500 mb-2">用于控制引导 Bot 在问题不清晰时是否弹出澄清窗口。</p>
+              <div className="space-y-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={clarifySettings.clarify_strict_mode}
+                    onChange={(e) =>
+                      setClarifySettings((prev) => ({ ...prev, clarify_strict_mode: e.target.checked }))
+                    }
+                  />
+                  <span>严格模式（更倾向先澄清再回答）</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={clarifySettings.clarify_force_rule}
+                    onChange={(e) =>
+                      setClarifySettings((prev) => ({ ...prev, clarify_force_rule: e.target.checked }))
+                    }
+                  />
+                  <span>允许规则强制澄清（命中规则时直接弹窗）</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-40">LLM 澄清阈值（0~1）</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={clarifySettings.clarify_threshold}
+                    onChange={(e) =>
+                      setClarifySettings((prev) => ({
+                        ...prev,
+                        clarify_threshold: Number(e.target.value),
+                      }))
+                    }
+                    className="border rounded px-2 py-1 w-24"
+                  />
+                </label>
+                <button type="button" onClick={saveClarifySettings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">
+                  保存澄清策略
+                </button>
               </div>
             </section>
           </div>

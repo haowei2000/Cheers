@@ -7,7 +7,12 @@ from typing import Any
 from app.config import settings
 
 ADMIN_SETTINGS_FILENAME = "admin_settings.json"
-SCOPES = ("guide_bot", "system_llm", "log_analyze")
+SCOPES = ("guide_bot", "system_llm", "log_analyze", "qa_summarize")
+DEFAULT_CLARIFY_SETTINGS = {
+    "clarify_strict_mode": False,
+    "clarify_force_rule": True,
+    "clarify_threshold": 0.6,
+}
 
 # 与 config 一致：相对 data_dir 基于 backend 根目录（3 个 parent：app/admin -> app -> backend）
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -58,6 +63,12 @@ def _ensure_llm_structures(data: dict[str, Any]) -> None:
         data["llm_providers"] = []
     if "llm_bindings" not in data:
         data["llm_bindings"] = {}
+
+
+def _ensure_clarify_settings(data: dict[str, Any]) -> None:
+    for k, v in DEFAULT_CLARIFY_SETTINGS.items():
+        if k not in data:
+            data[k] = v
 
 
 # 预设本地模型（Ollama，OpenAI 兼容）
@@ -153,7 +164,7 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
             "temperature": float(data.get("guide_llm_temperature", s.guide_llm_temperature)),
             "max_tokens": int(data.get("guide_llm_max_tokens", s.guide_llm_max_tokens)),
         }
-    if scope in ("system_llm", "log_analyze"):
+    if scope in ("system_llm", "log_analyze", "qa_summarize"):
         return {
             "base_url": (data.get("system_llm_base_url") or s.system_llm_base_url or "").strip(),
             "model": (data.get("system_llm_model") or s.system_llm_model or "gpt-4o-mini").strip(),
@@ -238,7 +249,12 @@ def delete_llm_provider(provider_id: str) -> bool:
     return False
 
 
-def set_llm_bindings(guide_bot: str | None = None, system_llm: str | None = None, log_analyze: str | None = None) -> None:
+def set_llm_bindings(
+    guide_bot: str | None = None,
+    system_llm: str | None = None,
+    log_analyze: str | None = None,
+    qa_summarize: str | None = None,
+) -> None:
     """更新功能绑定；传空串表示取消绑定。"""
     data = load_admin_settings()
     _ensure_llm_structures(data)
@@ -249,6 +265,8 @@ def set_llm_bindings(guide_bot: str | None = None, system_llm: str | None = None
         bindings["system_llm"] = (system_llm or "").strip() or ""
     if log_analyze is not None:
         bindings["log_analyze"] = (log_analyze or "").strip() or ""
+    if qa_summarize is not None:
+        bindings["qa_summarize"] = (qa_summarize or "").strip() or ""
     data["llm_bindings"] = {k: v for k, v in bindings.items() if v}
     save_admin_settings(data)
 
@@ -273,3 +291,42 @@ def get_effective_llm_number(env_value: float | int, key: str, default: float | 
         except (TypeError, ValueError):
             pass
     return env_value if env_value is not None else default
+
+
+def get_clarify_settings() -> dict[str, Any]:
+    """获取澄清策略配置（含默认值，且做范围兜底）。"""
+    data = load_admin_settings()
+    _ensure_clarify_settings(data)
+    threshold = data.get("clarify_threshold", DEFAULT_CLARIFY_SETTINGS["clarify_threshold"])
+    try:
+        threshold_f = float(threshold)
+    except (TypeError, ValueError):
+        threshold_f = float(DEFAULT_CLARIFY_SETTINGS["clarify_threshold"])
+    threshold_f = max(0.0, min(1.0, threshold_f))
+    return {
+        "clarify_strict_mode": bool(data.get("clarify_strict_mode", DEFAULT_CLARIFY_SETTINGS["clarify_strict_mode"])),
+        "clarify_force_rule": bool(data.get("clarify_force_rule", DEFAULT_CLARIFY_SETTINGS["clarify_force_rule"])),
+        "clarify_threshold": threshold_f,
+    }
+
+
+def set_clarify_settings(
+    clarify_strict_mode: bool | None = None,
+    clarify_force_rule: bool | None = None,
+    clarify_threshold: float | None = None,
+) -> dict[str, Any]:
+    """更新澄清策略配置并返回最新值。"""
+    data = load_admin_settings()
+    _ensure_clarify_settings(data)
+    if clarify_strict_mode is not None:
+        data["clarify_strict_mode"] = bool(clarify_strict_mode)
+    if clarify_force_rule is not None:
+        data["clarify_force_rule"] = bool(clarify_force_rule)
+    if clarify_threshold is not None:
+        try:
+            t = float(clarify_threshold)
+        except (TypeError, ValueError):
+            t = float(DEFAULT_CLARIFY_SETTINGS["clarify_threshold"])
+        data["clarify_threshold"] = max(0.0, min(1.0, t))
+    save_admin_settings(data)
+    return get_clarify_settings()

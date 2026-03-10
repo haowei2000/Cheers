@@ -15,11 +15,13 @@ type Message = {
   content: string;
   created_at?: string;
 };
+type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
 
 const LAYERS = ["ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT"] as const;
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
+const GUIDE_CLARIFY_BLOCK = /```guide-clarify\n([\s\S]*?)```/;
 
 type GuideFormField = {
   name: string;
@@ -33,20 +35,63 @@ type GuideFormField = {
 
 type GuideFormSchema = { action: string; fields: GuideFormField[] };
 
-function parseGuideForm(content: string): { text: string; form?: GuideFormSchema } {
-  const match = content.match(GUIDE_FORM_BLOCK);
-  if (!match) return { text: content.trim() };
-  const text = content.slice(0, match.index).trim();
-  try {
-    const form = JSON.parse(match[1].trim()) as GuideFormSchema;
-    return { text, form };
-  } catch {
-    return { text: content.trim() };
+type ClarifyOption = { id: string; label: string };
+type ClarifyQuestion = {
+  id: string;
+  prompt: string;
+  allow_multiple?: boolean;
+  options: ClarifyOption[];
+  other_enabled?: boolean;
+  other_label?: string;
+  other_placeholder?: string;
+};
+type ClarifySchema = {
+  title?: string;
+  questions: ClarifyQuestion[];
+  skip_policy?: "allow" | "forbid";
+  reason?: string;
+};
+type ClarifyAnswers = {
+  selected: Record<string, string[]>;
+  other_text: Record<string, string>;
+};
+const OTHER_CHOICE_ID = "__other__";
+
+function parseGuidePayload(content: string): { text: string; form?: GuideFormSchema; clarify?: ClarifySchema } {
+  let text = content;
+  let form: GuideFormSchema | undefined;
+  let clarify: ClarifySchema | undefined;
+
+  const formMatch = text.match(GUIDE_FORM_BLOCK);
+  if (formMatch) {
+    try {
+      form = JSON.parse(formMatch[1].trim()) as GuideFormSchema;
+      text = text.replace(formMatch[0], "");
+    } catch {}
   }
+
+  const clarifyMatch = text.match(GUIDE_CLARIFY_BLOCK);
+  if (clarifyMatch) {
+    try {
+      const parsed = JSON.parse(clarifyMatch[1].trim()) as ClarifySchema;
+      if (Array.isArray(parsed?.questions) && parsed.questions.length > 0) {
+        clarify = parsed;
+      }
+      text = text.replace(clarifyMatch[0], "");
+    } catch {}
+  }
+
+  return { text: text.trim(), form, clarify };
+}
+
+// 兼容历史调用，避免旧代码路径触发 ReferenceError
+function parseGuideForm(content: string): { text: string; form?: GuideFormSchema } {
+  const parsed = parseGuidePayload(content);
+  return { text: parsed.text, form: parsed.form };
 }
 
 /** 将消息内容中的 [text](url) 转为可点击链接，仅允许 / 或 http(s) 的 url */
-function renderMessageContent(content: string): (string | JSX.Element)[] {
+function renderMessageContent(content: string, keyPrefix = ""): (string | JSX.Element)[] {
   const re = /\[([^\]]+)\]\(([^)]+)\)/g;
   const out: (string | React.ReactElement)[] = [];
   let lastIndex = 0;
@@ -58,7 +103,7 @@ function renderMessageContent(content: string): (string | JSX.Element)[] {
     const safe = rawUrl.startsWith("/") || rawUrl.startsWith("http://") || rawUrl.startsWith("https://");
     out.push(
       <a
-        key={key++}
+        key={`${keyPrefix}link-${key++}`}
         href={safe ? rawUrl : "#"}
         target="_blank"
         rel="noreferrer"
@@ -76,7 +121,7 @@ function renderMessageContent(content: string): (string | JSX.Element)[] {
 const THINK_BLOCK = /<think>([\s\S]*?)<\/think>/gi;
 
 /** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
-function renderWithThinkFolding(content: string): (string | JSX.Element)[] {
+function renderWithThinkFolding(content: string, keyPrefix = ""): (string | JSX.Element)[] {
   const parts: (string | JSX.Element)[] = [];
   let lastIndex = 0;
   let key = 0;
@@ -84,18 +129,18 @@ function renderWithThinkFolding(content: string): (string | JSX.Element)[] {
   THINK_BLOCK.lastIndex = 0;
   while ((match = THINK_BLOCK.exec(content)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(...renderMessageContent(content.slice(lastIndex, match.index)));
+      parts.push(...renderMessageContent(content.slice(lastIndex, match.index), `${keyPrefix}seg-${key}-`));
     }
     const thinkContent = match[1]?.trim() || "";
     parts.push(
-      <ThinkFold key={key++} content={thinkContent} />
+      <ThinkFold key={`${keyPrefix}think-${key++}`} content={thinkContent} />
     );
     lastIndex = THINK_BLOCK.lastIndex;
   }
   if (lastIndex < content.length) {
-    parts.push(...renderMessageContent(content.slice(lastIndex)));
+    parts.push(...renderMessageContent(content.slice(lastIndex), `${keyPrefix}tail-${key}-`));
   }
-  return parts.length > 0 ? parts : renderMessageContent(content);
+  return parts.length > 0 ? parts : renderMessageContent(content, `${keyPrefix}full-`);
 }
 
 function ThinkFold({ content }: { content: string }) {
@@ -117,6 +162,72 @@ function ThinkFold({ content }: { content: string }) {
       )}
     </div>
   );
+}
+
+function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
+function buildQaPairs(messages: Message[]): QaPair[] {
+  const pairs: QaPair[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const q = messages[i];
+    if (q.sender_type !== "user") continue;
+    for (let j = i + 1; j < messages.length; j++) {
+      const a = messages[j];
+      if (a.sender_type === "bot") {
+        pairs.push({ question: q, answer: a });
+        break;
+      }
+      if (a.sender_type === "user") {
+        break;
+      }
+    }
+  }
+  return pairs;
+}
+
+function formatTs(ts?: string): string {
+  return (ts || "").slice(0, 19);
+}
+
+function buildQaMarkdown(channelName: string, pairs: QaPair[]): string {
+  const now = new Date();
+  const rows: string[] = [];
+  rows.push(`# 问答导出 - ${channelName}`);
+  rows.push("");
+  rows.push(`导出时间: ${now.toISOString()}`);
+  rows.push(`问答数量: ${pairs.length}`);
+  rows.push("");
+  pairs.forEach((p, idx) => {
+    const qText = stripThinkTags(parseGuidePayload(p.question.content).text || p.question.content);
+    const aText = stripThinkTags(parseGuidePayload(p.answer.content).text || p.answer.content);
+    rows.push(`## ${idx + 1}. 问答`);
+    rows.push("");
+    rows.push(`### 问题 (${formatTs(p.question.created_at) || "-"})`);
+    rows.push("");
+    rows.push(qText || "-");
+    rows.push("");
+    rows.push(`### 回答 (${formatTs(p.answer.created_at) || "-"})`);
+    rows.push("");
+    rows.push(aText || "-");
+    rows.push("");
+    rows.push("---");
+    rows.push("");
+  });
+  return rows.join("\n");
+}
+
+function downloadText(filename: string, content: string): void {
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function refreshChannels(setChannels: (c: Channel[]) => void) {
@@ -249,6 +360,117 @@ function GuideFormBlock({
   );
 }
 
+function ClarifyModal({
+  schema,
+  onContinue,
+  onSkip,
+}: {
+  schema: ClarifySchema;
+  onContinue: (answers: ClarifyAnswers) => void;
+  onSkip: () => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [otherText, setOtherText] = useState<Record<string, string>>({});
+  const allowSkip = (schema.skip_policy || "allow") === "allow";
+  const canContinue = schema.questions.every((q) => {
+    const selected = answers[q.id] || [];
+    if (selected.length === 0) return false;
+    if (selected.includes(OTHER_CHOICE_ID)) {
+      return !!(otherText[q.id] || "").trim();
+    }
+    return true;
+  });
+
+  const toggleOption = (q: ClarifyQuestion, optionId: string) => {
+    setAnswers((prev) => {
+      const current = prev[q.id] || [];
+      if (q.allow_multiple) {
+        const next = current.includes(optionId)
+          ? current.filter((id) => id !== optionId)
+          : [...current, optionId];
+        return { ...prev, [q.id]: next };
+      }
+      return { ...prev, [q.id]: [optionId] };
+    });
+  };
+
+  const toggleOther = (q: ClarifyQuestion) => toggleOption(q, OTHER_CHOICE_ID);
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50" aria-modal="true" role="dialog">
+      <div className="w-full max-w-xl rounded-lg bg-gray-950 text-white shadow-xl border border-gray-800 p-4">
+        <div className="mb-3">
+          <h3 className="text-lg font-semibold">{schema.title || "请先确认以下问题"}</h3>
+        </div>
+        <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
+          {schema.questions.map((q, idx) => (
+            <div key={q.id} className="rounded border border-gray-800 p-3">
+              <p className="text-sm mb-2">{idx + 1}. {q.prompt}</p>
+              <div className="space-y-1.5">
+                {q.options.map((opt) => {
+                  const checked = (answers[q.id] || []).includes(opt.id);
+                  return (
+                    <label key={opt.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type={q.allow_multiple ? "checkbox" : "radio"}
+                        name={q.id}
+                        checked={checked}
+                        onChange={() => toggleOption(q, opt.id)}
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  );
+                })}
+                {q.other_enabled && (
+                  <div className="pt-1">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type={q.allow_multiple ? "checkbox" : "radio"}
+                        name={q.id}
+                        checked={(answers[q.id] || []).includes(OTHER_CHOICE_ID)}
+                        onChange={() => toggleOther(q)}
+                      />
+                      <span>{q.other_label || "其他"}</span>
+                    </label>
+                    {(answers[q.id] || []).includes(OTHER_CHOICE_ID) && (
+                      <input
+                        type="text"
+                        value={otherText[q.id] || ""}
+                        onChange={(e) => setOtherText((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                        placeholder={q.other_placeholder || "请输入其他补充"}
+                        className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-white"
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          {allowSkip && (
+            <button
+              type="button"
+              onClick={onSkip}
+              className="px-3 py-1.5 rounded border border-gray-700 text-gray-200 hover:bg-gray-800"
+            >
+              Skip
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!canContinue}
+            onClick={() => onContinue({ selected: answers, other_text: otherText })}
+            className="px-3 py-1.5 rounded bg-amber-500 text-black font-medium disabled:opacity-50"
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -261,12 +483,19 @@ export default function App() {
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
+  const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>({});
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryPreview, setSummaryPreview] = useState("");
+  const [qaLlmReady, setQaLlmReady] = useState(false);
+  const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
+  const [clarifyModal, setClarifyModal] = useState<{ msgId: string; schema: ClarifySchema } | null>(null);
+  const [handledClarifyIds, setHandledClarifyIds] = useState<Record<string, boolean>>({});
 
   type ChannelBot = { member_id: string; username: string };
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     refreshChannels(setChannels);
@@ -276,6 +505,10 @@ export default function App() {
     if (!selectedId) {
       setMessages([]);
       setChannelBots([]);
+      setSelectedQaIds({});
+      setSummaryPreview("");
+      setClarifyModal(null);
+      setHandledClarifyIds({});
       return;
     }
     setLoading(true);
@@ -324,6 +557,41 @@ export default function App() {
     }
   }, [contextOpen, selectedId]);
 
+  useEffect(() => {
+    if (!selectedId || clarifyModal) return;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.sender_type !== "bot" || handledClarifyIds[m.msg_id]) continue;
+      const parsed = parseGuidePayload(m.content);
+      if (parsed.clarify) {
+        setClarifyModal({ msgId: m.msg_id, schema: parsed.clarify });
+        setHandledClarifyIds((prev) => ({ ...prev, [m.msg_id]: true }));
+        break;
+      }
+    }
+  }, [selectedId, messages, handledClarifyIds, clarifyModal]);
+
+  const sendUserMessage = async (content: string) => {
+    if (!selectedId || !content.trim()) return;
+    const body = {
+      content: content.trim(),
+      sender_id: DEV_USER_ID,
+      sender_type: "user",
+      file_ids: [] as string[],
+    };
+    const res = await fetch(`${API}/channels/${selectedId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await res.json();
+    setMessages((prev) => {
+      if (!d.data) return prev;
+      if (prev.some((m) => m.msg_id === d.data.msg_id)) return prev;
+      return [...prev, d.data];
+    });
+  };
+
   const send = () => {
     if (!selectedId || !input.trim()) return;
     const body = {
@@ -349,6 +617,26 @@ export default function App() {
         setPendingFileNames([]);
       })
       .catch(console.error);
+  };
+
+  const handleClarifyContinue = async (schema: ClarifySchema, answers: ClarifyAnswers) => {
+    const lines = ["@引导 澄清回答："];
+    for (const q of schema.questions) {
+      const picked = new Set(answers.selected[q.id] || []);
+      const labels = q.options.filter((o) => picked.has(o.id)).map((o) => o.label);
+      if (picked.has(OTHER_CHOICE_ID)) {
+        const other = (answers.other_text[q.id] || "").trim();
+        if (other) labels.push(`其他：${other}`);
+      }
+      lines.push(`- ${q.prompt}：${labels.length > 0 ? labels.join("、") : "未选择"}`);
+    }
+    await sendUserMessage(lines.join("\n"));
+    setClarifyModal(null);
+  };
+
+  const handleClarifySkip = async () => {
+    await sendUserMessage("@引导 用户选择跳过澄清，请在当前信息下继续回答。");
+    setClarifyModal(null);
   };
 
   const uploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -387,6 +675,122 @@ export default function App() {
         if (d.status === "success") setContextData((prev) => ({ ...prev, [layer.toLowerCase()]: content }));
       })
       .catch(console.error);
+  };
+
+  const selectedChannel = channels.find((c) => c.channel_id === selectedId) || null;
+  const qaPairs = buildQaPairs(messages);
+  const qaPairByQuestionId = new Map(qaPairs.map((p) => [p.question.msg_id, p]));
+  const selectedPairs = qaPairs.filter((p) => selectedQaIds[p.question.msg_id]);
+
+  const toggleQa = (msgId: string) => {
+    setSelectedQaIds((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
+  };
+
+  const clearQaSelection = () => setSelectedQaIds({});
+
+  const exportMdFilename = () => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const ch = (selectedChannel?.name || "channel").replace(/\s+/g, "_");
+    return `qa-export-${ch}-${stamp}.md`;
+  };
+
+  const downloadQaMarkdown = () => {
+    if (selectedPairs.length === 0) {
+      alert("请先勾选至少一组问答");
+      return;
+    }
+    const md = buildQaMarkdown(selectedChannel?.name || "频道", selectedPairs);
+    downloadText(exportMdFilename(), md);
+  };
+
+  const summaryMdFilename = () => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const ch = (selectedChannel?.name || "channel").replace(/\s+/g, "_");
+    return `qa-summary-${ch}-${stamp}.md`;
+  };
+
+  const refreshQaLlmStatus = async () => {
+    try {
+      const llmRes = await fetch(`${API}/admin/settings/llm`);
+      const llmData = await llmRes.json();
+      if (!llmRes.ok) {
+        setQaLlmReady(false);
+        setQaLlmHint("无法读取 LLM 配置，请稍后重试。");
+        return false;
+      }
+      const bindings = llmData?.data?.bindings || {};
+      const providers = llmData?.data?.providers || [];
+      const pickedId = bindings.qa_summarize || bindings.system_llm;
+      const picked = providers.find((p: { id: string; base_url?: string }) => p.id === pickedId);
+      if (!picked || !String(picked.base_url || "").trim()) {
+        setQaLlmReady(false);
+        setQaLlmHint("未配置问答总结 LLM，请到「管理」页绑定问答总结或系统 LLM。");
+        return false;
+      }
+      setQaLlmReady(true);
+      setQaLlmHint("LLM 已配置，可生成总结。");
+      return true;
+    } catch {
+      setQaLlmReady(false);
+      setQaLlmHint("检查 LLM 配置失败，请稍后重试。");
+      return false;
+    }
+  };
+
+  const generateQaSummary = async () => {
+    if (selectedPairs.length === 0) {
+      alert("请先勾选至少一组问答");
+      return;
+    }
+    setSummaryBusy(true);
+    try {
+      const ok = await refreshQaLlmStatus();
+      if (!ok) {
+        alert("请先在管理页配置并绑定可用 LLM（问答总结或系统 LLM）。");
+        return;
+      }
+
+      const pairs = selectedPairs.map((p) => ({
+        question: stripThinkTags(parseGuidePayload(p.question.content).text || p.question.content),
+        answer: stripThinkTags(parseGuidePayload(p.answer.content).text || p.answer.content),
+        question_time: formatTs(p.question.created_at),
+        answer_time: formatTs(p.answer.created_at),
+      }));
+      const res = await fetch(`${API}/admin/qa/summarize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel_name: selectedChannel?.name || "频道",
+          pairs,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.message || `总结失败 (${res.status})`);
+      }
+      const md = data?.data?.summary_markdown || "";
+      if (!md.trim()) {
+        throw new Error("未获得总结结果");
+      }
+      setSummaryPreview(md);
+    } catch (e) {
+      alert((e as Error).message || "生成总结失败");
+    } finally {
+      setSummaryBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedId) return;
+    refreshQaLlmStatus();
+  }, [selectedId]);
+
+  const downloadSummaryMarkdown = () => {
+    if (!summaryPreview.trim()) {
+      alert("请先生成总结");
+      return;
+    }
+    downloadText(summaryMdFilename(), summaryPreview);
   };
 
   return (
@@ -507,15 +911,71 @@ export default function App() {
         </div>
       )}
 
+      {clarifyModal && (
+        <ClarifyModal
+          schema={clarifyModal.schema}
+          onContinue={(answers) => handleClarifyContinue(clarifyModal.schema, answers)}
+          onSkip={handleClarifySkip}
+        />
+      )}
+
       <main className="flex-1 flex flex-col min-w-0">
         {selectedId ? (
           <>
+            <div className="px-4 pt-3 pb-2 border-b bg-white flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-500">已识别问答 {qaPairs.length} 组，已勾选 {selectedPairs.length} 组</span>
+              <button
+                type="button"
+                onClick={downloadQaMarkdown}
+                disabled={selectedPairs.length === 0}
+                className="px-2 py-1 text-xs rounded border border-gray-300 disabled:text-gray-400 disabled:border-gray-200 hover:bg-gray-50"
+              >
+                导出为 MD
+              </button>
+              <button
+                type="button"
+                onClick={generateQaSummary}
+                disabled={selectedPairs.length === 0 || summaryBusy || !qaLlmReady}
+                title={qaLlmHint}
+                className="px-2 py-1 text-xs rounded bg-blue-600 text-white disabled:bg-gray-300"
+              >
+                {summaryBusy ? "总结中..." : "LLM 总结"}
+              </button>
+              <button
+                type="button"
+                onClick={downloadSummaryMarkdown}
+                disabled={!summaryPreview.trim()}
+                className="px-2 py-1 text-xs rounded border border-gray-300 disabled:text-gray-400 disabled:border-gray-200 hover:bg-gray-50"
+              >
+                下载总结 MD
+              </button>
+              <button
+                type="button"
+                onClick={clearQaSelection}
+                className="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50"
+              >
+                清空勾选
+              </button>
+              {!qaLlmReady && (
+                <span className="text-xs text-amber-700">
+                  {qaLlmHint}
+                </span>
+              )}
+            </div>
+            {summaryPreview && (
+              <div className="px-4 pt-2 pb-2 border-b bg-gray-50">
+                <div className="text-xs text-gray-500 mb-1">总结预览</div>
+                <div className="w-full border rounded p-2 bg-white text-sm whitespace-pre-wrap max-h-60 overflow-auto">
+                  {summaryPreview}
+                </div>
+              </div>
+            )}
             <div className="flex-1 overflow-auto p-4 space-y-2">
               {loading ? (
                 <div className="text-gray-500">加载中...</div>
               ) : (
                 messages.map((m) => {
-                  const { text, form } = parseGuideForm(m.content);
+                  const { text, form } = parseGuidePayload(m.content);
                   return (
                     <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
                       <span className="text-xs text-gray-500 flex items-center gap-2">
@@ -525,8 +985,18 @@ export default function App() {
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
                         )}
                         {m.created_at?.slice(0, 19) || ""}
+                        {m.sender_type === "user" && qaPairByQuestionId.has(m.msg_id) && (
+                          <label className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600">
+                            <input
+                              type="checkbox"
+                              checked={!!selectedQaIds[m.msg_id]}
+                              onChange={() => toggleQa(m.msg_id)}
+                            />
+                            勾选问答
+                          </label>
+                        )}
                       </span>
-                      <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text)}</div>
+                      <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text, `${m.msg_id}-`)}</div>
                       {form && selectedId && m.sender_type === "bot" && (
                         <GuideFormBlock
                           msgId={m.msg_id}
@@ -556,9 +1026,8 @@ export default function App() {
                   />
                 </label>
                 <div className="flex-1 relative">
-                  <input
+                  <textarea
                     ref={inputRef}
-                    type="text"
                     value={input}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -580,10 +1049,13 @@ export default function App() {
                         setShowMentionDropdown(false);
                         return;
                       }
-                      if (e.key === "Enter" && !e.shiftKey) send();
+                      if (e.key === "Enter" && e.ctrlKey) {
+                        e.preventDefault();
+                        send();
+                      }
                     }}
-                    placeholder="输入消息，输入 @ 选择 Bot…"
-                    className="w-full border rounded px-3 py-2"
+                    placeholder="输入消息，输入 @ 选择 Bot…（Ctrl+Enter 发送，Enter 换行）"
+                    className="w-full border rounded px-3 py-2 min-h-[44px] max-h-48 resize-y"
                   />
                   {showMentionDropdown && (() => {
                     const matched = channelBots.filter((b) =>

@@ -1,4 +1,4 @@
-"""引导 Bot 帮助索引：根据用户问题匹配说明书摘要，引导完成操作；支持动态表单."""
+"""引导 Bot 帮助索引：根据用户问题匹配说明书摘要，引导完成操作；支持动态表单与澄清问答."""
 import json
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -19,9 +19,12 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "如何创建项目",
         "【前端入口】左侧点击「管理」→ 创建项目：选择工作空间、填写项目名称后点击「创建」。\n\n"
         "若无工作空间，需先建一个（只需做一次）：\n"
-        "Docker：docker compose exec backend sqlite3 /app/data/main.db \"INSERT INTO workspaces (workspace_id, name, created_at) VALUES ('ws-default-001', '默认空间', datetime('now'));\"\n"
+        "Docker：docker compose exec backend sqlite3 /app/data/main.db "
+        "\"INSERT INTO workspaces (workspace_id, name, created_at) "
+        "VALUES ('ws-default-001', '默认空间', datetime('now'));\"\n"
         "本地：cd backend && sqlite3 ../data/main.db 同上。\n\n"
-        "也可用 API：POST /api/channels，body 含 workspace_id、name、type。详见《系统管理说明书》§二。",
+        "也可用 API：POST /api/channels，body 含 workspace_id、name、type。"
+        "详见《系统管理说明书》§二。",
     ),
     HelpEntry(
         ("加入项目", "怎么加入", "加入频道", "被加进项目"),
@@ -34,23 +37,32 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         ("openclaw", "接入", "接入bot", "接入 bot", "怎么接", "注册bot", "添加bot"),
         "如何让 OpenClaw 接入",
         "接入 = 把你的 OpenClaw 变成系统里的一个 Bot，别人 @ 它就会由你的 OpenClaw 回复。\n\n"
-        "【前端填表创建】在左侧「管理」→「创建 Bot」中按表格填写 bot_id（可选）、username（@ 用的名字）、openclaw_endpoint 等后点击「创建」，再将该 Bot 加入具体项目即可。\n\n"
+        "【前端填表创建】在左侧「管理」→「创建 Bot」中按表格填写 "
+        "bot_id（可选）、username（@ 用的名字）、openclaw_endpoint 等后点击"
+        "「创建」，再将该 Bot 加入具体项目即可。\n\n"
         "或手动三步：\n"
         "1）准备好已运行的服务及访问地址（如 http://主机:端口）。\n"
-        "2）在系统里「注册」Bot：在 bot_accounts 表插入一条记录，填 bot_id、username（@ 用的名字）、openclaw_endpoint（填 http 或 https 地址）。\n"
-        "3）把该 Bot「加入」到具体项目：调用 POST /api/channels/{项目ID}/members，body 里 member_id=bot_id，member_type=bot。\n\n"
-        "当 openclaw_endpoint 为 http(s) 地址时，系统会向该地址 POST /execute 发送请求（请求/响应格式见《系统管理说明书》§四）。若未配置为 http 或服务不可用，@ 该 Bot 会收到占位或错误提示。\n\n"
-        "详见 [系统管理说明书 §四](/manual/系统管理说明书#四)。",
+        "2）在系统里「注册」Bot：在 bot_accounts 表插入一条记录，填 "
+        "bot_id、username（@ 用的名字）、openclaw_endpoint（填 http 或 https 地址）。\n"
+        "3）把该 Bot「加入」到具体项目：调用 "
+        "POST /api/channels/{项目ID}/members，body 里 member_id=bot_id，"
+        "member_type=bot。\n\n"
+        "当 openclaw_endpoint 为 http(s) 地址时，系统会向该地址 "
+        "POST /execute 发送请求（请求/响应格式见《系统管理说明书》§四）。"
+        "若未配置为 http 或服务不可用，@ 该 Bot 会收到占位或错误提示。\n\n"
+        "详见 [系统管理说明书 §四](/manual/系统管理说明书#四如何让-openclaw-接入注册-bot-并加入项目)。",
     ),
     HelpEntry(
         ("发现", "自动注册", "openclaw 发现", "让openclaw发现", "机器可读", "注册指南"),
         "如何让外部 OpenClaw 发现并自动注册",
         "外部 OpenClaw 可通过「发现接口」获取本系统提供的注册指南（机器可读 JSON），并自动提交注册申请；"
         "管理员在「管理」→「待审核 Bot 申请」中审核通过后，该 Bot 才会被创建并可被加入项目 @。\n\n"
-        "• 发现与注册指南（GET）：后端地址/api/public/agentnexus-discovery（如 http://localhost:8000/api/public/agentnexus-discovery）\n"
-        "• 提交注册申请（POST）：后端地址/api/bots/register-request，body 含 username、openclaw_endpoint（及选填 display_name）。\n"
+        "• 发现与注册指南（GET）：后端地址/api/public/agentnexus-discovery"
+        "（如 http://localhost:8000/api/public/agentnexus-discovery）\n"
+        "• 提交注册申请（POST）：后端地址/api/bots/register-request，"
+        "body 含 username、openclaw_endpoint（及选填 display_name）。\n"
         "• 管理员入口：左侧「管理」→「待审核 Bot 申请」→ 通过/拒绝。\n\n"
-        "详见 [系统管理说明书 §五](/manual/系统管理说明书#五)。",
+        "详见 [系统管理说明书 §五](/manual/系统管理说明书#五如何让外部-openclaw-发现并自动注册需管理员审核)。",
     ),
     HelpEntry(
         ("发消息", "聊天", "怎么发", "怎么@", "如何@", "at bot", "@"),
@@ -72,14 +84,16 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "可检查：\n"
         "1）该 Bot 是否已加入当前项目（管理员用「添加成员」把 Bot 加进项目）。\n"
         "2）你 @ 的名字是否和 Bot 的 username 完全一致。\n"
-        "3）若接的是真实服务，确认 openclaw_endpoint 为 http(s) 地址且该服务已实现 POST /execute 约定格式并已启动。\n\n"
+        "3）若接的是真实服务，确认 openclaw_endpoint 为 http(s) 地址且"
+        "该服务已实现 POST /execute 约定格式并已启动。\n\n"
         "详见《技术排查Q&A》或《普通用户使用说明》§四。",
     ),
     HelpEntry(
         ("安装", "部署", "怎么装", "环境"),
         "安装与部署",
         "推荐用 Docker：在项目根执行 docker compose up -d。\n\n"
-        "本地安装：后端 cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload；"
+        "本地安装：后端 cd backend && pip install -r requirements.txt && "
+        "uvicorn app.main:app --reload；"
         "前端 cd frontend && npm install && npm run dev。\n"
         "首次需执行 alembic upgrade head，并建工作空间与项目。详见《安装部署说明》。",
     ),
@@ -184,7 +198,8 @@ def build_guide_content_with_form(user_text: str) -> str:
         return ""
     form = get_form_for_intent(user_text)
     if form:
-        content += "\n\n```guide-form\n" + json.dumps(form, ensure_ascii=False) + "\n```"
+        blob = json.dumps(form, ensure_ascii=False)
+        content += "\n\n```guide-form\n" + blob + "\n```"
     return content
 
 
@@ -194,3 +209,97 @@ def get_help_context_for_llm() -> str:
     for entry in HELP_ENTRIES:
         parts.append(f"## {entry.title}\n{entry.content}")
     return "\n\n---\n\n".join(parts)
+
+
+def _clarify_template_for_create_project() -> dict[str, Any]:
+    return {
+        "title": "创建项目前先确认几个信息",
+        "skip_policy": "forbid",
+        "questions": [
+            {
+                "id": "workspace_scope",
+                "prompt": "这个项目要建在哪个工作空间？",
+                "allow_multiple": False,
+                "other_enabled": True,
+                "other_label": "其他工作空间",
+                "other_placeholder": "请输入工作空间名或说明",
+                "options": [
+                    {"id": "ws_default", "label": "默认空间"},
+                    {"id": "ws_existing", "label": "已有指定空间"},
+                    {"id": "ws_new", "label": "先创建新空间"},
+                ],
+            },
+            {
+                "id": "project_type",
+                "prompt": "项目类型偏向哪种？",
+                "allow_multiple": False,
+                "other_enabled": True,
+                "other_label": "其他类型",
+                "other_placeholder": "请输入项目类型偏好",
+                "options": [
+                    {"id": "public", "label": "公开协作项目（public）"},
+                    {"id": "private", "label": "私有项目（private）"},
+                ],
+            },
+        ],
+    }
+
+
+def _clarify_template_for_generic() -> dict[str, Any]:
+    return {
+        "title": "为避免误解，请先补充以下信息",
+        "skip_policy": "allow",
+        "questions": [
+            {
+                "id": "goal",
+                "prompt": "你本次最主要目标是？",
+                "allow_multiple": False,
+                "other_enabled": True,
+                "other_label": "其他目标",
+                "other_placeholder": "请输入你的目标",
+                "options": [
+                    {"id": "create", "label": "创建/配置"},
+                    {"id": "troubleshoot", "label": "故障排查"},
+                    {"id": "usage", "label": "日常使用指导"},
+                    {"id": "other", "label": "其他"},
+                ],
+            },
+            {
+                "id": "expectation",
+                "prompt": "你希望我输出的形式是？",
+                "allow_multiple": True,
+                "other_enabled": True,
+                "other_label": "其他输出形式",
+                "other_placeholder": "请输入你期望的输出形式",
+                "options": [
+                    {"id": "steps", "label": "分步骤操作指南"},
+                    {"id": "api", "label": "直接给 API/命令"},
+                    {"id": "ui", "label": "告诉我前端入口怎么点"},
+                    {"id": "checklist", "label": "给我排查清单"},
+                ],
+            },
+        ],
+    }
+
+
+def get_rule_based_clarify_schema(user_text: str) -> dict[str, Any] | None:
+    """
+    规则触发的澄清题（LLM 不可用或 LLM 未触发时兜底）。
+    返回 schema；无需澄清时返回 None。
+    """
+    if not user_text or not user_text.strip():
+        return None
+    text = user_text.strip().lower()
+
+    # 显式意图：创建项目但缺关键信息时，强制澄清，不允许 skip
+    create_kw = ("创建项目", "建项目", "新建项目", "帮我创建项目", "帮我建项目")
+    if any(k in text for k in create_kw):
+        # 语义较明确但仍存在必要参数缺失（如 workspace、type），统一先澄清
+        return _clarify_template_for_create_project()
+
+    # 过于笼统/短句：给一组通用澄清题
+    generic_kw = ("怎么弄", "怎么做", "帮我做", "搞一下", "处理一下", "看看这个")
+    if any(k in text for k in generic_kw) or len(text) <= 8:
+        return _clarify_template_for_generic()
+
+    return None
