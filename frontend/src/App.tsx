@@ -368,15 +368,25 @@ function GuideFormBlock({
   );
 }
 
-function ClarifyModal({
+function isClarifyReplyUserMessage(content: string): boolean {
+  const t = (content || "").trim();
+  return t.startsWith("@引导 澄清回答：") || t.includes("用户选择跳过澄清");
+}
+
+function ClarifyInlineBlock({
+  msgId,
   schema,
+  status,
   onContinue,
   onSkip,
 }: {
+  msgId: string;
   schema: ClarifySchema;
+  status: "form" | "waiting" | "answered";
   onContinue: (answers: ClarifyAnswers) => void;
   onSkip: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [otherText, setOtherText] = useState<Record<string, string>>({});
   const allowSkip = (schema.skip_policy || "allow") === "allow";
@@ -404,76 +414,103 @@ function ClarifyModal({
 
   const toggleOther = (q: ClarifyQuestion) => toggleOption(q, OTHER_CHOICE_ID);
 
+  if (status === "waiting") {
+    return (
+      <div className="my-1 rounded border border-gray-200 bg-gray-50 overflow-hidden p-2">
+        <span className="text-xs text-gray-500">引导正在根据澄清回答…</span>
+      </div>
+    );
+  }
+
+  if (status === "answered") {
+    return (
+      <div className="my-1 rounded border border-gray-200 bg-gray-50 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="w-full px-2 py-1.5 text-left text-xs text-gray-500 hover:bg-gray-100 flex items-center gap-1"
+        >
+          <span className="inline-block transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }}>▶</span>
+          <span>澄清</span>
+          <span>{open ? "收起" : "展开"}</span>
+        </button>
+        {open && (
+          <div className="p-2 text-xs text-gray-600 border-t border-gray-200">
+            已澄清并已收到引导回复
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/50" aria-modal="true" role="dialog">
-      <div className="w-full max-w-xl rounded-lg bg-gray-950 text-white shadow-xl border border-gray-800 p-4">
-        <div className="mb-3">
-          <h3 className="text-lg font-semibold">{schema.title || "请先确认以下问题"}</h3>
-        </div>
-        <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
-          {schema.questions.map((q, idx) => (
-            <div key={q.id} className="rounded border border-gray-800 p-3">
-              <p className="text-sm mb-2">{idx + 1}. {q.prompt}</p>
-              <div className="space-y-1.5">
-                {q.options.map((opt) => {
-                  const checked = (answers[q.id] || []).includes(opt.id);
-                  return (
-                    <label key={opt.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type={q.allow_multiple ? "checkbox" : "radio"}
-                        name={q.id}
-                        checked={checked}
-                        onChange={() => toggleOption(q, opt.id)}
-                      />
-                      <span>{opt.label}</span>
-                    </label>
-                  );
-                })}
-                {q.other_enabled && (
-                  <div className="pt-1">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type={q.allow_multiple ? "checkbox" : "radio"}
-                        name={q.id}
-                        checked={(answers[q.id] || []).includes(OTHER_CHOICE_ID)}
-                        onChange={() => toggleOther(q)}
-                      />
-                      <span>{q.other_label || "其他"}</span>
-                    </label>
-                    {(answers[q.id] || []).includes(OTHER_CHOICE_ID) && (
-                      <input
-                        type="text"
-                        value={otherText[q.id] || ""}
-                        onChange={(e) => setOtherText((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                        placeholder={q.other_placeholder || "请输入其他补充"}
-                        className="mt-1 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-sm text-white"
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
+    <div className="my-1 rounded border border-gray-200 bg-gray-50 overflow-hidden p-3">
+      <div className="mb-2">
+        <h4 className="text-sm font-medium text-gray-800">{schema.title || "请先确认以下问题"}</h4>
+      </div>
+      <div className="space-y-2 max-h-[40vh] overflow-auto pr-1">
+        {schema.questions.map((q, idx) => (
+          <div key={q.id} className="rounded border border-gray-200 bg-white p-2">
+            <p className="text-sm mb-1.5 text-gray-700">{idx + 1}. {q.prompt}</p>
+            <div className="space-y-1">
+              {q.options.map((opt) => {
+                const checked = (answers[q.id] || []).includes(opt.id);
+                return (
+                  <label key={opt.id} className="flex items-center gap-2 text-sm cursor-pointer text-gray-700">
+                    <input
+                      type={q.allow_multiple ? "checkbox" : "radio"}
+                      name={`${msgId}-${q.id}`}
+                      checked={checked}
+                      onChange={() => toggleOption(q, opt.id)}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                );
+              })}
+              {q.other_enabled && (
+                <div className="pt-1">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer text-gray-700">
+                    <input
+                      type={q.allow_multiple ? "checkbox" : "radio"}
+                      name={`${msgId}-${q.id}`}
+                      checked={(answers[q.id] || []).includes(OTHER_CHOICE_ID)}
+                      onChange={() => toggleOther(q)}
+                    />
+                    <span>{q.other_label || "其他"}</span>
+                  </label>
+                  {(answers[q.id] || []).includes(OTHER_CHOICE_ID) && (
+                    <input
+                      type="text"
+                      value={otherText[q.id] || ""}
+                      onChange={(e) => setOtherText((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                      placeholder={q.other_placeholder || "请输入其他补充"}
+                      className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                    />
+                  )}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-        <div className="mt-4 flex justify-end gap-2">
-          {allowSkip && (
-            <button
-              type="button"
-              onClick={onSkip}
-              className="px-3 py-1.5 rounded border border-gray-700 text-gray-200 hover:bg-gray-800"
-            >
-              Skip
-            </button>
-          )}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        {allowSkip && (
           <button
             type="button"
-            disabled={!canContinue}
-            onClick={() => onContinue({ selected: answers, other_text: otherText })}
-            className="px-3 py-1.5 rounded bg-amber-500 text-black font-medium disabled:opacity-50"
+            onClick={onSkip}
+            className="px-3 py-1.5 rounded border border-gray-400 text-gray-700 hover:bg-gray-100 text-sm"
           >
-            Continue
+            Skip
           </button>
-        </div>
+        )}
+        <button
+          type="button"
+          disabled={!canContinue}
+          onClick={() => onContinue({ selected: answers, other_text: otherText })}
+          className="px-3 py-1.5 rounded bg-amber-500 text-black font-medium disabled:opacity-50 text-sm"
+        >
+          Continue
+        </button>
       </div>
     </div>
   );
@@ -496,8 +533,7 @@ export default function App() {
   const [summaryPreview, setSummaryPreview] = useState("");
   const [qaLlmReady, setQaLlmReady] = useState(false);
   const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
-  const [clarifyModal, setClarifyModal] = useState<{ msgId: string; schema: ClarifySchema } | null>(null);
-  const [handledClarifyIds, setHandledClarifyIds] = useState<Record<string, boolean>>({});
+  const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<string | null>(null);
 
   type ChannelBot = { member_id: string; username: string };
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
@@ -515,8 +551,6 @@ export default function App() {
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
-      setClarifyModal(null);
-      setHandledClarifyIds({});
       return;
     }
     setLoading(true);
@@ -566,18 +600,14 @@ export default function App() {
   }, [contextOpen, selectedId]);
 
   useEffect(() => {
-    if (!selectedId || clarifyModal) return;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m.sender_type !== "bot" || handledClarifyIds[m.msg_id]) continue;
-      const parsed = parseGuidePayload(m.content);
-      if (parsed.clarify) {
-        setClarifyModal({ msgId: m.msg_id, schema: parsed.clarify });
-        setHandledClarifyIds((prev) => ({ ...prev, [m.msg_id]: true }));
-        break;
-      }
+    if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
+      setPendingClarifyReplyMsgId(null);
     }
-  }, [selectedId, messages, handledClarifyIds, clarifyModal]);
+  }, [pendingClarifyReplyMsgId, messages]);
+
+  useEffect(() => {
+    setPendingClarifyReplyMsgId(null);
+  }, [selectedId]);
 
   const sendUserMessage = async (content: string) => {
     if (!selectedId || !content.trim()) return;
@@ -627,7 +657,7 @@ export default function App() {
       .catch(console.error);
   };
 
-  const handleClarifyContinue = async (schema: ClarifySchema, answers: ClarifyAnswers) => {
+  const handleClarifyContinue = (msgId: string, schema: ClarifySchema, answers: ClarifyAnswers) => {
     const lines = ["@引导 澄清回答："];
     for (const q of schema.questions) {
       const picked = new Set(answers.selected[q.id] || []);
@@ -638,13 +668,19 @@ export default function App() {
       }
       lines.push(`- ${q.prompt}：${labels.length > 0 ? labels.join("、") : "未选择"}`);
     }
-    await sendUserMessage(lines.join("\n"));
-    setClarifyModal(null);
+    setPendingClarifyReplyMsgId(msgId);
+    sendUserMessage(lines.join("\n")).catch(() => {
+      setPendingClarifyReplyMsgId(null);
+      toast.error("提交失败，请重试");
+    });
   };
 
-  const handleClarifySkip = async () => {
-    await sendUserMessage("@引导 用户选择跳过澄清，请在当前信息下继续回答。");
-    setClarifyModal(null);
+  const handleClarifySkip = (msgId: string) => {
+    setPendingClarifyReplyMsgId(msgId);
+    sendUserMessage("@引导 用户选择跳过澄清，请在当前信息下继续回答。").catch(() => {
+      setPendingClarifyReplyMsgId(null);
+      toast.error("提交失败，请重试");
+    });
   };
 
   const uploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -919,14 +955,6 @@ export default function App() {
         </div>
       )}
 
-      {clarifyModal && (
-        <ClarifyModal
-          schema={clarifyModal.schema}
-          onContinue={(answers) => handleClarifyContinue(clarifyModal.schema, answers)}
-          onSkip={handleClarifySkip}
-        />
-      )}
-
       <main className="flex-1 flex flex-col min-w-0">
         {selectedId ? (
           <>
@@ -982,41 +1010,65 @@ export default function App() {
               {loading ? (
                 <div className="text-gray-500">加载中...</div>
               ) : (
-                messages.map((m) => {
-                  const { text, form } = parseGuidePayload(m.content);
-                  return (
-                    <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
-                      <span className="text-xs text-gray-500 flex items-center gap-2">
-                        {m.sender_type === "bot" ? (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
-                        ) : (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
+                <>
+                  {messages.map((m, idx) => {
+                    const { text, form, clarify } = parseGuidePayload(m.content);
+                    const nextMsg = messages[idx + 1];
+                    const clarifyAnswered =
+                      nextMsg &&
+                      (nextMsg.sender_type === "bot" || (nextMsg.sender_type === "user" && isClarifyReplyUserMessage(nextMsg.content)));
+                    const clarifyWaiting = pendingClarifyReplyMsgId === m.msg_id;
+                    const clarifyStatus: "form" | "waiting" | "answered" | null =
+                      clarify && m.sender_type === "bot"
+                        ? clarifyWaiting
+                          ? "waiting"
+                          : clarifyAnswered
+                            ? "answered"
+                            : "form"
+                        : null;
+                    return (
+                      <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
+                        <span className="text-xs text-gray-500 flex items-center gap-2">
+                          {m.sender_type === "bot" ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
+                          )}
+                          {m.created_at?.slice(0, 19) || ""}
+                          {m.sender_type === "user" && qaPairByQuestionId.has(m.msg_id) && (
+                            <label className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600">
+                              <input
+                                type="checkbox"
+                                checked={!!selectedQaIds[m.msg_id]}
+                                onChange={() => toggleQa(m.msg_id)}
+                              />
+                              勾选问答
+                            </label>
+                          )}
+                        </span>
+                        <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text, `${m.msg_id}-`)}</div>
+                        {form && selectedId && m.sender_type === "bot" && (
+                          <GuideFormBlock
+                            msgId={m.msg_id}
+                            form={form}
+                            channelId={selectedId}
+                            onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                            onChannelsRefresh={() => refreshChannels(setChannels)}
+                          />
                         )}
-                        {m.created_at?.slice(0, 19) || ""}
-                        {m.sender_type === "user" && qaPairByQuestionId.has(m.msg_id) && (
-                          <label className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600">
-                            <input
-                              type="checkbox"
-                              checked={!!selectedQaIds[m.msg_id]}
-                              onChange={() => toggleQa(m.msg_id)}
-                            />
-                            勾选问答
-                          </label>
+                        {clarifyStatus !== null && selectedId && (
+                          <ClarifyInlineBlock
+                            msgId={m.msg_id}
+                            schema={clarify!}
+                            status={clarifyStatus}
+                            onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
+                            onSkip={() => handleClarifySkip(m.msg_id)}
+                          />
                         )}
-                      </span>
-                      <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text, `${m.msg_id}-`)}</div>
-                      {form && selectedId && m.sender_type === "bot" && (
-                        <GuideFormBlock
-                          msgId={m.msg_id}
-                          form={form}
-                          channelId={selectedId}
-                          onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                          onChannelsRefresh={() => refreshChannels(setChannels)}
-                        />
-                      )}
-                    </div>
-                  );
-                })
+                      </div>
+                    );
+                  })}
+                  </>
               )}
             </div>
             <div className="p-2 border-t bg-white flex flex-col gap-2">
