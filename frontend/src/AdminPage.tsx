@@ -7,11 +7,21 @@ type TabId = "llm" | "perf" | "logs" | "bot" | "health";
 
 type Workspace = { workspace_id: string; name: string };
 type Channel = { channel_id: string; name: string; type: string };
+type BotItem = {
+  bot_id: string;
+  username: string;
+  display_name?: string;
+  openclaw_endpoint: string;
+  status: string;
+  intro?: string;
+  created_at?: string;
+};
 type PendingRequest = {
   request_id: string;
   username: string;
   display_name?: string;
   openclaw_endpoint: string;
+  intro?: string;
   status: string;
   requested_at?: string;
 };
@@ -52,9 +62,12 @@ export default function AdminPage() {
   const [botDisplayName, setBotDisplayName] = useState("");
   const [botEndpoint, setBotEndpoint] = useState("");
   const [botStatus, setBotStatus] = useState("online");
+  const [botIntro, setBotIntro] = useState("");
   const [botWizardStep, setBotWizardStep] = useState<0 | 1 | 2>(0);
   const [botWizardType, setBotWizardType] = useState<"guide" | "http" | "mock">("guide");
   const [lastCreatedBotId, setLastCreatedBotId] = useState("");
+  const [botList, setBotList] = useState<BotItem[]>([]);
+  const [botEditingId, setBotEditingId] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
 
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
@@ -125,8 +138,18 @@ export default function AdminPage() {
       .catch(() => setPendingRequests([]));
   };
 
+  const loadBots = () => {
+    fetch(`${API}/bots`)
+      .then((r) => r.json())
+      .then((d) => setBotList(d.data || []))
+      .catch(() => setBotList([]));
+  };
+
   useEffect(() => {
-    if (activeTab === "bot") loadPendingRequests();
+    if (activeTab === "bot") {
+      loadPendingRequests();
+      loadBots();
+    }
   }, [activeTab]);
 
   const loadLogs = () => {
@@ -293,14 +316,55 @@ export default function AdminPage() {
     const body: Record<string, string> = { username: botUsername.trim(), openclaw_endpoint: botEndpoint.trim(), status: botStatus };
     if (botId.trim()) body.bot_id = botId.trim();
     if (botDisplayName.trim()) body.display_name = botDisplayName.trim();
+    if (botIntro.trim()) body.intro = botIntro.trim();
     fetch(`${API}/bots`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); }
+        if (d.status === "success") { setAdminMsg("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); loadBots(); }
         else setAdminMsg(d.message || d.detail || "创建失败");
       })
       .catch((e) => setAdminMsg("请求失败: " + String(e)));
   };
+
+  const updateBot = (id: string) => {
+    const body: Record<string, string> = {
+      username: botUsername.trim(),
+      display_name: botDisplayName.trim(),
+      openclaw_endpoint: botEndpoint.trim(),
+      status: botStatus,
+      intro: botIntro.trim(),
+    };
+    fetch(`${API}/bots/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") { setAdminMsg("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }
+        else setAdminMsg(d.detail || "更新失败");
+      })
+      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+  };
+
+  const deleteBot = (id: string) => {
+    if (!confirm("确定删除该 Bot？")) return;
+    fetch(`${API}/bots/${id}`, { method: "DELETE" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") { setAdminMsg("已删除"); setBotEditingId(null); loadBots(); }
+        else setAdminMsg(d.detail || "删除失败");
+      })
+      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+  };
+
+  function introSummary(intro: string | undefined): string {
+    if (!intro) return "—";
+    try {
+      const o = JSON.parse(intro);
+      if (o.description) return o.description;
+      if (Array.isArray(o.capabilities)) return o.capabilities.join(", ");
+      return intro.slice(0, 40) + (intro.length > 40 ? "…" : "");
+    } catch {
+      return intro.slice(0, 40) + (intro.length > 40 ? "…" : "");
+    }
+  }
 
   const addBotToChannel = () => {
     if (!lastCreatedBotId || !addCh) { setAdminMsg("请选择要加入的项目"); return; }
@@ -469,6 +533,47 @@ export default function AdminPage() {
           <div className="max-w-2xl space-y-6">
             <h2 className="text-base font-medium text-gray-800">Bot 与频道</h2>
             <section>
+              <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                已注册 Bot 列表
+                <button type="button" onClick={loadBots} className="text-xs text-blue-600 hover:underline">刷新</button>
+              </h3>
+              {botList.length === 0 ? (
+                <p className="text-sm text-gray-500">暂无</p>
+              ) : (
+                <table className="w-full text-sm border border-gray-200">
+                  <thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">@ 名字</th><th className="border px-2 py-1 text-left">显示名</th><th className="border px-2 py-1 text-left">endpoint</th><th className="border px-2 py-1 text-left">状态</th><th className="border px-2 py-1 text-left">能力/描述</th><th className="border px-2 py-1 text-left">操作</th></tr></thead>
+                  <tbody>
+                    {botList.map((b) => (
+                      <tr key={b.bot_id}>
+                        <td className="border px-2 py-1">{b.username}</td>
+                        <td className="border px-2 py-1">{b.display_name || "—"}</td>
+                        <td className="border px-2 py-1 break-all max-w-[120px]" title={b.openclaw_endpoint}>{b.openclaw_endpoint}</td>
+                        <td className="border px-2 py-1">{b.status}</td>
+                        <td className="border px-2 py-1 max-w-[150px] truncate" title={b.intro || ""}>{introSummary(b.intro)}</td>
+                        <td className="border px-2 py-1">
+                          <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotStatus(b.status); setBotIntro(b.intro || ""); }} className="mr-1 px-2 py-0.5 text-blue-600 text-xs">编辑</button>
+                          <button type="button" onClick={() => deleteBot(b.bot_id)} className="px-2 py-0.5 text-red-600 text-xs">删除</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {botEditingId && (
+                <div className="mt-3 p-3 bg-gray-50 rounded border text-sm space-y-2">
+                  <h4 className="font-medium text-gray-700">编辑 Bot</h4>
+                  <div><label className="block text-gray-600">@ 名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
+                  <div><label className="block text-gray-600">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
+                  <div><label className="block text-gray-600">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
+                  <div><label className="block text-gray-600">自我介绍 (JSON)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => updateBot(botEditingId)} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">保存</button>
+                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>
+                  </div>
+                </div>
+              )}
+            </section>
+            <section>
               <h3 className="text-sm font-medium text-gray-700 mb-2">创建工作空间</h3>
               <div className="flex gap-2"><input type="text" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} placeholder="空间名称" className="border rounded px-2 py-1" /><button type="button" onClick={createWorkspace} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button></div>
             </section>
@@ -511,6 +616,7 @@ export default function AdminPage() {
                   <div><label className="block text-gray-700">@ 用名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} placeholder="如：小助" className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
+                  <div><label className="block text-gray-700">自我介绍 (JSON，含 capabilities 或 description)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1","能力2"],"description":"简短描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>
                   <div className="flex gap-2"><button type="button" onClick={createBot} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button><button type="button" onClick={() => setBotWizardStep(0)} className="px-3 py-1 bg-gray-200 rounded text-sm">上一步</button></div>
                 </div>
               )}
@@ -533,6 +639,7 @@ export default function AdminPage() {
                 <tr><td className="py-1 pr-2">display_name</td><td><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
                 <tr><td className="py-1 pr-2">openclaw_endpoint</td><td><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
                 <tr><td className="py-1 pr-2">status</td><td><select value={botStatus} onChange={(e) => setBotStatus(e.target.value)} className="border rounded px-2 py-1"><option value="online">online</option><option value="offline">offline</option></select></td></tr>
+                <tr><td className="py-1 pr-2">intro (JSON)</td><td><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-16" /></td></tr>
               </tbody></table>
               <button type="button" onClick={createBot} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button>
             </section>
@@ -542,9 +649,9 @@ export default function AdminPage() {
                 <button type="button" onClick={loadPendingRequests} className="text-xs text-blue-600 hover:underline">刷新</button>
               </h3>
               {pendingRequests.length === 0 ? <p className="text-sm text-gray-500">暂无</p> : (
-                <table className="w-full text-sm border border-gray-200"><thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">username</th><th className="border px-2 py-1 text-left">endpoint</th><th className="border px-2 py-1 text-left">操作</th></tr></thead><tbody>
+                <table className="w-full text-sm border border-gray-200"><thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">username</th><th className="border px-2 py-1 text-left">endpoint</th><th className="border px-2 py-1 text-left">自我介绍</th><th className="border px-2 py-1 text-left">操作</th></tr></thead><tbody>
                   {pendingRequests.map((r) => (
-                    <tr key={r.request_id}><td className="border px-2 py-1">{r.username}</td><td className="border px-2 py-1 break-all">{r.openclaw_endpoint}</td><td className="border px-2 py-1"><button type="button" onClick={() => approveRequest(r.request_id)} className="mr-1 px-2 py-0.5 bg-green-600 text-white rounded text-xs">通过</button><button type="button" onClick={() => rejectRequest(r.request_id)} className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">拒绝</button></td></tr>
+                    <tr key={r.request_id}><td className="border px-2 py-1">{r.username}</td><td className="border px-2 py-1 break-all">{r.openclaw_endpoint}</td><td className="border px-2 py-1 max-w-[150px] truncate" title={r.intro || ""}>{introSummary(r.intro)}</td><td className="border px-2 py-1"><button type="button" onClick={() => approveRequest(r.request_id)} className="mr-1 px-2 py-0.5 bg-green-600 text-white rounded text-xs">通过</button><button type="button" onClick={() => rejectRequest(r.request_id)} className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">拒绝</button></td></tr>
                   ))}</tbody></table>
               )}
             </section>

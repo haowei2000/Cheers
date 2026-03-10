@@ -18,6 +18,8 @@ async def agentnexus_discovery(request: Request) -> dict:
         "display_name": "string，选填，显示名称",
         "openclaw_endpoint": "string，必填，本 OpenClaw 的 http(s) 根地址，"
         "系统将向 {openclaw_endpoint}/execute 发送 POST 请求",
+        "intro": "string，必填，JSON 格式自我介绍，须含 capabilities 或 description，"
+        "如 {\"capabilities\": [...], \"description\": \"...\"}",
     }
     execute_contract = (
         "审核通过后，用户 @ 该 Bot 时，AgentNexus 会向 openclaw_endpoint 的 "

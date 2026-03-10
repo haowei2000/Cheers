@@ -72,6 +72,7 @@ class BotAccount(Base):
     soul_config_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     openclaw_endpoint: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="offline")  # offline | online | busy
+    intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -83,6 +84,7 @@ class BotRegistrationRequest(Base):
     username: Mapped[str] = mapped_column(String(64), nullable=False)
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     openclaw_endpoint: Mapped[str] = mapped_column(String(512), nullable=False)
+    intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")  # pending | approved | rejected
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

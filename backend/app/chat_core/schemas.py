@@ -73,6 +73,16 @@ class BotCreate(BaseModel):
     display_name: str | None = None
     openclaw_endpoint: str  # http(s) 或 guide://、mock://
     status: str = "online"
+    intro: str | None = None  # JSON: {"capabilities": [...], "description": "..."}
+
+
+class BotUpdate(BaseModel):
+    """更新 Bot（部分字段可选）."""
+    username: str | None = None
+    display_name: str | None = None
+    openclaw_endpoint: str | None = None
+    status: str | None = None
+    intro: str | None = None
 
 
 class BotInResponse(BaseModel):
@@ -83,6 +93,7 @@ class BotInResponse(BaseModel):
     display_name: str | None = None
     openclaw_endpoint: str
     status: str
+    intro: str | None = None
     created_at: datetime | None = None
 
 
@@ -91,6 +102,7 @@ class BotRegisterRequest(BaseModel):
     username: str  # @ 用的名字
     display_name: str | None = None
     openclaw_endpoint: str  # http(s) 地址
+    intro: str | None = None  # JSON: {"capabilities": [...], "description": "..."}
 
 
 class BotRegistrationRequestInResponse(BaseModel):
@@ -100,6 +112,7 @@ class BotRegistrationRequestInResponse(BaseModel):
     username: str
     display_name: str | None = None
     openclaw_endpoint: str
+    intro: str | None = None
     status: str  # pending | approved | rejected
     requested_at: datetime | None = None
     decided_at: datetime | None = None

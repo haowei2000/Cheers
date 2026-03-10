@@ -263,10 +263,25 @@ export default function App() {
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
 
   type ChannelBot = { member_id: string; username: string };
+  type BotItem = { bot_id: string; username: string; display_name?: string; intro?: string };
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
+  const [addBotOpen, setAddBotOpen] = useState(false);
+  const [allBots, setAllBots] = useState<BotItem[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  function introSummary(intro: string | undefined): string {
+    if (!intro) return "";
+    try {
+      const o = JSON.parse(intro);
+      if (o.description) return o.description;
+      if (Array.isArray(o.capabilities)) return o.capabilities.join(", ");
+      return intro.slice(0, 50) + (intro.length > 50 ? "…" : "");
+    } catch {
+      return intro.slice(0, 50) + (intro.length > 50 ? "…" : "");
+    }
+  }
 
   useEffect(() => {
     refreshChannels(setChannels);
@@ -323,6 +338,49 @@ export default function App() {
         .catch(console.error);
     }
   }, [contextOpen, selectedId]);
+
+  useEffect(() => {
+    if (addBotOpen) {
+      fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
+    }
+  }, [addBotOpen]);
+
+  const addBotToChannel = (botId: string) => {
+    if (!selectedId) return;
+    fetch(`${API}/channels/${selectedId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ member_id: botId, member_type: "bot" }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          fetch(`${API}/channels/${selectedId}/members?with_username=1`)
+            .then((res) => res.json())
+            .then((res) => {
+              if (res.data) {
+                const bots: ChannelBot[] = res.data
+                  .filter((m: { member_type: string; username?: string }) => m.member_type === "bot" && m.username)
+                  .map((m: { member_id: string; username: string }) => ({ member_id: m.member_id, username: m.username }));
+                setChannelBots(bots);
+              }
+            });
+        }
+      })
+      .catch(console.error);
+  };
+
+  const removeBotFromChannel = (memberId: string) => {
+    if (!selectedId) return;
+    fetch(`${API}/channels/${selectedId}/members/${encodeURIComponent(memberId)}`, { method: "DELETE" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          setChannelBots((prev) => prev.filter((b) => b.member_id !== memberId));
+        }
+      })
+      .catch(console.error);
+  };
 
   const send = () => {
     if (!selectedId || !input.trim()) return;
@@ -467,6 +525,58 @@ export default function App() {
               <button type="button" onClick={() => setHelpOpen(false)} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
                 关闭
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addBotOpen && selectedId && (
+        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/30" onClick={() => setAddBotOpen(false)} aria-modal="true" role="dialog">
+          <div className="bg-white rounded-lg shadow-lg max-w-xl w-full mx-4 p-5 text-left max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-lg font-semibold text-gray-800">管理频道 Bot</h2>
+              <button type="button" onClick={() => setAddBotOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="关闭">×</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">已加入的 Bot</h3>
+                {channelBots.length === 0 ? (
+                  <p className="text-sm text-gray-500">暂无</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {channelBots.map((b) => (
+                      <li key={b.member_id} className="flex items-center justify-between py-1.5 px-2 bg-gray-50 rounded text-sm">
+                        <span>@{b.username}</span>
+                        <button type="button" onClick={() => removeBotFromChannel(b.member_id)} className="text-red-600 text-xs">移除</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">可添加的 Bot</h3>
+                {(() => {
+                  const inChannelIds = new Set(channelBots.map((c) => c.member_id));
+                  const available = allBots.filter((b) => !inChannelIds.has(b.bot_id));
+                  if (available.length === 0) return <p className="text-sm text-gray-500">暂无或已全部加入</p>;
+                  return (
+                    <ul className="space-y-1">
+                      {available.map((b) => (
+                        <li key={b.bot_id} className="flex flex-col py-1.5 px-2 bg-gray-50 rounded text-sm gap-0.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">@{b.username}</span>
+                            <button type="button" onClick={() => addBotToChannel(b.bot_id)} className="text-blue-600 text-xs">加入频道</button>
+                          </div>
+                          {introSummary(b.intro) && <span className="text-xs text-gray-500 truncate" title={b.intro}>{introSummary(b.intro)}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button type="button" onClick={() => setAddBotOpen(false)} className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">关闭</button>
             </div>
           </div>
         </div>
@@ -627,7 +737,14 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <div className="px-2 pb-2">
+            <div className="px-2 pb-2 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setAddBotOpen(true)}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                添加 Bot
+              </button>
               <button
                 type="button"
                 onClick={() => setContextOpen(true)}

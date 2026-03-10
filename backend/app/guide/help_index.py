@@ -48,7 +48,7 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "外部 OpenClaw 可通过「发现接口」获取本系统提供的注册指南（机器可读 JSON），并自动提交注册申请；"
         "管理员在「管理」→「待审核 Bot 申请」中审核通过后，该 Bot 才会被创建并可被加入项目 @。\n\n"
         "• 发现与注册指南（GET）：后端地址/api/public/agentnexus-discovery（如 http://localhost:8000/api/public/agentnexus-discovery）\n"
-        "• 提交注册申请（POST）：后端地址/api/bots/register-request，body 含 username、openclaw_endpoint（及选填 display_name）。\n"
+        "• 提交注册申请（POST）：后端地址/api/bots/register-request，body 含 username、openclaw_endpoint、intro（必填，JSON 格式自我介绍），及选填 display_name。\n"
         "• 管理员入口：左侧「管理」→「待审核 Bot 申请」→ 通过/拒绝。\n\n"
         "详见 [系统管理说明书 §五](/manual/系统管理说明书#五)。",
     ),
@@ -96,6 +96,7 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "【前端入口】\n"
         "• 创建项目、添加/移除成员：左侧「管理」。\n"
         "• 上传文件：选中频道后，输入框旁「上传」（.txt/.md/.docx）。\n"
+        "• 添加 Bot 到频道：选中频道后，底部「添加 Bot」。\n"
         "• 频道上下文（四层记忆）：选中频道后，底部「频道上下文」。\n"
         "• API 文档：左侧「管理」内「打开 API 文档」或帮助中的 /docs 链接。\n"
         "• 使用帮助：左侧「帮助」或频道内 @引导 提问。\n\n"

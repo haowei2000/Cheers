@@ -59,6 +59,7 @@ async def seed(session: AsyncSession) -> bool:
                 display_name="使用引导 Bot",
                 openclaw_endpoint="guide://internal",
                 status="online",
+                intro='{"capabilities":["使用说明","创建项目","接入指南"],"description":"根据说明书回答使用问题"}',
             )
         )
         did_write = True
@@ -73,6 +74,7 @@ async def seed(session: AsyncSession) -> bool:
                 display_name="测试小助",
                 openclaw_endpoint="mock://test",
                 status="online",
+                intro='{"capabilities":["测试回复"],"description":"测试用 Mock Bot"}',
             )
         )
         did_write = True
@@ -126,6 +128,7 @@ async def seed(session: AsyncSession) -> bool:
                 display_name="主控",
                 openclaw_endpoint="coordinator://internal",
                 status="online",
+                intro='{"capabilities":["聚合 Bot 回复"],"description":"主控 Bot"}',
             )
         )
         did_write = True
