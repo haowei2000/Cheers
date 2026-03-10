@@ -24,6 +24,7 @@ tmp/
 # 前端
 node_modules/
 frontend/dist/
+*.tsbuildinfo
 frontend/.env
 frontend/.env.local
 

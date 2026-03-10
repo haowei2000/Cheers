@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import toast from "react-hot-toast";
 
 const API = "/api";
 
@@ -39,7 +40,6 @@ function refreshChannels(setChannels: (c: Channel[]) => void) {
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<TabId>("llm");
-  const [adminMsg, setAdminMsg] = useState("");
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -191,19 +191,18 @@ export default function AdminPage() {
             clarify_force_rule: !!d.data.clarify_force_rule,
             clarify_threshold: Number(d.data.clarify_threshold ?? 0.6),
           });
-          setAdminMsg("澄清策略已保存");
+          toast.success("澄清策略已保存");
         } else {
-          setAdminMsg(d.detail || d.message || "保存失败");
+          toast.error(d.detail || d.message || "保存失败");
         }
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const saveLlmProvider = (isEdit: boolean) => {
     const { name, base_url, model, api_key, temperature, max_tokens } = llmForm;
-    if (!name.trim() || !base_url.trim() || !model.trim()) { setAdminMsg("请填写名称、Base URL、Model"); return; }
+    if (!name.trim() || !base_url.trim() || !model.trim()) { toast.error("请填写名称、Base URL、Model"); return; }
     setLlmSaveLoading(true);
-    setAdminMsg("");
     const url = isEdit && llmEditingId ? `${API}/admin/settings/llm/providers/${llmEditingId}` : `${API}/admin/settings/llm/providers`;
     const method = isEdit ? "PUT" : "POST";
     console.log("[AdminPage] saveLlmProvider:", { method, url, name: name.trim(), base_url: base_url.trim(), model: model.trim() });
@@ -236,16 +235,16 @@ export default function AdminPage() {
       })
       .then((d) => {
         if (d.status === "success") {
-          setAdminMsg(isEdit ? "已更新" : "已添加");
+          toast.success(isEdit ? "已更新" : "已添加");
           setLlmProviders(d.data?.providers || []);
           setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 });
           setLlmEditingId(null);
-        } else setAdminMsg(String(d.detail || "失败"));
+        } else toast.error(String(d.detail || "失败"));
       })
       .catch((e) => {
         console.error("[AdminPage] saveLlmProvider error:", e);
         const errMsg = e?.message || String(e);
-        setAdminMsg("请求失败: " + errMsg);
+        toast.error("请求失败: " + errMsg);
         fetch(`${API}/debug/client-error`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -260,10 +259,10 @@ export default function AdminPage() {
     fetch(`${API}/admin/settings/llm/providers/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("已删除"); setLlmProviders(d.data.providers || []); setBindingGuideBot(d.data.bindings?.guide_bot ?? ""); setBindingSystemLlm(d.data.bindings?.system_llm ?? ""); setBindingLogAnalyze(d.data.bindings?.log_analyze ?? ""); setBindingQaSummarize(d.data.bindings?.qa_summarize ?? ""); setLlmEditingId(null); }
-        else setAdminMsg(d.detail || "删除失败");
+        if (d.status === "success") { toast.success("已删除"); setLlmProviders(d.data.providers || []); setBindingGuideBot(d.data.bindings?.guide_bot ?? ""); setBindingSystemLlm(d.data.bindings?.system_llm ?? ""); setBindingLogAnalyze(d.data.bindings?.log_analyze ?? ""); setBindingQaSummarize(d.data.bindings?.qa_summarize ?? ""); setLlmEditingId(null); }
+        else toast.error(d.detail || "删除失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const saveLlmBindings = () => {
@@ -279,10 +278,10 @@ export default function AdminPage() {
     })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("功能绑定已保存"); setLlmBindings(d.data.bindings || {}); }
-        else setAdminMsg(d.detail || "保存失败");
+        if (d.status === "success") { toast.success("功能绑定已保存"); setLlmBindings(d.data.bindings || {}); }
+        else toast.error(d.detail || "保存失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const analyzeLogs = () => {
@@ -303,77 +302,77 @@ export default function AdminPage() {
   };
 
   const createWorkspace = () => {
-    if (!workspaceName.trim()) { setAdminMsg("请填写空间名称"); return; }
+    if (!workspaceName.trim()) { toast.error("请填写空间名称"); return; }
     fetch(`${API}/workspaces`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: workspaceName.trim() }) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("工作空间创建成功"); setWorkspaceName(""); fetch(`${API}/workspaces`).then((r) => r.json()).then((x) => x.data && setWorkspaces(x.data)); }
-        else setAdminMsg(d.message || d.detail || "创建失败");
+        if (d.status === "success") { toast.success("工作空间创建成功"); setWorkspaceName(""); fetch(`${API}/workspaces`).then((r) => r.json()).then((x) => x.data && setWorkspaces(x.data)); }
+        else toast.error(d.message || d.detail || "创建失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const createChannel = () => {
-    if (!createWs || !createName.trim()) { setAdminMsg("请选择工作空间并填写项目名称"); return; }
+    if (!createWs || !createName.trim()) { toast.error("请选择工作空间并填写项目名称"); return; }
     fetch(`${API}/channels`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_id: createWs, name: createName.trim(), type: "public", purpose: "" }) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("创建成功"); setCreateName(""); refreshChannels(setChannels); }
-        else setAdminMsg(d.message || "创建失败");
+        if (d.status === "success") { toast.success("创建成功"); setCreateName(""); refreshChannels(setChannels); }
+        else toast.error(d.message || "创建失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const addMember = () => {
-    if (!addCh || !addMemberId.trim()) { setAdminMsg("请选择项目并填写成员 ID"); return; }
+    if (!addCh || !addMemberId.trim()) { toast.error("请选择项目并填写成员 ID"); return; }
     fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: addMemberId.trim(), member_type: addMemberType }) })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") setAdminMsg("添加成功"); else setAdminMsg(d.message || d.detail || "添加失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") toast.success("添加成功"); else toast.error(d.message || d.detail || "添加失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const removeMember = () => {
-    if (!rmCh || !rmMemberId.trim()) { setAdminMsg("请选择项目并填写成员 ID"); return; }
+    if (!rmCh || !rmMemberId.trim()) { toast.error("请选择项目并填写成员 ID"); return; }
     fetch(`${API}/channels/${rmCh}/members/${encodeURIComponent(rmMemberId.trim())}`, { method: "DELETE" })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") setAdminMsg("移除成功"); else setAdminMsg(d.message || d.detail || "移除失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") toast.success("移除成功"); else toast.error(d.message || d.detail || "移除失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const createBot = () => {
-    if (!botUsername.trim() || !botEndpoint.trim()) { setAdminMsg("请填写 @ 名字和 OpenClaw 地址"); return; }
+    if (!botUsername.trim() || !botEndpoint.trim()) { toast.error("请填写 @ 名字和 OpenClaw 地址"); return; }
     const body: Record<string, string> = { username: botUsername.trim(), openclaw_endpoint: botEndpoint.trim(), status: botStatus };
     if (botId.trim()) body.bot_id = botId.trim();
     if (botDisplayName.trim()) body.display_name = botDisplayName.trim();
     fetch(`${API}/bots`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); }
-        else setAdminMsg(d.message || d.detail || "创建失败");
+        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); }
+        else toast.error(d.message || d.detail || "创建失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const addBotToChannel = () => {
-    if (!lastCreatedBotId || !addCh) { setAdminMsg("请选择要加入的项目"); return; }
+    if (!lastCreatedBotId || !addCh) { toast.error("请选择要加入的项目"); return; }
     fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: lastCreatedBotId, member_type: "bot" }) })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") { setAdminMsg("已将 Bot 加入项目"); setLastCreatedBotId(""); setBotWizardStep(0); setAddCh(""); } else setAdminMsg(d.message || d.detail || "添加失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") { toast.success("已将 Bot 加入项目"); setLastCreatedBotId(""); setBotWizardStep(0); setAddCh(""); } else toast.error(d.message || d.detail || "添加失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const approveRequest = (id: string) => {
     fetch(`${API}/bots/registration-requests/${id}/approve`, { method: "POST" })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") { setAdminMsg(d.message || "已通过"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else setAdminMsg(d.detail || "操作失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") { toast.success(d.message || "已通过"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else toast.error(d.detail || "操作失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const rejectRequest = (id: string) => {
     fetch(`${API}/bots/registration-requests/${id}/reject`, { method: "POST" })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") { setAdminMsg("已拒绝"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else setAdminMsg(d.detail || "操作失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") { toast.success("已拒绝"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else toast.error(d.detail || "操作失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const tabs: { id: TabId; label: string }[] = [
@@ -403,8 +402,6 @@ export default function AdminPage() {
         ))}
       </div>
       <main className="flex-1 p-4 overflow-auto">
-        {adminMsg && <p className="mb-2 text-sm text-gray-700 bg-gray-200 px-2 py-1 rounded">{adminMsg}</p>}
-
         {activeTab === "llm" && (
           <div className="max-w-3xl space-y-6">
             <h2 className="text-base font-medium text-gray-800">LLM 参数</h2>
@@ -432,7 +429,6 @@ export default function AdminPage() {
                 <div className="flex gap-2 items-center">
                   <button type="button" onClick={() => saveLlmProvider(!!llmEditingId)} disabled={llmSaveLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-60 disabled:cursor-not-allowed">{llmSaveLoading ? "提交中…" : (llmEditingId ? "保存修改" : "新增")}</button>
                   {llmEditingId && <button type="button" onClick={() => { setLlmEditingId(null); setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 }); }} disabled={llmSaveLoading} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>}
-                  {adminMsg && activeTab === "llm" && <span className={`text-sm ${adminMsg.includes("失败") || adminMsg.includes("请填写") ? "text-red-600" : "text-green-600"}`}>{adminMsg}</span>}
                 </div>
               </form>
             </section>

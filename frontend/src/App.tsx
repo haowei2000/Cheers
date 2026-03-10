@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import toast from "react-hot-toast";
 
 const API = "/api";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -284,7 +285,9 @@ function GuideFormBlock({
       const workspace_id = values.workspace_id;
       const name = values.name?.trim();
       if (!workspace_id || !name) {
-        setError("请选择工作空间并填写项目名称");
+        const msg = "请选择工作空间并填写项目名称";
+        setError(msg);
+        toast.error(msg);
         return;
       }
       setError(null);
@@ -311,9 +314,14 @@ function GuideFormBlock({
                 onChannelsRefresh();
               });
           }
-          setError(d.detail || d.message || "创建失败");
+          const errMsg = d.detail || d.message || "创建失败";
+          setError(errMsg);
+          toast.error(errMsg);
         })
-        .catch(() => setError("请求失败"));
+        .catch(() => {
+          setError("请求失败");
+          toast.error("请求失败");
+        });
     }
   };
 
@@ -645,7 +653,7 @@ export default function App() {
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
     const allowed = [".txt", ".md", ".docx", ".pdf", ".xlsx", ".png", ".jpg", ".jpeg", ".webp"];
     if (!allowed.includes(ext)) {
-      alert("支持格式: " + allowed.join(", "));
+      toast.error("支持格式: " + allowed.join(", "));
       return;
     }
     fetch(
@@ -696,7 +704,7 @@ export default function App() {
 
   const downloadQaMarkdown = () => {
     if (selectedPairs.length === 0) {
-      alert("请先勾选至少一组问答");
+      toast.error("请先勾选至少一组问答");
       return;
     }
     const md = buildQaMarkdown(selectedChannel?.name || "频道", selectedPairs);
@@ -739,14 +747,14 @@ export default function App() {
 
   const generateQaSummary = async () => {
     if (selectedPairs.length === 0) {
-      alert("请先勾选至少一组问答");
+      toast.error("请先勾选至少一组问答");
       return;
     }
     setSummaryBusy(true);
     try {
       const ok = await refreshQaLlmStatus();
       if (!ok) {
-        alert("请先在管理页配置并绑定可用 LLM（问答总结或系统 LLM）。");
+        toast.error("请先在管理页配置并绑定可用 LLM（问答总结或系统 LLM）。");
         return;
       }
 
@@ -774,7 +782,7 @@ export default function App() {
       }
       setSummaryPreview(md);
     } catch (e) {
-      alert((e as Error).message || "生成总结失败");
+      toast.error((e as Error).message || "生成总结失败");
     } finally {
       setSummaryBusy(false);
     }
@@ -787,7 +795,7 @@ export default function App() {
 
   const downloadSummaryMarkdown = () => {
     if (!summaryPreview.trim()) {
-      alert("请先生成总结");
+      toast.error("请先生成总结");
       return;
     }
     downloadText(summaryMdFilename(), summaryPreview);

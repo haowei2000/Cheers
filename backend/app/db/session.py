@@ -2,7 +2,11 @@
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.config import settings
 from app.db.models import Base
@@ -15,9 +19,10 @@ async_engine = create_async_engine(
 
 
 def _set_sqlite_pragma(dbapi_connection, connection_record):
-    """主业务库 SQLite 连接建立时启用 WAL 模式."""
+    """主业务库 SQLite 连接建立时启用 WAL 并设置锁等待，避免并发写报 database is locked。"""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")  # 30 秒内等待锁释放
     cursor.close()
 
 
