@@ -5,12 +5,15 @@ import logging
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 
 logger = logging.getLogger("app.guide.adapter")
+from app.admin.settings_store import get_clarify_settings
 from app.guide.help_index import (
     build_guide_content_with_form,
     get_form_for_intent,
     get_help_context_for_llm,
+    get_rule_based_clarify_schema,
 )
 from app.guide.llm_client import chat as llm_chat
+from app.guide.llm_client import generate_clarify_schema
 from app.guide.llm_client import is_configured as llm_configured
 
 DEFAULT_REPLY = (
@@ -36,15 +39,54 @@ class GuideBotAdapter(OpenClawAdapter):
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         text = (payload.trigger_message or {}).get("text") or ""
+        help_ctx = get_help_context_for_llm()
+        clarify_settings = get_clarify_settings()
+        strict_mode = bool(clarify_settings.get("clarify_strict_mode", False))
+        force_rule = bool(clarify_settings.get("clarify_force_rule", True))
+        threshold = float(clarify_settings.get("clarify_threshold", 0.6))
+
+        # 1) 混合澄清触发：LLM 判断 + 规则兜底
+        clarify = None
+        llm_clarify = None
+        rule_clarify = get_rule_based_clarify_schema(text)
+        if llm_configured():
+            llm_clarify = await generate_clarify_schema(text, help_ctx)
+
+        if llm_clarify:
+            score = llm_clarify.get("_score")
+            if isinstance(score, (float, int)):
+                if float(score) >= threshold:
+                    clarify = llm_clarify
+            else:
+                # 无 score 时，沿用 need_clarify 布尔语义（返回了 schema 即视为 true）
+                clarify = llm_clarify
+
+        if strict_mode and llm_clarify and not clarify:
+            # 严格模式下，LLM 已判定 need_clarify 但分数低于阈值时也允许触发
+            clarify = llm_clarify
+
+        if not clarify and force_rule and rule_clarify:
+            clarify = rule_clarify
+
+        if not clarify and not llm_clarify and rule_clarify:
+            clarify = rule_clarify
+
+        if clarify:
+            clarify = {k: v for k, v in clarify.items() if k != "_score"}
+            content = "为避免误解，我先确认几个问题。"
+            content += "\n\n```guide-clarify\n" + json.dumps(clarify, ensure_ascii=False) + "\n```"
+            logger.info("guide_bot: clarify popup generated, questions=%s", len(clarify.get("questions", [])))
+            return AgentResponse(
+                content=content,
+                task_id=payload.task_id,
+                success=True,
+            )
+
         content = ""
-        from_llm = False
 
         if llm_configured():
-            ctx = get_help_context_for_llm()
-            system = SYSTEM_PROMPT_TEMPLATE.format(help_context=ctx)
+            system = SYSTEM_PROMPT_TEMPLATE.format(help_context=help_ctx)
             content = await llm_chat(system, text)
-            if content:
-                from_llm = True
 
         if not content:
             content = build_guide_content_with_form(text)

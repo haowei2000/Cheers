@@ -12,12 +12,13 @@ DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
 
 
 def _heading_to_id(text: str) -> str:
-    """从标题文本生成锚点 id，如「四、如何让...」->「四」."""
-    text = text.strip()
-    for sep in ("、", ".", " "):
-        if sep in text:
-            return text.split(sep)[0].strip()
-    return text[:20] if len(text) > 20 else text
+    """按统一 slug 规则生成锚点 id：小写、空白转-、去特殊字符."""
+    slug = text.strip().lower()
+    slug = re.sub(r"\s+", "-", slug)
+    # 保留：中文、英文小写、数字、连字符
+    slug = re.sub(r"[^a-z0-9\u4e00-\u9fff-]", "", slug)
+    slug = re.sub(r"-{2,}", "-", slug).strip("-")
+    return slug or "section"
 
 
 def _md_to_html_with_heading_ids(md_text: str) -> str:
@@ -30,13 +31,18 @@ def _md_to_html_with_heading_ids(md_text: str) -> str:
         return html
     html = markdown.markdown(md_text, extensions=["extra"])
 
+    used_ids: dict[str, int] = {}
+
     def add_id(match: re.Match) -> str:
         tag, content = match.group(1), match.group(2)
         frag = re.sub(r"<[^>]+>", "", content)  # 去掉内联标签
         frag = frag.strip()
-        hid = _heading_to_id(frag)
+        base_id = _heading_to_id(frag)
+        count = used_ids.get(base_id, 0) + 1
+        used_ids[base_id] = count
+        hid = base_id if count == 1 else f"{base_id}-{count}"
         return f'<{tag} id="{hid}">{content}</{tag}>'
-    html = re.sub(r"<(h[23])>([^<]+)</\1>", add_id, html)
+    html = re.sub(r"<(h[23])>(.*?)</\1>", add_id, html, flags=re.S)
     return html
 
 
@@ -52,7 +58,7 @@ def _escape_html(text: str) -> str:
 
 @router.get("/manual/{name:path}", response_class=HTMLResponse)
 async def get_manual(name: str) -> HTMLResponse:
-    """返回说明书 HTML 页，支持锚点（如 /manual/系统管理说明书#四）。"""
+    """返回说明书 HTML 页，支持锚点（如 /manual/系统管理说明书#四如何让-openclaw-接入注册-bot-并加入项目）。"""
     # 只允许 .md 或纯文件名，禁止 .. 等
     base = name.rstrip("/")
     if not base or ".." in base or base.startswith("/"):

@@ -1,5 +1,8 @@
 """引导 Bot 使用的 LLM 客户端（OpenAI 兼容）。由管理端「功能绑定」选择 LLM。"""
+import json
 import logging
+import re
+from typing import Any
 
 import httpx
 
@@ -161,3 +164,107 @@ async def chat(system_prompt: str, user_message: str) -> str | None:
     except Exception as e:
         logger.warning("guide llm request failed (using keyword fallback): %s", e)
     return None
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    # 优先直解析
+    try:
+        obj = json.loads(raw)
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        pass
+    # 尝试提取 ```json ... ``` 代码块
+    m = re.search(r"```json\s*([\s\S]*?)```", raw, re.IGNORECASE)
+    if m:
+        try:
+            obj = json.loads(m.group(1).strip())
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            return None
+    return None
+
+
+def _normalize_clarify_schema(data: dict[str, Any]) -> dict[str, Any] | None:
+    questions = data.get("questions")
+    if not isinstance(questions, list) or not questions:
+        return None
+    normalized_questions: list[dict[str, Any]] = []
+    for idx, q in enumerate(questions):
+        if not isinstance(q, dict):
+            continue
+        prompt = str(q.get("prompt") or "").strip()
+        options = q.get("options")
+        if not prompt or not isinstance(options, list) or len(options) < 2:
+            continue
+        normalized_opts: list[dict[str, str]] = []
+        for oid, opt in enumerate(options):
+            if not isinstance(opt, dict):
+                continue
+            label = str(opt.get("label") or "").strip()
+            opt_id = str(opt.get("id") or f"opt_{oid}").strip()
+            if not label:
+                continue
+            normalized_opts.append({"id": opt_id, "label": label})
+        if len(normalized_opts) < 2:
+            continue
+        normalized_questions.append(
+            {
+                "id": str(q.get("id") or f"q_{idx}"),
+                "prompt": prompt,
+                "allow_multiple": bool(q.get("allow_multiple", False)),
+                "options": normalized_opts,
+                "other_enabled": bool(q.get("other_enabled", False)),
+                "other_label": str(q.get("other_label") or "其他"),
+                "other_placeholder": str(q.get("other_placeholder") or "请输入其他补充"),
+            }
+        )
+    if not normalized_questions:
+        return None
+    skip_policy = "allow" if str(data.get("skip_policy") or "allow").lower() == "allow" else "forbid"
+    out: dict[str, Any] = {
+        "title": str(data.get("title") or "请先确认以下问题").strip(),
+        "questions": normalized_questions,
+        "skip_policy": skip_policy,
+    }
+    reason = str(data.get("reason") or "").strip()
+    if reason:
+        out["reason"] = reason
+    score = data.get("score")
+    try:
+        if score is not None:
+            out["_score"] = max(0.0, min(1.0, float(score)))
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+async def generate_clarify_schema(user_message: str, help_context: str) -> dict[str, Any] | None:
+    """让 LLM 生成澄清问题 JSON；失败返回 None。"""
+    if not is_configured():
+        return None
+    system_prompt = (
+        "你是企业应用的需求澄清助手。请判断用户提问是否信息不足。"
+        "若不需要澄清，只返回JSON: {\"need_clarify\": false}。"
+        "若需要澄清，返回JSON: "
+        "{\"need_clarify\": true, \"title\": \"...\", \"skip_policy\": \"allow|forbid\", "
+        "\"questions\": [{\"id\":\"...\",\"prompt\":\"...\",\"allow_multiple\":false,"
+        "\"options\":[{\"id\":\"a\",\"label\":\"选项A\"},{\"id\":\"b\",\"label\":\"选项B\"}]}], "
+        "\"reason\":\"...\"}。"
+        "必须是纯 JSON，不要输出其他文字。"
+        "问题应简短、可选项清晰，允许一次给 1~3 个问题。\n\n"
+        f"参考文档上下文:\n{help_context}"
+    )
+    content = await chat(system_prompt, user_message)
+    if not content:
+        return None
+    obj = _extract_json_object(content)
+    if not obj:
+        return None
+    if not bool(obj.get("need_clarify", False)):
+        return None
+    return _normalize_clarify_schema(obj)

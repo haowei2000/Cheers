@@ -11,9 +11,11 @@ from app.admin.log_buffer import get_formatted_log_excerpt, get_recent_logs
 from app.admin.settings_store import (
     create_llm_provider,
     delete_llm_provider,
+    get_clarify_settings,
     get_llm_bindings,
     get_llm_providers_list,
     get_provider_for_scope,
+    set_clarify_settings,
     set_llm_bindings,
     update_llm_provider,
 )
@@ -94,6 +96,7 @@ class LLMBindingsBody(BaseModel):
     guide_bot: str | None = None
     system_llm: str | None = None
     log_analyze: str | None = None
+    qa_summarize: str | None = None
 
 
 @router.put("/settings/llm/bindings")
@@ -103,8 +106,40 @@ async def put_llm_bindings(body: LLMBindingsBody) -> dict:
         guide_bot=body.guide_bot,
         system_llm=body.system_llm,
         log_analyze=body.log_analyze,
+        qa_summarize=body.qa_summarize,
     )
     return {"status": "success", "data": {"bindings": get_llm_bindings()}}  # type: ignore[return-value]
+
+
+class ClarifySettingsBody(BaseModel):
+    clarify_strict_mode: bool | None = None
+    clarify_force_rule: bool | None = None
+    clarify_threshold: float | None = None
+
+
+@router.get("/settings/clarify")
+async def get_admin_clarify_settings() -> dict:
+    """获取澄清策略设置。"""
+    return {
+        "status": "success",
+        "message": "ok",
+        "data": get_clarify_settings(),
+    }
+
+
+@router.put("/settings/clarify")
+async def put_admin_clarify_settings(body: ClarifySettingsBody) -> dict:
+    """更新澄清策略设置。"""
+    updated = set_clarify_settings(
+        clarify_strict_mode=body.clarify_strict_mode,
+        clarify_force_rule=body.clarify_force_rule,
+        clarify_threshold=body.clarify_threshold,
+    )
+    return {
+        "status": "success",
+        "message": "updated",
+        "data": updated,
+    }
 
 
 # ---------- 日志（面向 LLM） ----------
@@ -126,6 +161,18 @@ async def admin_logs(
 class LogAnalyzeBody(BaseModel):
     log_excerpt: str = ""
     question: str = ""
+
+
+class QaPairItem(BaseModel):
+    question: str = ""
+    answer: str = ""
+    question_time: str = ""
+    answer_time: str = ""
+
+
+class QaSummarizeBody(BaseModel):
+    channel_name: str = ""
+    pairs: list[QaPairItem] = []
 
 
 @router.post("/logs/analyze")
@@ -184,6 +231,80 @@ async def analyze_logs_with_llm(body: LogAnalyzeBody) -> dict:
     except Exception as e:
         logger.exception("logs/analyze: %s", e)
         raise HTTPException(status_code=500, detail=f"分析失败: {e!s}")
+
+
+@router.post("/qa/summarize")
+async def summarize_qa_with_llm(body: QaSummarizeBody) -> dict:
+    """将一组问答发送给 LLM，总结为详细 Markdown 文档。默认使用 qa_summarize 绑定，未绑定则回退 system_llm。"""
+    if not body.pairs:
+        raise HTTPException(status_code=400, detail="请至少提供一组问答")
+    c = get_provider_for_scope("qa_summarize") or get_provider_for_scope("system_llm")
+    if not c:
+        raise HTTPException(
+            status_code=400,
+            detail="请先在管理页「LLM 参数」中添加 LLM 设定，并在「功能绑定」中为「问答总结」或「系统 LLM」选择 LLM。",
+        )
+    base_url = (c.get("base_url") or "").strip()
+    api_key = (c.get("api_key") or "").strip()
+    model = (c.get("model") or "gpt-4o-mini").strip()
+    if not base_url:
+        raise HTTPException(status_code=400, detail="所选 LLM 的 Base URL 为空")
+
+    channel_name = (body.channel_name or "").strip() or "频道"
+    lines: list[str] = []
+    for idx, item in enumerate(body.pairs, start=1):
+        lines.append(f"## 问答 {idx}")
+        lines.append(f"问题时间: {item.question_time or '-'}")
+        lines.append(f"回答时间: {item.answer_time or '-'}")
+        lines.append("")
+        lines.append("### 问题")
+        lines.append(item.question.strip() or "-")
+        lines.append("")
+        lines.append("### 回答")
+        lines.append(item.answer.strip() or "-")
+        lines.append("")
+    qa_text = "\n".join(lines)
+    prompt = (
+        f"频道：{channel_name}\n"
+        f"共有 {len(body.pairs)} 组问答。\n\n"
+        "请根据以下问答整理一份详细且结构化的 Markdown 文档，需包含：\n"
+        "1) 背景与目标\n2) 关键问题与结论\n3) 详细步骤/方法\n4) 注意事项与风险\n5) 后续建议\n\n"
+        "要求：\n"
+        "- 使用清晰的 Markdown 标题层级\n"
+        "- 不要输出与原问答无关的内容\n"
+        "- 尽量保留关键细节，不要过度简写\n\n"
+        f"问答原文：\n\n{qa_text}"
+    )
+    try:
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是资深技术文档整理助手，擅长将问答记录整理为清晰、完整、可执行的 Markdown 文档。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": 2000,
+        }
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            r = await client.post(url, json=payload, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+            content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+            return {"status": "success", "data": {"summary_markdown": content.strip() or "无总结结果"}}
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        detail = "LLM 请求失败: 503（服务繁忙或模型加载中）" if code == 503 else f"LLM 请求失败: {code}"
+        logger.warning("qa/summarize HTTP %s: %s", code, e)
+        raise HTTPException(status_code=502, detail=detail)
+    except Exception as e:
+        logger.exception("qa/summarize: %s", e)
+        raise HTTPException(status_code=500, detail=f"总结失败: {e!s}")
 
 
 # ---------- 系统状态（可选） ----------

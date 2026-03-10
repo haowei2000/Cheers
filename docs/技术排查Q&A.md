@@ -27,7 +27,7 @@
 
 - **路径**：本地为 `backend/data/logs/`（若未改 LOG_DIR）；Docker 为容器内 `/app/data/logs/`，对应宿主机卷挂载点。
 - **未配置或不可写**：日志仅输出到控制台。Docker 下可用 `docker compose logs backend` 查看 stdout/stderr。
-- **环境变量**：`LOG_DIR`、`LOG_MAX_BYTES`（单文件最大字节，默认 5MB）、`LOG_BACKUP_COUNT`（保留份数，默认 3）。详见 [系统管理说明书 - 日志文件](系统管理说明书.md#日志文件便于排查错误)。
+- **环境变量**：`LOG_DIR`、`LOG_MAX_BYTES`（单文件最大字节，默认 5MB）、`LOG_BACKUP_COUNT`（保留份数，默认 3）。详见 [系统管理说明书 - 日志文件](/manual/系统管理说明书#日志文件便于排查错误)。
 
 ### 2.2 日志中常见关键词与含义
 
@@ -65,8 +65,8 @@
 | **WebSocket 断开、消息不实时** | 网络抖动、服务重启、代理超时 | 1）刷新页面重建连接；2）检查 Nginx/反向代理的 WebSocket 超时与 upgrade 配置 | 调整代理超时；保证后端稳定运行 |
 | **文件上传 400** | 非支持格式或缺少参数 | 确认请求含 channel_id、uploader_id、filename 及 body；格式为 .txt/.md/.docx | 按 [系统管理说明书](系统管理说明书.md) 或 API 文档修正 |
 | **文件状态为 failed** | 转换失败（格式异常、mammoth 等报错） | 查看 agentnexus.log / error.log 中与 file、convert、mammoth 相关的错误 | 确认文件未损坏、扩展名与内容一致；必要时查依赖版本 |
-| **@ Bot 无回复** | Bot 未加入该频道、username 不匹配、或真实服务不可达 | 1）GET `/api/channels/{项目ID}/members?with_username=1` 看是否有该 Bot；2）确认 @ 的名字与 bot 的 username 完全一致；3）若 endpoint 为 http(s)，确认该服务已实现 POST /execute 且可访问 | 在「管理」中将 Bot 加入该项目；或修正 @ 的名字；或检查 OpenClaw 服务与 [系统管理说明书 §4.4](系统管理说明书.md#44-真实调用的请求响应约定openclaw_endpoint-为-https-时) 约定 |
-| **@引导 无回复** | 引导 Bot 未加入当前项目、或未创建 | 1）确认是否执行过种子数据或手动创建过引导 Bot；2）GET 当前项目 members 是否含 bot-guide-001；3）查日志是否有 orchestrator/guide 相关错误 | 执行种子数据或手动添加成员（member_id=bot-guide-001, member_type=bot）；详见 [系统管理说明书 - @引导 无反应时如何排查](系统管理说明书.md#引导-无反应时如何排查) |
+| **@ Bot 无回复** | Bot 未加入该频道、username 不匹配、或真实服务不可达 | 1）GET `/api/channels/{项目ID}/members?with_username=1` 看是否有该 Bot；2）确认 @ 的名字与 bot 的 username 完全一致；3）若 endpoint 为 http(s)，确认该服务已实现 POST /execute 且可访问 | 在「管理」中将 Bot 加入该项目；或修正 @ 的名字；或检查 OpenClaw 服务与 [系统管理说明书 §4.4](/manual/系统管理说明书#44-真实调用的请求响应约定openclawendpoint-为-https-时) 约定 |
+| **@引导 无回复** | 引导 Bot 未加入当前项目、或未创建 | 1）确认是否执行过种子数据或手动创建过引导 Bot；2）GET 当前项目 members 是否含 bot-guide-001；3）查日志是否有 orchestrator/guide 相关错误 | 执行种子数据或手动添加成员（member_id=bot-guide-001, member_type=bot）；详见 [系统管理说明书 - @引导 无反应时如何排查](/manual/系统管理说明书#引导-无反应时如何排查) |
 
 ---
 

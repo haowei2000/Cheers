@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import toast from "react-hot-toast";
 
 const API = "/api";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -15,11 +16,13 @@ type Message = {
   content: string;
   created_at?: string;
 };
+type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
 
 const LAYERS = ["ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT"] as const;
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
+const GUIDE_CLARIFY_BLOCK = /```guide-clarify\n([\s\S]*?)```/;
 
 type GuideFormField = {
   name: string;
@@ -33,20 +36,63 @@ type GuideFormField = {
 
 type GuideFormSchema = { action: string; fields: GuideFormField[] };
 
-function parseGuideForm(content: string): { text: string; form?: GuideFormSchema } {
-  const match = content.match(GUIDE_FORM_BLOCK);
-  if (!match) return { text: content.trim() };
-  const text = content.slice(0, match.index).trim();
-  try {
-    const form = JSON.parse(match[1].trim()) as GuideFormSchema;
-    return { text, form };
-  } catch {
-    return { text: content.trim() };
+type ClarifyOption = { id: string; label: string };
+type ClarifyQuestion = {
+  id: string;
+  prompt: string;
+  allow_multiple?: boolean;
+  options: ClarifyOption[];
+  other_enabled?: boolean;
+  other_label?: string;
+  other_placeholder?: string;
+};
+type ClarifySchema = {
+  title?: string;
+  questions: ClarifyQuestion[];
+  skip_policy?: "allow" | "forbid";
+  reason?: string;
+};
+type ClarifyAnswers = {
+  selected: Record<string, string[]>;
+  other_text: Record<string, string>;
+};
+const OTHER_CHOICE_ID = "__other__";
+
+function parseGuidePayload(content: string): { text: string; form?: GuideFormSchema; clarify?: ClarifySchema } {
+  let text = content;
+  let form: GuideFormSchema | undefined;
+  let clarify: ClarifySchema | undefined;
+
+  const formMatch = text.match(GUIDE_FORM_BLOCK);
+  if (formMatch) {
+    try {
+      form = JSON.parse(formMatch[1].trim()) as GuideFormSchema;
+      text = text.replace(formMatch[0], "");
+    } catch {}
   }
+
+  const clarifyMatch = text.match(GUIDE_CLARIFY_BLOCK);
+  if (clarifyMatch) {
+    try {
+      const parsed = JSON.parse(clarifyMatch[1].trim()) as ClarifySchema;
+      if (Array.isArray(parsed?.questions) && parsed.questions.length > 0) {
+        clarify = parsed;
+      }
+      text = text.replace(clarifyMatch[0], "");
+    } catch {}
+  }
+
+  return { text: text.trim(), form, clarify };
+}
+
+// 兼容历史调用，避免旧代码路径触发 ReferenceError
+function parseGuideForm(content: string): { text: string; form?: GuideFormSchema } {
+  const parsed = parseGuidePayload(content);
+  return { text: parsed.text, form: parsed.form };
 }
 
 /** 将消息内容中的 [text](url) 转为可点击链接，仅允许 / 或 http(s) 的 url */
-function renderMessageContent(content: string): (string | JSX.Element)[] {
+function renderMessageContent(content: string, keyPrefix = ""): (string | JSX.Element)[] {
   const re = /\[([^\]]+)\]\(([^)]+)\)/g;
   const out: (string | React.ReactElement)[] = [];
   let lastIndex = 0;
@@ -58,7 +104,7 @@ function renderMessageContent(content: string): (string | JSX.Element)[] {
     const safe = rawUrl.startsWith("/") || rawUrl.startsWith("http://") || rawUrl.startsWith("https://");
     out.push(
       <a
-        key={key++}
+        key={`${keyPrefix}link-${key++}`}
         href={safe ? rawUrl : "#"}
         target="_blank"
         rel="noreferrer"
@@ -76,7 +122,7 @@ function renderMessageContent(content: string): (string | JSX.Element)[] {
 const THINK_BLOCK = /<think>([\s\S]*?)<\/think>/gi;
 
 /** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
-function renderWithThinkFolding(content: string): (string | JSX.Element)[] {
+function renderWithThinkFolding(content: string, keyPrefix = ""): (string | JSX.Element)[] {
   const parts: (string | JSX.Element)[] = [];
   let lastIndex = 0;
   let key = 0;
@@ -84,18 +130,18 @@ function renderWithThinkFolding(content: string): (string | JSX.Element)[] {
   THINK_BLOCK.lastIndex = 0;
   while ((match = THINK_BLOCK.exec(content)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(...renderMessageContent(content.slice(lastIndex, match.index)));
+      parts.push(...renderMessageContent(content.slice(lastIndex, match.index), `${keyPrefix}seg-${key}-`));
     }
     const thinkContent = match[1]?.trim() || "";
     parts.push(
-      <ThinkFold key={key++} content={thinkContent} />
+      <ThinkFold key={`${keyPrefix}think-${key++}`} content={thinkContent} />
     );
     lastIndex = THINK_BLOCK.lastIndex;
   }
   if (lastIndex < content.length) {
-    parts.push(...renderMessageContent(content.slice(lastIndex)));
+    parts.push(...renderMessageContent(content.slice(lastIndex), `${keyPrefix}tail-${key}-`));
   }
-  return parts.length > 0 ? parts : renderMessageContent(content);
+  return parts.length > 0 ? parts : renderMessageContent(content, `${keyPrefix}full-`);
 }
 
 function ThinkFold({ content }: { content: string }) {
@@ -117,6 +163,72 @@ function ThinkFold({ content }: { content: string }) {
       )}
     </div>
   );
+}
+
+function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
+function buildQaPairs(messages: Message[]): QaPair[] {
+  const pairs: QaPair[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const q = messages[i];
+    if (q.sender_type !== "user") continue;
+    for (let j = i + 1; j < messages.length; j++) {
+      const a = messages[j];
+      if (a.sender_type === "bot") {
+        pairs.push({ question: q, answer: a });
+        break;
+      }
+      if (a.sender_type === "user") {
+        break;
+      }
+    }
+  }
+  return pairs;
+}
+
+function formatTs(ts?: string): string {
+  return (ts || "").slice(0, 19);
+}
+
+function buildQaMarkdown(channelName: string, pairs: QaPair[]): string {
+  const now = new Date();
+  const rows: string[] = [];
+  rows.push(`# 问答导出 - ${channelName}`);
+  rows.push("");
+  rows.push(`导出时间: ${now.toISOString()}`);
+  rows.push(`问答数量: ${pairs.length}`);
+  rows.push("");
+  pairs.forEach((p, idx) => {
+    const qText = stripThinkTags(parseGuidePayload(p.question.content).text || p.question.content);
+    const aText = stripThinkTags(parseGuidePayload(p.answer.content).text || p.answer.content);
+    rows.push(`## ${idx + 1}. 问答`);
+    rows.push("");
+    rows.push(`### 问题 (${formatTs(p.question.created_at) || "-"})`);
+    rows.push("");
+    rows.push(qText || "-");
+    rows.push("");
+    rows.push(`### 回答 (${formatTs(p.answer.created_at) || "-"})`);
+    rows.push("");
+    rows.push(aText || "-");
+    rows.push("");
+    rows.push("---");
+    rows.push("");
+  });
+  return rows.join("\n");
+}
+
+function downloadText(filename: string, content: string): void {
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function refreshChannels(setChannels: (c: Channel[]) => void) {
@@ -173,7 +285,9 @@ function GuideFormBlock({
       const workspace_id = values.workspace_id;
       const name = values.name?.trim();
       if (!workspace_id || !name) {
-        setError("请选择工作空间并填写项目名称");
+        const msg = "请选择工作空间并填写项目名称";
+        setError(msg);
+        toast.error(msg);
         return;
       }
       setError(null);
@@ -200,9 +314,14 @@ function GuideFormBlock({
                 onChannelsRefresh();
               });
           }
-          setError(d.detail || d.message || "创建失败");
+          const errMsg = d.detail || d.message || "创建失败";
+          setError(errMsg);
+          toast.error(errMsg);
         })
-        .catch(() => setError("请求失败"));
+        .catch(() => {
+          setError("请求失败");
+          toast.error("请求失败");
+        });
     }
   };
 
@@ -249,6 +368,163 @@ function GuideFormBlock({
   );
 }
 
+function isClarifyReplyUserMessage(content: string): boolean {
+  const t = (content || "").trim();
+  return t.startsWith("@引导 澄清回答：") || t.includes("用户选择跳过澄清");
+}
+
+function ClarifyInlineBlock({
+  msgId,
+  schema,
+  status,
+  replyContent,
+  onContinue,
+  onSkip,
+}: {
+  msgId: string;
+  schema: ClarifySchema;
+  status: "form" | "waiting" | "answered";
+  replyContent?: string;
+  onContinue: (answers: ClarifyAnswers) => void;
+  onSkip: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [otherText, setOtherText] = useState<Record<string, string>>({});
+  const allowSkip = (schema.skip_policy || "allow") === "allow";
+  const canContinue = schema.questions.every((q) => {
+    const selected = answers[q.id] || [];
+    if (selected.length === 0) return false;
+    if (selected.includes(OTHER_CHOICE_ID)) {
+      return !!(otherText[q.id] || "").trim();
+    }
+    return true;
+  });
+
+  const toggleOption = (q: ClarifyQuestion, optionId: string) => {
+    setAnswers((prev) => {
+      const current = prev[q.id] || [];
+      if (q.allow_multiple) {
+        const next = current.includes(optionId)
+          ? current.filter((id) => id !== optionId)
+          : [...current, optionId];
+        return { ...prev, [q.id]: next };
+      }
+      return { ...prev, [q.id]: [optionId] };
+    });
+  };
+
+  const toggleOther = (q: ClarifyQuestion) => toggleOption(q, OTHER_CHOICE_ID);
+
+  if (status === "waiting") {
+    return (
+      <div className="my-1 rounded border border-gray-200 bg-gray-50 overflow-hidden p-2">
+        <span className="text-xs text-gray-500">引导正在根据澄清回答…</span>
+      </div>
+    );
+  }
+
+  if (status === "answered") {
+    const displayReply = replyContent?.replace(/^@引导\s*澄清回答[：:]\s*/i, "").trim() || "";
+    return (
+      <div className="my-1 rounded border border-gray-200 bg-gray-50 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="w-full px-2 py-1.5 text-left text-xs text-gray-500 hover:bg-gray-100 flex items-center gap-1"
+        >
+          <span className="inline-block transition-transform" style={{ transform: open ? "rotate(90deg)" : "none" }}>▶</span>
+          <span>澄清</span>
+          <span>{open ? "收起" : "展开"}</span>
+        </button>
+        {open && (
+          <div className="p-2 text-xs text-gray-600 border-t border-gray-200 space-y-2">
+            <p>已澄清并已收到引导回复</p>
+            {displayReply && (
+              <div className="rounded border border-gray-200 bg-gray-100 p-2">
+                <p className="text-gray-500 mb-1">澄清回答</p>
+                <pre className="whitespace-pre-wrap text-gray-700 font-sans text-xs">{displayReply}</pre>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-1 rounded border border-gray-200 bg-gray-50 overflow-hidden p-3">
+      <div className="mb-2">
+        <h4 className="text-sm font-medium text-gray-800">{schema.title || "请先确认以下问题"}</h4>
+      </div>
+      <div className="space-y-2 max-h-[40vh] overflow-auto pr-1">
+        {schema.questions.map((q, idx) => (
+          <div key={q.id} className="rounded border border-gray-200 bg-white p-2">
+            <p className="text-sm mb-1.5 text-gray-700">{idx + 1}. {q.prompt}</p>
+            <div className="space-y-1">
+              {q.options.map((opt) => {
+                const checked = (answers[q.id] || []).includes(opt.id);
+                return (
+                  <label key={opt.id} className="flex items-center gap-2 text-sm cursor-pointer text-gray-700">
+                    <input
+                      type={q.allow_multiple ? "checkbox" : "radio"}
+                      name={`${msgId}-${q.id}`}
+                      checked={checked}
+                      onChange={() => toggleOption(q, opt.id)}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                );
+              })}
+              {q.other_enabled && (
+                <div className="pt-1">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer text-gray-700">
+                    <input
+                      type={q.allow_multiple ? "checkbox" : "radio"}
+                      name={`${msgId}-${q.id}`}
+                      checked={(answers[q.id] || []).includes(OTHER_CHOICE_ID)}
+                      onChange={() => toggleOther(q)}
+                    />
+                    <span>{q.other_label || "其他"}</span>
+                  </label>
+                  {(answers[q.id] || []).includes(OTHER_CHOICE_ID) && (
+                    <input
+                      type="text"
+                      value={otherText[q.id] || ""}
+                      onChange={(e) => setOtherText((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                      placeholder={q.other_placeholder || "请输入其他补充"}
+                      className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm text-gray-800"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        {allowSkip && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="px-3 py-1.5 rounded border border-gray-400 text-gray-700 hover:bg-gray-100 text-sm"
+          >
+            Skip
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={!canContinue}
+          onClick={() => onContinue({ selected: answers, other_text: otherText })}
+          className="px-3 py-1.5 rounded bg-amber-500 text-black font-medium disabled:opacity-50 text-sm"
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -261,15 +537,25 @@ export default function App() {
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
+  const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>({});
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryPreview, setSummaryPreview] = useState("");
+  const [qaLlmReady, setQaLlmReady] = useState(false);
+  const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
+  const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<string | null>(null);
 
   type ChannelBot = { member_id: string; username: string };
   type BotItem = { bot_id: string; username: string; display_name?: string; intro?: string };
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
+<<<<<<< HEAD
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [allBots, setAllBots] = useState<BotItem[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+=======
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+>>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
 
   function introSummary(intro: string | undefined): string {
     if (!intro) return "";
@@ -291,6 +577,8 @@ export default function App() {
     if (!selectedId) {
       setMessages([]);
       setChannelBots([]);
+      setSelectedQaIds({});
+      setSummaryPreview("");
       return;
     }
     setLoading(true);
@@ -340,6 +628,7 @@ export default function App() {
   }, [contextOpen, selectedId]);
 
   useEffect(() => {
+<<<<<<< HEAD
     if (addBotOpen) {
       fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
     }
@@ -380,6 +669,36 @@ export default function App() {
         }
       })
       .catch(console.error);
+=======
+    if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
+      setPendingClarifyReplyMsgId(null);
+    }
+  }, [pendingClarifyReplyMsgId, messages]);
+
+  useEffect(() => {
+    setPendingClarifyReplyMsgId(null);
+  }, [selectedId]);
+
+  const sendUserMessage = async (content: string) => {
+    if (!selectedId || !content.trim()) return;
+    const body = {
+      content: content.trim(),
+      sender_id: DEV_USER_ID,
+      sender_type: "user",
+      file_ids: [] as string[],
+    };
+    const res = await fetch(`${API}/channels/${selectedId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await res.json();
+    setMessages((prev) => {
+      if (!d.data) return prev;
+      if (prev.some((m) => m.msg_id === d.data.msg_id)) return prev;
+      return [...prev, d.data];
+    });
+>>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
   };
 
   const send = () => {
@@ -409,13 +728,39 @@ export default function App() {
       .catch(console.error);
   };
 
+  const handleClarifyContinue = (msgId: string, schema: ClarifySchema, answers: ClarifyAnswers) => {
+    const lines = ["@引导 澄清回答："];
+    for (const q of schema.questions) {
+      const picked = new Set(answers.selected[q.id] || []);
+      const labels = q.options.filter((o) => picked.has(o.id)).map((o) => o.label);
+      if (picked.has(OTHER_CHOICE_ID)) {
+        const other = (answers.other_text[q.id] || "").trim();
+        if (other) labels.push(`其他：${other}`);
+      }
+      lines.push(`- ${q.prompt}：${labels.length > 0 ? labels.join("、") : "未选择"}`);
+    }
+    setPendingClarifyReplyMsgId(msgId);
+    sendUserMessage(lines.join("\n")).catch(() => {
+      setPendingClarifyReplyMsgId(null);
+      toast.error("提交失败，请重试");
+    });
+  };
+
+  const handleClarifySkip = (msgId: string) => {
+    setPendingClarifyReplyMsgId(msgId);
+    sendUserMessage("@引导 用户选择跳过澄清，请在当前信息下继续回答。").catch(() => {
+      setPendingClarifyReplyMsgId(null);
+      toast.error("提交失败，请重试");
+    });
+  };
+
   const uploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedId) return;
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
     const allowed = [".txt", ".md", ".docx", ".pdf", ".xlsx", ".png", ".jpg", ".jpeg", ".webp"];
     if (!allowed.includes(ext)) {
-      alert("支持格式: " + allowed.join(", "));
+      toast.error("支持格式: " + allowed.join(", "));
       return;
     }
     fetch(
@@ -445,6 +790,122 @@ export default function App() {
         if (d.status === "success") setContextData((prev) => ({ ...prev, [layer.toLowerCase()]: content }));
       })
       .catch(console.error);
+  };
+
+  const selectedChannel = channels.find((c) => c.channel_id === selectedId) || null;
+  const qaPairs = buildQaPairs(messages);
+  const qaPairByQuestionId = new Map(qaPairs.map((p) => [p.question.msg_id, p]));
+  const selectedPairs = qaPairs.filter((p) => selectedQaIds[p.question.msg_id]);
+
+  const toggleQa = (msgId: string) => {
+    setSelectedQaIds((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
+  };
+
+  const clearQaSelection = () => setSelectedQaIds({});
+
+  const exportMdFilename = () => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const ch = (selectedChannel?.name || "channel").replace(/\s+/g, "_");
+    return `qa-export-${ch}-${stamp}.md`;
+  };
+
+  const downloadQaMarkdown = () => {
+    if (selectedPairs.length === 0) {
+      toast.error("请先勾选至少一组问答");
+      return;
+    }
+    const md = buildQaMarkdown(selectedChannel?.name || "频道", selectedPairs);
+    downloadText(exportMdFilename(), md);
+  };
+
+  const summaryMdFilename = () => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const ch = (selectedChannel?.name || "channel").replace(/\s+/g, "_");
+    return `qa-summary-${ch}-${stamp}.md`;
+  };
+
+  const refreshQaLlmStatus = async () => {
+    try {
+      const llmRes = await fetch(`${API}/admin/settings/llm`);
+      const llmData = await llmRes.json();
+      if (!llmRes.ok) {
+        setQaLlmReady(false);
+        setQaLlmHint("无法读取 LLM 配置，请稍后重试。");
+        return false;
+      }
+      const bindings = llmData?.data?.bindings || {};
+      const providers = llmData?.data?.providers || [];
+      const pickedId = bindings.qa_summarize || bindings.system_llm;
+      const picked = providers.find((p: { id: string; base_url?: string }) => p.id === pickedId);
+      if (!picked || !String(picked.base_url || "").trim()) {
+        setQaLlmReady(false);
+        setQaLlmHint("未配置问答总结 LLM，请到「管理」页绑定问答总结或系统 LLM。");
+        return false;
+      }
+      setQaLlmReady(true);
+      setQaLlmHint("LLM 已配置，可生成总结。");
+      return true;
+    } catch {
+      setQaLlmReady(false);
+      setQaLlmHint("检查 LLM 配置失败，请稍后重试。");
+      return false;
+    }
+  };
+
+  const generateQaSummary = async () => {
+    if (selectedPairs.length === 0) {
+      toast.error("请先勾选至少一组问答");
+      return;
+    }
+    setSummaryBusy(true);
+    try {
+      const ok = await refreshQaLlmStatus();
+      if (!ok) {
+        toast.error("请先在管理页配置并绑定可用 LLM（问答总结或系统 LLM）。");
+        return;
+      }
+
+      const pairs = selectedPairs.map((p) => ({
+        question: stripThinkTags(parseGuidePayload(p.question.content).text || p.question.content),
+        answer: stripThinkTags(parseGuidePayload(p.answer.content).text || p.answer.content),
+        question_time: formatTs(p.question.created_at),
+        answer_time: formatTs(p.answer.created_at),
+      }));
+      const res = await fetch(`${API}/admin/qa/summarize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel_name: selectedChannel?.name || "频道",
+          pairs,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.message || `总结失败 (${res.status})`);
+      }
+      const md = data?.data?.summary_markdown || "";
+      if (!md.trim()) {
+        throw new Error("未获得总结结果");
+      }
+      setSummaryPreview(md);
+    } catch (e) {
+      toast.error((e as Error).message || "生成总结失败");
+    } finally {
+      setSummaryBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedId) return;
+    refreshQaLlmStatus();
+  }, [selectedId]);
+
+  const downloadSummaryMarkdown = () => {
+    if (!summaryPreview.trim()) {
+      toast.error("请先生成总结");
+      return;
+    }
+    downloadText(summaryMdFilename(), summaryPreview);
   };
 
   return (
@@ -620,35 +1081,133 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0">
         {selectedId ? (
           <>
+            <div className="px-4 pt-3 pb-2 border-b bg-white flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-500">已识别问答 {qaPairs.length} 组，已勾选 {selectedPairs.length} 组</span>
+              <button
+                type="button"
+                onClick={downloadQaMarkdown}
+                disabled={selectedPairs.length === 0}
+                className="px-2 py-1 text-xs rounded border border-gray-300 disabled:text-gray-400 disabled:border-gray-200 hover:bg-gray-50"
+              >
+                导出为 MD
+              </button>
+              <button
+                type="button"
+                onClick={generateQaSummary}
+                disabled={selectedPairs.length === 0 || summaryBusy || !qaLlmReady}
+                title={qaLlmHint}
+                className="px-2 py-1 text-xs rounded bg-blue-600 text-white disabled:bg-gray-300"
+              >
+                {summaryBusy ? "总结中..." : "LLM 总结"}
+              </button>
+              <button
+                type="button"
+                onClick={downloadSummaryMarkdown}
+                disabled={!summaryPreview.trim()}
+                className="px-2 py-1 text-xs rounded border border-gray-300 disabled:text-gray-400 disabled:border-gray-200 hover:bg-gray-50"
+              >
+                下载总结 MD
+              </button>
+              <button
+                type="button"
+                onClick={clearQaSelection}
+                className="px-2 py-1 text-xs rounded border border-gray-300 hover:bg-gray-50"
+              >
+                清空勾选
+              </button>
+              {!qaLlmReady && (
+                <span className="text-xs text-amber-700">
+                  {qaLlmHint}
+                </span>
+              )}
+            </div>
+            {summaryPreview && (
+              <div className="px-4 pt-2 pb-2 border-b bg-gray-50">
+                <div className="text-xs text-gray-500 mb-1">总结预览</div>
+                <div className="w-full border rounded p-2 bg-white text-sm whitespace-pre-wrap max-h-60 overflow-auto">
+                  {summaryPreview}
+                </div>
+              </div>
+            )}
             <div className="flex-1 overflow-auto p-4 space-y-2">
               {loading ? (
                 <div className="text-gray-500">加载中...</div>
               ) : (
-                messages.map((m) => {
-                  const { text, form } = parseGuideForm(m.content);
-                  return (
-                    <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
-                      <span className="text-xs text-gray-500 flex items-center gap-2">
-                        {m.sender_type === "bot" ? (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
-                        ) : (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
+                <>
+                  {messages.map((m, idx) => {
+                    const prevMsg = messages[idx - 1];
+                    const isClarifyReplyBubble =
+                      m.sender_type === "user" &&
+                      prevMsg?.sender_type === "bot" &&
+                      !!parseGuidePayload(prevMsg.content).clarify &&
+                      isClarifyReplyUserMessage(m.content);
+                    if (isClarifyReplyBubble) {
+                      return <div key={m.msg_id} className="sr-only" aria-hidden="true" />;
+                    }
+                    const { text, form, clarify } = parseGuidePayload(m.content);
+                    const nextMsg = messages[idx + 1];
+                    const clarifyAnswered =
+                      nextMsg &&
+                      (nextMsg.sender_type === "bot" || (nextMsg.sender_type === "user" && isClarifyReplyUserMessage(nextMsg.content)));
+                    const clarifyWaiting = pendingClarifyReplyMsgId === m.msg_id;
+                    const clarifyStatus: "form" | "waiting" | "answered" | null =
+                      clarify && m.sender_type === "bot"
+                        ? clarifyWaiting
+                          ? "waiting"
+                          : clarifyAnswered
+                            ? "answered"
+                            : "form"
+                        : null;
+                    const replyContent =
+                      clarifyStatus === "answered" &&
+                      nextMsg?.sender_type === "user" &&
+                      isClarifyReplyUserMessage(nextMsg.content)
+                        ? nextMsg.content
+                        : undefined;
+                    return (
+                      <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
+                        <span className="text-xs text-gray-500 flex items-center gap-2">
+                          {m.sender_type === "bot" ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
+                          )}
+                          {m.created_at?.slice(0, 19) || ""}
+                          {m.sender_type === "user" && qaPairByQuestionId.has(m.msg_id) && (
+                            <label className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600">
+                              <input
+                                type="checkbox"
+                                checked={!!selectedQaIds[m.msg_id]}
+                                onChange={() => toggleQa(m.msg_id)}
+                              />
+                              勾选问答
+                            </label>
+                          )}
+                        </span>
+                        <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text, `${m.msg_id}-`)}</div>
+                        {form && selectedId && m.sender_type === "bot" && (
+                          <GuideFormBlock
+                            msgId={m.msg_id}
+                            form={form}
+                            channelId={selectedId}
+                            onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                            onChannelsRefresh={() => refreshChannels(setChannels)}
+                          />
                         )}
-                        {m.created_at?.slice(0, 19) || ""}
-                      </span>
-                      <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text)}</div>
-                      {form && selectedId && m.sender_type === "bot" && (
-                        <GuideFormBlock
-                          msgId={m.msg_id}
-                          form={form}
-                          channelId={selectedId}
-                          onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                          onChannelsRefresh={() => refreshChannels(setChannels)}
-                        />
-                      )}
-                    </div>
-                  );
-                })
+                        {clarifyStatus !== null && selectedId && (
+                          <ClarifyInlineBlock
+                            msgId={m.msg_id}
+                            schema={clarify!}
+                            status={clarifyStatus}
+                            replyContent={replyContent}
+                            onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
+                            onSkip={() => handleClarifySkip(m.msg_id)}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                  </>
               )}
             </div>
             <div className="p-2 border-t bg-white flex flex-col gap-2">
@@ -666,9 +1225,8 @@ export default function App() {
                   />
                 </label>
                 <div className="flex-1 relative">
-                  <input
+                  <textarea
                     ref={inputRef}
-                    type="text"
                     value={input}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -690,10 +1248,13 @@ export default function App() {
                         setShowMentionDropdown(false);
                         return;
                       }
-                      if (e.key === "Enter" && !e.shiftKey) send();
+                      if (e.key === "Enter" && e.ctrlKey) {
+                        e.preventDefault();
+                        send();
+                      }
                     }}
-                    placeholder="输入消息，输入 @ 选择 Bot…"
-                    className="w-full border rounded px-3 py-2"
+                    placeholder="输入消息，输入 @ 选择 Bot…（Ctrl+Enter 发送，Enter 换行）"
+                    className="w-full border rounded px-3 py-2 min-h-[44px] max-h-48 resize-y"
                   />
                   {showMentionDropdown && (() => {
                     const matched = channelBots.filter((b) =>

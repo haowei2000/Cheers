@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import toast from "react-hot-toast";
 
 const API = "/api";
 
@@ -36,7 +37,12 @@ type LLMProvider = {
   temperature: number;
   max_tokens: number;
 };
-type LLMBindings = { guide_bot?: string; system_llm?: string; log_analyze?: string };
+type LLMBindings = { guide_bot?: string; system_llm?: string; log_analyze?: string; qa_summarize?: string };
+type ClarifySettings = {
+  clarify_strict_mode: boolean;
+  clarify_force_rule: boolean;
+  clarify_threshold: number;
+};
 
 function refreshChannels(setChannels: (c: Channel[]) => void) {
   fetch(`${API}/channels`).then((r) => r.json()).then((d) => d.data && setChannels(d.data)).catch(console.error);
@@ -44,7 +50,6 @@ function refreshChannels(setChannels: (c: Channel[]) => void) {
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<TabId>("llm");
-  const [adminMsg, setAdminMsg] = useState("");
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -80,6 +85,12 @@ export default function AdminPage() {
   const [bindingGuideBot, setBindingGuideBot] = useState("");
   const [bindingSystemLlm, setBindingSystemLlm] = useState("");
   const [bindingLogAnalyze, setBindingLogAnalyze] = useState("");
+  const [bindingQaSummarize, setBindingQaSummarize] = useState("");
+  const [clarifySettings, setClarifySettings] = useState<ClarifySettings>({
+    clarify_strict_mode: false,
+    clarify_force_rule: true,
+    clarify_threshold: 0.6,
+  });
 
   const [logLevel, setLogLevel] = useState("");
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
@@ -113,11 +124,24 @@ export default function AdminPage() {
             setBindingGuideBot(d.data.bindings?.guide_bot ?? "");
             setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
             setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
+            setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
           }
         })
         .catch((e) => {
           console.error("[AdminPage] fetch LLM settings error:", e);
         });
+      fetch(`${API}/admin/settings/clarify`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.data) {
+            setClarifySettings({
+              clarify_strict_mode: !!d.data.clarify_strict_mode,
+              clarify_force_rule: !!d.data.clarify_force_rule,
+              clarify_threshold: Number(d.data.clarify_threshold ?? 0.6),
+            });
+          }
+        })
+        .catch((e) => console.error("[AdminPage] fetch clarify settings error:", e));
     }
   }, [activeTab]);
 
@@ -171,15 +195,37 @@ export default function AdminPage() {
         setBindingGuideBot(d.data.bindings?.guide_bot ?? "");
         setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
         setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
+        setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
       }
     }).catch(console.error);
   };
 
+  const saveClarifySettings = () => {
+    fetch(`${API}/admin/settings/clarify`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(clarifySettings),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success" && d.data) {
+          setClarifySettings({
+            clarify_strict_mode: !!d.data.clarify_strict_mode,
+            clarify_force_rule: !!d.data.clarify_force_rule,
+            clarify_threshold: Number(d.data.clarify_threshold ?? 0.6),
+          });
+          toast.success("澄清策略已保存");
+        } else {
+          toast.error(d.detail || d.message || "保存失败");
+        }
+      })
+      .catch((e) => toast.error("请求失败: " + String(e)));
+  };
+
   const saveLlmProvider = (isEdit: boolean) => {
     const { name, base_url, model, api_key, temperature, max_tokens } = llmForm;
-    if (!name.trim() || !base_url.trim() || !model.trim()) { setAdminMsg("请填写名称、Base URL、Model"); return; }
+    if (!name.trim() || !base_url.trim() || !model.trim()) { toast.error("请填写名称、Base URL、Model"); return; }
     setLlmSaveLoading(true);
-    setAdminMsg("");
     const url = isEdit && llmEditingId ? `${API}/admin/settings/llm/providers/${llmEditingId}` : `${API}/admin/settings/llm/providers`;
     const method = isEdit ? "PUT" : "POST";
     console.log("[AdminPage] saveLlmProvider:", { method, url, name: name.trim(), base_url: base_url.trim(), model: model.trim() });
@@ -212,16 +258,16 @@ export default function AdminPage() {
       })
       .then((d) => {
         if (d.status === "success") {
-          setAdminMsg(isEdit ? "已更新" : "已添加");
+          toast.success(isEdit ? "已更新" : "已添加");
           setLlmProviders(d.data?.providers || []);
           setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 });
           setLlmEditingId(null);
-        } else setAdminMsg(String(d.detail || "失败"));
+        } else toast.error(String(d.detail || "失败"));
       })
       .catch((e) => {
         console.error("[AdminPage] saveLlmProvider error:", e);
         const errMsg = e?.message || String(e);
-        setAdminMsg("请求失败: " + errMsg);
+        toast.error("请求失败: " + errMsg);
         fetch(`${API}/debug/client-error`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -236,24 +282,29 @@ export default function AdminPage() {
     fetch(`${API}/admin/settings/llm/providers/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("已删除"); setLlmProviders(d.data.providers || []); setBindingGuideBot(d.data.bindings?.guide_bot ?? ""); setBindingSystemLlm(d.data.bindings?.system_llm ?? ""); setBindingLogAnalyze(d.data.bindings?.log_analyze ?? ""); setLlmEditingId(null); }
-        else setAdminMsg(d.detail || "删除失败");
+        if (d.status === "success") { toast.success("已删除"); setLlmProviders(d.data.providers || []); setBindingGuideBot(d.data.bindings?.guide_bot ?? ""); setBindingSystemLlm(d.data.bindings?.system_llm ?? ""); setBindingLogAnalyze(d.data.bindings?.log_analyze ?? ""); setBindingQaSummarize(d.data.bindings?.qa_summarize ?? ""); setLlmEditingId(null); }
+        else toast.error(d.detail || "删除失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const saveLlmBindings = () => {
     fetch(`${API}/admin/settings/llm/bindings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ guide_bot: bindingGuideBot || null, system_llm: bindingSystemLlm || null, log_analyze: bindingLogAnalyze || null }),
+      body: JSON.stringify({
+        guide_bot: bindingGuideBot || null,
+        system_llm: bindingSystemLlm || null,
+        log_analyze: bindingLogAnalyze || null,
+        qa_summarize: bindingQaSummarize || null,
+      }),
     })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("功能绑定已保存"); setLlmBindings(d.data.bindings || {}); }
-        else setAdminMsg(d.detail || "保存失败");
+        if (d.status === "success") { toast.success("功能绑定已保存"); setLlmBindings(d.data.bindings || {}); }
+        else toast.error(d.detail || "保存失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const analyzeLogs = () => {
@@ -274,45 +325,45 @@ export default function AdminPage() {
   };
 
   const createWorkspace = () => {
-    if (!workspaceName.trim()) { setAdminMsg("请填写空间名称"); return; }
+    if (!workspaceName.trim()) { toast.error("请填写空间名称"); return; }
     fetch(`${API}/workspaces`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: workspaceName.trim() }) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("工作空间创建成功"); setWorkspaceName(""); fetch(`${API}/workspaces`).then((r) => r.json()).then((x) => x.data && setWorkspaces(x.data)); }
-        else setAdminMsg(d.message || d.detail || "创建失败");
+        if (d.status === "success") { toast.success("工作空间创建成功"); setWorkspaceName(""); fetch(`${API}/workspaces`).then((r) => r.json()).then((x) => x.data && setWorkspaces(x.data)); }
+        else toast.error(d.message || d.detail || "创建失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const createChannel = () => {
-    if (!createWs || !createName.trim()) { setAdminMsg("请选择工作空间并填写项目名称"); return; }
+    if (!createWs || !createName.trim()) { toast.error("请选择工作空间并填写项目名称"); return; }
     fetch(`${API}/channels`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_id: createWs, name: createName.trim(), type: "public", purpose: "" }) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("创建成功"); setCreateName(""); refreshChannels(setChannels); }
-        else setAdminMsg(d.message || "创建失败");
+        if (d.status === "success") { toast.success("创建成功"); setCreateName(""); refreshChannels(setChannels); }
+        else toast.error(d.message || "创建失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const addMember = () => {
-    if (!addCh || !addMemberId.trim()) { setAdminMsg("请选择项目并填写成员 ID"); return; }
+    if (!addCh || !addMemberId.trim()) { toast.error("请选择项目并填写成员 ID"); return; }
     fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: addMemberId.trim(), member_type: addMemberType }) })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") setAdminMsg("添加成功"); else setAdminMsg(d.message || d.detail || "添加失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") toast.success("添加成功"); else toast.error(d.message || d.detail || "添加失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const removeMember = () => {
-    if (!rmCh || !rmMemberId.trim()) { setAdminMsg("请选择项目并填写成员 ID"); return; }
+    if (!rmCh || !rmMemberId.trim()) { toast.error("请选择项目并填写成员 ID"); return; }
     fetch(`${API}/channels/${rmCh}/members/${encodeURIComponent(rmMemberId.trim())}`, { method: "DELETE" })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") setAdminMsg("移除成功"); else setAdminMsg(d.message || d.detail || "移除失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") toast.success("移除成功"); else toast.error(d.message || d.detail || "移除失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const createBot = () => {
-    if (!botUsername.trim() || !botEndpoint.trim()) { setAdminMsg("请填写 @ 名字和 OpenClaw 地址"); return; }
+    if (!botUsername.trim() || !botEndpoint.trim()) { toast.error("请填写 @ 名字和 OpenClaw 地址"); return; }
     const body: Record<string, string> = { username: botUsername.trim(), openclaw_endpoint: botEndpoint.trim(), status: botStatus };
     if (botId.trim()) body.bot_id = botId.trim();
     if (botDisplayName.trim()) body.display_name = botDisplayName.trim();
@@ -320,10 +371,15 @@ export default function AdminPage() {
     fetch(`${API}/bots`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
+<<<<<<< HEAD
         if (d.status === "success") { setAdminMsg("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); loadBots(); }
         else setAdminMsg(d.message || d.detail || "创建失败");
+=======
+        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); }
+        else toast.error(d.message || d.detail || "创建失败");
+>>>>>>> 26d380f604852d3f09773d4ecafc3fb5e5c7bfb2
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const updateBot = (id: string) => {
@@ -367,25 +423,25 @@ export default function AdminPage() {
   }
 
   const addBotToChannel = () => {
-    if (!lastCreatedBotId || !addCh) { setAdminMsg("请选择要加入的项目"); return; }
+    if (!lastCreatedBotId || !addCh) { toast.error("请选择要加入的项目"); return; }
     fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: lastCreatedBotId, member_type: "bot" }) })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") { setAdminMsg("已将 Bot 加入项目"); setLastCreatedBotId(""); setBotWizardStep(0); setAddCh(""); } else setAdminMsg(d.message || d.detail || "添加失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") { toast.success("已将 Bot 加入项目"); setLastCreatedBotId(""); setBotWizardStep(0); setAddCh(""); } else toast.error(d.message || d.detail || "添加失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const approveRequest = (id: string) => {
     fetch(`${API}/bots/registration-requests/${id}/approve`, { method: "POST" })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") { setAdminMsg(d.message || "已通过"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else setAdminMsg(d.detail || "操作失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") { toast.success(d.message || "已通过"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else toast.error(d.detail || "操作失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const rejectRequest = (id: string) => {
     fetch(`${API}/bots/registration-requests/${id}/reject`, { method: "POST" })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") { setAdminMsg("已拒绝"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else setAdminMsg(d.detail || "操作失败"); })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .then((d) => { if (d.status === "success") { toast.success("已拒绝"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else toast.error(d.detail || "操作失败"); })
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const tabs: { id: TabId; label: string }[] = [
@@ -415,8 +471,6 @@ export default function AdminPage() {
         ))}
       </div>
       <main className="flex-1 p-4 overflow-auto">
-        {adminMsg && <p className="mb-2 text-sm text-gray-700 bg-gray-200 px-2 py-1 rounded">{adminMsg}</p>}
-
         {activeTab === "llm" && (
           <div className="max-w-3xl space-y-6">
             <h2 className="text-base font-medium text-gray-800">LLM 参数</h2>
@@ -444,7 +498,6 @@ export default function AdminPage() {
                 <div className="flex gap-2 items-center">
                   <button type="button" onClick={() => saveLlmProvider(!!llmEditingId)} disabled={llmSaveLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-60 disabled:cursor-not-allowed">{llmSaveLoading ? "提交中…" : (llmEditingId ? "保存修改" : "新增")}</button>
                   {llmEditingId && <button type="button" onClick={() => { setLlmEditingId(null); setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 }); }} disabled={llmSaveLoading} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>}
-                  {adminMsg && activeTab === "llm" && <span className={`text-sm ${adminMsg.includes("失败") || adminMsg.includes("请填写") ? "text-red-600" : "text-green-600"}`}>{adminMsg}</span>}
                 </div>
               </form>
             </section>
@@ -476,7 +529,62 @@ export default function AdminPage() {
                   </select>
                   <span className="text-gray-500 text-xs">未选时使用系统 LLM</span>
                 </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-32">问答总结</span>
+                  <select value={bindingQaSummarize} onChange={(e) => setBindingQaSummarize(e.target.value)} className="border rounded px-2 py-1 flex-1 max-w-xs">
+                    <option value="">— 不绑定 —</option>
+                    {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <span className="text-gray-500 text-xs">未选时使用系统 LLM</span>
+                </label>
                 <button type="button" onClick={saveLlmBindings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">保存绑定</button>
+              </div>
+            </section>
+
+            <section className="bg-white p-4 rounded border">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">澄清策略</h3>
+              <p className="text-xs text-gray-500 mb-2">用于控制引导 Bot 在问题不清晰时是否弹出澄清窗口。</p>
+              <div className="space-y-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={clarifySettings.clarify_strict_mode}
+                    onChange={(e) =>
+                      setClarifySettings((prev) => ({ ...prev, clarify_strict_mode: e.target.checked }))
+                    }
+                  />
+                  <span>严格模式（更倾向先澄清再回答）</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={clarifySettings.clarify_force_rule}
+                    onChange={(e) =>
+                      setClarifySettings((prev) => ({ ...prev, clarify_force_rule: e.target.checked }))
+                    }
+                  />
+                  <span>允许规则强制澄清（命中规则时直接弹窗）</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <span className="w-40">LLM 澄清阈值（0~1）</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={clarifySettings.clarify_threshold}
+                    onChange={(e) =>
+                      setClarifySettings((prev) => ({
+                        ...prev,
+                        clarify_threshold: Number(e.target.value),
+                      }))
+                    }
+                    className="border rounded px-2 py-1 w-24"
+                  />
+                </label>
+                <button type="button" onClick={saveClarifySettings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">
+                  保存澄清策略
+                </button>
               </div>
             </section>
           </div>
