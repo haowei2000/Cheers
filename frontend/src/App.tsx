@@ -182,6 +182,53 @@ function buildQaPairs(messages: Message[]): QaPair[] {
   return pairs;
 }
 
+/** 问题摘要，用于折叠展示（截断过长文本） */
+function questionSummary(m: Message, maxLen = 60): string {
+  const { text } = parseGuidePayload(m.content);
+  const raw = (text || m.content || "").trim();
+  const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  if (stripped.length <= maxLen) return stripped || "（无内容）";
+  return stripped.slice(0, maxLen) + "…";
+}
+
+/** 任意消息的折叠预览（Bot 消息用 "Bot: " 前缀） */
+function blockPreview(m: Message, maxLen = 60): string {
+  const { text } = parseGuidePayload(m.content);
+  const raw = (text || m.content || "").trim();
+  const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const content = stripped || "（无内容）";
+  const prefix = m.sender_type === "bot" ? "Bot: " : "";
+  const display = prefix + content;
+  if (display.length <= maxLen) return display;
+  return display.slice(0, maxLen) + "…";
+}
+
+/** 将消息按逻辑问答块分组（含 clarify 轮次），每个块以用户问题开头 */
+function buildLogicalQaBlocks(messages: Message[]): { question: Message; messages: Message[] }[] {
+  const blocks: { question: Message; messages: Message[] }[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const m = messages[i];
+    if (m.sender_type !== "user" || isClarifyReplyUserMessage(m.content)) {
+      i++;
+      continue;
+    }
+    const blockMessages: Message[] = [m];
+    let j = i + 1;
+    while (j < messages.length) {
+      const next = messages[j];
+      if (next.sender_type === "user" && !isClarifyReplyUserMessage(next.content)) {
+        break;
+      }
+      blockMessages.push(next);
+      j++;
+    }
+    blocks.push({ question: m, messages: blockMessages });
+    i = j;
+  }
+  return blocks;
+}
+
 function formatTs(ts?: string): string {
   return (ts || "").slice(0, 19);
 }
@@ -519,6 +566,107 @@ function ClarifyInlineBlock({
   );
 }
 
+/** 单条消息气泡，供完整展示与折叠块复用 */
+function MessageBubble({
+  m,
+  prevMsg,
+  nextMsg,
+  blockQuestionIds,
+  selectedQaIds,
+  toggleQa,
+  selectedId,
+  setMessages,
+  setChannels,
+  refreshChannels,
+  handleClarifyContinue,
+  handleClarifySkip,
+  pendingClarifyReplyMsgId,
+}: {
+  m: Message;
+  prevMsg?: Message;
+  nextMsg?: Message;
+  blockQuestionIds: Set<string>;
+  selectedQaIds: Record<string, boolean>;
+  toggleQa: (msgId: string) => void;
+  selectedId: string | null;
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
+  refreshChannels: (setChannels: (c: Channel[]) => void) => void;
+  handleClarifyContinue: (msgId: string, schema: ClarifySchema, answers: ClarifyAnswers) => void;
+  handleClarifySkip: (msgId: string) => void;
+  pendingClarifyReplyMsgId: string | null;
+}) {
+  const isClarifyReplyBubble =
+    m.sender_type === "user" &&
+    prevMsg?.sender_type === "bot" &&
+    !!parseGuidePayload(prevMsg.content).clarify &&
+    isClarifyReplyUserMessage(m.content);
+  if (isClarifyReplyBubble) {
+    return <div key={m.msg_id} className="sr-only" aria-hidden="true" />;
+  }
+  const { text, form, clarify } = parseGuidePayload(m.content);
+  const clarifyAnswered =
+    nextMsg &&
+    (nextMsg.sender_type === "bot" || (nextMsg.sender_type === "user" && isClarifyReplyUserMessage(nextMsg.content)));
+  const clarifyWaiting = pendingClarifyReplyMsgId === m.msg_id;
+  const clarifyStatus: "form" | "waiting" | "answered" | null =
+    clarify && m.sender_type === "bot"
+      ? clarifyWaiting
+        ? "waiting"
+        : clarifyAnswered
+          ? "answered"
+          : "form"
+      : null;
+  const replyContent =
+    clarifyStatus === "answered" &&
+    nextMsg?.sender_type === "user" &&
+    isClarifyReplyUserMessage(nextMsg.content)
+      ? nextMsg.content
+      : undefined;
+  return (
+    <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
+      <span className="text-xs text-gray-500 flex items-center gap-2 w-full">
+        {m.sender_type === "bot" ? (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
+        ) : (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
+        )}
+        {m.created_at?.slice(0, 19) || ""}
+        {m.sender_type === "user" && blockQuestionIds.has(m.msg_id) && (
+          <label className="ml-auto flex-shrink-0 inline-flex items-center gap-1 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={!!selectedQaIds[m.msg_id]}
+              onChange={() => toggleQa(m.msg_id)}
+            />
+            勾选
+          </label>
+        )}
+      </span>
+      <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text, `${m.msg_id}-`)}</div>
+      {form && selectedId && m.sender_type === "bot" && (
+        <GuideFormBlock
+          msgId={m.msg_id}
+          form={form}
+          channelId={selectedId}
+          onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+          onChannelsRefresh={() => refreshChannels(setChannels)}
+        />
+      )}
+      {clarifyStatus !== null && selectedId && (
+        <ClarifyInlineBlock
+          msgId={m.msg_id}
+          schema={clarify!}
+          status={clarifyStatus}
+          replyContent={replyContent}
+          onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
+          onSkip={() => handleClarifySkip(m.msg_id)}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // 用户认证状态
   type CurrentUser = { user_id: string; username: string; display_name: string; role: string } | null;
@@ -577,6 +725,9 @@ export default function App() {
   const [mentionFilter, setMentionFilter] = useState("");
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [allBots, setAllBots] = useState<BotItem[]>([]);
+  const [expandedOlderIds, setExpandedOlderIds] = useState<Set<string>>(new Set());
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // 登录/注册处理函数
@@ -630,6 +781,8 @@ export default function App() {
     localStorage.removeItem("currentUser");
     setLoginModalOpen(true);
   };
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
   function introSummary(intro: string | undefined): string {
     if (!intro) return "";
@@ -653,6 +806,8 @@ export default function App() {
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
+      setWaitingForBotReply(false);
+      setProcessingBots({});
       return;
     }
     setLoading(true);
@@ -666,10 +821,17 @@ export default function App() {
           setChannelBots(bots);
         } else setChannelBots([]);
       })
-      .catch(() => setChannelBots([]));
+      .catch(() => {
+        setChannelBots([]);
+        setChannelUsers([]);
+      });
     fetch(`${API}/channels/${selectedId}/messages`)
       .then((r) => r.json())
-      .then((d) => (d.data ? setMessages(d.data) : setMessages([])))
+      .then((d) => {
+        const data = d.data || [];
+        setMessages(data);
+        setHasMore(data.length >= 30);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [selectedId]);
@@ -707,9 +869,25 @@ export default function App() {
     }
   }, [addBotOpen]);
 
-  const addBotToChannel = (botId: string) => {
-    if (!selectedId) return;
-    fetch(`${API}/channels/${selectedId}/members`, {
+  useEffect(() => {
+    if (showMentionDropdown && selectedId) {
+      fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
+    }
+  }, [showMentionDropdown, selectedId]);
+
+  useEffect(() => {
+    if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
+      setPendingClarifyReplyMsgId(null);
+    }
+  }, [pendingClarifyReplyMsgId, messages]);
+
+  useEffect(() => {
+    setPendingClarifyReplyMsgId(null);
+  }, [selectedId]);
+
+  const addBotToChannel = (botId: string): Promise<boolean> => {
+    if (!selectedId) return Promise.resolve(false);
+    return fetch(`${API}/channels/${selectedId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ member_id: botId, member_type: "bot" }),
@@ -852,6 +1030,26 @@ export default function App() {
     e.target.value = "";
   };
 
+  const loadMoreMessages = () => {
+    if (!selectedId || loadingMore || !hasMore || messages.length === 0) return;
+    const oldestId = messages[0]?.msg_id;
+    if (!oldestId) return;
+    setLoadingMore(true);
+    fetch(`${API}/channels/${selectedId}/messages?limit=20&before_msg_id=${encodeURIComponent(oldestId)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const data = d.data || [];
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m.msg_id));
+          const newMsgs = data.filter((m: Message) => !existingIds.has(m.msg_id));
+          return [...newMsgs, ...prev];
+        });
+        setHasMore(data.length >= 20);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingMore(false));
+  };
+
   const saveContextLayer = (layer: string, content: string) => {
     if (!selectedId) return;
     fetch(`${API}/channels/${selectedId}/context`, {
@@ -867,9 +1065,26 @@ export default function App() {
   };
 
   const selectedChannel = channels.find((c) => c.channel_id === selectedId) || null;
-  const qaPairs = buildQaPairs(messages);
-  const qaPairByQuestionId = new Map(qaPairs.map((p) => [p.question.msg_id, p]));
-  const selectedPairs = qaPairs.filter((p) => selectedQaIds[p.question.msg_id]);
+  const blocks = buildLogicalQaBlocks(messages);
+  const blockQuestionIds = new Set(blocks.map((b) => b.question.msg_id));
+  const blockPairsForExport: QaPair[] = blocks.map((b) => {
+    const lastBot = [...b.messages].reverse().find((m) => m.sender_type === "bot");
+    const answer: Message = lastBot || {
+      msg_id: `${b.question.msg_id}-no-reply`,
+      sender_id: "",
+      sender_type: "bot",
+      content: "(无回复)",
+      created_at: b.question.created_at,
+    };
+    return { question: b.question, answer };
+  });
+  const selectedPairs = blockPairsForExport.filter((p) => selectedQaIds[p.question.msg_id]);
+
+  const RECENT_COUNT = 5;
+  const recentBlocks = blocks.slice(-RECENT_COUNT);
+  const olderBlocks = blocks.slice(0, -RECENT_COUNT);
+  const blockMsgIds = new Set(blocks.flatMap((b) => b.messages.map((m) => m.msg_id)));
+  const preambleMessages = messages.filter((m) => !blockMsgIds.has(m.msg_id));
 
   const toggleQa = (msgId: string) => {
     setSelectedQaIds((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
@@ -1215,7 +1430,7 @@ export default function App() {
         {selectedId ? (
           <>
             <div className="px-4 pt-3 pb-2 border-b bg-white flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-500">已识别问答 {qaPairs.length} 组，已勾选 {selectedPairs.length} 组</span>
+              <span className="text-xs text-gray-500">已识别问答 {blockPairsForExport.length} 组，已勾选 {selectedPairs.length} 组</span>
               <button
                 type="button"
                 onClick={downloadQaMarkdown}
@@ -1262,7 +1477,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            <div className="flex-1 overflow-auto p-4 space-y-2">
+            <div ref={messagesContainerRef} className="flex-1 overflow-auto p-4 space-y-2">
               {loading ? (
                 <div className="text-gray-500">加载中...</div>
               ) : (
@@ -1297,21 +1512,11 @@ export default function App() {
                       isClarifyReplyUserMessage(nextMsg.content)
                         ? nextMsg.content
                         : undefined;
-                    const senderBot = m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
-                    const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
-                    const botInitials = botLabel.slice(0, 2).toUpperCase();
                     return (
                       <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
                         <span className="text-xs text-gray-500 flex items-center gap-2">
                           {m.sender_type === "bot" ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              {senderBot?.avatar_url ? (
-                                <img src={senderBot.avatar_url} alt={botLabel} className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
-                              ) : (
-                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-400 text-white text-xs font-bold flex-shrink-0" aria-hidden="true">{botInitials.slice(0, 1)}</span>
-                              )}
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">{botLabel}</span>
-                            </span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
                           ) : (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
                           )}
@@ -1350,6 +1555,13 @@ export default function App() {
                       </div>
                     );
                   })}
+                  {waitingForBotReply && <ThinkingIndicator />}
+                  {Object.entries(processingBots).map(([botId, username]) => (
+                    <div key={botId} className="p-2 rounded bg-amber-50 border-l-2 border-amber-400 text-sm text-gray-600 animate-pulse">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 text-xs font-medium mr-2">@{username}</span>
+                      正在处理...
+                    </div>
+                  ))}
                   </>
               )}
             </div>
