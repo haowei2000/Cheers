@@ -74,10 +74,10 @@ class BotAccount(Base):
     soul_config_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     openclaw_endpoint: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="offline")  # offline | online | busy
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
     prompt_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 默认提示词模板，{{}} 表示用户消息
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
-
 
 class BotRegistrationRequest(Base):
     """外部 OpenClaw 注册申请（待管理员审核）。"""
@@ -114,6 +114,8 @@ class Message(Base):
     __tablename__ = "messages"
 
     msg_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    # 顶层任务线程 id：同一条「用户问题 + 多 Bot 串行协作」共用一个 task_id
+    task_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     channel_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("channels.channel_id"), nullable=False
     )
@@ -122,6 +124,8 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     file_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)  # list of file_id
     mention_bot_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
+    # 问答精确指针：本条消息回复的是哪一条消息，用于前端构建问答卡片与折叠
+    in_reply_to_msg_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="messages")

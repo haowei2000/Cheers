@@ -63,6 +63,10 @@ class MessageInResponse(BaseModel):
     content: str
     file_ids: list[str] | None = None
     mention_bot_ids: list[str] | None = None
+    # 顶层任务线程 id：同一条「用户问题 + 多 Bot 串行协作」共用一个 task_id
+    task_id: str | None = None
+    # 问答精确指针：本条消息回复的是哪一条消息，用于前端构建问答卡片与折叠
+    in_reply_to_msg_id: str | None = None
     created_at: datetime | None = None
 
 
