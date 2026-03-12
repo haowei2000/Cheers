@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, ConfigDict
 
-from app.db.models import Workspace
+from app.db.models import Workspace, Channel, ChannelMembership, User
 from app.db.session import get_session
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -55,3 +55,71 @@ async def list_workspaces(
         for w in workspaces
     ]
     return {"status": "success", "data": data}
+
+
+@router.get("/{workspace_id}/members")
+async def list_workspace_members(
+    workspace_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """获取工作空间的所有成员（通过频道成员关联）."""
+    # 查找该工作空间的所有频道
+    result = await session.execute(
+        select(Channel).where(Channel.workspace_id == workspace_id)
+    )
+    channels = result.scalars().all()
+    channel_ids = [c.channel_id for c in channels]
+
+    if not channel_ids:
+        return {"status": "success", "data": []}
+
+    # 查找所有成员
+    result = await session.execute(
+        select(ChannelMembership, User)
+        .join(User, ChannelMembership.member_id == User.user_id)
+        .where(ChannelMembership.channel_id.in_(channel_ids))
+        .where(ChannelMembership.member_type == "user")
+    )
+    rows = result.all()
+
+    # 去重
+    seen = set()
+    members = []
+    for membership, user in rows:
+        if user.user_id not in seen:
+            seen.add(user.user_id)
+            members.append({
+                "user_id": user.user_id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "role": user.role,
+            })
+
+    return {"status": "success", "data": members}
+
+
+@router.delete("/{workspace_id}")
+async def delete_workspace(
+    workspace_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """删除工作空间（同时删除该工作空间下的所有频道）."""
+    result = await session.execute(
+        select(Workspace).where(Workspace.workspace_id == workspace_id)
+    )
+    ws = result.scalar_one_or_none()
+    if not ws:
+        raise HTTPException(status_code=404, detail="工作空间不存在")
+
+    # 删除该工作空间下的所有频道
+    result = await session.execute(
+        select(Channel).where(Channel.workspace_id == workspace_id)
+    )
+    channels = result.scalars().all()
+    for ch in channels:
+        await session.delete(ch)
+
+    await session.delete(ws)
+    await session.commit()
+
+    return {"status": "success", "message": "工作空间已删除"}

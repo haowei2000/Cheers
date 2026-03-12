@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 
 const API = "/api";
 
-type TabId = "llm" | "perf" | "logs" | "bot" | "health";
+type TabId = "llm" | "perf" | "logs" | "bot" | "health" | "user" | "workspace";
 
 type Workspace = { workspace_id: string; name: string };
 type Channel = { channel_id: string; name: string; type: string };
@@ -49,6 +49,17 @@ function refreshChannels(setChannels: (c: Channel[]) => void) {
 }
 
 export default function AdminPage() {
+  // 从 localStorage 获取当前用户角色
+  const getCurrentUser = () => {
+    try {
+      const stored = localStorage.getItem("currentUser");
+      if (!stored) return null;
+      return JSON.parse(stored).user;
+    } catch { return null; }
+  };
+  const currentUser = getCurrentUser();
+  const userRole = currentUser?.role || "";
+
   const [activeTab, setActiveTab] = useState<TabId>("llm");
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -69,7 +80,7 @@ export default function AdminPage() {
   const [botStatus, setBotStatus] = useState("online");
   const [botIntro, setBotIntro] = useState("");
   const [botWizardStep, setBotWizardStep] = useState<0 | 1 | 2>(0);
-  const [botWizardType, setBotWizardType] = useState<"guide" | "http" | "mock">("guide");
+  const [_botWizardType, setBotWizardType] = useState<"guide" | "http" | "mock">("guide");
   const [lastCreatedBotId, setLastCreatedBotId] = useState("");
   const [botList, setBotList] = useState<BotItem[]>([]);
   const [botEditingId, setBotEditingId] = useState<string | null>(null);
@@ -79,7 +90,7 @@ export default function AdminPage() {
   const [taskStats, setTaskStats] = useState<{ total_tasks: number; limit_days: number; per_bot: { username: string; display_name?: string; task_count: number; avg_latency_ms?: number }[] } | null>(null);
 
   const [llmProviders, setLlmProviders] = useState<LLMProvider[]>([]);
-  const [llmBindings, setLlmBindings] = useState<LLMBindings>({});
+  const [_llmBindings, setLlmBindings] = useState<LLMBindings>({});
   const [llmForm, setLlmForm] = useState({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 });
   const [llmEditingId, setLlmEditingId] = useState<string | null>(null);
   const [llmSaveLoading, setLlmSaveLoading] = useState(false);
@@ -96,13 +107,20 @@ export default function AdminPage() {
   });
 
   const [logLevel, setLogLevel] = useState("");
-  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [_logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [logExcerpt, setLogExcerpt] = useState("");
   const [logQuestion, setLogQuestion] = useState("");
   const [logAnalysis, setLogAnalysis] = useState("");
   const [logLoading, setLogLoading] = useState(false);
 
   const [healthStatus, setHealthStatus] = useState<{ database: string; redis: string; guide_llm?: string } | null>(null);
+
+  // 用户管理
+  type UserItem = { user_id: string; username: string; display_name?: string; role: string; created_at?: string };
+  const [userList, setUserList] = useState<UserItem[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
+  const [workspaceUsers, setWorkspaceUsers] = useState<UserItem[]>([]);
+  const [workspaceChannels, setWorkspaceChannels] = useState<Channel[]>([]);
 
   useEffect(() => {
     refreshChannels(setChannels);
@@ -178,6 +196,25 @@ export default function AdminPage() {
     }
   }, [activeTab]);
 
+  // 用户管理
+  useEffect(() => {
+    if (activeTab === "user" || activeTab === "workspace") {
+      fetch(`${API}/auth/users`).then((r) => r.json()).then((d) => setUserList(d || [])).catch(() => setUserList([]));
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "workspace" && selectedWorkspaceId) {
+      fetch(`${API}/workspaces/${selectedWorkspaceId}/members`).then((r) => r.json()).then((d) => setWorkspaceUsers(d.data || [])).catch(() => setWorkspaceUsers([]));
+      fetch(`${API}/channels/by-workspace/${selectedWorkspaceId}`).then((r) => r.json()).then((d) => setWorkspaceChannels(d.data || [])).catch(() => setWorkspaceChannels([]));
+    }
+  }, [activeTab, selectedWorkspaceId]);
+
+  const updateUserRole = (userId: string, role: string) => {
+    fetch(`${API}/auth/users/${userId}/role`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) })
+      .then((r) => r.json()).then((d) => { if (d.user_id) { setUserList((list) => list.map((u) => u.user_id === userId ? d : u)); toast.success("更新成功"); } else toast.error(d.detail || "更新失败"); }).catch(() => toast.error("请求失败"));
+  };
+
   const loadPendingRequests = () => {
     fetch(`${API}/bots/registration-requests?status=pending`)
       .then((r) => r.json())
@@ -210,18 +247,6 @@ export default function AdminPage() {
       .catch(console.error);
   };
 
-  const loadLlmSettings = () => {
-    fetch(`${API}/admin/settings/llm`).then((r) => r.json()).then((d) => {
-      if (d.data) {
-        setLlmProviders(d.data.providers || []);
-        setLlmBindings(d.data.bindings || {});
-        setBindingGuideBot(d.data.bindings?.guide_bot ?? "");
-        setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
-        setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
-        setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
-      }
-    }).catch(console.error);
-  };
 
   const saveOrchestratorSettings = () => {
     fetch(`${API}/admin/settings/orchestrator`, {
@@ -431,10 +456,10 @@ export default function AdminPage() {
     fetch(`${API}/bots/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }
-        else setAdminMsg(d.detail || "更新失败");
+        if (d.status === "success") { toast.success("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }
+        else toast.error(d.detail || "更新失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const deleteBot = (id: string) => {
@@ -442,10 +467,10 @@ export default function AdminPage() {
     fetch(`${API}/bots/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { setAdminMsg("已删除"); setBotEditingId(null); loadBots(); }
-        else setAdminMsg(d.detail || "删除失败");
+        if (d.status === "success") { toast.success("已删除"); setBotEditingId(null); loadBots(); }
+        else toast.error(d.detail || "删除失败");
       })
-      .catch((e) => setAdminMsg("请求失败: " + String(e)));
+      .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   function introSummary(intro: string | undefined): string {
@@ -482,13 +507,16 @@ export default function AdminPage() {
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
-  const tabs: { id: TabId; label: string }[] = [
-    { id: "llm", label: "LLM 参数" },
-    { id: "perf", label: "性能监控" },
-    { id: "logs", label: "日志与排查" },
+  const allTabs: { id: TabId; label: string; roles?: string[] }[] = [
+    { id: "llm", label: "LLM 参数", roles: ["system_admin"] },
+    { id: "perf", label: "性能监控", roles: ["system_admin"] },
+    { id: "logs", label: "日志与排查", roles: ["system_admin"] },
     { id: "bot", label: "Bot 与频道" },
     { id: "health", label: "系统状态" },
+    { id: "user", label: "用户管理", roles: ["system_admin"] },
+    { id: "workspace", label: "工作空间" },
   ];
+  const tabs = allTabs.filter((t) => !t.roles || t.roles.includes(userRole));
 
   return (
     <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
@@ -872,6 +900,292 @@ export default function AdminPage() {
               </ul>
             ) : (
               <p className="text-gray-500">加载中…</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === "user" && (
+          <div>
+            <h2 className="text-base font-medium text-gray-800 mb-4">用户管理</h2>
+
+            {/* 新建用户表单 */}
+            <div className="mb-4 p-3 bg-gray-50 rounded">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const fd = new FormData(e.currentTarget);
+                  const username = fd.get("username") as string;
+                  const password = fd.get("password") as string;
+                  const display_name = fd.get("display_name") as string;
+                  if (!username || !password) return;
+                  fetch(`${API}/auth/register`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password, display_name }),
+                  })
+                    .then((r) => r.json())
+                    .then((d) => {
+                      if (d.user_id) {
+                        toast.success("创建成功");
+                        setUserList((list) => [...list, d]);
+                        (e.target as HTMLFormElement).reset();
+                      } else {
+                        toast.error(d.detail || "创建失败");
+                      }
+                    })
+                    .catch(() => toast.error("请求失败"));
+                }}
+                className="flex gap-2 items-end"
+              >
+                <div>
+                  <label className="text-xs block">用户名</label>
+                  <input name="username" required className="border rounded px-2 py-1" />
+                </div>
+                <div>
+                  <label className="text-xs block">显示名</label>
+                  <input name="display_name" className="border rounded px-2 py-1" />
+                </div>
+                <div>
+                  <label className="text-xs block">密码</label>
+                  <input name="password" type="password" required className="border rounded px-2 py-1" />
+                </div>
+                <button type="submit" className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">新建用户</button>
+              </form>
+            </div>
+
+            <table className="w-full text-sm border">
+              <thead>
+                <tr className="bg-gray-50 border-b">
+                  <th className="text-left p-2">用户名</th>
+                  <th className="text-left p-2">显示名</th>
+                  <th className="text-left p-2">角色</th>
+                  <th className="text-left p-2">创建时间</th>
+                  <th className="text-left p-2">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userList.map((u) => (
+                  <tr key={u.user_id} className="border-b">
+                    <td className="p-2">{u.username}</td>
+                    <td className="p-2">{u.display_name || "—"}</td>
+                    <td className="p-2">
+                      <select value={u.role} onChange={(e) => updateUserRole(u.user_id, e.target.value)} className="border rounded px-2 py-1">
+                        <option value="system_admin">系统管理员</option>
+                        <option value="space_admin">空间管理员</option>
+                        <option value="channel_admin">频道管理员</option>
+                        <option value="member">成员</option>
+                        <option value="guest">访客</option>
+                      </select>
+                    </td>
+                    <td className="p-2">{u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}</td>
+                    <td className="p-2">
+                      <button onClick={() => { fetch(`${API}/auth/users/reset-password/${u.user_id}`, { method: "POST" }).then((r) => r.json()).then((d) => { if (d.status === "success") { toast.success("密码已重置为 123456"); } else { toast.error(d.detail || "重置失败"); } }).catch(() => toast.error("请求失败")); }} className="text-blue-600 hover:underline mr-2">重置密码</button>
+                      <button onClick={() => { if (confirm("确定删除该用户？")) { fetch(`${API}/auth/users/${u.user_id}`, { method: "DELETE" }).then(() => setUserList((list) => list.filter((x) => x.user_id !== u.user_id))); }}} className="text-red-600 hover:underline">删除</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {userList.length === 0 && <p className="text-gray-500 mt-4">暂无用户</p>}
+          </div>
+        )}
+
+        {activeTab === "workspace" && (
+          <div>
+            <h2 className="text-base font-medium text-gray-800 mb-4">工作空间管理</h2>
+
+            {/* 我的工作空间列表 - 点击选择 */}
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">我的工作空间</h3>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {workspaces.map((ws) => (
+                  <button
+                    key={ws.workspace_id}
+                    onClick={() => setSelectedWorkspaceId(ws.workspace_id)}
+                    className={`px-3 py-1 rounded border ${selectedWorkspaceId === ws.workspace_id ? "bg-blue-500 text-white" : "bg-white hover:bg-gray-50"}`}
+                  >
+                    {ws.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* 创建工作空间 - 仅系统管理员和空间管理员 */}
+              {(userRole === "system_admin" || userRole === "space_admin") && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const name = fd.get("wsname") as string;
+                    if (!name) return;
+                    fetch(`${API}/workspaces`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ name }),
+                    })
+                      .then((r) => r.json())
+                      .then((d) => {
+                        if (d.status === "success") {
+                          toast.success("创建成功");
+                          setWorkspaces((ws) => [...ws, d.data]);
+                          setSelectedWorkspaceId(d.data.workspace_id);
+                          (e.target as HTMLFormElement).reset();
+                        } else {
+                          toast.error(d.detail || "创建失败");
+                        }
+                      })
+                      .catch(() => toast.error("请求失败"));
+                  }}
+                  className="flex gap-2"
+                >
+                  <input name="wsname" placeholder="新工作空间名称" required className="border rounded px-2 py-1 flex-1" />
+                  <button type="submit" className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">新增空间</button>
+                </form>
+              )}
+            </div>
+
+            {/* 选中的工作空间详情 */}
+            {selectedWorkspaceId && (
+              <div className="grid grid-cols-2 gap-4">
+                {/* 成员管理 */}
+                <div className="border rounded p-3">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">成员管理</h3>
+                  {(userRole === "system_admin" || userRole === "space_admin") && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const fd = new FormData(e.currentTarget);
+                        const username = fd.get("username") as string;
+                        if (!username) return;
+                        // 查找用户ID
+                        const user = userList.find((u) => u.username === username);
+                        if (!user) {
+                          toast.error("用户不存在");
+                          return;
+                        }
+                        // 添加用户到第一个频道
+                        if (workspaceChannels.length > 0) {
+                          fetch(`${API}/channels/${workspaceChannels[0].channel_id}/members`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ member_id: user.user_id, member_type: "user" }),
+                          })
+                            .then((r) => r.json())
+                            .then((d) => {
+                              if (d.status === "success") {
+                                toast.success("添加成功");
+                                setWorkspaceUsers((list) => [...list, user]);
+                              } else {
+                                toast.error(d.detail || "添加失败");
+                              }
+                            })
+                            .catch(() => toast.error("请求失败"));
+                        } else {
+                          toast.error("请先创建频道");
+                        }
+                        (e.target as HTMLFormElement).reset();
+                      }}
+                      className="flex gap-2 mb-2"
+                    >
+                      <input name="username" placeholder="用户名" required className="border rounded px-2 py-1 flex-1" />
+                      <button type="submit" className="bg-green-500 text-white px-2 py-1 rounded text-sm">添加成员</button>
+                    </form>
+                  )}
+                  <table className="w-full text-xs border">
+                    <thead>
+                      <tr className="bg-gray-50 border-b">
+                        <th className="text-left p-1">用户名</th>
+                        <th className="text-left p-1">显示名</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {workspaceUsers.map((u) => (
+                        <tr key={u.user_id} className="border-b">
+                          <td className="p-1">{u.username}</td>
+                          <td className="p-1">{u.display_name || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {workspaceUsers.length === 0 && <p className="text-gray-500 text-xs">暂无成员</p>}
+                </div>
+
+                {/* 频道管理 */}
+                <div className="border rounded p-3">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">频道管理</h3>
+                  {(userRole === "system_admin" || userRole === "space_admin" || userRole === "channel_admin") && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const fd = new FormData(e.currentTarget);
+                        const name = fd.get("channelname") as string;
+                        if (!name) return;
+                        fetch(`${API}/channels`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ workspace_id: selectedWorkspaceId, name, type: "public" }),
+                        })
+                          .then((r) => r.json())
+                          .then((d) => {
+                            if (d.status === "success") {
+                              toast.success("创建成功");
+                              setWorkspaceChannels((list) => [...list, d.data]);
+                            } else {
+                              toast.error(d.detail || "创建失败");
+                            }
+                          })
+                          .catch(() => toast.error("请求失败"));
+                        (e.target as HTMLFormElement).reset();
+                      }}
+                      className="flex gap-2 mb-2"
+                    >
+                      <input name="channelname" placeholder="新频道名称" required className="border rounded px-2 py-1 flex-1" />
+                      <button type="submit" className="bg-green-500 text-white px-2 py-1 rounded text-sm">新增频道</button>
+                    </form>
+                  )}
+                  <table className="w-full text-xs border">
+                    <thead>
+                      <tr className="bg-gray-50 border-b">
+                        <th className="text-left p-1">频道名</th>
+                        <th className="text-left p-1">类型</th>
+                        {(userRole === "system_admin" || userRole === "space_admin" || userRole === "channel_admin") && <th className="text-left p-1">操作</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {workspaceChannels.map((ch) => (
+                        <tr key={ch.channel_id} className="border-b">
+                          <td className="p-1">{ch.name}</td>
+                          <td className="p-1">{ch.type}</td>
+                          {(userRole === "system_admin" || userRole === "space_admin" || userRole === "channel_admin") && (
+                            <td className="p-1">
+                              <button
+                                onClick={() => {
+                                  if (confirm("确定删除该频道？")) {
+                                    fetch(`${API}/channels/${ch.channel_id}`, { method: "DELETE" })
+                                      .then((r) => r.json())
+                                      .then((d) => {
+                                        if (d.status === "success") {
+                                          toast.success("删除成功");
+                                          setWorkspaceChannels((list) => list.filter((c) => c.channel_id !== ch.channel_id));
+                                        } else {
+                                          toast.error(d.detail || "删除失败");
+                                        }
+                                      })
+                                      .catch(() => toast.error("请求失败"));
+                                  }
+                                }}
+                                className="text-red-600 hover:underline"
+                              >
+                                删除
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {workspaceChannels.length === 0 && <p className="text-gray-500 text-xs">暂无频道</p>}
+                </div>
+              </div>
             )}
           </div>
         )}

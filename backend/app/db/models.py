@@ -55,8 +55,10 @@ class User(Base):
 
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    role: Mapped[str] = mapped_column(String(32), nullable=False, default="member")  # admin | member | botmanager
+    # 角色: system_admin | space_admin | channel_admin | member | guest
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="member")
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

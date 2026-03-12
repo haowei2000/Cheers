@@ -1,7 +1,10 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json ./
-RUN npm install
+# Using taobao npm mirror for acceleration
+# Update npm and install dependencies with more tolerance for failures
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install --include=dev --legacy-peer-deps || npm install --include=dev
 COPY . .
 RUN npm run build
 

@@ -9,26 +9,40 @@ description = "AgentNexus 智枢协作平台 - 后端"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    # Web & Async
     "fastapi>=0.115.0,<1.0",
     "uvicorn[standard]>=0.32.0",
     "websockets>=14.0",
+    # 数据库
     "sqlalchemy>=2.0.0",
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
     "aiosqlite>=0.20.0",
+    "greenlet>=3.0.0",
+    # Redis
     "redis>=5.2.0",
+    # 配置与环境
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
+    # 文件转换
     "mammoth>=1.8.0",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.24.0",
-    "httpx>=0.28.0",
-    "flake8>=7.0.0",
+    "markdown>=3.5.0",
+    "pymupdf>=1.24.0",
+    "openpyxl>=3.1.0",
+    # 密码哈希
+    "passlib>=1.7.4",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
-dev = ["flake8", "pytest-cov"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov",
+    "httpx>=0.28.0",
+    "flake8>=7.0.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -42,3 +56,7 @@ pythonpath = ["."]
 [tool.flake8]
 max-line-length = 120
 extend-ignore = ["E501"]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
