@@ -164,41 +164,10 @@ function stripThinkTags(text: string): string {
 }
 
 function buildQaPairs(messages: Message[]): QaPair[] {
-  // 优先使用后端提供的 in_reply_to_msg_id 做精确配对，其次才回退到顺序配对
-  const byId = new Map<string, Message>();
-  const answersByQuestionId = new Map<string, Message>();
-
-  for (const m of messages) {
-    byId.set(m.msg_id, m);
-  }
-
-  // 先根据 in_reply_to_msg_id 建立问答对
-  for (const m of messages) {
-    if (m.sender_type !== "bot") continue;
-    const qid = (m as any).in_reply_to_msg_id as string | undefined;
-    if (!qid) continue;
-    if (!byId.has(qid)) continue;
-    // 一条问题默认只展示一条首选答案
-    if (!answersByQuestionId.has(qid)) {
-      answersByQuestionId.set(qid, m);
-    }
-  }
-
   const pairs: QaPair[] = [];
-
-  // 先收集基于 in_reply_to_msg_id 的问答
-  for (const [qid, a] of answersByQuestionId.entries()) {
-    const q = byId.get(qid);
-    if (!q) continue;
-    if (q.sender_type !== "user") continue;
-    pairs.push({ question: q, answer: a });
-  }
-
-  // 对于没有任何回答的问题，保留原有“顺序最近 Bot 回复”策略作为补充
   for (let i = 0; i < messages.length; i++) {
     const q = messages[i];
     if (q.sender_type !== "user") continue;
-    if (answersByQuestionId.has(q.msg_id)) continue;
     for (let j = i + 1; j < messages.length; j++) {
       const a = messages[j];
       if (a.sender_type === "bot") {
@@ -210,8 +179,54 @@ function buildQaPairs(messages: Message[]): QaPair[] {
       }
     }
   }
-
   return pairs;
+}
+
+/** 问题摘要，用于折叠展示（截断过长文本） */
+function questionSummary(m: Message, maxLen = 60): string {
+  const { text } = parseGuidePayload(m.content);
+  const raw = (text || m.content || "").trim();
+  const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  if (stripped.length <= maxLen) return stripped || "（无内容）";
+  return stripped.slice(0, maxLen) + "…";
+}
+
+/** 任意消息的折叠预览（Bot 消息用 "Bot: " 前缀） */
+function blockPreview(m: Message, maxLen = 60): string {
+  const { text } = parseGuidePayload(m.content);
+  const raw = (text || m.content || "").trim();
+  const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const content = stripped || "（无内容）";
+  const prefix = m.sender_type === "bot" ? "Bot: " : "";
+  const display = prefix + content;
+  if (display.length <= maxLen) return display;
+  return display.slice(0, maxLen) + "…";
+}
+
+/** 将消息按逻辑问答块分组（含 clarify 轮次），每个块以用户问题开头 */
+function buildLogicalQaBlocks(messages: Message[]): { question: Message; messages: Message[] }[] {
+  const blocks: { question: Message; messages: Message[] }[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const m = messages[i];
+    if (m.sender_type !== "user" || isClarifyReplyUserMessage(m.content)) {
+      i++;
+      continue;
+    }
+    const blockMessages: Message[] = [m];
+    let j = i + 1;
+    while (j < messages.length) {
+      const next = messages[j];
+      if (next.sender_type === "user" && !isClarifyReplyUserMessage(next.content)) {
+        break;
+      }
+      blockMessages.push(next);
+      j++;
+    }
+    blocks.push({ question: m, messages: blockMessages });
+    i = j;
+  }
+  return blocks;
 }
 
 function formatTs(ts?: string): string {
@@ -551,6 +566,107 @@ function ClarifyInlineBlock({
   );
 }
 
+/** 单条消息气泡，供完整展示与折叠块复用 */
+function MessageBubble({
+  m,
+  prevMsg,
+  nextMsg,
+  blockQuestionIds,
+  selectedQaIds,
+  toggleQa,
+  selectedId,
+  setMessages,
+  setChannels,
+  refreshChannels,
+  handleClarifyContinue,
+  handleClarifySkip,
+  pendingClarifyReplyMsgId,
+}: {
+  m: Message;
+  prevMsg?: Message;
+  nextMsg?: Message;
+  blockQuestionIds: Set<string>;
+  selectedQaIds: Record<string, boolean>;
+  toggleQa: (msgId: string) => void;
+  selectedId: string | null;
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
+  refreshChannels: (setChannels: (c: Channel[]) => void) => void;
+  handleClarifyContinue: (msgId: string, schema: ClarifySchema, answers: ClarifyAnswers) => void;
+  handleClarifySkip: (msgId: string) => void;
+  pendingClarifyReplyMsgId: string | null;
+}) {
+  const isClarifyReplyBubble =
+    m.sender_type === "user" &&
+    prevMsg?.sender_type === "bot" &&
+    !!parseGuidePayload(prevMsg.content).clarify &&
+    isClarifyReplyUserMessage(m.content);
+  if (isClarifyReplyBubble) {
+    return <div key={m.msg_id} className="sr-only" aria-hidden="true" />;
+  }
+  const { text, form, clarify } = parseGuidePayload(m.content);
+  const clarifyAnswered =
+    nextMsg &&
+    (nextMsg.sender_type === "bot" || (nextMsg.sender_type === "user" && isClarifyReplyUserMessage(nextMsg.content)));
+  const clarifyWaiting = pendingClarifyReplyMsgId === m.msg_id;
+  const clarifyStatus: "form" | "waiting" | "answered" | null =
+    clarify && m.sender_type === "bot"
+      ? clarifyWaiting
+        ? "waiting"
+        : clarifyAnswered
+          ? "answered"
+          : "form"
+      : null;
+  const replyContent =
+    clarifyStatus === "answered" &&
+    nextMsg?.sender_type === "user" &&
+    isClarifyReplyUserMessage(nextMsg.content)
+      ? nextMsg.content
+      : undefined;
+  return (
+    <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
+      <span className="text-xs text-gray-500 flex items-center gap-2 w-full">
+        {m.sender_type === "bot" ? (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
+        ) : (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
+        )}
+        {m.created_at?.slice(0, 19) || ""}
+        {m.sender_type === "user" && blockQuestionIds.has(m.msg_id) && (
+          <label className="ml-auto flex-shrink-0 inline-flex items-center gap-1 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={!!selectedQaIds[m.msg_id]}
+              onChange={() => toggleQa(m.msg_id)}
+            />
+            勾选
+          </label>
+        )}
+      </span>
+      <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text, `${m.msg_id}-`)}</div>
+      {form && selectedId && m.sender_type === "bot" && (
+        <GuideFormBlock
+          msgId={m.msg_id}
+          form={form}
+          channelId={selectedId}
+          onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+          onChannelsRefresh={() => refreshChannels(setChannels)}
+        />
+      )}
+      {clarifyStatus !== null && selectedId && (
+        <ClarifyInlineBlock
+          msgId={m.msg_id}
+          schema={clarify!}
+          status={clarifyStatus}
+          replyContent={replyContent}
+          onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
+          onSkip={() => handleClarifySkip(m.msg_id)}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // 用户认证状态
   type CurrentUser = { user_id: string; username: string; display_name: string; role: string } | null;
@@ -607,11 +723,12 @@ export default function App() {
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
-  const [mentionDropdownPlacement, setMentionDropdownPlacement] = useState<"top" | "bottom">("bottom");
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [allBots, setAllBots] = useState<BotItem[]>([]);
+  const [expandedOlderIds, setExpandedOlderIds] = useState<Set<string>>(new Set());
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
   // 登录/注册处理函数
   const handleLogin = async (username: string, password: string) => {
@@ -664,6 +781,8 @@ export default function App() {
     localStorage.removeItem("currentUser");
     setLoginModalOpen(true);
   };
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
   function introSummary(intro: string | undefined): string {
     if (!intro) return "";
@@ -687,6 +806,8 @@ export default function App() {
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
+      setWaitingForBotReply(false);
+      setProcessingBots({});
       return;
     }
     setLoading(true);
@@ -700,10 +821,17 @@ export default function App() {
           setChannelBots(bots);
         } else setChannelBots([]);
       })
-      .catch(() => setChannelBots([]));
+      .catch(() => {
+        setChannelBots([]);
+        setChannelUsers([]);
+      });
     fetch(`${API}/channels/${selectedId}/messages`)
       .then((r) => r.json())
-      .then((d) => (d.data ? setMessages(d.data) : setMessages([])))
+      .then((d) => {
+        const data = d.data || [];
+        setMessages(data);
+        setHasMore(data.length >= 30);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [selectedId]);
@@ -741,9 +869,25 @@ export default function App() {
     }
   }, [addBotOpen]);
 
-  const addBotToChannel = (botId: string) => {
-    if (!selectedId) return;
-    fetch(`${API}/channels/${selectedId}/members`, {
+  useEffect(() => {
+    if (showMentionDropdown && selectedId) {
+      fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
+    }
+  }, [showMentionDropdown, selectedId]);
+
+  useEffect(() => {
+    if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
+      setPendingClarifyReplyMsgId(null);
+    }
+  }, [pendingClarifyReplyMsgId, messages]);
+
+  useEffect(() => {
+    setPendingClarifyReplyMsgId(null);
+  }, [selectedId]);
+
+  const addBotToChannel = (botId: string): Promise<boolean> => {
+    if (!selectedId) return Promise.resolve(false);
+    return fetch(`${API}/channels/${selectedId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ member_id: botId, member_type: "bot" }),
@@ -886,6 +1030,26 @@ export default function App() {
     e.target.value = "";
   };
 
+  const loadMoreMessages = () => {
+    if (!selectedId || loadingMore || !hasMore || messages.length === 0) return;
+    const oldestId = messages[0]?.msg_id;
+    if (!oldestId) return;
+    setLoadingMore(true);
+    fetch(`${API}/channels/${selectedId}/messages?limit=20&before_msg_id=${encodeURIComponent(oldestId)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const data = d.data || [];
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m.msg_id));
+          const newMsgs = data.filter((m: Message) => !existingIds.has(m.msg_id));
+          return [...newMsgs, ...prev];
+        });
+        setHasMore(data.length >= 20);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingMore(false));
+  };
+
   const saveContextLayer = (layer: string, content: string) => {
     if (!selectedId) return;
     fetch(`${API}/channels/${selectedId}/context`, {
@@ -901,13 +1065,26 @@ export default function App() {
   };
 
   const selectedChannel = channels.find((c) => c.channel_id === selectedId) || null;
-  const qaPairs = buildQaPairs(messages);
-  const qaPairByQuestionId = new Map(qaPairs.map((p) => [p.question.msg_id, p]));
-  const selectedPairs = qaPairs.filter((p) => selectedQaIds[p.question.msg_id]);
-  const qaAnswerIds = new Set(qaPairs.map((p) => p.answer.msg_id));
+  const blocks = buildLogicalQaBlocks(messages);
+  const blockQuestionIds = new Set(blocks.map((b) => b.question.msg_id));
+  const blockPairsForExport: QaPair[] = blocks.map((b) => {
+    const lastBot = [...b.messages].reverse().find((m) => m.sender_type === "bot");
+    const answer: Message = lastBot || {
+      msg_id: `${b.question.msg_id}-no-reply`,
+      sender_id: "",
+      sender_type: "bot",
+      content: "(无回复)",
+      created_at: b.question.created_at,
+    };
+    return { question: b.question, answer };
+  });
+  const selectedPairs = blockPairsForExport.filter((p) => selectedQaIds[p.question.msg_id]);
 
-  // 按“问题卡片”折叠/展开回答：key 为 question.msg_id
-  const [expandedQuestionIds, setExpandedQuestionIds] = useState<Record<string, boolean>>({});
+  const RECENT_COUNT = 5;
+  const recentBlocks = blocks.slice(-RECENT_COUNT);
+  const olderBlocks = blocks.slice(0, -RECENT_COUNT);
+  const blockMsgIds = new Set(blocks.flatMap((b) => b.messages.map((m) => m.msg_id)));
+  const preambleMessages = messages.filter((m) => !blockMsgIds.has(m.msg_id));
 
   const toggleQa = (msgId: string) => {
     setSelectedQaIds((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
@@ -963,26 +1140,6 @@ export default function App() {
       return false;
     }
   };
-
-  // 每次进入频道或问答列表变化时：默认展开最新 5 条问答（按问题卡片），其余问答折叠
-  useEffect(() => {
-    if (!selectedId || qaPairs.length === 0) {
-      setExpandedQuestionIds({});
-      return;
-    }
-    const latest = qaPairs.slice(-5);
-    const next: Record<string, boolean> = {};
-    latest.forEach((p) => {
-      next[p.question.msg_id] = true;
-    });
-    setExpandedQuestionIds(next);
-  }, [selectedId, qaPairs.length]);
-
-  // 进入频道或收到新消息时，聊天区域滚动到最新消息
-  useEffect(() => {
-    if (!messagesContainerRef.current) return;
-    messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-  }, [selectedId, messages.length]);
 
   const generateQaSummary = async () => {
     if (selectedPairs.length === 0) {
@@ -1273,7 +1430,7 @@ export default function App() {
         {selectedId ? (
           <>
             <div className="px-4 pt-3 pb-2 border-b bg-white flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-500">已识别问答 {qaPairs.length} 组，已勾选 {selectedPairs.length} 组</span>
+              <span className="text-xs text-gray-500">已识别问答 {blockPairsForExport.length} 组，已勾选 {selectedPairs.length} 组</span>
               <button
                 type="button"
                 onClick={downloadQaMarkdown}
@@ -1335,160 +1492,11 @@ export default function App() {
                     if (isClarifyReplyBubble) {
                       return <div key={m.msg_id} className="sr-only" aria-hidden="true" />;
                     }
-
-                    // 回答消息在对应的问题卡片中渲染，这里跳过
-                    if (qaAnswerIds.has(m.msg_id)) {
-                      return null;
-                    }
-
-                    // 问题卡片：用户消息且被识别为问答中的“问题”
-                    if (m.sender_type === "user" && qaPairByQuestionId.has(m.msg_id)) {
-                      const pair = qaPairByQuestionId.get(m.msg_id)!;
-                      const questionExpanded = !!expandedQuestionIds[m.msg_id];
-                      const questionSummaryText =
-                        stripThinkTags(parseGuidePayload(m.content).text || m.content) || "（无内容）";
-
-                      // 查找回答消息及其澄清状态
-                      const answer = pair.answer;
-                      const answerIdx = messages.findIndex((mm) => mm.msg_id === answer.msg_id);
-                      const answerNext = answerIdx >= 0 ? messages[answerIdx + 1] : undefined;
-                      const { text: answerText, form: answerForm, clarify: answerClarify } = parseGuidePayload(answer.content);
-                      const answerClarifyAnswered =
-                        answerNext &&
-                        (answerNext.sender_type === "bot" ||
-                          (answerNext.sender_type === "user" && isClarifyReplyUserMessage(answerNext.content)));
-                      const answerClarifyWaiting = pendingClarifyReplyMsgId === answer.msg_id;
-                      const answerClarifyStatus: "form" | "waiting" | "answered" | null =
-                        answerClarify && answer.sender_type === "bot"
-                          ? answerClarifyWaiting
-                            ? "waiting"
-                            : answerClarifyAnswered
-                              ? "answered"
-                              : "form"
-                          : null;
-                      const answerReplyContent =
-                        answerClarifyStatus === "answered" &&
-                        answerNext?.sender_type === "user" &&
-                        isClarifyReplyUserMessage(answerNext.content)
-                          ? answerNext.content
-                          : undefined;
-                      const answerSenderBot =
-                        answer.sender_type === "bot" ? channelBots.find((b) => b.member_id === answer.sender_id) : undefined;
-                      const answerBotLabel = answerSenderBot?.display_name || answerSenderBot?.username || "Bot";
-                      const answerBotInitials = answerBotLabel.slice(0, 2).toUpperCase();
-
-                      return (
-                        <div key={m.msg_id} className="p-2 rounded bg-white border border-gray-200">
-                          <button
-                            type="button"
-                            className="w-full flex items-center gap-2 text-xs text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5"
-                            onClick={() =>
-                              setExpandedQuestionIds((prev) => ({ ...prev, [m.msg_id]: !prev[m.msg_id] }))
-                            }
-                          >
-                            <span
-                              className="inline-block text-gray-400 transition-transform"
-                              style={{ transform: questionExpanded ? "rotate(90deg)" : "none" }}
-                              aria-hidden="true"
-                            >
-                              ▶
-                            </span>
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">
-                              用户
-                            </span>
-                            <span className="text-gray-400">{m.created_at?.slice(0, 19) || ""}</span>
-                            <span className="ml-2 text-gray-800 text-xs" title={questionSummaryText}>
-                              {questionSummaryText}
-                            </span>
-                            {qaPairByQuestionId.has(m.msg_id) && (
-                              <label className="ml-auto inline-flex items-center">
-                                <input
-                                  type="checkbox"
-                                  checked={!!selectedQaIds[m.msg_id]}
-                                  onChange={() => toggleQa(m.msg_id)}
-                                />
-                              </label>
-                            )}
-                          </button>
-
-                          {questionExpanded && (
-                            <div className="mt-2 pl-6">
-                              <div
-                                className={`p-2 rounded ${
-                                  answer.sender_type === "bot"
-                                    ? "bg-green-50 border-l-2 border-green-400"
-                                    : "bg-white"
-                                }`}
-                              >
-                                <span className="text-xs text-gray-500 flex items-center gap-2">
-                                  {answer.sender_type === "bot" ? (
-                                    <span className="inline-flex items-center gap-1.5">
-                                      {answerSenderBot?.avatar_url ? (
-                                        <img
-                                          src={answerSenderBot.avatar_url}
-                                          alt={answerBotLabel}
-                                          className="w-5 h-5 rounded-full object-cover flex-shrink-0"
-                                        />
-                                      ) : (
-                                        <span
-                                          className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-400 text-white text-xs font-bold flex-shrink-0"
-                                          aria-hidden="true"
-                                        >
-                                          {answerBotInitials.slice(0, 1)}
-                                        </span>
-                                      )}
-                                      <span
-                                        className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium"
-                                        aria-label="Bot"
-                                      >
-                                        {answerBotLabel}
-                                      </span>
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">
-                                      {answer.sender_type === "user" ? "用户" : "系统"}
-                                    </span>
-                                  )}
-                                  <span>{answer.created_at?.slice(0, 19) || ""}</span>
-                                </span>
-                                <div className="mt-1 whitespace-pre-wrap">
-                                  {renderWithThinkFolding(answerText || answer.content, `${answer.msg_id}-`)}
-                                </div>
-                                {answerForm && selectedId && answer.sender_type === "bot" && (
-                                  <GuideFormBlock
-                                    msgId={answer.msg_id}
-                                    form={answerForm}
-                                    channelId={selectedId}
-                                    onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                                    onChannelsRefresh={() => refreshChannels(setChannels)}
-                                  />
-                                )}
-                                {answerClarifyStatus !== null && selectedId && (
-                                  <ClarifyInlineBlock
-                                    msgId={answer.msg_id}
-                                    schema={answerClarify!}
-                                    status={answerClarifyStatus}
-                                    replyContent={answerReplyContent}
-                                    onContinue={(answers) =>
-                                      handleClarifyContinue(answer.msg_id, answerClarify!, answers)
-                                    }
-                                    onSkip={() => handleClarifySkip(answer.msg_id)}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    // 非问答相关消息按原样渲染
                     const { text, form, clarify } = parseGuidePayload(m.content);
                     const nextMsg = messages[idx + 1];
                     const clarifyAnswered =
                       nextMsg &&
-                      (nextMsg.sender_type === "bot" ||
-                        (nextMsg.sender_type === "user" && isClarifyReplyUserMessage(nextMsg.content)));
+                      (nextMsg.sender_type === "bot" || (nextMsg.sender_type === "user" && isClarifyReplyUserMessage(nextMsg.content)));
                     const clarifyWaiting = pendingClarifyReplyMsgId === m.msg_id;
                     const clarifyStatus: "form" | "waiting" | "answered" | null =
                       clarify && m.sender_type === "bot"
@@ -1504,51 +1512,27 @@ export default function App() {
                       isClarifyReplyUserMessage(nextMsg.content)
                         ? nextMsg.content
                         : undefined;
-                    const senderBot = m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
-                    const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
-                    const botInitials = botLabel.slice(0, 2).toUpperCase();
-
                     return (
-                      <div
-                        key={m.msg_id}
-                        className={`p-2 rounded ${
-                          m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"
-                        }`}
-                      >
+                      <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
                         <span className="text-xs text-gray-500 flex items-center gap-2">
                           {m.sender_type === "bot" ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              {senderBot?.avatar_url ? (
-                                <img
-                                  src={senderBot.avatar_url}
-                                  alt={botLabel}
-                                  className="w-5 h-5 rounded-full object-cover flex-shrink-0"
-                                />
-                              ) : (
-                                <span
-                                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-400 text-white text-xs font-bold flex-shrink-0"
-                                  aria-hidden="true"
-                                >
-                                  {botInitials.slice(0, 1)}
-                                </span>
-                              )}
-                              <span
-                                className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium"
-                                aria-label="Bot"
-                              >
-                                {botLabel}
-                              </span>
-                            </span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
                           ) : (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">
-                              {m.sender_type === "user" ? "用户" : "系统"}
-                            </span>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
                           )}
                           {m.created_at?.slice(0, 19) || ""}
+                          {m.sender_type === "user" && qaPairByQuestionId.has(m.msg_id) && (
+                            <label className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600">
+                              <input
+                                type="checkbox"
+                                checked={!!selectedQaIds[m.msg_id]}
+                                onChange={() => toggleQa(m.msg_id)}
+                              />
+                              勾选问答
+                            </label>
+                          )}
                         </span>
-                        <div className="mt-1 whitespace-pre-wrap">
-                          {renderWithThinkFolding(text, `${m.msg_id}-`)}
-                        </div>
+                        <div className="mt-1 whitespace-pre-wrap">{renderWithThinkFolding(text, `${m.msg_id}-`)}</div>
                         {form && selectedId && m.sender_type === "bot" && (
                           <GuideFormBlock
                             msgId={m.msg_id}
@@ -1571,6 +1555,13 @@ export default function App() {
                       </div>
                     );
                   })}
+                  {waitingForBotReply && <ThinkingIndicator />}
+                  {Object.entries(processingBots).map(([botId, username]) => (
+                    <div key={botId} className="p-2 rounded bg-amber-50 border-l-2 border-amber-400 text-sm text-gray-600 animate-pulse">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 text-xs font-medium mr-2">@{username}</span>
+                      正在处理...
+                    </div>
+                  ))}
                   </>
               )}
             </div>
@@ -1600,16 +1591,6 @@ export default function App() {
                       if (lastAt !== -1) {
                         const after = v.slice(lastAt + 1, pos);
                         if (!after.includes(" ") && !after.includes("\n")) {
-                          // 根据当前输入框在视口中的位置，动态决定下拉在上方还是下方展示
-                          const rect = e.target.getBoundingClientRect();
-                          const spaceBelow = window.innerHeight - rect.bottom;
-                          const spaceAbove = rect.top;
-                          // 预留约 180px 作为下拉所需空间，不够则优先放到上方
-                          if (spaceBelow < 180 && spaceAbove > spaceBelow) {
-                            setMentionDropdownPlacement("top");
-                          } else {
-                            setMentionDropdownPlacement("bottom");
-                          }
                           setShowMentionDropdown(true);
                           setMentionFilter(after);
                           return;
@@ -1634,14 +1615,9 @@ export default function App() {
                     const matched = channelBots.filter((b) =>
                       b.username.toLowerCase().includes(mentionFilter.toLowerCase())
                     );
-                    if (matched.length === 0) return null;
-                    const placementClass =
-                      mentionDropdownPlacement === "top"
-                        ? "bottom-full mb-1"
-                        : "top-full mt-1";
-                    return (
+                    return matched.length > 0 && (
                     <ul
-                      className={`absolute left-0 right-0 ${placementClass} bg-white border rounded shadow-lg z-20 max-h-40 overflow-auto`}
+                      className="absolute left-0 right-0 top-full mt-1 bg-white border rounded shadow-lg z-20 max-h-40 overflow-auto"
                       role="listbox"
                     >
                       {matched.map((b) => (
