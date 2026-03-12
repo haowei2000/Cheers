@@ -52,6 +52,7 @@ npm run dev
 ### 一键部署（推荐）
 
 ```bash
+cp docker-compose.yml.template docker-compose.yml
 docker compose up -d
 # 前端: http://localhost:80   API: http://localhost:8000
 # 默认会写入种子数据：默认工作空间、测试项目、引导 Bot（@引导）、Orchestrator（@coordinator）。打开前端进入「测试项目」，输入 @引导 怎么用 即可获取使用引导。

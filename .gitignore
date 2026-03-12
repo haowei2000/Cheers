@@ -50,3 +50,4 @@ build/
 
 # 文档生成物（保留设计 docx，不提交生成物）
 # docs/*.docx 可保留在仓库，按团队约定
+docker-compose.yml

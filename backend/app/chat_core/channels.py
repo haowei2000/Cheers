@@ -27,6 +27,22 @@ async def list_channels(session: AsyncSession = Depends(get_session)) -> dict:
     }
 
 
+@router.get("/by-workspace/{workspace_id}")
+async def list_channels_by_workspace(
+    workspace_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """获取指定工作空间的所有频道."""
+    result = await session.execute(
+        select(Channel).where(Channel.workspace_id == workspace_id).order_by(Channel.created_at)
+    )
+    channels = result.scalars().all()
+    return {
+        "status": "success",
+        "data": [ChannelInResponse.model_validate(c).model_dump() for c in channels],
+    }
+
+
 @router.post("")
 async def create_channel(
     body: ChannelCreate,
@@ -135,3 +151,48 @@ async def remove_member(
     await session.delete(m)
     await session.flush()
     return {"status": "success"}
+
+
+@router.delete("/{channel_id}")
+async def delete_channel(
+    channel_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """删除频道（同时删除关联的成员、消息、文件记录）."""
+    result = await session.execute(
+        select(Channel).where(Channel.channel_id == channel_id)
+    )
+    ch = result.scalar_one_or_none()
+    if not ch:
+        raise HTTPException(status_code=404, detail="channel not found")
+
+    # 删除关联的成员记录
+    result = await session.execute(
+        select(ChannelMembership).where(ChannelMembership.channel_id == channel_id)
+    )
+    memberships = result.scalars().all()
+    for m in memberships:
+        await session.delete(m)
+
+    # 删除关联的消息记录
+    from app.db.models import Message
+    result = await session.execute(
+        select(Message).where(Message.channel_id == channel_id)
+    )
+    messages = result.scalars().all()
+    for msg in messages:
+        await session.delete(msg)
+
+    # 删除关联的文件记录
+    from app.db.models import FileRecord
+    result = await session.execute(
+        select(FileRecord).where(FileRecord.channel_id == channel_id)
+    )
+    file_records = result.scalars().all()
+    for f in file_records:
+        await session.delete(f)
+
+    # 删除频道
+    await session.delete(ch)
+    await session.commit()
+    return {"status": "success", "message": "频道已删除"}

@@ -2,7 +2,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "8002:8000"
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///data/main.db
       - REDIS_URL=redis://redis:6379/0
@@ -26,7 +26,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6389:6379"
 
 volumes:
   agentnexus_data:
