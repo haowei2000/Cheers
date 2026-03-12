@@ -71,7 +71,9 @@ class BotCreate(BaseModel):
     bot_id: str | None = None  # 不填则自动生成 UUID
     username: str  # @ 用的名字，唯一
     display_name: str | None = None
-    openclaw_endpoint: str  # http(s) 或 guide://、mock://
+    openclaw_endpoint: str  # http(s)、ws(s):// 或 guide://、mock://
+    openclaw_session: str | None = None  # WebSocket 模式专用，如 agent:xiaozhi
+    openclaw_token: str | None = None   # WebSocket 模式专用，gateway auth token
     status: str = "online"
     intro: str | None = None  # JSON: {"capabilities": [...], "description": "..."}
 
@@ -81,6 +83,8 @@ class BotUpdate(BaseModel):
     username: str | None = None
     display_name: str | None = None
     openclaw_endpoint: str | None = None
+    openclaw_session: str | None = None
+    openclaw_token: str | None = None
     status: str | None = None
     intro: str | None = None
 
@@ -92,6 +96,8 @@ class BotInResponse(BaseModel):
     username: str
     display_name: str | None = None
     openclaw_endpoint: str
+    openclaw_session: str | None = None
+    openclaw_token: str | None = None
     status: str
     intro: str | None = None
     created_at: datetime | None = None

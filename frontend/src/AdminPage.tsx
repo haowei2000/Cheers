@@ -86,6 +86,13 @@ export default function AdminPage() {
   const [botEditingId, setBotEditingId] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
 
+  // MCP 导入
+  type McpBotPreview = { server_name: string; username: string; display_name?: string; endpoint: string; token?: string };
+  const [mcpConfigText, setMcpConfigText] = useState("");
+  const [mcpPreviewBots, setMcpPreviewBots] = useState<McpBotPreview[]>([]);
+  const [mcpPreviewSkipped, setMcpPreviewSkipped] = useState<{ server: string; reason: string }[]>([]);
+  const [mcpImporting, setMcpImporting] = useState(false);
+
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
   const [taskStats, setTaskStats] = useState<{ total_tasks: number; limit_days: number; per_bot: { username: string; display_name?: string; task_count: number; avg_latency_ms?: number }[] } | null>(null);
 
@@ -507,6 +514,42 @@ export default function AdminPage() {
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
+  const previewFromMcp = () => {
+    let parsed: unknown;
+    try { parsed = JSON.parse(mcpConfigText); } catch { toast.error("JSON 格式有误，请检查"); return; }
+    fetch(`${API}/bots/preview-from-mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed) })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          setMcpPreviewBots(d.data.bots || []);
+          setMcpPreviewSkipped(d.data.skipped || []);
+          if ((d.data.bots || []).length === 0) toast.error("未解析到有效 Bot，请检查配置");
+          else toast.success(`解析到 ${d.data.bots.length} 个 Bot`);
+        } else toast.error(d.detail || "解析失败");
+      })
+      .catch((e) => toast.error("请求失败: " + String(e)));
+  };
+
+  const importFromMcp = () => {
+    let parsed: unknown;
+    try { parsed = JSON.parse(mcpConfigText); } catch { toast.error("JSON 格式有误，请检查"); return; }
+    setMcpImporting(true);
+    fetch(`${API}/bots/import-from-mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed) })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          const n = (d.data.imported || []).length;
+          toast.success(n > 0 ? `已导入 ${n} 个 Bot` : "无新 Bot 可导入（可能已存在）");
+          setMcpPreviewBots([]);
+          setMcpPreviewSkipped([]);
+          setMcpConfigText("");
+          loadBots();
+        } else toast.error(d.detail || "导入失败");
+      })
+      .catch((e) => toast.error("请求失败: " + String(e)))
+      .finally(() => setMcpImporting(false));
+  };
+
   const allTabs: { id: TabId; label: string; roles?: string[] }[] = [
     { id: "llm", label: "LLM 参数", roles: ["system_admin"] },
     { id: "perf", label: "性能监控", roles: ["system_admin"] },
@@ -816,8 +859,15 @@ export default function AdminPage() {
               <h3 className="text-sm font-medium text-gray-700 mb-2">添加成员</h3>
               <div className="flex flex-wrap gap-2">
                 <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border rounded px-2 py-1 text-sm"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
-                <input type="text" value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} placeholder="成员 ID" className="border rounded px-2 py-1 text-sm w-40" />
-                <select value={addMemberType} onChange={(e) => setAddMemberType(e.target.value as "user" | "bot")} className="border rounded px-2 py-1 text-sm"><option value="user">用户</option><option value="bot">Bot</option></select>
+                <select value={addMemberType} onChange={(e) => { setAddMemberType(e.target.value as "user" | "bot"); setAddMemberId(""); }} className="border rounded px-2 py-1 text-sm"><option value="user">用户</option><option value="bot">Bot</option></select>
+                {addMemberType === "bot" ? (
+                  <select value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} className="border rounded px-2 py-1 text-sm">
+                    <option value="">选择 Bot</option>
+                    {botList.map((b) => <option key={b.bot_id} value={b.bot_id}>{b.display_name || b.username} (@{b.username})</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} placeholder="用户 ID" className="border rounded px-2 py-1 text-sm w-40" />
+                )}
                 <button type="button" onClick={addMember} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">添加</button>
               </div>
             </section>
@@ -869,6 +919,43 @@ export default function AdminPage() {
                 <tr><td className="py-1 pr-2">intro (JSON)</td><td><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-16" /></td></tr>
               </tbody></table>
               <button type="button" onClick={createBot} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button>
+            </section>
+            <section>
+              <h3 className="text-sm font-medium text-gray-700 mb-2">从 MCP 配置导入 Bot</h3>
+              <p className="text-xs text-gray-500 mb-2">粘贴 mcp.json 配置，自动解析 OPENCLAW_SESSION / OPENCLAW_AGENT_NAME / OPENCLAW_URL 并批量导入。</p>
+              <textarea
+                value={mcpConfigText}
+                onChange={(e) => { setMcpConfigText(e.target.value); setMcpPreviewBots([]); setMcpPreviewSkipped([]); }}
+                placeholder={'{\n  "mcpServers": {\n    "openclaw": {\n      "command": "npx",\n      "args": ["-y", "openclaw-mcp-server"],\n      "env": {\n        "OPENCLAW_URL": "ws://127.0.0.1:18789",\n        "OPENCLAW_TOKEN": "your-token",\n        "OPENCLAW_SESSION": "agent:xiaozhi",\n        "OPENCLAW_AGENT_NAME": "小龙虾"\n      }\n    }\n  }\n}'}
+                className="border rounded px-2 py-1 w-full h-36 font-mono text-xs"
+              />
+              <div className="flex gap-2 mt-2">
+                <button type="button" onClick={previewFromMcp} className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm">预览</button>
+                <button type="button" onClick={importFromMcp} disabled={mcpImporting} className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-60">
+                  {mcpImporting ? "导入中…" : "导入"}
+                </button>
+              </div>
+              {mcpPreviewBots.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-gray-600 mb-1">可导入的 Bot：</p>
+                  <table className="w-full text-xs border border-gray-200">
+                    <thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">服务名</th><th className="border px-2 py-1 text-left">username</th><th className="border px-2 py-1 text-left">显示名</th><th className="border px-2 py-1 text-left">endpoint</th></tr></thead>
+                    <tbody>
+                      {mcpPreviewBots.map((b) => (
+                        <tr key={b.server_name}><td className="border px-2 py-1">{b.server_name}</td><td className="border px-2 py-1">@{b.username}</td><td className="border px-2 py-1">{b.display_name || "—"}</td><td className="border px-2 py-1 break-all">{b.endpoint}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {mcpPreviewSkipped.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-xs font-medium text-gray-500 mb-1">跳过：</p>
+                  <ul className="text-xs text-gray-400 space-y-0.5">
+                    {mcpPreviewSkipped.map((s, i) => <li key={i}>{s.server}：{s.reason}</li>)}
+                  </ul>
+                </div>
+              )}
             </section>
             <section>
               <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
