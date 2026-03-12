@@ -1,8 +1,10 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json ./
-# 使用淘宝 npm 镜像加速
-RUN npm install --include=dev --registry https://registry.npmmirror.com
+# Using taobao npm mirror for acceleration
+# Update npm and install dependencies with more tolerance for failures
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install --include=dev --legacy-peer-deps || npm install --include=dev
 COPY . .
 RUN npm run build
 
