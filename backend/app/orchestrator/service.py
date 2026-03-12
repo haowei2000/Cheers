@@ -17,6 +17,24 @@ from app.orchestrator.orchestrator_adapter import extract_suggested_bots
 COORDINATOR_USERNAME = "coordinator"
 
 
+def _apply_prompt_template(template: str | None, user_message: str) -> str:
+    """应用提示词模板，将 {{}} 替换为用户消息.
+    
+    Args:
+        template: 提示词模板，包含 {{}} 作为用户消息占位符
+        user_message: 原始用户消息
+        
+    Returns:
+        应用模板后的消息内容
+    """
+    if not template:
+        return user_message
+    # 支持 {{}} 或 {{message}} 作为占位符
+    result = template.replace("{{}}", user_message)
+    result = result.replace("{{message}}", user_message)
+    return result
+
+
 async def run_orchestrator(
     channel_id: str,
     trigger_msg: Message,
@@ -39,6 +57,7 @@ async def run_orchestrator(
     rows = result.all()
     channel_bot_usernames = [row[1].username for row in rows]
     bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
+    bot_template_by_username = {row[1].username: row[1].prompt_template for row in rows}
 
     mentioned = extract_mentions(trigger_msg.content)
     target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames)
@@ -65,17 +84,19 @@ async def run_orchestrator(
         bot_id = bot_id_by_username[username]
         if username == COORDINATOR_USERNAME and not direct_answer_mode:
             # 用户显式 @coordinator：主控聚合，调用频道内除 coordinator 外的所有 Bot
-            other_rows = [(r[0].member_id, r[1].username) for r in rows if r[1].username != COORDINATOR_USERNAME]
+            other_rows = [(r[0].member_id, r[1].username, r[1].prompt_template) for r in rows if r[1].username != COORDINATOR_USERNAME]
             parts = []
-            for other_bot_id, other_username in other_rows:
+            for other_bot_id, other_username, other_template in other_rows:
                 adapter = await adapter_factory(other_bot_id)
                 task_id = str(uuid.uuid4())
+                # 应用该 Bot 的提示词模板
+                templated_text = _apply_prompt_template(other_template, trigger_msg.content)
                 payload = AgentPayload(
                     task_id=task_id,
                     channel_id=channel_id,
                     trigger_message={
                         "user": trigger_msg.sender_id,
-                        "text": trigger_msg.content,
+                        "text": templated_text,
                         "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                     },
                     memory_context=memory_context,
@@ -106,7 +127,7 @@ async def run_orchestrator(
             continue
 
         if username == COORDINATOR_USERNAME and direct_answer_mode:
-            # 直接回答模式：用 OrchestratorAdapter 回答业务问题
+            # 直接回答模式：用 OrchestratorAdapter 回答业务问题（不应用模板，因为是系统 Bot）
             adapter = await adapter_factory(bot_id)
             task_id = str(uuid.uuid4())
             other_bots = [u for u in channel_bot_usernames if u != COORDINATOR_USERNAME]
@@ -149,16 +170,19 @@ async def run_orchestrator(
                 for sug_username in suggested:
                     if sug_username in channel_bot_usernames and sug_username != COORDINATOR_USERNAME:
                         sug_bot_id = bot_id_by_username[sug_username]
+                        sug_template = bot_template_by_username.get(sug_username)
                         if broadcast_processing:
                             await broadcast_processing(channel_id, sug_bot_id, sug_username)
                         sug_adapter = await adapter_factory(sug_bot_id)
                         sug_task_id = str(uuid.uuid4())
+                        # 应用被建议 Bot 的提示词模板
+                        sug_templated_text = _apply_prompt_template(sug_template, trigger_msg.content)
                         sug_payload = AgentPayload(
                             task_id=sug_task_id,
                             channel_id=channel_id,
                             trigger_message={
                                 "user": trigger_msg.sender_id,
-                                "text": trigger_msg.content,
+                                "text": sug_templated_text,
                                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                             },
                             memory_context=memory_context,
@@ -190,12 +214,15 @@ async def run_orchestrator(
             await broadcast_processing(channel_id, bot_id, username)
         adapter = await adapter_factory(bot_id)
         task_id = str(uuid.uuid4())
+        # 应用该 Bot 的提示词模板
+        bot_template = bot_template_by_username.get(username)
+        templated_text = _apply_prompt_template(bot_template, trigger_msg.content)
         payload = AgentPayload(
             task_id=task_id,
             channel_id=channel_id,
             trigger_message={
                 "user": trigger_msg.sender_id,
-                "text": trigger_msg.content,
+                "text": templated_text,
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
             },
             memory_context=memory_context,

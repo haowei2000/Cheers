@@ -1,12 +1,7 @@
 """Bot 账号 REST：创建、列表、更新、删除、外部注册申请与审核."""
 import json
-import uuid
 from datetime import datetime
-from typing import Any
-
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,31 +14,6 @@ from app.chat_core.schemas import (
 )
 from app.db.models import BotAccount, BotRegistrationRequest, gen_uuid
 from app.db.session import get_session
-
-
-class McpServerEntry(BaseModel):
-    """单个 MCP 服务器配置条目."""
-
-    command: str
-    args: list[str] = []
-    env: dict[str, str] = {}
-
-
-class McpServersConfig(BaseModel):
-    """MCP 服务器配置，格式与 mcp.json/claude_desktop_config.json 一致."""
-
-    mcpServers: dict[str, McpServerEntry]
-
-
-class McpBotInfo(BaseModel):
-    """从 MCP 配置解析出的 Bot 信息."""
-
-    server_name: str
-    username: str
-    display_name: str | None = None
-    endpoint: str
-    session: str | None = None  # 完整 OPENCLAW_SESSION，如 agent:xiaozhi
-    token: str | None = None
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
 
@@ -112,11 +82,9 @@ async def create_bot(
         username=body.username.strip(),
         display_name=body.display_name.strip() if body.display_name else None,
         openclaw_endpoint=body.openclaw_endpoint.strip(),
-        openclaw_session=body.openclaw_session.strip() if body.openclaw_session else None,
-        openclaw_token=body.openclaw_token.strip() if body.openclaw_token else None,
         status=body.status.strip() or "online",
         intro=intro_val,
-        avatar_url=body.avatar_url.strip() if body.avatar_url else None,
+        prompt_template=body.prompt_template.strip() if body.prompt_template else None,
     )
     session.add(bot)
     await session.commit()
@@ -264,108 +232,6 @@ async def reject_registration_request(
     return {"status": "success", "message": "已拒绝"}
 
 
-# ---------- 从 MCP 配置导入 Bot ----------
-
-
-def _parse_openclaw_bots(config: McpServersConfig) -> tuple[list[McpBotInfo], list[dict]]:
-    """解析 MCP 配置，提取 OpenClaw Bot 信息。返回 (bots, skipped)."""
-    bots: list[McpBotInfo] = []
-    skipped: list[dict] = []
-
-    for server_name, entry in config.mcpServers.items():
-        env = entry.env
-        openclaw_url = env.get("OPENCLAW_URL")
-        session_str = env.get("OPENCLAW_SESSION", "")
-        agent_name = env.get("OPENCLAW_AGENT_NAME")
-        token = env.get("OPENCLAW_TOKEN")
-
-        if not openclaw_url:
-            skipped.append({"server": server_name, "reason": "缺少 OPENCLAW_URL"})
-            continue
-        if not session_str:
-            skipped.append({"server": server_name, "reason": "缺少 OPENCLAW_SESSION"})
-            continue
-
-        # OPENCLAW_SESSION 格式为 "agent:xiaozhi"，取冒号后的部分作为 username 和 chat session key
-        username = session_str.split(":", 1)[1] if ":" in session_str else session_str
-        if not username:
-            skipped.append({"server": server_name, "reason": "OPENCLAW_SESSION 格式无效"})
-            continue
-
-        # chat.send 使用不带 "agent:" 前缀的 session key（如 "xiaozhi"）
-        chat_session = username
-
-        bots.append(McpBotInfo(
-            server_name=server_name,
-            username=username,
-            display_name=agent_name,
-            endpoint=openclaw_url,
-            session=chat_session,
-            token=token,
-        ))
-
-    return bots, skipped
-
-
-@router.post("/preview-from-mcp")
-async def preview_bots_from_mcp(body: McpServersConfig) -> dict:
-    """解析 MCP 配置，预览可导入的 Bot 列表（不写入数据库）."""
-    bots, skipped = _parse_openclaw_bots(body)
-    return {
-        "status": "success",
-        "data": {
-            "bots": [b.model_dump() for b in bots],
-            "skipped": skipped,
-        },
-    }
-
-
-@router.post("/import-from-mcp")
-async def import_bots_from_mcp(
-    body: McpServersConfig,
-    session: AsyncSession = Depends(get_session),
-) -> dict:
-    """解析 MCP 配置并将 OpenClaw Bot 导入数据库（跳过已存在的）."""
-    bots, skipped = _parse_openclaw_bots(body)
-
-    imported = []
-    for bot_info in bots:
-        existing = await session.execute(
-            select(BotAccount).where(BotAccount.username == bot_info.username)
-        )
-        if existing.scalar_one_or_none():
-            skipped.append({"server": bot_info.server_name, "username": bot_info.username, "reason": "username 已存在"})
-            continue
-
-        bot = BotAccount(
-            bot_id=gen_uuid(),
-            username=bot_info.username,
-            display_name=bot_info.display_name,
-            openclaw_endpoint=bot_info.endpoint,
-            openclaw_session=bot_info.session,
-            openclaw_token=bot_info.token,
-            status="online",
-            intro=None,
-        )
-        session.add(bot)
-        await session.flush()
-        await session.refresh(bot)
-
-        d = BotInResponse.model_validate(bot).model_dump()
-        if bot.created_at:
-            d["created_at"] = bot.created_at.isoformat()
-        imported.append(d)
-
-    await session.commit()
-    return {
-        "status": "success",
-        "data": {
-            "imported": imported,
-            "skipped": skipped,
-        },
-    }
-
-
 # ---------- 单 Bot 操作 ----------
 
 
@@ -409,16 +275,12 @@ async def update_bot(
         bot.display_name = body.display_name.strip() if body.display_name else None
     if body.openclaw_endpoint is not None:
         bot.openclaw_endpoint = body.openclaw_endpoint.strip()
-    if body.openclaw_session is not None:
-        bot.openclaw_session = body.openclaw_session.strip() or None
-    if body.openclaw_token is not None:
-        bot.openclaw_token = body.openclaw_token.strip() or None
     if body.status is not None:
         bot.status = body.status.strip() or bot.status
     if body.intro is not None:
         bot.intro = _validate_intro(body.intro) if body.intro else None
-    if body.avatar_url is not None:
-        bot.avatar_url = body.avatar_url.strip() if body.avatar_url else None
+    if body.prompt_template is not None:
+        bot.prompt_template = body.prompt_template.strip() if body.prompt_template else None
     await session.commit()
     await session.refresh(bot)
     d = BotInResponse.model_validate(bot).model_dump()
