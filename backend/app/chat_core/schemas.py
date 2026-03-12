@@ -74,6 +74,7 @@ class BotCreate(BaseModel):
     openclaw_endpoint: str  # http(s) 或 guide://、mock://
     status: str = "online"
     intro: str | None = None  # JSON: {"capabilities": [...], "description": "..."}
+    avatar_url: str | None = None
 
 
 class BotUpdate(BaseModel):
@@ -83,6 +84,7 @@ class BotUpdate(BaseModel):
     openclaw_endpoint: str | None = None
     status: str | None = None
     intro: str | None = None
+    avatar_url: str | None = None
 
 
 class BotInResponse(BaseModel):
@@ -94,6 +96,7 @@ class BotInResponse(BaseModel):
     openclaw_endpoint: str
     status: str
     intro: str | None = None
+    avatar_url: str | None = None
     created_at: datetime | None = None
 
 

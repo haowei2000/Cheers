@@ -570,8 +570,8 @@ export default function App() {
   const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<string | null>(null);
 
-  type ChannelBot = { member_id: string; username: string };
-  type BotItem = { bot_id: string; username: string; display_name?: string; intro?: string };
+  type ChannelBot = { member_id: string; username: string; avatar_url?: string; display_name?: string };
+  type BotItem = { bot_id: string; username: string; display_name?: string; intro?: string; avatar_url?: string };
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
@@ -662,7 +662,7 @@ export default function App() {
         if (d.data) {
           const bots: ChannelBot[] = d.data
             .filter((m: { member_type: string; username?: string }) => m.member_type === "bot" && m.username)
-            .map((m: { member_id: string; username: string }) => ({ member_id: m.member_id, username: m.username }));
+            .map((m: { member_id: string; username: string; avatar_url?: string; display_name?: string }) => ({ member_id: m.member_id, username: m.username, avatar_url: m.avatar_url, display_name: m.display_name }));
           setChannelBots(bots);
         } else setChannelBots([]);
       })
@@ -723,7 +723,7 @@ export default function App() {
               if (res.data) {
                 const bots: ChannelBot[] = res.data
                   .filter((m: { member_type: string; username?: string }) => m.member_type === "bot" && m.username)
-                  .map((m: { member_id: string; username: string }) => ({ member_id: m.member_id, username: m.username }));
+                  .map((m: { member_id: string; username: string; avatar_url?: string; display_name?: string }) => ({ member_id: m.member_id, username: m.username, avatar_url: m.avatar_url, display_name: m.display_name }));
                 setChannelBots(bots);
               }
             });
@@ -1297,11 +1297,21 @@ export default function App() {
                       isClarifyReplyUserMessage(nextMsg.content)
                         ? nextMsg.content
                         : undefined;
+                    const senderBot = m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
+                    const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
+                    const botInitials = botLabel.slice(0, 2).toUpperCase();
                     return (
                       <div key={m.msg_id} className={`p-2 rounded ${m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"}`}>
                         <span className="text-xs text-gray-500 flex items-center gap-2">
                           {m.sender_type === "bot" ? (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">Bot</span>
+                            <span className="inline-flex items-center gap-1.5">
+                              {senderBot?.avatar_url ? (
+                                <img src={senderBot.avatar_url} alt={botLabel} className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
+                              ) : (
+                                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-400 text-white text-xs font-bold flex-shrink-0" aria-hidden="true">{botInitials.slice(0, 1)}</span>
+                              )}
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium" aria-label="Bot">{botLabel}</span>
+                            </span>
                           ) : (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">用户</span>
                           )}
