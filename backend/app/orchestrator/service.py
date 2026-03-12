@@ -43,7 +43,12 @@ async def run_orchestrator(
     broadcast_processing: Callable[[str, str, str], Awaitable[None]] | None = None,
 ) -> list[Message]:
     """
-    根据触发消息中的 @ 提及，解析出目标 Bot，串行调用 Adapter，每条 Bot 回复持久化并返回。
+    根据触发消息中的 @ 提及，解析出目标 Bot，串行调用 Adapter。
+
+    顶层执行流视为「单线任务线程」：
+    - 对同一条「用户提问 + 多 Bot 串行协作」统一分配一个 task_id；
+    - 所有 AgentPayload / AgentTask / Bot 回复消息在该线程内共用此 task_id；
+    - Bot 回复消息的 in_reply_to_msg_id 指向触发本轮调用的消息，实现精确问答配对。
     若目标包含 coordinator，则主控聚合：串行调用频道内其他 Bot，汇总为一条 Coordinator 回复。
     """
     result = await session.execute(
@@ -80,15 +85,22 @@ async def run_orchestrator(
     memory_context = await memory_load(channel_id)
 
     created: list[Message] = []
+    # 顶层任务线程 id：同一轮 run_orchestrator 调用内统一使用
+    root_task_id = str(uuid.uuid4())
     for username in target_usernames:
         bot_id = bot_id_by_username[username]
         if username == COORDINATOR_USERNAME and not direct_answer_mode:
             # 用户显式 @coordinator：主控聚合，调用频道内除 coordinator 外的所有 Bot
-            other_rows = [(r[0].member_id, r[1].username, r[1].prompt_template) for r in rows if r[1].username != COORDINATOR_USERNAME]
+            other_rows = [
+                (r[0].member_id, r[1].username, r[1].prompt_template)
+                for r in rows
+                if r[1].username != COORDINATOR_USERNAME
+            ]
             parts = []
             for other_bot_id, other_username, other_template in other_rows:
                 adapter = await adapter_factory(other_bot_id)
-                task_id = str(uuid.uuid4())
+                # 使用同一 root_task_id 将本次 orchestrator 流内的调用串成一条任务线程
+                task_id = root_task_id
                 # 应用该 Bot 的提示词模板
                 templated_text = _apply_prompt_template(other_template, trigger_msg.content)
                 payload = AgentPayload(
@@ -111,11 +123,13 @@ async def run_orchestrator(
                 sender_id=bot_id,
                 sender_type="bot",
                 content=combined,
+                task_id=root_task_id,
+                in_reply_to_msg_id=trigger_msg.msg_id,
             )
             session.add(coord_msg)
             await session.flush()
             coord_task = AgentTask(
-                task_id=str(uuid.uuid4()),
+                task_id=root_task_id,
                 channel_id=channel_id,
                 bot_id=bot_id,
                 trigger_msg_id=trigger_msg.msg_id,
@@ -129,7 +143,7 @@ async def run_orchestrator(
         if username == COORDINATOR_USERNAME and direct_answer_mode:
             # 直接回答模式：用 OrchestratorAdapter 回答业务问题（不应用模板，因为是系统 Bot）
             adapter = await adapter_factory(bot_id)
-            task_id = str(uuid.uuid4())
+            task_id = root_task_id
             other_bots = [u for u in channel_bot_usernames if u != COORDINATOR_USERNAME]
             payload = AgentPayload(
                 task_id=task_id,
@@ -150,6 +164,8 @@ async def run_orchestrator(
                 sender_id=bot_id,
                 sender_type="bot",
                 content=content,
+                task_id=task_id,
+                in_reply_to_msg_id=trigger_msg.msg_id,
             )
             session.add(orch_msg)
             await session.flush()
@@ -174,7 +190,8 @@ async def run_orchestrator(
                         if broadcast_processing:
                             await broadcast_processing(channel_id, sug_bot_id, sug_username)
                         sug_adapter = await adapter_factory(sug_bot_id)
-                        sug_task_id = str(uuid.uuid4())
+                        # 建议接力的 Bot 调用仍归属于同一顶层任务线程
+                        sug_task_id = root_task_id
                         # 应用被建议 Bot 的提示词模板
                         sug_templated_text = _apply_prompt_template(sug_template, trigger_msg.content)
                         sug_payload = AgentPayload(
@@ -195,6 +212,8 @@ async def run_orchestrator(
                             sender_id=sug_bot_id,
                             sender_type="bot",
                             content=sug_content,
+                            task_id=sug_task_id,
+                            in_reply_to_msg_id=trigger_msg.msg_id,
                         )
                         session.add(sug_msg)
                         await session.flush()
@@ -213,7 +232,8 @@ async def run_orchestrator(
         if broadcast_processing:
             await broadcast_processing(channel_id, bot_id, username)
         adapter = await adapter_factory(bot_id)
-        task_id = str(uuid.uuid4())
+        # 普通显式 @Bot 串行场景：同一 run_orchestrator 内共用 root_task_id 作为线程 id
+        task_id = root_task_id
         # 应用该 Bot 的提示词模板
         bot_template = bot_template_by_username.get(username)
         templated_text = _apply_prompt_template(bot_template, trigger_msg.content)
@@ -238,6 +258,8 @@ async def run_orchestrator(
             sender_id=bot_id,
             sender_type="bot",
             content=content,
+            task_id=task_id,
+            in_reply_to_msg_id=trigger_msg.msg_id,
         )
         session.add(bot_msg)
         await session.flush()

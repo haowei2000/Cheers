@@ -1,14 +1,14 @@
 """Add openclaw_session and openclaw_token to bot_accounts.
 
-Revision ID: 005
-Revises: 004
+Revision ID: 006
+Revises: 005
 Create Date: 2026-03-12
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "005"
-down_revision = "004"
+revision = "006"
+down_revision = "005"
 branch_labels = None
 depends_on = None
 

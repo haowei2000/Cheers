@@ -74,7 +74,7 @@ export default function AdminPage() {
   const currentUser = getCurrentUser();
   const userRole = currentUser?.role || "";
 
-  const [activeTab, setActiveTab] = useState<TabId>("llm");
+  const [activeTab, setActiveTab] = useState<TabId>(() => (userRole === "system_admin" ? "llm" : "bot"));
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
