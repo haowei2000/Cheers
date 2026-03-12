@@ -15,7 +15,21 @@ type BotItem = {
   openclaw_endpoint: string;
   status: string;
   intro?: string;
+  prompt_template?: string;
   created_at?: string;
+};
+
+type MCPBotSuggestion = {
+  suggested_username: string;
+  suggested_display_name: string;
+  suggested_endpoint: string;
+  suggested_intro: {
+    description: string;
+    capabilities: string[];
+    mcp_config: Record<string, unknown>;
+  };
+  server_name: string;
+  transport_type: string;
 };
 type PendingRequest = {
   request_id: string;
@@ -79,19 +93,20 @@ export default function AdminPage() {
   const [botEndpoint, setBotEndpoint] = useState("");
   const [botStatus, setBotStatus] = useState("online");
   const [botIntro, setBotIntro] = useState("");
+  const [botPromptTemplate, setBotPromptTemplate] = useState("");
   const [botWizardStep, setBotWizardStep] = useState<0 | 1 | 2>(0);
-  const [_botWizardType, setBotWizardType] = useState<"guide" | "http" | "mock">("guide");
+  const [_botWizardType, setBotWizardType] = useState<"guide" | "http" | "mock" | "mcp">("guide");
   const [lastCreatedBotId, setLastCreatedBotId] = useState("");
   const [botList, setBotList] = useState<BotItem[]>([]);
   const [botEditingId, setBotEditingId] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
 
-  // MCP 导入
-  type McpBotPreview = { server_name: string; username: string; display_name?: string; endpoint: string; token?: string };
-  const [mcpConfigText, setMcpConfigText] = useState("");
-  const [mcpPreviewBots, setMcpPreviewBots] = useState<McpBotPreview[]>([]);
-  const [mcpPreviewSkipped, setMcpPreviewSkipped] = useState<{ server: string; reason: string }[]>([]);
-  const [mcpImporting, setMcpImporting] = useState(false);
+  // MCP 导入相关状态
+  const [mcpModalOpen, setMcpModalOpen] = useState(false);
+  const [mcpConfigJson, setMcpConfigJson] = useState("");
+  const [mcpSuggestions, setMcpSuggestions] = useState<MCPBotSuggestion[]>([]);
+  const [mcpPreviewLoading, setMcpPreviewLoading] = useState(false);
+  const [mcpSelectedIndex, setMcpSelectedIndex] = useState<number | null>(null);
 
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
   const [taskStats, setTaskStats] = useState<{ total_tasks: number; limit_days: number; per_bot: { username: string; display_name?: string; task_count: number; avg_latency_ms?: number }[] } | null>(null);
@@ -443,10 +458,11 @@ export default function AdminPage() {
     if (botId.trim()) body.bot_id = botId.trim();
     if (botDisplayName.trim()) body.display_name = botDisplayName.trim();
     if (botIntro.trim()) body.intro = botIntro.trim();
+    if (botPromptTemplate.trim()) body.prompt_template = botPromptTemplate.trim();
     fetch(`${API}/bots`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); loadBots(); }
+        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); loadBots(); }
         else toast.error(d.message || d.detail || "创建失败");
       })
       .catch((e) => toast.error("请求失败: " + String(e)));
@@ -459,11 +475,12 @@ export default function AdminPage() {
       openclaw_endpoint: botEndpoint.trim(),
       status: botStatus,
       intro: botIntro.trim(),
+      prompt_template: botPromptTemplate.trim(),
     };
     fetch(`${API}/bots/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { toast.success("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }
+        if (d.status === "success") { toast.success("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }
         else toast.error(d.detail || "更新失败");
       })
       .catch((e) => toast.error("请求失败: " + String(e)));
@@ -512,42 +529,6 @@ export default function AdminPage() {
       .then((r) => r.json())
       .then((d) => { if (d.status === "success") { toast.success("已拒绝"); setPendingRequests((p) => p.filter((r) => r.request_id !== id)); } else toast.error(d.detail || "操作失败"); })
       .catch((e) => toast.error("请求失败: " + String(e)));
-  };
-
-  const previewFromMcp = () => {
-    let parsed: unknown;
-    try { parsed = JSON.parse(mcpConfigText); } catch { toast.error("JSON 格式有误，请检查"); return; }
-    fetch(`${API}/bots/preview-from-mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed) })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success") {
-          setMcpPreviewBots(d.data.bots || []);
-          setMcpPreviewSkipped(d.data.skipped || []);
-          if ((d.data.bots || []).length === 0) toast.error("未解析到有效 Bot，请检查配置");
-          else toast.success(`解析到 ${d.data.bots.length} 个 Bot`);
-        } else toast.error(d.detail || "解析失败");
-      })
-      .catch((e) => toast.error("请求失败: " + String(e)));
-  };
-
-  const importFromMcp = () => {
-    let parsed: unknown;
-    try { parsed = JSON.parse(mcpConfigText); } catch { toast.error("JSON 格式有误，请检查"); return; }
-    setMcpImporting(true);
-    fetch(`${API}/bots/import-from-mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed) })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success") {
-          const n = (d.data.imported || []).length;
-          toast.success(n > 0 ? `已导入 ${n} 个 Bot` : "无新 Bot 可导入（可能已存在）");
-          setMcpPreviewBots([]);
-          setMcpPreviewSkipped([]);
-          setMcpConfigText("");
-          loadBots();
-        } else toast.error(d.detail || "导入失败");
-      })
-      .catch((e) => toast.error("请求失败: " + String(e)))
-      .finally(() => setMcpImporting(false));
   };
 
   const allTabs: { id: TabId; label: string; roles?: string[] }[] = [
@@ -821,7 +802,7 @@ export default function AdminPage() {
                         <td className="border px-2 py-1">{b.status}</td>
                         <td className="border px-2 py-1 max-w-[150px] truncate" title={b.intro || ""}>{introSummary(b.intro)}</td>
                         <td className="border px-2 py-1">
-                          <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotStatus(b.status); setBotIntro(b.intro || ""); }} className="mr-1 px-2 py-0.5 text-blue-600 text-xs">编辑</button>
+                          <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotStatus(b.status); setBotIntro(b.intro || ""); setBotPromptTemplate(b.prompt_template || ""); }} className="mr-1 px-2 py-0.5 text-blue-600 text-xs">编辑</button>
                           <button type="button" onClick={() => deleteBot(b.bot_id)} className="px-2 py-0.5 text-red-600 text-xs">删除</button>
                         </td>
                       </tr>
@@ -836,9 +817,10 @@ export default function AdminPage() {
                   <div><label className="block text-gray-600">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-600">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-600">自我介绍 (JSON)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>
+                  <div><label className="block text-gray-600">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-20" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => updateBot(botEditingId)} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">保存</button>
-                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>
+                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>
                   </div>
                 </div>
               )}
@@ -859,15 +841,8 @@ export default function AdminPage() {
               <h3 className="text-sm font-medium text-gray-700 mb-2">添加成员</h3>
               <div className="flex flex-wrap gap-2">
                 <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border rounded px-2 py-1 text-sm"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
-                <select value={addMemberType} onChange={(e) => { setAddMemberType(e.target.value as "user" | "bot"); setAddMemberId(""); }} className="border rounded px-2 py-1 text-sm"><option value="user">用户</option><option value="bot">Bot</option></select>
-                {addMemberType === "bot" ? (
-                  <select value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} className="border rounded px-2 py-1 text-sm">
-                    <option value="">选择 Bot</option>
-                    {botList.map((b) => <option key={b.bot_id} value={b.bot_id}>{b.display_name || b.username} (@{b.username})</option>)}
-                  </select>
-                ) : (
-                  <input type="text" value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} placeholder="用户 ID" className="border rounded px-2 py-1 text-sm w-40" />
-                )}
+                <input type="text" value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} placeholder="成员 ID" className="border rounded px-2 py-1 text-sm w-40" />
+                <select value={addMemberType} onChange={(e) => setAddMemberType(e.target.value as "user" | "bot")} className="border rounded px-2 py-1 text-sm"><option value="user">用户</option><option value="bot">Bot</option></select>
                 <button type="button" onClick={addMember} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">添加</button>
               </div>
             </section>
@@ -882,18 +857,25 @@ export default function AdminPage() {
             <section>
               <h3 className="text-sm font-medium text-gray-700 mb-2">Bot 添加向导</h3>
               {botWizardStep === 0 && (
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button type="button" onClick={() => { setBotWizardType("guide"); setBotEndpoint("guide://"); setBotWizardStep(1); }} className="px-3 py-2 border rounded text-sm">引导 Bot</button>
                   <button type="button" onClick={() => { setBotWizardType("http"); setBotEndpoint("https://"); setBotWizardStep(1); }} className="px-3 py-2 border rounded text-sm">真实 OpenClaw</button>
                   <button type="button" onClick={() => { setBotWizardType("mock"); setBotEndpoint("mock://"); setBotWizardStep(1); }} className="px-3 py-2 border rounded text-sm">Mock</button>
+                  <button type="button" onClick={() => setMcpModalOpen(true)} className="px-3 py-2 border rounded text-sm bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100">从 MCP 导入</button>
                 </div>
               )}
               {botWizardStep === 1 && (
                 <div className="space-y-2 text-sm">
+                  {_botWizardType === "mcp" && (
+                    <div className="p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-700">
+                      📥 已从 MCP 配置导入，请检查并修改后创建
+                    </div>
+                  )}
                   <div><label className="block text-gray-700">@ 用名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} placeholder="如：mybot" className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">自我介绍 (JSON，含 capabilities 或 description)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1","能力2"],"description":"简短描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>
+                  <div><label className="block text-gray-700">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-20" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
                   <div className="flex gap-2"><button type="button" onClick={createBot} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button><button type="button" onClick={() => setBotWizardStep(0)} className="px-3 py-1 bg-gray-200 rounded text-sm">上一步</button></div>
                 </div>
               )}
@@ -910,6 +892,16 @@ export default function AdminPage() {
             </section>
             <section>
               <h3 className="text-sm font-medium text-gray-700 mb-2">创建 Bot（高级）</h3>
+              <div className="mb-3">
+                <button
+                  type="button"
+                  onClick={() => setMcpModalOpen(true)}
+                  className="px-3 py-2 border rounded text-sm bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100"
+                >
+                  📥 从 MCP 配置导入
+                </button>
+                <span className="text-xs text-gray-500 ml-2">支持 Claude Desktop 的 mcpServers 配置</span>
+              </div>
               <table className="w-full text-sm"><tbody>
                 <tr><td className="py-1 pr-2 w-32">bot_id（可选）</td><td><input type="text" value={botId} onChange={(e) => setBotId(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
                 <tr><td className="py-1 pr-2">username</td><td><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
@@ -917,45 +909,9 @@ export default function AdminPage() {
                 <tr><td className="py-1 pr-2">openclaw_endpoint</td><td><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
                 <tr><td className="py-1 pr-2">status</td><td><select value={botStatus} onChange={(e) => setBotStatus(e.target.value)} className="border rounded px-2 py-1"><option value="online">online</option><option value="offline">offline</option></select></td></tr>
                 <tr><td className="py-1 pr-2">intro (JSON)</td><td><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-16" /></td></tr>
+                <tr><td className="py-1 pr-2 align-top">提示词模板</td><td><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-16" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></td></tr>
               </tbody></table>
               <button type="button" onClick={createBot} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button>
-            </section>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">从 MCP 配置导入 Bot</h3>
-              <p className="text-xs text-gray-500 mb-2">粘贴 mcp.json 配置，自动解析 OPENCLAW_SESSION / OPENCLAW_AGENT_NAME / OPENCLAW_URL 并批量导入。</p>
-              <textarea
-                value={mcpConfigText}
-                onChange={(e) => { setMcpConfigText(e.target.value); setMcpPreviewBots([]); setMcpPreviewSkipped([]); }}
-                placeholder={'{\n  "mcpServers": {\n    "openclaw": {\n      "command": "npx",\n      "args": ["-y", "openclaw-mcp-server"],\n      "env": {\n        "OPENCLAW_URL": "ws://127.0.0.1:18789",\n        "OPENCLAW_TOKEN": "your-token",\n        "OPENCLAW_SESSION": "agent:xiaozhi",\n        "OPENCLAW_AGENT_NAME": "小龙虾"\n      }\n    }\n  }\n}'}
-                className="border rounded px-2 py-1 w-full h-36 font-mono text-xs"
-              />
-              <div className="flex gap-2 mt-2">
-                <button type="button" onClick={previewFromMcp} className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm">预览</button>
-                <button type="button" onClick={importFromMcp} disabled={mcpImporting} className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-60">
-                  {mcpImporting ? "导入中…" : "导入"}
-                </button>
-              </div>
-              {mcpPreviewBots.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-medium text-gray-600 mb-1">可导入的 Bot：</p>
-                  <table className="w-full text-xs border border-gray-200">
-                    <thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">服务名</th><th className="border px-2 py-1 text-left">username</th><th className="border px-2 py-1 text-left">显示名</th><th className="border px-2 py-1 text-left">endpoint</th></tr></thead>
-                    <tbody>
-                      {mcpPreviewBots.map((b) => (
-                        <tr key={b.server_name}><td className="border px-2 py-1">{b.server_name}</td><td className="border px-2 py-1">@{b.username}</td><td className="border px-2 py-1">{b.display_name || "—"}</td><td className="border px-2 py-1 break-all">{b.endpoint}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {mcpPreviewSkipped.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-xs font-medium text-gray-500 mb-1">跳过：</p>
-                  <ul className="text-xs text-gray-400 space-y-0.5">
-                    {mcpPreviewSkipped.map((s, i) => <li key={i}>{s.server}：{s.reason}</li>)}
-                  </ul>
-                </div>
-              )}
             </section>
             <section>
               <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
@@ -970,6 +926,107 @@ export default function AdminPage() {
               )}
             </section>
             <p className="text-sm"><a href="/docs" target="_blank" rel="noreferrer" className="text-blue-600 underline">打开 API 文档</a></p>
+
+            {/* MCP 导入模态框 */}
+            {mcpModalOpen && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+                  <div className="flex items-center justify-between p-4 border-b">
+                    <h3 className="text-lg font-medium">从 MCP 配置导入 Bot</h3>
+                    <button onClick={() => { setMcpModalOpen(false); setMcpConfigJson(""); setMcpSuggestions([]); setMcpSelectedIndex(null); }} className="text-gray-500 hover:text-gray-700">✕</button>
+                  </div>
+                  <div className="p-4 overflow-y-auto flex-1">
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">MCP 配置文件内容 (JSON)</label>
+                      <textarea
+                        value={mcpConfigJson}
+                        onChange={(e) => setMcpConfigJson(e.target.value)}
+                        placeholder={`示例：\n{\n  "mcpServers": {\n    "fetch": {\n      "command": "uvx",\n      "args": ["mcp-server-fetch"],\n      "description": "Fetch web content"\n    }\n  }\n}`}
+                        className="w-full border rounded px-3 py-2 font-mono text-xs h-40"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">支持 Claude Desktop 的 mcpServers 配置格式</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (!mcpConfigJson.trim()) { toast.error("请输入 MCP 配置"); return; }
+                        setMcpPreviewLoading(true);
+                        try {
+                          const res = await fetch(`${API}/mcp/preview`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ config_json: mcpConfigJson }),
+                          });
+                          const d = await res.json();
+                          if (d.status === "success" && d.data?.suggestions) {
+                            setMcpSuggestions(d.data.suggestions);
+                            if (d.data.suggestions.length === 0) toast.error("未找到有效的 MCP Server 配置");
+                            else toast.success(`找到 ${d.data.suggestions.length} 个可导入的配置`);
+                          } else {
+                            toast.error(d.detail || "解析失败");
+                          }
+                        } catch (e) {
+                          toast.error("请求失败: " + String(e));
+                        } finally {
+                          setMcpPreviewLoading(false);
+                        }
+                      }}
+                      disabled={mcpPreviewLoading}
+                      className="px-4 py-2 bg-purple-600 text-white rounded text-sm disabled:opacity-50"
+                    >
+                      {mcpPreviewLoading ? "解析中…" : "预览配置"}
+                    </button>
+
+                    {mcpSuggestions.length > 0 && (
+                      <div className="mt-4">
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">找到的服务器配置</h4>
+                        <div className="space-y-2">
+                          {mcpSuggestions.map((s, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => setMcpSelectedIndex(idx)}
+                              className={`p-3 border rounded cursor-pointer ${mcpSelectedIndex === idx ? "border-purple-500 bg-purple-50" : "border-gray-200 hover:border-purple-300"}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-sm">{s.server_name}</span>
+                                <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">{s.transport_type}</span>
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                @{s.suggested_username} → {s.suggested_endpoint}
+                              </div>
+                              <div className="text-xs text-gray-600 mt-1">{s.suggested_intro.description}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4 border-t flex justify-end gap-2">
+                    <button onClick={() => { setMcpModalOpen(false); setMcpConfigJson(""); setMcpSuggestions([]); setMcpSelectedIndex(null); }} className="px-4 py-2 text-gray-600 text-sm">取消</button>
+                    <button
+                      onClick={() => {
+                        if (mcpSelectedIndex === null) { toast.error("请选择要导入的服务器"); return; }
+                        const s = mcpSuggestions[mcpSelectedIndex];
+                        // 填充 Bot 表单
+                        setBotUsername(s.suggested_username);
+                        setBotDisplayName(s.suggested_display_name);
+                        setBotEndpoint(s.suggested_endpoint);
+                        setBotIntro(JSON.stringify(s.suggested_intro, null, 2));
+                        setBotWizardType("mcp");
+                        setMcpModalOpen(false);
+                        setMcpSuggestions([]);
+                        setMcpSelectedIndex(null);
+                        setBotWizardStep(1);
+                        toast.success("配置已填充，请检查并创建 Bot");
+                      }}
+                      disabled={mcpSelectedIndex === null}
+                      className="px-4 py-2 bg-purple-600 text-white rounded text-sm disabled:opacity-50"
+                    >
+                      导入选中配置
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
