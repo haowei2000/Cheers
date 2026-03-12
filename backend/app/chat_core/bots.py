@@ -116,6 +116,7 @@ async def create_bot(
         openclaw_token=body.openclaw_token.strip() if body.openclaw_token else None,
         status=body.status.strip() or "online",
         intro=intro_val,
+        avatar_url=body.avatar_url.strip() if body.avatar_url else None,
     )
     session.add(bot)
     await session.commit()
@@ -416,6 +417,8 @@ async def update_bot(
         bot.status = body.status.strip() or bot.status
     if body.intro is not None:
         bot.intro = _validate_intro(body.intro) if body.intro else None
+    if body.avatar_url is not None:
+        bot.avatar_url = body.avatar_url.strip() if body.avatar_url else None
     await session.commit()
     await session.refresh(bot)
     d = BotInResponse.model_validate(bot).model_dump()

@@ -77,6 +77,7 @@ class BotAccount(Base):
     openclaw_token: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)   # gateway auth token
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="offline")  # offline | online | busy
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 

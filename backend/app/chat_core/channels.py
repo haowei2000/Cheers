@@ -96,6 +96,8 @@ async def list_members(
     out = []
     for m in members:
         username = None
+        avatar_url = None
+        display_name = None
         if m.member_type == "bot":
             r = await session.execute(
                 select(BotAccount).where(BotAccount.bot_id == m.member_id)
@@ -103,11 +105,15 @@ async def list_members(
             bot = r.scalar_one_or_none()
             if bot:
                 username = bot.username
+                avatar_url = bot.avatar_url
+                display_name = bot.display_name
         out.append({
             "channel_id": m.channel_id,
             "member_id": m.member_id,
             "member_type": m.member_type,
             "username": username,
+            "avatar_url": avatar_url,
+            "display_name": display_name,
         })
     return {"status": "success", "data": out}
 

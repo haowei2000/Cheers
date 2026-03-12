@@ -76,6 +76,7 @@ class BotCreate(BaseModel):
     openclaw_token: str | None = None   # WebSocket 模式专用，gateway auth token
     status: str = "online"
     intro: str | None = None  # JSON: {"capabilities": [...], "description": "..."}
+    avatar_url: str | None = None
 
 
 class BotUpdate(BaseModel):
@@ -87,6 +88,7 @@ class BotUpdate(BaseModel):
     openclaw_token: str | None = None
     status: str | None = None
     intro: str | None = None
+    avatar_url: str | None = None
 
 
 class BotInResponse(BaseModel):
@@ -100,6 +102,7 @@ class BotInResponse(BaseModel):
     openclaw_token: str | None = None
     status: str
     intro: str | None = None
+    avatar_url: str | None = None
     created_at: datetime | None = None
 
 
