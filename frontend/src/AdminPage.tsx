@@ -15,6 +15,7 @@ type BotItem = {
   openclaw_endpoint: string;
   status: string;
   intro?: string;
+  prompt_template?: string;
   created_at?: string;
 };
 
@@ -92,6 +93,7 @@ export default function AdminPage() {
   const [botEndpoint, setBotEndpoint] = useState("");
   const [botStatus, setBotStatus] = useState("online");
   const [botIntro, setBotIntro] = useState("");
+  const [botPromptTemplate, setBotPromptTemplate] = useState("");
   const [botWizardStep, setBotWizardStep] = useState<0 | 1 | 2>(0);
   const [_botWizardType, setBotWizardType] = useState<"guide" | "http" | "mock" | "mcp">("guide");
   const [lastCreatedBotId, setLastCreatedBotId] = useState("");
@@ -456,10 +458,11 @@ export default function AdminPage() {
     if (botId.trim()) body.bot_id = botId.trim();
     if (botDisplayName.trim()) body.display_name = botDisplayName.trim();
     if (botIntro.trim()) body.intro = botIntro.trim();
+    if (botPromptTemplate.trim()) body.prompt_template = botPromptTemplate.trim();
     fetch(`${API}/bots`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); loadBots(); }
+        if (d.status === "success") { toast.success("Bot 创建成功"); setLastCreatedBotId(d.data?.bot_id ?? ""); if (botWizardStep === 1) setBotWizardStep(2); setBotId(""); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); loadBots(); }
         else toast.error(d.message || d.detail || "创建失败");
       })
       .catch((e) => toast.error("请求失败: " + String(e)));
@@ -472,11 +475,12 @@ export default function AdminPage() {
       openclaw_endpoint: botEndpoint.trim(),
       status: botStatus,
       intro: botIntro.trim(),
+      prompt_template: botPromptTemplate.trim(),
     };
     fetch(`${API}/bots/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { toast.success("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }
+        if (d.status === "success") { toast.success("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }
         else toast.error(d.detail || "更新失败");
       })
       .catch((e) => toast.error("请求失败: " + String(e)));
@@ -798,7 +802,7 @@ export default function AdminPage() {
                         <td className="border px-2 py-1">{b.status}</td>
                         <td className="border px-2 py-1 max-w-[150px] truncate" title={b.intro || ""}>{introSummary(b.intro)}</td>
                         <td className="border px-2 py-1">
-                          <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotStatus(b.status); setBotIntro(b.intro || ""); }} className="mr-1 px-2 py-0.5 text-blue-600 text-xs">编辑</button>
+                          <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotStatus(b.status); setBotIntro(b.intro || ""); setBotPromptTemplate(b.prompt_template || ""); }} className="mr-1 px-2 py-0.5 text-blue-600 text-xs">编辑</button>
                           <button type="button" onClick={() => deleteBot(b.bot_id)} className="px-2 py-0.5 text-red-600 text-xs">删除</button>
                         </td>
                       </tr>
@@ -813,9 +817,10 @@ export default function AdminPage() {
                   <div><label className="block text-gray-600">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-600">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-600">自我介绍 (JSON)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>
+                  <div><label className="block text-gray-600">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-20" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => updateBot(botEditingId)} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">保存</button>
-                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); }} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>
+                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>
                   </div>
                 </div>
               )}
@@ -870,6 +875,7 @@ export default function AdminPage() {
                   <div><label className="block text-gray-700">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
                   <div><label className="block text-gray-700">自我介绍 (JSON，含 capabilities 或 description)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1","能力2"],"description":"简短描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>
+                  <div><label className="block text-gray-700">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-20" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
                   <div className="flex gap-2"><button type="button" onClick={createBot} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button><button type="button" onClick={() => setBotWizardStep(0)} className="px-3 py-1 bg-gray-200 rounded text-sm">上一步</button></div>
                 </div>
               )}
@@ -903,6 +909,7 @@ export default function AdminPage() {
                 <tr><td className="py-1 pr-2">openclaw_endpoint</td><td><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
                 <tr><td className="py-1 pr-2">status</td><td><select value={botStatus} onChange={(e) => setBotStatus(e.target.value)} className="border rounded px-2 py-1"><option value="online">online</option><option value="offline">offline</option></select></td></tr>
                 <tr><td className="py-1 pr-2">intro (JSON)</td><td><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-16" /></td></tr>
+                <tr><td className="py-1 pr-2 align-top">提示词模板</td><td><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-16" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></td></tr>
               </tbody></table>
               <button type="button" onClick={createBot} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button>
             </section>
