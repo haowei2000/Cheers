@@ -1540,39 +1540,8 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 bg-white">
         {selectedId ? (
           <>
-            {/* Channel header */}
-            <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-white flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-lg font-light">#</span>
-                <h2 className="text-base font-semibold text-gray-900">{selectedChannel?.name || "频道"}</h2>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setAddBotOpen(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 text-xs font-medium transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" />
-                  </svg>
-                  <span>Bot</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContextOpen(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 text-xs font-medium transition-colors"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path fillRule="evenodd" d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" clipRule="evenodd" />
-                  </svg>
-                  <span>上下文</span>
-                </button>
-              </div>
-            </div>
-
-            {/* QA Toolbar */}
-            <div className="flex-shrink-0 px-4 py-2 border-b border-gray-100 bg-gray-50 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-400">问答: {blockPairsForExport.length} 组 · 已选 {selectedPairs.length} 组</span>
+            <div className="px-4 pt-3 pb-2 border-b bg-white flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-500">已识别问答 {blockPairsForExport.length} 组，已勾选 {selectedPairs.length} 组</span>
               <button
                 type="button"
                 onClick={downloadQaMarkdown}
@@ -1618,8 +1587,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            {/* Messages area - Slack style */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-auto">
+            <div ref={messagesContainerRef} className="flex-1 overflow-auto p-4 space-y-2">
               {loading ? (
                 <div className="flex items-center justify-center h-full text-gray-400 text-sm">加载中...</div>
               ) : (
@@ -1813,71 +1781,76 @@ export default function App() {
                     const avatarText = isBot ? botInitials.slice(0, 1) : (currentUser?.display_name || "U").slice(0, 1).toUpperCase();
 
                     return (
-                      <div key={m.msg_id} className="px-4 py-1 hover:bg-gray-50 group transition-colors">
-                        <div className="flex items-start gap-3">
-                          {/* Avatar */}
-                          <div className="flex-shrink-0 mt-0.5">
-                            {isBot && senderBot?.avatar_url ? (
-                              <img src={senderBot.avatar_url} alt={botLabel} className="w-9 h-9 rounded-lg object-cover" />
-                            ) : (
-                              <div
-                                className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-sm font-bold"
-                                style={{ backgroundColor: avatarBg }}
+                      <div
+                        key={m.msg_id}
+                        className={`p-2 rounded ${
+                          m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"
+                        }`}
+                      >
+                        <span className="text-xs text-gray-500 flex items-center gap-2">
+                          {m.sender_type === "bot" ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              {senderBot?.avatar_url ? (
+                                <img
+                                  src={senderBot.avatar_url}
+                                  alt={botLabel}
+                                  className="w-5 h-5 rounded-full object-cover flex-shrink-0"
+                                />
+                              ) : (
+                                <span
+                                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-400 text-white text-xs font-bold flex-shrink-0"
+                                  aria-hidden="true"
+                                >
+                                  {botInitials.slice(0, 1)}
+                                </span>
+                              )}
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium"
+                                aria-label="Bot"
                               >
-                                {avatarText}
-                              </div>
-                            )}
-                          </div>
-                          {/* Content */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline gap-2 flex-wrap">
-                              <span className={`font-semibold text-sm ${isBot ? "text-[#2EB67D]" : "text-gray-900"}`}>
-                                {senderName}
+                                {botLabel}
                               </span>
-                              {isBot && (
-                                <span className="text-xs px-1 py-0.5 bg-[#2EB67D]/10 text-[#2EB67D] rounded font-medium">Bot</span>
-                              )}
-                              <span className="text-xs text-gray-400">{m.created_at?.slice(0, 19) || ""}</span>
-                              {!isBot && qaPairByQuestionId.has(m.msg_id) && (
-                                <label className="inline-flex items-center gap-1 text-xs text-gray-500 cursor-pointer hover:text-gray-700">
-                                  <input
-                                    type="checkbox"
-                                    checked={!!selectedQaIds[m.msg_id]}
-                                    onChange={() => toggleQa(m.msg_id)}
-                                    className="accent-[#1264A3]"
-                                  />
-                                  <span>勾选</span>
-                                </label>
-                              )}
-                            </div>
-                            <div className="mt-0.5 text-sm text-gray-900 whitespace-pre-wrap leading-relaxed">
-                              {renderWithThinkFolding(text, `${m.msg_id}-`)}
-                            </div>
-                            {form && selectedId && isBot && (
-                              <GuideFormBlock
-                                msgId={m.msg_id}
-                                form={form}
-                                channelId={selectedId}
-                                onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                                onChannelsRefresh={() => refreshChannels(setChannels)}
-                              />
-                            )}
-                            {clarifyStatus !== null && selectedId && (
-                              <ClarifyInlineBlock
-                                msgId={m.msg_id}
-                                schema={clarify!}
-                                status={clarifyStatus}
-                                replyContent={replyContent}
-                                onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
-                                onSkip={() => handleClarifySkip(m.msg_id)}
-                              />
-                            )}
-                          </div>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">
+                              {m.sender_type === "user" ? "用户" : "系统"}
+                            </span>
+                          )}
+                          {m.created_at?.slice(0, 19) || ""}
+                        </span>
+                        <div className="mt-1 whitespace-pre-wrap">
+                          {renderWithThinkFolding(text, `${m.msg_id}-`)}
                         </div>
+                        {form && selectedId && m.sender_type === "bot" && (
+                          <GuideFormBlock
+                            msgId={m.msg_id}
+                            form={form}
+                            channelId={selectedId}
+                            onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                            onChannelsRefresh={() => refreshChannels(setChannels)}
+                          />
+                        )}
+                        {clarifyStatus !== null && selectedId && (
+                          <ClarifyInlineBlock
+                            msgId={m.msg_id}
+                            schema={clarify!}
+                            status={clarifyStatus}
+                            replyContent={replyContent}
+                            onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
+                            onSkip={() => handleClarifySkip(m.msg_id)}
+                          />
+                        )}
                       </div>
                     );
                   })}
-                </div>
+                  {waitingForBotReply && <ThinkingIndicator />}
+                  {Object.entries(processingBots).map(([botId, username]) => (
+                    <div key={botId} className="p-2 rounded bg-amber-50 border-l-2 border-amber-400 text-sm text-gray-600 animate-pulse">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 text-xs font-medium mr-2">@{username}</span>
+                      正在处理...
+                    </div>
+                  ))}
+                  </>
               )}
             </div>
 
@@ -1943,12 +1916,17 @@ export default function App() {
                     const matched = channelBots.filter((b) =>
                       b.username.toLowerCase().includes(mentionFilter.toLowerCase())
                     );
-                    return matched.length > 0 && (
-                      <ul
-                        className="absolute left-0 right-0 bottom-full mb-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-40 overflow-auto"
-                        role="listbox"
-                      >
-                        {matched.map((b) => (
+                    if (matched.length === 0) return null;
+                    const placementClass =
+                      mentionDropdownPlacement === "top"
+                        ? "bottom-full mb-1"
+                        : "top-full mt-1";
+                    return (
+                    <ul
+                      className={`absolute left-0 right-0 ${placementClass} bg-white border rounded shadow-lg z-20 max-h-40 overflow-auto`}
+                      role="listbox"
+                    >
+                      {matched.map((b) => (
                           <li
                             key={b.member_id}
                             role="option"
