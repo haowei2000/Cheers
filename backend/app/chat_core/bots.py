@@ -275,6 +275,10 @@ async def update_bot(
         bot.display_name = body.display_name.strip() if body.display_name else None
     if body.openclaw_endpoint is not None:
         bot.openclaw_endpoint = body.openclaw_endpoint.strip()
+    if body.openclaw_session is not None:
+        bot.openclaw_session = body.openclaw_session.strip() if body.openclaw_session else None
+    if body.openclaw_token is not None:
+        bot.openclaw_token = body.openclaw_token.strip() if body.openclaw_token else None
     if body.status is not None:
         bot.status = body.status.strip() or bot.status
     if body.intro is not None:

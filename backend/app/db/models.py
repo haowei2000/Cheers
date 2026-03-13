@@ -75,6 +75,8 @@ class BotAccount(Base):
     openclaw_endpoint: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="offline")  # offline | online | busy
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    openclaw_session: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    openclaw_token: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
     prompt_template: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 默认提示词模板，{{}} 表示用户消息
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

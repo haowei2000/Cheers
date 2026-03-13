@@ -87,10 +87,12 @@ async def create_message(
     except Exception as e:
         logger.exception("orchestrator failed channel_id=%s: %s", channel_id, e)
 
+    bot_message_dicts: list[dict] = []
     for bm in bot_messages:
         bd = MessageInResponse.model_validate(bm).model_dump()
         if bm.created_at:
             bd["created_at"] = bm.created_at.isoformat()
+        bot_message_dicts.append(bd)
         await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": bd})
 
     # RECENT 层异步更新（不阻塞主消息流）
@@ -98,7 +100,7 @@ async def create_message(
         from app.memory.recent_update import schedule_recent_update
         schedule_recent_update(channel_id)
 
-    return {"status": "success", "data": d}
+    return {"status": "success", "data": d, "bot_messages": bot_message_dicts}
 
 
 @router.post("/{channel_id}/guide-reply")

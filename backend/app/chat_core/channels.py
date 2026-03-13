@@ -93,6 +93,7 @@ async def list_members(
             "status": "success",
             "data": [MemberInResponse.model_validate(m).model_dump() for m in members],
         }
+    from app.db.models import User
     out = []
     for m in members:
         username = None
@@ -107,6 +108,15 @@ async def list_members(
                 username = bot.username
                 avatar_url = bot.avatar_url
                 display_name = bot.display_name
+        elif m.member_type == "user":
+            r = await session.execute(
+                select(User).where(User.user_id == m.member_id)
+            )
+            user = r.scalar_one_or_none()
+            if user:
+                username = user.username
+                avatar_url = user.avatar_url
+                display_name = user.display_name
         out.append({
             "channel_id": m.channel_id,
             "member_id": m.member_id,

@@ -1,8 +1,35 @@
 # OpenClaw 接入 AgentNexus 指南
 
-## 一、架构说明
+## 一、架构说明与模式选择
 
-### 消息流向
+AgentNexus 支持两种模式与 OpenClaw 通信，选择不同，用户体验不同：
+
+### 模式对比
+
+| 模式 | endpoint 前缀 | 说明 | 用户是否能看到真实 AI 回复 |
+|------|--------------|------|--------------------------|
+| **WS 模式（推荐）** | `ws://` 或 `wss://` | 通过 WebSocket JSON-RPC 调用，同步等待 AI 完整回复 | ✅ 能，实时写入聊天频道 |
+| **HTTP 模式** | `http://` 或 `https://` | 调用 `/hooks/agent`，fire-and-forget | ❌ 不能，仅显示"已接收请求，正在处理…" |
+
+> **生产环境强烈建议使用 WS 模式**，HTTP 模式仅适合不需要展示回复的场景（如纯触发式任务）。
+
+### WS 模式消息流向
+
+```
+用户在 AgentNexus 发消息
+        ↓
+AgentNexus WS 连接 OpenClaw Gateway :18789
+  握手 → chat.send（携带 sessionKey + message）
+        ↓
+OpenClaw Gateway 路由给 Agent
+        ↓
+Agent 运行、调用 LLM，流式输出
+        ↓
+stream=assistant 事件 → AgentNexus 累积文本
+stream=lifecycle phase=end → AgentNexus 写入频道并展示
+```
+
+### HTTP 模式消息流向
 
 ```
 用户在 AgentNexus 发消息
@@ -10,14 +37,12 @@
 AgentNexus POST /hooks/agent
   + Authorization: Bearer <token>
         ↓
-OpenClaw Gateway :18789
+OpenClaw Gateway :18789（立即返回 200，任务异步处理）
         ↓
-Agent 运行、调用 LLM
-        ↓
-响应返回给 AgentNexus
+AgentNexus 写入占位消息"已接收请求，正在处理…"
 ```
 
-> **注意：** OpenClaw 是**接收方**，没有 `/execute` 端点。AgentNexus 主动调用 OpenClaw，而不是反过来。
+> **注意：** HTTP 模式下 AgentNexus 收不到 AI 回复内容。OpenClaw 没有 `/execute` 端点；若需真实回复，请使用 WS 模式。
 
 ### Hooks 的两种类型（不要混淆）
 
@@ -116,25 +141,92 @@ curl http://127.0.0.1:18789/healthz
 
 ## 四、AgentNexus 侧配置
 
-在 AgentNexus 注册 Bot 时，需填写以下信息：
+### 4.1 通过管理后台 UI 配置（推荐）
+
+1. 打开前端 → 左侧「**管理**」→ **Bot 管理** 区块
+2. 点击「添加 Bot」，填写 **@ 名字**（username）后创建
+3. 在 Bot 列表中点击「**编辑**」，按模式填写：
+
+**WS 模式（推荐，能获取真实 AI 回复）：**
 
 | 字段 | 示例值 | 说明 |
 |------|--------|------|
-| `username` | `openclaw66` | @ 时使用的名称，全局唯一 |
-| `openclaw_endpoint` | `http://10.1.10.66:18789` | OpenClaw Gateway 地址，**端口必须是 18789**，不要用 nginx 端口 |
-| `hook_token` | `your-long-random-secret` | 与 `hooks.token` 一致 |
+| `openclaw_endpoint` | `ws://10.1.10.66:18789` | Gateway WebSocket 地址，端口通常为 18789 |
+| `openclaw_session` | `nexus:user1` | **必填**，session key，前缀须在 `allowedSessionKeyPrefixes` 中 |
+| `openclaw_token` | `your-long-random-secret` | 与 `hooks.token` 一致；WS 握手鉴权用 |
 
-同时在 AgentNexus 的环境变量或 Bot 配置中设置：
+**HTTP 模式（fire-and-forget，不等真实回复）：**
+
+| 字段 | 示例值 | 说明 |
+|------|--------|------|
+| `openclaw_endpoint` | `http://10.1.10.66:18789` | Gateway HTTP 地址 |
+
+HTTP 模式还需在后端 `.env` 中配置 Token（全局共用）：
 
 ```
 OPENCLAW_HOOK_TOKEN=your-long-random-secret
+OPENCLAW_AGENT_ID=main
+OPENCLAW_SESSION_PREFIX=nexus:
 ```
 
-若未配置，AgentNexus 会以无鉴权头方式调用，OpenClaw 将返回 401。
+若未配置 `OPENCLAW_HOOK_TOKEN`，AgentNexus 将不带鉴权头调用，OpenClaw 会返回 401。
+
+### 4.2 Bot 配置完成后
+
+1. 在「管理」→ **Bot 与频道** 区块，将 Bot 添加到目标项目
+2. 用户在项目中 `@username` 即可触发
 
 ---
 
-## 五、调用方式
+## 五、调用方式详解
+
+### 5.1 WS 模式（推荐）
+
+AgentNexus 与 OpenClaw Gateway 建立 WebSocket 连接后，执行三步 JSON-RPC：
+
+**第 1 步：握手**
+
+```json
+→ {"type":"req","id":"<uuid>","method":"connect","params":{
+    "minProtocol":3,"maxProtocol":3,
+    "client":{"id":"cli","version":"1.0","platform":"server","mode":"webchat"},
+    "role":"operator","scopes":["operator.admin"],
+    "auth":{"token":"your-long-random-secret"},
+    "caps":[]
+  }}
+← {"type":"res","id":"<uuid>","result":{...}}
+```
+
+**第 2 步：发消息**
+
+```json
+→ {"type":"req","id":"<uuid>","method":"chat.send","params":{
+    "sessionKey":"nexus:user1",
+    "message":"用户消息内容",
+    "deliver":false,
+    "idempotencyKey":"<task_id>"
+  }}
+← {"type":"res","id":"<uuid>","result":{...}}
+```
+
+**第 3 步：等待事件**
+
+```json
+← {"type":"event","payload":{"stream":"assistant","data":{"text":"AI 回复..."}}}
+← {"type":"event","payload":{"stream":"lifecycle","data":{"phase":"end"}}}
+```
+
+收到 `lifecycle phase=end`（或 `done`/`error`/`abort`）后，AgentNexus 将累积的 `assistant text` 写入频道并展示给用户。
+
+**关键配置对应关系：**
+
+| AgentNexus Bot 字段 | 对应 OpenClaw 配置 |
+|--------------------|------------------|
+| `openclaw_endpoint` | Gateway WebSocket 地址，如 `ws://10.1.10.66:18789` |
+| `openclaw_session` | `sessionKey`，前缀需在 `allowedSessionKeyPrefixes` 中 |
+| `openclaw_token` | `hooks.token`，握手时放入 `auth.token` |
+
+### 5.2 HTTP 模式
 
 AgentNexus 收到用户消息后，向 OpenClaw 发送：
 
@@ -152,8 +244,6 @@ Content-Type: application/json
 }
 ```
 
-### 字段说明
-
 | 字段 | 说明 |
 |------|------|
 | `message` | 用户消息，必填 |
@@ -162,10 +252,10 @@ Content-Type: application/json
 | `wakeMode` | `now` = 立即处理；`next-heartbeat` = 等下次心跳 |
 | `deliver` | `false` = 不让 OpenClaw 主动推送到 WhatsApp/Telegram，由 AgentNexus 自己处理响应 |
 
-### 注意事项
+注意事项：
 
 - Token **必须放在 Header**，不能放 query string（`?token=...` 会返回 400）
-- `/hooks/agent` 是**异步**接口，返回 200 仅表示任务已接受，不代表 Agent 已回复
+- `/hooks/agent` 是**异步**接口，返回 200 仅表示任务已接受，**AgentNexus 不等待 AI 回复**
 - `sessionKey` 前缀必须匹配 `allowedSessionKeyPrefixes`，否则请求会被拒绝
 
 ---
@@ -208,13 +298,32 @@ launchctl unload ~/Library/LaunchAgents/ai.openclaw.gateway.plist
 launchctl load  ~/Library/LaunchAgents/ai.openclaw.gateway.plist
 ```
 
-### 本地直接测试 hooks
+### WS 模式 Bot 无回复
+
+AgentNexus 日志出现 `ws_openclaw: failed` 时：
+
+1. 确认 `openclaw_session` 已填写（不能为空）
+2. 确认 `openclaw_session` 的前缀在 OpenClaw `allowedSessionKeyPrefixes` 中
+3. 确认 `openclaw_token` 与 OpenClaw `hooks.token` 一致
+4. 检查 Gateway 是否支持 WebSocket（`openclaw gateway status`）
+
+AgentNexus 日志出现 `ws_openclaw: timeout waiting for reply` 时：
+
+- Agent 处理超过 30 秒（默认超时）
+- 考虑缩短 Agent 响应链路，或检查 LLM 是否正常
+
+**WS 模式显示"endpoint 未配置或格式不支持"**
+
+- `openclaw_endpoint` 未填写，或不是 `ws://` / `wss://` 前缀（如误填了 `http://`）
+- 前往管理后台 → Bot 管理 → 编辑，将 endpoint 改为 `ws://...`
+
+### 本地直接测试 hooks（HTTP 模式）
 
 ```bash
 # 测试连通性
 curl http://127.0.0.1:18789/healthz
 
-# 测试完整调用
+# 测试完整调用（HTTP 模式）
 curl -X POST http://127.0.0.1:18789/hooks/agent \
   -H "Authorization: Bearer your-long-random-secret" \
   -H "Content-Type: application/json" \
