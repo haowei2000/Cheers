@@ -8,6 +8,7 @@ from app.adapters.base import OpenClawAdapter
 from app.adapters.http_openclaw import HttpOpenClawAdapter
 from app.adapters.mock import MockOpenClawAdapter
 from app.adapters.ws_openclaw import WsOpenClawAdapter
+from app.assistant.adapter import AssistantBotAdapter
 from app.db.models import BotAccount
 from app.guide.adapter import GuideBotAdapter
 from app.orchestrator.orchestrator_adapter import OrchestratorAdapter
@@ -24,6 +25,8 @@ async def get_adapter_for_bot(bot_id: str, session: AsyncSession) -> OpenClawAda
     ep = (bot.openclaw_endpoint or "").strip().lower()
     if ep.startswith("guide://"):
         return GuideBotAdapter()
+    if ep.startswith("assistant://"):
+        return AssistantBotAdapter()
     if ep.startswith("coordinator://"):
         return OrchestratorAdapter()
     if ep.startswith("ws://") or ep.startswith("wss://"):

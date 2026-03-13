@@ -7,7 +7,8 @@ const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.h
 const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
 const API_DOCS_URL = "/docs";
 
-type Channel = { channel_id: string; name: string; type: string };
+type Channel = { channel_id: string; name: string; type: string; workspace_id?: string };
+type Workspace = { workspace_id: string; name: string };
 type Message = {
   msg_id: string;
   sender_id: string;
@@ -308,6 +309,13 @@ function refreshChannels(setChannels: (c: Channel[]) => void) {
   fetch(`${API}/channels`)
     .then((r) => r.json())
     .then((d) => d.data && setChannels(d.data))
+    .catch(console.error);
+}
+
+function refreshWorkspaces(setWorkspaces: (w: Workspace[]) => void) {
+  fetch(`${API}/workspaces`)
+    .then((r) => r.json())
+    .then((d) => d.data && setWorkspaces(d.data))
     .catch(console.error);
 }
 
@@ -747,6 +755,8 @@ export default function App() {
   }, []);
 
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -772,6 +782,10 @@ export default function App() {
   const [mentionFilter, setMentionFilter] = useState("");
   const [mentionDropdownPlacement, setMentionDropdownPlacement] = useState<"top" | "bottom">("bottom");
   const [addBotOpen, setAddBotOpen] = useState(false);
+  const [createWsOpen, setCreateWsOpen] = useState(false);
+  const [createChannelOpen, setCreateChannelOpen] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [newChannelName, setNewChannelName] = useState("");
   const [allBots, setAllBots] = useState<BotItem[]>([]);
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
@@ -834,6 +848,68 @@ export default function App() {
     localStorage.removeItem("currentUser");
     setLoginModalOpen(true);
   };
+
+  // 创建工作空间
+  const handleCreateWorkspace = () => {
+    if (!newWorkspaceName.trim()) {
+      toast.error("请填写工作空间名称");
+      return;
+    }
+    fetch(`${API}/workspaces`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newWorkspaceName.trim() }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          toast.success("工作空间创建成功");
+          setNewWorkspaceName("");
+          setCreateWsOpen(false);
+          refreshWorkspaces(setWorkspaces);
+          setSelectedWorkspaceId(d.data.workspace_id);
+        } else {
+          toast.error(d.detail || "创建失败");
+        }
+      })
+      .catch(() => toast.error("创建失败"));
+  };
+
+  // 创建频道（项目）
+  const handleCreateChannel = () => {
+    if (!newChannelName.trim()) {
+      toast.error("请填写频道名称");
+      return;
+    }
+    if (!selectedWorkspaceId) {
+      toast.error("请先选择工作空间");
+      return;
+    }
+    fetch(`${API}/channels`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspace_id: selectedWorkspaceId,
+        name: newChannelName.trim(),
+        type: "public",
+        purpose: "",
+      }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          toast.success("频道创建成功");
+          setNewChannelName("");
+          setCreateChannelOpen(false);
+          refreshChannels(setChannels);
+          setSelectedId(d.data.channel_id);
+        } else {
+          toast.error(d.detail || "创建失败");
+        }
+      })
+      .catch(() => toast.error("创建失败"));
+  };
+
   function introSummary(intro: string | undefined): string {
     if (!intro) return "";
     try {
@@ -848,6 +924,11 @@ export default function App() {
 
   useEffect(() => {
     refreshChannels(setChannels);
+    // 加载工作空间列表
+    fetch(`${API}/workspaces`)
+      .then((r) => r.json())
+      .then((d) => d.data && setWorkspaces(d.data))
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -1403,27 +1484,74 @@ export default function App() {
           </div>
         )}
 
+        {/* Workspace selector */}
+        <div className="px-3 py-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[#C9BDD0] text-xs font-semibold uppercase tracking-wider">工作空间</span>
+            <button
+              type="button"
+              onClick={() => setCreateWsOpen(true)}
+              className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
+              title="创建工作空间"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+              </svg>
+            </button>
+          </div>
+          <select
+            value={selectedWorkspaceId}
+            onChange={(e) => setSelectedWorkspaceId(e.target.value)}
+            className="w-full bg-white/10 text-white text-sm rounded px-2 py-1.5 border border-white/20 focus:outline-none focus:border-white/40"
+          >
+            <option value="" className="text-gray-900">全部工作空间</option>
+            {workspaces.map((w) => (
+              <option key={w.workspace_id} value={w.workspace_id} className="text-gray-900">
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Channels section */}
-        <div className="px-3 pt-3 pb-1">
+        <div className="px-3 pt-3 pb-1 flex items-center justify-between">
           <span className="text-[#C9BDD0] text-xs font-semibold uppercase tracking-wider">频道</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (!selectedWorkspaceId) {
+                toast.error("请先选择工作空间");
+                return;
+              }
+              setCreateChannelOpen(true);
+            }}
+            className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
+            title="创建频道"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+            </svg>
+          </button>
         </div>
         <ul className="overflow-auto flex-1 px-2">
-          {channels.map((c) => (
-            <li key={c.channel_id}>
-              <button
-                type="button"
-                onClick={() => setSelectedId(c.channel_id)}
-                className={`w-full text-left px-2 py-1 rounded text-sm flex items-center gap-1.5 transition-colors ${
-                  selectedId === c.channel_id
-                    ? "bg-[#1264A3] text-white font-medium"
-                    : "text-[#C9BDD0] hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                <span className="text-current opacity-70">#</span>
-                <span className="truncate">{c.name}</span>
-              </button>
-            </li>
-          ))}
+          {channels
+            .filter((c) => !selectedWorkspaceId || c.workspace_id === selectedWorkspaceId)
+            .map((c) => (
+              <li key={c.channel_id}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(c.channel_id)}
+                  className={`w-full text-left px-2 py-1 rounded text-sm flex items-center gap-1.5 transition-colors ${
+                    selectedId === c.channel_id
+                      ? "bg-[#1264A3] text-white font-medium"
+                      : "text-[#C9BDD0] hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <span className="text-current opacity-70">#</span>
+                  <span className="truncate">{c.name}</span>
+                </button>
+              </li>
+            ))}
         </ul>
 
         {/* Bottom nav */}
@@ -1490,6 +1618,133 @@ export default function App() {
               <button type="button" onClick={() => setHelpOpen(false)} className="px-4 py-2 bg-[#F8F8F8] text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
                 关闭
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 创建工作空间 Modal */}
+      {createWsOpen && (
+        <div
+          className="fixed inset-0 z-10 flex items-center justify-center bg-black/40"
+          onClick={() => setCreateWsOpen(false)}
+          aria-modal="true"
+          role="dialog"
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900">创建工作空间</h2>
+              <button
+                type="button"
+                onClick={() => setCreateWsOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none"
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">名称</label>
+                <input
+                  type="text"
+                  value={newWorkspaceName}
+                  onChange={(e) => setNewWorkspaceName(e.target.value)}
+                  placeholder="输入工作空间名称"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateWorkspace()}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateWsOpen(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateWorkspace}
+                  className="px-4 py-2 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]"
+                >
+                  创建
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 创建频道 Modal */}
+      {createChannelOpen && (
+        <div
+          className="fixed inset-0 z-10 flex items-center justify-center bg-black/40"
+          onClick={() => setCreateChannelOpen(false)}
+          aria-modal="true"
+          role="dialog"
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900">创建频道</h2>
+              <button
+                type="button"
+                onClick={() => setCreateChannelOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none"
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">工作空间</label>
+                <select
+                  value={selectedWorkspaceId}
+                  onChange={(e) => setSelectedWorkspaceId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+                >
+                  <option value="">选择工作空间</option>
+                  {workspaces.map((w) => (
+                    <option key={w.workspace_id} value={w.workspace_id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">频道名称</label>
+                <input
+                  type="text"
+                  value={newChannelName}
+                  onChange={(e) => setNewChannelName(e.target.value)}
+                  placeholder="输入频道名称"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateChannel()}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateChannelOpen(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateChannel}
+                  className="px-4 py-2 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]"
+                >
+                  创建
+                </button>
+              </div>
             </div>
           </div>
         </div>

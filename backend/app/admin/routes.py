@@ -96,6 +96,7 @@ async def delete_llm_provider_route(provider_id: str) -> dict:
 
 class LLMBindingsBody(BaseModel):
     guide_bot: str | None = None
+    assistant_bot: str | None = None
     system_llm: str | None = None
     log_analyze: str | None = None
     qa_summarize: str | None = None
@@ -107,6 +108,7 @@ async def put_llm_bindings(body: LLMBindingsBody) -> dict:
     """更新功能绑定：各功能使用哪个 LLM（传 provider id，传空串表示不绑定）。"""
     set_llm_bindings(
         guide_bot=body.guide_bot,
+        assistant_bot=body.assistant_bot,
         system_llm=body.system_llm,
         log_analyze=body.log_analyze,
         qa_summarize=body.qa_summarize,
