@@ -543,408 +543,484 @@ export default function AdminPage() {
   const tabs = allTabs.filter((t) => !t.roles || t.roles.includes(userRole));
 
   return (
-    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
-      <header className="flex-shrink-0 bg-white border-b px-4 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-gray-800">管理后台</h1>
-        <Link to="/" className="text-sm text-blue-600 hover:underline">返回首页</Link>
+    <div className="h-screen bg-[#F8F8F8] flex flex-col overflow-hidden">
+      {/* Slack-style header */}
+      <header className="flex-shrink-0 bg-[#3F0E40] px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link
+            to="/"
+            className="text-[#C9BDD0] hover:text-white flex items-center gap-1.5 text-sm transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+            </svg>
+            返回
+          </Link>
+          <span className="text-white/30">|</span>
+          <h1 className="text-white font-semibold text-base">管理后台</h1>
+        </div>
+        {currentUser && (
+          <div className="flex items-center gap-2">
+            <span className="text-[#C9BDD0] text-sm">{currentUser.display_name}</span>
+            <div className="w-7 h-7 rounded-full bg-[#D0B3D3] text-[#3F0E40] text-xs font-bold flex items-center justify-center">
+              {currentUser.display_name.slice(0, 1).toUpperCase()}
+            </div>
+          </div>
+        )}
       </header>
-      <div className="flex-shrink-0 flex border-b bg-white px-4 gap-1">
+      {/* Tab navigation */}
+      <div className="flex-shrink-0 flex border-b border-gray-200 bg-white px-4 gap-0.5 overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium rounded-t ${activeTab === t.id ? "bg-gray-100 text-blue-700 border-b-2 border-blue-600 -mb-px" : "text-gray-600 hover:bg-gray-50"}`}
+            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
+              activeTab === t.id
+                ? "text-[#1264A3] border-b-2 border-[#1264A3] -mb-px"
+                : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+            }`}
           >
             {t.label}
           </button>
         ))}
       </div>
-      <main className="flex-1 min-h-0 p-4 overflow-y-auto">
+      <main className="flex-1 min-h-0 p-5 overflow-y-auto">
         {activeTab === "llm" && (
-          <div className="max-w-3xl space-y-6">
-            <h2 className="text-base font-medium text-gray-800">LLM 参数</h2>
-            <p className="text-sm text-gray-500">一层：设定 LLM（增删改、列表）；二层：为各功能从下拉中选择使用的 LLM。</p>
+          <div className="max-w-3xl space-y-5">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">LLM 参数</h2>
+              <p className="text-sm text-gray-500 mt-0.5">一层：设定 LLM（增删改、列表）；二层：为各功能从下拉中选择使用的 LLM。</p>
+            </div>
 
-            <section className="bg-white p-4 rounded border">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">一层 · LLM 设定</h3>
-              <div className="overflow-x-auto mb-3">
-                <table className="w-full text-sm border border-gray-200">
-                  <thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">名称</th><th className="border px-2 py-1 text-left">Base URL</th><th className="border px-2 py-1 text-left">Model</th><th className="border px-2 py-1 text-left">操作</th></tr></thead>
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">LLM 设定</h3>
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">名称</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Base URL</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Model</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">操作</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {llmProviders.length === 0 ? <tr><td colSpan={4} className="border px-2 py-2 text-gray-500">暂无，请先添加</td></tr> : llmProviders.map((p) => (
-                      <tr key={p.id}><td className="border px-2 py-1">{p.name}</td><td className="border px-2 py-1 truncate max-w-[200px]" title={p.base_url}>{p.base_url}</td><td className="border px-2 py-1">{p.model}</td><td className="border px-2 py-1"><button type="button" onClick={() => { setLlmEditingId(p.id); setLlmForm({ name: p.name, base_url: p.base_url, model: p.model, api_key: "", temperature: p.temperature, max_tokens: p.max_tokens }); }} className="mr-1 text-blue-600 text-xs">编辑</button><button type="button" onClick={() => deleteLlmProvider(p.id)} className="text-red-600 text-xs">删除</button></td></tr>
+                    {llmProviders.length === 0 ? (
+                      <tr><td colSpan={4} className="px-3 py-3 text-gray-400 text-sm">暂无，请先添加</td></tr>
+                    ) : llmProviders.map((p) => (
+                      <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="px-3 py-2">{p.name}</td>
+                        <td className="px-3 py-2 truncate max-w-[200px] text-gray-500" title={p.base_url}>{p.base_url}</td>
+                        <td className="px-3 py-2 text-gray-600">{p.model}</td>
+                        <td className="px-3 py-2">
+                          <button type="button" onClick={() => { setLlmEditingId(p.id); setLlmForm({ name: p.name, base_url: p.base_url, model: p.model, api_key: "", temperature: p.temperature, max_tokens: p.max_tokens }); }} className="mr-2 text-[#1264A3] text-xs font-medium hover:underline">编辑</button>
+                          <button type="button" onClick={() => deleteLlmProvider(p.id)} className="text-red-500 text-xs font-medium hover:underline">删除</button>
+                        </td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <form className="grid gap-2 text-sm max-w-lg" onSubmit={(e) => e.preventDefault()}>
-                <label className="flex items-center gap-2"><span className="w-24">名称</span><input type="text" value={llmForm.name} onChange={(e) => setLlmForm((f) => ({ ...f, name: e.target.value }))} placeholder="如：Ollama 本地" className="border rounded px-2 py-1 flex-1" /></label>
-                <label className="flex items-center gap-2"><span className="w-24">Base URL</span><input type="text" value={llmForm.base_url} onChange={(e) => setLlmForm((f) => ({ ...f, base_url: e.target.value }))} placeholder="http://localhost:11434/v1" className="border rounded px-2 py-1 flex-1" /></label>
-                <label className="flex items-center gap-2"><span className="w-24">Model</span><input type="text" value={llmForm.model} onChange={(e) => setLlmForm((f) => ({ ...f, model: e.target.value }))} placeholder="llama3" className="border rounded px-2 py-1 flex-1" /></label>
-                <label className="flex items-center gap-2"><span className="w-24">API Key</span><input type="password" value={llmForm.api_key} onChange={(e) => setLlmForm((f) => ({ ...f, api_key: e.target.value }))} placeholder={llmEditingId ? "留空不修改" : "选填"} className="border rounded px-2 py-1 flex-1" autoComplete="off" /></label>
-                <label className="flex items-center gap-2"><span className="w-24">Temperature</span><input type="number" step={0.1} value={llmForm.temperature} onChange={(e) => setLlmForm((f) => ({ ...f, temperature: Number(e.target.value) }))} className="border rounded px-2 py-1 w-20" /></label>
-                <label className="flex items-center gap-2"><span className="w-24">Max Tokens</span><input type="number" value={llmForm.max_tokens} onChange={(e) => setLlmForm((f) => ({ ...f, max_tokens: Number(e.target.value) }))} className="border rounded px-2 py-1 w-20" /></label>
-                <div className="flex gap-2 items-center">
-                  <button type="button" onClick={() => saveLlmProvider(!!llmEditingId)} disabled={llmSaveLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-60 disabled:cursor-not-allowed">{llmSaveLoading ? "提交中…" : (llmEditingId ? "保存修改" : "新增")}</button>
-                  {llmEditingId && <button type="button" onClick={() => { setLlmEditingId(null); setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 }); }} disabled={llmSaveLoading} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>}
+              <form className="grid gap-3 text-sm max-w-lg" onSubmit={(e) => e.preventDefault()}>
+                <label className="flex items-center gap-3"><span className="w-24 text-gray-600 text-xs">名称</span><input type="text" value={llmForm.name} onChange={(e) => setLlmForm((f) => ({ ...f, name: e.target.value }))} placeholder="如：Ollama 本地" className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 text-sm focus:outline-none focus:border-[#1264A3]" /></label>
+                <label className="flex items-center gap-3"><span className="w-24 text-gray-600 text-xs">Base URL</span><input type="text" value={llmForm.base_url} onChange={(e) => setLlmForm((f) => ({ ...f, base_url: e.target.value }))} placeholder="http://localhost:11434/v1" className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 text-sm focus:outline-none focus:border-[#1264A3]" /></label>
+                <label className="flex items-center gap-3"><span className="w-24 text-gray-600 text-xs">Model</span><input type="text" value={llmForm.model} onChange={(e) => setLlmForm((f) => ({ ...f, model: e.target.value }))} placeholder="llama3" className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 text-sm focus:outline-none focus:border-[#1264A3]" /></label>
+                <label className="flex items-center gap-3"><span className="w-24 text-gray-600 text-xs">API Key</span><input type="password" value={llmForm.api_key} onChange={(e) => setLlmForm((f) => ({ ...f, api_key: e.target.value }))} placeholder={llmEditingId ? "留空不修改" : "选填"} className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 text-sm focus:outline-none focus:border-[#1264A3]" autoComplete="off" /></label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-3"><span className="w-24 text-gray-600 text-xs">Temperature</span><input type="number" step={0.1} value={llmForm.temperature} onChange={(e) => setLlmForm((f) => ({ ...f, temperature: Number(e.target.value) }))} className="border border-gray-300 rounded-lg px-3 py-1.5 w-20 text-sm focus:outline-none focus:border-[#1264A3]" /></label>
+                  <label className="flex items-center gap-3"><span className="w-24 text-gray-600 text-xs">Max Tokens</span><input type="number" value={llmForm.max_tokens} onChange={(e) => setLlmForm((f) => ({ ...f, max_tokens: Number(e.target.value) }))} className="border border-gray-300 rounded-lg px-3 py-1.5 w-24 text-sm focus:outline-none focus:border-[#1264A3]" /></label>
+                </div>
+                <div className="flex gap-2 items-center pt-1">
+                  <button type="button" onClick={() => saveLlmProvider(!!llmEditingId)} disabled={llmSaveLoading} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium disabled:opacity-60 hover:bg-[#3d1040]">{llmSaveLoading ? "提交中…" : (llmEditingId ? "保存修改" : "新增")}</button>
+                  {llmEditingId && <button type="button" onClick={() => { setLlmEditingId(null); setLlmForm({ name: "", base_url: "", model: "", api_key: "", temperature: 0.7, max_tokens: 1000 }); }} disabled={llmSaveLoading} className="px-4 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">取消</button>}
                 </div>
               </form>
             </section>
 
-            <section className="bg-white p-4 rounded border">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">二层 · 功能绑定</h3>
-              <p className="text-xs text-gray-500 mb-2">为以下功能选择要使用的 LLM（从上方已添加的设定中选择）。</p>
-              <div className="space-y-2 text-sm">
-                <label className="flex items-center gap-2">
-                  <span className="w-32">引导 Bot</span>
-                  <select value={bindingGuideBot} onChange={(e) => setBindingGuideBot(e.target.value)} className="border rounded px-2 py-1 flex-1 max-w-xs">
-                    <option value="">— 不绑定 —</option>
-                    {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </label>
-                <label className="flex items-center gap-2">
-                  <span className="w-32">系统 LLM</span>
-                  <select value={bindingSystemLlm} onChange={(e) => setBindingSystemLlm(e.target.value)} className="border rounded px-2 py-1 flex-1 max-w-xs">
-                    <option value="">— 不绑定 —</option>
-                    {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <span className="text-gray-500 text-xs">RECENT 压缩等</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <span className="w-32">日志分析</span>
-                  <select value={bindingLogAnalyze} onChange={(e) => setBindingLogAnalyze(e.target.value)} className="border rounded px-2 py-1 flex-1 max-w-xs">
-                    <option value="">— 不绑定 —</option>
-                    {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <span className="text-gray-500 text-xs">未选时使用系统 LLM</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <span className="w-32">问答总结</span>
-                  <select value={bindingQaSummarize} onChange={(e) => setBindingQaSummarize(e.target.value)} className="border rounded px-2 py-1 flex-1 max-w-xs">
-                    <option value="">— 不绑定 —</option>
-                    {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <span className="text-gray-500 text-xs">未选时使用系统 LLM</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <span className="w-32">Orchestrator</span>
-                  <select value={bindingOrchestrator} onChange={(e) => setBindingOrchestrator(e.target.value)} className="border rounded px-2 py-1 flex-1 max-w-xs">
-                    <option value="">— 不绑定 —</option>
-                    {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <span className="text-gray-500 text-xs">直接回答时使用，未选时用系统 LLM</span>
-                </label>
-                <button type="button" onClick={saveLlmBindings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">保存绑定</button>
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">功能绑定</h3>
+              <p className="text-xs text-gray-500 mb-3">为以下功能选择要使用的 LLM（从上方已添加的设定中选择）。</p>
+              <div className="space-y-3 text-sm">
+                {[
+                  { label: "引导 Bot", value: bindingGuideBot, onChange: setBindingGuideBot, hint: "" },
+                  { label: "系统 LLM", value: bindingSystemLlm, onChange: setBindingSystemLlm, hint: "RECENT 压缩等" },
+                  { label: "日志分析", value: bindingLogAnalyze, onChange: setBindingLogAnalyze, hint: "未选时使用系统 LLM" },
+                  { label: "问答总结", value: bindingQaSummarize, onChange: setBindingQaSummarize, hint: "未选时使用系统 LLM" },
+                  { label: "Orchestrator", value: bindingOrchestrator, onChange: setBindingOrchestrator, hint: "直接回答时使用，未选时用系统 LLM" },
+                ].map(({ label, value, onChange, hint }) => (
+                  <label key={label} className="flex items-center gap-3">
+                    <span className="w-28 text-gray-600 text-xs flex-shrink-0">{label}</span>
+                    <select value={value} onChange={(e) => onChange(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 flex-1 max-w-xs text-sm focus:outline-none focus:border-[#1264A3]">
+                      <option value="">— 不绑定 —</option>
+                      {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    {hint && <span className="text-gray-400 text-xs">{hint}</span>}
+                  </label>
+                ))}
+                <button type="button" onClick={saveLlmBindings} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">保存绑定</button>
               </div>
             </section>
 
-            <section className="bg-white p-4 rounded border">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">澄清策略</h3>
-              <p className="text-xs text-gray-500 mb-2">用于控制引导 Bot 在问题不清晰时是否弹出澄清窗口。</p>
-              <div className="space-y-2 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={clarifySettings.clarify_strict_mode}
-                    onChange={(e) =>
-                      setClarifySettings((prev) => ({ ...prev, clarify_strict_mode: e.target.checked }))
-                    }
-                  />
-                  <span>严格模式（更倾向先澄清再回答）</span>
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">澄清策略</h3>
+              <p className="text-xs text-gray-500 mb-3">用于控制引导 Bot 在问题不清晰时是否弹出澄清窗口。</p>
+              <div className="space-y-3 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={clarifySettings.clarify_strict_mode} onChange={(e) => setClarifySettings((prev) => ({ ...prev, clarify_strict_mode: e.target.checked }))} className="accent-[#4A154B]" />
+                  <span className="text-gray-700">严格模式（更倾向先澄清再回答）</span>
                 </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={clarifySettings.clarify_force_rule}
-                    onChange={(e) =>
-                      setClarifySettings((prev) => ({ ...prev, clarify_force_rule: e.target.checked }))
-                    }
-                  />
-                  <span>允许规则强制澄清（命中规则时直接弹窗）</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={clarifySettings.clarify_force_rule} onChange={(e) => setClarifySettings((prev) => ({ ...prev, clarify_force_rule: e.target.checked }))} className="accent-[#4A154B]" />
+                  <span className="text-gray-700">允许规则强制澄清（命中规则时直接弹窗）</span>
                 </label>
-                <label className="flex items-center gap-2">
-                  <span className="w-40">LLM 澄清阈值（0~1）</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={clarifySettings.clarify_threshold}
-                    onChange={(e) =>
-                      setClarifySettings((prev) => ({
-                        ...prev,
-                        clarify_threshold: Number(e.target.value),
-                      }))
-                    }
-                    className="border rounded px-2 py-1 w-24"
-                  />
+                <label className="flex items-center gap-3">
+                  <span className="text-gray-600 text-xs w-36">LLM 澄清阈值（0~1）</span>
+                  <input type="number" min={0} max={1} step={0.05} value={clarifySettings.clarify_threshold} onChange={(e) => setClarifySettings((prev) => ({ ...prev, clarify_threshold: Number(e.target.value) }))} className="border border-gray-300 rounded-lg px-3 py-1.5 w-24 text-sm focus:outline-none focus:border-[#1264A3]" />
                 </label>
-                <button type="button" onClick={saveClarifySettings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">
-                  保存澄清策略
-                </button>
+                <button type="button" onClick={saveClarifySettings} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">保存澄清策略</button>
               </div>
             </section>
 
-            <section className="bg-white p-4 rounded border">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Orchestrator 配置</h3>
-              <p className="text-xs text-gray-500 mb-2">Orchestrator 为系统内置 Bot，负责回答业务问题。需先将其加入频道。</p>
-              <div className="space-y-2 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={orchestratorSettings.orchestrator_direct_answer}
-                    onChange={(e) =>
-                      setOrchestratorSettings((prev) => ({ ...prev, orchestrator_direct_answer: e.target.checked }))
-                    }
-                  />
-                  <span>直接回答未 @ 的问题（未 @ 任何人时由 Orchestrator 回答）</span>
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Orchestrator 配置</h3>
+              <p className="text-xs text-gray-500 mb-3">Orchestrator 为系统内置 Bot，负责回答业务问题。需先将其加入频道。</p>
+              <div className="space-y-3 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={orchestratorSettings.orchestrator_direct_answer} onChange={(e) => setOrchestratorSettings((prev) => ({ ...prev, orchestrator_direct_answer: e.target.checked }))} className="accent-[#4A154B]" />
+                  <span className="text-gray-700">直接回答未 @ 的问题（未 @ 任何人时由 Orchestrator 回答）</span>
                 </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={orchestratorSettings.orchestrator_auto_takeover}
-                    onChange={(e) =>
-                      setOrchestratorSettings((prev) => ({ ...prev, orchestrator_auto_takeover: e.target.checked }))
-                    }
-                  />
-                  <span>自动接手（Orchestrator 建议 @部门bot 后，被建议 Bot 自动回答）</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={orchestratorSettings.orchestrator_auto_takeover} onChange={(e) => setOrchestratorSettings((prev) => ({ ...prev, orchestrator_auto_takeover: e.target.checked }))} className="accent-[#4A154B]" />
+                  <span className="text-gray-700">自动接手（Orchestrator 建议 @部门bot 后，被建议 Bot 自动回答）</span>
                 </label>
-                <button type="button" onClick={saveOrchestratorSettings} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">
-                  保存 Orchestrator 配置
-                </button>
+                <button type="button" onClick={saveOrchestratorSettings} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">保存 Orchestrator 配置</button>
               </div>
             </section>
           </div>
         )}
 
         {activeTab === "perf" && (
-          <div>
-            <h2 className="text-base font-medium text-gray-800 mb-2">性能监控</h2>
+          <div className="max-w-4xl space-y-5">
+            <h2 className="text-base font-semibold text-gray-900">性能监控</h2>
             {taskStats && (
-              <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200 text-sm">
-                <h3 className="font-medium text-gray-700 mb-2">资源监控（最近 {taskStats.limit_days} 天）</h3>
-                <p className="text-gray-600 mb-2">总任务数：{taskStats.total_tasks}</p>
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">资源监控（最近 {taskStats.limit_days} 天）</h3>
+                <p className="text-sm text-gray-500 mb-3">总任务数：<span className="font-semibold text-gray-800">{taskStats.total_tasks}</span></p>
                 <div className="flex flex-wrap gap-3">
                   {taskStats.per_bot.map((b) => (
-                    <div key={b.username} className="px-3 py-2 bg-white rounded border border-gray-200">
-                      <span className="font-medium">@{b.username}</span>
-                      <span className="text-gray-500 ml-2">任务数 {b.task_count}</span>
-                      {b.avg_latency_ms != null && <span className="text-gray-500 ml-2">平均 {Math.round(b.avg_latency_ms)}ms</span>}
+                    <div key={b.username} className="px-4 py-3 bg-[#F8F8F8] rounded-lg border border-gray-200 text-sm">
+                      <div className="font-semibold text-gray-800">@{b.username}</div>
+                      <div className="text-gray-500 text-xs mt-0.5">任务数 {b.task_count}{b.avg_latency_ms != null ? ` · 平均 ${Math.round(b.avg_latency_ms)}ms` : ""}</div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-            <p className="text-sm text-gray-500 mb-2">最近 Agent 任务执行记录。</p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border border-gray-200 bg-white">
-                <thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">Bot</th><th className="border px-2 py-1 text-left">频道</th><th className="border px-2 py-1 text-left">耗时(ms)</th><th className="border px-2 py-1 text-left">时间</th></tr></thead>
-                <tbody>
-                  {(taskList.length === 0) ? <tr><td colSpan={4} className="border px-2 py-2 text-gray-500">暂无记录</td></tr> : taskList.slice(0, 50).map((t) => (
-                    <tr key={t.task_id}><td className="border px-2 py-1">{t.bot_username ?? t.task_id.slice(0, 8)}</td><td className="border px-2 py-1">{t.channel_id?.slice(0, 8)}…</td><td className="border px-2 py-1">{t.latency_ms ?? "—"}</td><td className="border px-2 py-1">{t.created_at?.slice(0, 19) ?? ""}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <p className="text-sm font-medium text-gray-700">最近 Agent 任务执行记录</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Bot</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">频道</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">耗时(ms)</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {taskList.length === 0 ? (
+                      <tr><td colSpan={4} className="px-4 py-4 text-gray-400 text-sm">暂无记录</td></tr>
+                    ) : taskList.slice(0, 50).map((t) => (
+                      <tr key={t.task_id} className="border-b border-gray-50 hover:bg-gray-50">
+                        <td className="px-4 py-2">{t.bot_username ?? t.task_id.slice(0, 8)}</td>
+                        <td className="px-4 py-2 text-gray-500">{t.channel_id?.slice(0, 8)}…</td>
+                        <td className="px-4 py-2 text-gray-600">{t.latency_ms ?? "—"}</td>
+                        <td className="px-4 py-2 text-gray-500">{t.created_at?.slice(0, 19) ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
 
         {activeTab === "logs" && (
-          <div className="space-y-4">
-            <h2 className="text-base font-medium text-gray-800">日志与排查</h2>
-            <p className="text-sm text-gray-500">日志格式面向 LLM 设计，便于「请 LLM 分析」给出可能原因与排查步骤。</p>
+          <div className="max-w-5xl space-y-5">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900">日志与排查</h2>
+              <p className="text-sm text-gray-500 mt-0.5">日志格式面向 LLM 设计，便于「请 LLM 分析」给出可能原因与排查步骤。</p>
+            </div>
             <div className="flex gap-2 items-center">
-              <select value={logLevel} onChange={(e) => setLogLevel(e.target.value)} className="border rounded px-2 py-1 text-sm">
-                <option value="">全部</option>
+              <select value={logLevel} onChange={(e) => setLogLevel(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]">
+                <option value="">全部级别</option>
                 <option value="DEBUG">DEBUG</option>
                 <option value="INFO">INFO</option>
                 <option value="WARNING">WARNING</option>
                 <option value="ERROR">ERROR</option>
               </select>
-              <button type="button" onClick={loadLogs} className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm">刷新日志</button>
+              <button type="button" onClick={loadLogs} className="px-4 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">刷新日志</button>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">日志摘要（可编辑后发给 LLM）</label>
-                <textarea value={logExcerpt} onChange={(e) => setLogExcerpt(e.target.value)} className="w-full border rounded p-2 font-mono text-xs h-64" placeholder="点击「刷新日志」加载" />
-                <label className="block text-sm font-medium text-gray-700 mt-2 mb-1">补充问题（可选）</label>
-                <input type="text" value={logQuestion} onChange={(e) => setLogQuestion(e.target.value)} placeholder="例如：为什么连接被拒绝？" className="w-full border rounded px-2 py-1 text-sm" />
-                <button type="button" onClick={analyzeLogs} disabled={logLoading} className="mt-2 px-4 py-2 bg-blue-600 text-white rounded text-sm disabled:opacity-50">请 LLM 分析</button>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">日志摘要（可编辑后发给 LLM）</label>
+                  <textarea value={logExcerpt} onChange={(e) => setLogExcerpt(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 font-mono text-xs h-64 focus:outline-none focus:border-[#1264A3]" placeholder="点击「刷新日志」加载" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">补充问题（可选）</label>
+                  <input type="text" value={logQuestion} onChange={(e) => setLogQuestion(e.target.value)} placeholder="例如：为什么连接被拒绝？" className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]" />
+                </div>
+                <button type="button" onClick={analyzeLogs} disabled={logLoading} className="px-4 py-2 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040] disabled:opacity-50">
+                  {logLoading ? "分析中…" : "请 LLM 分析"}
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">LLM 分析结果</label>
-                <div className="w-full border rounded p-2 bg-gray-50 text-sm whitespace-pre-wrap min-h-64">{logLoading ? "分析中…" : (logAnalysis || "—")}</div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">LLM 分析结果</label>
+                <div className="w-full border border-gray-200 rounded-lg p-3 bg-[#F8F8F8] text-sm whitespace-pre-wrap min-h-64 text-gray-700">
+                  {logLoading ? <span className="text-gray-400">分析中…</span> : (logAnalysis || <span className="text-gray-400">—</span>)}
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {activeTab === "bot" && (
-          <div className="max-w-2xl space-y-6">
-            <h2 className="text-base font-medium text-gray-800">Bot 与频道</h2>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                已注册 Bot 列表
-                <button type="button" onClick={loadBots} className="text-xs text-blue-600 hover:underline">刷新</button>
-              </h3>
+          <div className="max-w-3xl space-y-5">
+            <h2 className="text-base font-semibold text-gray-900">Bot 与频道</h2>
+
+            {/* Bot list */}
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-800">已注册 Bot 列表</h3>
+                <button type="button" onClick={loadBots} className="text-xs text-[#1264A3] font-medium hover:underline">刷新</button>
+              </div>
               {botList.length === 0 ? (
-                <p className="text-sm text-gray-500">暂无</p>
+                <p className="text-sm text-gray-400">暂无</p>
               ) : (
-                <table className="w-full text-sm border border-gray-200">
-                  <thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">@ 名字</th><th className="border px-2 py-1 text-left">显示名</th><th className="border px-2 py-1 text-left">endpoint</th><th className="border px-2 py-1 text-left">状态</th><th className="border px-2 py-1 text-left">能力/描述</th><th className="border px-2 py-1 text-left">操作</th></tr></thead>
-                  <tbody>
-                    {botList.map((b) => (
-                      <tr key={b.bot_id}>
-                        <td className="border px-2 py-1">{b.username}</td>
-                        <td className="border px-2 py-1">{b.display_name || "—"}</td>
-                        <td className="border px-2 py-1 break-all max-w-[120px]" title={b.openclaw_endpoint}>{b.openclaw_endpoint}</td>
-                        <td className="border px-2 py-1">{b.status}</td>
-                        <td className="border px-2 py-1 max-w-[150px] truncate" title={b.intro || ""}>{introSummary(b.intro)}</td>
-                        <td className="border px-2 py-1">
-                          <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotStatus(b.status); setBotIntro(b.intro || ""); setBotPromptTemplate(b.prompt_template || ""); }} className="mr-1 px-2 py-0.5 text-blue-600 text-xs">编辑</button>
-                          <button type="button" onClick={() => deleteBot(b.bot_id)} className="px-2 py-0.5 text-red-600 text-xs">删除</button>
-                        </td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">@ 名字</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">显示名</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">endpoint</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">状态</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">能力/描述</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">操作</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {botList.map((b) => (
+                        <tr key={b.bot_id} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="px-3 py-2 font-medium">{b.username}</td>
+                          <td className="px-3 py-2 text-gray-600">{b.display_name || "—"}</td>
+                          <td className="px-3 py-2 break-all max-w-[120px] text-gray-500 text-xs" title={b.openclaw_endpoint}>{b.openclaw_endpoint}</td>
+                          <td className="px-3 py-2">
+                            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${b.status === "online" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>{b.status}</span>
+                          </td>
+                          <td className="px-3 py-2 max-w-[150px] truncate text-gray-500" title={b.intro || ""}>{introSummary(b.intro)}</td>
+                          <td className="px-3 py-2">
+                            <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotStatus(b.status); setBotIntro(b.intro || ""); setBotPromptTemplate(b.prompt_template || ""); }} className="mr-2 text-[#1264A3] text-xs font-medium hover:underline">编辑</button>
+                            <button type="button" onClick={() => deleteBot(b.bot_id)} className="text-red-500 text-xs font-medium hover:underline">删除</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
               {botEditingId && (
-                <div className="mt-3 p-3 bg-gray-50 rounded border text-sm space-y-2">
-                  <h4 className="font-medium text-gray-700">编辑 Bot</h4>
-                  <div><label className="block text-gray-600">@ 名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
-                  <div><label className="block text-gray-600">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
-                  <div><label className="block text-gray-600">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
-                  <div><label className="block text-gray-600">自我介绍 (JSON)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>
-                  <div><label className="block text-gray-600">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-20" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
+                <div className="mt-4 p-4 bg-[#F8F8F8] rounded-xl border border-gray-200 text-sm space-y-3">
+                  <h4 className="font-semibold text-gray-800">编辑 Bot</h4>
+                  <div><label className="block text-xs text-gray-500 mb-1">@ 名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">自我介绍 (JSON)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 focus:outline-none focus:border-[#1264A3] text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 focus:outline-none focus:border-[#1264A3] text-sm" /><p className="text-xs text-gray-400 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => updateBot(botEditingId)} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">保存</button>
-                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }} className="px-3 py-1 bg-gray-200 rounded text-sm">取消</button>
+                    <button type="button" onClick={() => updateBot(botEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">保存</button>
+                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300">取消</button>
                   </div>
                 </div>
               )}
             </section>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">创建工作空间</h3>
-              <div className="flex gap-2"><input type="text" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} placeholder="空间名称" className="border rounded px-2 py-1" /><button type="button" onClick={createWorkspace} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button></div>
-            </section>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">创建项目</h3>
-              <div className="flex flex-wrap gap-2">
-                <select value={createWs} onChange={(e) => setCreateWs(e.target.value)} className="border rounded px-2 py-1 text-sm"><option value="">选择工作空间</option>{workspaces.map((w) => <option key={w.workspace_id} value={w.workspace_id}>{w.name}</option>)}</select>
-                <input type="text" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="项目名称" className="border rounded px-2 py-1 text-sm" />
-                <button type="button" onClick={createChannel} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button>
-              </div>
-            </section>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">添加成员</h3>
-              <div className="flex flex-wrap gap-2">
-                <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border rounded px-2 py-1 text-sm"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
-                <input type="text" value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} placeholder="成员 ID" className="border rounded px-2 py-1 text-sm w-40" />
-                <select value={addMemberType} onChange={(e) => setAddMemberType(e.target.value as "user" | "bot")} className="border rounded px-2 py-1 text-sm"><option value="user">用户</option><option value="bot">Bot</option></select>
-                <button type="button" onClick={addMember} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">添加</button>
-              </div>
-            </section>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">移除成员</h3>
-              <div className="flex flex-wrap gap-2">
-                <select value={rmCh} onChange={(e) => setRmCh(e.target.value)} className="border rounded px-2 py-1 text-sm"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
-                <input type="text" value={rmMemberId} onChange={(e) => setRmMemberId(e.target.value)} placeholder="成员 ID" className="border rounded px-2 py-1 text-sm w-40" />
-                <button type="button" onClick={removeMember} className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm">移除</button>
-              </div>
-            </section>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Bot 添加向导</h3>
+
+            {/* Quick actions */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <section className="bg-white rounded-xl border border-gray-200 p-4">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">创建工作空间</h3>
+                <div className="flex gap-2">
+                  <input type="text" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} placeholder="空间名称" className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 text-sm focus:outline-none focus:border-[#1264A3]" />
+                  <button type="button" onClick={createWorkspace} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">创建</button>
+                </div>
+              </section>
+              <section className="bg-white rounded-xl border border-gray-200 p-4">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">创建项目</h3>
+                <div className="flex flex-wrap gap-2">
+                  <select value={createWs} onChange={(e) => setCreateWs(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm flex-1 focus:outline-none focus:border-[#1264A3]"><option value="">选择工作空间</option>{workspaces.map((w) => <option key={w.workspace_id} value={w.workspace_id}>{w.name}</option>)}</select>
+                  <input type="text" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="项目名称" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm flex-1 focus:outline-none focus:border-[#1264A3]" />
+                  <button type="button" onClick={createChannel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">创建</button>
+                </div>
+              </section>
+              <section className="bg-white rounded-xl border border-gray-200 p-4">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">添加成员</h3>
+                <div className="flex flex-wrap gap-2">
+                  <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
+                  <input type="text" value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} placeholder="成员 ID" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-[#1264A3]" />
+                  <select value={addMemberType} onChange={(e) => setAddMemberType(e.target.value as "user" | "bot")} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]"><option value="user">用户</option><option value="bot">Bot</option></select>
+                  <button type="button" onClick={addMember} className="px-4 py-1.5 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0d5296]">添加</button>
+                </div>
+              </section>
+              <section className="bg-white rounded-xl border border-gray-200 p-4">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">移除成员</h3>
+                <div className="flex flex-wrap gap-2">
+                  <select value={rmCh} onChange={(e) => setRmCh(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
+                  <input type="text" value={rmMemberId} onChange={(e) => setRmMemberId(e.target.value)} placeholder="成员 ID" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-[#1264A3]" />
+                  <button type="button" onClick={removeMember} className="px-4 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100">移除</button>
+                </div>
+              </section>
+            </div>
+
+            {/* Bot wizard */}
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">Bot 添加向导</h3>
               {botWizardStep === 0 && (
                 <div className="flex gap-2 flex-wrap">
-                  <button type="button" onClick={() => { setBotWizardType("guide"); setBotEndpoint("guide://"); setBotWizardStep(1); }} className="px-3 py-2 border rounded text-sm">引导 Bot</button>
-                  <button type="button" onClick={() => { setBotWizardType("http"); setBotEndpoint("https://"); setBotWizardStep(1); }} className="px-3 py-2 border rounded text-sm">真实 OpenClaw</button>
-                  <button type="button" onClick={() => { setBotWizardType("mock"); setBotEndpoint("mock://"); setBotWizardStep(1); }} className="px-3 py-2 border rounded text-sm">Mock</button>
-                  <button type="button" onClick={() => setMcpModalOpen(true)} className="px-3 py-2 border rounded text-sm bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100">从 MCP 导入</button>
+                  <button type="button" onClick={() => { setBotWizardType("guide"); setBotEndpoint("guide://"); setBotWizardStep(1); }} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 text-gray-700">引导 Bot</button>
+                  <button type="button" onClick={() => { setBotWizardType("http"); setBotEndpoint("https://"); setBotWizardStep(1); }} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 text-gray-700">真实 OpenClaw</button>
+                  <button type="button" onClick={() => { setBotWizardType("mock"); setBotEndpoint("mock://"); setBotWizardStep(1); }} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 text-gray-700">Mock</button>
+                  <button type="button" onClick={() => setMcpModalOpen(true)} className="px-4 py-2 border border-purple-300 bg-purple-50 rounded-lg text-sm font-medium text-purple-700 hover:bg-purple-100">从 MCP 导入</button>
                 </div>
               )}
               {botWizardStep === 1 && (
-                <div className="space-y-2 text-sm">
+                <div className="space-y-3 text-sm max-w-lg">
                   {_botWizardType === "mcp" && (
-                    <div className="p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-700">
-                      📥 已从 MCP 配置导入，请检查并修改后创建
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-700">
+                      已从 MCP 配置导入，请检查并修改后创建
                     </div>
                   )}
-                  <div><label className="block text-gray-700">@ 用名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} placeholder="如：mybot" className="border rounded px-2 py-1 w-full" /></div>
-                  <div><label className="block text-gray-700">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
-                  <div><label className="block text-gray-700">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></div>
-                  <div><label className="block text-gray-700">自我介绍 (JSON，含 capabilities 或 description)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1","能力2"],"description":"简短描述"}' className="border rounded px-2 py-1 w-full h-20" /></div>
-                  <div><label className="block text-gray-700">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-20" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
-                  <div className="flex gap-2"><button type="button" onClick={createBot} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button><button type="button" onClick={() => setBotWizardStep(0)} className="px-3 py-1 bg-gray-200 rounded text-sm">上一步</button></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">@ 用名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} placeholder="如：mybot" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">自我介绍 (JSON，含 capabilities 或 description)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1","能力2"],"description":"简短描述"}' className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 focus:outline-none focus:border-[#1264A3]" /><p className="text-xs text-gray-400 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={createBot} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">创建</button>
+                    <button type="button" onClick={() => setBotWizardStep(0)} className="px-4 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">上一步</button>
+                  </div>
                 </div>
               )}
               {botWizardStep === 2 && (
-                <div className="space-y-2 text-sm">
-                  <p className="text-green-600">Bot 已创建，请加入项目。</p>
+                <div className="space-y-3 text-sm">
+                  <p className="text-[#007a5a] font-medium">Bot 已创建，请加入项目。</p>
                   <div className="flex gap-2">
-                    <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border rounded px-2 py-1"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
-                    <button type="button" onClick={addBotToChannel} className="px-3 py-1 bg-blue-600 text-white rounded text-sm">将 Bot 加入所选项目</button>
+                    <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#1264A3]"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
+                    <button type="button" onClick={addBotToChannel} className="px-4 py-1.5 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0d5296]">将 Bot 加入所选项目</button>
                   </div>
-                  <button type="button" onClick={() => { setBotWizardStep(0); setLastCreatedBotId(""); }} className="text-gray-500 text-xs">完成</button>
+                  <button type="button" onClick={() => { setBotWizardStep(0); setLastCreatedBotId(""); }} className="text-gray-400 text-xs hover:text-gray-600">完成</button>
                 </div>
               )}
             </section>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">创建 Bot（高级）</h3>
+
+            {/* Advanced create bot */}
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">创建 Bot（高级）</h3>
               <div className="mb-3">
-                <button
-                  type="button"
-                  onClick={() => setMcpModalOpen(true)}
-                  className="px-3 py-2 border rounded text-sm bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100"
-                >
-                  📥 从 MCP 配置导入
+                <button type="button" onClick={() => setMcpModalOpen(true)} className="px-4 py-2 border border-purple-300 bg-purple-50 rounded-lg text-sm font-medium text-purple-700 hover:bg-purple-100">
+                  从 MCP 配置导入
                 </button>
-                <span className="text-xs text-gray-500 ml-2">支持 Claude Desktop 的 mcpServers 配置</span>
+                <span className="text-xs text-gray-400 ml-2">支持 Claude Desktop 的 mcpServers 配置</span>
               </div>
-              <table className="w-full text-sm"><tbody>
-                <tr><td className="py-1 pr-2 w-32">bot_id（可选）</td><td><input type="text" value={botId} onChange={(e) => setBotId(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
-                <tr><td className="py-1 pr-2">username</td><td><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
-                <tr><td className="py-1 pr-2">display_name</td><td><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
-                <tr><td className="py-1 pr-2">openclaw_endpoint</td><td><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border rounded px-2 py-1 w-full" /></td></tr>
-                <tr><td className="py-1 pr-2">status</td><td><select value={botStatus} onChange={(e) => setBotStatus(e.target.value)} className="border rounded px-2 py-1"><option value="online">online</option><option value="offline">offline</option></select></td></tr>
-                <tr><td className="py-1 pr-2">intro (JSON)</td><td><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border rounded px-2 py-1 w-full h-16" /></td></tr>
-                <tr><td className="py-1 pr-2 align-top">提示词模板</td><td><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border rounded px-2 py-1 w-full h-16" /><p className="text-xs text-gray-500 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></td></tr>
-              </tbody></table>
-              <button type="button" onClick={createBot} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">创建</button>
+              <div className="grid grid-cols-1 gap-2 text-sm max-w-lg">
+                {[
+                  { label: "bot_id（可选）", value: botId, setter: setBotId, type: "text" },
+                  { label: "username", value: botUsername, setter: setBotUsername, type: "text" },
+                  { label: "display_name", value: botDisplayName, setter: setBotDisplayName, type: "text" },
+                  { label: "openclaw_endpoint", value: botEndpoint, setter: setBotEndpoint, type: "text" },
+                ].map(({ label, value, setter, type }) => (
+                  <label key={label} className="flex items-center gap-3">
+                    <span className="w-36 text-xs text-gray-500 flex-shrink-0">{label}</span>
+                    <input type={type} value={value} onChange={(e) => setter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 focus:outline-none focus:border-[#1264A3]" />
+                  </label>
+                ))}
+                <label className="flex items-center gap-3">
+                  <span className="w-36 text-xs text-gray-500 flex-shrink-0">status</span>
+                  <select value={botStatus} onChange={(e) => setBotStatus(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 flex-1 focus:outline-none focus:border-[#1264A3]"><option value="online">online</option><option value="offline">offline</option></select>
+                </label>
+                <div className="flex gap-3">
+                  <span className="w-36 text-xs text-gray-500 flex-shrink-0 pt-1.5">intro (JSON)</span>
+                  <textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border border-gray-300 rounded-lg px-3 py-2 flex-1 h-16 focus:outline-none focus:border-[#1264A3] text-sm" />
+                </div>
+                <div className="flex gap-3">
+                  <span className="w-36 text-xs text-gray-500 flex-shrink-0 pt-1.5">提示词模板</span>
+                  <div className="flex-1">
+                    <textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-16 focus:outline-none focus:border-[#1264A3] text-sm" />
+                    <p className="text-xs text-gray-400 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p>
+                  </div>
+                </div>
+              </div>
+              <button type="button" onClick={createBot} className="mt-3 px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">创建</button>
             </section>
-            <section>
-              <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                待审核 Bot 申请
-                <button type="button" onClick={loadPendingRequests} className="text-xs text-blue-600 hover:underline">刷新</button>
-              </h3>
-              {pendingRequests.length === 0 ? <p className="text-sm text-gray-500">暂无</p> : (
-                <table className="w-full text-sm border border-gray-200"><thead><tr className="bg-gray-50"><th className="border px-2 py-1 text-left">username</th><th className="border px-2 py-1 text-left">endpoint</th><th className="border px-2 py-1 text-left">自我介绍</th><th className="border px-2 py-1 text-left">操作</th></tr></thead><tbody>
-                  {pendingRequests.map((r) => (
-                    <tr key={r.request_id}><td className="border px-2 py-1">{r.username}</td><td className="border px-2 py-1 break-all">{r.openclaw_endpoint}</td><td className="border px-2 py-1 max-w-[150px] truncate" title={r.intro || ""}>{introSummary(r.intro)}</td><td className="border px-2 py-1"><button type="button" onClick={() => approveRequest(r.request_id)} className="mr-1 px-2 py-0.5 bg-green-600 text-white rounded text-xs">通过</button><button type="button" onClick={() => rejectRequest(r.request_id)} className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">拒绝</button></td></tr>
-                  ))}</tbody></table>
+
+            {/* Pending requests */}
+            <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-800">待审核 Bot 申请</h3>
+                <button type="button" onClick={loadPendingRequests} className="text-xs text-[#1264A3] font-medium hover:underline">刷新</button>
+              </div>
+              {pendingRequests.length === 0 ? <p className="text-sm text-gray-400">暂无</p> : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">username</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">endpoint</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">自我介绍</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingRequests.map((r) => (
+                        <tr key={r.request_id} className="border-b border-gray-50 hover:bg-gray-50">
+                          <td className="px-3 py-2 font-medium">{r.username}</td>
+                          <td className="px-3 py-2 break-all text-gray-500 text-xs">{r.openclaw_endpoint}</td>
+                          <td className="px-3 py-2 max-w-[150px] truncate text-gray-500" title={r.intro || ""}>{introSummary(r.intro)}</td>
+                          <td className="px-3 py-2">
+                            <button type="button" onClick={() => approveRequest(r.request_id)} className="mr-2 px-2.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium hover:bg-green-200">通过</button>
+                            <button type="button" onClick={() => rejectRequest(r.request_id)} className="px-2.5 py-0.5 bg-red-50 text-red-600 rounded text-xs font-medium hover:bg-red-100">拒绝</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
-            <p className="text-sm"><a href="/docs" target="_blank" rel="noreferrer" className="text-blue-600 underline">打开 API 文档</a></p>
+            <p className="text-sm"><a href="/docs" target="_blank" rel="noreferrer" className="text-[#1264A3] hover:underline font-medium">打开 API 文档</a></p>
 
             {/* MCP 导入模态框 */}
             {mcpModalOpen && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
-                  <div className="flex items-center justify-between p-4 border-b">
-                    <h3 className="text-lg font-medium">从 MCP 配置导入 Bot</h3>
-                    <button onClick={() => { setMcpModalOpen(false); setMcpConfigJson(""); setMcpSuggestions([]); setMcpSelectedIndex(null); }} className="text-gray-500 hover:text-gray-700">✕</button>
+                <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                    <h3 className="text-base font-semibold text-gray-900">从 MCP 配置导入 Bot</h3>
+                    <button onClick={() => { setMcpModalOpen(false); setMcpConfigJson(""); setMcpSuggestions([]); setMcpSelectedIndex(null); }} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600">✕</button>
                   </div>
-                  <div className="p-4 overflow-y-auto flex-1">
+                  <div className="p-5 overflow-y-auto flex-1">
                     <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">MCP 配置文件内容 (JSON)</label>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">MCP 配置文件内容 (JSON)</label>
                       <textarea
                         value={mcpConfigJson}
                         onChange={(e) => setMcpConfigJson(e.target.value)}
                         placeholder={`示例：\n{\n  "mcpServers": {\n    "fetch": {\n      "command": "uvx",\n      "args": ["mcp-server-fetch"],\n      "description": "Fetch web content"\n    }\n  }\n}`}
-                        className="w-full border rounded px-3 py-2 font-mono text-xs h-40"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 font-mono text-xs h-40 focus:outline-none focus:border-[#1264A3]"
                       />
-                      <p className="text-xs text-gray-500 mt-1">支持 Claude Desktop 的 mcpServers 配置格式</p>
+                      <p className="text-xs text-gray-400 mt-1">支持 Claude Desktop 的 mcpServers 配置格式</p>
                     </div>
                     <button
                       onClick={async () => {
@@ -971,24 +1047,24 @@ export default function AdminPage() {
                         }
                       }}
                       disabled={mcpPreviewLoading}
-                      className="px-4 py-2 bg-purple-600 text-white rounded text-sm disabled:opacity-50"
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-purple-700"
                     >
                       {mcpPreviewLoading ? "解析中…" : "预览配置"}
                     </button>
 
                     {mcpSuggestions.length > 0 && (
                       <div className="mt-4">
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">找到的服务器配置</h4>
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">找到的服务器配置</h4>
                         <div className="space-y-2">
                           {mcpSuggestions.map((s, idx) => (
                             <div
                               key={idx}
                               onClick={() => setMcpSelectedIndex(idx)}
-                              className={`p-3 border rounded cursor-pointer ${mcpSelectedIndex === idx ? "border-purple-500 bg-purple-50" : "border-gray-200 hover:border-purple-300"}`}
+                              className={`p-3 border rounded-lg cursor-pointer transition-colors ${mcpSelectedIndex === idx ? "border-purple-500 bg-purple-50" : "border-gray-200 hover:border-purple-300 hover:bg-gray-50"}`}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="font-medium text-sm">{s.server_name}</span>
-                                <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">{s.transport_type}</span>
+                                <span className="font-semibold text-sm text-gray-800">{s.server_name}</span>
+                                <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded font-medium">{s.transport_type}</span>
                               </div>
                               <div className="text-xs text-gray-500 mt-1">
                                 @{s.suggested_username} → {s.suggested_endpoint}
@@ -1000,13 +1076,12 @@ export default function AdminPage() {
                       </div>
                     )}
                   </div>
-                  <div className="p-4 border-t flex justify-end gap-2">
-                    <button onClick={() => { setMcpModalOpen(false); setMcpConfigJson(""); setMcpSuggestions([]); setMcpSelectedIndex(null); }} className="px-4 py-2 text-gray-600 text-sm">取消</button>
+                  <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+                    <button onClick={() => { setMcpModalOpen(false); setMcpConfigJson(""); setMcpSuggestions([]); setMcpSelectedIndex(null); }} className="px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-50 rounded-lg">取消</button>
                     <button
                       onClick={() => {
                         if (mcpSelectedIndex === null) { toast.error("请选择要导入的服务器"); return; }
                         const s = mcpSuggestions[mcpSelectedIndex];
-                        // 填充 Bot 表单
                         setBotUsername(s.suggested_username);
                         setBotDisplayName(s.suggested_display_name);
                         setBotEndpoint(s.suggested_endpoint);
@@ -1019,7 +1094,7 @@ export default function AdminPage() {
                         toast.success("配置已填充，请检查并创建 Bot");
                       }}
                       disabled={mcpSelectedIndex === null}
-                      className="px-4 py-2 bg-purple-600 text-white rounded text-sm disabled:opacity-50"
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-purple-700"
                     >
                       导入选中配置
                     </button>
@@ -1031,29 +1106,38 @@ export default function AdminPage() {
         )}
 
         {activeTab === "health" && (
-          <div>
-            <h2 className="text-base font-medium text-gray-800 mb-2">系统状态</h2>
+          <div className="max-w-md space-y-5">
+            <h2 className="text-base font-semibold text-gray-900">系统状态</h2>
             {healthStatus ? (
-              <ul className="space-y-1 text-sm">
-                <li>数据库: <span className={healthStatus.database === "ok" ? "text-green-600" : "text-red-600"}>{healthStatus.database}</span></li>
-                <li>Redis: <span className={healthStatus.redis === "ok" ? "text-green-600" : "text-red-600"}>{healthStatus.redis}</span></li>
-                <li>引导 LLM: <span className={
-                  healthStatus.guide_llm === "ok" ? "text-green-600" :
-                  healthStatus.guide_llm === "degraded (503)" ? "text-amber-600" : "text-red-600"
-                }>{healthStatus.guide_llm ?? "—"}</span></li>
-              </ul>
+              <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+                {[
+                  { label: "数据库", value: healthStatus.database, good: healthStatus.database === "ok" },
+                  { label: "Redis", value: healthStatus.redis, good: healthStatus.redis === "ok" },
+                  { label: "引导 LLM", value: healthStatus.guide_llm ?? "—", good: healthStatus.guide_llm === "ok", warn: healthStatus.guide_llm === "degraded (503)" },
+                ].map(({ label, value, good, warn }) => (
+                  <div key={label} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                    <span className="text-sm font-medium text-gray-700">{label}</span>
+                    <span className={`text-sm font-semibold px-2.5 py-0.5 rounded-full ${
+                      good ? "bg-green-100 text-green-700" : warn ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                    }`}>{value}</span>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <p className="text-gray-500">加载中…</p>
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <p className="text-gray-400 text-sm">加载中…</p>
+              </div>
             )}
           </div>
         )}
 
         {activeTab === "user" && (
-          <div>
-            <h2 className="text-base font-medium text-gray-800 mb-4">用户管理</h2>
+          <div className="max-w-4xl space-y-5">
+            <h2 className="text-base font-semibold text-gray-900">用户管理</h2>
 
             {/* 新建用户表单 */}
-            <div className="mb-4 p-3 bg-gray-50 rounded">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">新建用户</h3>
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -1079,81 +1163,86 @@ export default function AdminPage() {
                     })
                     .catch(() => toast.error("请求失败"));
                 }}
-                className="flex gap-2 items-end"
+                className="flex flex-wrap gap-3 items-end"
               >
                 <div>
-                  <label className="text-xs block">用户名</label>
-                  <input name="username" required className="border rounded px-2 py-1" />
+                  <label className="text-xs font-medium text-gray-500 block mb-1">用户名</label>
+                  <input name="username" required className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]" />
                 </div>
                 <div>
-                  <label className="text-xs block">显示名</label>
-                  <input name="display_name" className="border rounded px-2 py-1" />
+                  <label className="text-xs font-medium text-gray-500 block mb-1">显示名</label>
+                  <input name="display_name" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]" />
                 </div>
                 <div>
-                  <label className="text-xs block">密码</label>
-                  <input name="password" type="password" required className="border rounded px-2 py-1" />
+                  <label className="text-xs font-medium text-gray-500 block mb-1">密码</label>
+                  <input name="password" type="password" required className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]" />
                 </div>
-                <button type="submit" className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">新建用户</button>
+                <button type="submit" className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">新建用户</button>
               </form>
             </div>
 
-            <table className="w-full text-sm border">
-              <thead>
-                <tr className="bg-gray-50 border-b">
-                  <th className="text-left p-2">用户名</th>
-                  <th className="text-left p-2">显示名</th>
-                  <th className="text-left p-2">角色</th>
-                  <th className="text-left p-2">创建时间</th>
-                  <th className="text-left p-2">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {userList.map((u) => (
-                  <tr key={u.user_id} className="border-b">
-                    <td className="p-2">{u.username}</td>
-                    <td className="p-2">{u.display_name || "—"}</td>
-                    <td className="p-2">
-                      <select value={u.role} onChange={(e) => updateUserRole(u.user_id, e.target.value)} className="border rounded px-2 py-1">
-                        <option value="system_admin">系统管理员</option>
-                        <option value="space_admin">空间管理员</option>
-                        <option value="channel_admin">频道管理员</option>
-                        <option value="member">成员</option>
-                        <option value="guest">访客</option>
-                      </select>
-                    </td>
-                    <td className="p-2">{u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}</td>
-                    <td className="p-2">
-                      <button onClick={() => { fetch(`${API}/auth/users/reset-password/${u.user_id}`, { method: "POST" }).then((r) => r.json()).then((d) => { if (d.status === "success") { toast.success("密码已重置为 123456"); } else { toast.error(d.detail || "重置失败"); } }).catch(() => toast.error("请求失败")); }} className="text-blue-600 hover:underline mr-2">重置密码</button>
-                      <button onClick={() => { if (confirm("确定删除该用户？")) { fetch(`${API}/auth/users/${u.user_id}`, { method: "DELETE" }).then(() => setUserList((list) => list.filter((x) => x.user_id !== u.user_id))); }}} className="text-red-600 hover:underline">删除</button>
-                    </td>
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">用户名</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">显示名</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">角色</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">创建时间</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">操作</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {userList.length === 0 && <p className="text-gray-500 mt-4">暂无用户</p>}
+                </thead>
+                <tbody>
+                  {userList.map((u) => (
+                    <tr key={u.user_id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="px-4 py-2.5 font-medium">{u.username}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{u.display_name || "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <select value={u.role} onChange={(e) => updateUserRole(u.user_id, e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-[#1264A3]">
+                          <option value="system_admin">系统管理员</option>
+                          <option value="space_admin">空间管理员</option>
+                          <option value="channel_admin">频道管理员</option>
+                          <option value="member">成员</option>
+                          <option value="guest">访客</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <button onClick={() => { fetch(`${API}/auth/users/reset-password/${u.user_id}`, { method: "POST" }).then((r) => r.json()).then((d) => { if (d.status === "success") { toast.success("密码已重置为 123456"); } else { toast.error(d.detail || "重置失败"); } }).catch(() => toast.error("请求失败")); }} className="text-[#1264A3] text-xs font-medium hover:underline mr-3">重置密码</button>
+                        <button onClick={() => { if (confirm("确定删除该用户？")) { fetch(`${API}/auth/users/${u.user_id}`, { method: "DELETE" }).then(() => setUserList((list) => list.filter((x) => x.user_id !== u.user_id))); }}} className="text-red-500 text-xs font-medium hover:underline">删除</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {userList.length === 0 && <p className="text-gray-400 px-4 py-4 text-sm">暂无用户</p>}
+            </div>
           </div>
         )}
 
         {activeTab === "workspace" && (
-          <div>
-            <h2 className="text-base font-medium text-gray-800 mb-4">工作空间管理</h2>
+          <div className="max-w-4xl space-y-5">
+            <h2 className="text-base font-semibold text-gray-900">工作空间管理</h2>
 
             {/* 我的工作空间列表 - 点击选择 */}
-            <div className="mb-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">我的工作空间</h3>
-              <div className="flex flex-wrap gap-2 mb-3">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">我的工作空间</h3>
+              <div className="flex flex-wrap gap-2 mb-4">
                 {workspaces.map((ws) => (
                   <button
                     key={ws.workspace_id}
                     onClick={() => setSelectedWorkspaceId(ws.workspace_id)}
-                    className={`px-3 py-1 rounded border ${selectedWorkspaceId === ws.workspace_id ? "bg-blue-500 text-white" : "bg-white hover:bg-gray-50"}`}
+                    className={`px-4 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                      selectedWorkspaceId === ws.workspace_id
+                        ? "bg-[#4A154B] text-white border-[#4A154B]"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                    }`}
                   >
                     {ws.name}
                   </button>
                 ))}
               </div>
 
-              {/* 创建工作空间 - 仅系统管理员和空间管理员 */}
               {(userRole === "system_admin" || userRole === "space_admin") && (
                 <form
                   onSubmit={(e) => {
@@ -1181,8 +1270,8 @@ export default function AdminPage() {
                   }}
                   className="flex gap-2"
                 >
-                  <input name="wsname" placeholder="新工作空间名称" required className="border rounded px-2 py-1 flex-1" />
-                  <button type="submit" className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">新增空间</button>
+                  <input name="wsname" placeholder="新工作空间名称" required className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 text-sm focus:outline-none focus:border-[#1264A3]" />
+                  <button type="submit" className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">新增空间</button>
                 </form>
               )}
             </div>
@@ -1191,8 +1280,8 @@ export default function AdminPage() {
             {selectedWorkspaceId && (
               <div className="grid grid-cols-2 gap-4">
                 {/* 成员管理 */}
-                <div className="border rounded p-3">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">成员管理</h3>
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">成员管理</h3>
                   {(userRole === "system_admin" || userRole === "space_admin") && (
                     <form
                       onSubmit={(e) => {
@@ -1200,13 +1289,8 @@ export default function AdminPage() {
                         const fd = new FormData(e.currentTarget);
                         const username = fd.get("username") as string;
                         if (!username) return;
-                        // 查找用户ID
                         const user = userList.find((u) => u.username === username);
-                        if (!user) {
-                          toast.error("用户不存在");
-                          return;
-                        }
-                        // 添加用户到第一个频道
+                        if (!user) { toast.error("用户不存在"); return; }
                         if (workspaceChannels.length > 0) {
                           fetch(`${API}/channels/${workspaceChannels[0].channel_id}/members`, {
                             method: "POST",
@@ -1215,47 +1299,41 @@ export default function AdminPage() {
                           })
                             .then((r) => r.json())
                             .then((d) => {
-                              if (d.status === "success") {
-                                toast.success("添加成功");
-                                setWorkspaceUsers((list) => [...list, user]);
-                              } else {
-                                toast.error(d.detail || "添加失败");
-                              }
+                              if (d.status === "success") { toast.success("添加成功"); setWorkspaceUsers((list) => [...list, user]); }
+                              else toast.error(d.detail || "添加失败");
                             })
                             .catch(() => toast.error("请求失败"));
-                        } else {
-                          toast.error("请先创建频道");
-                        }
+                        } else { toast.error("请先创建频道"); }
                         (e.target as HTMLFormElement).reset();
                       }}
-                      className="flex gap-2 mb-2"
+                      className="flex gap-2 mb-3"
                     >
-                      <input name="username" placeholder="用户名" required className="border rounded px-2 py-1 flex-1" />
-                      <button type="submit" className="bg-green-500 text-white px-2 py-1 rounded text-sm">添加成员</button>
+                      <input name="username" placeholder="用户名" required className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 text-sm focus:outline-none focus:border-[#1264A3]" />
+                      <button type="submit" className="px-3 py-1.5 bg-[#007a5a] text-white rounded-lg text-sm font-medium hover:bg-[#006a4d]">添加</button>
                     </form>
                   )}
-                  <table className="w-full text-xs border">
+                  <table className="w-full text-xs">
                     <thead>
-                      <tr className="bg-gray-50 border-b">
-                        <th className="text-left p-1">用户名</th>
-                        <th className="text-left p-1">显示名</th>
+                      <tr className="border-b border-gray-100">
+                        <th className="text-left py-1.5 text-gray-500 font-semibold uppercase tracking-wide">用户名</th>
+                        <th className="text-left py-1.5 text-gray-500 font-semibold uppercase tracking-wide">显示名</th>
                       </tr>
                     </thead>
                     <tbody>
                       {workspaceUsers.map((u) => (
-                        <tr key={u.user_id} className="border-b">
-                          <td className="p-1">{u.username}</td>
-                          <td className="p-1">{u.display_name || "—"}</td>
+                        <tr key={u.user_id} className="border-b border-gray-50">
+                          <td className="py-1.5 font-medium text-gray-800">{u.username}</td>
+                          <td className="py-1.5 text-gray-500">{u.display_name || "—"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  {workspaceUsers.length === 0 && <p className="text-gray-500 text-xs">暂无成员</p>}
+                  {workspaceUsers.length === 0 && <p className="text-gray-400 text-xs mt-2">暂无成员</p>}
                 </div>
 
                 {/* 频道管理 */}
-                <div className="border rounded p-3">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">频道管理</h3>
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">频道管理</h3>
                   {(userRole === "system_admin" || userRole === "space_admin" || userRole === "channel_admin") && (
                     <form
                       onSubmit={(e) => {
@@ -1270,54 +1348,46 @@ export default function AdminPage() {
                         })
                           .then((r) => r.json())
                           .then((d) => {
-                            if (d.status === "success") {
-                              toast.success("创建成功");
-                              setWorkspaceChannels((list) => [...list, d.data]);
-                            } else {
-                              toast.error(d.detail || "创建失败");
-                            }
+                            if (d.status === "success") { toast.success("创建成功"); setWorkspaceChannels((list) => [...list, d.data]); }
+                            else toast.error(d.detail || "创建失败");
                           })
                           .catch(() => toast.error("请求失败"));
                         (e.target as HTMLFormElement).reset();
                       }}
-                      className="flex gap-2 mb-2"
+                      className="flex gap-2 mb-3"
                     >
-                      <input name="channelname" placeholder="新频道名称" required className="border rounded px-2 py-1 flex-1" />
-                      <button type="submit" className="bg-green-500 text-white px-2 py-1 rounded text-sm">新增频道</button>
+                      <input name="channelname" placeholder="新频道名称" required className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 text-sm focus:outline-none focus:border-[#1264A3]" />
+                      <button type="submit" className="px-3 py-1.5 bg-[#007a5a] text-white rounded-lg text-sm font-medium hover:bg-[#006a4d]">新增</button>
                     </form>
                   )}
-                  <table className="w-full text-xs border">
+                  <table className="w-full text-xs">
                     <thead>
-                      <tr className="bg-gray-50 border-b">
-                        <th className="text-left p-1">频道名</th>
-                        <th className="text-left p-1">类型</th>
-                        {(userRole === "system_admin" || userRole === "space_admin" || userRole === "channel_admin") && <th className="text-left p-1">操作</th>}
+                      <tr className="border-b border-gray-100">
+                        <th className="text-left py-1.5 text-gray-500 font-semibold uppercase tracking-wide">频道名</th>
+                        <th className="text-left py-1.5 text-gray-500 font-semibold uppercase tracking-wide">类型</th>
+                        {(userRole === "system_admin" || userRole === "space_admin" || userRole === "channel_admin") && <th className="text-left py-1.5"></th>}
                       </tr>
                     </thead>
                     <tbody>
                       {workspaceChannels.map((ch) => (
-                        <tr key={ch.channel_id} className="border-b">
-                          <td className="p-1">{ch.name}</td>
-                          <td className="p-1">{ch.type}</td>
+                        <tr key={ch.channel_id} className="border-b border-gray-50">
+                          <td className="py-1.5 font-medium text-gray-800">{ch.name}</td>
+                          <td className="py-1.5 text-gray-500">{ch.type}</td>
                           {(userRole === "system_admin" || userRole === "space_admin" || userRole === "channel_admin") && (
-                            <td className="p-1">
+                            <td className="py-1.5">
                               <button
                                 onClick={() => {
                                   if (confirm("确定删除该频道？")) {
                                     fetch(`${API}/channels/${ch.channel_id}`, { method: "DELETE" })
                                       .then((r) => r.json())
                                       .then((d) => {
-                                        if (d.status === "success") {
-                                          toast.success("删除成功");
-                                          setWorkspaceChannels((list) => list.filter((c) => c.channel_id !== ch.channel_id));
-                                        } else {
-                                          toast.error(d.detail || "删除失败");
-                                        }
+                                        if (d.status === "success") { toast.success("删除成功"); setWorkspaceChannels((list) => list.filter((c) => c.channel_id !== ch.channel_id)); }
+                                        else toast.error(d.detail || "删除失败");
                                       })
                                       .catch(() => toast.error("请求失败"));
                                   }
                                 }}
-                                className="text-red-600 hover:underline"
+                                className="text-red-500 hover:underline font-medium"
                               >
                                 删除
                               </button>
@@ -1327,7 +1397,7 @@ export default function AdminPage() {
                       ))}
                     </tbody>
                   </table>
-                  {workspaceChannels.length === 0 && <p className="text-gray-500 text-xs">暂无频道</p>}
+                  {workspaceChannels.length === 0 && <p className="text-gray-400 text-xs mt-2">暂无频道</p>}
                 </div>
               </div>
             )}
