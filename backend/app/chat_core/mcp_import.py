@@ -109,7 +109,7 @@ def _extract_bot_from_mcp_server(
     )
 
 
-@router.post("/preview", response_model=MCPImportPreviewResponse)
+@router.post("/preview")
 async def preview_mcp_import(request: MCPImportRequest) -> dict:
     """预览 MCP 配置导入 - 解析但不创建 Bot.
     

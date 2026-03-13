@@ -771,6 +771,8 @@ export default function App() {
   const [mentionDropdownPlacement, setMentionDropdownPlacement] = useState<"top" | "bottom">("bottom");
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [allBots, setAllBots] = useState<BotItem[]>([]);
+  const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
+  const [addingBots, setAddingBots] = useState(false);
   const [expandedOlderIds, setExpandedOlderIds] = useState<Set<string>>(new Set());
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -911,6 +913,7 @@ export default function App() {
   useEffect(() => {
     if (addBotOpen) {
       fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
+      setSelectedBotIds(new Set());
     }
   }, [addBotOpen]);
 
@@ -1481,22 +1484,57 @@ export default function App() {
                   if (available.length === 0) return <p className="text-sm text-gray-400">暂无或已全部加入</p>;
                   return (
                     <ul className="space-y-1">
-                      {available.map((b) => (
-                        <li key={b.bot_id} className="flex flex-col py-2 px-3 bg-[#F8F8F8] rounded-lg text-sm gap-0.5 hover:bg-gray-100 transition-colors">
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-gray-800">@{b.username}</span>
-                            <button type="button" onClick={() => addBotToChannel(b.bot_id)} className="text-[#1264A3] text-xs font-medium hover:underline">加入频道</button>
-                          </div>
-                          {introSummary(b.intro) && <span className="text-xs text-gray-500 truncate" title={b.intro}>{introSummary(b.intro)}</span>}
-                        </li>
-                      ))}
+                      {available.map((b) => {
+                        const checked = selectedBotIds.has(b.bot_id);
+                        return (
+                          <li
+                            key={b.bot_id}
+                            className={`flex items-start gap-2 py-2 px-3 rounded-lg text-sm cursor-pointer transition-colors select-none ${checked ? "bg-blue-50 border border-[#1264A3]/30" : "bg-[#F8F8F8] hover:bg-gray-100"}`}
+                            onClick={() => setSelectedBotIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(b.bot_id)) next.delete(b.bot_id); else next.add(b.bot_id);
+                              return next;
+                            })}
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 accent-[#1264A3] shrink-0"
+                              checked={checked}
+                              onChange={() => {}}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-medium text-gray-800">@{b.username}</span>
+                              {introSummary(b.intro) && <span className="text-xs text-gray-500 truncate" title={b.intro}>{introSummary(b.intro)}</span>}
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   );
                 })()}
               </div>
             </div>
-            <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex justify-end gap-2">
               <button type="button" onClick={() => setAddBotOpen(false)} className="px-4 py-2 bg-[#F8F8F8] text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">关闭</button>
+              {selectedBotIds.size > 0 && (
+                <button
+                  type="button"
+                  disabled={addingBots}
+                  onClick={async () => {
+                    setAddingBots(true);
+                    try {
+                      await Promise.all([...selectedBotIds].map((id) => addBotToChannel(id)));
+                      setSelectedBotIds(new Set());
+                    } finally {
+                      setAddingBots(false);
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#1264A3] text-white rounded-lg hover:bg-[#0f5a94] text-sm font-medium disabled:opacity-60"
+                >
+                  {addingBots ? "添加中…" : `添加选中 (${selectedBotIds.size})`}
+                </button>
+              )}
             </div>
           </div>
         </div>
