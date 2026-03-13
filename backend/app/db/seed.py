@@ -16,7 +16,7 @@ from app.db.models import (
     Workspace,
 )
 from app.db.session import async_session_factory
-from app.guide.constants import GUIDE_BOT_ID, ORCHESTRATOR_BOT_ID
+from app.guide.constants import ASSISTANT_BOT_ID, GUIDE_BOT_ID, ORCHESTRATOR_BOT_ID
 
 # 固定 ID，便于文档与脚本引用
 WORKSPACE_ID = "ws-default-001"
@@ -61,6 +61,34 @@ async def seed(session: AsyncSession) -> bool:
                 status="online",
                 intro='{"capabilities":["使用说明","创建项目","接入指南"],"description":"根据说明书回答使用问题"}',
             )
+        )
+        did_write = True
+
+    # 频道 AI 助手（assistant:// 表示使用 AssistantBotAdapter，将四层记忆注入 System Prompt）
+    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == ASSISTANT_BOT_ID))
+    if r.scalar_one_or_none() is None:
+        session.add(
+            BotAccount(
+                bot_id=ASSISTANT_BOT_ID,
+                username="助手",
+                display_name="频道 AI 助手",
+                openclaw_endpoint="assistant://internal",
+                status="online",
+                intro='{"capabilities":["项目问答","上下文理解","知识检索"],"description":"基于频道四层记忆回答项目相关问题"}',
+            )
+        )
+        did_write = True
+
+    # 助手 Bot 加入测试项目
+    r = await session.execute(
+        select(ChannelMembership).where(
+            ChannelMembership.channel_id == CHANNEL_ID,
+            ChannelMembership.member_id == ASSISTANT_BOT_ID,
+        )
+    )
+    if r.scalar_one_or_none() is None:
+        session.add(
+            ChannelMembership(channel_id=CHANNEL_ID, member_id=ASSISTANT_BOT_ID, member_type="bot")
         )
         did_write = True
 
@@ -177,4 +205,4 @@ def _ensure_data_dir() -> None:
 if __name__ == "__main__":
     _ensure_data_dir()
     asyncio.run(run_seed())
-    print("Seed done. Workspace:", WORKSPACE_ID, "Channel:", CHANNEL_ID, "Guide bot: @引导", "Orchestrator: @coordinator")
+    print("Seed done. Workspace:", WORKSPACE_ID, "Channel:", CHANNEL_ID, "Guide bot: @引导", "Orchestrator: @coordinator", "Assistant: @助手")

@@ -7,7 +7,7 @@ from typing import Any
 from app.config import settings
 
 ADMIN_SETTINGS_FILENAME = "admin_settings.json"
-SCOPES = ("guide_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")
+SCOPES = ("guide_bot", "assistant_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")
 DEFAULT_CLARIFY_SETTINGS = {
     "clarify_strict_mode": False,
     "clarify_force_rule": True,
@@ -175,6 +175,9 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
             "temperature": float(data.get("guide_llm_temperature", s.guide_llm_temperature)),
             "max_tokens": int(data.get("guide_llm_max_tokens", s.guide_llm_max_tokens)),
         }
+    if scope == "assistant_bot":
+        # 无独立绑定时回退到 guide_bot 配置
+        return get_provider_for_scope("guide_bot")
     if scope in ("system_llm", "log_analyze", "qa_summarize", "orchestrator"):
         return {
             "base_url": (data.get("system_llm_base_url") or s.system_llm_base_url or "").strip(),
@@ -262,6 +265,7 @@ def delete_llm_provider(provider_id: str) -> bool:
 
 def set_llm_bindings(
     guide_bot: str | None = None,
+    assistant_bot: str | None = None,
     system_llm: str | None = None,
     log_analyze: str | None = None,
     qa_summarize: str | None = None,
@@ -273,6 +277,8 @@ def set_llm_bindings(
     bindings = data.get("llm_bindings") or {}
     if guide_bot is not None:
         bindings["guide_bot"] = (guide_bot or "").strip() or ""
+    if assistant_bot is not None:
+        bindings["assistant_bot"] = (assistant_bot or "").strip() or ""
     if system_llm is not None:
         bindings["system_llm"] = (system_llm or "").strip() or ""
     if log_analyze is not None:
