@@ -86,6 +86,8 @@ class BotUpdate(BaseModel):
     username: str | None = None
     display_name: str | None = None
     openclaw_endpoint: str | None = None
+    openclaw_session: str | None = None
+    openclaw_token: str | None = None
     status: str | None = None
     intro: str | None = None
     prompt_template: str | None = None

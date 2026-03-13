@@ -13,6 +13,8 @@ type BotItem = {
   username: string;
   display_name?: string;
   openclaw_endpoint: string;
+  openclaw_session?: string;
+  openclaw_token?: string;
   status: string;
   intro?: string;
   prompt_template?: string;
@@ -81,16 +83,24 @@ export default function AdminPage() {
   const [createWs, setCreateWs] = useState("");
   const [createName, setCreateName] = useState("");
   const [addCh, setAddCh] = useState("");
-  const [addMemberId, setAddMemberId] = useState("");
-  const [addMemberType, setAddMemberType] = useState<"user" | "bot">("user");
   const [rmCh, setRmCh] = useState("");
-  const [rmMemberId, setRmMemberId] = useState("");
+  type MemberOption = { id: string; type: "bot" | "user"; label: string };
+  const [addChOptions, setAddChOptions] = useState<MemberOption[]>([]);
+  const [addChLoading, setAddChLoading] = useState(false);
+  const [addSelectedIds, setAddSelectedIds] = useState<Set<string>>(new Set());
+  const [addingMembers, setAddingMembers] = useState(false);
+  const [rmChMembers, setRmChMembers] = useState<MemberOption[]>([]);
+  const [rmChLoading, setRmChLoading] = useState(false);
+  const [rmSelectedIds, setRmSelectedIds] = useState<Set<string>>(new Set());
+  const [removingMembers, setRemovingMembers] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
 
   const [botId, setBotId] = useState("");
   const [botUsername, setBotUsername] = useState("");
   const [botDisplayName, setBotDisplayName] = useState("");
   const [botEndpoint, setBotEndpoint] = useState("");
+  const [botSession, setBotSession] = useState("");
+  const [botToken, setBotToken] = useState("");
   const [botStatus, setBotStatus] = useState("online");
   const [botIntro, setBotIntro] = useState("");
   const [botPromptTemplate, setBotPromptTemplate] = useState("");
@@ -231,6 +241,46 @@ export default function AdminPage() {
       fetch(`${API}/channels/by-workspace/${selectedWorkspaceId}`).then((r) => r.json()).then((d) => setWorkspaceChannels(d.data || [])).catch(() => setWorkspaceChannels([]));
     }
   }, [activeTab, selectedWorkspaceId]);
+
+  useEffect(() => {
+    setAddSelectedIds(new Set());
+    if (!addCh) { setAddChOptions([]); return; }
+    setAddChLoading(true);
+    Promise.all([
+      fetch(`${API}/channels/${addCh}/members?with_username=1`).then((r) => r.json()),
+      fetch(`${API}/bots`).then((r) => r.json()),
+      fetch(`${API}/auth/users`).then((r) => r.json()),
+    ]).then(([membersRes, botsRes, usersRes]) => {
+      const inChannel = new Set<string>((membersRes.data || []).map((m: { member_id: string }) => m.member_id));
+      const opts: { id: string; type: "bot" | "user"; label: string }[] = [];
+      for (const b of (botsRes.data || [])) {
+        if (!inChannel.has(b.bot_id)) opts.push({ id: b.bot_id, type: "bot", label: `[Bot] @${b.username}${b.display_name ? " · " + b.display_name : ""}` });
+      }
+      for (const u of (usersRes || [])) {
+        if (!inChannel.has(u.user_id)) opts.push({ id: u.user_id, type: "user", label: `[用户] @${u.username}${u.display_name ? " · " + u.display_name : ""}` });
+      }
+      setAddChOptions(opts);
+    }).catch(() => setAddChOptions([])).finally(() => setAddChLoading(false));
+  }, [addCh]);
+
+  useEffect(() => {
+    setRmSelectedIds(new Set());
+    if (!rmCh) { setRmChMembers([]); return; }
+    setRmChLoading(true);
+    Promise.all([
+      fetch(`${API}/channels/${rmCh}/members?with_username=1`).then((r) => r.json()),
+      fetch(`${API}/auth/users`).then((r) => r.json()),
+    ]).then(([membersRes, usersRes]) => {
+      const userMap = new Map<string, string>((usersRes || []).map((u: { user_id: string; username: string; display_name?: string }) => [u.user_id, `@${u.username}${u.display_name ? " · " + u.display_name : ""}`]));
+      const opts: { id: string; type: "bot" | "user"; label: string }[] = (membersRes.data || []).map((m: { member_id: string; member_type: string; username?: string; display_name?: string }) => {
+        const label = m.member_type === "bot"
+          ? `[Bot] @${m.username || m.member_id}${m.display_name ? " · " + m.display_name : ""}`
+          : `[用户] ${userMap.get(m.member_id) || m.member_id}`;
+        return { id: m.member_id, type: m.member_type as "bot" | "user", label };
+      });
+      setRmChMembers(opts);
+    }).catch(() => setRmChMembers([])).finally(() => setRmChLoading(false));
+  }, [rmCh]);
 
   const updateUserRole = (userId: string, role: string) => {
     fetch(`${API}/auth/users/${userId}/role`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) })
@@ -436,20 +486,59 @@ export default function AdminPage() {
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
-  const addMember = () => {
-    if (!addCh || !addMemberId.trim()) { toast.error("请选择项目并填写成员 ID"); return; }
-    fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: addMemberId.trim(), member_type: addMemberType }) })
-      .then((r) => r.json())
-      .then((d) => { if (d.status === "success") toast.success("添加成功"); else toast.error(d.message || d.detail || "添加失败"); })
-      .catch((e) => toast.error("请求失败: " + String(e)));
+  const addMember = async () => {
+    if (!addCh || addSelectedIds.size === 0) { toast.error("请选择项目和成员"); return; }
+    setAddingMembers(true);
+    try {
+      const items = addChOptions.filter((o) => addSelectedIds.has(o.id));
+      await Promise.all(items.map((item) =>
+        fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: item.id, member_type: item.type }) })
+          .then((r) => r.json())
+      ));
+      toast.success(`已添加 ${items.length} 个成员`);
+      setAddSelectedIds(new Set());
+      // 刷新两个列表
+      const membersRes = await fetch(`${API}/channels/${addCh}/members?with_username=1`).then((r) => r.json());
+      const inChannel = new Set<string>((membersRes.data || []).map((m: { member_id: string }) => m.member_id));
+      setAddChOptions((prev) => prev.filter((o) => !inChannel.has(o.id)));
+      if (rmCh === addCh) {
+        const [updatedMembers, usersRes] = await Promise.all([
+          fetch(`${API}/channels/${rmCh}/members?with_username=1`).then((r) => r.json()),
+          fetch(`${API}/auth/users`).then((r) => r.json()),
+        ]);
+        const userMap = new Map<string, string>((usersRes || []).map((u: { user_id: string; username: string; display_name?: string }) => [u.user_id, `@${u.username}${u.display_name ? " · " + u.display_name : ""}`]));
+        setRmChMembers((updatedMembers.data || []).map((m: { member_id: string; member_type: string; username?: string; display_name?: string }) => ({
+          id: m.member_id,
+          type: m.member_type as "bot" | "user",
+          label: m.member_type === "bot" ? `[Bot] @${m.username || m.member_id}${m.display_name ? " · " + m.display_name : ""}` : `[用户] ${userMap.get(m.member_id) || m.member_id}`,
+        })));
+      }
+    } catch (e) { toast.error("请求失败: " + String(e)); }
+    finally { setAddingMembers(false); }
   };
 
-  const removeMember = () => {
-    if (!rmCh || !rmMemberId.trim()) { toast.error("请选择项目并填写成员 ID"); return; }
-    fetch(`${API}/channels/${rmCh}/members/${encodeURIComponent(rmMemberId.trim())}`, { method: "DELETE" })
-      .then((r) => r.json())
-      .then((d) => { if (d.status === "success") toast.success("移除成功"); else toast.error(d.message || d.detail || "移除失败"); })
-      .catch((e) => toast.error("请求失败: " + String(e)));
+  const removeMember = async () => {
+    if (!rmCh || rmSelectedIds.size === 0) { toast.error("请选择项目和成员"); return; }
+    setRemovingMembers(true);
+    try {
+      await Promise.all([...rmSelectedIds].map((id) =>
+        fetch(`${API}/channels/${rmCh}/members/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => r.json())
+      ));
+      toast.success(`已移除 ${rmSelectedIds.size} 个成员`);
+      setRmChMembers((prev) => prev.filter((m) => !rmSelectedIds.has(m.id)));
+      setRmSelectedIds(new Set());
+      if (addCh === rmCh) {
+        // 刷新可添加列表
+        const membersRes = await fetch(`${API}/channels/${addCh}/members?with_username=1`).then((r) => r.json());
+        const inChannel = new Set<string>((membersRes.data || []).map((m: { member_id: string }) => m.member_id));
+        const [botsRes, usersRes] = await Promise.all([fetch(`${API}/bots`).then((r) => r.json()), fetch(`${API}/auth/users`).then((r) => r.json())]);
+        const opts: { id: string; type: "bot" | "user"; label: string }[] = [];
+        for (const b of (botsRes.data || [])) if (!inChannel.has(b.bot_id)) opts.push({ id: b.bot_id, type: "bot", label: `[Bot] @${b.username}${b.display_name ? " · " + b.display_name : ""}` });
+        for (const u of (usersRes || [])) if (!inChannel.has(u.user_id)) opts.push({ id: u.user_id, type: "user", label: `[用户] @${u.username}${u.display_name ? " · " + u.display_name : ""}` });
+        setAddChOptions(opts);
+      }
+    } catch (e) { toast.error("请求失败: " + String(e)); }
+    finally { setRemovingMembers(false); }
   };
 
   const createBot = () => {
@@ -473,6 +562,8 @@ export default function AdminPage() {
       username: botUsername.trim(),
       display_name: botDisplayName.trim(),
       openclaw_endpoint: botEndpoint.trim(),
+      openclaw_session: botSession.trim(),
+      openclaw_token: botToken.trim(),
       status: botStatus,
       intro: botIntro.trim(),
       prompt_template: botPromptTemplate.trim(),
@@ -480,7 +571,7 @@ export default function AdminPage() {
     fetch(`${API}/bots/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then((r) => r.json())
       .then((d) => {
-        if (d.status === "success") { toast.success("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }
+        if (d.status === "success") { toast.success("已更新"); setBotEditingId(null); loadBots(); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotSession(""); setBotToken(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }
         else toast.error(d.detail || "更新失败");
       })
       .catch((e) => toast.error("请求失败: " + String(e)));
@@ -825,7 +916,7 @@ export default function AdminPage() {
                           </td>
                           <td className="px-3 py-2 max-w-[150px] truncate text-gray-500" title={b.intro || ""}>{introSummary(b.intro)}</td>
                           <td className="px-3 py-2">
-                            <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotStatus(b.status); setBotIntro(b.intro || ""); setBotPromptTemplate(b.prompt_template || ""); }} className="mr-2 text-[#1264A3] text-xs font-medium hover:underline">编辑</button>
+                            <button type="button" onClick={() => { setBotEditingId(b.bot_id); setBotUsername(b.username); setBotDisplayName(b.display_name || ""); setBotEndpoint(b.openclaw_endpoint); setBotSession(b.openclaw_session || ""); setBotToken(b.openclaw_token || ""); setBotStatus(b.status); setBotIntro(b.intro || ""); setBotPromptTemplate(b.prompt_template || ""); }} className="mr-2 text-[#1264A3] text-xs font-medium hover:underline">编辑</button>
                             <button type="button" onClick={() => deleteBot(b.bot_id)} className="text-red-500 text-xs font-medium hover:underline">删除</button>
                           </td>
                         </tr>
@@ -839,12 +930,14 @@ export default function AdminPage() {
                   <h4 className="font-semibold text-gray-800">编辑 Bot</h4>
                   <div><label className="block text-xs text-gray-500 mb-1">@ 名字</label><input type="text" value={botUsername} onChange={(e) => setBotUsername(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
                   <div><label className="block text-xs text-gray-500 mb-1">显示名称</label><input type="text" value={botDisplayName} onChange={(e) => setBotDisplayName(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
-                  <div><label className="block text-xs text-gray-500 mb-1">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">openclaw_endpoint</label><input type="text" value={botEndpoint} onChange={(e) => setBotEndpoint(e.target.value)} placeholder="ws://host:port 或 http://host:port" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">openclaw_session <span className="text-gray-400 font-normal">（WS 必填）</span></label><input type="text" value={botSession} onChange={(e) => setBotSession(e.target.value)} placeholder="例如 my-session-key" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">openclaw_token <span className="text-gray-400 font-normal">（WS 鉴权，可选）</span></label><input type="password" value={botToken} onChange={(e) => setBotToken(e.target.value)} placeholder="留空则不带 token" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:outline-none focus:border-[#1264A3]" /></div>
                   <div><label className="block text-xs text-gray-500 mb-1">自我介绍 (JSON)</label><textarea value={botIntro} onChange={(e) => setBotIntro(e.target.value)} placeholder='{"capabilities":["能力1"],"description":"描述"}' className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 focus:outline-none focus:border-[#1264A3] text-sm" /></div>
                   <div><label className="block text-xs text-gray-500 mb-1">提示词模板（可选）</label><textarea value={botPromptTemplate} onChange={(e) => setBotPromptTemplate(e.target.value)} placeholder="你是一个专业的助手。用户问题：{{}} 请用中文回答。" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 focus:outline-none focus:border-[#1264A3] text-sm" /><p className="text-xs text-gray-400 mt-1">使用 {"{{}}"} 作为用户消息的占位符</p></div>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => updateBot(botEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]">保存</button>
-                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300">取消</button>
+                    <button type="button" onClick={() => { setBotEditingId(null); setBotUsername(""); setBotDisplayName(""); setBotEndpoint(""); setBotSession(""); setBotToken(""); setBotStatus("online"); setBotIntro(""); setBotPromptTemplate(""); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300">取消</button>
                   </div>
                 </div>
               )}
@@ -869,19 +962,70 @@ export default function AdminPage() {
               </section>
               <section className="bg-white rounded-xl border border-gray-200 p-4">
                 <h3 className="text-sm font-semibold text-gray-800 mb-3">添加成员</h3>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2">
                   <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
-                  <input type="text" value={addMemberId} onChange={(e) => setAddMemberId(e.target.value)} placeholder="成员 ID" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-[#1264A3]" />
-                  <select value={addMemberType} onChange={(e) => setAddMemberType(e.target.value as "user" | "bot")} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]"><option value="user">用户</option><option value="bot">Bot</option></select>
-                  <button type="button" onClick={addMember} className="px-4 py-1.5 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0d5296]">添加</button>
+                  {addCh && (
+                    <>
+                      {addChLoading ? (
+                        <p className="text-xs text-gray-400">加载中…</p>
+                      ) : addChOptions.length === 0 ? (
+                        <p className="text-xs text-gray-400">暂无可添加的成员</p>
+                      ) : (
+                        <ul className="max-h-40 overflow-y-auto space-y-1 border border-gray-100 rounded-lg p-1">
+                          {addChOptions.map((o) => {
+                            const checked = addSelectedIds.has(o.id);
+                            return (
+                              <li
+                                key={o.id}
+                                className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm select-none transition-colors ${checked ? "bg-blue-50 border border-[#1264A3]/30" : "hover:bg-gray-50"}`}
+                                onClick={() => setAddSelectedIds((prev) => { const n = new Set(prev); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n; })}
+                              >
+                                <input type="checkbox" className="accent-[#1264A3] shrink-0" checked={checked} onChange={() => {}} onClick={(e) => e.stopPropagation()} />
+                                <span className="truncate text-gray-700">{o.label}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      <button type="button" onClick={addMember} disabled={addingMembers || addSelectedIds.size === 0} className="px-4 py-1.5 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0d5296] disabled:opacity-50 self-end">
+                        {addingMembers ? "添加中…" : `添加选中${addSelectedIds.size > 0 ? ` (${addSelectedIds.size})` : ""}`}
+                      </button>
+                    </>
+                  )}
                 </div>
               </section>
               <section className="bg-white rounded-xl border border-gray-200 p-4">
                 <h3 className="text-sm font-semibold text-gray-800 mb-3">移除成员</h3>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2">
                   <select value={rmCh} onChange={(e) => setRmCh(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1264A3]"><option value="">选择项目</option>{channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}</select>
-                  <input type="text" value={rmMemberId} onChange={(e) => setRmMemberId(e.target.value)} placeholder="成员 ID" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:border-[#1264A3]" />
-                  <button type="button" onClick={removeMember} className="px-4 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100">移除</button>
+                  {rmCh && (
+                    <>
+                      {rmChLoading ? (
+                        <p className="text-xs text-gray-400">加载中…</p>
+                      ) : rmChMembers.length === 0 ? (
+                        <p className="text-xs text-gray-400">该频道暂无成员</p>
+                      ) : (
+                        <ul className="max-h-40 overflow-y-auto space-y-1 border border-gray-100 rounded-lg p-1">
+                          {rmChMembers.map((o) => {
+                            const checked = rmSelectedIds.has(o.id);
+                            return (
+                              <li
+                                key={o.id}
+                                className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm select-none transition-colors ${checked ? "bg-red-50 border border-red-300/50" : "hover:bg-gray-50"}`}
+                                onClick={() => setRmSelectedIds((prev) => { const n = new Set(prev); if (n.has(o.id)) n.delete(o.id); else n.add(o.id); return n; })}
+                              >
+                                <input type="checkbox" className="accent-red-500 shrink-0" checked={checked} onChange={() => {}} onClick={(e) => e.stopPropagation()} />
+                                <span className="truncate text-gray-700">{o.label}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      <button type="button" onClick={removeMember} disabled={removingMembers || rmSelectedIds.size === 0} className="px-4 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50 self-end">
+                        {removingMembers ? "移除中…" : `移除选中${rmSelectedIds.size > 0 ? ` (${rmSelectedIds.size})` : ""}`}
+                      </button>
+                    </>
+                  )}
                 </div>
               </section>
             </div>
