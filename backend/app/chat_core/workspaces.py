@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, ConfigDict
 
-from app.db.models import Workspace, Channel, ChannelMembership, User
+from app.db.models import Workspace, Channel, ChannelMembership, User, Message
 from app.db.session import get_session
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -103,7 +103,7 @@ async def delete_workspace(
     workspace_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """删除工作空间（同时删除该工作空间下的所有频道）."""
+    """删除工作空间（同时删除该工作空间下的所有频道及成员关系）."""
     result = await session.execute(
         select(Workspace).where(Workspace.workspace_id == workspace_id)
     )
@@ -111,12 +111,33 @@ async def delete_workspace(
     if not ws:
         raise HTTPException(status_code=404, detail="工作空间不存在")
 
-    # 删除该工作空间下的所有频道
+    # 获取该工作空间下的所有频道
     result = await session.execute(
         select(Channel).where(Channel.workspace_id == workspace_id)
     )
     channels = result.scalars().all()
+
+    # 先删除所有频道的消息、成员关系，再删除频道
     for ch in channels:
+        # 删除该频道的所有消息
+        result = await session.execute(
+            select(Message).where(Message.channel_id == ch.channel_id)
+        )
+        messages = result.scalars().all()
+        for m in messages:
+            await session.delete(m)
+        
+        # 删除该频道的所有成员关系
+        result = await session.execute(
+            select(ChannelMembership).where(
+                ChannelMembership.channel_id == ch.channel_id
+            )
+        )
+        memberships = result.scalars().all()
+        for m in memberships:
+            await session.delete(m)
+        
+        await session.flush()  # 确保消息和成员关系已删除
         await session.delete(ch)
 
     await session.delete(ws)
