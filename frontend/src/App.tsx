@@ -1845,12 +1845,12 @@ export default function App() {
                   })}
                   {waitingForBotReply && <ThinkingIndicator />}
                   {Object.entries(processingBots).map(([botId, username]) => (
-                    <div key={botId} className="p-2 rounded bg-amber-50 border-l-2 border-amber-400 text-sm text-gray-600 animate-pulse">
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 text-xs font-medium mr-2">@{username}</span>
-                      正在处理...
+                    <div key={botId} className="px-4 py-2 flex items-center gap-2 text-sm text-gray-500 animate-pulse">
+                      <div className="w-6 h-6 rounded bg-[#2EB67D]/20 flex items-center justify-center text-[#2EB67D] text-xs font-bold">@{username.slice(0,1)}</div>
+                      <span>@{username} 正在处理...</span>
                     </div>
                   ))}
-                  </>
+                </div>
               )}
             </div>
 
