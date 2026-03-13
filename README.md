@@ -32,14 +32,13 @@
 
 ### 后端
 
-```bash
 cd backend
-python -m venv .venv
+# 推荐使用 uv（基于 astral uv）进行包管理和虚拟环境管理
+uv venv          # 创建虚拟环境（首次）
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+uv sync          # 安装依赖（包括 dev 依赖）
 cp ../.env.example ../.env  # 编辑 .env 填写数据库等
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
 
 ### 前端
 
