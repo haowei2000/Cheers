@@ -50,7 +50,7 @@ async def test_guide_adapter_execute_returns_help() -> None:
 
 @pytest.mark.asyncio
 async def test_guide_adapter_execute_default_reply() -> None:
-    """无匹配时返回默认引导语."""
+    """无匹配时返回默认引导语或澄清弹窗（rule-based clarify 可能触发 popup）."""
     adapter = GuideBotAdapter()
     payload = AgentPayload(
         task_id="t1",
@@ -60,7 +60,12 @@ async def test_guide_adapter_execute_default_reply() -> None:
     )
     resp = await adapter.execute(payload)
     assert resp.success
-    assert "怎么创建项目" in resp.content or "说明书" in resp.content
+    # force_rule=True 时无关输入也可能触发规则澄清弹窗，两者均为合法输出
+    assert (
+        "怎么创建项目" in resp.content
+        or "说明书" in resp.content
+        or "guide-clarify" in resp.content
+    )
 
 
 @pytest.mark.asyncio

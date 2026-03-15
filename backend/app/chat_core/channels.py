@@ -11,7 +11,7 @@ from app.chat_core.schemas import (
 )
 from app.db.models import BotAccount, Channel, ChannelMembership, Workspace
 from app.db.session import get_session
-from app.guide.constants import ASSISTANT_BOT_ID, GUIDE_BOT_ID
+from app.guide.constants import GUIDE_BOT_ID
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
@@ -61,8 +61,8 @@ async def create_channel(
     )
     session.add(ch)
     await session.flush()
-    # 自动将内置 Bot 加入新项目：引导（@引导）和频道 AI 助手（@助手）
-    for builtin_bot_id in (GUIDE_BOT_ID, ASSISTANT_BOT_ID):
+    # 自动将内置统一 Bot（@引导）加入新项目
+    for builtin_bot_id in (GUIDE_BOT_ID,):
         r = await session.execute(
             select(BotAccount).where(BotAccount.bot_id == builtin_bot_id)
         )
