@@ -83,15 +83,20 @@ async def _seed_system_model_and_template(session: AsyncSession) -> bool:
 
 
 async def _seed_unified_bot(session: AsyncSession) -> bool:
-    """创建统一内置 Bot（@引导）：引导 + 助手 + 记忆管理三合一。"""
+    """创建统一内置 Bot（@channel bot）：引导 + 助手 + 记忆管理三合一。"""
     r = await session.execute(select(BotAccount).where(BotAccount.bot_id == GUIDE_BOT_ID))
-    if r.scalar_one_or_none() is not None:
+    existing = r.scalar_one_or_none()
+    if existing is not None:
+        # 迁移旧用户名
+        if existing.username == "引导":
+            existing.username = "channel bot"
+            await session.flush()
         return False
 
     session.add(
         BotAccount(
             bot_id=GUIDE_BOT_ID,
-            username="引导",
+            username="channel bot",
             display_name="内置助手",
             description=(
                 "系统内置统一助手，集引导、项目助手、记忆管理三合一。"
@@ -103,7 +108,7 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
             status="online",
             intro=(
                 '{"capabilities":["系统引导","项目问答","记忆读写","澄清弹窗","动态表单","Bot路由建议"],'
-                '"description":"内置统一助手，@引导 即可使用"}'
+                '"description":"内置统一助手，@channel bot 即可使用"}'
             ),
         )
     )
@@ -361,10 +366,10 @@ async def ensure_builtin_bot() -> None:
             # 1. 确保系统占位 model / template 存在
             await _seed_system_model_and_template(session)
 
-            # 2. 确保 @引导 BotAccount 存在
+            # 2. 确保 @channel bot BotAccount 存在
             await _seed_unified_bot(session)
 
-            # 3. 确保 @引导 加入所有现有频道（补齐旧频道缺失的 membership）
+            # 3. 确保 @channel bot 加入所有现有频道（补齐旧频道缺失的 membership）
             all_channels = (await session.execute(select(Channel))).scalars().all()
             for ch in all_channels:
                 r = await session.execute(
@@ -413,5 +418,5 @@ if __name__ == "__main__":
         f"  System: 系统内置占位 model/template\n"
         f"  Models: Ollama (Llama 3.2), OpenAI GPT-4o\n"
         f"  Templates: 通用助手, 代码审查, 创意写作\n"
-        f"  Bots: @引导（内置统一Bot） @代码审查"
+        f"  Bots: @channel bot（内置统一Bot） @代码审查"
     )

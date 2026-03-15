@@ -119,14 +119,14 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "• 上传文件：选中频道后，输入框旁「上传」（.txt/.md/.docx）。\n"
         "• 频道上下文（四层记忆）：选中频道后，底部「频道上下文」。\n"
         "• API 文档：左侧「管理」内「打开 API 文档」或帮助中的 /docs 链接。\n"
-        "• 使用帮助：左侧「帮助」或频道内 @引导 提问。\n\n"
-        "更多可问 @引导 怎么创建项目、怎么加入项目、怎么把 Bot 拉进群、怎么用 等。",
+        "• 使用帮助：左侧「帮助」或频道内 @channel bot 提问。\n\n"
+        "更多可问 @channel bot 怎么创建项目、怎么加入项目、怎么把 Bot 拉进群、怎么用 等。",
     ),
     HelpEntry(
         ("orchestrator", "coordinator", "主控", "直接回答", "自动接手"),
         "Orchestrator 是什么、怎么用",
         "Orchestrator 是系统内置的业务问答 Bot（@coordinator）。\n\n"
-        "• 直接回答：管理员开启「直接回答未 @ 的问题」后，你发消息不 @ 任何人时，Orchestrator 会优先回答业务问题；系统使用类问题会建议你 @引导。\n"
+        "• 直接回答：管理员开启「直接回答未 @ 的问题」后，你发消息不 @ 任何人时，Orchestrator 会优先回答业务问题；系统使用类问题会建议你 @channel bot。\n"
         "• 显式 @：写 @coordinator 可让 Orchestrator 聚合频道内其他 Bot 的回复，或根据问题建议你 @ 某个部门 Bot。\n"
         "• 自动接手：管理员开启后，Orchestrator 回复中含「建议 @xxx」时，被建议的 Bot 会自动接手回答，你会看到「正在处理...」提示。\n\n"
         "Orchestrator 需管理员加入频道后才能用；配置在「管理」→「LLM 设置」→「Orchestrator 配置」。",
@@ -134,7 +134,7 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
     HelpEntry(
         ("帮助", "怎么用", "不会用", "说明书", "文档"),
         "使用说明总览",
-        "我是引导 Bot，根据说明书帮你完成操作。你可以这样问我：\n\n"
+        "我是 channel bot，根据说明书帮你完成操作。你可以这样问我：\n\n"
         "• 入口 / 功能入口 → 查看所有前端入口\n"
         "• 怎么创建项目\n"
         "• 怎么加入项目\n"

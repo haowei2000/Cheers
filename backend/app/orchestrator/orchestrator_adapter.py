@@ -62,7 +62,7 @@ class OrchestratorAdapter(OpenClawAdapter):
         bots_hint = "当前频道可用的部门 Bot：" + ", ".join("@" + b for b in channel_bots) + "。" if channel_bots else "当前频道无其他部门 Bot。"
         system = """你是 AgentNexus 的 Orchestrator（业务问答 Bot）。用户的问题未 @ 任何 Bot，由你优先回答。
 
-若问题属于系统使用（如怎么创建项目、怎么接入 OpenClaw），请简要说明并建议用户 @引导 获取详细指引。
+若问题属于系统使用（如怎么创建项目、怎么接入 OpenClaw），请简要说明并建议用户 @channel bot 获取详细指引。
 若问题属于业务范畴，请根据上下文回答。{bots_hint}
 若需要部门 Bot 的专业能力，可在回答末尾加上「建议 @Bot名 回答 XXX 问题」（Bot 名必须来自上述列表）。
 回答请简洁，使用 Markdown 格式。

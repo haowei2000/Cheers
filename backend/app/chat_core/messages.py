@@ -62,12 +62,14 @@ async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
             msg = result.scalar_one_or_none()
             if not msg:
                 return
-            bot_messages = await run_orchestrator(
+            bot_messages, already_broadcast_ids = await run_orchestrator(
                 channel_id, msg, bg_session,
                 lambda bid: get_adapter_for_bot(bid, bg_session),
                 broadcast_processing=broadcast_bot_processing,
             )
             for bm in bot_messages:
+                if bm.msg_id in already_broadcast_ids:
+                    continue  # Agent Loop 内部已广播，跳过避免重复
                 bd = MessageInResponse.model_validate(bm).model_dump()
                 if bm.created_at:
                     bd["created_at"] = bm.created_at.isoformat()
@@ -107,6 +109,9 @@ async def create_message(
     # 先提交用户消息，确保后台任务可以读取到
     await session.commit()
     await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": d})
+    # 每条消息都立即更新 recent.md
+    from app.memory.recent_update import schedule_recent_update
+    schedule_recent_update(channel_id)
     # Orchestrator 异步后台执行，Bot 回复经 WebSocket 推送，不阻塞 HTTP 响应
     asyncio.create_task(_run_orchestrator_bg(channel_id, msg.msg_id))
     return {"status": "success", "data": d}

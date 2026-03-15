@@ -20,7 +20,29 @@ def extract_mentions(text: str) -> list[str]:
     return result
 
 
-def filter_mentioned_bots(mentioned_names: list[str], channel_bot_usernames: list[str]) -> list[str]:
-    """在 @ 提及的名字中，只保留属于本频道已激活 Bot 的用户名（返回 Bot 的 username 列表）。"""
+def filter_mentioned_bots(
+    mentioned_names: list[str],
+    channel_bot_usernames: list[str],
+    text: str = "",
+) -> list[str]:
+    """在 @ 提及的名字中，只保留属于本频道已激活 Bot 的用户名。
+
+    对含空格的 Bot 用户名（如 'channel bot'），在原始文本中直接扫描 '@channel bot' 形式。
+    """
     channel_set = set(channel_bot_usernames)
-    return [name for name in mentioned_names if name in channel_set]
+    seen: set[str] = set()
+    result: list[str] = []
+
+    for name in mentioned_names:
+        if name in channel_set and name not in seen:
+            result.append(name)
+            seen.add(name)
+
+    # 补充：对含空格的 Bot 名，直接在原文中查找 @name
+    if text:
+        for bot_name in channel_bot_usernames:
+            if " " in bot_name and bot_name not in seen and f"@{bot_name}" in text:
+                result.append(bot_name)
+                seen.add(bot_name)
+
+    return result
