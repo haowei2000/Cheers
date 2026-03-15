@@ -114,6 +114,76 @@ function renderMessageContent(content: string, keyPrefix = ""): (string | JSX.El
   return out;
 }
 
+// ── Lightweight Markdown renderer (no external library) ──────────────────────
+function renderMd(md: string): string {
+  if (!md.trim()) return "";
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s: string) =>
+    esc(s)
+      .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-xs font-mono">$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+      .replace(
+        /\[([^\]]+)\]\(([^)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noreferrer" class="text-[#1264A3] underline">$1</a>'
+      );
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let inCode = false, codeBuf: string[] = [], inUl = false, inOl = false;
+  const flushList = () => {
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (inOl) { out.push("</ol>"); inOl = false; }
+  };
+  for (const raw of lines) {
+    if (raw.startsWith("```")) {
+      if (!inCode) { flushList(); inCode = true; codeBuf = []; }
+      else {
+        out.push(`<pre class="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
+        inCode = false;
+      }
+      continue;
+    }
+    if (inCode) { codeBuf.push(raw); continue; }
+    if (/^---+$/.test(raw.trim())) { flushList(); out.push('<hr class="my-3 border-gray-200"/>'); continue; }
+    const hm = raw.match(/^(#{1,6})\s+(.*)/);
+    if (hm) {
+      flushList();
+      const lvl = hm[1].length;
+      const sz = ["text-lg font-bold mt-4 mb-1","text-base font-bold mt-3 mb-1","text-sm font-semibold mt-2 mb-0.5","text-sm font-semibold","text-xs font-semibold","text-xs font-semibold"][lvl-1];
+      const border = lvl <= 2 ? " border-b border-gray-200 pb-1" : "";
+      out.push(`<h${lvl} class="${sz} text-gray-900${border}">${inline(hm[2])}</h${lvl}>`);
+      continue;
+    }
+    if (raw.startsWith("> ")) {
+      flushList();
+      out.push(`<blockquote class="border-l-4 border-blue-300 bg-blue-50 pl-3 py-0.5 my-1 text-gray-600 text-sm italic">${inline(raw.slice(2))}</blockquote>`);
+      continue;
+    }
+    const ulm = raw.match(/^[-*+]\s+(.*)/);
+    if (ulm) {
+      if (inOl) { out.push("</ol>"); inOl = false; }
+      if (!inUl) { out.push('<ul class="list-disc pl-5 my-1 space-y-0.5 text-sm text-gray-800">'); inUl = true; }
+      out.push(`<li>${inline(ulm[1])}</li>`);
+      continue;
+    }
+    const olm = raw.match(/^\d+\.\s+(.*)/);
+    if (olm) {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (!inOl) { out.push('<ol class="list-decimal pl-5 my-1 space-y-0.5 text-sm text-gray-800">'); inOl = true; }
+      out.push(`<li>${inline(olm[1])}</li>`);
+      continue;
+    }
+    flushList();
+    if (raw.trim() === "") { out.push('<div class="my-1.5"></div>'); continue; }
+    out.push(`<p class="text-sm text-gray-800 leading-relaxed my-0.5">${inline(raw)}</p>`);
+  }
+  if (inCode && codeBuf.length) out.push(`<pre class="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
+  flushList();
+  return out.join("\n");
+}
+
 const THINK_BLOCK = /<think>([\s\S]*?)<\/think>/gi;
 
 /** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
@@ -157,6 +227,181 @@ function ThinkFold({ content }: { content: string }) {
         </pre>
       )}
     </div>
+  );
+}
+
+// ── Memory Panel (right sidebar) ─────────────────────────────────────────────
+const LAYER_META: Record<string, { label: string; desc: string; color: string; icon: string }> = {
+  ANCHOR:      { label: "Project Anchor",  desc: "Core goals, constraints, background",    color: "blue",   icon: "⚓" },
+  DECISIONS:   { label: "Decision Log",    desc: "Key decisions and rationale",             color: "purple", icon: "📋" },
+  FILES_INDEX: { label: "File Index",      desc: "Uploaded files and resource references",  color: "amber",  icon: "🗂️" },
+  RECENT:      { label: "Recent Activity", desc: "Latest updates and channel highlights",   color: "green",  icon: "🕐" },
+};
+
+const COLOR_MAP: Record<string, { tab: string; badge: string; border: string }> = {
+  blue:   { tab: "bg-blue-50 text-blue-700 border-blue-200",   badge: "bg-blue-100 text-blue-700",   border: "border-blue-300" },
+  purple: { tab: "bg-purple-50 text-purple-700 border-purple-200", badge: "bg-purple-100 text-purple-700", border: "border-purple-300" },
+  amber:  { tab: "bg-amber-50 text-amber-700 border-amber-200", badge: "bg-amber-100 text-amber-700",  border: "border-amber-300" },
+  green:  { tab: "bg-green-50 text-green-700 border-green-200", badge: "bg-green-100 text-green-700",  border: "border-green-300" },
+};
+
+function MemoryPanel({
+  channelName,
+  contextData,
+  onSave,
+  onDataChange,
+  onClose,
+}: {
+  channelName: string;
+  contextData: Record<string, string>;
+  onSave: (layer: string, content: string) => void;
+  onDataChange: (layer: string, val: string) => void;
+  onClose: () => void;
+}) {
+  const [activeLayer, setActiveLayer] = useState<string>("ANCHOR");
+  const [mode, setMode] = useState<"preview" | "edit">("preview");
+  const [editVal, setEditVal] = useState("");
+
+  const meta = LAYER_META[activeLayer];
+  const rawContent = contextData[activeLayer.toLowerCase()] ?? "";
+  const wordCount = rawContent.trim() ? rawContent.trim().split(/\s+/).length : 0;
+
+  const switchLayer = (layer: string) => {
+    setActiveLayer(layer);
+    setMode("preview");
+    setEditVal(contextData[layer.toLowerCase()] ?? "");
+  };
+
+  const startEdit = () => {
+    setEditVal(rawContent);
+    setMode("edit");
+  };
+
+  const handleSave = () => {
+    onDataChange(activeLayer, editVal);
+    onSave(activeLayer, editVal);
+    setMode("preview");
+  };
+
+  const handleDiscard = () => {
+    setEditVal(rawContent);
+    setMode("preview");
+  };
+
+  return (
+    <aside className="w-72 flex-shrink-0 border-l border-gray-200 bg-white flex flex-col">
+      {/* Panel header */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
+        <div className="min-w-0">
+          <span className="text-sm font-semibold text-gray-900">频道记忆</span>
+          {channelName && (
+            <span className="ml-1.5 text-xs text-gray-400">#{channelName}</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none flex-shrink-0"
+          title="关闭"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Layer tabs */}
+      <div className="flex border-b border-gray-100 flex-shrink-0">
+        {LAYERS.map((layer) => {
+          const m = LAYER_META[layer];
+          const active = layer === activeLayer;
+          const filled = !!(contextData[layer.toLowerCase()]?.trim());
+          return (
+            <button
+              key={layer}
+              onClick={() => switchLayer(layer)}
+              title={m.label}
+              className={`flex-1 py-2 flex flex-col items-center gap-0.5 text-[10px] border-b-2 transition-colors ${
+                active
+                  ? "border-[#1264A3] text-[#1264A3]"
+                  : "border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <span className="text-sm leading-none">{m.icon}</span>
+              <span className="leading-none font-medium truncate max-w-full px-0.5">{m.label.split(" ")[0]}</span>
+              {filled && <span className="w-1 h-1 rounded-full bg-current opacity-60" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content toolbar */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs font-semibold text-gray-700 truncate">{meta.label}</span>
+          {rawContent.trim() && (
+            <span className="text-[10px] text-gray-400 flex-shrink-0">{wordCount}w</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {mode === "preview" ? (
+            <button
+              type="button"
+              onClick={startEdit}
+              className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+            >
+              编辑
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={handleDiscard}
+                className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="text-[11px] px-2 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
+              >
+                保存
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 overflow-y-auto">
+        {mode === "edit" ? (
+          <textarea
+            value={editVal}
+            onChange={(e) => setEditVal(e.target.value)}
+            className="w-full h-full font-mono text-xs p-3 resize-none focus:outline-none leading-relaxed"
+            placeholder={`用 Markdown 写 ${meta.label}…`}
+            spellCheck={false}
+          />
+        ) : rawContent.trim() ? (
+          <div
+            className="px-3 py-3 text-sm"
+            dangerouslySetInnerHTML={{ __html: renderMd(rawContent) }}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
+            <span className="text-3xl opacity-30">{meta.icon}</span>
+            <p className="text-xs font-medium text-gray-500">暂无内容</p>
+            <p className="text-[11px] text-gray-400">{meta.desc}</p>
+            <button
+              type="button"
+              onClick={startEdit}
+              className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+            >
+              添加内容
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -589,7 +834,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
@@ -822,13 +1067,13 @@ export default function App() {
   }, [selectedId]);
 
   useEffect(() => {
-    if (contextOpen && selectedId) {
+    if (memoryPanelOpen && selectedId) {
       fetch(`${API}/channels/${selectedId}/context`)
         .then((r) => r.json())
         .then((d) => d.data && setContextData(d.data))
         .catch(console.error);
     }
-  }, [contextOpen, selectedId]);
+  }, [memoryPanelOpen, selectedId]);
 
   useEffect(() => {
     if (addBotOpen) {
@@ -1423,6 +1668,15 @@ export default function App() {
             </svg>
             <span>管理</span>
           </Link>
+          <Link
+            to="/docs"
+            className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M4 4a2 2 0 0 1 2-2h4.586A2 2 0 0 1 12 2.586L15.414 6A2 2 0 0 1 16 7.414V16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4Zm2 6a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H7a1 1 0 0 1-1-1Zm1 3a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H7Z" clipRule="evenodd" />
+            </svg>
+            <span>Docs</span>
+          </Link>
           <button
             type="button"
             onClick={() => setHelpOpen(true)}
@@ -1695,40 +1949,6 @@ export default function App() {
         </div>
       )}
 
-      {contextOpen && selectedId && (
-        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40" onClick={() => setContextOpen(false)} aria-modal="true" role="dialog">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 p-6 text-left max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-900">频道上下文</h2>
-              <button type="button" onClick={() => setContextOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl" aria-label="关闭">
-                ×
-              </button>
-            </div>
-            {LAYERS.map((layer) => (
-              <div key={layer} className="mb-4">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{layer}</label>
-                <textarea
-                  value={contextData[layer.toLowerCase()] ?? ""}
-                  onChange={(e) => setContextData((prev) => ({ ...prev, [layer.toLowerCase()]: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm h-24 focus:outline-none focus:border-[#1264A3]"
-                />
-                <button
-                  type="button"
-                  onClick={() => saveContextLayer(layer, contextData[layer.toLowerCase()] ?? "")}
-                  className="mt-1.5 px-3 py-1 bg-[#F8F8F8] text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200"
-                >
-                  保存
-                </button>
-              </div>
-            ))}
-            <div className="mt-4 flex justify-end">
-              <button type="button" onClick={() => setContextOpen(false)} className="px-4 py-2 bg-[#F8F8F8] text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
-                关闭
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {manageMembersOpen && selectedId && (
         <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40" onClick={() => setManageMembersOpen(false)} aria-modal="true" role="dialog">
@@ -1878,6 +2098,7 @@ export default function App() {
         </div>
       )}
 
+      <div className="flex-1 flex min-w-0">
       <main className="flex-1 flex flex-col min-w-0 bg-white">
         {selectedId ? (
           <>
@@ -1920,8 +2141,22 @@ export default function App() {
               )}
               <button
                 type="button"
+                onClick={() => setMemoryPanelOpen((o) => !o)}
+                className={`ml-auto px-2.5 py-1 text-xs rounded-md border transition-colors flex items-center gap-1 ${
+                  memoryPanelOpen
+                    ? "bg-[#1264A3] text-white border-[#1264A3]"
+                    : "border-[#1264A3] text-[#1264A3] hover:bg-[#1264A3]/10"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M10.75 16.82A7.462 7.462 0 0 1 10 17c-.383 0-.759-.037-1.125-.108l.002-.034a1.75 1.75 0 0 0 2.248 0l.002.034ZM2.5 10a7.5 7.5 0 1 1 15 0 7.5 7.5 0 0 1-15 0ZM10 6.75a.75.75 0 0 1 .75.75v1.543l1.244.829a.75.75 0 0 1-.831 1.246l-1.5-1a.75.75 0 0 1-.163-.244V7.5A.75.75 0 0 1 10 6.75Z" />
+                </svg>
+                记忆
+              </button>
+              <button
+                type="button"
                 onClick={() => setManageMembersOpen(true)}
-                className="ml-auto px-2.5 py-1 text-xs rounded-md border border-[#1264A3] text-[#1264A3] hover:bg-[#1264A3]/10 transition-colors flex items-center gap-1"
+                className="px-2.5 py-1 text-xs rounded-md border border-[#1264A3] text-[#1264A3] hover:bg-[#1264A3]/10 transition-colors flex items-center gap-1"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                   <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
@@ -2359,6 +2594,18 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Memory right panel */}
+      {memoryPanelOpen && selectedId && (
+        <MemoryPanel
+          channelName={selectedChannel?.name ?? ""}
+          contextData={contextData}
+          onSave={saveContextLayer}
+          onDataChange={(layer, val) => setContextData((prev) => ({ ...prev, [layer.toLowerCase()]: val }))}
+          onClose={() => setMemoryPanelOpen(false)}
+        />
+      )}
+      </div>
     </div>
     </>
   );

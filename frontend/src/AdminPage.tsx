@@ -117,6 +117,7 @@ export default function AdminPage() {
     api_key: "",
     description: "",
     is_enabled: true,
+    extra_headers: "",   // JSON 字符串，如 {"x-my-header":"value"}
   });
   const [modelEditingId, setModelEditingId] = useState<string | null>(null);
 
@@ -284,17 +285,24 @@ export default function AdminPage() {
       toast.error("请填写必填项");
       return;
     }
+    let extraHeaders: Record<string, string> | undefined;
+    if (modelForm.extra_headers.trim()) {
+      try { extraHeaders = JSON.parse(modelForm.extra_headers); }
+      catch { toast.error("额外 Headers 格式错误，须为合法 JSON 对象"); return; }
+    }
+    const config = extraHeaders ? { extra_headers: extraHeaders } : {};
+    const { extra_headers: _eh, ...rest } = modelForm;
     fetch(`${API}/admin/models`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(modelForm),
+      body: JSON.stringify({ ...rest, config }),
     })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
           toast.success("模型创建成功");
           loadModels();
-          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true });
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, extra_headers: "" });
         } else {
           toast.error(d.message || d.detail || "创建失败");
         }
@@ -303,6 +311,12 @@ export default function AdminPage() {
   };
 
   const updateModel = (id: string) => {
+    let extraHeaders: Record<string, string> | null = null;
+    if (modelForm.extra_headers.trim()) {
+      try { extraHeaders = JSON.parse(modelForm.extra_headers); }
+      catch { toast.error("额外 Headers 格式错误，须为合法 JSON 对象"); return; }
+    }
+    const config = extraHeaders !== null ? { extra_headers: extraHeaders } : {};
     fetch(`${API}/admin/models/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -314,6 +328,7 @@ export default function AdminPage() {
         api_key: modelForm.api_key || undefined,
         description: modelForm.description,
         is_enabled: modelForm.is_enabled,
+        config,
       }),
     })
       .then((r) => r.json())
@@ -322,7 +337,7 @@ export default function AdminPage() {
           toast.success("已更新");
           loadModels();
           setModelEditingId(null);
-          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true });
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, extra_headers: "" });
         } else {
           toast.error(d.message || d.detail || "更新失败");
         }
@@ -347,6 +362,7 @@ export default function AdminPage() {
 
   const startEditModel = (m: AIModel) => {
     setModelEditingId(m.model_id);
+    const eh = m.config?.extra_headers;
     setModelForm({
       name: m.name,
       provider: m.provider,
@@ -355,6 +371,7 @@ export default function AdminPage() {
       api_key: "",
       description: m.description || "",
       is_enabled: m.is_enabled,
+      extra_headers: eh && typeof eh === "object" ? JSON.stringify(eh) : "",
     });
   };
 
@@ -653,6 +670,7 @@ export default function AdminPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4A154B] to-[#611f69] flex items-center justify-center text-white font-bold">A</div>
             <h1 className="text-lg font-semibold text-gray-800">AgentNexus 管理</h1>
           </div>
+          <Link to="/docs" className="text-sm text-[#1264A3] hover:underline mr-4">Docs</Link>
           <Link to="/" className="text-sm text-[#1264A3] hover:underline">返回聊天</Link>
         </div>
       </header>
@@ -703,6 +721,7 @@ export default function AdminPage() {
                             <div className="text-xs text-gray-500 mt-1">
                               {m.provider} / {m.model_name} | {m.base_url}
                               {m.api_key_masked && ` | Key: ${m.api_key_masked}`}
+                              {!!m.config?.extra_headers && <span className="ml-1 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">+headers</span>}
                             </div>
                             {m.description && <div className="text-xs text-gray-400 mt-1">{m.description}</div>}
                           </div>
@@ -751,6 +770,17 @@ export default function AdminPage() {
                           <label className="block text-xs text-gray-500 mb-1">描述</label>
                           <input type="text" value={modelForm.description} onChange={(e) => setModelForm({ ...modelForm, description: e.target.value })} placeholder="模型描述" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                         </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs text-gray-500 mb-1">额外请求 Headers <span className="text-gray-400">（JSON 对象，可选）</span></label>
+                          <textarea
+                            value={modelForm.extra_headers}
+                            onChange={(e) => setModelForm({ ...modelForm, extra_headers: e.target.value })}
+                            placeholder={'{"x-openclaw-agent-id": "main"}'}
+                            rows={2}
+                            className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm font-mono resize-none"
+                          />
+                          <p className="text-xs text-gray-400 mt-0.5">每次调用 LLM 时附加到请求头，用于需要自定义鉴权头的 endpoint</p>
+                        </div>
                         <div className="col-span-2 flex items-center gap-2">
                           <input type="checkbox" id="is_enabled" checked={modelForm.is_enabled} onChange={(e) => setModelForm({ ...modelForm, is_enabled: e.target.checked })} className="rounded" />
                           <label htmlFor="is_enabled" className="text-xs text-gray-500">启用此模型</label>
@@ -760,7 +790,7 @@ export default function AdminPage() {
                         {modelEditingId ? (
                           <>
                             <button onClick={() => updateModel(modelEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
-                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, extra_headers: "" }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
                           </>
                         ) : (
                           <button onClick={createModel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建模型</button>

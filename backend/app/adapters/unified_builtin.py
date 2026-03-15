@@ -103,6 +103,9 @@ async def _call_llm(system: str, user_text: str) -> str | None:
     headers = {"Content-Type": "application/json"}
     if cfg.get("api_key"):
         headers["Authorization"] = f"Bearer {cfg['api_key']}"
+    extra = cfg.get("extra_headers")
+    if isinstance(extra, dict):
+        headers.update({str(k): str(v) for k, v in extra.items()})
     body = {
         "model": cfg["model"],
         "messages": [

@@ -92,58 +92,6 @@ async def run_orchestrator(
     root_task_id = str(uuid.uuid4())
     for username in target_usernames:
         bot_id = bot_id_by_username[username]
-        if username == COORDINATOR_USERNAME and not direct_answer_mode:
-            # 用户显式 @coordinator：主控聚合，调用频道内除 coordinator 外的所有 Bot
-            other_rows = [
-                (r[0].member_id, r[1].username,
-                 r[1].prompt_template.user_template if r[1].prompt_template else None)
-                for r in rows
-                if r[1].username != COORDINATOR_USERNAME
-            ]
-            parts = []
-            for other_bot_id, other_username, other_template in other_rows:
-                adapter = await adapter_factory(other_bot_id)
-                # 使用同一 root_task_id 将本次 orchestrator 流内的调用串成一条任务线程
-                task_id = root_task_id
-                # 应用该 Bot 的提示词模板
-                templated_text = _apply_prompt_template(other_template, trigger_msg.content)
-                payload = AgentPayload(
-                    task_id=task_id,
-                    channel_id=channel_id,
-                    trigger_message={
-                        "user": trigger_msg.sender_id,
-                        "text": templated_text,
-                        "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
-                    },
-                    memory_context=memory_context,
-                    attachments=[],
-                )
-                resp: AgentResponse = await adapter.execute(payload)
-                content = resp.content if resp.success else (resp.error_message or "处理出错")
-                parts.append(f"### @{other_username}\n\n{content}")
-            combined = "## 汇总\n\n" + "\n\n---\n\n".join(parts) if parts else "（当前频道无其他 Bot 可调度）"
-            coord_msg = Message(
-                channel_id=channel_id,
-                sender_id=bot_id,
-                sender_type="bot",
-                content=combined,
-                task_id=root_task_id,
-                in_reply_to_msg_id=trigger_msg.msg_id,
-            )
-            session.add(coord_msg)
-            await session.flush()
-            coord_task = AgentTask(
-                task_id=str(uuid.uuid4()),
-                channel_id=channel_id,
-                bot_id=bot_id,
-                trigger_msg_id=trigger_msg.msg_id,
-                response_msg_id=coord_msg.msg_id,
-            )
-            session.add(coord_task)
-            await session.flush()
-            created.append(coord_msg)
-            continue
-
         if username == COORDINATOR_USERNAME and direct_answer_mode:
             # 直接回答模式：用 OrchestratorAdapter 回答业务问题（不应用模板，因为是系统 Bot）
             adapter = await adapter_factory(bot_id)
@@ -241,6 +189,7 @@ async def run_orchestrator(
         # 应用该 Bot 的提示词模板
         bot_template = bot_template_by_username.get(username)
         templated_text = _apply_prompt_template(bot_template, trigger_msg.content)
+        other_bots = [u for u in channel_bot_usernames if u != username]
         payload = AgentPayload(
             task_id=task_id,
             channel_id=channel_id,
@@ -251,6 +200,7 @@ async def run_orchestrator(
             },
             memory_context=memory_context,
             attachments=[],
+            process_config={"channel_bot_usernames": other_bots},
         )
         logger.info("orchestrator: calling bot bot_id=%s username=%s endpoint=...", bot_id, username)
         resp: AgentResponse = await adapter.execute(payload)
