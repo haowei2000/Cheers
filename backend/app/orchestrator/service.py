@@ -14,7 +14,7 @@ from app.db.models import AgentTask, BotAccount, ChannelMembership, Message
 from app.orchestrator.mention import extract_mentions, filter_mentioned_bots
 from app.orchestrator.orchestrator_adapter import extract_suggested_bots
 
-COORDINATOR_USERNAME = "coordinator"
+COORDINATOR_USERNAME = "引导"
 
 
 def _apply_prompt_template(template: str | None, user_message: str) -> str:
@@ -62,7 +62,10 @@ async def run_orchestrator(
     rows = result.all()
     channel_bot_usernames = [row[1].username for row in rows]
     bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
-    bot_template_by_username = {row[1].username: row[1].prompt_template for row in rows}
+    bot_template_by_username = {
+        row[1].username: (row[1].prompt_template.user_template if row[1].prompt_template else None)
+        for row in rows
+    }
 
     mentioned = extract_mentions(trigger_msg.content)
     target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames)
@@ -92,7 +95,8 @@ async def run_orchestrator(
         if username == COORDINATOR_USERNAME and not direct_answer_mode:
             # 用户显式 @coordinator：主控聚合，调用频道内除 coordinator 外的所有 Bot
             other_rows = [
-                (r[0].member_id, r[1].username, r[1].prompt_template)
+                (r[0].member_id, r[1].username,
+                 r[1].prompt_template.user_template if r[1].prompt_template else None)
                 for r in rows
                 if r[1].username != COORDINATOR_USERNAME
             ]
@@ -129,7 +133,7 @@ async def run_orchestrator(
             session.add(coord_msg)
             await session.flush()
             coord_task = AgentTask(
-                task_id=root_task_id,
+                task_id=str(uuid.uuid4()),
                 channel_id=channel_id,
                 bot_id=bot_id,
                 trigger_msg_id=trigger_msg.msg_id,
@@ -170,7 +174,7 @@ async def run_orchestrator(
             session.add(orch_msg)
             await session.flush()
             task_record = AgentTask(
-                task_id=task_id,
+                task_id=str(uuid.uuid4()),
                 channel_id=channel_id,
                 bot_id=bot_id,
                 trigger_msg_id=trigger_msg.msg_id,
@@ -218,7 +222,7 @@ async def run_orchestrator(
                         session.add(sug_msg)
                         await session.flush()
                         session.add(AgentTask(
-                            task_id=sug_task_id,
+                            task_id=str(uuid.uuid4()),
                             channel_id=channel_id,
                             bot_id=sug_bot_id,
                             trigger_msg_id=trigger_msg.msg_id,
@@ -264,7 +268,7 @@ async def run_orchestrator(
         session.add(bot_msg)
         await session.flush()
         task_record = AgentTask(
-            task_id=task_id,
+            task_id=str(uuid.uuid4()),
             channel_id=channel_id,
             bot_id=bot_id,
             trigger_msg_id=trigger_msg.msg_id,
