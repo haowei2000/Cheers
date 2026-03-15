@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import FriendsPanel from "./FriendsPanel";
+import ChannelMembersModal from "./ChannelMembersModal";
 
 const API = "/api";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -19,7 +21,7 @@ type Message = {
 type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
 
-const LAYERS = ["ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT"] as const;
+const LAYERS = ["ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "MEMBERS"] as const;
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
 const GUIDE_CLARIFY_BLOCK = /```guide-clarify\n([\s\S]*?)```/;
@@ -114,6 +116,76 @@ function renderMessageContent(content: string, keyPrefix = ""): (string | JSX.El
   return out;
 }
 
+// ── Lightweight Markdown renderer (no external library) ──────────────────────
+function renderMd(md: string): string {
+  if (!md.trim()) return "";
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s: string) =>
+    esc(s)
+      .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-xs font-mono">$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+      .replace(
+        /\[([^\]]+)\]\(([^)]+)\)/g,
+        '<a href="$2" target="_blank" rel="noreferrer" class="text-[#1264A3] underline">$1</a>'
+      );
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let inCode = false, codeBuf: string[] = [], inUl = false, inOl = false;
+  const flushList = () => {
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (inOl) { out.push("</ol>"); inOl = false; }
+  };
+  for (const raw of lines) {
+    if (raw.startsWith("```")) {
+      if (!inCode) { flushList(); inCode = true; codeBuf = []; }
+      else {
+        out.push(`<pre class="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
+        inCode = false;
+      }
+      continue;
+    }
+    if (inCode) { codeBuf.push(raw); continue; }
+    if (/^---+$/.test(raw.trim())) { flushList(); out.push('<hr class="my-3 border-gray-200"/>'); continue; }
+    const hm = raw.match(/^(#{1,6})\s+(.*)/);
+    if (hm) {
+      flushList();
+      const lvl = hm[1].length;
+      const sz = ["text-lg font-bold mt-4 mb-1","text-base font-bold mt-3 mb-1","text-sm font-semibold mt-2 mb-0.5","text-sm font-semibold","text-xs font-semibold","text-xs font-semibold"][lvl-1];
+      const border = lvl <= 2 ? " border-b border-gray-200 pb-1" : "";
+      out.push(`<h${lvl} class="${sz} text-gray-900${border}">${inline(hm[2])}</h${lvl}>`);
+      continue;
+    }
+    if (raw.startsWith("> ")) {
+      flushList();
+      out.push(`<blockquote class="border-l-4 border-blue-300 bg-blue-50 pl-3 py-0.5 my-1 text-gray-600 text-sm italic">${inline(raw.slice(2))}</blockquote>`);
+      continue;
+    }
+    const ulm = raw.match(/^[-*+]\s+(.*)/);
+    if (ulm) {
+      if (inOl) { out.push("</ol>"); inOl = false; }
+      if (!inUl) { out.push('<ul class="list-disc pl-5 my-1 space-y-0.5 text-sm text-gray-800">'); inUl = true; }
+      out.push(`<li>${inline(ulm[1])}</li>`);
+      continue;
+    }
+    const olm = raw.match(/^\d+\.\s+(.*)/);
+    if (olm) {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (!inOl) { out.push('<ol class="list-decimal pl-5 my-1 space-y-0.5 text-sm text-gray-800">'); inOl = true; }
+      out.push(`<li>${inline(olm[1])}</li>`);
+      continue;
+    }
+    flushList();
+    if (raw.trim() === "") { out.push('<div class="my-1.5"></div>'); continue; }
+    out.push(`<p class="text-sm text-gray-800 leading-relaxed my-0.5">${inline(raw)}</p>`);
+  }
+  if (inCode && codeBuf.length) out.push(`<pre class="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
+  flushList();
+  return out.join("\n");
+}
+
 const THINK_BLOCK = /<think>([\s\S]*?)<\/think>/gi;
 
 /** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
@@ -157,6 +229,234 @@ function ThinkFold({ content }: { content: string }) {
         </pre>
       )}
     </div>
+  );
+}
+
+// ── Memory Panel (right sidebar) ─────────────────────────────────────────────
+const LAYER_META: Record<string, { label: string; desc: string; color: string; icon: string; readonly?: boolean }> = {
+  ANCHOR:      { label: "项目锚点",   desc: "核心目标、约束、背景",       color: "blue",   icon: "⚓" },
+  DECISIONS:   { label: "决策记录",   desc: "重要决策及原因",             color: "purple", icon: "📋" },
+  FILES_INDEX: { label: "资料索引",   desc: "上传的文件与参考资料",        color: "amber",  icon: "🗂️" },
+  RECENT:      { label: "近期动态",   desc: "最新进展、待办、结论",        color: "green",  icon: "🕐" },
+  MEMBERS:     { label: "频道成员",   desc: "用户与 Bot 能力一览",        color: "gray",   icon: "👥", readonly: true },
+};
+
+type MemberItem = { member_id: string; member_type: string; username?: string; display_name?: string; avatar_url?: string };
+
+function MemoryPanel({
+  channelId,
+  channelName,
+  contextData,
+  onSave,
+  onDataChange,
+  onClose,
+}: {
+  channelId: string;
+  channelName: string;
+  contextData: Record<string, string>;
+  onSave: (layer: string, content: string) => void;
+  onDataChange: (layer: string, val: string) => void;
+  onClose: () => void;
+}) {
+  const [activeLayer, setActiveLayer] = useState<string>("ANCHOR");
+  const [mode, setMode] = useState<"preview" | "edit">("preview");
+  const [editVal, setEditVal] = useState("");
+  const [members, setMembers] = useState<MemberItem[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+
+  const meta = LAYER_META[activeLayer];
+  const isReadonly = !!meta.readonly;
+  const rawContent = contextData[activeLayer.toLowerCase()] ?? "";
+  const wordCount = rawContent.trim() ? rawContent.trim().split(/\s+/).length : 0;
+
+  const switchLayer = (layer: string) => {
+    setActiveLayer(layer);
+    setMode("preview");
+    setEditVal(contextData[layer.toLowerCase()] ?? "");
+    if (layer === "MEMBERS") {
+      setMembersLoading(true);
+      fetch(`${API}/channels/${channelId}/members?with_username=1`)
+        .then((r) => r.json())
+        .then((d) => setMembers(d.data || []))
+        .catch(() => {})
+        .finally(() => setMembersLoading(false));
+    }
+  };
+
+  // Load members on mount if starting on MEMBERS tab
+  useEffect(() => {
+    if (activeLayer === "MEMBERS") switchLayer("MEMBERS");
+  }, []);
+
+  const startEdit = () => {
+    setEditVal(rawContent);
+    setMode("edit");
+  };
+
+  const handleSave = () => {
+    onDataChange(activeLayer, editVal);
+    onSave(activeLayer, editVal);
+    setMode("preview");
+  };
+
+  const handleDiscard = () => {
+    setEditVal(rawContent);
+    setMode("preview");
+  };
+
+  return (
+    <aside className="w-72 flex-shrink-0 border-l border-gray-200 bg-white flex flex-col">
+      {/* Panel header */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
+        <div className="min-w-0">
+          <span className="text-sm font-semibold text-gray-900">频道记忆</span>
+          {channelName && (
+            <span className="ml-1.5 text-xs text-gray-400">#{channelName}</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none flex-shrink-0"
+          title="关闭"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Layer tabs */}
+      <div className="flex border-b border-gray-100 flex-shrink-0">
+        {LAYERS.map((layer) => {
+          const m = LAYER_META[layer];
+          const active = layer === activeLayer;
+          const filled = !!(contextData[layer.toLowerCase()]?.trim());
+          return (
+            <button
+              key={layer}
+              onClick={() => switchLayer(layer)}
+              title={m.label}
+              className={`flex-1 py-2 flex flex-col items-center gap-0.5 text-[10px] border-b-2 transition-colors ${
+                active
+                  ? "border-[#1264A3] text-[#1264A3]"
+                  : "border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <span className="text-sm leading-none">{m.icon}</span>
+              <span className="leading-none font-medium truncate max-w-full px-0.5">{m.label.split(" ")[0]}</span>
+              {filled && <span className="w-1 h-1 rounded-full bg-current opacity-60" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content toolbar */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs font-semibold text-gray-700 truncate">{meta.label}</span>
+          {!isReadonly && rawContent.trim() && (
+            <span className="text-[10px] text-gray-400 flex-shrink-0">{wordCount}w</span>
+          )}
+          {isReadonly && (
+            <span className="text-[10px] text-gray-400 flex-shrink-0">只读</span>
+          )}
+        </div>
+        {!isReadonly && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {mode === "preview" ? (
+              <button
+                type="button"
+                onClick={startEdit}
+                className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+              >
+                编辑
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleDiscard}
+                  className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="text-[11px] px-2 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
+                >
+                  保存
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 overflow-y-auto">
+        {isReadonly ? (
+          membersLoading ? (
+            <div className="flex items-center justify-center h-full text-gray-400 text-xs">加载中…</div>
+          ) : members.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 text-center px-4">
+              <span className="text-3xl opacity-30">👥</span>
+              <p className="text-xs text-gray-500">暂无成员</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {[...members]
+                .sort((a, b) => (a.member_type === "bot" ? -1 : 1) - (b.member_type === "bot" ? -1 : 1))
+                .map((m) => {
+                  const isBot = m.member_type === "bot";
+                  const label = m.display_name || m.username || (isBot ? "Bot" : "用户");
+                  const sub = m.username && m.username !== m.display_name ? `@${m.username}` : null;
+                  const initial = label.slice(0, 1).toUpperCase();
+                  return (
+                    <div key={m.member_id} className="flex items-center gap-2.5 px-3 py-2">
+                      <div className={`w-7 h-7 rounded${isBot ? "" : "-full"} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${isBot ? "bg-[#2EB67D]" : "bg-[#1264A3]"}`}>
+                        {initial}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-gray-800 truncate">{label}</p>
+                        {sub && <p className="text-[10px] text-gray-400 truncate">{sub}</p>}
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${isBot ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"}`}>
+                        {isBot ? "Bot" : "用户"}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          )
+        ) : mode === "edit" ? (
+          <textarea
+            value={editVal}
+            onChange={(e) => setEditVal(e.target.value)}
+            className="w-full h-full font-mono text-xs p-3 resize-none focus:outline-none leading-relaxed"
+            placeholder={`用 Markdown 写 ${meta.label}…`}
+            spellCheck={false}
+          />
+        ) : rawContent.trim() ? (
+          <div
+            className="px-3 py-3 text-sm"
+            dangerouslySetInnerHTML={{ __html: renderMd(rawContent) }}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
+            <span className="text-3xl opacity-30">{meta.icon}</span>
+            <p className="text-xs font-medium text-gray-500">暂无内容</p>
+            <p className="text-[11px] text-gray-400">{meta.desc}</p>
+            <button
+              type="button"
+              onClick={startEdit}
+              className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+            >
+              添加内容
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -589,7 +889,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
+  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
@@ -617,12 +917,7 @@ export default function App() {
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
   const [manageMembersOpen, setManageMembersOpen] = useState(false);
-  type MemberOption = { id: string; type: "bot" | "user"; label: string };
-  const [memberAddOptions, setMemberAddOptions] = useState<MemberOption[]>([]);
-  const [memberAddSelected, setMemberAddSelected] = useState<Set<string>>(new Set());
-  const [memberRemoveSelected, setMemberRemoveSelected] = useState<Set<string>>(new Set());
-  const [addingMembersModal, setAddingMembersModal] = useState(false);
-  const [removingMembersModal, setRemovingMembersModal] = useState(false);
+  const [friendsPanelOpen, setFriendsPanelOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(new Set());
   const [, setHasMore] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -815,6 +1110,17 @@ export default function App() {
             if (id && prev.some((m) => m.msg_id === id)) return prev;
             return [...prev, msg.data];
           });
+          // 检测到记忆写入通知时刷新记忆面板数据
+          if (
+            msg.data.sender_type === "bot" &&
+            typeof msg.data.content === "string" &&
+            msg.data.content.includes("已更新记忆层")
+          ) {
+            fetch(`${API}/channels/${selectedId}/context`)
+              .then((r) => r.json())
+              .then((d) => d.data && setContextData(d.data))
+              .catch(() => {});
+          }
         }
       } catch {}
     };
@@ -822,13 +1128,13 @@ export default function App() {
   }, [selectedId]);
 
   useEffect(() => {
-    if (contextOpen && selectedId) {
+    if (memoryPanelOpen && selectedId) {
       fetch(`${API}/channels/${selectedId}/context`)
         .then((r) => r.json())
         .then((d) => d.data && setContextData(d.data))
         .catch(console.error);
     }
-  }, [contextOpen, selectedId]);
+  }, [memoryPanelOpen, selectedId]);
 
   useEffect(() => {
     if (addBotOpen) {
@@ -837,27 +1143,7 @@ export default function App() {
     }
   }, [addBotOpen]);
 
-  useEffect(() => {
-    if (!manageMembersOpen || !selectedId) return;
-    setMemberAddSelected(new Set());
-    setMemberRemoveSelected(new Set());
-    const wsId = selectedChannel?.workspace_id;
-    Promise.all([
-      fetch(`${API}/channels/${selectedId}/members?with_username=1`).then((r) => r.json()),
-      fetch(`${API}/bots`).then((r) => r.json()),
-      wsId ? fetch(`${API}/workspaces/${wsId}/members`).then((r) => r.json()) : Promise.resolve({ data: [] }),
-    ]).then(([membersRes, botsRes, usersRes]) => {
-      const inChannel = new Set<string>((membersRes.data || []).map((m: { member_id: string }) => m.member_id));
-      const opts: MemberOption[] = [];
-      for (const b of (botsRes.data || [])) {
-        if (!inChannel.has(b.bot_id)) opts.push({ id: b.bot_id, type: "bot", label: `[Bot] @${b.username}${b.display_name ? " · " + b.display_name : ""}` });
-      }
-      for (const u of (usersRes.data || [])) {
-        if (!inChannel.has(u.user_id)) opts.push({ id: u.user_id, type: "user", label: `[用户] @${u.username}${u.display_name ? " · " + u.display_name : ""}` });
-      }
-      setMemberAddOptions(opts);
-    }).catch(() => setMemberAddOptions([]));
-  }, [manageMembersOpen, selectedId]);
+
 
   useEffect(() => {
     if (showMentionDropdown && selectedId) {
@@ -979,6 +1265,9 @@ export default function App() {
       sender_type: "user",
       file_ids: pendingFileIds,
     };
+    setInput("");
+    setPendingFileIds([]);
+    setPendingFileNames([]);
     fetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -986,22 +1275,12 @@ export default function App() {
     })
       .then((r) => r.json())
       .then((d) => {
-        setMessages((prev) => {
-          let next = prev;
-          if (d.data && !prev.some((m) => m.msg_id === d.data.msg_id)) {
-            next = [...next, d.data];
-          }
-          const botMsgs: Message[] = d.bot_messages || [];
-          for (const bm of botMsgs) {
-            if (bm && bm.msg_id && !next.some((m) => m.msg_id === bm.msg_id)) {
-              next = [...next, bm];
-            }
-          }
-          return next;
-        });
-        setInput("");
-        setPendingFileIds([]);
-        setPendingFileNames([]);
+        // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
+        if (d.data) {
+          setMessages((prev) =>
+            prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]
+          );
+        }
       })
       .catch(console.error);
   };
@@ -1414,6 +1693,16 @@ export default function App() {
 
         {/* Bottom nav */}
         <div className="px-2 py-2 border-t border-white/10 space-y-0.5">
+          <button
+            type="button"
+            onClick={() => setFriendsPanelOpen(true)}
+            className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
+            </svg>
+            <span>好友</span>
+          </button>
           <Link
             to="/admin"
             className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
@@ -1422,6 +1711,15 @@ export default function App() {
               <path fillRule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.992 6.992 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" />
             </svg>
             <span>管理</span>
+          </Link>
+          <Link
+            to="/docs"
+            className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M4 4a2 2 0 0 1 2-2h4.586A2 2 0 0 1 12 2.586L15.414 6A2 2 0 0 1 16 7.414V16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4Zm2 6a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H7a1 1 0 0 1-1-1Zm1 3a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H7Z" clipRule="evenodd" />
+            </svg>
+            <span>Docs</span>
           </Link>
           <button
             type="button"
@@ -1695,189 +1993,26 @@ export default function App() {
         </div>
       )}
 
-      {contextOpen && selectedId && (
-        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40" onClick={() => setContextOpen(false)} aria-modal="true" role="dialog">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 p-6 text-left max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-900">频道上下文</h2>
-              <button type="button" onClick={() => setContextOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl" aria-label="关闭">
-                ×
-              </button>
-            </div>
-            {LAYERS.map((layer) => (
-              <div key={layer} className="mb-4">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">{layer}</label>
-                <textarea
-                  value={contextData[layer.toLowerCase()] ?? ""}
-                  onChange={(e) => setContextData((prev) => ({ ...prev, [layer.toLowerCase()]: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm h-24 focus:outline-none focus:border-[#1264A3]"
-                />
-                <button
-                  type="button"
-                  onClick={() => saveContextLayer(layer, contextData[layer.toLowerCase()] ?? "")}
-                  className="mt-1.5 px-3 py-1 bg-[#F8F8F8] text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-200"
-                >
-                  保存
-                </button>
-              </div>
-            ))}
-            <div className="mt-4 flex justify-end">
-              <button type="button" onClick={() => setContextOpen(false)} className="px-4 py-2 bg-[#F8F8F8] text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">
-                关闭
-              </button>
-            </div>
-          </div>
-        </div>
+
+      {/* 好友管理面板 */}
+      <FriendsPanel
+        currentUserId={currentUserId}
+        isOpen={friendsPanelOpen}
+        onClose={() => setFriendsPanelOpen(false)}
+      />
+
+      {/* 频道成员管理模态框 */}
+      {selectedId && (
+        <ChannelMembersModal
+          channelId={selectedId}
+          channelName={selectedChannel?.name || ""}
+          currentUserId={currentUserId}
+          isOpen={manageMembersOpen}
+          onClose={() => setManageMembersOpen(false)}
+        />
       )}
 
-      {manageMembersOpen && selectedId && (
-        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40" onClick={() => setManageMembersOpen(false)} aria-modal="true" role="dialog">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 p-6 text-left max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-5">
-              <h2 className="text-lg font-bold text-gray-900">管理成员 — #{selectedChannel?.name}</h2>
-              <button type="button" onClick={() => setManageMembersOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl" aria-label="关闭">×</button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {/* 添加成员 */}
-              <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">添加成员</h3>
-                {memberAddOptions.length === 0 ? (
-                  <p className="text-sm text-gray-400">暂无可添加的成员</p>
-                ) : (
-                  <ul className="space-y-1 max-h-64 overflow-auto">
-                    {memberAddOptions.map((opt) => {
-                      const checked = memberAddSelected.has(opt.id);
-                      return (
-                        <li
-                          key={opt.id}
-                          className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm cursor-pointer select-none ${checked ? "bg-[#1264A3]/10 border border-[#1264A3]/30" : "bg-[#F8F8F8] hover:bg-gray-100"}`}
-                          onClick={() => setMemberAddSelected((prev) => {
-                            const next = new Set(prev);
-                            next.has(opt.id) ? next.delete(opt.id) : next.add(opt.id);
-                            return next;
-                          })}
-                        >
-                          <input type="checkbox" readOnly checked={checked} className="flex-shrink-0" />
-                          <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${opt.type === "bot" ? "bg-green-100 text-green-700" : "bg-blue-50 text-blue-700"}`}>{opt.type === "bot" ? "Bot" : "用户"}</span>
-                          <span className="truncate text-gray-800">{opt.label.replace(/^\[Bot\] |^\[用户\] /, "")}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                {memberAddSelected.size > 0 && (
-                  <button
-                    type="button"
-                    disabled={addingMembersModal}
-                    onClick={async () => {
-                      setAddingMembersModal(true);
-                      try {
-                        const items = memberAddOptions.filter((o) => memberAddSelected.has(o.id));
-                        await Promise.all(items.map((item) =>
-                          fetch(`${API}/channels/${selectedId}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: item.id, member_type: item.type }) }).then((r) => r.json())
-                        ));
-                        toast.success(`已添加 ${items.length} 个成员`);
-                        // 刷新成员列表
-                        const res = await fetch(`${API}/channels/${selectedId}/members?with_username=1`).then((r) => r.json());
-                        const inChannel = new Set<string>((res.data || []).map((m: { member_id: string }) => m.member_id));
-                        setMemberAddOptions((prev) => prev.filter((o) => !inChannel.has(o.id)));
-                        setMemberAddSelected(new Set());
-                        setChannelBots((res.data || []).filter((m: { member_type: string; username?: string }) => m.member_type === "bot" && m.username).map((m: { member_id: string; username: string; avatar_url?: string; display_name?: string }) => ({ member_id: m.member_id, username: m.username, avatar_url: m.avatar_url, display_name: m.display_name })));
-                        setChannelUsers((res.data || []).filter((m: { member_type: string; username?: string }) => m.member_type === "user" && m.username).map((m: { member_id: string; username: string; avatar_url?: string; display_name?: string }) => ({ member_id: m.member_id, username: m.username, avatar_url: m.avatar_url, display_name: m.display_name })));
-                      } catch {
-                        toast.error("添加失败");
-                      } finally {
-                        setAddingMembersModal(false);
-                      }
-                    }}
-                    className="mt-3 px-4 py-1.5 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0d5296] disabled:opacity-50"
-                  >
-                    {addingMembersModal ? "添加中…" : `添加选中 (${memberAddSelected.size})`}
-                  </button>
-                )}
-              </div>
-
-              {/* 移除成员 */}
-              <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">当前成员</h3>
-                {channelBots.length === 0 && channelUsers.length === 0 ? (
-                  <p className="text-sm text-gray-400">该频道暂无成员</p>
-                ) : (
-                  <ul className="space-y-1 max-h-64 overflow-auto">
-                    {[
-                      ...channelBots.map((b) => ({ id: b.member_id, type: "bot" as const, label: `@${b.username}${b.display_name ? " · " + b.display_name : ""}` })),
-                      ...channelUsers.map((u) => ({ id: u.member_id, type: "user" as const, label: `@${u.username}${u.display_name ? " · " + u.display_name : ""}` })),
-                    ].map((m) => {
-                      const checked = memberRemoveSelected.has(m.id);
-                      return (
-                        <li
-                          key={m.id}
-                          className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm cursor-pointer select-none ${checked ? "bg-red-50 border border-red-200" : "bg-[#F8F8F8] hover:bg-gray-100"}`}
-                          onClick={() => setMemberRemoveSelected((prev) => {
-                            const next = new Set(prev);
-                            next.has(m.id) ? next.delete(m.id) : next.add(m.id);
-                            return next;
-                          })}
-                        >
-                          <input type="checkbox" readOnly checked={checked} className="flex-shrink-0" />
-                          <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${m.type === "bot" ? "bg-green-100 text-green-700" : "bg-blue-50 text-blue-700"}`}>{m.type === "bot" ? "Bot" : "用户"}</span>
-                          <span className="truncate text-gray-800">{m.label}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                {memberRemoveSelected.size > 0 && (
-                  <button
-                    type="button"
-                    disabled={removingMembersModal}
-                    onClick={async () => {
-                      setRemovingMembersModal(true);
-                      try {
-                        await Promise.all([...memberRemoveSelected].map((id) =>
-                          fetch(`${API}/channels/${selectedId}/members/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => r.json())
-                        ));
-                        toast.success(`已移除 ${memberRemoveSelected.size} 个成员`);
-                        const removed = new Set(memberRemoveSelected);
-                        setChannelBots((prev) => prev.filter((b) => !removed.has(b.member_id)));
-                        setChannelUsers((prev) => prev.filter((u) => !removed.has(u.member_id)));
-                        // 将移除的成员放回可添加列表（重新拉取补全 label）
-                        const wsId = selectedChannel?.workspace_id;
-                        const [botsRes, usersRes] = await Promise.all([
-                          fetch(`${API}/bots`).then((r) => r.json()),
-                          wsId ? fetch(`${API}/workspaces/${wsId}/members`).then((r) => r.json()) : Promise.resolve({ data: [] }),
-                        ]);
-                        const stillInChannel = new Set<string>([
-                          ...channelBots.filter((b) => !removed.has(b.member_id)).map((b) => b.member_id),
-                          ...channelUsers.filter((u) => !removed.has(u.member_id)).map((u) => u.member_id),
-                        ]);
-                        const opts: MemberOption[] = [];
-                        for (const b of (botsRes.data || [])) if (!stillInChannel.has(b.bot_id)) opts.push({ id: b.bot_id, type: "bot", label: `[Bot] @${b.username}${b.display_name ? " · " + b.display_name : ""}` });
-                        for (const u of (usersRes.data || [])) if (!stillInChannel.has(u.user_id)) opts.push({ id: u.user_id, type: "user", label: `[用户] @${u.username}${u.display_name ? " · " + u.display_name : ""}` });
-                        setMemberAddOptions(opts);
-                        setMemberRemoveSelected(new Set());
-                      } catch {
-                        toast.error("移除失败");
-                      } finally {
-                        setRemovingMembersModal(false);
-                      }
-                    }}
-                    className="mt-3 px-4 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50"
-                  >
-                    {removingMembersModal ? "移除中…" : `移除选中 (${memberRemoveSelected.size})`}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button type="button" onClick={() => setManageMembersOpen(false)} className="px-4 py-2 bg-[#F8F8F8] text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">关闭</button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      <div className="flex-1 flex min-w-0">
       <main className="flex-1 flex flex-col min-w-0 bg-white">
         {selectedId ? (
           <>
@@ -1920,13 +2055,27 @@ export default function App() {
               )}
               <button
                 type="button"
+                onClick={() => setMemoryPanelOpen((o) => !o)}
+                className={`ml-auto px-2.5 py-1 text-xs rounded-md border transition-colors flex items-center gap-1 ${
+                  memoryPanelOpen
+                    ? "bg-[#1264A3] text-white border-[#1264A3]"
+                    : "border-[#1264A3] text-[#1264A3] hover:bg-[#1264A3]/10"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M10.75 16.82A7.462 7.462 0 0 1 10 17c-.383 0-.759-.037-1.125-.108l.002-.034a1.75 1.75 0 0 0 2.248 0l.002.034ZM2.5 10a7.5 7.5 0 1 1 15 0 7.5 7.5 0 0 1-15 0ZM10 6.75a.75.75 0 0 1 .75.75v1.543l1.244.829a.75.75 0 0 1-.831 1.246l-1.5-1a.75.75 0 0 1-.163-.244V7.5A.75.75 0 0 1 10 6.75Z" />
+                </svg>
+                记忆
+              </button>
+              <button
+                type="button"
                 onClick={() => setManageMembersOpen(true)}
-                className="ml-auto px-2.5 py-1 text-xs rounded-md border border-[#1264A3] text-[#1264A3] hover:bg-[#1264A3]/10 transition-colors flex items-center gap-1"
+                className="px-2.5 py-1 text-xs rounded-md border border-[#1264A3] text-[#1264A3] hover:bg-[#1264A3]/10 transition-colors flex items-center gap-1"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                   <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
                 </svg>
-                管理成员
+                成员
               </button>
             </div>
 
@@ -2359,6 +2508,19 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Memory right panel */}
+      {memoryPanelOpen && selectedId && (
+        <MemoryPanel
+          channelId={selectedId}
+          channelName={selectedChannel?.name ?? ""}
+          contextData={contextData}
+          onSave={saveContextLayer}
+          onDataChange={(layer, val) => setContextData((prev) => ({ ...prev, [layer.toLowerCase()]: val }))}
+          onClose={() => setMemoryPanelOpen(false)}
+        />
+      )}
+      </div>
     </div>
     </>
   );

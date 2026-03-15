@@ -10,16 +10,20 @@ from fastapi.responses import JSONResponse
 from app.chat_core import bots as chat_core_bots
 from app.chat_core import channels as chat_core_channels
 from app.chat_core import context_api as chat_core_context
+from app.chat_core import friends as chat_core_friends
 from app.chat_core import mcp_import as chat_core_mcp
 from app.chat_core import messages as chat_core_messages
 from app.chat_core import tasks_api as chat_core_tasks
 from app.chat_core import workspaces as chat_core_workspaces
 from app.chat_core.ws_manager import ws_manager
 from app.admin.routes import router as admin_router
+from app.admin.models import router as admin_models_router
+from app.admin.templates import router as admin_templates_router
 from app.auth.routes import router as auth_router
 from app.file_processor import routes as file_routes
 from app.logging_config import setup_logging
 from app.manual_routes import router as manual_router
+from app.db.session import init_db
 from app.memory.context_store import init_context_db
 from app.public_routes import router as public_router
 
@@ -98,7 +102,10 @@ app.include_router(chat_core_messages.router)
 app.include_router(chat_core_context.router)
 app.include_router(chat_core_tasks.router)
 app.include_router(chat_core_mcp.router)
+app.include_router(chat_core_friends.router)
 app.include_router(admin_router)
+app.include_router(admin_models_router)
+app.include_router(admin_templates_router)
 app.include_router(file_routes.router)
 app.include_router(manual_router)
 app.include_router(public_router)
@@ -128,6 +135,7 @@ async def startup() -> None:
     """启动时配置日志与 Context Store；可选执行种子数据."""
     setup_logging()
     logger.info("AgentNexus startup")
+    await init_db()
 
     from pathlib import Path
     from app.config import settings
@@ -148,6 +156,12 @@ async def startup() -> None:
         ensure_preset_llm_providers()
     except Exception as e:
         logger.exception("preset LLM providers: %s", e)
+
+    try:
+        from app.db.seed import ensure_builtin_bot
+        await ensure_builtin_bot()
+    except Exception as e:
+        logger.exception("ensure builtin bot failed: %s", e)
 
 
 @app.get("/health")

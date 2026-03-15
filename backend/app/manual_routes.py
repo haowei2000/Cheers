@@ -5,10 +5,73 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 
+from pydantic import BaseModel
+
 router = APIRouter(tags=["manual"])
 
 # 项目根上一级为 backend，docs 在项目根
 DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
+
+
+# ── JSON API for docs dashboard ───────────────────────────────────────────────
+
+def _safe_doc_path(name: str) -> Path | None:
+    """Resolve and validate that the path stays inside DOCS_DIR."""
+    base = name.strip("/")
+    if not base or ".." in base or base.startswith("/"):
+        return None
+    if not base.endswith(".md"):
+        base = base + ".md"
+    path = (DOCS_DIR / base).resolve()
+    if not path.is_relative_to(DOCS_DIR.resolve()):
+        return None
+    return path
+
+
+@router.get("/api/docs")
+async def list_docs() -> dict:
+    """List all .md files in the docs directory."""
+    if not DOCS_DIR.is_dir():
+        return {"files": []}
+    files = sorted(DOCS_DIR.glob("*.md"), key=lambda p: p.name)
+    return {
+        "files": [
+            {"name": f.name, "stem": f.stem, "size": f.stat().st_size}
+            for f in files
+        ]
+    }
+
+
+@router.get("/api/docs/raw/{name:path}")
+async def get_doc_raw(name: str) -> dict:
+    """Return raw markdown content of a doc file."""
+    path = _safe_doc_path(name)
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"name": path.name, "stem": path.stem, "content": content}
+
+
+class DocSaveBody(BaseModel):
+    content: str
+
+
+@router.put("/api/docs/raw/{name:path}")
+async def save_doc(name: str, body: DocSaveBody) -> dict:
+    """Overwrite a doc file with new markdown content."""
+    path = _safe_doc_path(name)
+    if path is None:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        path.write_text(body.content, encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "ok", "name": path.name}
 
 
 def _heading_to_id(text: str) -> str:

@@ -82,6 +82,9 @@ async def check_connection() -> tuple[bool, str]:
     headers = {"Content-Type": "application/json"}
     if c and (c.get("api_key") or "").strip():
         headers["Authorization"] = f"Bearer {(c.get('api_key') or '').strip()}"
+    extra = (c or {}).get("extra_headers")
+    if isinstance(extra, dict):
+        headers.update({str(k): str(v) for k, v in extra.items()})
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.post(url, json=payload, headers=headers)
@@ -134,13 +137,17 @@ async def chat(system_prompt: str, user_message: str) -> str | None:
     headers = {"Content-Type": "application/json"}
     if c and (c.get("api_key") or "").strip():
         headers["Authorization"] = f"Bearer {(c.get('api_key') or '').strip()}"
+    extra = (c or {}).get("extra_headers")
+    if isinstance(extra, dict):
+        headers.update({str(k): str(v) for k, v in extra.items()})
+    timeout = float(c.get("timeout", 600)) if c else 600.0
     try:
         logger.info(
             "guide llm request: model=%s user_msg=%s",
             _model(),
             (user_message[:80] + "…") if len(user_message) > 80 else user_message,
         )
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(url, json=payload, headers=headers)
             r.raise_for_status()
             data = r.json()
@@ -149,6 +156,11 @@ async def chat(system_prompt: str, user_message: str) -> str | None:
                 content = choice[0].get("message", {}).get("content")
                 if isinstance(content, str) and content.strip():
                     return content.strip()
+    except httpx.TimeoutException as e:
+        logger.warning(
+            "guide llm request timed out after %.0fs (%s): url=%s",
+            timeout, type(e).__name__, url,
+        )
     except httpx.HTTPStatusError as e:
         try:
             body = e.response.text
@@ -160,9 +172,12 @@ async def chat(system_prompt: str, user_message: str) -> str | None:
             str(e.request.url),
             body[:1000] if body else "(empty)",
         )
-        logger.warning("guide llm request failed (using keyword fallback): %s", e)
     except Exception as e:
-        logger.warning("guide llm request failed (using keyword fallback): %s", e)
+        logger.warning(
+            "guide llm request failed (%s): %s",
+            type(e).__name__,
+            str(e) or "(no message)",
+        )
     return None
 
 

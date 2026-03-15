@@ -1,44 +1,60 @@
-"""解析 bot_id -> OpenClawAdapter：按 Bot 的 openclaw_endpoint 选择引导 / WS / HTTP 真实 / Mock 兜底。"""
+"""解析 bot_id -> OpenClawAdapter.
+
+路由规则：
+- GUIDE_BOT_ID → UnifiedBuiltinBotAdapter（内置三合一：引导/助手/记忆管理）
+- 其余 bot_id → LLMBotAdapter（Bot = AIModel + PromptTemplate）
+"""
 import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import OpenClawAdapter
-from app.adapters.http_openclaw import HttpOpenClawAdapter
+from app.adapters.llm_bot import LLMBotAdapter
 from app.adapters.mock import MockOpenClawAdapter
-from app.adapters.ws_openclaw import WsOpenClawAdapter
-from app.assistant.adapter import AssistantBotAdapter
+from app.adapters.unified_builtin import UnifiedBuiltinBotAdapter
 from app.db.models import BotAccount
-from app.guide.adapter import GuideBotAdapter
-from app.orchestrator.orchestrator_adapter import OrchestratorAdapter
+from app.guide.constants import GUIDE_BOT_ID
 
 logger = logging.getLogger("app.orchestrator.adapter_resolver")
 
 
 async def get_adapter_for_bot(bot_id: str, session: AsyncSession) -> OpenClawAdapter:
-    """按 bot 的 openclaw_endpoint 返回对应适配器."""
-    result = await session.execute(select(BotAccount).where(BotAccount.bot_id == bot_id))
+    """获取 Bot 的适配器。
+
+    内置统一 Bot（GUIDE_BOT_ID）直接返回 UnifiedBuiltinBotAdapter；
+    其余 bot 走 LLMBotAdapter（需配置 AIModel + PromptTemplate）。
+    """
+    # 内置统一 Bot：不依赖 DB 中的 AIModel / PromptTemplate
+    if bot_id == GUIDE_BOT_ID:
+        logger.info("adapter_resolver: bot_id=%s -> UnifiedBuiltinBotAdapter", bot_id)
+        return UnifiedBuiltinBotAdapter()
+
+    result = await session.execute(
+        select(BotAccount).where(BotAccount.bot_id == bot_id)
+    )
     bot = result.scalar_one_or_none()
+
     if not bot:
         return MockOpenClawAdapter(reply="[未知 Bot] 已收到消息。")
-    ep = (bot.openclaw_endpoint or "").strip().lower()
-    if ep.startswith("guide://"):
-        return GuideBotAdapter()
-    if ep.startswith("assistant://"):
-        return AssistantBotAdapter()
-    if ep.startswith("coordinator://"):
-        return OrchestratorAdapter()
-    if ep.startswith("ws://") or ep.startswith("wss://"):
-        session_key = (bot.openclaw_session or "").strip()
-        if not session_key:
-            display = bot.display_name or bot.username
-            return MockOpenClawAdapter(reply=f"[{display}] 未配置 openclaw_session，无法发送。")
-        logger.info("adapter_resolver: bot_id=%s username=%s -> WsOpenClawAdapter %s session=%s",
-                    bot_id, bot.username, bot.openclaw_endpoint, session_key)
-        return WsOpenClawAdapter(bot.openclaw_endpoint, session_key, bot.openclaw_token)
-    if ep.startswith("http://") or ep.startswith("https://"):
-        logger.info("adapter_resolver: bot_id=%s username=%s -> HttpOpenClawAdapter %s", bot_id, bot.username, bot.openclaw_endpoint)
-        return HttpOpenClawAdapter(bot.openclaw_endpoint)
-    display = bot.display_name or bot.username
-    return MockOpenClawAdapter(reply=f"[{display}] 已收到消息。（endpoint 未配置或格式不支持）")
+
+    if not bot.ai_model:
+        logger.warning("adapter_resolver: bot_id=%s has no model configured", bot_id)
+        return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 未配置模型")
+
+    if not bot.prompt_template:
+        logger.warning("adapter_resolver: bot_id=%s has no template configured", bot_id)
+        return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 未配置提示词模板")
+
+    if bot.ai_model.is_enabled is False:
+        logger.warning("adapter_resolver: bot_id=%s model is disabled", bot_id)
+        return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 模型已禁用")
+
+    logger.info(
+        "adapter_resolver: bot_id=%s username=%s -> LLMBotAdapter model=%s template=%s",
+        bot_id,
+        bot.username,
+        bot.ai_model.name,
+        bot.prompt_template.name,
+    )
+    return LLMBotAdapter(bot)
