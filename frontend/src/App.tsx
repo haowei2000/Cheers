@@ -1060,6 +1060,17 @@ export default function App() {
             if (id && prev.some((m) => m.msg_id === id)) return prev;
             return [...prev, msg.data];
           });
+          // 检测到记忆写入通知时刷新记忆面板数据
+          if (
+            msg.data.sender_type === "bot" &&
+            typeof msg.data.content === "string" &&
+            msg.data.content.includes("已更新记忆层")
+          ) {
+            fetch(`${API}/channels/${selectedId}/context`)
+              .then((r) => r.json())
+              .then((d) => d.data && setContextData(d.data))
+              .catch(() => {});
+          }
         }
       } catch {}
     };
