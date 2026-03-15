@@ -16,7 +16,6 @@ function renderMarkdown(md: string): string {
   const lines = md.split("\n");
   const out: string[] = [];
   let inCode = false;
-  let codeLang = "";
   let codeBuf: string[] = [];
   let inList = false;
   let listOrdered = false;
@@ -50,14 +49,12 @@ function renderMarkdown(md: string): string {
       if (!inCode) {
         flushList();
         inCode = true;
-        codeLang = raw.slice(3).trim();
         codeBuf = [];
       } else {
         out.push(
           `<pre class="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto my-3 text-sm font-mono leading-relaxed"><code>${esc(codeBuf.join("\n"))}</code></pre>`
         );
         inCode = false;
-        codeLang = "";
         codeBuf = [];
       }
       continue;

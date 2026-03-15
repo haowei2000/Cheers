@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import FriendsPanel from "./FriendsPanel";
+import ChannelMembersModal from "./ChannelMembersModal";
 
 const API = "/api";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -19,7 +21,7 @@ type Message = {
 type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
 
-const LAYERS = ["ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT"] as const;
+const LAYERS = ["ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "MEMBERS"] as const;
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
 const GUIDE_CLARIFY_BLOCK = /```guide-clarify\n([\s\S]*?)```/;
@@ -231,27 +233,25 @@ function ThinkFold({ content }: { content: string }) {
 }
 
 // ── Memory Panel (right sidebar) ─────────────────────────────────────────────
-const LAYER_META: Record<string, { label: string; desc: string; color: string; icon: string }> = {
-  ANCHOR:      { label: "Project Anchor",  desc: "Core goals, constraints, background",    color: "blue",   icon: "⚓" },
-  DECISIONS:   { label: "Decision Log",    desc: "Key decisions and rationale",             color: "purple", icon: "📋" },
-  FILES_INDEX: { label: "File Index",      desc: "Uploaded files and resource references",  color: "amber",  icon: "🗂️" },
-  RECENT:      { label: "Recent Activity", desc: "Latest updates and channel highlights",   color: "green",  icon: "🕐" },
+const LAYER_META: Record<string, { label: string; desc: string; color: string; icon: string; readonly?: boolean }> = {
+  ANCHOR:      { label: "项目锚点",   desc: "核心目标、约束、背景",       color: "blue",   icon: "⚓" },
+  DECISIONS:   { label: "决策记录",   desc: "重要决策及原因",             color: "purple", icon: "📋" },
+  FILES_INDEX: { label: "资料索引",   desc: "上传的文件与参考资料",        color: "amber",  icon: "🗂️" },
+  RECENT:      { label: "近期动态",   desc: "最新进展、待办、结论",        color: "green",  icon: "🕐" },
+  MEMBERS:     { label: "频道成员",   desc: "用户与 Bot 能力一览",        color: "gray",   icon: "👥", readonly: true },
 };
 
-const COLOR_MAP: Record<string, { tab: string; badge: string; border: string }> = {
-  blue:   { tab: "bg-blue-50 text-blue-700 border-blue-200",   badge: "bg-blue-100 text-blue-700",   border: "border-blue-300" },
-  purple: { tab: "bg-purple-50 text-purple-700 border-purple-200", badge: "bg-purple-100 text-purple-700", border: "border-purple-300" },
-  amber:  { tab: "bg-amber-50 text-amber-700 border-amber-200", badge: "bg-amber-100 text-amber-700",  border: "border-amber-300" },
-  green:  { tab: "bg-green-50 text-green-700 border-green-200", badge: "bg-green-100 text-green-700",  border: "border-green-300" },
-};
+type MemberItem = { member_id: string; member_type: string; username?: string; display_name?: string; avatar_url?: string };
 
 function MemoryPanel({
+  channelId,
   channelName,
   contextData,
   onSave,
   onDataChange,
   onClose,
 }: {
+  channelId: string;
   channelName: string;
   contextData: Record<string, string>;
   onSave: (layer: string, content: string) => void;
@@ -261,8 +261,11 @@ function MemoryPanel({
   const [activeLayer, setActiveLayer] = useState<string>("ANCHOR");
   const [mode, setMode] = useState<"preview" | "edit">("preview");
   const [editVal, setEditVal] = useState("");
+  const [members, setMembers] = useState<MemberItem[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
 
   const meta = LAYER_META[activeLayer];
+  const isReadonly = !!meta.readonly;
   const rawContent = contextData[activeLayer.toLowerCase()] ?? "";
   const wordCount = rawContent.trim() ? rawContent.trim().split(/\s+/).length : 0;
 
@@ -270,7 +273,20 @@ function MemoryPanel({
     setActiveLayer(layer);
     setMode("preview");
     setEditVal(contextData[layer.toLowerCase()] ?? "");
+    if (layer === "MEMBERS") {
+      setMembersLoading(true);
+      fetch(`${API}/channels/${channelId}/members?with_username=1`)
+        .then((r) => r.json())
+        .then((d) => setMembers(d.data || []))
+        .catch(() => {})
+        .finally(() => setMembersLoading(false));
+    }
   };
+
+  // Load members on mount if starting on MEMBERS tab
+  useEffect(() => {
+    if (activeLayer === "MEMBERS") switchLayer("MEMBERS");
+  }, []);
 
   const startEdit = () => {
     setEditVal(rawContent);
@@ -337,43 +353,82 @@ function MemoryPanel({
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-xs font-semibold text-gray-700 truncate">{meta.label}</span>
-          {rawContent.trim() && (
+          {!isReadonly && rawContent.trim() && (
             <span className="text-[10px] text-gray-400 flex-shrink-0">{wordCount}w</span>
           )}
-        </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {mode === "preview" ? (
-            <button
-              type="button"
-              onClick={startEdit}
-              className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-            >
-              编辑
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={handleDiscard}
-                className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                className="text-[11px] px-2 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
-              >
-                保存
-              </button>
-            </>
+          {isReadonly && (
+            <span className="text-[10px] text-gray-400 flex-shrink-0">只读</span>
           )}
         </div>
+        {!isReadonly && (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {mode === "preview" ? (
+              <button
+                type="button"
+                onClick={startEdit}
+                className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+              >
+                编辑
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleDiscard}
+                  className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="text-[11px] px-2 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
+                >
+                  保存
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main content */}
       <div className="flex-1 overflow-y-auto">
-        {mode === "edit" ? (
+        {isReadonly ? (
+          membersLoading ? (
+            <div className="flex items-center justify-center h-full text-gray-400 text-xs">加载中…</div>
+          ) : members.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 text-center px-4">
+              <span className="text-3xl opacity-30">👥</span>
+              <p className="text-xs text-gray-500">暂无成员</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {[...members]
+                .sort((a, b) => (a.member_type === "bot" ? -1 : 1) - (b.member_type === "bot" ? -1 : 1))
+                .map((m) => {
+                  const isBot = m.member_type === "bot";
+                  const label = m.display_name || m.username || (isBot ? "Bot" : "用户");
+                  const sub = m.username && m.username !== m.display_name ? `@${m.username}` : null;
+                  const initial = label.slice(0, 1).toUpperCase();
+                  return (
+                    <div key={m.member_id} className="flex items-center gap-2.5 px-3 py-2">
+                      <div className={`w-7 h-7 rounded${isBot ? "" : "-full"} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${isBot ? "bg-[#2EB67D]" : "bg-[#1264A3]"}`}>
+                        {initial}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-gray-800 truncate">{label}</p>
+                        {sub && <p className="text-[10px] text-gray-400 truncate">{sub}</p>}
+                      </div>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${isBot ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"}`}>
+                        {isBot ? "Bot" : "用户"}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          )
+        ) : mode === "edit" ? (
           <textarea
             value={editVal}
             onChange={(e) => setEditVal(e.target.value)}
@@ -862,12 +917,7 @@ export default function App() {
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
   const [manageMembersOpen, setManageMembersOpen] = useState(false);
-  type MemberOption = { id: string; type: "bot" | "user"; label: string };
-  const [memberAddOptions, setMemberAddOptions] = useState<MemberOption[]>([]);
-  const [memberAddSelected, setMemberAddSelected] = useState<Set<string>>(new Set());
-  const [memberRemoveSelected, setMemberRemoveSelected] = useState<Set<string>>(new Set());
-  const [addingMembersModal, setAddingMembersModal] = useState(false);
-  const [removingMembersModal, setRemovingMembersModal] = useState(false);
+  const [friendsPanelOpen, setFriendsPanelOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(new Set());
   const [, setHasMore] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1093,27 +1143,7 @@ export default function App() {
     }
   }, [addBotOpen]);
 
-  useEffect(() => {
-    if (!manageMembersOpen || !selectedId) return;
-    setMemberAddSelected(new Set());
-    setMemberRemoveSelected(new Set());
-    const wsId = selectedChannel?.workspace_id;
-    Promise.all([
-      fetch(`${API}/channels/${selectedId}/members?with_username=1`).then((r) => r.json()),
-      fetch(`${API}/bots`).then((r) => r.json()),
-      wsId ? fetch(`${API}/workspaces/${wsId}/members`).then((r) => r.json()) : Promise.resolve({ data: [] }),
-    ]).then(([membersRes, botsRes, usersRes]) => {
-      const inChannel = new Set<string>((membersRes.data || []).map((m: { member_id: string }) => m.member_id));
-      const opts: MemberOption[] = [];
-      for (const b of (botsRes.data || [])) {
-        if (!inChannel.has(b.bot_id)) opts.push({ id: b.bot_id, type: "bot", label: `[Bot] @${b.username}${b.display_name ? " · " + b.display_name : ""}` });
-      }
-      for (const u of (usersRes.data || [])) {
-        if (!inChannel.has(u.user_id)) opts.push({ id: u.user_id, type: "user", label: `[用户] @${u.username}${u.display_name ? " · " + u.display_name : ""}` });
-      }
-      setMemberAddOptions(opts);
-    }).catch(() => setMemberAddOptions([]));
-  }, [manageMembersOpen, selectedId]);
+
 
   useEffect(() => {
     if (showMentionDropdown && selectedId) {
@@ -1670,6 +1700,16 @@ export default function App() {
 
         {/* Bottom nav */}
         <div className="px-2 py-2 border-t border-white/10 space-y-0.5">
+          <button
+            type="button"
+            onClick={() => setFriendsPanelOpen(true)}
+            className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
+            </svg>
+            <span>好友</span>
+          </button>
           <Link
             to="/admin"
             className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
@@ -1961,152 +2001,22 @@ export default function App() {
       )}
 
 
-      {manageMembersOpen && selectedId && (
-        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40" onClick={() => setManageMembersOpen(false)} aria-modal="true" role="dialog">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 p-6 text-left max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-5">
-              <h2 className="text-lg font-bold text-gray-900">管理成员 — #{selectedChannel?.name}</h2>
-              <button type="button" onClick={() => setManageMembersOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl" aria-label="关闭">×</button>
-            </div>
+      {/* 好友管理面板 */}
+      <FriendsPanel
+        currentUserId={currentUserId}
+        isOpen={friendsPanelOpen}
+        onClose={() => setFriendsPanelOpen(false)}
+      />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {/* 添加成员 */}
-              <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">添加成员</h3>
-                {memberAddOptions.length === 0 ? (
-                  <p className="text-sm text-gray-400">暂无可添加的成员</p>
-                ) : (
-                  <ul className="space-y-1 max-h-64 overflow-auto">
-                    {memberAddOptions.map((opt) => {
-                      const checked = memberAddSelected.has(opt.id);
-                      return (
-                        <li
-                          key={opt.id}
-                          className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm cursor-pointer select-none ${checked ? "bg-[#1264A3]/10 border border-[#1264A3]/30" : "bg-[#F8F8F8] hover:bg-gray-100"}`}
-                          onClick={() => setMemberAddSelected((prev) => {
-                            const next = new Set(prev);
-                            next.has(opt.id) ? next.delete(opt.id) : next.add(opt.id);
-                            return next;
-                          })}
-                        >
-                          <input type="checkbox" readOnly checked={checked} className="flex-shrink-0" />
-                          <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${opt.type === "bot" ? "bg-green-100 text-green-700" : "bg-blue-50 text-blue-700"}`}>{opt.type === "bot" ? "Bot" : "用户"}</span>
-                          <span className="truncate text-gray-800">{opt.label.replace(/^\[Bot\] |^\[用户\] /, "")}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                {memberAddSelected.size > 0 && (
-                  <button
-                    type="button"
-                    disabled={addingMembersModal}
-                    onClick={async () => {
-                      setAddingMembersModal(true);
-                      try {
-                        const items = memberAddOptions.filter((o) => memberAddSelected.has(o.id));
-                        await Promise.all(items.map((item) =>
-                          fetch(`${API}/channels/${selectedId}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: item.id, member_type: item.type }) }).then((r) => r.json())
-                        ));
-                        toast.success(`已添加 ${items.length} 个成员`);
-                        // 刷新成员列表
-                        const res = await fetch(`${API}/channels/${selectedId}/members?with_username=1`).then((r) => r.json());
-                        const inChannel = new Set<string>((res.data || []).map((m: { member_id: string }) => m.member_id));
-                        setMemberAddOptions((prev) => prev.filter((o) => !inChannel.has(o.id)));
-                        setMemberAddSelected(new Set());
-                        setChannelBots((res.data || []).filter((m: { member_type: string; username?: string }) => m.member_type === "bot" && m.username).map((m: { member_id: string; username: string; avatar_url?: string; display_name?: string }) => ({ member_id: m.member_id, username: m.username, avatar_url: m.avatar_url, display_name: m.display_name })));
-                        setChannelUsers((res.data || []).filter((m: { member_type: string; username?: string }) => m.member_type === "user" && m.username).map((m: { member_id: string; username: string; avatar_url?: string; display_name?: string }) => ({ member_id: m.member_id, username: m.username, avatar_url: m.avatar_url, display_name: m.display_name })));
-                      } catch {
-                        toast.error("添加失败");
-                      } finally {
-                        setAddingMembersModal(false);
-                      }
-                    }}
-                    className="mt-3 px-4 py-1.5 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0d5296] disabled:opacity-50"
-                  >
-                    {addingMembersModal ? "添加中…" : `添加选中 (${memberAddSelected.size})`}
-                  </button>
-                )}
-              </div>
-
-              {/* 移除成员 */}
-              <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">当前成员</h3>
-                {channelBots.length === 0 && channelUsers.length === 0 ? (
-                  <p className="text-sm text-gray-400">该频道暂无成员</p>
-                ) : (
-                  <ul className="space-y-1 max-h-64 overflow-auto">
-                    {[
-                      ...channelBots.map((b) => ({ id: b.member_id, type: "bot" as const, label: `@${b.username}${b.display_name ? " · " + b.display_name : ""}` })),
-                      ...channelUsers.map((u) => ({ id: u.member_id, type: "user" as const, label: `@${u.username}${u.display_name ? " · " + u.display_name : ""}` })),
-                    ].map((m) => {
-                      const checked = memberRemoveSelected.has(m.id);
-                      return (
-                        <li
-                          key={m.id}
-                          className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm cursor-pointer select-none ${checked ? "bg-red-50 border border-red-200" : "bg-[#F8F8F8] hover:bg-gray-100"}`}
-                          onClick={() => setMemberRemoveSelected((prev) => {
-                            const next = new Set(prev);
-                            next.has(m.id) ? next.delete(m.id) : next.add(m.id);
-                            return next;
-                          })}
-                        >
-                          <input type="checkbox" readOnly checked={checked} className="flex-shrink-0" />
-                          <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${m.type === "bot" ? "bg-green-100 text-green-700" : "bg-blue-50 text-blue-700"}`}>{m.type === "bot" ? "Bot" : "用户"}</span>
-                          <span className="truncate text-gray-800">{m.label}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                {memberRemoveSelected.size > 0 && (
-                  <button
-                    type="button"
-                    disabled={removingMembersModal}
-                    onClick={async () => {
-                      setRemovingMembersModal(true);
-                      try {
-                        await Promise.all([...memberRemoveSelected].map((id) =>
-                          fetch(`${API}/channels/${selectedId}/members/${encodeURIComponent(id)}`, { method: "DELETE" }).then((r) => r.json())
-                        ));
-                        toast.success(`已移除 ${memberRemoveSelected.size} 个成员`);
-                        const removed = new Set(memberRemoveSelected);
-                        setChannelBots((prev) => prev.filter((b) => !removed.has(b.member_id)));
-                        setChannelUsers((prev) => prev.filter((u) => !removed.has(u.member_id)));
-                        // 将移除的成员放回可添加列表（重新拉取补全 label）
-                        const wsId = selectedChannel?.workspace_id;
-                        const [botsRes, usersRes] = await Promise.all([
-                          fetch(`${API}/bots`).then((r) => r.json()),
-                          wsId ? fetch(`${API}/workspaces/${wsId}/members`).then((r) => r.json()) : Promise.resolve({ data: [] }),
-                        ]);
-                        const stillInChannel = new Set<string>([
-                          ...channelBots.filter((b) => !removed.has(b.member_id)).map((b) => b.member_id),
-                          ...channelUsers.filter((u) => !removed.has(u.member_id)).map((u) => u.member_id),
-                        ]);
-                        const opts: MemberOption[] = [];
-                        for (const b of (botsRes.data || [])) if (!stillInChannel.has(b.bot_id)) opts.push({ id: b.bot_id, type: "bot", label: `[Bot] @${b.username}${b.display_name ? " · " + b.display_name : ""}` });
-                        for (const u of (usersRes.data || [])) if (!stillInChannel.has(u.user_id)) opts.push({ id: u.user_id, type: "user", label: `[用户] @${u.username}${u.display_name ? " · " + u.display_name : ""}` });
-                        setMemberAddOptions(opts);
-                        setMemberRemoveSelected(new Set());
-                      } catch {
-                        toast.error("移除失败");
-                      } finally {
-                        setRemovingMembersModal(false);
-                      }
-                    }}
-                    className="mt-3 px-4 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50"
-                  >
-                    {removingMembersModal ? "移除中…" : `移除选中 (${memberRemoveSelected.size})`}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button type="button" onClick={() => setManageMembersOpen(false)} className="px-4 py-2 bg-[#F8F8F8] text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium">关闭</button>
-            </div>
-          </div>
-        </div>
+      {/* 频道成员管理模态框 */}
+      {selectedId && (
+        <ChannelMembersModal
+          channelId={selectedId}
+          channelName={selectedChannel?.name || ""}
+          currentUserId={currentUserId}
+          isOpen={manageMembersOpen}
+          onClose={() => setManageMembersOpen(false)}
+        />
       )}
 
       <div className="flex-1 flex min-w-0">
@@ -2172,7 +2082,7 @@ export default function App() {
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
                   <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
                 </svg>
-                管理成员
+                成员
               </button>
             </div>
 
@@ -2609,6 +2519,7 @@ export default function App() {
       {/* Memory right panel */}
       {memoryPanelOpen && selectedId && (
         <MemoryPanel
+          channelId={selectedId}
           channelName={selectedChannel?.name ?? ""}
           contextData={contextData}
           onSave={saveContextLayer}

@@ -86,9 +86,12 @@ _SYSTEM_PROMPT = """\
   content 为该层的完整新内容（覆盖写入，请保留原有重要内容并追加新内容）。
   纯粹的问答、闲聊、系统引导类回复不需要写入。
 
-- 若问题超出你的能力范围，而频道中有更合适的专业 Bot，
-  可在回复末尾说「建议 @Bot名 回答 XXX 问题」（Bot 名必须来自下列列表）。
-  当前频道可用的其他 Bot：{bots_hint}
+- 若问题超出你的能力范围或有更合适的专业 Bot，
+  可在回复中直接 @Bot名 或说「建议 @Bot名 回答 XXX 问题」。
+  Bot 名必须来自下方「频道成员」列表中的 bot。
+
+=== 频道成员 ===
+{members_section}
 """
 
 
@@ -201,14 +204,33 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             return AgentResponse(content=content, task_id=payload.task_id, success=True)
 
         # ── 2. LLM 主回答（三层职责合一） ────────────────────────────────────
-        bots_hint = "、".join("@" + b for b in channel_bots) if channel_bots else "（暂无其他专业 Bot）"
+        bot_details = (payload.process_config or {}).get("channel_bot_details") or {}
+        members_lines: list[str] = []
+        for uname in channel_bots:
+            detail = bot_details.get(uname) or {}
+            display = detail.get("display_name") or uname
+            desc = detail.get("description") or ""
+            caps: list[str] = []
+            try:
+                intro = json.loads(detail.get("intro") or "{}")
+                caps = intro.get("capabilities") or []
+            except Exception:
+                pass
+            line = f"- @{uname}（{display}）"
+            if desc:
+                line += f"：{desc}"
+            if caps:
+                line += f"  能力：{'、'.join(caps)}"
+            members_lines.append(line)
+        members_section = "\n".join(members_lines) if members_lines else "（暂无其他专业 Bot）"
+
         system = _SYSTEM_PROMPT.format(
             help_context=get_help_context_for_llm(),
             anchor=memory.get("anchor") or "（暂无）",
             decisions=memory.get("decisions") or "（暂无）",
             files_index=memory.get("files_index") or "（暂无）",
             recent=memory.get("recent") or "（暂无）",
-            bots_hint=bots_hint,
+            members_section=members_section,
         )
         raw = await _call_llm(system, user_text)
 

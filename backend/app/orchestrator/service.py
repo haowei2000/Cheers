@@ -66,6 +66,15 @@ async def run_orchestrator(
         row[1].username: (row[1].prompt_template.user_template if row[1].prompt_template else None)
         for row in rows
     }
+    # Bot 详情（供内置助手判断路由）
+    bot_details_by_username: dict[str, dict] = {
+        row[1].username: {
+            "display_name": row[1].display_name or row[1].username,
+            "description": row[1].description or "",
+            "intro": row[1].intro or "",
+        }
+        for row in rows
+    }
 
     mentioned = extract_mentions(trigger_msg.content)
     target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames)
@@ -107,7 +116,10 @@ async def run_orchestrator(
                 },
                 memory_context=memory_context,
                 attachments=[],
-                process_config={"channel_bot_usernames": other_bots},
+                process_config={
+                    "channel_bot_usernames": other_bots,
+                    "channel_bot_details": {k: v for k, v in bot_details_by_username.items() if k != COORDINATOR_USERNAME},
+                },
             )
             resp: AgentResponse = await adapter.execute(payload)
             content = resp.content if resp.success else (resp.error_message or "处理出错")
@@ -200,7 +212,10 @@ async def run_orchestrator(
             },
             memory_context=memory_context,
             attachments=[],
-            process_config={"channel_bot_usernames": other_bots},
+            process_config={
+                "channel_bot_usernames": other_bots,
+                "channel_bot_details": {k: v for k, v in bot_details_by_username.items() if k != username},
+            },
         )
         logger.info("orchestrator: calling bot bot_id=%s username=%s endpoint=...", bot_id, username)
         resp: AgentResponse = await adapter.execute(payload)
