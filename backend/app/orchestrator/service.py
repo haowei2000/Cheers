@@ -14,7 +14,7 @@ from app.db.models import AgentTask, BotAccount, ChannelMembership, Message
 from app.orchestrator.mention import extract_mentions, filter_mentioned_bots
 from app.orchestrator.orchestrator_adapter import extract_suggested_bots
 
-COORDINATOR_USERNAME = "引导"
+COORDINATOR_USERNAME = "channel bot"
 
 
 def _apply_prompt_template(template: str | None, user_message: str) -> str:
@@ -41,15 +41,14 @@ async def run_orchestrator(
     session: AsyncSession,
     adapter_factory: Callable[[str], Awaitable[OpenClawAdapter]],
     broadcast_processing: Callable[[str, str, str], Awaitable[None]] | None = None,
-) -> list[Message]:
+) -> tuple[list[Message], set[str]]:
     """
     根据触发消息中的 @ 提及，解析出目标 Bot，串行调用 Adapter。
 
-    顶层执行流视为「单线任务线程」：
-    - 对同一条「用户提问 + 多 Bot 串行协作」统一分配一个 task_id；
-    - 所有 AgentPayload / AgentTask / Bot 回复消息在该线程内共用此 task_id；
-    - Bot 回复消息的 in_reply_to_msg_id 指向触发本轮调用的消息，实现精确问答配对。
-    若目标包含 coordinator，则主控聚合：串行调用频道内其他 Bot，汇总为一条 Coordinator 回复。
+    返回 (created_messages, already_broadcast_ids)：
+    - created_messages: 本次创建的所有 Bot 消息
+    - already_broadcast_ids: 已经由 Agent Loop 内部广播过的消息 msg_id 集合，
+      调用方广播时应跳过这些，避免重复推送。
     """
     result = await session.execute(
         select(ChannelMembership, BotAccount)
@@ -77,7 +76,7 @@ async def run_orchestrator(
     }
 
     mentioned = extract_mentions(trigger_msg.content)
-    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames)
+    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_msg.content)
     direct_answer_mode = False
     if not target_usernames:
         orch_settings = get_orchestrator_settings()
@@ -97,8 +96,31 @@ async def run_orchestrator(
     memory_context = await memory_load(channel_id)
 
     created: list[Message] = []
+    already_broadcast: set[str] = set()
     # 顶层任务线程 id：同一轮 run_orchestrator 调用内统一使用
     root_task_id = str(uuid.uuid4())
+
+    # Agent Loop 回调：在频道内创建 Bot 消息并立即广播（用于 call_bot 工具结果可见性）
+    async def _create_msg_and_broadcast(sender_id: str, content: str) -> None:
+        from app.chat_core.schemas import MessageInResponse
+        from app.chat_core.ws_manager import ws_manager
+        msg = Message(
+            channel_id=channel_id,
+            sender_id=sender_id,
+            sender_type="bot",
+            content=content,
+            task_id=root_task_id,
+            in_reply_to_msg_id=trigger_msg.msg_id,
+        )
+        session.add(msg)
+        await session.flush()
+        bd = MessageInResponse.model_validate(msg).model_dump()
+        if msg.created_at:
+            bd["created_at"] = msg.created_at.isoformat()
+        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": bd})
+        already_broadcast.add(msg.msg_id)
+        created.append(msg)
+
     for username in target_usernames:
         bot_id = bot_id_by_username[username]
         if username == COORDINATOR_USERNAME and direct_answer_mode:
@@ -119,6 +141,9 @@ async def run_orchestrator(
                 process_config={
                     "channel_bot_usernames": other_bots,
                     "channel_bot_details": {k: v for k, v in bot_details_by_username.items() if k != COORDINATOR_USERNAME},
+                    "bot_id_by_username": {k: v for k, v in bot_id_by_username.items() if k != COORDINATOR_USERNAME},
+                    "_adapter_factory": adapter_factory,
+                    "_create_and_broadcast": _create_msg_and_broadcast,
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
@@ -191,7 +216,7 @@ async def run_orchestrator(
                         await session.flush()
                         created.append(sug_msg)
                         logger.info("orchestrator_auto_takeover: triggered @%s", sug_username)
-            continue
+            continue  # already handled coordinator case above
 
         if broadcast_processing:
             await broadcast_processing(channel_id, bot_id, username)
@@ -215,6 +240,9 @@ async def run_orchestrator(
             process_config={
                 "channel_bot_usernames": other_bots,
                 "channel_bot_details": {k: v for k, v in bot_details_by_username.items() if k != username},
+                "bot_id_by_username": {k: v for k, v in bot_id_by_username.items() if k != username},
+                "_adapter_factory": adapter_factory,
+                "_create_and_broadcast": _create_msg_and_broadcast,
             },
         )
         logger.info("orchestrator: calling bot bot_id=%s username=%s endpoint=...", bot_id, username)
@@ -242,4 +270,4 @@ async def run_orchestrator(
         session.add(task_record)
         await session.flush()
         created.append(bot_msg)
-    return created
+    return created, already_broadcast

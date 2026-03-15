@@ -679,7 +679,7 @@ function GuideFormBlock({
 
 function isClarifyReplyUserMessage(content: string): boolean {
   const t = (content || "").trim();
-  return t.startsWith("@引导 澄清回答：") || t.includes("用户选择跳过澄清");
+  return t.startsWith("@channel bot 澄清回答：") || t.includes("用户选择跳过澄清");
 }
 
 function ClarifyInlineBlock({
@@ -737,7 +737,7 @@ function ClarifyInlineBlock({
   }
 
   if (status === "answered") {
-    const displayReply = replyContent?.replace(/^@引导\s*澄清回答[：:]\s*/i, "").trim() || "";
+    const displayReply = replyContent?.replace(/^@channel bot\s*澄清回答[：:]\s*/i, "").trim() || "";
     return (
       <div className="my-2 rounded-lg border border-gray-200 bg-[#F8F8F8] overflow-hidden">
         <button
@@ -1167,16 +1167,6 @@ export default function App() {
     }
   }, [showMentionDropdown, selectedId]);
 
-  useEffect(() => {
-    if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
-      setPendingClarifyReplyMsgId(null);
-    }
-  }, [pendingClarifyReplyMsgId, messages]);
-
-  useEffect(() => {
-    setPendingClarifyReplyMsgId(null);
-  }, [selectedId]);
-
   const addBotToChannel = (botId: string): Promise<void> => {
     if (!selectedId) return Promise.resolve();
     return fetch(`${API}/channels/${selectedId}/members`, {
@@ -1219,7 +1209,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (pendingClarifyReplyMsgId && messages.length > 0 && messages[messages.length - 1].sender_type === "bot") {
+    if (!pendingClarifyReplyMsgId) return;
+    // 在澄清表单消息之后找到用户的答复，再之后有 Bot 回复则视为已完成
+    const clarifyIdx = messages.findIndex((m) => m.msg_id === pendingClarifyReplyMsgId);
+    if (clarifyIdx === -1) return;
+    const afterClarify = messages.slice(clarifyIdx + 1);
+    const userReplyIdx = afterClarify.findIndex((m) => m.sender_type === "user");
+    if (userReplyIdx === -1) return;
+    const afterUserReply = afterClarify.slice(userReplyIdx + 1);
+    if (afterUserReply.some((m) => m.sender_type === "bot")) {
       setPendingClarifyReplyMsgId(null);
     }
   }, [pendingClarifyReplyMsgId, messages]);
@@ -1228,33 +1226,28 @@ export default function App() {
     setPendingClarifyReplyMsgId(null);
   }, [selectedId]);
 
-  const sendUserMessage = async (content: string) => {
-    if (!selectedId || !content.trim()) return;
+  const sendUserMessage = (content: string): Promise<void> => {
+    if (!selectedId || !content.trim()) return Promise.resolve();
     const body = {
       content: content.trim(),
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: [] as string[],
     };
-    const res = await fetch(`${API}/channels/${selectedId}/messages`, {
+    return fetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    });
-    const d = await res.json();
-    setMessages((prev) => {
-      let next = prev;
-      if (d.data && !prev.some((m) => m.msg_id === d.data.msg_id)) {
-        next = [...next, d.data];
-      }
-      const botMsgs: Message[] = d.bot_messages || [];
-      for (const bm of botMsgs) {
-        if (bm && bm.msg_id && !next.some((m) => m.msg_id === bm.msg_id)) {
-          next = [...next, bm];
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
+        if (d.data) {
+          setMessages((prev) =>
+            prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]
+          );
         }
-      }
-      return next;
-    });
+      });
   };
 
   const send = () => {
@@ -1286,7 +1279,7 @@ export default function App() {
   };
 
   const handleClarifyContinue = (msgId: string, schema: ClarifySchema, answers: ClarifyAnswers) => {
-    const lines = ["@引导 澄清回答："];
+    const lines = ["@channel bot 澄清回答："];
     for (const q of schema.questions) {
       const picked = new Set(answers.selected[q.id] || []);
       const labels = q.options.filter((o) => picked.has(o.id)).map((o) => o.label);
@@ -1305,7 +1298,7 @@ export default function App() {
 
   const handleClarifySkip = (msgId: string) => {
     setPendingClarifyReplyMsgId(msgId);
-    sendUserMessage("@引导 用户选择跳过澄清，请在当前信息下继续回答。").catch(() => {
+    sendUserMessage("@channel bot 用户选择跳过澄清，请在当前信息下继续回答。").catch(() => {
       setPendingClarifyReplyMsgId(null);
       toast.error("提交失败，请重试");
     });
@@ -1752,15 +1745,15 @@ export default function App() {
               </button>
             </div>
             <p className="text-gray-700 text-sm mb-3">
-              在任意频道输入 <strong>@引导</strong> 并输入你的问题，引导 Bot 会根据说明书自动回复，并显示相关入口。
+              在任意频道输入 <strong>@channel bot</strong> 并输入你的问题，channel bot 会根据说明书自动回复，并显示相关入口。
             </p>
             <p className="text-gray-600 text-xs mb-2">例如可以问：</p>
             <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-2">
-              <li>@引导 怎么用</li>
-              <li>@引导 怎么创建项目</li>
-              <li>@引导 怎么加入项目</li>
-              <li>@引导 怎么接入 OpenClaw</li>
-              <li>@引导 入口</li>
+              <li>@channel bot 怎么用</li>
+              <li>@channel bot 怎么创建项目</li>
+              <li>@channel bot 怎么加入项目</li>
+              <li>@channel bot 怎么接入 OpenClaw</li>
+              <li>@channel bot 入口</li>
             </ul>
             <p className="text-gray-600 text-xs mb-2">前端入口：</p>
             <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside mb-4">

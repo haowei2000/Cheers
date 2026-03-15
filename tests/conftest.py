@@ -43,15 +43,30 @@ async def db_session(db_engine) -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """覆盖依赖的 FastAPI 测试客户端."""
+async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncClient, None]:
+    """覆盖依赖的 FastAPI 测试客户端。
+
+    同时将 messages.py 中的 async_session_factory 替换为测试用工厂，
+    确保 _run_orchestrator_bg 后台任务也写入同一块测试 DB。
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from app.db.session import get_session
+    import app.chat_core.messages as _messages_mod
+
+    test_session_factory = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False, autocommit=False, autoflush=False
+    )
 
     async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
-    from app.db.session import get_session
+    original_factory = _messages_mod.async_session_factory
+    _messages_mod.async_session_factory = test_session_factory
     app.dependency_overrides[get_session] = override_get_session
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+    _messages_mod.async_session_factory = original_factory
     app.dependency_overrides.clear()
