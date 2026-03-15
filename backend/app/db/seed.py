@@ -351,6 +351,43 @@ async def run_seed() -> None:
             raise
 
 
+async def ensure_builtin_bot() -> None:
+    """每次启动时无条件确保内置统一 Bot 存在，并加入所有现有频道。
+
+    不依赖 SEED_DATA 环境变量，保证升级后旧库也能自动补齐内置 Bot。
+    """
+    async with async_session_factory() as session:
+        try:
+            # 1. 确保系统占位 model / template 存在
+            await _seed_system_model_and_template(session)
+
+            # 2. 确保 @引导 BotAccount 存在
+            await _seed_unified_bot(session)
+
+            # 3. 确保 @引导 加入所有现有频道（补齐旧频道缺失的 membership）
+            all_channels = (await session.execute(select(Channel))).scalars().all()
+            for ch in all_channels:
+                r = await session.execute(
+                    select(ChannelMembership).where(
+                        ChannelMembership.channel_id == ch.channel_id,
+                        ChannelMembership.member_id == GUIDE_BOT_ID,
+                    )
+                )
+                if r.scalar_one_or_none() is None:
+                    session.add(
+                        ChannelMembership(
+                            channel_id=ch.channel_id,
+                            member_id=GUIDE_BOT_ID,
+                            member_type="bot",
+                        )
+                    )
+
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
 def _ensure_data_dir() -> None:
     """确保主库所在目录存在（SQLite 文件路径）。"""
     url = settings.database_url

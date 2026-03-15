@@ -82,6 +82,9 @@ async def check_connection() -> tuple[bool, str]:
     headers = {"Content-Type": "application/json"}
     if c and (c.get("api_key") or "").strip():
         headers["Authorization"] = f"Bearer {(c.get('api_key') or '').strip()}"
+    extra = (c or {}).get("extra_headers")
+    if isinstance(extra, dict):
+        headers.update({str(k): str(v) for k, v in extra.items()})
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             r = await client.post(url, json=payload, headers=headers)
@@ -134,6 +137,9 @@ async def chat(system_prompt: str, user_message: str) -> str | None:
     headers = {"Content-Type": "application/json"}
     if c and (c.get("api_key") or "").strip():
         headers["Authorization"] = f"Bearer {(c.get('api_key') or '').strip()}"
+    extra = (c or {}).get("extra_headers")
+    if isinstance(extra, dict):
+        headers.update({str(k): str(v) for k, v in extra.items()})
     try:
         logger.info(
             "guide llm request: model=%s user_msg=%s",

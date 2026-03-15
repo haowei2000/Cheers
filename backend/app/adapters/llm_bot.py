@@ -102,6 +102,9 @@ class LLMBotAdapter(OpenClawAdapter):
         headers = {"Content-Type": "application/json"}
         if api_config.get("api_key"):
             headers["Authorization"] = f"Bearer {api_config['api_key']}"
+        extra = api_config.get("extra_headers")
+        if isinstance(extra, dict):
+            headers.update({str(k): str(v) for k, v in extra.items()})
 
         # 构建消息
         # 从 memory_context 中提取可能的上下文变量

@@ -153,6 +153,12 @@ async def startup() -> None:
     except Exception as e:
         logger.exception("preset LLM providers: %s", e)
 
+    try:
+        from app.db.seed import ensure_builtin_bot
+        await ensure_builtin_bot()
+    except Exception as e:
+        logger.exception("ensure builtin bot failed: %s", e)
+
 
 @app.get("/health")
 def health():
