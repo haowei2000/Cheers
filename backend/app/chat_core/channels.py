@@ -1,6 +1,7 @@
 """频道与成员 REST 路由."""
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat_core.schemas import (
@@ -9,11 +10,23 @@ from app.chat_core.schemas import (
     MemberAdd,
     MemberInResponse,
 )
-from app.db.models import BotAccount, Channel, ChannelMembership, Workspace
+from app.db.models import BotAccount, Channel, ChannelMembership, User, Workspace
 from app.db.session import get_session
 from app.guide.constants import GUIDE_BOT_ID
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
+
+
+class MemberInviteRequest(BaseModel):
+    """邀请成员请求（支持通过用户ID或用户名）."""
+    inviter_id: str  # 邀请者ID
+    identifier: str  # 用户ID 或 用户名
+
+
+class MemberInviteByFriendRequest(BaseModel):
+    """通过好友关系邀请成员."""
+    inviter_id: str  # 邀请者ID
+    friend_id: str  # 好友用户ID
 
 
 @router.get("")
@@ -168,6 +181,119 @@ async def remove_member(
     await session.delete(m)
     await session.flush()
     return {"status": "success"}
+
+
+@router.post("/{channel_id}/invite")
+async def invite_member_by_identifier(
+    channel_id: str,
+    body: MemberInviteRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """通过用户ID或用户名邀请用户加入频道."""
+    # 检查频道是否存在
+    result = await session.execute(
+        select(Channel).where(Channel.channel_id == channel_id)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="频道不存在")
+    
+    # 查找用户（通过ID或用户名）
+    result = await session.execute(
+        select(User).where(
+            or_(
+                User.user_id == body.identifier,
+                User.username == body.identifier
+            )
+        )
+    )
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    # 检查是否已经在频道中
+    result = await session.execute(
+        select(ChannelMembership).where(
+            and_(
+                ChannelMembership.channel_id == channel_id,
+                ChannelMembership.member_id == user.user_id
+            )
+        )
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="用户已在频道中")
+    
+    # 添加成员
+    membership = ChannelMembership(
+        channel_id=channel_id,
+        member_id=user.user_id,
+        member_type="user",
+        added_by=body.inviter_id,
+    )
+    session.add(membership)
+    await session.flush()
+    
+    return {
+        "status": "success",
+        "message": f"已邀请 @{user.username} 加入频道",
+        "data": {
+            "user_id": user.user_id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "avatar_url": user.avatar_url,
+        },
+    }
+
+
+@router.get("/{channel_id}/friends-to-invite")
+async def get_friends_to_invite(
+    channel_id: str,
+    user_id: str = Query(..., description="当前用户ID"),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """获取可以邀请加入频道的好友列表（排除已在频道中的）."""
+    from app.db.models import Friendship
+    
+    # 获取当前频道成员ID
+    result = await session.execute(
+        select(ChannelMembership.member_id).where(
+            ChannelMembership.channel_id == channel_id
+        )
+    )
+    member_ids = {row[0] for row in result.all()}
+    
+    # 获取好友列表
+    result = await session.execute(
+        select(Friendship, User).join(
+            User,
+            or_(
+                and_(Friendship.friend_id == User.user_id, Friendship.user_id == user_id),
+                and_(Friendship.user_id == User.user_id, Friendship.friend_id == user_id)
+            )
+        ).where(
+            and_(
+                or_(
+                    and_(Friendship.user_id == user_id, Friendship.status == "accepted"),
+                    and_(Friendship.friend_id == user_id, Friendship.status == "accepted")
+                ),
+                User.user_id.notin_(member_ids) if member_ids else True
+            )
+        )
+    )
+    
+    friends = []
+    for friendship, user in result.all():
+        friends.append({
+            "user_id": user.user_id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "avatar_url": user.avatar_url,
+        })
+    
+    return {
+        "status": "success",
+        "data": friends,
+    }
 
 
 @router.delete("/{channel_id}")

@@ -200,3 +200,18 @@ class AgentTask(Base):
     token_count: Mapped[Optional[int]] = mapped_column(nullable=True)
     feedback: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class Friendship(Base):
+    """好友关系表：记录用户之间的好友关系."""
+    __tablename__ = "friendships"
+
+    friendship_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False)
+    friend_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="accepted")  # pending, accepted, blocked
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id], lazy="joined")
+    friend: Mapped["User"] = relationship("User", foreign_keys=[friend_id], lazy="joined")
