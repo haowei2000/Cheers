@@ -1,4 +1,5 @@
 """消息 REST 与 WebSocket 路由."""
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.chat_core.schemas import MessageCreate, MessageInResponse
 from app.chat_core.ws_manager import ws_manager
 from app.db.models import Channel, Message
-from app.db.session import get_session
+from app.db.session import async_session_factory, get_session
 from app.guide.constants import GUIDE_BOT_ID
 from app.orchestrator.adapter_resolver import get_adapter_for_bot
 from app.orchestrator.service import run_orchestrator
@@ -50,13 +51,43 @@ async def list_messages(
     return {"status": "success", "data": items}
 
 
+async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
+    """后台任务：在独立 session 中运行 Orchestrator，Bot 回复通过 WebSocket 广播。"""
+    async def broadcast_bot_processing(ch_id: str, bot_id: str, username: str) -> None:
+        await ws_manager.broadcast_to_channel(ch_id, {"type": "bot_processing", "data": {"bot_id": bot_id, "username": username}})
+
+    async with async_session_factory() as bg_session:
+        try:
+            result = await bg_session.execute(select(Message).where(Message.msg_id == msg_id))
+            msg = result.scalar_one_or_none()
+            if not msg:
+                return
+            bot_messages = await run_orchestrator(
+                channel_id, msg, bg_session,
+                lambda bid: get_adapter_for_bot(bid, bg_session),
+                broadcast_processing=broadcast_bot_processing,
+            )
+            for bm in bot_messages:
+                bd = MessageInResponse.model_validate(bm).model_dump()
+                if bm.created_at:
+                    bd["created_at"] = bm.created_at.isoformat()
+                await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": bd})
+            if bot_messages:
+                from app.memory.recent_update import schedule_recent_update
+                schedule_recent_update(channel_id)
+            await bg_session.commit()
+        except Exception as e:
+            logger.exception("orchestrator background task failed channel_id=%s: %s", channel_id, e)
+            await bg_session.rollback()
+
+
 @router.post("/{channel_id}/messages")
 async def create_message(
     channel_id: str,
     body: MessageCreate,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """发送消息并持久化，并广播到频道 WebSocket."""
+    """发送消息并持久化，并广播到频道 WebSocket。Orchestrator 在后台异步运行，不阻塞响应。"""
     result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="channel not found")
@@ -73,34 +104,12 @@ async def create_message(
     d = MessageInResponse.model_validate(msg).model_dump()
     if msg.created_at:
         d["created_at"] = msg.created_at.isoformat()
+    # 先提交用户消息，确保后台任务可以读取到
+    await session.commit()
     await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": d})
-
-    # 若消息中有 @Bot 或开启 Orchestrator 直接回答，触发 Orchestrator（串行执行，回写 Bot 消息并广播）
-    async def broadcast_bot_processing(ch_id: str, bot_id: str, username: str) -> None:
-        await ws_manager.broadcast_to_channel(ch_id, {"type": "bot_processing", "data": {"bot_id": bot_id, "username": username}})
-
-    bot_messages = []
-    try:
-        bot_messages = await run_orchestrator(
-            channel_id, msg, session, lambda bid: get_adapter_for_bot(bid, session), broadcast_processing=broadcast_bot_processing
-        )
-    except Exception as e:
-        logger.exception("orchestrator failed channel_id=%s: %s", channel_id, e)
-
-    bot_message_dicts: list[dict] = []
-    for bm in bot_messages:
-        bd = MessageInResponse.model_validate(bm).model_dump()
-        if bm.created_at:
-            bd["created_at"] = bm.created_at.isoformat()
-        bot_message_dicts.append(bd)
-        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": bd})
-
-    # RECENT 层异步更新（不阻塞主消息流）
-    if bot_messages:
-        from app.memory.recent_update import schedule_recent_update
-        schedule_recent_update(channel_id)
-
-    return {"status": "success", "data": d, "bot_messages": bot_message_dicts}
+    # Orchestrator 异步后台执行，Bot 回复经 WebSocket 推送，不阻塞 HTTP 响应
+    asyncio.create_task(_run_orchestrator_bg(channel_id, msg.msg_id))
+    return {"status": "success", "data": d}
 
 
 @router.post("/{channel_id}/guide-reply")
