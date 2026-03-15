@@ -30,10 +30,10 @@ async def load(channel_id: str) -> dict[str, str]:
 
 
 async def save_layer(channel_id: str, layer: str, content: str) -> None:
-    """写入一层到 SQLite。可选：异步同步到 MD 文件（见 sync_channel_to_md）."""
-    import os
+    """写入一层到 SQLite。layer 统一大写以与 get_all_layers 保持一致。"""
     db_path = _context_db_path()
-    await set_layer(db_path, channel_id, layer, content)
+    await init_context_db(db_path)
+    await set_layer(db_path, channel_id, layer.upper(), content)
 
 
 async def sync_channel_to_md(channel_id: str) -> None:

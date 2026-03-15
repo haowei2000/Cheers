@@ -1,4 +1,6 @@
 """单 Bot 接入集成测试：发带 @bot 的消息，验证 Bot 回复被持久化并可拉取."""
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,6 +72,8 @@ async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: As
         },
     )
     assert resp.status_code == 200
+    # 等待后台 orchestrator 任务完成（MockAdapter 无 IO，应立即完成）
+    await asyncio.sleep(0.2)
 
     list_resp = await client.get(f"/api/channels/{ch.channel_id}/messages")
     assert list_resp.status_code == 200
@@ -128,6 +132,7 @@ async def test_message_at_multiple_bots_serial_replies(
         },
     )
     assert resp.status_code == 200
+    await asyncio.sleep(0.2)
 
     list_resp = await client.get(f"/api/channels/{ch.channel_id}/messages")
     assert list_resp.status_code == 200
