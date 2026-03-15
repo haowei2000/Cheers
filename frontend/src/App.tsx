@@ -1265,6 +1265,9 @@ export default function App() {
       sender_type: "user",
       file_ids: pendingFileIds,
     };
+    setInput("");
+    setPendingFileIds([]);
+    setPendingFileNames([]);
     fetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1272,22 +1275,12 @@ export default function App() {
     })
       .then((r) => r.json())
       .then((d) => {
-        setMessages((prev) => {
-          let next = prev;
-          if (d.data && !prev.some((m) => m.msg_id === d.data.msg_id)) {
-            next = [...next, d.data];
-          }
-          const botMsgs: Message[] = d.bot_messages || [];
-          for (const bm of botMsgs) {
-            if (bm && bm.msg_id && !next.some((m) => m.msg_id === bm.msg_id)) {
-              next = [...next, bm];
-            }
-          }
-          return next;
-        });
-        setInput("");
-        setPendingFileIds([]);
-        setPendingFileNames([]);
+        // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
+        if (d.data) {
+          setMessages((prev) =>
+            prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]
+          );
+        }
       })
       .catch(console.error);
   };

@@ -23,6 +23,7 @@ from app.auth.routes import router as auth_router
 from app.file_processor import routes as file_routes
 from app.logging_config import setup_logging
 from app.manual_routes import router as manual_router
+from app.db.session import init_db
 from app.memory.context_store import init_context_db
 from app.public_routes import router as public_router
 
@@ -134,6 +135,7 @@ async def startup() -> None:
     """启动时配置日志与 Context Store；可选执行种子数据."""
     setup_logging()
     logger.info("AgentNexus startup")
+    await init_db()
 
     from pathlib import Path
     from app.config import settings
