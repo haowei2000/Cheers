@@ -197,6 +197,7 @@ class MessageCreate(BaseModel):
     sender_type: str = "user"
     file_ids: list[str] = []
     mention_bot_ids: list[str] = []
+    in_reply_to_msg_id: str | None = None
 
 
 class MessageInResponse(BaseModel):
