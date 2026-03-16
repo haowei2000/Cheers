@@ -39,11 +39,49 @@ class GuideBotAdapter(OpenClawAdapter):
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         text = (payload.trigger_message or {}).get("text") or ""
+        original_question = getattr(payload, "original_question_text", None) or ""
         help_ctx = get_help_context_for_llm()
         clarify_settings = get_clarify_settings()
         strict_mode = bool(clarify_settings.get("clarify_strict_mode", False))
         force_rule = bool(clarify_settings.get("clarify_force_rule", True))
         threshold = float(clarify_settings.get("clarify_threshold", 0.6))
+
+        # 0) 澄清回答场景：合并原问题 + 澄清内容，直接生成最终回答，不再触发新一轮澄清
+        is_clarify_reply = (
+            text.strip().startswith("@引导 澄清回答：")
+            or text.strip().startswith("@channel bot 澄清回答：")
+            or "用户选择跳过澄清" in text
+        )
+        if is_clarify_reply:
+            if not original_question:
+                logger.warning(
+                    "guide_bot: clarify reply but original_question empty, using full text as fallback"
+                )
+                original_question = "(原问题未找到，以下为用户澄清内容)"
+            combined = (
+                f"【原始问题】\n{original_question}\n\n"
+                f"【用户补充澄清】\n{text}\n\n"
+                "请基于以上原始问题与用户补充的澄清信息，给出完整、有针对性的回答。"
+            )
+            logger.info(
+                "guide_bot: clarify merge prompt len=%s, original_len=%s",
+                len(combined),
+                len(original_question),
+            )
+            content = ""
+            if llm_configured():
+                system = SYSTEM_PROMPT_TEMPLATE.format(help_context=help_ctx)
+                content = await llm_chat(system, combined)
+            if not content:
+                content = build_guide_content_with_form(combined)
+            if not content:
+                content = DEFAULT_REPLY
+            logger.info("guide_bot: reply from clarify merge, len=%s", len(content or ""))
+            return AgentResponse(
+                content=content or DEFAULT_REPLY,
+                task_id=payload.task_id,
+                success=True,
+            )
 
         # 1) 混合澄清触发：LLM 判断 + 规则兜底
         clarify = None

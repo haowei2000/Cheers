@@ -17,6 +17,55 @@ from app.orchestrator.orchestrator_adapter import extract_suggested_bots
 COORDINATOR_USERNAME = "channel bot"
 
 
+def _is_guide_clarify_reply(content: str) -> bool:
+    """判断是否为引导 Bot 的澄清回答消息（兼容 @引导 与 @channel bot）."""
+    t = (content or "").strip()
+    return (
+        t.startswith("@引导 澄清回答：")
+        or t.startswith("@channel bot 澄清回答：")
+        or "用户选择跳过澄清" in t
+    )
+
+
+async def _fetch_original_question_for_clarify(
+    session: AsyncSession, channel_id: str, trigger_msg: Message
+) -> str | None:
+    """
+    当 trigger_msg 为澄清回答时，查找并返回原问题文本。
+    逻辑：澄清回答前一条应为 Bot 的 guide-clarify 消息，其 in_reply_to_msg_id 指向原问题。
+    """
+    r = await session.execute(
+        select(Message)
+        .where(
+            Message.channel_id == channel_id,
+            Message.created_at < trigger_msg.created_at,
+        )
+        .order_by(Message.created_at.desc())
+        .limit(5)
+    )
+    prev_msgs = list(r.scalars().all())
+    for m in prev_msgs:
+        if m.sender_type != "bot":
+            continue
+        if "guide-clarify" not in (m.content or ""):
+            continue
+        orig_id = m.in_reply_to_msg_id
+        if not orig_id:
+            continue
+        orig_r = await session.execute(select(Message).where(Message.msg_id == orig_id))
+        orig = orig_r.scalar_one_or_none()
+        if orig and orig.sender_type == "user":
+            out = (orig.content or "").strip()
+            logger.info(
+                "orchestrator: fetched original_question for clarify, len=%s",
+                len(out),
+            )
+            return out
+        break
+    logger.warning("orchestrator: no original_question found for clarify reply")
+    return None
+
+
 def _apply_prompt_template(template: str | None, user_message: str) -> str:
     """应用提示词模板，将 {{}} 替换为用户消息.
     
@@ -259,6 +308,16 @@ async def run_orchestrator(
         templated_text = _apply_prompt_template(bot_template, trigger_msg.content)
         other_bots = [u for u in channel_bot_usernames if u != username]
         bot_msg = await _pre_create_bot_msg(bot_id, task_id)
+        original_question_text: str | None = None
+        if username in ("引导", "channel bot") and _is_guide_clarify_reply(trigger_msg.content):
+            original_question_text = await _fetch_original_question_for_clarify(
+                session, channel_id, trigger_msg
+            )
+            if original_question_text:
+                logger.info(
+                    "orchestrator: guide clarify reply, original_question=%s",
+                    (original_question_text[:50] + "…") if len(original_question_text) > 50 else original_question_text,
+                )
         payload = AgentPayload(
             task_id=task_id,
             channel_id=channel_id,
@@ -277,6 +336,7 @@ async def run_orchestrator(
                 "_create_and_broadcast": _create_msg_and_broadcast,
                 "_stream_token": _make_stream_token_cb(bot_msg.msg_id),
             },
+            original_question_text=original_question_text,
         )
         logger.info("orchestrator: calling bot bot_id=%s username=%s", bot_id, username)
         resp: AgentResponse = await adapter.execute(payload)
