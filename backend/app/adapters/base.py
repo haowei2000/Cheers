@@ -13,6 +13,8 @@ class AgentPayload:
     memory_context: dict[str, str]
     attachments: list[dict[str, str]] = field(default_factory=list)
     process_config: dict[str, Any] = field(default_factory=lambda: {"mode": "sequential", "timeout_seconds": 120})
+    # 澄清场景：原问题文本，供引导 Bot 合并上下文后生成最终回答
+    original_question_text: str | None = None
 
 
 @dataclass

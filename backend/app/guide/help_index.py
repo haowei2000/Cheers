@@ -300,6 +300,30 @@ def _clarify_template_for_generic() -> dict[str, Any]:
     }
 
 
+def _clarify_template_for_api_integration() -> dict[str, Any]:
+    """接入外部系统（禅道等）时，需确认是否已有 API 及地址。"""
+    return {
+        "title": "确认需求",
+        "skip_policy": "allow",
+        "questions": [
+            {
+                "id": "has_api",
+                "prompt": "你已经有该系统的 API 接口了吗？（需要系统开放 API 并提供接口地址）",
+                "allow_multiple": False,
+                "options": [
+                    {
+                        "id": "yes",
+                        "label": "有",
+                        "requires_text": True,
+                        "text_placeholder": "请输入 API 地址（如 https://xxx.com/api）",
+                    },
+                    {"id": "no", "label": "没有/不清楚"},
+                ],
+            },
+        ],
+    }
+
+
 def get_rule_based_clarify_schema(user_text: str) -> dict[str, Any] | None:
     """
     规则触发的澄清题（LLM 不可用或 LLM 未触发时兜底）。
@@ -314,6 +338,11 @@ def get_rule_based_clarify_schema(user_text: str) -> dict[str, Any] | None:
     if any(k in text for k in create_kw):
         # 语义较明确但仍存在必要参数缺失（如 workspace、type），统一先澄清
         return _clarify_template_for_create_project()
+
+    # 接入外部系统（禅道、Jira 等）：需确认 API 地址
+    api_kw = ("禅道", "zentao", "jira", "接入", "加入需求", "同步需求")
+    if any(k in text for k in api_kw):
+        return _clarify_template_for_api_integration()
 
     # 过于笼统/短句：给一组通用澄清题
     generic_kw = ("怎么弄", "怎么做", "帮我做", "搞一下", "处理一下", "看看这个")

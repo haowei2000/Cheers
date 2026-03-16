@@ -39,7 +39,7 @@ type GuideFormField = {
 
 type GuideFormSchema = { action: string; fields: GuideFormField[] };
 
-type ClarifyOption = { id: string; label: string };
+type ClarifyOption = { id: string; label: string; requires_text?: boolean; text_placeholder?: string };
 type ClarifyQuestion = {
   id: string;
   prompt: string;
@@ -58,6 +58,7 @@ type ClarifySchema = {
 type ClarifyAnswers = {
   selected: Record<string, string[]>;
   other_text: Record<string, string>;
+  option_text?: Record<string, string>; // key: `${q.id}:${opt.id}` for requires_text options
 };
 const OTHER_CHOICE_ID = "__other__";
 
@@ -702,12 +703,19 @@ function ClarifyInlineBlock({
   const [open, setOpen] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [otherText, setOtherText] = useState<Record<string, string>>({});
+  const [optionText, setOptionText] = useState<Record<string, string>>({}); // key: `${q.id}:${opt.id}`
   const allowSkip = (schema.skip_policy || "allow") === "allow";
   const canContinue = schema.questions.every((q) => {
     const selected = answers[q.id] || [];
     if (selected.length === 0) return false;
     if (selected.includes(OTHER_CHOICE_ID)) {
       return !!(otherText[q.id] || "").trim();
+    }
+    for (const opt of q.options) {
+      if (opt.requires_text && selected.includes(opt.id)) {
+        const key = `${q.id}:${opt.id}`;
+        if (!(optionText[key] || "").trim()) return false;
+      }
     }
     return true;
   });
@@ -778,17 +786,29 @@ function ClarifyInlineBlock({
             <div className="space-y-1.5">
               {q.options.map((opt) => {
                 const checked = (answers[q.id] || []).includes(opt.id);
+                const optKey = `${q.id}:${opt.id}`;
                 return (
-                  <label key={opt.id} className="flex items-center gap-2 text-sm cursor-pointer text-gray-700 hover:text-gray-900">
-                    <input
-                      type={q.allow_multiple ? "checkbox" : "radio"}
-                      name={`${msgId}-${q.id}`}
-                      checked={checked}
-                      onChange={() => toggleOption(q, opt.id)}
-                      className="accent-[#1264A3]"
-                    />
-                    <span>{opt.label}</span>
-                  </label>
+                  <div key={opt.id} className="space-y-1">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer text-gray-700 hover:text-gray-900">
+                      <input
+                        type={q.allow_multiple ? "checkbox" : "radio"}
+                        name={`${msgId}-${q.id}`}
+                        checked={checked}
+                        onChange={() => toggleOption(q, opt.id)}
+                        className="accent-[#1264A3]"
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                    {opt.requires_text && checked && (
+                      <input
+                        type="text"
+                        value={optionText[optKey] || ""}
+                        onChange={(e) => setOptionText((prev) => ({ ...prev, [optKey]: e.target.value }))}
+                        placeholder={opt.text_placeholder || "请输入"}
+                        className="ml-6 w-full rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:border-[#1264A3]"
+                      />
+                    )}
+                  </div>
                 );
               })}
               {q.other_enabled && (
@@ -831,7 +851,7 @@ function ClarifyInlineBlock({
         <button
           type="button"
           disabled={!canContinue}
-          onClick={() => onContinue({ selected: answers, other_text: otherText })}
+          onClick={() => onContinue({ selected: answers, other_text: otherText, option_text: optionText })}
           className="px-4 py-1.5 rounded bg-[#007a5a] text-white font-medium disabled:opacity-40 text-sm hover:bg-[#006a4d]"
         >
           继续
@@ -1310,11 +1330,17 @@ export default function App() {
 
   const handleClarifyContinue = (msgId: string, schema: ClarifySchema, answers: ClarifyAnswers) => {
     const lines = ["@channel bot 澄清回答："];
+    const optText = answers.option_text || {};
     for (const q of schema.questions) {
       const picked = new Set(answers.selected[q.id] || []);
-      const labels = q.options.filter((o) => picked.has(o.id)).map((o) => o.label);
+      const labels = q.options
+        .filter((o) => picked.has(o.id))
+        .map((o) => {
+          const txt = (optText[`${q.id}:${o.id}`] || "").trim();
+          return txt ? `${o.label}：${txt}` : o.label;
+        });
       if (picked.has(OTHER_CHOICE_ID)) {
-        const other = (answers.other_text[q.id] || "").trim();
+        const other = (answers.other_text?.[q.id] || "").trim();
         if (other) labels.push(`其他：${other}`);
       }
       lines.push(`- ${q.prompt}：${labels.length > 0 ? labels.join("、") : "未选择"}`);
@@ -2185,7 +2211,30 @@ export default function App() {
                       !!parseGuidePayload(prevMsg.content).clarify &&
                       isClarifyReplyUserMessage(m.content);
                     if (isClarifyReplyBubble) {
-                      return <div key={m.msg_id} className="sr-only" aria-hidden="true" />;
+                      // 澄清回答隐藏，但需渲染其对应的二次回答（Bot 最终回复）
+                      const followUpBot = messages[idx + 1];
+                      const followUpIsBot = followUpBot?.sender_type === "bot";
+                      return (
+                        <div key={m.msg_id}>
+                          <div className="sr-only" aria-hidden="true" />
+                          {followUpIsBot && (
+                            <div key={followUpBot.msg_id} className="p-2 rounded bg-green-50 border-l-2 border-green-400">
+                              <span className="text-xs text-gray-500 flex items-center gap-2">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium">
+                                  Bot
+                                </span>
+                                {followUpBot.created_at?.slice(0, 19) || ""}
+                              </span>
+                              <div className="mt-1 whitespace-pre-wrap">
+                                {renderWithThinkFolding(
+                                  parseGuidePayload(followUpBot.content).text || followUpBot.content,
+                                  `${followUpBot.msg_id}-`
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
                     }
 
                     const { text, form, clarify } = parseGuidePayload(m.content);

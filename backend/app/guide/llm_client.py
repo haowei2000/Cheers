@@ -216,7 +216,7 @@ def _normalize_clarify_schema(data: dict[str, Any]) -> dict[str, Any] | None:
         options = q.get("options")
         if not prompt or not isinstance(options, list) or len(options) < 2:
             continue
-        normalized_opts: list[dict[str, str]] = []
+        normalized_opts: list[dict[str, Any]] = []
         for oid, opt in enumerate(options):
             if not isinstance(opt, dict):
                 continue
@@ -224,7 +224,11 @@ def _normalize_clarify_schema(data: dict[str, Any]) -> dict[str, Any] | None:
             opt_id = str(opt.get("id") or f"opt_{oid}").strip()
             if not label:
                 continue
-            normalized_opts.append({"id": opt_id, "label": label})
+            item: dict[str, Any] = {"id": opt_id, "label": label}
+            if opt.get("requires_text"):
+                item["requires_text"] = True
+                item["text_placeholder"] = str(opt.get("text_placeholder") or "请输入").strip()
+            normalized_opts.append(item)
         if len(normalized_opts) < 2:
             continue
         normalized_questions.append(
@@ -268,10 +272,13 @@ async def generate_clarify_schema(user_message: str, help_context: str) -> dict[
         "若需要澄清，返回JSON: "
         "{\"need_clarify\": true, \"title\": \"...\", \"skip_policy\": \"allow|forbid\", "
         "\"questions\": [{\"id\":\"...\",\"prompt\":\"...\",\"allow_multiple\":false,"
-        "\"options\":[{\"id\":\"a\",\"label\":\"选项A\"},{\"id\":\"b\",\"label\":\"选项B\"}]}], "
+        "\"options\":[{\"id\":\"a\",\"label\":\"选项A\"},{\"id\":\"b\",\"label\":\"选项B\","
+        "\"requires_text\":true,\"text_placeholder\":\"请输入地址或说明\"}]}], "
         "\"reason\":\"...\"}。"
         "必须是纯 JSON，不要输出其他文字。"
-        "问题应简短、可选项清晰，允许一次给 1~3 个问题。\n\n"
+        "问题应简短、可选项清晰，允许一次给 1~3 个问题。"
+        "若某选项选中后需要用户补充文字（如地址、URL、具体说明），为该选项加上 "
+        "\"requires_text\": true 和 \"text_placeholder\": \"提示文案\"，不要将「请输入…」写在 label 里。\n\n"
         f"参考文档上下文:\n{help_context}"
     )
     content = await chat(system_prompt, user_message)
