@@ -100,6 +100,7 @@ async def create_message(
         content=body.content,
         file_ids=body.file_ids or [],
         mention_bot_ids=body.mention_bot_ids or [],
+        in_reply_to_msg_id=body.in_reply_to_msg_id or None,
     )
     session.add(msg)
     await session.flush()
