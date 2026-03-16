@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -111,6 +111,7 @@ class Channel(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str] = mapped_column(String(32), nullable=False, default="public")
     purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    auto_assist: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="channels")

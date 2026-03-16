@@ -36,7 +36,7 @@ async def update_context(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """更新频道某一层 Context Store."""
-    if body.layer not in ("ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT"):
+    if body.layer not in ("ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "PROGRESS"):
         raise HTTPException(status_code=400, detail="invalid layer")
     result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
     if not result.scalar_one_or_none():

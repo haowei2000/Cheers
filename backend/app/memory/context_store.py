@@ -4,7 +4,7 @@ from pathlib import Path
 
 import aiosqlite
 
-LAYERS = ("ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT")
+LAYERS = ("ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "PROGRESS")
 
 
 async def init_context_db(db_path: str) -> None:

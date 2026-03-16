@@ -4,9 +4,10 @@
 - AIModel 提供模型参数（provider, model_name, base_url, api_key）
 - PromptTemplate 提供提示词（system_prompt, user_template）
 """
+import json
 import logging
 import re
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 import httpx
 
@@ -139,7 +140,36 @@ class LLMBotAdapter(OpenClawAdapter):
             task_id,
         )
 
+        stream_token_cb: Callable[[str], Awaitable[None]] | None = (
+            (payload.process_config or {}).get("_stream_token")
+        )
+
         try:
+            if stream_token_cb:
+                body["stream"] = True
+                full_content = ""
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    async with client.stream("POST", url, json=body, headers=headers) as r:
+                        r.raise_for_status()
+                        async for line in r.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data_str = line[6:].strip()
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data_str)
+                                delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+                                if delta:
+                                    full_content += delta
+                                    await stream_token_cb(delta)
+                            except (json.JSONDecodeError, KeyError):
+                                pass
+                if not full_content:
+                    return AgentResponse(content="", task_id=task_id, success=False, error_message="LLM 返回空内容")
+                logger.info("llm_bot: stream success bot=%s content_len=%d", self.bot.username, len(full_content))
+                return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
+
             async with httpx.AsyncClient(timeout=120.0) as client:
                 r = await client.post(url, json=body, headers=headers)
                 r.raise_for_status()

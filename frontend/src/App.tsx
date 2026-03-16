@@ -9,7 +9,7 @@ const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.h
 const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
 const API_DOCS_URL = "/docs";
 
-type Channel = { channel_id: string; name: string; type: string; workspace_id?: string };
+type Channel = { channel_id: string; name: string; type: string; workspace_id?: string; auto_assist?: boolean };
 type Workspace = { workspace_id: string; name: string };
 type Message = {
   msg_id: string;
@@ -17,11 +17,12 @@ type Message = {
   sender_type: string;
   content: string;
   created_at?: string;
+  _streaming?: boolean;
 };
 type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
 
-const LAYERS = ["ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "MEMBERS"] as const;
+const LAYERS = ["ANCHOR", "PROGRESS", "DECISIONS", "FILES_INDEX", "RECENT", "MEMBERS"] as const;
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
 const GUIDE_CLARIFY_BLOCK = /```guide-clarify\n([\s\S]*?)```/;
@@ -235,6 +236,7 @@ function ThinkFold({ content }: { content: string }) {
 // ── Memory Panel (right sidebar) ─────────────────────────────────────────────
 const LAYER_META: Record<string, { label: string; desc: string; color: string; icon: string; readonly?: boolean }> = {
   ANCHOR:      { label: "项目锚点",   desc: "核心目标、约束、背景",       color: "blue",   icon: "⚓" },
+  PROGRESS:    { label: "项目进度",   desc: "当前进度、已完成、下一步",    color: "teal",   icon: "📈" },
   DECISIONS:   { label: "决策记录",   desc: "重要决策及原因",             color: "purple", icon: "📋" },
   FILES_INDEX: { label: "资料索引",   desc: "上传的文件与参考资料",        color: "amber",  icon: "🗂️" },
   RECENT:      { label: "近期动态",   desc: "最新进展、待办、结论",        color: "green",  icon: "🕐" },
@@ -900,6 +902,7 @@ export default function App() {
   const [qaLlmReady, setQaLlmReady] = useState(false);
   const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<string | null>(null);
+  const [autoAssist, setAutoAssist] = useState(false);
 
   type ChannelBot = { member_id: string; username: string; avatar_url?: string; display_name?: string };
   type ChannelUser = { member_id: string; username: string; avatar_url?: string; display_name?: string };
@@ -1068,8 +1071,11 @@ export default function App() {
       setSummaryPreview("");
       setWaitingForBotReply(false);
       setProcessingBots({});
+      setAutoAssist(false);
       return;
     }
+    const ch = channels.find((c) => c.channel_id === selectedId);
+    setAutoAssist(ch?.auto_assist ?? false);
     setLoading(true);
     fetch(`${API}/channels/${selectedId}/members?with_username=1`)
       .then((r) => r.json())
@@ -1109,14 +1115,37 @@ export default function App() {
           setMessages((prev) => {
             const id = msg.data.msg_id;
             if (id && prev.some((m) => m.msg_id === id)) return prev;
-            return [...prev, msg.data];
+            // Mark bot messages as streaming until message_done arrives
+            const entry = msg.data.sender_type === "bot"
+              ? { ...msg.data, _streaming: true }
+              : msg.data;
+            return [...prev, entry];
           });
-          // 检测到记忆写入通知时刷新记忆面板数据
           if (
             msg.data.sender_type === "bot" &&
             typeof msg.data.content === "string" &&
             msg.data.content.includes("已更新记忆层")
           ) {
+            fetch(`${API}/channels/${selectedId}/context`)
+              .then((r) => r.json())
+              .then((d) => d.data && setContextData(d.data))
+              .catch(() => {});
+          }
+        } else if (msg.type === "message_stream" && msg.data) {
+          const { msg_id, delta } = msg.data;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.msg_id === msg_id ? { ...m, content: m.content + delta, _streaming: true } : m
+            )
+          );
+        } else if (msg.type === "message_done" && msg.data) {
+          const { msg_id, content } = msg.data;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.msg_id === msg_id ? { ...m, content, _streaming: false } : m
+            )
+          );
+          if (typeof content === "string" && content.includes("已更新记忆层")) {
             fetch(`${API}/channels/${selectedId}/context`)
               .then((r) => r.json())
               .then((d) => d.data && setContextData(d.data))
@@ -2073,6 +2102,34 @@ export default function App() {
             <div className="px-5 py-3 border-b border-gray-100 bg-white flex items-center gap-3">
               <span className="text-gray-400 font-medium text-base select-none">#</span>
               <h1 className="font-semibold text-gray-900 text-base truncate flex-1">{selectedChannel?.name || ""}</h1>
+              {/* Auto-assist toggle */}
+              <label className="flex items-center gap-1.5 cursor-pointer select-none" title={autoAssist ? "自动调用内置助手（开启中）" : "自动调用内置助手（关闭）"}>
+                <span className="text-xs text-gray-500 whitespace-nowrap">自动助手</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoAssist}
+                  onClick={() => {
+                    const next = !autoAssist;
+                    setAutoAssist(next);
+                    fetch(`${API}/channels/${selectedId}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ auto_assist: next }),
+                    })
+                      .then((r) => r.json())
+                      .then((d) => {
+                        if (d.data) {
+                          setChannels((prev) => prev.map((c) => c.channel_id === selectedId ? { ...c, auto_assist: d.data.auto_assist } : c));
+                        }
+                      })
+                      .catch(() => setAutoAssist(!next));
+                  }}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${autoAssist ? "bg-[#1264A3]" : "bg-gray-200"}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${autoAssist ? "translate-x-[18px]" : "translate-x-[3px]"}`} />
+                </button>
+              </label>
               {blockPairsForExport.length > 0 && (
                 <button
                   type="button"
@@ -2207,7 +2264,12 @@ export default function App() {
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
                           <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
-                            {renderWithThinkFolding(text, `${m.msg_id}-`)}
+                            {m._streaming && !text
+                              ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                              : renderWithThinkFolding(text, `${m.msg_id}-`)}
+                            {m._streaming && !!text && (
+                              <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
+                            )}
                           </div>
                           {form && selectedId && m.sender_type === "bot" && (
                             <GuideFormBlock

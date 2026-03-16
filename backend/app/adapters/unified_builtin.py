@@ -63,6 +63,11 @@ _TOOLS_DESC = """\
 {"tool": "update_decision", "args": {"content": "决策内容（覆盖写入）"}}
 ```
 
+### update_progress — 更新项目进度
+```tool-call
+{"tool": "update_progress", "args": {"content": "当前进度、已完成事项、下一步计划（覆盖写入）"}}
+```
+
 ### ask_user — 向用户提问，暂停 Agent 等待回答
 ```tool-call
 {"tool": "ask_user", "args": {"question": "问题标题", "options": ["选项A", "选项B"], "allow_multiple": false}}
@@ -87,11 +92,8 @@ def _get_llm_config() -> dict | None:
     return None
 
 
-async def _call_llm_messages(messages: list[dict]) -> str | None:
-    """多轮对话 LLM 调用，messages 格式为 OpenAI messages 数组。"""
-    cfg = _get_llm_config()
-    if not cfg:
-        return None
+def _build_llm_http(cfg: dict) -> tuple[str, dict, dict]:
+    """Return (url, headers, base_body_fields) for LLM calls."""
     url = cfg["base_url"].rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
     if cfg.get("api_key"):
@@ -99,13 +101,22 @@ async def _call_llm_messages(messages: list[dict]) -> str | None:
     extra = cfg.get("extra_headers")
     if isinstance(extra, dict):
         headers.update({str(k): str(v) for k, v in extra.items()})
-    timeout = float(cfg.get("timeout", 600))
-    body = {
+    base = {
         "model": cfg["model"],
-        "messages": messages,
         "temperature": float(cfg.get("temperature", 0.7)),
         "max_tokens": int(cfg.get("max_tokens", 2000)),
     }
+    return url, headers, base
+
+
+async def _call_llm_messages(messages: list[dict]) -> str | None:
+    """多轮对话 LLM 调用，messages 格式为 OpenAI messages 数组。"""
+    cfg = _get_llm_config()
+    if not cfg:
+        return None
+    url, headers, base = _build_llm_http(cfg)
+    timeout = float(cfg.get("timeout", 600))
+    body = {**base, "messages": messages}
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(url, json=body, headers=headers)
@@ -119,6 +130,79 @@ async def _call_llm_messages(messages: list[dict]) -> str | None:
     except Exception as e:
         logger.exception("unified_builtin: LLM request failed: %s", e)
         return None
+
+
+_TOOL_CALL_START = "```tool-call"
+
+
+async def _stream_llm_filtered(messages: list[dict], token_cb) -> str | None:
+    """
+    Stream LLM response, suppressing tool-call blocks from the token stream.
+    Text outside tool-call blocks is forwarded to token_cb character-by-character;
+    the full raw response (including tool-call blocks) is returned for parsing.
+    """
+    cfg = _get_llm_config()
+    if not cfg:
+        return None
+    url, headers, base = _build_llm_http(cfg)
+    timeout = float(cfg.get("timeout", 600))
+    body = {**base, "messages": messages, "stream": True}
+
+    full = ""
+    pending = ""        # lookahead buffer to detect ```tool-call start
+    in_tool = False
+    tool_buf = ""
+    _lookahead = len(_TOOL_CALL_START)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("POST", url, json=body, headers=headers) as r:
+                r.raise_for_status()
+                async for line in r.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                        token = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+                    if not token:
+                        continue
+                    full += token
+
+                    if in_tool:
+                        tool_buf += token
+                        # Closing ``` after the opening line signals end of tool block
+                        if "```" in tool_buf[len(_TOOL_CALL_START):]:
+                            in_tool = False
+                            tool_buf = ""
+                    else:
+                        pending += token
+                        idx = pending.find(_TOOL_CALL_START)
+                        if idx >= 0:
+                            if idx > 0 and token_cb:
+                                await token_cb(pending[:idx])
+                            in_tool = True
+                            tool_buf = pending[idx:]
+                            pending = ""
+                        else:
+                            safe_len = max(0, len(pending) - _lookahead)
+                            if safe_len > 0 and token_cb:
+                                await token_cb(pending[:safe_len])
+                            pending = pending[safe_len:]
+
+        if pending and not in_tool and token_cb:
+            await token_cb(pending)
+
+    except httpx.TimeoutException as e:
+        logger.warning("unified_builtin: stream LLM timeout (%.0fs, %s)", timeout, type(e).__name__)
+    except Exception as e:
+        logger.exception("unified_builtin: stream LLM failed: %s", e)
+
+    return full.strip() or None
 
 
 # ─── 工具解析 ─────────────────────────────────────────────────────────────────
@@ -151,6 +235,16 @@ async def _exec_update_anchor(args: dict, ctx: dict) -> str:
     await save_layer(ctx["channel_id"], "anchor", content)
     logger.info("unified_builtin[tool]: update_anchor channel=%s len=%d", ctx["channel_id"], len(content))
     return "已更新项目锚点"
+
+
+async def _exec_update_progress(args: dict, ctx: dict) -> str:
+    content = str(args.get("content") or "").strip()
+    if not content:
+        return "错误：content 不能为空"
+    from app.memory.manager import save_layer
+    await save_layer(ctx["channel_id"], "progress", content)
+    logger.info("unified_builtin[tool]: update_progress channel=%s len=%d", ctx["channel_id"], len(content))
+    return "已更新项目进度"
 
 
 async def _exec_update_decision(args: dict, ctx: dict) -> str:
@@ -237,11 +331,26 @@ def _exec_ask_user(args: dict) -> tuple[str, bool]:
 
 # ─── Agent Loop ───────────────────────────────────────────────────────────────
 
-async def _agent_loop(system_prompt: str, user_text: str, ctx: dict) -> str:
+def _tool_label(tool_name: str, args: dict) -> str:
+    """Human-readable label for a tool call notification."""
+    if tool_name == "call_bot":
+        return f"调用 @{args.get('username', '?')}"
+    if tool_name == "update_anchor":
+        return "更新项目锚点"
+    if tool_name == "update_decision":
+        return "记录决策"
+    if tool_name == "update_progress":
+        return "更新项目进度"
+    if tool_name == "ask_user":
+        return "向用户提问"
+    return tool_name
+
+
+async def _agent_loop(system_prompt: str, user_text: str, ctx: dict, stream_cb=None) -> str:
     """
     核心 Agent 循环：
-      1. 调用 LLM（携带完整对话历史）
-      2. 解析 tool-call 块
+      1. 调用 LLM（携带完整对话历史）；若有 stream_cb 则流式输出可见文本
+      2. 解析 tool-call 块，通过 stream_cb 发出工具调用通知
       3. 执行工具，将结果注回对话
       4. 重复，直到：无工具调用 / ask_user 触发 / 达到 MAX_LOOP_ITERATIONS
 
@@ -253,14 +362,19 @@ async def _agent_loop(system_prompt: str, user_text: str, ctx: dict) -> str:
     ]
 
     for iteration in range(MAX_LOOP_ITERATIONS):
-        raw = await _call_llm_messages(messages)
+        # 流式调用 LLM，过滤掉 tool-call 块的可见输出
+        if stream_cb:
+            raw = await _stream_llm_filtered(messages, stream_cb)
+        else:
+            raw = await _call_llm_messages(messages)
+
         if not raw:
             logger.warning("unified_builtin: LLM returned empty at iteration %d", iteration)
             break
 
         tool_calls = _parse_tool_calls(raw)
         if not tool_calls:
-            # 无工具调用 → 最终回复
+            # 无工具调用 → 最终回复（已流式输出完毕）
             return _strip_tool_calls(raw)
 
         # 将含工具调用的 assistant 消息加入历史
@@ -275,6 +389,11 @@ async def _agent_loop(system_prompt: str, user_text: str, ctx: dict) -> str:
             tool_name = call.get("tool", "")
             args = call.get("args") or {}
 
+            # 通知前端：工具调用开始
+            if stream_cb:
+                label = _tool_label(tool_name, args)
+                await stream_cb(f"\n\n`🔧 {label}…`")
+
             if tool_name == "call_bot":
                 result = await _exec_call_bot(args, ctx)
                 tool_results.append(f"[call_bot @{args.get('username', '?')}]: {result}")
@@ -287,12 +406,20 @@ async def _agent_loop(system_prompt: str, user_text: str, ctx: dict) -> str:
                 result = await _exec_update_decision(args, ctx)
                 tool_results.append(f"[update_decision]: {result}")
 
+            elif tool_name == "update_progress":
+                result = await _exec_update_progress(args, ctx)
+                tool_results.append(f"[update_progress]: {result}")
+
             elif tool_name == "ask_user":
                 pause_content, should_pause = _exec_ask_user(args)
                 tool_results.append("[ask_user]: 已向用户发送选择题，等待回答")
 
             else:
                 tool_results.append(f"[{tool_name}]: 未知工具，跳过")
+
+            # 通知前端：工具调用完成
+            if stream_cb and tool_name != "ask_user":
+                await stream_cb(" ✓\n")
 
         logger.info(
             "unified_builtin: agent loop iter=%d tools=%s channel=%s",
@@ -302,11 +429,15 @@ async def _agent_loop(system_prompt: str, user_text: str, ctx: dict) -> str:
         )
 
         if should_pause:
-            # ask_user 触发：将 LLM 原文（去掉工具块）+ 选择题一并返回
             prefix = _strip_tool_calls(raw)
+            if stream_cb:
+                # ask_user 选择题内容不走 stream（由 message_done 一次性展示）
+                pass
             return (prefix + "\n\n" + pause_content).strip() if prefix else pause_content
 
         # 将工具结果注入对话，继续下一轮
+        if stream_cb:
+            await stream_cb("\n\n")
         results_text = "\n".join(tool_results)
         messages.append({
             "role": "user",
@@ -368,17 +499,44 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             _TOOLS_DESC,
             "=== 系统帮助文档（回答使用类问题时参考）===\n" + get_help_context_for_llm(),
             (
-                "=== 四层项目记忆 ===\n"
+                "=== 项目记忆 ===\n"
                 f"【锚点·最高优先级】\n{memory.get('anchor') or '（暂无）'}\n\n"
+                f"【项目进度】\n{memory.get('progress') or '（暂无）'}\n\n"
                 f"【决策记录】\n{memory.get('decisions') or '（暂无）'}\n\n"
                 f"【资料索引】\n{memory.get('files_index') or '（暂无）'}\n\n"
                 f"【近期动态】\n{memory.get('recent') or '（暂无）'}"
             ),
             "=== 频道 Bot 成员（可通过 call_bot 调用）===\n" + members_section,
-            "请用简洁专业的 Markdown 回答。复杂任务优先借助工具分解处理。",
+            (
+                "## 记忆维护职责（必须严格执行）\n\n"
+                "在每次对话中，你必须主动判断是否需要更新以下记忆层，**不要等用户主动要求**：\n\n"
+                "- **update_anchor**：若用户提到项目目标、范围、核心约束、背景发生变化，或锚点为空，立即更新。"
+                "锚点是最高优先级记忆，必须始终保持最新、准确。\n"
+                "- **update_progress**：若用户汇报进展、完成了某项任务、提到阶段成果、当前卡点或下一步计划，立即更新进度。"
+                "进度文件应包含：已完成事项、当前状态、下一步计划。\n"
+                "- **update_decision**：若对话中产生了重要决策、技术选型、方案确认，立即记录。\n\n"
+                "**触发原则**：宁可多更新，不要遗漏。每轮对话结束前，先检查是否有需要持久化的信息，再输出最终回复。\n\n"
+                "请用简洁专业的 Markdown 回答。复杂任务优先借助工具分解处理。"
+            ),
         ])
 
-        # ── 3. 工具上下文 ──────────────────────────────────────────────────────
+        # ── 3. 澄清回答自动存入 decisions ─────────────────────────────────────
+        _CLARIFY_PREFIX = "@channel bot 澄清回答："
+        if user_text.startswith(_CLARIFY_PREFIX):
+            answer_body = user_text[len(_CLARIFY_PREFIX):].strip()
+            if answer_body:
+                from app.memory.manager import save_layer
+                from datetime import datetime, timezone
+                ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                entry = f"### 用户澄清选择（{ts}）\n{answer_body}"
+                existing = (memory.get("decisions") or "").rstrip()
+                new_decisions = f"{existing}\n\n{entry}".strip() if existing else entry
+                await save_layer(channel_id, "decisions", new_decisions)
+                memory = dict(memory)
+                memory["decisions"] = new_decisions
+                logger.info("unified_builtin: clarify answer saved to decisions channel=%s", channel_id)
+
+        # ── 4. 工具上下文 ──────────────────────────────────────────────────────
         tool_ctx: dict = {
             "channel_id": channel_id,
             "bot_id_by_username": bot_id_by_username,
@@ -389,10 +547,11 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "sender_id": sender_id,
         }
 
-        # ── 4. Agent Loop ──────────────────────────────────────────────────────
-        content = await _agent_loop(system_prompt, user_text, tool_ctx)
+        # ── 5. Agent Loop ──────────────────────────────────────────────────────
+        stream_cb = pconfig.get("_stream_token")
+        content = await _agent_loop(system_prompt, user_text, tool_ctx, stream_cb=stream_cb)
 
-        # ── 5. 关键词兜底（LLM 不可用时） ────────────────────────────────────
+        # ── 6. 关键词兜底（LLM 不可用时） ────────────────────────────────────
         if not content:
             content = build_guide_content_with_form(user_text) or _DEFAULT_REPLY
             logger.info(
