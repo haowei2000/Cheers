@@ -90,7 +90,7 @@ async def run_orchestrator(
                     "no mentioned bots in channel: channel_id=%s mentioned=%s channel_bots=%s (Bot 可能未加入该频道，请在「添加成员」或聊天内 @ 邀请)",
                     channel_id, mentioned, channel_bot_usernames,
                 )
-            return []
+            return [], set()
 
     from app.memory.manager import load as memory_load
     memory_context = await memory_load(channel_id)
@@ -121,6 +121,45 @@ async def run_orchestrator(
         already_broadcast.add(msg.msg_id)
         created.append(msg)
 
+    async def _pre_create_bot_msg(bot_id: str, task_id: str) -> "Message":
+        """Pre-create an empty bot message and broadcast it to start streaming."""
+        from app.chat_core.schemas import MessageInResponse
+        from app.chat_core.ws_manager import ws_manager
+        msg = Message(
+            channel_id=channel_id,
+            sender_id=bot_id,
+            sender_type="bot",
+            content="",
+            task_id=task_id,
+            in_reply_to_msg_id=trigger_msg.msg_id,
+        )
+        session.add(msg)
+        await session.flush()
+        bd = MessageInResponse.model_validate(msg).model_dump()
+        if msg.created_at:
+            bd["created_at"] = msg.created_at.isoformat()
+        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": bd})
+        already_broadcast.add(msg.msg_id)
+        return msg
+
+    def _make_stream_token_cb(msg_id: str):
+        from app.chat_core.ws_manager import ws_manager as _ws
+        async def _cb(delta: str) -> None:
+            await _ws.broadcast_to_channel(
+                channel_id,
+                {"type": "message_stream", "data": {"msg_id": msg_id, "delta": delta}},
+            )
+        return _cb
+
+    async def _finalize_bot_msg(msg: "Message", content: str) -> None:
+        from app.chat_core.ws_manager import ws_manager
+        msg.content = content
+        await session.flush()
+        await ws_manager.broadcast_to_channel(
+            channel_id,
+            {"type": "message_done", "data": {"msg_id": msg.msg_id, "content": content}},
+        )
+
     for username in target_usernames:
         bot_id = bot_id_by_username[username]
         if username == COORDINATOR_USERNAME and direct_answer_mode:
@@ -128,6 +167,7 @@ async def run_orchestrator(
             adapter = await adapter_factory(bot_id)
             task_id = root_task_id
             other_bots = [u for u in channel_bot_usernames if u != COORDINATOR_USERNAME]
+            orch_msg = await _pre_create_bot_msg(bot_id, task_id)
             payload = AgentPayload(
                 task_id=task_id,
                 channel_id=channel_id,
@@ -144,28 +184,19 @@ async def run_orchestrator(
                     "bot_id_by_username": {k: v for k, v in bot_id_by_username.items() if k != COORDINATOR_USERNAME},
                     "_adapter_factory": adapter_factory,
                     "_create_and_broadcast": _create_msg_and_broadcast,
+                    "_stream_token": _make_stream_token_cb(orch_msg.msg_id),
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
             content = resp.content if resp.success else (resp.error_message or "处理出错")
-            orch_msg = Message(
-                channel_id=channel_id,
-                sender_id=bot_id,
-                sender_type="bot",
-                content=content,
-                task_id=task_id,
-                in_reply_to_msg_id=trigger_msg.msg_id,
-            )
-            session.add(orch_msg)
-            await session.flush()
-            task_record = AgentTask(
+            await _finalize_bot_msg(orch_msg, content)
+            session.add(AgentTask(
                 task_id=str(uuid.uuid4()),
                 channel_id=channel_id,
                 bot_id=bot_id,
                 trigger_msg_id=trigger_msg.msg_id,
                 response_msg_id=orch_msg.msg_id,
-            )
-            session.add(task_record)
+            ))
             await session.flush()
             created.append(orch_msg)
             # 自动接手：解析「建议 @xxx」，若开启则触发被建议的 Bot
@@ -179,10 +210,9 @@ async def run_orchestrator(
                         if broadcast_processing:
                             await broadcast_processing(channel_id, sug_bot_id, sug_username)
                         sug_adapter = await adapter_factory(sug_bot_id)
-                        # 建议接力的 Bot 调用仍归属于同一顶层任务线程
                         sug_task_id = root_task_id
-                        # 应用被建议 Bot 的提示词模板
                         sug_templated_text = _apply_prompt_template(sug_template, trigger_msg.content)
+                        sug_msg = await _pre_create_bot_msg(sug_bot_id, sug_task_id)
                         sug_payload = AgentPayload(
                             task_id=sug_task_id,
                             channel_id=channel_id,
@@ -193,19 +223,13 @@ async def run_orchestrator(
                             },
                             memory_context=memory_context,
                             attachments=[],
+                            process_config={
+                                "_stream_token": _make_stream_token_cb(sug_msg.msg_id),
+                            },
                         )
                         sug_resp: AgentResponse = await sug_adapter.execute(sug_payload)
                         sug_content = sug_resp.content if sug_resp.success else (sug_resp.error_message or "处理出错")
-                        sug_msg = Message(
-                            channel_id=channel_id,
-                            sender_id=sug_bot_id,
-                            sender_type="bot",
-                            content=sug_content,
-                            task_id=sug_task_id,
-                            in_reply_to_msg_id=trigger_msg.msg_id,
-                        )
-                        session.add(sug_msg)
-                        await session.flush()
+                        await _finalize_bot_msg(sug_msg, sug_content)
                         session.add(AgentTask(
                             task_id=str(uuid.uuid4()),
                             channel_id=channel_id,
@@ -221,12 +245,11 @@ async def run_orchestrator(
         if broadcast_processing:
             await broadcast_processing(channel_id, bot_id, username)
         adapter = await adapter_factory(bot_id)
-        # 普通显式 @Bot 串行场景：同一 run_orchestrator 内共用 root_task_id 作为线程 id
         task_id = root_task_id
-        # 应用该 Bot 的提示词模板
         bot_template = bot_template_by_username.get(username)
         templated_text = _apply_prompt_template(bot_template, trigger_msg.content)
         other_bots = [u for u in channel_bot_usernames if u != username]
+        bot_msg = await _pre_create_bot_msg(bot_id, task_id)
         payload = AgentPayload(
             task_id=task_id,
             channel_id=channel_id,
@@ -243,31 +266,22 @@ async def run_orchestrator(
                 "bot_id_by_username": {k: v for k, v in bot_id_by_username.items() if k != username},
                 "_adapter_factory": adapter_factory,
                 "_create_and_broadcast": _create_msg_and_broadcast,
+                "_stream_token": _make_stream_token_cb(bot_msg.msg_id),
             },
         )
-        logger.info("orchestrator: calling bot bot_id=%s username=%s endpoint=...", bot_id, username)
+        logger.info("orchestrator: calling bot bot_id=%s username=%s", bot_id, username)
         resp: AgentResponse = await adapter.execute(payload)
         if not resp.success:
             logger.warning("orchestrator: bot %s failed: %s", username, resp.error_message or "unknown")
         content = resp.content if resp.success else (resp.error_message or "处理出错")
-        bot_msg = Message(
-            channel_id=channel_id,
-            sender_id=bot_id,
-            sender_type="bot",
-            content=content,
-            task_id=task_id,
-            in_reply_to_msg_id=trigger_msg.msg_id,
-        )
-        session.add(bot_msg)
-        await session.flush()
-        task_record = AgentTask(
+        await _finalize_bot_msg(bot_msg, content)
+        session.add(AgentTask(
             task_id=str(uuid.uuid4()),
             channel_id=channel_id,
             bot_id=bot_id,
             trigger_msg_id=trigger_msg.msg_id,
             response_msg_id=bot_msg.msg_id,
-        )
-        session.add(task_record)
+        ))
         await session.flush()
         created.append(bot_msg)
     return created, already_broadcast

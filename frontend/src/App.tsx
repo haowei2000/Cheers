@@ -17,11 +17,12 @@ type Message = {
   sender_type: string;
   content: string;
   created_at?: string;
+  _streaming?: boolean;
 };
 type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
 
-const LAYERS = ["ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "MEMBERS"] as const;
+const LAYERS = ["ANCHOR", "PROGRESS", "DECISIONS", "FILES_INDEX", "RECENT", "MEMBERS"] as const;
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
 const GUIDE_CLARIFY_BLOCK = /```guide-clarify\n([\s\S]*?)```/;
@@ -235,6 +236,7 @@ function ThinkFold({ content }: { content: string }) {
 // ── Memory Panel (right sidebar) ─────────────────────────────────────────────
 const LAYER_META: Record<string, { label: string; desc: string; color: string; icon: string; readonly?: boolean }> = {
   ANCHOR:      { label: "项目锚点",   desc: "核心目标、约束、背景",       color: "blue",   icon: "⚓" },
+  PROGRESS:    { label: "项目进度",   desc: "当前进度、已完成、下一步",    color: "teal",   icon: "📈" },
   DECISIONS:   { label: "决策记录",   desc: "重要决策及原因",             color: "purple", icon: "📋" },
   FILES_INDEX: { label: "资料索引",   desc: "上传的文件与参考资料",        color: "amber",  icon: "🗂️" },
   RECENT:      { label: "近期动态",   desc: "最新进展、待办、结论",        color: "green",  icon: "🕐" },
@@ -1109,14 +1111,37 @@ export default function App() {
           setMessages((prev) => {
             const id = msg.data.msg_id;
             if (id && prev.some((m) => m.msg_id === id)) return prev;
-            return [...prev, msg.data];
+            // Mark bot messages as streaming until message_done arrives
+            const entry = msg.data.sender_type === "bot"
+              ? { ...msg.data, _streaming: true }
+              : msg.data;
+            return [...prev, entry];
           });
-          // 检测到记忆写入通知时刷新记忆面板数据
           if (
             msg.data.sender_type === "bot" &&
             typeof msg.data.content === "string" &&
             msg.data.content.includes("已更新记忆层")
           ) {
+            fetch(`${API}/channels/${selectedId}/context`)
+              .then((r) => r.json())
+              .then((d) => d.data && setContextData(d.data))
+              .catch(() => {});
+          }
+        } else if (msg.type === "message_stream" && msg.data) {
+          const { msg_id, delta } = msg.data;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.msg_id === msg_id ? { ...m, content: m.content + delta, _streaming: true } : m
+            )
+          );
+        } else if (msg.type === "message_done" && msg.data) {
+          const { msg_id, content } = msg.data;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.msg_id === msg_id ? { ...m, content, _streaming: false } : m
+            )
+          );
+          if (typeof content === "string" && content.includes("已更新记忆层")) {
             fetch(`${API}/channels/${selectedId}/context`)
               .then((r) => r.json())
               .then((d) => d.data && setContextData(d.data))
@@ -2207,7 +2232,12 @@ export default function App() {
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
                           <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
-                            {renderWithThinkFolding(text, `${m.msg_id}-`)}
+                            {m._streaming && !text
+                              ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                              : renderWithThinkFolding(text, `${m.msg_id}-`)}
+                            {m._streaming && !!text && (
+                              <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
+                            )}
                           </div>
                           {form && selectedId && m.sender_type === "bot" && (
                             <GuideFormBlock
