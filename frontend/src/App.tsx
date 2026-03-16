@@ -18,6 +18,7 @@ type Message = {
   content: string;
   created_at?: string;
   _streaming?: boolean;
+  in_reply_to_msg_id?: string | null;
 };
 type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
@@ -923,6 +924,7 @@ export default function App() {
   const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<string | null>(null);
   const [autoAssist, setAutoAssist] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
   type ChannelBot = { member_id: string; username: string; avatar_url?: string; display_name?: string };
   type ChannelUser = { member_id: string; username: string; avatar_url?: string; display_name?: string };
@@ -1092,6 +1094,7 @@ export default function App() {
       setWaitingForBotReply(false);
       setProcessingBots({});
       setAutoAssist(false);
+      setReplyingTo(null);
       return;
     }
     const ch = channels.find((c) => c.channel_id === selectedId);
@@ -1302,15 +1305,17 @@ export default function App() {
 
   const send = () => {
     if (!selectedId || !input.trim()) return;
-    const body = {
+    const body: Record<string, unknown> = {
       content: input.trim(),
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: pendingFileIds,
     };
+    if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
     setInput("");
     setPendingFileIds([]);
     setPendingFileNames([]);
+    setReplyingTo(null);
     fetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2267,16 +2272,57 @@ export default function App() {
                       ? new Date(m.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
                       : "";
 
+                    // Reference quote block (shared between own & others)
+                    const refMsg = m.in_reply_to_msg_id ? messages.find((x) => x.msg_id === m.in_reply_to_msg_id) : null;
+                    const refBlock = refMsg ? (() => {
+                      const refBot = refMsg.sender_type === "bot" ? channelBots.find((b) => b.member_id === refMsg.sender_id) : null;
+                      const refLabel = refMsg.sender_type === "bot" ? (refBot?.display_name || refBot?.username || "Bot") : "我";
+                      const refText = (parseGuidePayload(refMsg.content).text || refMsg.content).replace(/\n/g, " ").slice(0, 60);
+                      return (
+                        <div
+                          className={`flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg mb-1 border-l-2 cursor-pointer max-w-full ${isOwn ? "bg-white/20 border-white/60" : "bg-gray-200/70 border-gray-400/60"}`}
+                          onClick={() => {
+                            const el = document.getElementById(`msg-${refMsg.msg_id}`);
+                            el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            el?.classList.add("ring-2", "ring-[#1264A3]/40");
+                            setTimeout(() => el?.classList.remove("ring-2", "ring-[#1264A3]/40"), 1500);
+                          }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 mt-0.5 flex-shrink-0 ${isOwn ? "text-white/70" : "text-gray-500"}`}>
+                            <path fillRule="evenodd" d="M8.914 6.025a.75.75 0 0 1 1.06 0 3.5 3.5 0 0 1 0 4.95l-2 2a3.5 3.5 0 0 1-5.396-4.402.75.75 0 0 1 1.251.827 2 2 0 0 0 3.085 2.514l2-2a2 2 0 0 0 0-2.828.75.75 0 0 1 0-1.06Zm-3.828 1.95a.75.75 0 0 1-1.06 0 3.5 3.5 0 0 1 0-4.95l2-2a3.5 3.5 0 0 1 5.396 4.402.75.75 0 0 1-1.251-.827 2 2 0 0 0-3.085-2.514l-2 2a2 2 0 0 0 0 2.828.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                          </svg>
+                          <div className="min-w-0">
+                            <span className={`text-[11px] font-semibold ${isOwn ? "text-white/80" : "text-gray-600"}`}>{refLabel}</span>
+                            <span className={`text-[11px] ml-1.5 truncate block ${isOwn ? "text-white/60" : "text-gray-500"}`}>{refText}{(parseGuidePayload(refMsg.content).text || refMsg.content).length > 60 ? "…" : ""}</span>
+                          </div>
+                        </div>
+                      );
+                    })() : null;
+
                     if (isOwn) {
                       return (
-                        <div key={m.msg_id} className="flex flex-row-reverse items-end gap-2.5 px-4 py-1">
+                        <div id={`msg-${m.msg_id}`} key={m.msg_id} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
                           <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">
                             我
                           </div>
-                          <div className="flex flex-col items-end max-w-[72%]">
-                            <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
-                            <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                              {text || m.content}
+                          <div className="flex items-end gap-1.5">
+                            {/* Reply button — appears on hover, left of bubble */}
+                            <button
+                              type="button"
+                              title="回复"
+                              onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                                <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                            <div className="flex flex-col items-end max-w-[72%]">
+                              <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
+                              <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
+                                {refBlock}
+                                {text || m.content}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -2284,7 +2330,7 @@ export default function App() {
                     }
 
                     return (
-                      <div key={m.msg_id} className="flex items-start gap-2.5 px-4 py-1">
+                      <div id={`msg-${m.msg_id}`} key={m.msg_id} className="group flex items-start gap-2.5 px-4 py-1 transition-all">
                         {/* Avatar */}
                         <div className="flex-shrink-0 mt-0.5">
                           {m.sender_type === "bot" ? (
@@ -2313,6 +2359,7 @@ export default function App() {
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
                           <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
+                            {refBlock}
                             {m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                               : renderWithThinkFolding(text, `${m.msg_id}-`)}
@@ -2340,6 +2387,17 @@ export default function App() {
                             />
                           )}
                         </div>
+                        {/* Reply button — appears on hover, right of bubble */}
+                        <button
+                          type="button"
+                          title="回复"
+                          onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                            <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                          </svg>
+                        </button>
                       </div>
                     );
                   })}
@@ -2371,6 +2429,27 @@ export default function App() {
 
             {/* Input area */}
             <div className="flex-shrink-0 px-4 pb-4 pt-2">
+              {/* Reply bar */}
+              {replyingTo && (() => {
+                const refBot = replyingTo.sender_type === "bot" ? channelBots.find((b) => b.member_id === replyingTo.sender_id) : null;
+                const refLabel = replyingTo.sender_type === "bot" ? (refBot?.display_name || refBot?.username || "Bot") : "我";
+                const refPreview = (parseGuidePayload(replyingTo.content).text || replyingTo.content).replace(/\n/g, " ").slice(0, 80);
+                return (
+                  <div className="flex items-center gap-2 px-3 py-2 mb-1 bg-gray-50 border border-gray-200 rounded-xl text-[13px]">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-[#1264A3] flex-shrink-0">
+                      <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-gray-500">回复</span>
+                    <span className="font-semibold text-gray-700">{refLabel}</span>
+                    <span className="text-gray-400 truncate flex-1">{refPreview}{(parseGuidePayload(replyingTo.content).text || replyingTo.content).length > 80 ? "…" : ""}</span>
+                    <button type="button" onClick={() => setReplyingTo(null)} className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                        <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })()}
               {pendingFileNames.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {pendingFileNames.map((name, i) => (
