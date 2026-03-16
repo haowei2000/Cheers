@@ -894,6 +894,7 @@ export default function App() {
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
   const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>({});
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryPreview, setSummaryPreview] = useState("");
   const [qaLlmReady, setQaLlmReady] = useState(false);
@@ -1357,19 +1358,6 @@ export default function App() {
   });
   const selectedPairs = blockPairsForExport.filter((p) => selectedQaIds[p.question.msg_id]);
 
-  // 便于按问题 msg_id 定位对应回答和跳过回答气泡
-  const qaPairByQuestionId = new Map(blockPairsForExport.map((p) => [p.question.msg_id, p]));
-  const qaAnswerIds = new Set(blockPairsForExport.map((p) => p.answer.msg_id));
-
-  // 按“问题卡片”折叠/展开回答：key 为 question.msg_id
-  const [expandedQuestionIds, setExpandedQuestionIds] = useState<Record<string, boolean>>({});
-
-  const toggleQa = (msgId: string) => {
-    setSelectedQaIds((prev) => ({ ...prev, [msgId]: !prev[msgId] }));
-  };
-
-  const clearQaSelection = () => setSelectedQaIds({});
-
   const exportMdFilename = () => {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const ch = (selectedChannel?.name || "channel").replace(/\s+/g, "_");
@@ -1378,17 +1366,11 @@ export default function App() {
 
   const downloadQaMarkdown = () => {
     if (selectedPairs.length === 0) {
-      toast.error("请先勾选至少一组问答");
+      toast.error("请勾选至少一组问答");
       return;
     }
     const md = buildQaMarkdown(selectedChannel?.name || "频道", selectedPairs);
     downloadText(exportMdFilename(), md);
-  };
-
-  const summaryMdFilename = () => {
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const ch = (selectedChannel?.name || "channel").replace(/\s+/g, "_");
-    return `qa-summary-${ch}-${stamp}.md`;
   };
 
   const refreshQaLlmStatus = async () => {
@@ -1419,29 +1401,15 @@ export default function App() {
     }
   };
 
-  // 每次进入频道或问答列表变化时：默认展开最新 5 条问答（按问题卡片），其余问答折叠
-  useEffect(() => {
-    if (!selectedId || blockPairsForExport.length === 0) {
-      setExpandedQuestionIds({});
-      return;
-    }
-    const latest = blockPairsForExport.slice(-5);
-    const next: Record<string, boolean> = {};
-    latest.forEach((p) => {
-      next[p.question.msg_id] = true;
-    });
-    setExpandedQuestionIds(next);
-  }, [selectedId, blockPairsForExport.length]);
-
   // 进入频道或收到新消息时，聊天区域滚动到最新消息
   useEffect(() => {
     if (!messagesContainerRef.current) return;
     messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
   }, [selectedId, messages.length]);
 
-  const generateQaSummary = async () => {
-    if (selectedPairs.length === 0) {
-      toast.error("请先勾选至少一组问答");
+  const generateQaSummary = async (pairsToSummarize: QaPair[]) => {
+    if (pairsToSummarize.length === 0) {
+      toast.error("请勾选至少一组问答");
       return;
     }
     setSummaryBusy(true);
@@ -1452,7 +1420,7 @@ export default function App() {
         return;
       }
 
-      const pairs = selectedPairs.map((p) => ({
+      const pairs = pairsToSummarize.map((p) => ({
         question: stripThinkTags(parseGuidePayload(p.question.content).text || p.question.content),
         answer: stripThinkTags(parseGuidePayload(p.answer.content).text || p.answer.content),
         question_time: formatTs(p.question.created_at),
@@ -1486,14 +1454,6 @@ export default function App() {
     if (!selectedId) return;
     refreshQaLlmStatus();
   }, [selectedId]);
-
-  const downloadSummaryMarkdown = () => {
-    if (!summaryPreview.trim()) {
-      toast.error("请先生成总结");
-      return;
-    }
-    downloadText(summaryMdFilename(), summaryPreview);
-  };
 
   return (
     <>
@@ -1667,18 +1627,38 @@ export default function App() {
           {channels
             .filter((c) => !selectedWorkspaceId || c.workspace_id === selectedWorkspaceId)
             .map((c) => (
-              <li key={c.channel_id}>
+              <li key={c.channel_id} className="group relative">
                 <button
                   type="button"
                   onClick={() => setSelectedId(c.channel_id)}
-                  className={`w-full text-left px-2 py-1 rounded text-sm flex items-center gap-1.5 transition-colors ${
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[13px] flex items-center gap-1.5 transition-colors pr-7 ${
                     selectedId === c.channel_id
-                      ? "bg-[#1264A3] text-white font-medium"
+                      ? "bg-white/20 text-white font-semibold"
                       : "text-[#C9BDD0] hover:bg-white/10 hover:text-white"
                   }`}
                 >
-                  <span className="text-current opacity-70">#</span>
+                  <span className="text-current opacity-60 text-base leading-none">#</span>
                   <span className="truncate">{c.name}</span>
+                </button>
+                <button
+                  type="button"
+                  title="删除频道"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!confirm(`确定删除频道「${c.name}」？此操作不可恢复。`)) return;
+                    fetch(`${API}/channels/${c.channel_id}`, { method: "DELETE" })
+                      .then((r) => {
+                        if (!r.ok) throw new Error("删除失败");
+                        setChannels((prev) => prev.filter((x) => x.channel_id !== c.channel_id));
+                        if (selectedId === c.channel_id) setSelectedId(null);
+                      })
+                      .catch(() => toast.error("删除频道失败"));
+                  }}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/20 text-[#C9BDD0] hover:text-red-300"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                    <path fillRule="evenodd" d="M5 3.25V4H2.75a.75.75 0 0 0 0 1.5h.3l.815 8.15A1.5 1.5 0 0 0 5.357 15h5.285a1.5 1.5 0 0 0 1.493-1.35l.815-8.15h.3a.75.75 0 0 0 0-1.5H11v-.75A2.25 2.25 0 0 0 8.75 1h-1.5A2.25 2.25 0 0 0 5 3.25Zm2.25-.75a.75.75 0 0 0-.75.75V4h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6.05 6a.75.75 0 0 1 .787.713l.275 5.5a.75.75 0 0 1-1.498.075l-.275-5.5A.75.75 0 0 1 6.05 6Zm3.9 0a.75.75 0 0 1 .712.787l-.275 5.5a.75.75 0 0 1-1.498-.075l.275-5.5a.75.75 0 0 1 .786-.711Z" clipRule="evenodd" />
+                  </svg>
                 </button>
               </li>
             ))}
@@ -2005,86 +1985,141 @@ export default function App() {
         />
       )}
 
+      {/* Summary Modal */}
+      {summaryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSummaryModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-[680px] max-w-[95vw] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900 text-base">生成问答总结</h2>
+              <button type="button" onClick={() => setSummaryModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                </svg>
+              </button>
+            </div>
+
+            {/* QA pair list */}
+            <div className="flex-1 overflow-auto px-5 py-3 space-y-2 min-h-0">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-500">{selectedPairs.length} / {blockPairsForExport.length} 组已选</span>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setSelectedQaIds(Object.fromEntries(blockPairsForExport.map((p) => [p.question.msg_id, true])))}
+                    className="text-xs text-[#1264A3] hover:underline">全选</button>
+                  <button type="button" onClick={() => setSelectedQaIds({})}
+                    className="text-xs text-gray-400 hover:underline">取消全选</button>
+                </div>
+              </div>
+              {blockPairsForExport.map((pair) => {
+                const checked = !!selectedQaIds[pair.question.msg_id];
+                const qText = stripThinkTags(parseGuidePayload(pair.question.content).text || pair.question.content);
+                const aText = stripThinkTags(parseGuidePayload(pair.answer.content).text || pair.answer.content);
+                const senderBot = channelBots.find((b) => b.member_id === pair.answer.sender_id);
+                const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
+                return (
+                  <label key={pair.question.msg_id}
+                    className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-colors select-none ${checked ? "bg-blue-50 border-[#1264A3]/30" : "bg-gray-50 border-gray-200 hover:bg-gray-100"}`}>
+                    <input type="checkbox" checked={checked}
+                      onChange={() => setSelectedQaIds((prev) => ({ ...prev, [pair.question.msg_id]: !prev[pair.question.msg_id] }))}
+                      className="mt-0.5 flex-shrink-0 accent-[#1264A3]" />
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-medium flex-shrink-0">问</span>
+                        <span className="text-[13px] text-gray-800 line-clamp-2">{qText}</span>
+                      </div>
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#2EB67D]/15 text-[#2EB67D] font-medium flex-shrink-0">{pair.answer.sender_type === "bot" ? botLabel : "答"}</span>
+                        <span className="text-[13px] text-gray-500 line-clamp-2">{aText || "(无回复)"}</span>
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* Summary result */}
+            {summaryPreview && (
+              <div className="mx-5 mb-3 border border-gray-200 rounded-xl bg-gray-50 p-3 max-h-48 overflow-auto">
+                <div className="text-xs font-medium text-gray-500 mb-1.5">总结结果</div>
+                <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{summaryPreview}</div>
+              </div>
+            )}
+
+            {/* Modal footer */}
+            <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 gap-3">
+              <div className="text-xs text-gray-400" title={qaLlmHint}>{qaLlmReady ? "✓ LLM 已就绪" : "⚠ LLM 未配置"}</div>
+              <div className="flex gap-2">
+                {summaryPreview && (
+                  <button type="button" onClick={downloadQaMarkdown} disabled={selectedPairs.length === 0}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:border-gray-400 disabled:opacity-40 transition-colors">
+                    导出 MD
+                  </button>
+                )}
+                <button type="button" onClick={() => generateQaSummary(selectedPairs)} disabled={selectedPairs.length === 0 || summaryBusy || !qaLlmReady}
+                  className="px-4 py-1.5 rounded-lg bg-[#1264A3] text-white text-sm font-medium hover:bg-[#0d4f82] disabled:opacity-40 transition-colors">
+                  {summaryBusy ? "生成中…" : "生成总结"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 flex min-w-0">
       <main className="flex-1 flex flex-col min-w-0 bg-white">
         {selectedId ? (
           <>
-            <div className="px-4 pt-3 pb-2 border-b bg-white flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-500">已识别问答 {blockPairsForExport.length} 组，已勾选 {selectedPairs.length} 组</span>
-              <button
-                type="button"
-                onClick={downloadQaMarkdown}
-                disabled={selectedPairs.length === 0}
-                className="px-2.5 py-1 text-xs rounded-md border border-gray-300 text-gray-600 disabled:text-gray-300 disabled:border-gray-200 hover:bg-white transition-colors"
-              >
-                导出 MD
-              </button>
-              <button
-                type="button"
-                onClick={generateQaSummary}
-                disabled={selectedPairs.length === 0 || summaryBusy || !qaLlmReady}
-                title={qaLlmHint}
-                className="px-2.5 py-1 text-xs rounded-md bg-[#1264A3] text-white disabled:bg-gray-300 hover:bg-[#0d5296] transition-colors"
-              >
-                {summaryBusy ? "总结中..." : "LLM 总结"}
-              </button>
-              <button
-                type="button"
-                onClick={downloadSummaryMarkdown}
-                disabled={!summaryPreview.trim()}
-                className="px-2.5 py-1 text-xs rounded-md border border-gray-300 text-gray-600 disabled:text-gray-300 disabled:border-gray-200 hover:bg-white transition-colors"
-              >
-                下载总结
-              </button>
-              <button
-                type="button"
-                onClick={clearQaSelection}
-                className="px-2.5 py-1 text-xs rounded-md border border-gray-300 text-gray-600 hover:bg-white transition-colors"
-              >
-                清空勾选
-              </button>
-              {!qaLlmReady && (
-                <span className="text-xs text-amber-600">{qaLlmHint}</span>
+            {/* Channel header */}
+            <div className="px-5 py-3 border-b border-gray-100 bg-white flex items-center gap-3">
+              <span className="text-gray-400 font-medium text-base select-none">#</span>
+              <h1 className="font-semibold text-gray-900 text-base truncate flex-1">{selectedChannel?.name || ""}</h1>
+              {blockPairsForExport.length > 0 && (
+                <button
+                  type="button"
+                  title="生成问答总结"
+                  onClick={() => {
+                    setSelectedQaIds(Object.fromEntries(blockPairsForExport.map((p) => [p.question.msg_id, true])));
+                    setSummaryPreview("");
+                    setSummaryModalOpen(true);
+                  }}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                >
+                  {/* document-text / notes icon */}
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M4 4a2 2 0 0 1 2-2h4.586A2 2 0 0 1 12 2.586L15.414 6A2 2 0 0 1 16 7.414V16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4Zm2 6a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 6 10Zm.75 2.25a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" clipRule="evenodd" />
+                  </svg>
+                </button>
               )}
               <button
                 type="button"
                 onClick={() => setMemoryPanelOpen((o) => !o)}
-                className={`ml-auto px-2.5 py-1 text-xs rounded-md border transition-colors flex items-center gap-1 ${
-                  memoryPanelOpen
-                    ? "bg-[#1264A3] text-white border-[#1264A3]"
-                    : "border-[#1264A3] text-[#1264A3] hover:bg-[#1264A3]/10"
+                title="频道记忆"
+                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
+                  memoryPanelOpen ? "bg-[#1264A3] text-white" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                 }`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                  <path d="M10.75 16.82A7.462 7.462 0 0 1 10 17c-.383 0-.759-.037-1.125-.108l.002-.034a1.75 1.75 0 0 0 2.248 0l.002.034ZM2.5 10a7.5 7.5 0 1 1 15 0 7.5 7.5 0 0 1-15 0ZM10 6.75a.75.75 0 0 1 .75.75v1.543l1.244.829a.75.75 0 0 1-.831 1.246l-1.5-1a.75.75 0 0 1-.163-.244V7.5A.75.75 0 0 1 10 6.75Z" />
+                {/* brain icon */}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                  <path d="M13 3a1 1 0 0 1 1-1 6 6 0 0 1 6 6c0 1.08-.29 2.09-.8 2.96A4 4 0 0 1 20 14a4 4 0 0 1-2.22 3.57c.14.43.22.89.22 1.43a1 1 0 1 1-2 0c0-.5-.1-.95-.27-1.37A4 4 0 0 1 14 14v-1h-1v8a1 1 0 1 1-2 0v-8h-1v1a4 4 0 0 1-1.73 3.63C8.1 18.05 8 18.5 8 19a1 1 0 1 1-2 0c0-.54.08-1 .22-1.43A4 4 0 0 1 4 14a4 4 0 0 1 .8-2.96A6 6 0 0 1 4 8a6 6 0 0 1 6-6 1 1 0 1 1 0 2 4 4 0 0 0-4 4c0 .78.22 1.5.6 2.12A4 4 0 0 1 8 14v-1H7a1 1 0 1 1 0-2h1v-1a2 2 0 1 1 4 0v1h1a1 1 0 1 1 0 2h-1v1a4 4 0 0 1 .4-1.88A4 4 0 0 0 16 8a4 4 0 0 0-3-3.87V10a1 1 0 1 1-2 0V3Z" />
                 </svg>
-                记忆
               </button>
               <button
                 type="button"
                 onClick={() => setManageMembersOpen(true)}
-                className="px-2.5 py-1 text-xs rounded-md border border-[#1264A3] text-[#1264A3] hover:bg-[#1264A3]/10 transition-colors flex items-center gap-1"
+                title="成员管理"
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                   <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
                 </svg>
-                成员
               </button>
             </div>
 
-            {summaryPreview && (
-              <div className="flex-shrink-0 px-4 pt-2 pb-2 border-b border-gray-100 bg-gray-50">
-                <div className="text-xs font-medium text-gray-500 mb-1">总结预览</div>
-                <div className="w-full border border-gray-200 rounded-lg p-2.5 bg-white text-sm whitespace-pre-wrap max-h-60 overflow-auto">
-                  {summaryPreview}
-                </div>
-              </div>
-            )}
-            <div ref={messagesContainerRef} className="flex-1 overflow-auto p-4 space-y-2">
+            <div ref={messagesContainerRef} className="flex-1 overflow-auto">
               {loading ? (
                 <div className="flex items-center justify-center h-full text-gray-400 text-sm">加载中...</div>
               ) : (
-                <div className="py-4">
+                <div className="py-2 px-2">
                   {messages.map((m, idx) => {
                     const prevMsg = messages[idx - 1];
                     const isClarifyReplyBubble =
@@ -2096,153 +2131,6 @@ export default function App() {
                       return <div key={m.msg_id} className="sr-only" aria-hidden="true" />;
                     }
 
-                    // 回答消息在对应的问题卡片中渲染，这里跳过
-                    if (qaAnswerIds.has(m.msg_id)) {
-                      return null;
-                    }
-
-                    // 问题卡片：用户消息且被识别为问答中的“问题”
-                    if (m.sender_type === "user" && qaPairByQuestionId.has(m.msg_id)) {
-                      const pair = qaPairByQuestionId.get(m.msg_id)!;
-                      const questionExpanded = !!expandedQuestionIds[m.msg_id];
-                      const questionSummaryText =
-                        stripThinkTags(parseGuidePayload(m.content).text || m.content) || "（无内容）";
-
-                      // 查找回答消息及其澄清状态
-                      const answer = pair.answer;
-                      const answerIdx = messages.findIndex((mm) => mm.msg_id === answer.msg_id);
-                      const answerNext = answerIdx >= 0 ? messages[answerIdx + 1] : undefined;
-                      const { text: answerText, form: answerForm, clarify: answerClarify } = parseGuidePayload(answer.content);
-                      const answerClarifyAnswered =
-                        answerNext &&
-                        (answerNext.sender_type === "bot" ||
-                          (answerNext.sender_type === "user" && isClarifyReplyUserMessage(answerNext.content)));
-                      const answerClarifyWaiting = pendingClarifyReplyMsgId === answer.msg_id;
-                      const answerClarifyStatus: "form" | "waiting" | "answered" | null =
-                        answerClarify && answer.sender_type === "bot"
-                          ? answerClarifyWaiting
-                            ? "waiting"
-                            : answerClarifyAnswered
-                              ? "answered"
-                              : "form"
-                          : null;
-                      const answerReplyContent =
-                        answerClarifyStatus === "answered" &&
-                        answerNext?.sender_type === "user" &&
-                        isClarifyReplyUserMessage(answerNext.content)
-                          ? answerNext.content
-                          : undefined;
-                      const answerSenderBot =
-                        answer.sender_type === "bot" ? channelBots.find((b) => b.member_id === answer.sender_id) : undefined;
-                      const answerBotLabel = answerSenderBot?.display_name || answerSenderBot?.username || "Bot";
-                      const answerBotInitials = answerBotLabel.slice(0, 2).toUpperCase();
-
-                      return (
-                        <div key={m.msg_id} className="p-2 rounded bg-white border border-gray-200">
-                          <button
-                            type="button"
-                            className="w-full flex items-center gap-2 text-xs text-gray-700 hover:bg-gray-50 rounded px-1 py-0.5"
-                            onClick={() =>
-                              setExpandedQuestionIds((prev) => ({ ...prev, [m.msg_id]: !prev[m.msg_id] }))
-                            }
-                          >
-                            <span
-                              className="inline-block text-gray-400 transition-transform"
-                              style={{ transform: questionExpanded ? "rotate(90deg)" : "none" }}
-                              aria-hidden="true"
-                            >
-                              ▶
-                            </span>
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">
-                              用户
-                            </span>
-                            <span className="text-gray-400">{m.created_at?.slice(0, 19) || ""}</span>
-                            <span className="ml-2 text-gray-800 text-xs" title={questionSummaryText}>
-                              {questionSummaryText}
-                            </span>
-                            {qaPairByQuestionId.has(m.msg_id) && (
-                              <label className="ml-auto inline-flex items-center">
-                                <input
-                                  type="checkbox"
-                                  checked={!!selectedQaIds[m.msg_id]}
-                                  onChange={() => toggleQa(m.msg_id)}
-                                />
-                              </label>
-                            )}
-                          </button>
-
-                          {questionExpanded && (
-                            <div className="mt-2 pl-6">
-                              <div
-                                className={`p-2 rounded ${
-                                  answer.sender_type === "bot"
-                                    ? "bg-green-50 border-l-2 border-green-400"
-                                    : "bg-white"
-                                }`}
-                              >
-                                <span className="text-xs text-gray-500 flex items-center gap-2">
-                                  {answer.sender_type === "bot" ? (
-                                    <span className="inline-flex items-center gap-1.5">
-                                      {answerSenderBot?.avatar_url ? (
-                                        <img
-                                          src={answerSenderBot.avatar_url}
-                                          alt={answerBotLabel}
-                                          className="w-5 h-5 rounded-full object-cover flex-shrink-0"
-                                        />
-                                      ) : (
-                                        <span
-                                          className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-400 text-white text-xs font-bold flex-shrink-0"
-                                          aria-hidden="true"
-                                        >
-                                          {answerBotInitials.slice(0, 1)}
-                                        </span>
-                                      )}
-                                      <span
-                                        className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium"
-                                        aria-label="Bot"
-                                      >
-                                        {answerBotLabel}
-                                      </span>
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">
-                                      {answer.sender_type === "user" ? "用户" : "系统"}
-                                    </span>
-                                  )}
-                                  <span>{answer.created_at?.slice(0, 19) || ""}</span>
-                                </span>
-                                <div className="mt-1 whitespace-pre-wrap">
-                                  {renderWithThinkFolding(answerText || answer.content, `${answer.msg_id}-`)}
-                                </div>
-                                {answerForm && selectedId && answer.sender_type === "bot" && (
-                                  <GuideFormBlock
-                                    msgId={answer.msg_id}
-                                    form={answerForm}
-                                    channelId={selectedId}
-                                    onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                                    onChannelsRefresh={() => refreshChannels(setChannels)}
-                                  />
-                                )}
-                                {answerClarifyStatus !== null && selectedId && (
-                                  <ClarifyInlineBlock
-                                    msgId={answer.msg_id}
-                                    schema={answerClarify!}
-                                    status={answerClarifyStatus}
-                                    replyContent={answerReplyContent}
-                                    onContinue={(answers) =>
-                                      handleClarifyContinue(answer.msg_id, answerClarify!, answers)
-                                    }
-                                    onSkip={() => handleClarifySkip(answer.msg_id)}
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    // 非问答相关消息按原样渲染
                     const { text, form, clarify } = parseGuidePayload(m.content);
                     const nextMsg = messages[idx + 1];
                     const clarifyAnswered =
@@ -2264,90 +2152,118 @@ export default function App() {
                       isClarifyReplyUserMessage(nextMsg.content)
                         ? nextMsg.content
                         : undefined;
-                    const senderBot =
-                      m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
+
+                    const isOwn = m.sender_type === "user" && m.sender_id === currentUserId;
+                    const senderBot = m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
                     const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
                     const botInitials = botLabel.slice(0, 2).toUpperCase();
-                    return (
-                      <div
-                        key={m.msg_id}
-                        className={`p-2 rounded ${
-                          m.sender_type === "bot" ? "bg-green-50 border-l-2 border-green-400" : "bg-white"
-                        }`}
-                      >
-                        <span className="text-xs text-gray-500 flex items-center gap-2">
-                          {m.sender_type === "bot" ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              {senderBot?.avatar_url ? (
-                                <img
-                                  src={senderBot.avatar_url}
-                                  alt={botLabel}
-                                  className="w-5 h-5 rounded-full object-cover flex-shrink-0"
-                                />
-                              ) : (
-                                <span
-                                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-400 text-white text-xs font-bold flex-shrink-0"
-                                  aria-hidden="true"
-                                >
-                                  {botInitials.slice(0, 1)}
-                                </span>
-                              )}
-                              <span
-                                className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium"
-                                aria-label="Bot"
-                              >
-                                {botLabel}
-                              </span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 text-xs">
-                              {m.sender_type === "user" ? "用户" : "系统"}
-                            </span>
-                          )}
-                          {m.created_at?.slice(0, 19) || ""}
-                        </span>
-                        <div className="mt-1 whitespace-pre-wrap">
-                          {renderWithThinkFolding(text, `${m.msg_id}-`)}
+                    const msgTime = m.created_at
+                      ? new Date(m.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+                      : "";
+
+                    if (isOwn) {
+                      return (
+                        <div key={m.msg_id} className="flex flex-row-reverse items-end gap-2.5 px-4 py-1">
+                          <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">
+                            我
+                          </div>
+                          <div className="flex flex-col items-end max-w-[72%]">
+                            <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
+                            <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
+                              {text || m.content}
+                            </div>
+                          </div>
                         </div>
-                        {form && selectedId && m.sender_type === "bot" && (
-                          <GuideFormBlock
-                            msgId={m.msg_id}
-                            form={form}
-                            channelId={selectedId}
-                            onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                            onChannelsRefresh={() => refreshChannels(setChannels)}
-                          />
-                        )}
-                        {clarifyStatus !== null && selectedId && (
-                          <ClarifyInlineBlock
-                            msgId={m.msg_id}
-                            schema={clarify!}
-                            status={clarifyStatus}
-                            replyContent={replyContent}
-                            onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
-                            onSkip={() => handleClarifySkip(m.msg_id)}
-                          />
-                        )}
+                      );
+                    }
+
+                    return (
+                      <div key={m.msg_id} className="flex items-start gap-2.5 px-4 py-1">
+                        {/* Avatar */}
+                        <div className="flex-shrink-0 mt-0.5">
+                          {m.sender_type === "bot" ? (
+                            senderBot?.avatar_url ? (
+                              <img src={senderBot.avatar_url} alt={botLabel} className="w-8 h-8 rounded-xl object-cover" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">
+                                {botInitials}
+                              </div>
+                            )
+                          ) : (
+                            <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">
+                              U
+                            </div>
+                          )}
+                        </div>
+                        {/* Bubble */}
+                        <div className="flex flex-col max-w-[72%]">
+                          <div className="flex items-baseline gap-1.5 mb-1">
+                            <span className="font-semibold text-[13px] text-gray-900 leading-none">
+                              {m.sender_type === "bot" ? botLabel : "用户"}
+                            </span>
+                            {m.sender_type === "bot" && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>
+                            )}
+                            <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
+                          </div>
+                          <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
+                            {renderWithThinkFolding(text, `${m.msg_id}-`)}
+                          </div>
+                          {form && selectedId && m.sender_type === "bot" && (
+                            <GuideFormBlock
+                              msgId={m.msg_id}
+                              form={form}
+                              channelId={selectedId}
+                              onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                              onChannelsRefresh={() => refreshChannels(setChannels)}
+                            />
+                          )}
+                          {clarifyStatus !== null && selectedId && (
+                            <ClarifyInlineBlock
+                              msgId={m.msg_id}
+                              schema={clarify!}
+                              status={clarifyStatus}
+                              replyContent={replyContent}
+                              onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
+                              onSkip={() => handleClarifySkip(m.msg_id)}
+                            />
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                   {waitingForBotReply && <ThinkingIndicator />}
                   {Object.entries(processingBots).map(([botId, username]) => (
-                    <div key={botId} className="px-4 py-2 flex items-center gap-2 text-sm text-gray-500 animate-pulse">
-                      <div className="w-6 h-6 rounded bg-[#2EB67D]/20 flex items-center justify-center text-[#2EB67D] text-xs font-bold">@{username.slice(0,1)}</div>
-                      <span>@{username} 正在处理...</span>
+                    <div key={botId} className="flex gap-3 px-3 py-2">
+                      <div className="w-9 h-9 rounded-xl bg-[#2EB67D]/20 flex items-center justify-center text-[#2EB67D] text-sm font-bold flex-shrink-0">
+                        {username.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <span className="font-semibold text-[14px] text-gray-900">{username}</span>
+                          <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium">Bot</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[13px] text-gray-400">
+                          <span className="inline-flex gap-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "0ms" }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "150ms" }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-300 animate-bounce" style={{ animationDelay: "300ms" }} />
+                          </span>
+                          正在输入...
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Slack-style input area */}
+            {/* Input area */}
             <div className="flex-shrink-0 px-4 pb-4 pt-2">
               {pendingFileNames.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
                   {pendingFileNames.map((name, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#F8F8F8] border border-gray-200 rounded text-xs text-gray-600">
+                    <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 border border-gray-200 rounded-full text-xs text-gray-600">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-gray-400">
                         <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h4.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12A1.5 1.5 0 0 1 13 5.622V12.5A1.5 1.5 0 0 1 11.5 14h-7A1.5 1.5 0 0 1 3 12.5v-9Z" />
                       </svg>
@@ -2357,7 +2273,7 @@ export default function App() {
                 </div>
               )}
               <div className="relative">
-              <div className="border border-gray-300 rounded-lg overflow-hidden focus-within:border-gray-400 focus-within:shadow-sm transition-all">
+              <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm focus-within:border-gray-400 focus-within:shadow-md transition-all">
                 <div>
                   <textarea
                     ref={inputRef}
@@ -2397,19 +2313,19 @@ export default function App() {
                         send();
                       }
                     }}
-                    placeholder={`向 #${selectedChannel?.name || "频道"} 发送消息，输入 @ 选择 Bot…`}
-                    className="w-full px-3 pt-2.5 pb-2 min-h-[44px] max-h-48 resize-none outline-none text-sm text-gray-900 placeholder-gray-400"
+                    placeholder={`发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`}
+                    className="w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] text-gray-900 placeholder-gray-400 bg-transparent"
                     rows={1}
                   />
                 </div>
                 {/* Input toolbar */}
-                <div className="flex items-center justify-between px-2 py-1.5 border-t border-gray-200">
-                  <div className="flex items-center gap-1">
+                <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
+                  <div className="flex items-center gap-0.5">
                     <label
-                      className="w-8 h-8 flex items-center justify-center rounded cursor-pointer text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
                       title="上传文件"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4.5 h-4.5">
                         <path fillRule="evenodd" d="M15.621 4.379a3 3 0 0 0-4.242 0l-7 7a3 3 0 0 0 4.241 4.243h.001l.497-.5a.75.75 0 0 1 1.064 1.057l-.498.501-.002.002a4.5 4.5 0 0 1-6.364-6.364l7-7a4.5 4.5 0 0 1 6.368 6.36l-3.455 3.553A2.625 2.625 0 1 1 9.52 9.52l3.45-3.451a.75.75 0 1 1 1.061 1.06l-3.45 3.451a1.125 1.125 0 0 0 1.587 1.595l3.454-3.553a3 3 0 0 0 0-4.242Z" clipRule="evenodd" />
                       </svg>
                       <input
@@ -2421,13 +2337,13 @@ export default function App() {
                     </label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 hidden sm:inline">Ctrl+Enter 发送</span>
+                    <span className="text-[12px] text-gray-400 hidden sm:inline select-none">Ctrl+Enter</span>
                     <button
                       type="button"
                       onClick={send}
-                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                      className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${
                         input.trim()
-                          ? "bg-[#007a5a] text-white hover:bg-[#006a4d]"
+                          ? "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
                           : "bg-gray-100 text-gray-400 cursor-not-allowed"
                       }`}
                       disabled={!input.trim()}
@@ -2491,13 +2407,13 @@ export default function App() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-            <div className="w-16 h-16 rounded-2xl bg-[#3F0E40]/10 flex items-center justify-center mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-[#3F0E40]/40">
+            <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 text-gray-300">
                 <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0 1 12 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 0 1-3.476.383.39.39 0 0 0-.297.17l-2.755 4.133a.75.75 0 0 1-1.248 0l-2.755-4.133a.39.39 0 0 0-.297-.17 48.9 48.9 0 0 1-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97Z" clipRule="evenodd" />
               </svg>
             </div>
-            <p className="text-gray-500 text-base font-medium">请从左侧选择频道</p>
-            <p className="text-gray-400 text-sm mt-1">选择一个频道开始对话</p>
+            <p className="text-gray-700 text-[15px] font-semibold">选择一个频道</p>
+            <p className="text-gray-400 text-[13px] mt-1.5">从左侧选择频道开始对话，或 <span className="text-[#1264A3]">创建新频道</span></p>
           </div>
         )}
       </main>
