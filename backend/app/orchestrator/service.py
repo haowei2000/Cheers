@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.admin.settings_store import get_orchestrator_settings
-from app.db.models import AgentTask, BotAccount, ChannelMembership, Message
+from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message
 from app.orchestrator.mention import extract_mentions, filter_mentioned_bots
 from app.orchestrator.orchestrator_adapter import extract_suggested_bots
 
@@ -80,7 +80,16 @@ async def run_orchestrator(
     direct_answer_mode = False
     if not target_usernames:
         orch_settings = get_orchestrator_settings()
-        if orch_settings.get("orchestrator_direct_answer") and COORDINATOR_USERNAME in channel_bot_usernames:
+        # Check per-channel auto_assist toggle first, fall back to global setting
+        channel_result = await session.execute(
+            select(Channel).where(Channel.channel_id == channel_id)
+        )
+        channel_obj = channel_result.scalar_one_or_none()
+        channel_auto_assist = bool(channel_obj.auto_assist) if channel_obj else False
+        global_direct_answer = bool(orch_settings.get("orchestrator_direct_answer"))
+        # Only auto-invoke when the message has NO @mentions at all;
+        # if any @mention exists but didn't match a bot, treat it as a user mention and skip.
+        if not mentioned and (channel_auto_assist or global_direct_answer) and COORDINATOR_USERNAME in channel_bot_usernames:
             target_usernames = [COORDINATOR_USERNAME]
             direct_answer_mode = True
             logger.info("orchestrator_direct_answer: routing to coordinator, channel_id=%s", channel_id)

@@ -19,17 +19,20 @@ TS_DEFAULT = sa.text("(datetime('now'))")
 
 
 def upgrade() -> None:
-    op.create_table(
-        "friendships",
-        sa.Column("friendship_id", sa.String(36), nullable=False),
-        sa.Column("user_id", sa.String(36), sa.ForeignKey("users.user_id"), nullable=False),
-        sa.Column("friend_id", sa.String(36), sa.ForeignKey("users.user_id"), nullable=False),
-        sa.Column("status", sa.String(16), nullable=False, server_default="accepted"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=TS_DEFAULT),
-        sa.PrimaryKeyConstraint("friendship_id"),
-    )
-    op.create_index("ix_friendships_user_id", "friendships", ["user_id"])
-    op.create_index("ix_friendships_friend_id", "friendships", ["friend_id"])
+    conn = op.get_bind()
+    existing = sa.inspect(conn).get_table_names()
+    if "friendships" not in existing:
+        op.create_table(
+            "friendships",
+            sa.Column("friendship_id", sa.String(36), nullable=False),
+            sa.Column("user_id", sa.String(36), sa.ForeignKey("users.user_id"), nullable=False),
+            sa.Column("friend_id", sa.String(36), sa.ForeignKey("users.user_id"), nullable=False),
+            sa.Column("status", sa.String(16), nullable=False, server_default="accepted"),
+            sa.Column("created_at", sa.DateTime(timezone=True), server_default=TS_DEFAULT),
+            sa.PrimaryKeyConstraint("friendship_id"),
+        )
+        op.create_index("ix_friendships_user_id", "friendships", ["user_id"])
+        op.create_index("ix_friendships_friend_id", "friendships", ["friend_id"])
 
 
 def downgrade() -> None:

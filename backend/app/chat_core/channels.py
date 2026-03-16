@@ -91,6 +91,28 @@ async def create_channel(
     return {"status": "success", "data": ChannelInResponse.model_validate(ch).model_dump()}
 
 
+class ChannelPatch(BaseModel):
+    """频道属性更新."""
+    auto_assist: bool | None = None
+
+
+@router.patch("/{channel_id}")
+async def patch_channel(
+    channel_id: str,
+    body: ChannelPatch,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """更新频道属性（如 auto_assist 开关）."""
+    result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
+    ch = result.scalar_one_or_none()
+    if not ch:
+        raise HTTPException(status_code=404, detail="channel not found")
+    if body.auto_assist is not None:
+        ch.auto_assist = body.auto_assist
+    await session.flush()
+    return {"status": "success", "data": ChannelInResponse.model_validate(ch).model_dump()}
+
+
 @router.get("/{channel_id}/members")
 async def list_members(
     channel_id: str,

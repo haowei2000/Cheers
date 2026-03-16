@@ -165,6 +165,7 @@ class ChannelInResponse(BaseModel):
     name: str
     type: str
     purpose: str | None = None
+    auto_assist: bool = False
 
 
 class MemberAdd(BaseModel):

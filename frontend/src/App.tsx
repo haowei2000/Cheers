@@ -9,7 +9,7 @@ const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.h
 const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
 const API_DOCS_URL = "/docs";
 
-type Channel = { channel_id: string; name: string; type: string; workspace_id?: string };
+type Channel = { channel_id: string; name: string; type: string; workspace_id?: string; auto_assist?: boolean };
 type Workspace = { workspace_id: string; name: string };
 type Message = {
   msg_id: string;
@@ -902,6 +902,7 @@ export default function App() {
   const [qaLlmReady, setQaLlmReady] = useState(false);
   const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<string | null>(null);
+  const [autoAssist, setAutoAssist] = useState(false);
 
   type ChannelBot = { member_id: string; username: string; avatar_url?: string; display_name?: string };
   type ChannelUser = { member_id: string; username: string; avatar_url?: string; display_name?: string };
@@ -1070,8 +1071,11 @@ export default function App() {
       setSummaryPreview("");
       setWaitingForBotReply(false);
       setProcessingBots({});
+      setAutoAssist(false);
       return;
     }
+    const ch = channels.find((c) => c.channel_id === selectedId);
+    setAutoAssist(ch?.auto_assist ?? false);
     setLoading(true);
     fetch(`${API}/channels/${selectedId}/members?with_username=1`)
       .then((r) => r.json())
@@ -2098,6 +2102,34 @@ export default function App() {
             <div className="px-5 py-3 border-b border-gray-100 bg-white flex items-center gap-3">
               <span className="text-gray-400 font-medium text-base select-none">#</span>
               <h1 className="font-semibold text-gray-900 text-base truncate flex-1">{selectedChannel?.name || ""}</h1>
+              {/* Auto-assist toggle */}
+              <label className="flex items-center gap-1.5 cursor-pointer select-none" title={autoAssist ? "自动调用内置助手（开启中）" : "自动调用内置助手（关闭）"}>
+                <span className="text-xs text-gray-500 whitespace-nowrap">自动助手</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoAssist}
+                  onClick={() => {
+                    const next = !autoAssist;
+                    setAutoAssist(next);
+                    fetch(`${API}/channels/${selectedId}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ auto_assist: next }),
+                    })
+                      .then((r) => r.json())
+                      .then((d) => {
+                        if (d.data) {
+                          setChannels((prev) => prev.map((c) => c.channel_id === selectedId ? { ...c, auto_assist: d.data.auto_assist } : c));
+                        }
+                      })
+                      .catch(() => setAutoAssist(!next));
+                  }}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${autoAssist ? "bg-[#1264A3]" : "bg-gray-200"}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${autoAssist ? "translate-x-[18px]" : "translate-x-[3px]"}`} />
+                </button>
+              </label>
               {blockPairsForExport.length > 0 && (
                 <button
                   type="button"
