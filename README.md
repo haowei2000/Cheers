@@ -64,6 +64,17 @@ docker compose up -d
 - 上传 docx 后 Bot 能读取内容
 - 前端可登录、发消息、看历史
 
+## Roadmap
+
+- [x] 里程碑 1：核心链路（ChatCore + 单 Bot + 文件转 MD + 前端基础版）
+- [x] 里程碑 2：多 Agent 协作（多 Bot 串行 + MemoryManager + 管理后台）
+- [x] 里程碑 3：智能调度（Coordinator + 质量监控看板）
+- [ ] 门户阶段一：门户基础（Orchestrator 内置 + 自动接手 + Bot 澄清）
+- [ ] 门户阶段二：公共平台（公共知识/数据平台 + 访问申请 API）
+- [ ] 门户阶段三：能力发现与编排增强（skills/MCP + A2A 握手）
+
+详细里程碑规划与当前进度见 [ROADMAP.md](ROADMAP.md)。
+
 ## 许可证
 
 见项目仓库说明。
