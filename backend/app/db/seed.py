@@ -15,6 +15,7 @@ from app.db.models import (
     PromptTemplate,
     User,
     Workspace,
+    WorkspaceMembership,
 )
 from app.db.session import async_session_factory
 from app.guide.constants import (
@@ -285,6 +286,22 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
             )
         )
         did_write = True
+
+    # 工作空间成员关系（dev 为 member，admin 为 owner）
+    for uid, ws_role in ((DEV_USER_ID, "member"), (ADMIN_USER_ID, "owner")):
+        r = await session.execute(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == WORKSPACE_ID,
+                WorkspaceMembership.user_id == uid,
+            )
+        )
+        if r.scalar_one_or_none() is None:
+            session.add(WorkspaceMembership(
+                workspace_id=WORKSPACE_ID,
+                user_id=uid,
+                role=ws_role,
+            ))
+            did_write = True
 
     return did_write
 

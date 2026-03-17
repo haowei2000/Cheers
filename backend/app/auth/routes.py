@@ -1,7 +1,7 @@
 """认证模块：用户注册、登录、角色管理."""
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -72,6 +72,50 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """验证密码."""
     return pwd_context.verify(plain_password, hashed_password)
+
+
+# 权限字典（permission -> 拥有该权限的角色列表）
+PERMISSIONS: dict[str, list[str]] = {
+    perm: [role for role, perms in ROLE_PERMISSIONS.items() if perms.get(perm)]
+    for perm in ["user_management", "space_management", "channel_management", "bot_config", "system_settings"]
+}
+
+
+async def get_current_user(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_session),
+) -> User:
+    """从 Authorization: Bearer <user_id> 中验证当前用户."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="未登录")
+    token = authorization.removeprefix("Bearer ").strip()
+    result = await db.execute(select(User).where(User.user_id == token))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="无效 Token")
+    return user
+
+
+async def try_get_current_user(
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_session),
+) -> Optional[User]:
+    """可选认证：有 token 则验证并返回用户，无 token 则返回 None."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    result = await db.execute(select(User).where(User.user_id == token))
+    return result.scalar_one_or_none()
+
+
+def require_permission(permission: str):
+    """返回一个检查调用方是否拥有指定权限的 FastAPI 依赖."""
+    async def _check(current_user: User = Depends(get_current_user)) -> User:
+        allowed = PERMISSIONS.get(permission, [])
+        if current_user.role not in allowed:
+            raise HTTPException(status_code=403, detail="权限不足")
+        return current_user
+    return _check
 
 
 # ============ Schemas ============
@@ -191,6 +235,7 @@ async def list_users(db: AsyncSession = Depends(get_session)):
 async def update_user_role(
     user_id: str,
     req: UpdateRoleRequest,
+    _: User = Depends(require_permission("user_management")),
     db: AsyncSession = Depends(get_session),
 ):
     """更新用户角色（系统管理员专用）."""
@@ -263,7 +308,11 @@ async def list_roles():
 
 
 @router.delete("/users/{user_id}")
-async def delete_user(user_id: str, db: AsyncSession = Depends(get_session)):
+async def delete_user(
+    user_id: str,
+    _: User = Depends(require_permission("user_management")),
+    db: AsyncSession = Depends(get_session),
+):
     """删除用户（系统管理员专用）."""
     result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalar_one_or_none()
@@ -281,7 +330,11 @@ async def delete_user(user_id: str, db: AsyncSession = Depends(get_session)):
 
 
 @router.post("/users/reset-password/{user_id}")
-async def reset_password(user_id: str, db: AsyncSession = Depends(get_session)):
+async def reset_password(
+    user_id: str,
+    _: User = Depends(require_permission("user_management")),
+    db: AsyncSession = Depends(get_session),
+):
     """重置用户密码为 123456（系统管理员专用）."""
     result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalar_one_or_none()

@@ -4,10 +4,11 @@ import logging
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.admin.log_buffer import get_formatted_log_excerpt, get_recent_logs
+from app.auth.routes import require_permission
 from app.admin.settings_store import (
     create_llm_provider,
     delete_llm_provider,
@@ -24,7 +25,11 @@ from app.admin.settings_store import (
 
 logger = logging.getLogger("app.admin")
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_permission("system_settings"))],
+)
 
 
 # ---------- LLM 设置（一层：设定列表 二层：功能绑定） ----------

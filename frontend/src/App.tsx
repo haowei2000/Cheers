@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import FriendsPanel from "./FriendsPanel";
@@ -537,15 +537,17 @@ function downloadText(filename: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-function refreshChannels(setChannels: (c: Channel[]) => void) {
-  fetch(`${API}/channels`)
+function refreshChannels(setChannels: (c: Channel[]) => void, token?: string) {
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  fetch(`${API}/channels`, { headers })
     .then((r) => r.json())
     .then((d) => d.data && setChannels(d.data))
     .catch(console.error);
 }
 
-function refreshWorkspaces(setWorkspaces: (w: Workspace[]) => void) {
-  fetch(`${API}/workspaces`)
+function refreshWorkspaces(setWorkspaces: (w: Workspace[]) => void, token?: string) {
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  fetch(`${API}/workspaces`, { headers })
     .then((r) => r.json())
     .then((d) => d.data && setWorkspaces(d.data))
     .catch(console.error);
@@ -558,13 +560,16 @@ function GuideFormBlock({
   channelId,
   onReply,
   onChannelsRefresh,
+  userToken,
 }: {
   msgId: string;
   form: GuideFormSchema;
   channelId: string;
   onReply: (msg: Message) => void;
   onChannelsRefresh: () => void;
+  userToken?: string;
 }) {
+  const authHeaders: Record<string, string> = userToken ? { Authorization: `Bearer ${userToken}` } : {};
   const [values, setValues] = useState<Record<string, string>>({});
   const [options, setOptions] = useState<Record<string, { value: string; label: string }[]>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -573,7 +578,7 @@ function GuideFormBlock({
   useEffect(() => {
     form.fields.forEach((f) => {
       if (f.type === "select" && f.options_url) {
-        fetch(`${API}${f.options_url}`)
+        fetch(`${API}${f.options_url}`, { headers: authHeaders })
           .then((r) => r.json())
           .then((d) => {
             if (d.data && Array.isArray(d.data)) {
@@ -606,7 +611,7 @@ function GuideFormBlock({
       setError(null);
       fetch(`${API}/channels`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ workspace_id, name, type: "public" }),
       })
         .then((r) => r.json())
@@ -897,6 +902,20 @@ export default function App() {
   // 当前用户ID（用于API调用）
   const currentUserId = currentUser?.user_id || DEV_USER_ID;
 
+  // 带认证头的 fetch 工具
+  const authFetch = useCallback(
+    (url: string, options: RequestInit = {}) =>
+      fetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(currentUser ? { Authorization: `Bearer ${currentUser.user_id}` } : {}),
+          ...(options.headers as Record<string, string> | undefined),
+        },
+      }),
+    [currentUser]
+  );
+
   // 初始化时检查登录状态
   useEffect(() => {
     if (!currentUser) {
@@ -1023,9 +1042,8 @@ export default function App() {
       toast.error("请填写工作空间名称");
       return;
     }
-    fetch(`${API}/workspaces`, {
+    authFetch(`${API}/workspaces`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newWorkspaceName.trim() }),
     })
       .then((r) => r.json())
@@ -1034,7 +1052,7 @@ export default function App() {
           toast.success("工作空间创建成功");
           setNewWorkspaceName("");
           setCreateWsOpen(false);
-          refreshWorkspaces(setWorkspaces);
+          refreshWorkspaces(setWorkspaces, currentUser?.user_id);
           setSelectedWorkspaceId(d.data.workspace_id);
         } else {
           toast.error(d.detail || "创建失败");
@@ -1053,9 +1071,8 @@ export default function App() {
       toast.error("请先选择工作空间");
       return;
     }
-    fetch(`${API}/channels`, {
+    authFetch(`${API}/channels`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         workspace_id: selectedWorkspaceId,
         name: newChannelName.trim(),
@@ -1069,7 +1086,7 @@ export default function App() {
           toast.success("频道创建成功");
           setNewChannelName("");
           setCreateChannelOpen(false);
-          refreshChannels(setChannels);
+          refreshChannels(setChannels, currentUser?.user_id);
           setSelectedId(d.data.channel_id);
         } else {
           toast.error(d.detail || "创建失败");
@@ -1091,13 +1108,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    refreshChannels(setChannels);
-    // 加载工作空间列表
-    fetch(`${API}/workspaces`)
-      .then((r) => r.json())
-      .then((d) => d.data && setWorkspaces(d.data))
-      .catch(console.error);
-  }, []);
+    refreshChannels(setChannels, currentUser?.user_id);
+    refreshWorkspaces(setWorkspaces, currentUser?.user_id);
+  }, [currentUser?.user_id]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1449,7 +1462,7 @@ export default function App() {
 
   const refreshQaLlmStatus = async () => {
     try {
-      const llmRes = await fetch(`${API}/admin/settings/llm`);
+      const llmRes = await authFetch(`${API}/admin/settings/llm`);
       const llmData = await llmRes.json();
       if (!llmRes.ok) {
         setQaLlmReady(false);
@@ -1500,9 +1513,8 @@ export default function App() {
         question_time: formatTs(p.question.created_at),
         answer_time: formatTs(p.answer.created_at),
       }));
-      const res = await fetch(`${API}/admin/qa/summarize`, {
+      const res = await authFetch(`${API}/admin/qa/summarize`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           channel_name: selectedChannel?.name || "频道",
           pairs,
@@ -1683,14 +1695,14 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     if (confirm("确定删除该工作空间？删除后其下的频道也将被删除。")) {
-                      fetch(`${API}/workspaces/${selectedWorkspaceId}`, { method: "DELETE" })
+                      authFetch(`${API}/workspaces/${selectedWorkspaceId}`, { method: "DELETE" })
                         .then((r) => r.json())
                         .then((d) => {
                           if (d.status === "success") {
                             toast.success("工作空间已删除");
                             setSelectedWorkspaceId("");
-                            refreshWorkspaces(setWorkspaces);
-                            refreshChannels(setChannels);
+                            refreshWorkspaces(setWorkspaces, currentUser?.user_id);
+                            refreshChannels(setChannels, currentUser?.user_id);
                           } else {
                             toast.error(d.detail || "删除失败");
                           }
@@ -1768,6 +1780,15 @@ export default function App() {
                 >
                   <span className="text-current opacity-60 text-base leading-none">#</span>
                   <span className="truncate">{c.name}</span>
+                  {!selectedWorkspaceId && c.workspace_id && (() => {
+                    const ws = workspaces.find((w) => w.workspace_id === c.workspace_id);
+                    const abbrev = ws ? ws.name.slice(0, 4) : "";
+                    return abbrev ? (
+                      <span className="ml-1 flex-shrink-0 text-[10px] px-1 py-0 rounded bg-white/10 text-[#C9BDD0] leading-4">
+                        {abbrev}
+                      </span>
+                    ) : null;
+                  })()}
                 </button>
                 <button
                   type="button"
@@ -2099,6 +2120,7 @@ export default function App() {
       {/* 好友管理面板 */}
       <FriendsPanel
         currentUserId={currentUserId}
+        userToken={currentUser?.user_id}
         isOpen={friendsPanelOpen}
         onClose={() => setFriendsPanelOpen(false)}
       />
@@ -2109,6 +2131,7 @@ export default function App() {
           channelId={selectedId}
           channelName={selectedChannel?.name || ""}
           currentUserId={currentUserId}
+          userToken={currentUser?.user_id}
           isOpen={manageMembersOpen}
           onClose={() => setManageMembersOpen(false)}
         />
@@ -2350,7 +2373,8 @@ export default function App() {
                           {form && selectedId && m.sender_type === "bot" && (
                             <GuideFormBlock msgId={m.msg_id} form={form} channelId={selectedId}
                               onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                              onChannelsRefresh={() => refreshChannels(setChannels)} />
+                              onChannelsRefresh={() => refreshChannels(setChannels, currentUser?.user_id)}
+                              userToken={currentUser?.user_id} />
                           )}
                           {clarifyStatus !== null && selectedId && (
                             <ClarifyInlineBlock msgId={m.msg_id} schema={clarify!} status={clarifyStatus}
@@ -2482,7 +2506,8 @@ export default function App() {
                                     {rForm && selectedId && r.sender_type === "bot" && (
                                       <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
                                         onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                                        onChannelsRefresh={() => refreshChannels(setChannels)} />
+                                        onChannelsRefresh={() => refreshChannels(setChannels, currentUser?.user_id)}
+                                        userToken={currentUser?.user_id} />
                                     )}
                                     {rClarifyStatus !== null && selectedId && (
                                       <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}

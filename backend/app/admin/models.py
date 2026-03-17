@@ -10,8 +10,13 @@ from app.chat_core.schemas import (
 )
 from app.db.models import AIModel
 from app.db.session import get_session
+from app.auth.routes import require_permission
 
-router = APIRouter(prefix="/api/admin/models", tags=["admin-models"])
+router = APIRouter(
+    prefix="/api/admin/models",
+    tags=["admin-models"],
+    dependencies=[Depends(require_permission("bot_config"))],
+)
 
 
 def _mask_api_key(key: str | None) -> str | None:
