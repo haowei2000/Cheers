@@ -265,7 +265,6 @@ async def _exec_call_bot(args: dict, ctx: dict) -> str:
 
     bot_id_by_username: dict = ctx.get("bot_id_by_username") or {}
     adapter_factory = ctx.get("adapter_factory")
-    create_and_broadcast = ctx.get("create_and_broadcast")
 
     if username not in bot_id_by_username:
         available = list(bot_id_by_username.keys())
@@ -289,10 +288,6 @@ async def _exec_call_bot(args: dict, ctx: dict) -> str:
         )
         resp: AgentResponse = await adapter.execute(sub_payload)
         result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
-
-        # 广播被调用 Bot 的回复到频道（用户可见）
-        if create_and_broadcast:
-            await create_and_broadcast(bot_id, result)
 
         logger.info("unified_builtin[tool]: call_bot @%s completed channel=%s", username, ctx["channel_id"])
         return f"@{username} 回复：\n{result}"
