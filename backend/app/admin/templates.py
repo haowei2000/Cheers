@@ -10,8 +10,13 @@ from app.chat_core.schemas import (
 )
 from app.db.models import PromptTemplate
 from app.db.session import get_session
+from app.auth.routes import require_permission
 
-router = APIRouter(prefix="/api/admin/templates", tags=["admin-templates"])
+router = APIRouter(
+    prefix="/api/admin/templates",
+    tags=["admin-templates"],
+    dependencies=[Depends(require_permission("bot_config"))],
+)
 
 
 @router.get("")

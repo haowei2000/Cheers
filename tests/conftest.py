@@ -51,6 +51,8 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
     """
     from sqlalchemy.ext.asyncio import async_sessionmaker
     from app.db.session import get_session
+    from app.auth.routes import get_current_user
+    from app.db.models import User
     import app.chat_core.messages as _messages_mod
 
     test_session_factory = async_sessionmaker(
@@ -60,9 +62,22 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
     async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
+    # 测试用 system_admin 用户（跳过认证）
+    test_user = User(
+        user_id="test-user-0000-0000-0000-000000000001",
+        username="test_admin",
+        password_hash="x",
+        display_name="Test Admin",
+        role="system_admin",
+    )
+
+    async def override_get_current_user() -> User:
+        return test_user
+
     original_factory = _messages_mod.async_session_factory
     _messages_mod.async_session_factory = test_session_factory
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
