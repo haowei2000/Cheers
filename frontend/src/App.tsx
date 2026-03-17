@@ -925,6 +925,20 @@ export default function App() {
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<string | null>(null);
   const [autoAssist, setAutoAssist] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+  const toggleThread = (rootId: string) =>
+    setExpandedThreads((prev) => {
+      const next = new Set(prev);
+      next.has(rootId) ? next.delete(rootId) : next.add(rootId);
+      return next;
+    });
+  const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
+  const toggleMessage = (msgId: string) =>
+    setCollapsedMessages((prev) => {
+      const next = new Set(prev);
+      next.has(msgId) ? next.delete(msgId) : next.add(msgId);
+      return next;
+    });
 
   type ChannelBot = { member_id: string; username: string; avatar_url?: string; display_name?: string };
   type ChannelUser = { member_id: string; username: string; avatar_url?: string; display_name?: string };
@@ -1138,7 +1152,6 @@ export default function App() {
           setMessages((prev) => {
             const id = msg.data.msg_id;
             if (id && prev.some((m) => m.msg_id === id)) return prev;
-            // Mark bot messages as streaming until message_done arrives
             const entry = msg.data.sender_type === "bot"
               ? { ...msg.data, _streaming: true }
               : msg.data;
@@ -1279,14 +1292,15 @@ export default function App() {
     setPendingClarifyReplyMsgId(null);
   }, [selectedId]);
 
-  const sendUserMessage = (content: string): Promise<void> => {
+  const sendUserMessage = (content: string, inReplyToMsgId?: string): Promise<void> => {
     if (!selectedId || !content.trim()) return Promise.resolve();
-    const body = {
+    const body: Record<string, unknown> = {
       content: content.trim(),
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: [] as string[],
     };
+    if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
     return fetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1351,7 +1365,7 @@ export default function App() {
       lines.push(`- ${q.prompt}：${labels.length > 0 ? labels.join("、") : "未选择"}`);
     }
     setPendingClarifyReplyMsgId(msgId);
-    sendUserMessage(lines.join("\n")).catch(() => {
+    sendUserMessage(lines.join("\n"), msgId).catch(() => {
       setPendingClarifyReplyMsgId(null);
       toast.error("提交失败，请重试");
     });
@@ -1359,7 +1373,7 @@ export default function App() {
 
   const handleClarifySkip = (msgId: string) => {
     setPendingClarifyReplyMsgId(msgId);
-    sendUserMessage("@channel bot 用户选择跳过澄清，请在当前信息下继续回答。").catch(() => {
+    sendUserMessage("@channel bot 用户选择跳过澄清，请在当前信息下继续回答。", msgId).catch(() => {
       setPendingClarifyReplyMsgId(null);
       toast.error("提交失败，请重试");
     });
@@ -1514,6 +1528,61 @@ export default function App() {
     if (!selectedId) return;
     refreshQaLlmStatus();
   }, [selectedId]);
+
+  // Auto-expand threads that contain streaming (incoming) messages
+  useEffect(() => {
+    const msgIdSet = new Set(messages.map((x) => x.msg_id));
+    const rootIdCache = new Map<string, string>();
+    function getRootId(msgId: string): string {
+      if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
+      const m = messages.find((x) => x.msg_id === msgId);
+      if (!m || !m.in_reply_to_msg_id || !msgIdSet.has(m.in_reply_to_msg_id)) {
+        rootIdCache.set(msgId, msgId); return msgId;
+      }
+      const rid = getRootId(m.in_reply_to_msg_id);
+      rootIdCache.set(msgId, rid); return rid;
+    }
+    const toExpand = messages
+      .filter((m) => m._streaming && m.in_reply_to_msg_id)
+      .map((m) => getRootId(m.msg_id));
+    if (toExpand.length > 0)
+      setExpandedThreads((prev) => new Set([...prev, ...toExpand]));
+  }, [messages]);
+
+  // Build thread tree: follow parent chain to find root, group all descendants under it
+  const { threadRoots, threadRepliesOf } = (() => {
+    const msgIdSet = new Set(messages.map((x) => x.msg_id));
+    const rootIdCache = new Map<string, string>();
+    function getRootId(msgId: string): string {
+      if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
+      const m = messages.find((x) => x.msg_id === msgId);
+      if (!m || !m.in_reply_to_msg_id || !msgIdSet.has(m.in_reply_to_msg_id)) {
+        rootIdCache.set(msgId, msgId);
+        return msgId;
+      }
+      const rid = getRootId(m.in_reply_to_msg_id);
+      rootIdCache.set(msgId, rid);
+      return rid;
+    }
+    const replyMap = new Map<string, Message[]>();
+    const replySet = new Set<string>();
+    for (const m of messages) {
+      const rootId = getRootId(m.msg_id);
+      if (rootId !== m.msg_id) {
+        replySet.add(m.msg_id);
+        const arr = replyMap.get(rootId) ?? [];
+        arr.push(m);
+        replyMap.set(rootId, arr);
+      }
+    }
+    for (const arr of replyMap.values()) {
+      arr.sort((a, b) => (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1);
+    }
+    return {
+      threadRoots: messages.filter((m) => !replySet.has(m.msg_id)),
+      threadRepliesOf: (rootId: string): Message[] => replyMap.get(rootId) ?? [],
+    };
+  })();
 
   return (
     <>
@@ -2208,62 +2277,29 @@ export default function App() {
                 <div className="flex items-center justify-center h-full text-gray-400 text-sm">加载中...</div>
               ) : (
                 <div className="py-2 px-2">
-                  {messages.map((m, idx) => {
-                    const prevMsg = messages[idx - 1];
-                    const isClarifyReplyBubble =
-                      m.sender_type === "user" &&
-                      prevMsg?.sender_type === "bot" &&
-                      !!parseGuidePayload(prevMsg.content).clarify &&
-                      isClarifyReplyUserMessage(m.content);
-                    if (isClarifyReplyBubble) {
-                      // 澄清回答隐藏，但需渲染其对应的二次回答（Bot 最终回复）
-                      const followUpBot = messages[idx + 1];
-                      const followUpIsBot = followUpBot?.sender_type === "bot";
-                      return (
-                        <div key={m.msg_id}>
-                          <div className="sr-only" aria-hidden="true" />
-                          {followUpIsBot && (
-                            <div key={followUpBot.msg_id} className="p-2 rounded bg-green-50 border-l-2 border-green-400">
-                              <span className="text-xs text-gray-500 flex items-center gap-2">
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-200 text-green-800 text-xs font-medium">
-                                  Bot
-                                </span>
-                                {followUpBot.created_at?.slice(0, 19) || ""}
-                              </span>
-                              <div className="mt-1 whitespace-pre-wrap">
-                                {renderWithThinkFolding(
-                                  parseGuidePayload(followUpBot.content).text || followUpBot.content,
-                                  `${followUpBot.msg_id}-`
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
+                  {threadRoots.map((m) => {
+                    const replies = threadRepliesOf(m.msg_id);
 
+                    // ── helpers shared by root & replies ──────────────────
+                    const replyIcon = (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                        <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                      </svg>
+                    );
+
+                    // ── root message ───────────────────────────────────────
                     const { text, form, clarify } = parseGuidePayload(m.content);
-                    const nextMsg = messages[idx + 1];
-                    const clarifyAnswered =
-                      nextMsg &&
-                      (nextMsg.sender_type === "bot" ||
-                        (nextMsg.sender_type === "user" && isClarifyReplyUserMessage(nextMsg.content)));
+                    const clarifyAnswered = !!clarify && messages.some(
+                      (r) => r.in_reply_to_msg_id === m.msg_id && isClarifyReplyUserMessage(r.content)
+                    );
                     const clarifyWaiting = pendingClarifyReplyMsgId === m.msg_id;
                     const clarifyStatus: "form" | "waiting" | "answered" | null =
                       clarify && m.sender_type === "bot"
-                        ? clarifyWaiting
-                          ? "waiting"
-                          : clarifyAnswered
-                            ? "answered"
-                            : "form"
+                        ? clarifyWaiting ? "waiting" : clarifyAnswered ? "answered" : "form"
                         : null;
-                    const replyContent =
-                      clarifyStatus === "answered" &&
-                      nextMsg?.sender_type === "user" &&
-                      isClarifyReplyUserMessage(nextMsg.content)
-                        ? nextMsg.content
-                        : undefined;
-
+                    const displayContent = isClarifyReplyUserMessage(m.content)
+                      ? m.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                      : (text || m.content);
                     const isOwn = m.sender_type === "user" && m.sender_id === currentUserId;
                     const senderBot = m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
                     const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
@@ -2272,132 +2308,219 @@ export default function App() {
                       ? new Date(m.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
                       : "";
 
-                    // Reference quote block (shared between own & others)
-                    const refMsg = m.in_reply_to_msg_id ? messages.find((x) => x.msg_id === m.in_reply_to_msg_id) : null;
-                    const refBlock = refMsg ? (() => {
-                      const refBot = refMsg.sender_type === "bot" ? channelBots.find((b) => b.member_id === refMsg.sender_id) : null;
-                      const refLabel = refMsg.sender_type === "bot" ? (refBot?.display_name || refBot?.username || "Bot") : "我";
-                      const refText = (parseGuidePayload(refMsg.content).text || refMsg.content).replace(/\n/g, " ").slice(0, 60);
-                      return (
-                        <div
-                          className={`flex items-start gap-1.5 px-2.5 py-1.5 rounded-lg mb-1 border-l-2 cursor-pointer max-w-full ${isOwn ? "bg-white/20 border-white/60" : "bg-gray-200/70 border-gray-400/60"}`}
-                          onClick={() => {
-                            const el = document.getElementById(`msg-${refMsg.msg_id}`);
-                            el?.scrollIntoView({ behavior: "smooth", block: "center" });
-                            el?.classList.add("ring-2", "ring-[#1264A3]/40");
-                            setTimeout(() => el?.classList.remove("ring-2", "ring-[#1264A3]/40"), 1500);
-                          }}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 mt-0.5 flex-shrink-0 ${isOwn ? "text-white/70" : "text-gray-500"}`}>
-                            <path fillRule="evenodd" d="M8.914 6.025a.75.75 0 0 1 1.06 0 3.5 3.5 0 0 1 0 4.95l-2 2a3.5 3.5 0 0 1-5.396-4.402.75.75 0 0 1 1.251.827 2 2 0 0 0 3.085 2.514l2-2a2 2 0 0 0 0-2.828.75.75 0 0 1 0-1.06Zm-3.828 1.95a.75.75 0 0 1-1.06 0 3.5 3.5 0 0 1 0-4.95l2-2a3.5 3.5 0 0 1 5.396 4.402.75.75 0 0 1-1.251-.827 2 2 0 0 0-3.085-2.514l-2 2a2 2 0 0 0 0 2.828.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
-                          </svg>
-                          <div className="min-w-0">
-                            <span className={`text-[11px] font-semibold ${isOwn ? "text-white/80" : "text-gray-600"}`}>{refLabel}</span>
-                            <span className={`text-[11px] ml-1.5 truncate block ${isOwn ? "text-white/60" : "text-gray-500"}`}>{refText}{(parseGuidePayload(refMsg.content).text || refMsg.content).length > 60 ? "…" : ""}</span>
-                          </div>
-                        </div>
-                      );
-                    })() : null;
-
-                    if (isOwn) {
-                      return (
-                        <div id={`msg-${m.msg_id}`} key={m.msg_id} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
-                          <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">
-                            我
-                          </div>
-                          <div className="flex items-end gap-1.5">
-                            {/* Reply button — appears on hover, left of bubble */}
-                            <button
-                              type="button"
-                              title="回复"
-                              onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                                <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
-                              </svg>
-                            </button>
-                            <div className="flex flex-col items-end max-w-[72%]">
-                              <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
-                              <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                                {refBlock}
-                                {text || m.content}
-                              </div>
+                    const rootBubble = isOwn ? (
+                      <div id={`msg-${m.msg_id}`} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
+                        <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">我</div>
+                        <div className="flex items-end gap-1.5">
+                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1">
+                            {replyIcon}
+                          </button>
+                          <div className="flex flex-col items-end max-w-[72%]">
+                            <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
+                            <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
+                              {displayContent}
                             </div>
                           </div>
                         </div>
-                      );
-                    }
-
-                    return (
-                      <div id={`msg-${m.msg_id}`} key={m.msg_id} className="group flex items-start gap-2.5 px-4 py-1 transition-all">
-                        {/* Avatar */}
+                      </div>
+                    ) : (
+                      <div id={`msg-${m.msg_id}`} className="group flex items-start gap-2.5 px-4 py-1 transition-all">
                         <div className="flex-shrink-0 mt-0.5">
                           {m.sender_type === "bot" ? (
-                            senderBot?.avatar_url ? (
-                              <img src={senderBot.avatar_url} alt={botLabel} className="w-8 h-8 rounded-xl object-cover" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">
-                                {botInitials}
-                              </div>
-                            )
+                            senderBot?.avatar_url
+                              ? <img src={senderBot.avatar_url} alt={botLabel} className="w-8 h-8 rounded-xl object-cover" />
+                              : <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">{botInitials}</div>
                           ) : (
-                            <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">
-                              U
-                            </div>
+                            <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">U</div>
                           )}
                         </div>
-                        {/* Bubble */}
                         <div className="flex flex-col max-w-[72%]">
                           <div className="flex items-baseline gap-1.5 mb-1">
-                            <span className="font-semibold text-[13px] text-gray-900 leading-none">
-                              {m.sender_type === "bot" ? botLabel : "用户"}
-                            </span>
-                            {m.sender_type === "bot" && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>
-                            )}
+                            <span className="font-semibold text-[13px] text-gray-900 leading-none">{m.sender_type === "bot" ? botLabel : "用户"}</span>
+                            {m.sender_type === "bot" && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>}
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
                           <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
-                            {refBlock}
                             {m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                               : renderWithThinkFolding(text, `${m.msg_id}-`)}
-                            {m._streaming && !!text && (
-                              <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
-                            )}
+                            {m._streaming && !!text && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                           </div>
                           {form && selectedId && m.sender_type === "bot" && (
-                            <GuideFormBlock
-                              msgId={m.msg_id}
-                              form={form}
-                              channelId={selectedId}
+                            <GuideFormBlock msgId={m.msg_id} form={form} channelId={selectedId}
                               onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                              onChannelsRefresh={() => refreshChannels(setChannels)}
-                            />
+                              onChannelsRefresh={() => refreshChannels(setChannels)} />
                           )}
                           {clarifyStatus !== null && selectedId && (
-                            <ClarifyInlineBlock
-                              msgId={m.msg_id}
-                              schema={clarify!}
-                              status={clarifyStatus}
-                              replyContent={replyContent}
+                            <ClarifyInlineBlock msgId={m.msg_id} schema={clarify!} status={clarifyStatus}
+                              replyContent={undefined}
                               onContinue={(answers) => handleClarifyContinue(m.msg_id, clarify!, answers)}
-                              onSkip={() => handleClarifySkip(m.msg_id)}
-                            />
+                              onSkip={() => handleClarifySkip(m.msg_id)} />
                           )}
                         </div>
-                        {/* Reply button — appears on hover, right of bubble */}
-                        <button
-                          type="button"
-                          title="回复"
-                          onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                            <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
-                          </svg>
+                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                          {replyIcon}
                         </button>
+                      </div>
+                    );
+
+                    // ── thread replies (collapsible) ──────────────────────
+                    const isExpanded = expandedThreads.has(m.msg_id);
+                    const threadSection = replies.length > 0 ? (
+                      <div className="ml-12 mb-1">
+                        {/* Collapsed summary */}
+                        {!isExpanded && (
+                          <button
+                            type="button"
+                            onClick={() => toggleThread(m.msg_id)}
+                            className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-gray-100 transition-colors group/th text-left"
+                          >
+                            {(() => {
+                              const last = replies[replies.length - 1];
+                              const { text: lt } = parseGuidePayload(last.content);
+                              const preview = (isClarifyReplyUserMessage(last.content)
+                                ? last.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                                : (lt || last.content)
+                              ).replace(/\s+/g, " ").slice(0, 10);
+                              return (
+                                <>
+                                  <span className="text-[12px] font-medium text-[#1264A3] group-hover/th:underline">
+                                    {replies.length} 条回复
+                                  </span>
+                                  {preview && (
+                                    <span className="text-[12px] text-gray-400 truncate max-w-[120px]">
+                                      {preview}{(lt || last.content).length > 10 ? "…" : ""}
+                                    </span>
+                                  )}
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-gray-400">
+                                    <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                                  </svg>
+                                </>
+                              );
+                            })()}
+                          </button>
+                        )}
+                        {/* Expanded replies */}
+                        {isExpanded && (
+                        <div className="pl-3 border-l-2 border-gray-200 flex flex-col gap-0.5">
+                        {replies.map((r) => {
+                          const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
+                          const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
+                          const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
+                          const rInitials = rLabel.slice(0, 2).toUpperCase();
+                          const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+                          const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
+                          const rDisplay = isClarifyReplyUserMessage(r.content)
+                            ? r.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                            : (rTextRaw || r.content);
+                          const rClarifyAnswered = !!rClarify && messages.some(
+                            (x) => x.in_reply_to_msg_id === r.msg_id && isClarifyReplyUserMessage(x.content)
+                          );
+                          const rClarifyWaiting = pendingClarifyReplyMsgId === r.msg_id;
+                          const rClarifyStatus: "form" | "waiting" | "answered" | null =
+                            rClarify && r.sender_type === "bot"
+                              ? rClarifyWaiting ? "waiting" : rClarifyAnswered ? "answered" : "form"
+                              : null;
+                          // Show "↩ name" if replying to a non-root message
+                          const rDirectParent = r.in_reply_to_msg_id !== m.msg_id
+                            ? messages.find((x) => x.msg_id === r.in_reply_to_msg_id)
+                            : null;
+                          const rParentBot = rDirectParent?.sender_type === "bot"
+                            ? channelBots.find((b) => b.member_id === rDirectParent.sender_id)
+                            : null;
+                          const rParentLabel = rDirectParent
+                            ? (rDirectParent.sender_type === "bot"
+                                ? (rParentBot?.display_name || rParentBot?.username || "Bot")
+                                : (rDirectParent.sender_id === currentUserId ? "我" : "用户"))
+                            : null;
+
+                          const rCollapsed = collapsedMessages.has(r.msg_id);
+                          const rPreview = rDisplay.replace(/\s+/g, " ").slice(0, 10) + (rDisplay.length > 10 ? "…" : "");
+                          return (
+                            <div key={r.msg_id} id={`msg-${r.msg_id}`} className="group/tr flex items-start gap-2 py-1">
+                              {r.sender_type === "bot" ? (
+                                rBot?.avatar_url
+                                  ? <img src={rBot.avatar_url} alt={rLabel} className="w-6 h-6 rounded-lg object-cover flex-shrink-0 mt-0.5" />
+                                  : <div className="w-6 h-6 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5">{rInitials}</div>
+                              ) : (
+                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5 ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
+                                  {rIsOwn ? "我" : "U"}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
+                                  <span className="font-semibold text-[12px] text-gray-900">{rLabel}</span>
+                                  {r.sender_type === "bot" && <span className="text-[9px] px-1 py-0.5 rounded bg-[#2EB67D]/10 text-[#2EB67D] font-medium">Bot</span>}
+                                  <span className="text-[11px] text-gray-400">{rTime}</span>
+                                  {rParentLabel && (
+                                    <span className="text-[11px] text-gray-400">↩ <span className="font-medium text-gray-500">{rParentLabel}</span></span>
+                                  )}
+                                  {rCollapsed && (
+                                    <span className="text-[11px] text-gray-400 truncate max-w-[120px]">{rPreview}</span>
+                                  )}
+                                  <button type="button" onClick={() => toggleMessage(r.msg_id)}
+                                    className="opacity-0 group-hover/tr:opacity-100 transition-opacity ml-0.5 flex items-center justify-center w-4 h-4 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                    title={rCollapsed ? "展开" : "折叠"}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                                      {rCollapsed
+                                        ? <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                                        : <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                                      }
+                                    </svg>
+                                  </button>
+                                </div>
+                                {!rCollapsed && (
+                                  <>
+                                    <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
+                                      {r._streaming && !rTextRaw
+                                        ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`)}
+                                      {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
+                                    </div>
+                                    {rForm && selectedId && r.sender_type === "bot" && (
+                                      <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
+                                        onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                                        onChannelsRefresh={() => refreshChannels(setChannels)} />
+                                    )}
+                                    {rClarifyStatus !== null && selectedId && (
+                                      <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
+                                        replyContent={undefined}
+                                        onContinue={(answers) => handleClarifyContinue(r.msg_id, rClarify!, answers)}
+                                        onSkip={() => handleClarifySkip(r.msg_id)} />
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                              <button type="button" title="回复" onClick={() => { setReplyingTo(r); inputRef.current?.focus(); }}
+                                className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                                  <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                            </div>
+                          );
+                        })}
+                          <button
+                            type="button"
+                            onClick={() => toggleThread(m.msg_id)}
+                            className="mt-0.5 flex items-center gap-1 px-1 py-0.5 text-[11px] text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                              <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                            </svg>
+                            收起
+                          </button>
+                        </div>
+                        )}
+                      </div>
+                    ) : null;
+
+                    return (
+                      <div key={m.msg_id}>
+                        {rootBubble}
+                        {threadSection}
                       </div>
                     );
                   })}
