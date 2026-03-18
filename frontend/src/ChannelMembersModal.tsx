@@ -29,6 +29,7 @@ interface ChannelMembersModalProps {
   channelId: string;
   channelName: string;
   currentUserId: string;
+  userToken?: string;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -37,9 +38,11 @@ export default function ChannelMembersModal({
   channelId,
   channelName,
   currentUserId,
+  userToken,
   isOpen,
   onClose,
 }: ChannelMembersModalProps) {
+  const authHeaders: Record<string, string> = userToken ? { Authorization: `Bearer ${userToken}` } : {};
   const [members, setMembers] = useState<Member[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(false);
@@ -58,7 +61,7 @@ export default function ChannelMembersModal({
   const loadMembers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/channels/${channelId}/members?with_username=1`);
+      const res = await fetch(`${API}/channels/${channelId}/members?with_username=1`, { headers: authHeaders });
       const data = await res.json();
       if (data.status === "success") {
         setMembers(data.data || []);
@@ -74,7 +77,8 @@ export default function ChannelMembersModal({
   const loadFriendsToInvite = async () => {
     try {
       const res = await fetch(
-        `${API}/channels/${channelId}/friends-to-invite?user_id=${encodeURIComponent(currentUserId)}`
+        `${API}/channels/${channelId}/friends-to-invite?user_id=${encodeURIComponent(currentUserId)}`,
+        { headers: authHeaders }
       );
       const data = await res.json();
       if (data.status === "success") {
@@ -91,7 +95,7 @@ export default function ChannelMembersModal({
     try {
       const res = await fetch(`${API}/channels/${channelId}/members`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           member_id: friendId,
           member_type: "user",
@@ -132,7 +136,7 @@ export default function ChannelMembersModal({
       try {
         const res = await fetch(`${API}/channels/${channelId}/members`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             member_id: friendId,
             member_type: "user",
@@ -172,7 +176,7 @@ export default function ChannelMembersModal({
     try {
       const res = await fetch(`${API}/channels/${channelId}/invite`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           inviter_id: currentUserId,
           identifier: inviteQuery.trim(),
@@ -206,7 +210,7 @@ export default function ChannelMembersModal({
     try {
       const res = await fetch(
         `${API}/channels/${channelId}/members/${encodeURIComponent(memberId)}`,
-        { method: "DELETE" }
+        { method: "DELETE", headers: authHeaders }
       );
       const data = await res.json();
       if (data.status === "success") {
@@ -224,7 +228,7 @@ export default function ChannelMembersModal({
   // 加载所有 Bot
   const loadAllBots = async () => {
     try {
-      const res = await fetch(`${API}/bots`);
+      const res = await fetch(`${API}/bots`, { headers: authHeaders });
       const data = await res.json();
       if (data.status === "success") {
         setAllBots(data.data || []);
@@ -240,7 +244,7 @@ export default function ChannelMembersModal({
     try {
       const res = await fetch(`${API}/channels/${channelId}/members`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ member_id: botId, member_type: "bot" }),
       });
       const data = await res.json();

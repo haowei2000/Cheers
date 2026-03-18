@@ -71,8 +71,9 @@ type ClarifySettings = {
   clarify_threshold: number;
 };
 
-function refreshChannels(setChannels: (c: Channel[]) => void) {
-  fetch(`${API}/channels`).then((r) => r.json()).then((d) => d.data && setChannels(d.data)).catch(console.error);
+function refreshChannels(setChannels: (c: Channel[]) => void, token?: string) {
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  fetch(`${API}/channels`, { headers }).then((r) => r.json()).then((d) => d.data && setChannels(d.data)).catch(console.error);
 }
 
 export default function AdminPage() {
@@ -86,6 +87,18 @@ export default function AdminPage() {
   };
   const currentUser = getCurrentUser();
   const userRole = currentUser?.role || "";
+
+  // 带认证头的 fetch 工具
+  const token = currentUser?.user_id;
+  const authFetch = (url: string, options: RequestInit = {}) =>
+    fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers as Record<string, string> | undefined),
+      },
+    });
 
   const [activeTab, setActiveTab] = useState<TabId>(() => (userRole === "system_admin" ? "models" : "bot"));
 
@@ -188,8 +201,8 @@ export default function AdminPage() {
 
   // ==================== Load Data ====================
   useEffect(() => {
-    refreshChannels(setChannels);
-    fetch(`${API}/workspaces`).then((r) => r.json()).then((d) => d.data && setWorkspaces(d.data)).catch(console.error);
+    refreshChannels(setChannels, token);
+    authFetch(`${API}/workspaces`).then((r) => r.json()).then((d) => d.data && setWorkspaces(d.data)).catch(console.error);
     loadModels();
     loadTemplates();
     loadBots();
@@ -204,7 +217,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (activeTab === "llm") {
-      fetch(`${API}/admin/settings/llm`)
+      authFetch(`${API}/admin/settings/llm`)
         .then((r) => r.json())
         .then((d) => {
           if (d.data) {
@@ -218,7 +231,7 @@ export default function AdminPage() {
           }
         })
         .catch(console.error);
-      fetch(`${API}/admin/settings/clarify`)
+      authFetch(`${API}/admin/settings/clarify`)
         .then((r) => r.json())
         .then((d) => {
           if (d.data) {
@@ -230,7 +243,7 @@ export default function AdminPage() {
           }
         })
         .catch(console.error);
-      fetch(`${API}/admin/settings/orchestrator`)
+      authFetch(`${API}/admin/settings/orchestrator`)
         .then((r) => r.json())
         .then((d) => {
           if (d.data) {
@@ -246,7 +259,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (activeTab === "logs") {
-      fetch(`${API}/admin/logs?limit=200`).then((r) => r.json()).then((d) => { if (d.data) setLogEntries(d.data); }).catch(console.error);
+      authFetch(`${API}/admin/logs?limit=200`).then((r) => r.json()).then((d) => { if (d.data) setLogEntries(d.data); }).catch(console.error);
     }
   }, [activeTab]);
 
@@ -258,7 +271,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (activeTab === "user") {
-      fetch(`${API}/admin/users`).then((r) => r.json()).then((d) => { if (d.data) setUserList(d.data); }).catch(console.error);
+      authFetch(`${API}/admin/users`).then((r) => r.json()).then((d) => { if (d.data) setUserList(d.data); }).catch(console.error);
     }
   }, [activeTab]);
 
@@ -274,7 +287,7 @@ export default function AdminPage() {
 
   // ==================== Model API Functions ====================
   const loadModels = () => {
-    fetch(`${API}/admin/models?include_disabled=true`)
+    authFetch(`${API}/admin/models?include_disabled=true`)
       .then((r) => r.json())
       .then((d) => { if (d.data) setModels(d.data); })
       .catch(console.error);
@@ -292,9 +305,8 @@ export default function AdminPage() {
     }
     const config = extraHeaders ? { extra_headers: extraHeaders } : {};
     const { extra_headers: _eh, ...rest } = modelForm;
-    fetch(`${API}/admin/models`, {
+    authFetch(`${API}/admin/models`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...rest, config }),
     })
       .then((r) => r.json())
@@ -317,7 +329,7 @@ export default function AdminPage() {
       catch { toast.error("额外 Headers 格式错误，须为合法 JSON 对象"); return; }
     }
     const config = extraHeaders !== null ? { extra_headers: extraHeaders } : {};
-    fetch(`${API}/admin/models/${id}`, {
+    authFetch(`${API}/admin/models/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -347,7 +359,7 @@ export default function AdminPage() {
 
   const deleteModel = (id: string) => {
     if (!confirm("确定删除此模型？")) return;
-    fetch(`${API}/admin/models/${id}`, { method: "DELETE" })
+    authFetch(`${API}/admin/models/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
@@ -377,7 +389,7 @@ export default function AdminPage() {
 
   // ==================== Template API Functions ====================
   const loadTemplates = () => {
-    fetch(`${API}/admin/templates`)
+    authFetch(`${API}/admin/templates`)
       .then((r) => r.json())
       .then((d) => { if (d.data) setTemplates(d.data); })
       .catch(console.error);
@@ -388,7 +400,7 @@ export default function AdminPage() {
       toast.error("请填写必填项");
       return;
     }
-    fetch(`${API}/admin/templates`, {
+    authFetch(`${API}/admin/templates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(templateForm),
@@ -407,7 +419,7 @@ export default function AdminPage() {
   };
 
   const updateTemplate = (id: string) => {
-    fetch(`${API}/admin/templates/${id}`, {
+    authFetch(`${API}/admin/templates/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -433,7 +445,7 @@ export default function AdminPage() {
 
   const deleteTemplate = (id: string) => {
     if (!confirm("确定删除此模板？")) return;
-    fetch(`${API}/admin/templates/${id}`, { method: "DELETE" })
+    authFetch(`${API}/admin/templates/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
@@ -459,7 +471,7 @@ export default function AdminPage() {
 
   // ==================== Bot API Functions ====================
   const loadBots = () => {
-    fetch(`${API}/bots`)
+    authFetch(`${API}/bots`)
       .then((r) => r.json())
       .then((d) => { if (d.data) setBotList(d.data); })
       .catch(console.error);
@@ -470,7 +482,7 @@ export default function AdminPage() {
       toast.error("请填写必填项：用户名、模型、模板");
       return;
     }
-    fetch(`${API}/bots`, {
+    authFetch(`${API}/bots`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(botForm),
@@ -499,7 +511,7 @@ export default function AdminPage() {
   };
 
   const updateBot = (id: string) => {
-    fetch(`${API}/bots/${id}`, {
+    authFetch(`${API}/bots/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(botForm),
@@ -529,7 +541,7 @@ export default function AdminPage() {
 
   const deleteBot = (id: string) => {
     if (!confirm("确定删除此 Bot？")) return;
-    fetch(`${API}/bots/${id}`, { method: "DELETE" })
+    authFetch(`${API}/bots/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
@@ -559,24 +571,24 @@ export default function AdminPage() {
   // ==================== Workspace & Channel Functions ====================
   const createWorkspace = () => {
     if (!workspaceName.trim()) return;
-    fetch(`${API}/workspaces`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: workspaceName.trim() }) })
+    authFetch(`${API}/workspaces`, { method: "POST", body: JSON.stringify({ name: workspaceName.trim() }) })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") { toast.success("已创建"); setWorkspaceName(""); fetch(`${API}/workspaces`).then((r) => r.json()).then((d) => d.data && setWorkspaces(d.data)).catch(console.error); } else toast.error(d.message || "创建失败"); })
+      .then((d) => { if (d.status === "success") { toast.success("已创建"); setWorkspaceName(""); authFetch(`${API}/workspaces`).then((r) => r.json()).then((d) => d.data && setWorkspaces(d.data)).catch(console.error); } else toast.error(d.message || "创建失败"); })
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const createChannel = () => {
     if (!createWs || !createName.trim()) return;
-    fetch(`${API}/channels`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace_id: createWs, name: createName.trim() }) })
+    authFetch(`${API}/channels`, { method: "POST", body: JSON.stringify({ workspace_id: createWs, name: createName.trim() }) })
       .then((r) => r.json())
-      .then((d) => { if (d.status === "success") { toast.success("项目已创建"); setCreateName(""); refreshChannels(setChannels); } else toast.error(d.message || "创建失败"); })
+      .then((d) => { if (d.status === "success") { toast.success("项目已创建"); setCreateName(""); refreshChannels(setChannels, token); } else toast.error(d.message || "创建失败"); })
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const refreshAddChOptions = (channelId: string) => {
     if (!channelId) { setAddChOptions([]); return; }
     setAddChLoading(true);
-    Promise.all([fetch(`${API}/bots`).then((r) => r.json()), fetch(`${API}/admin/users`).then((r) => r.json())])
+    Promise.all([authFetch(`${API}/bots`).then((r) => r.json()), authFetch(`${API}/admin/users`).then((r) => r.json())])
       .then(([botsRes, usersRes]) => {
         const bots: BotItem[] = botsRes.data || [];
         const users: UserItem[] = usersRes.data || [];
@@ -632,7 +644,7 @@ export default function AdminPage() {
   const runLogAnalysis = () => {
     if (!logExcerpt.trim() && !logQuestion.trim()) return;
     setLogLoading(true);
-    fetch(`${API}/admin/logs/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ excerpt: logExcerpt.trim(), question: logQuestion.trim() }) })
+    authFetch(`${API}/admin/logs/analyze`, { method: "POST", body: JSON.stringify({ excerpt: logExcerpt.trim(), question: logQuestion.trim() }) })
       .then((r) => r.json())
       .then((d) => { setLogAnalysis(d.data?.result || d.data?.analysis || ""); setLogLoading(false); })
       .catch(() => setLogLoading(false));
@@ -641,27 +653,44 @@ export default function AdminPage() {
 
 
   const saveLlmBinding = (scope: string, providerId: string) => {
-    fetch(`${API}/admin/settings/llm/bind`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope, provider_id: providerId }) })
+    authFetch(`${API}/admin/settings/llm/bind`, { method: "POST", body: JSON.stringify({ scope, provider_id: providerId }) })
       .then((r) => r.json())
       .then((d) => { if (d.status === "success") toast.success("绑定已更新"); else toast.error(d.message || "绑定失败"); })
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const saveOrchestratorSettings = () => {
-    fetch(`${API}/admin/settings/orchestrator`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(orchestratorSettings) })
+    authFetch(`${API}/admin/settings/orchestrator`, { method: "POST", body: JSON.stringify(orchestratorSettings) })
       .then((r) => r.json())
       .then((d) => { if (d.status === "success") toast.success("设置已保存"); else toast.error(d.message || "保存失败"); })
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   const saveClarifySettings = () => {
-    fetch(`${API}/admin/settings/clarify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(clarifySettings) })
+    authFetch(`${API}/admin/settings/clarify`, { method: "POST", body: JSON.stringify(clarifySettings) })
       .then((r) => r.json())
       .then((d) => { if (d.status === "success") toast.success("设置已保存"); else toast.error(d.message || "保存失败"); })
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
   // ==================== Render ====================
+
+  // 权限检查：未登录或无管理员权限则显示提示
+  if (!currentUser || (userRole !== "system_admin" && userRole !== "space_admin")) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F8] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl mb-4">🔒</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">权限不足</h2>
+          <p className="text-gray-500 mb-6">您需要管理员权限才能访问此页面。</p>
+          <Link to="/" className="px-4 py-2 bg-[#4A154B] text-white rounded-lg hover:bg-[#611f69] text-sm font-medium">
+            返回聊天
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8F8F8]">
       <header className="border-b border-gray-200 bg-white sticky top-0 z-10">

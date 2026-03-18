@@ -16,8 +16,9 @@ from app.chat_core.schemas import (
     BotSimpleInResponse,
     BotUpdate,
 )
-from app.db.models import BotAccount, BotRegistrationRequest, gen_uuid, AIModel, PromptTemplate
+from app.db.models import BotAccount, BotRegistrationRequest, gen_uuid, AIModel, PromptTemplate, User
 from app.db.session import get_session
+from app.auth.routes import require_permission
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
 
@@ -92,6 +93,7 @@ async def list_bots(
 @router.post("")
 async def create_bot(
     body: BotCreate,
+    _: User = Depends(require_permission("bot_config")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """创建 Bot：选择模型 + 选择提示词模板."""
@@ -195,6 +197,7 @@ async def get_bot(
 async def update_bot(
     bot_id: str,
     body: BotUpdate,
+    _: User = Depends(require_permission("bot_config")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """更新 Bot 信息."""
@@ -270,6 +273,7 @@ async def update_bot(
 @router.delete("/{bot_id}")
 async def delete_bot(
     bot_id: str,
+    _: User = Depends(require_permission("bot_config")),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """删除 Bot 账号."""

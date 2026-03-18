@@ -12,6 +12,7 @@ from app.chat_core.schemas import (
 )
 from app.db.models import BotAccount, Channel, ChannelMembership, User, Workspace
 from app.db.session import get_session
+from app.auth.routes import get_current_user, try_get_current_user
 from app.guide.constants import GUIDE_BOT_ID
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
@@ -30,10 +31,25 @@ class MemberInviteByFriendRequest(BaseModel):
 
 
 @router.get("")
-async def list_channels(session: AsyncSession = Depends(get_session)) -> dict:
-    """获取频道列表."""
-    result = await session.execute(select(Channel).order_by(Channel.created_at))
-    channels = result.scalars().all()
+async def list_channels(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """获取频道列表：system_admin 见全部，其他用户只见已加入的频道。"""
+    if current_user.role == "system_admin":
+        result = await session.execute(select(Channel).order_by(Channel.created_at))
+        channels = result.scalars().all()
+    else:
+        result = await session.execute(
+            select(Channel)
+            .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
+            .where(
+                ChannelMembership.member_id == current_user.user_id,
+                ChannelMembership.member_type == "user",
+            )
+            .order_by(Channel.created_at)
+        )
+        channels = result.scalars().all()
     return {
         "status": "success",
         "data": [ChannelInResponse.model_validate(c).model_dump() for c in channels],
@@ -60,6 +76,7 @@ async def list_channels_by_workspace(
 async def create_channel(
     body: ChannelCreate,
     session: AsyncSession = Depends(get_session),
+    current_user: User | None = Depends(try_get_current_user),
 ) -> dict:
     """创建频道."""
     result = await session.execute(select(Workspace).where(Workspace.workspace_id == body.workspace_id))
@@ -87,6 +104,15 @@ async def create_channel(
                     member_type="bot",
                 )
             )
+    # 自动将创建者加入频道成员
+    if current_user:
+        session.add(
+            ChannelMembership(
+                channel_id=ch.channel_id,
+                member_id=current_user.user_id,
+                member_type="user",
+            )
+        )
     await session.flush()
     return {"status": "success", "data": ChannelInResponse.model_validate(ch).model_dump()}
 

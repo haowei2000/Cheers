@@ -3,8 +3,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, ConfigDict
 
-from app.db.models import Workspace, Channel, ChannelMembership, User, Message
+from app.db.models import Workspace, Channel, ChannelMembership, User, Message, WorkspaceMembership
 from app.db.session import get_session
+from app.auth.routes import get_current_user, require_permission
 from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
@@ -22,17 +23,31 @@ class WorkspaceCreate(BaseModel):
     name: str
 
 
+class AddWorkspaceMemberRequest(BaseModel):
+    user_id: str
+    role: str = "member"
+
+
 @router.post("")
 async def create_workspace(
     body: WorkspaceCreate,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """创建工作空间（管理界面表格表单可调用）。"""
+    """创建工作空间，并将创建者自动加为 owner。"""
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="name 不能为空")
     ws = Workspace(name=name)
     session.add(ws)
+    await session.flush()  # 获取 workspace_id
+
+    # 创建者自动成为 owner
+    session.add(WorkspaceMembership(
+        workspace_id=ws.workspace_id,
+        user_id=current_user.user_id,
+        role="owner",
+    ))
     await session.commit()
     await session.refresh(ws)
     return {
@@ -43,64 +58,129 @@ async def create_workspace(
 
 @router.get("")
 async def list_workspaces(
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取工作空间列表（创建项目时选择）."""
-    result = await session.execute(
-        select(Workspace).order_by(Workspace.created_at)
-    )
-    workspaces = result.scalars().all()
-    data = [
-        WorkspaceInResponse.model_validate(w).model_dump()
-        for w in workspaces
-    ]
+    """获取工作空间列表：system_admin 见全部，其他用户只见已加入的工作空间。"""
+    if current_user.role == "system_admin":
+        result = await session.execute(
+            select(Workspace).order_by(Workspace.created_at)
+        )
+        workspaces = result.scalars().all()
+    else:
+        result = await session.execute(
+            select(Workspace)
+            .join(WorkspaceMembership, Workspace.workspace_id == WorkspaceMembership.workspace_id)
+            .where(WorkspaceMembership.user_id == current_user.user_id)
+            .order_by(Workspace.created_at)
+        )
+        workspaces = result.scalars().all()
+
+    data = [WorkspaceInResponse.model_validate(w).model_dump() for w in workspaces]
     return {"status": "success", "data": data}
 
 
 @router.get("/{workspace_id}/members")
 async def list_workspace_members(
     workspace_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取工作空间的所有成员（通过频道成员关联）."""
-    # 查找该工作空间的所有频道
-    result = await session.execute(
-        select(Channel).where(Channel.workspace_id == workspace_id)
+    """获取工作空间的直接成员列表（WorkspaceMembership）。"""
+    ws_result = await session.execute(
+        select(Workspace).where(Workspace.workspace_id == workspace_id)
     )
-    channels = result.scalars().all()
-    channel_ids = [c.channel_id for c in channels]
+    if not ws_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="工作空间不存在")
 
-    if not channel_ids:
-        return {"status": "success", "data": []}
+    # 非 system_admin 须是该工作空间成员
+    if current_user.role != "system_admin":
+        mem = await session.execute(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == workspace_id,
+                WorkspaceMembership.user_id == current_user.user_id,
+            )
+        )
+        if not mem.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="权限不足")
 
-    # 查找所有成员
     result = await session.execute(
-        select(ChannelMembership, User)
-        .join(User, ChannelMembership.member_id == User.user_id)
-        .where(ChannelMembership.channel_id.in_(channel_ids))
-        .where(ChannelMembership.member_type == "user")
+        select(WorkspaceMembership, User)
+        .join(User, WorkspaceMembership.user_id == User.user_id)
+        .where(WorkspaceMembership.workspace_id == workspace_id)
     )
-    rows = result.all()
-
-    # 去重
-    seen = set()
-    members = []
-    for membership, user in rows:
-        if user.user_id not in seen:
-            seen.add(user.user_id)
-            members.append({
-                "user_id": user.user_id,
-                "username": user.username,
-                "display_name": user.display_name,
-                "role": user.role,
-            })
-
+    members = [
+        {
+            "user_id": user.user_id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "role": user.role,
+            "workspace_role": wm.role,
+        }
+        for wm, user in result.all()
+    ]
     return {"status": "success", "data": members}
+
+
+@router.post("/{workspace_id}/members")
+async def add_workspace_member(
+    workspace_id: str,
+    body: AddWorkspaceMemberRequest,
+    _: User = Depends(require_permission("space_management")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """添加工作空间成员（需要 space_management 权限）。"""
+    if not (await session.execute(select(Workspace).where(Workspace.workspace_id == workspace_id))).scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="工作空间不存在")
+
+    if not (await session.execute(select(User).where(User.user_id == body.user_id))).scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    existing = await session.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == body.user_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="用户已是工作空间成员")
+
+    session.add(WorkspaceMembership(
+        workspace_id=workspace_id,
+        user_id=body.user_id,
+        role=body.role,
+    ))
+    await session.commit()
+    return {"status": "success", "message": "成员已添加"}
+
+
+@router.delete("/{workspace_id}/members/{user_id}")
+async def remove_workspace_member(
+    workspace_id: str,
+    user_id: str,
+    _: User = Depends(require_permission("space_management")),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """移除工作空间成员（需要 space_management 权限）。"""
+    result = await session.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == user_id,
+        )
+    )
+    membership = result.scalar_one_or_none()
+    if not membership:
+        raise HTTPException(status_code=404, detail="成员不存在")
+
+    await session.delete(membership)
+    await session.commit()
+    return {"status": "success", "message": "成员已移除"}
 
 
 @router.delete("/{workspace_id}")
 async def delete_workspace(
     workspace_id: str,
+    _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """删除工作空间（同时删除该工作空间下的所有频道及成员关系）."""
@@ -119,26 +199,29 @@ async def delete_workspace(
 
     # 先删除所有频道的消息、成员关系，再删除频道
     for ch in channels:
-        # 删除该频道的所有消息
         result = await session.execute(
             select(Message).where(Message.channel_id == ch.channel_id)
         )
-        messages = result.scalars().all()
-        for m in messages:
+        for m in result.scalars().all():
             await session.delete(m)
-        
-        # 删除该频道的所有成员关系
+
         result = await session.execute(
             select(ChannelMembership).where(
                 ChannelMembership.channel_id == ch.channel_id
             )
         )
-        memberships = result.scalars().all()
-        for m in memberships:
+        for m in result.scalars().all():
             await session.delete(m)
-        
-        await session.flush()  # 确保消息和成员关系已删除
+
+        await session.flush()
         await session.delete(ch)
+
+    # 删除工作空间成员关系
+    ws_members = await session.execute(
+        select(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
+    )
+    for wm in ws_members.scalars().all():
+        await session.delete(wm)
 
     await session.delete(ws)
     await session.commit()

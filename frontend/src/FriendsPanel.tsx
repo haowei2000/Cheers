@@ -19,11 +19,13 @@ interface UserSearchResult {
 
 interface FriendsPanelProps {
   currentUserId: string;
+  userToken?: string;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function FriendsPanel({ currentUserId, isOpen, onClose }: FriendsPanelProps) {
+export default function FriendsPanel({ currentUserId, userToken, isOpen, onClose }: FriendsPanelProps) {
+  const authHeaders: Record<string, string> = userToken ? { Authorization: `Bearer ${userToken}` } : {};
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -36,7 +38,7 @@ export default function FriendsPanel({ currentUserId, isOpen, onClose }: Friends
     if (!currentUserId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/friends/${currentUserId}`);
+      const res = await fetch(`${API}/friends/${currentUserId}`, { headers: authHeaders });
       const data = await res.json();
       if (data.status === "success") {
         setFriends(data.data || []);
@@ -54,7 +56,8 @@ export default function FriendsPanel({ currentUserId, isOpen, onClose }: Friends
     setSearching(true);
     try {
       const res = await fetch(
-        `${API}/friends/search?query=${encodeURIComponent(searchQuery)}&current_user_id=${encodeURIComponent(currentUserId)}`
+        `${API}/friends/search?query=${encodeURIComponent(searchQuery)}&current_user_id=${encodeURIComponent(currentUserId)}`,
+        { headers: authHeaders }
       );
       const data = await res.json();
       if (data.status === "success") {
@@ -72,7 +75,7 @@ export default function FriendsPanel({ currentUserId, isOpen, onClose }: Friends
     try {
       const res = await fetch(`${API}/friends`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           user_id: currentUserId,
           friend_identifier: friendIdentifier,
@@ -99,7 +102,7 @@ export default function FriendsPanel({ currentUserId, isOpen, onClose }: Friends
     try {
       const res = await fetch(`${API}/friends`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           user_id: currentUserId,
           friend_id: friendId,

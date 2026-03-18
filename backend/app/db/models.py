@@ -150,6 +150,16 @@ class ChannelMembership(Base):
     channel: Mapped["Channel"] = relationship("Channel", back_populates="memberships")
 
 
+class WorkspaceMembership(Base):
+    """工作空间成员关系."""
+    __tablename__ = "workspace_memberships"
+
+    workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey("workspaces.workspace_id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(20), default="member")  # "owner" | "admin" | "member"
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Message(Base):
     """消息."""
     __tablename__ = "messages"
