@@ -34,7 +34,7 @@ class AIModelUpdate(BaseModel):
 class AIModelInResponse(BaseModel):
     """AI 模型响应."""
     model_config = ConfigDict(from_attributes=True)
-    
+
     model_id: str
     name: str
     provider: str
@@ -72,7 +72,7 @@ class PromptTemplateUpdate(BaseModel):
 class PromptTemplateInResponse(BaseModel):
     """提示词模板响应."""
     model_config = ConfigDict(from_attributes=True)
-    
+
     template_id: str
     name: str
     description: str | None = None
@@ -115,7 +115,7 @@ class BotUpdate(BaseModel):
 class BotInResponse(BaseModel):
     """Bot 响应（包含关联的模型和模板信息）."""
     model_config = ConfigDict(from_attributes=True)
-    
+
     bot_id: str
     username: str
     display_name: str | None = None
@@ -125,7 +125,7 @@ class BotInResponse(BaseModel):
     intro: str | None = None
     custom_system_prompt: str | None = None
     created_at: datetime | None = None
-    
+
     # 关联信息
     model_id: str
     template_id: str
@@ -197,9 +197,28 @@ class MessageCreate(BaseModel):
     content: str
     sender_id: str
     sender_type: str = "user"
-    file_ids: list[str] = []
-    mention_bot_ids: list[str] = []
+    file_ids: list[str] = Field(default_factory=list)
+    mention_bot_ids: list[str] = Field(default_factory=list)
     in_reply_to_msg_id: str | None = None
+
+
+class MessageStreamCreate(BaseModel):
+    """发送消息并以 SSE 接收 Bot 流式回复。"""
+    content: str
+    sender_id: str
+    sender_type: str = "user"
+    file_id: str | None = None
+    file_ids: list[str] = Field(default_factory=list)
+    mention_bot_ids: list[str] = Field(default_factory=list)
+
+
+class MessageFileInResponse(BaseModel):
+    """消息引用的文件元信息。"""
+    file_id: str
+    original_filename: str | None = None
+    content_type: str | None = None
+    size_bytes: int | None = None
+    status: str
 
 
 class MessageInResponse(BaseModel):
@@ -211,6 +230,7 @@ class MessageInResponse(BaseModel):
     sender_type: str
     content: str
     file_ids: list[str] | None = None
+    files: list[MessageFileInResponse] | None = None
     mention_bot_ids: list[str] | None = None
     task_id: str | None = None
     in_reply_to_msg_id: str | None = None

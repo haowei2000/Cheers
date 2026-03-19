@@ -1,6 +1,12 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        PIP_INDEX_URL: ${BACKEND_PIP_INDEX_URL:-https://pypi.org/simple}
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8002:8000"
     environment:
@@ -8,20 +14,31 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SQLITE_CONTEXT_PATH=data/context_store/context.db
       - DATA_DIR=data
-      # 首次启动自动写入种子数据（默认工作空间、测试项目、@引导、@coordinator）；可改为 0 关闭
-      - SEED_DATA=1
-      # 引导 Bot / 系统 LLM 地址：容器内不能用 localhost，需指向宿主机或外部服务
-      # - GUIDE_LLM_BASE_URL=http://host.docker.internal:11434/v1
-      # - SYSTEM_LLM_BASE_URL=https://api.openai.com/v1
-      # - SYSTEM_LLM_API_KEY=sk-...
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-s3}
+      - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT:-http://rustfs:9000}
+      - STORAGE_S3_PUBLIC_ENDPOINT=${STORAGE_S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      - STORAGE_S3_REGION=${STORAGE_S3_REGION:-us-east-1}
+      - STORAGE_S3_ACCESS_KEY=${STORAGE_S3_ACCESS_KEY:-agentnexus-dev-access}
+      - STORAGE_S3_SECRET_KEY=${STORAGE_S3_SECRET_KEY:-agentnexus-dev-secret}
+      - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-agentnexus-files}
+      - STORAGE_S3_FORCE_PATH_STYLE=${STORAGE_S3_FORCE_PATH_STYLE:-true}
+      - STORAGE_S3_AUTO_CREATE_BUCKET=${STORAGE_S3_AUTO_CREATE_BUCKET:-true}
+      - STORAGE_PRESIGN_EXPIRES_SECONDS=${STORAGE_PRESIGN_EXPIRES_SECONDS:-900}
+      - FILE_UPLOAD_MAX_BYTES=${FILE_UPLOAD_MAX_BYTES:-26214400}
+      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain}
+      - LLM_LOCALHOST_ALIAS=${LLM_LOCALHOST_ALIAS:-host.docker.internal}
+      - SEED_DATA=${SEED_DATA:-1}
     volumes:
       - agentnexus_data:/app/data
     depends_on:
       redis:
         condition: service_started
+      rustfs:
+        condition: service_started
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     ports:
       - "80:80"
     depends_on:
@@ -29,8 +46,41 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6389:6379"
 
+  rustfs:
+    image: rustfs/rustfs:latest
+    restart: unless-stopped
+    security_opt:
+      - "no-new-privileges:true"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - RUSTFS_VOLUMES=/data
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-*}
+      - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-*}
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-agentnexus-dev-access}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-agentnexus-dev-secret}
+      - RUSTFS_OBS_LOGGER_LEVEL=${RUSTFS_OBS_LOGGER_LEVEL:-info}
+      - RUSTFS_OBJECT_CACHE_ENABLE=${RUSTFS_OBJECT_CACHE_ENABLE:-true}
+      - RUSTFS_OBJECT_CACHE_TTL_SECS=${RUSTFS_OBJECT_CACHE_TTL_SECS:-300}
+    volumes:
+      - rustfs_data:/data
+      - rustfs_logs:/logs
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
   agentnexus_data:
+  rustfs_data:
+  rustfs_logs:
