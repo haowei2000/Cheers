@@ -148,6 +148,17 @@ class UserInfo(BaseModel):
     role: str
     avatar_url: Optional[str]
     created_at: str
+    bio: Optional[str] = None
+
+
+class UpdateProfileRequest(BaseModel):
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class UpdateRoleRequest(BaseModel):
@@ -156,6 +167,56 @@ class UpdateRoleRequest(BaseModel):
 
 
 # ============ Routes ============
+
+
+def _user_to_info(user: User) -> UserInfo:
+    return UserInfo(
+        user_id=user.user_id,
+        username=user.username,
+        display_name=user.display_name,
+        role=user.role,
+        avatar_url=user.avatar_url,
+        created_at=user.created_at.isoformat(),
+        bio=user.bio,
+    )
+
+
+@router.get("/users/me", response_model=UserInfo)
+async def get_my_profile(
+    current_user: User = Depends(get_current_user),
+) -> UserInfo:
+    """获取当前用户个人资料."""
+    return _user_to_info(current_user)
+
+
+@router.put("/users/me", response_model=UserInfo)
+async def update_my_profile(
+    req: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+) -> UserInfo:
+    """更新当前用户个人资料（显示名称、简介）."""
+    if req.display_name is not None:
+        current_user.display_name = req.display_name
+    if req.bio is not None:
+        current_user.bio = req.bio
+    await db.commit()
+    await db.refresh(current_user)
+    return _user_to_info(current_user)
+
+
+@router.put("/users/me/password")
+async def change_my_password(
+    req: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """修改当前用户密码."""
+    if not verify_password(req.current_password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码不正确")
+    current_user.password_hash = hash_password(req.new_password)
+    await db.commit()
+    return {"status": "success", "message": "密码已更新"}
 
 
 @router.post("/register", response_model=UserInfo)
@@ -180,14 +241,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_session)
     await db.commit()
     await db.refresh(user)
 
-    return UserInfo(
-        user_id=user.user_id,
-        username=user.username,
-        display_name=user.display_name,
-        role=user.role,
-        avatar_url=user.avatar_url,
-        created_at=user.created_at.isoformat(),
-    )
+    return _user_to_info(user)
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -218,17 +272,7 @@ async def list_users(db: AsyncSession = Depends(get_session)):
     result = await db.execute(select(User))
     users = result.scalars().all()
 
-    return [
-        UserInfo(
-            user_id=u.user_id,
-            username=u.username,
-            display_name=u.display_name,
-            role=u.role,
-            avatar_url=u.avatar_url,
-            created_at=u.created_at.isoformat(),
-        )
-        for u in users
-    ]
+    return [_user_to_info(u) for u in users]
 
 
 @router.put("/users/{user_id}/role", response_model=UserInfo)
@@ -258,14 +302,7 @@ async def update_user_role(
     await db.commit()
     await db.refresh(user)
 
-    return UserInfo(
-        user_id=user.user_id,
-        username=user.username,
-        display_name=user.display_name,
-        role=user.role,
-        avatar_url=user.avatar_url,
-        created_at=user.created_at.isoformat(),
-    )
+    return _user_to_info(user)
 
 
 @router.get("/roles")
