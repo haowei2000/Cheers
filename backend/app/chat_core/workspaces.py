@@ -1,5 +1,5 @@
 """工作空间 REST：列表与创建（供管理表格表单使用）."""
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, ConfigDict
 
@@ -25,6 +25,12 @@ class WorkspaceCreate(BaseModel):
 
 class AddWorkspaceMemberRequest(BaseModel):
     user_id: str
+    role: str = "member"
+
+
+class InviteWorkspaceMemberRequest(BaseModel):
+    """邀请工作空间成员（支持通过用户名或 user_id 搜索）."""
+    identifier: str  # 用户名 或 user_id
     role: str = "member"
 
 
@@ -175,6 +181,95 @@ async def remove_workspace_member(
     await session.delete(membership)
     await session.commit()
     return {"status": "success", "message": "成员已移除"}
+
+
+@router.post("/{workspace_id}/invite")
+async def invite_workspace_member(
+    workspace_id: str,
+    body: InviteWorkspaceMemberRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """邀请成员加入工作空间，并自动将其加入该工作空间下所有频道。
+    需要调用者是 system_admin、space_admin，或该工作空间的 owner/admin。
+    """
+    # 验证工作空间存在
+    ws = (await session.execute(
+        select(Workspace).where(Workspace.workspace_id == workspace_id)
+    )).scalar_one_or_none()
+    if not ws:
+        raise HTTPException(status_code=404, detail="工作空间不存在")
+
+    # 权限检查：system_admin/space_admin 或工作空间 owner/admin
+    if current_user.role not in ("system_admin", "space_admin"):
+        caller_membership = (await session.execute(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == workspace_id,
+                WorkspaceMembership.user_id == current_user.user_id,
+            )
+        )).scalar_one_or_none()
+        if not caller_membership or caller_membership.role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="权限不足，仅工作空间管理员可邀请成员")
+
+    # 查找被邀请用户（支持 username 或 user_id）
+    target_user = (await session.execute(
+        select(User).where(
+            or_(User.user_id == body.identifier, User.username == body.identifier)
+        )
+    )).scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 检查是否已是工作空间成员
+    existing = (await session.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == target_user.user_id,
+        )
+    )).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail="用户已是工作空间成员")
+
+    # 加入工作空间
+    session.add(WorkspaceMembership(
+        workspace_id=workspace_id,
+        user_id=target_user.user_id,
+        role=body.role,
+    ))
+
+    # 获取该工作空间所有频道
+    channels_result = await session.execute(
+        select(Channel).where(Channel.workspace_id == workspace_id)
+    )
+    channels = channels_result.scalars().all()
+
+    # 将用户加入所有频道（跳过已在其中的）
+    for ch in channels:
+        already_in = (await session.execute(
+            select(ChannelMembership).where(
+                ChannelMembership.channel_id == ch.channel_id,
+                ChannelMembership.member_id == target_user.user_id,
+            )
+        )).scalar_one_or_none()
+        if not already_in:
+            session.add(ChannelMembership(
+                channel_id=ch.channel_id,
+                member_id=target_user.user_id,
+                member_type="user",
+                added_by=current_user.user_id,
+            ))
+
+    await session.commit()
+    return {
+        "status": "success",
+        "message": f"已邀请 @{target_user.username} 加入工作空间及其下 {len(channels)} 个频道",
+        "data": {
+            "user_id": target_user.user_id,
+            "username": target_user.username,
+            "display_name": target_user.display_name,
+            "channels_joined": len(channels),
+        },
+    }
 
 
 @router.delete("/{workspace_id}")

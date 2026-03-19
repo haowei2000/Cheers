@@ -158,17 +158,17 @@ async def startup() -> None:
         logger.exception("preset LLM providers: %s", e)
 
     # Column migrations for existing databases (must run before ensure_builtin_bot)
-    try:
-        from app.db.session import engine
-        import sqlalchemy
-        async with engine.begin() as conn:
-            await conn.execute(
-                sqlalchemy.text(
-                    "ALTER TABLE channels ADD COLUMN auto_assist INTEGER NOT NULL DEFAULT 0"
-                )
-            )
-    except Exception:
-        pass  # Column already exists
+    import sqlalchemy
+    from app.db.session import async_engine
+    for _sql in [
+        "ALTER TABLE channels ADD COLUMN auto_assist INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE bot_accounts ADD COLUMN created_by VARCHAR(36)",
+    ]:
+        try:
+            async with async_engine.begin() as conn:
+                await conn.execute(sqlalchemy.text(_sql))
+        except Exception:
+            pass  # Column already exists
 
     try:
         from app.db.seed import ensure_builtin_bot
