@@ -8,14 +8,13 @@ from app.chat_core.schemas import (
     AIModelInResponse,
     AIModelUpdate,
 )
-from app.db.models import AIModel
+from app.db.models import AIModel, User
 from app.db.session import get_session
-from app.auth.routes import require_permission
+from app.auth.routes import get_current_user
 
 router = APIRouter(
     prefix="/api/admin/models",
     tags=["admin-models"],
-    dependencies=[Depends(require_permission("bot_config"))],
 )
 
 
@@ -52,6 +51,7 @@ async def list_models(
 @router.post("")
 async def create_model(
     body: AIModelCreate,
+    _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """创建 AI 模型配置."""
@@ -107,6 +107,7 @@ async def get_model(
 async def update_model(
     model_id: str,
     body: AIModelUpdate,
+    _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """更新 AI 模型配置."""
@@ -116,14 +117,7 @@ async def update_model(
     model = result.scalar_one_or_none()
     if not model:
         raise HTTPException(status_code=404, detail="模型不存在")
-    
-    if model.is_builtin:
-        # 内置模型只能修改部分字段
-        allowed_fields = ["is_enabled", "api_key", "config"]
-        for field in ["name", "provider", "model_name", "base_url", "description"]:
-            if getattr(body, field) is not None:
-                raise HTTPException(status_code=400, detail=f"内置模型不能修改 {field}")
-    
+
     if body.name is not None:
         name = body.name.strip()
         if name != model.name:
@@ -162,18 +156,17 @@ async def update_model(
 @router.delete("/{model_id}")
 async def delete_model(
     model_id: str,
+    _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """删除 AI 模型（不能删除内置模型）."""
+    """删除 AI 模型."""
     result = await session.execute(
         select(AIModel).where(AIModel.model_id == model_id)
     )
     model = result.scalar_one_or_none()
     if not model:
         raise HTTPException(status_code=404, detail="模型不存在")
-    if model.is_builtin:
-        raise HTTPException(status_code=400, detail="不能删除内置模型")
-    
+
     # 检查是否有 Bot 正在使用此模型
     from app.db.models import BotAccount
     using_bots = await session.execute(

@@ -67,6 +67,7 @@ class BotAccount(Base):
     
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online")  # online | offline | busy
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # 创建者 user_id
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     # Relationships
