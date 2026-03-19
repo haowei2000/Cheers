@@ -8,14 +8,13 @@ from app.chat_core.schemas import (
     PromptTemplateInResponse,
     PromptTemplateUpdate,
 )
-from app.db.models import PromptTemplate
+from app.db.models import PromptTemplate, User
 from app.db.session import get_session
-from app.auth.routes import require_permission
+from app.auth.routes import get_current_user
 
 router = APIRouter(
     prefix="/api/admin/templates",
     tags=["admin-templates"],
-    dependencies=[Depends(require_permission("bot_config"))],
 )
 
 
@@ -39,6 +38,7 @@ async def list_templates(
 @router.post("")
 async def create_template(
     body: PromptTemplateCreate,
+    _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """创建提示词模板."""
@@ -97,6 +97,7 @@ async def get_template(
 async def update_template(
     template_id: str,
     body: PromptTemplateUpdate,
+    _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """更新提示词模板."""
@@ -106,9 +107,6 @@ async def update_template(
     template = result.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="模板不存在")
-    
-    if template.is_builtin and body.name is not None:
-        raise HTTPException(status_code=400, detail="不能修改内置模板的名称")
     
     if body.name is not None:
         name = body.name.strip()
@@ -146,6 +144,7 @@ async def update_template(
 @router.delete("/{template_id}")
 async def delete_template(
     template_id: str,
+    _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """删除提示词模板（不能删除内置模板）."""
@@ -155,9 +154,7 @@ async def delete_template(
     template = result.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=404, detail="模板不存在")
-    if template.is_builtin:
-        raise HTTPException(status_code=400, detail="不能删除内置模板")
-    
+
     # 检查是否有 Bot 正在使用此模板
     from app.db.models import BotAccount
     using_bots = await session.execute(
