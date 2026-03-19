@@ -1,0 +1,37 @@
+# AgentNexus Backend - 核心依赖
+# Python 3.13+
+
+# Web & Async
+fastapi>=0.115.0,<1.0
+uvicorn[standard]>=0.32.0
+websockets>=14.0
+
+# 数据库（SQLite 主库 + Context Store）
+sqlalchemy>=2.0.0
+alembic>=1.14.0
+aiosqlite>=0.20.0
+
+# Redis
+redis>=5.2.0
+boto3>=1.42.0
+
+# 配置与环境
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# 文件转换（txt/md/docx + M2: pdf/xlsx）
+mammoth>=1.8.0
+markdown>=3.5.0
+pymupdf>=1.24.0
+openpyxl>=3.1.0
+
+# 测试
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+httpx>=0.28.0
+greenlet>=3.0.0
+
+# 代码质量
+flake8>=7.0.0
+passlib>=1.7.4

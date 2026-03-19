@@ -1,8 +1,10 @@
 """管理端 LLM 等参数持久化：一层 LLM 设定（增删改列表），二层功能绑定（按功能选 LLM）。"""
 import json
+import sqlite3
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from app.config import settings
 
@@ -18,6 +20,7 @@ DEFAULT_ORCHESTRATOR_SETTINGS = {
     "orchestrator_direct_answer": False,
     "orchestrator_auto_takeover": False,
 }
+AI_MODEL_PROVIDER_PREFIX = "ai-model:"
 
 # 与 config 一致：相对 data_dir 基于 backend 根目录（3 个 parent：app/admin -> app -> backend）
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -82,6 +85,115 @@ def _ensure_orchestrator_settings(data: dict[str, Any]) -> None:
             data[k] = v
 
 
+def _rewrite_localhost_base_url(base_url: str) -> str:
+    alias = (settings.llm_localhost_alias or "").strip()
+    url = (base_url or "").strip()
+    if not alias or not url:
+        return url
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return url
+    if (parsed.hostname or "").lower() not in {"localhost", "127.0.0.1", "0.0.0.0"}:
+        return url
+    netloc = alias
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme or "http", netloc, parsed.path, parsed.query, parsed.fragment))
+
+
+def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = {
+        "base_url": _rewrite_localhost_base_url((payload.get("base_url") or "").strip()),
+        "model": (payload.get("model") or "").strip(),
+        "api_key": (payload.get("api_key") or "").strip(),
+        "temperature": float(payload.get("temperature", 0.7)),
+        "max_tokens": int(payload.get("max_tokens", 1000)),
+    }
+    extra_headers = payload.get("extra_headers")
+    if isinstance(extra_headers, dict) and extra_headers:
+        normalized["extra_headers"] = {str(k): str(v) for k, v in extra_headers.items()}
+    timeout = payload.get("timeout")
+    if timeout is not None:
+        try:
+            normalized["timeout"] = float(timeout)
+        except (TypeError, ValueError):
+            pass
+    return normalized
+
+
+def _resolve_sqlite_database_path() -> Path | None:
+    url = (settings.database_url or "").strip()
+    if not url.startswith("sqlite") or "///" not in url:
+        return None
+    database_path = url.split("///", 1)[1].split("?", 1)[0]
+    if not database_path or database_path == ":memory:":
+        return None
+    path = Path(database_path)
+    if not path.is_absolute():
+        path = (_BACKEND_ROOT / path).resolve()
+    return path
+
+
+def _parse_json_object(raw_value: Any) -> dict[str, Any]:
+    if isinstance(raw_value, dict):
+        return raw_value
+    if isinstance(raw_value, str) and raw_value.strip():
+        try:
+            data = json.loads(raw_value)
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
+    return {}
+
+
+def _load_ai_model_providers() -> list[dict[str, Any]]:
+    db_path = _resolve_sqlite_database_path()
+    if not db_path or not db_path.is_file():
+        return []
+
+    query = """
+        SELECT model_id, name, provider, model_name, base_url, api_key, config
+        FROM ai_models
+        WHERE is_enabled = 1
+        ORDER BY datetime(created_at) DESC, name ASC
+    """
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(query).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        if conn is not None:
+            conn.close()
+
+    providers: list[dict[str, Any]] = []
+    for row in rows:
+        config = _parse_json_object(row["config"])
+        extra_headers = config.get("extra_headers")
+        provider: dict[str, Any] = {
+            "id": f"{AI_MODEL_PROVIDER_PREFIX}{row['model_id']}",
+            "model_id": row["model_id"],
+            "name": row["name"] or row["model_name"] or "未命名模型",
+            "base_url": (row["base_url"] or "").strip(),
+            "model": (row["model_name"] or "").strip(),
+            "api_key": (row["api_key"] or "").strip(),
+            "temperature": float(config.get("temperature", 0.7)),
+            "max_tokens": int(config.get("max_tokens", 1000)),
+            "source": "ai_model",
+            "provider": (row["provider"] or "").strip(),
+        }
+        if isinstance(extra_headers, dict) and extra_headers:
+            provider["extra_headers"] = extra_headers
+        timeout = config.get("timeout")
+        if timeout is not None:
+            provider["timeout"] = timeout
+        providers.append(provider)
+    return providers
+
+
 # 预设本地模型（Ollama，OpenAI 兼容）
 PRESET_LLM_BASE_URL = "http://localhost:11434/v1"
 PRESET_LLM_API_KEY = "ollama"
@@ -97,18 +209,21 @@ def ensure_preset_llm_providers() -> None:
     """若当前无任何 LLM 设定，则写入预设的本地 Ollama 模型（仅执行一次）。"""
     data = load_admin_settings()
     _ensure_llm_structures(data)
-    if data["llm_providers"]:
-        return
-    for p in PRESET_LLM_PROVIDERS:
-        data["llm_providers"].append({
-            "id": p["id"],
-            "name": p["name"],
-            "base_url": PRESET_LLM_BASE_URL,
-            "model": p["model"],
-            "api_key": PRESET_LLM_API_KEY,
-            "temperature": 0.7,
-            "max_tokens": 1000,
-        })
+    if not data["llm_providers"]:
+        for p in PRESET_LLM_PROVIDERS:
+            data["llm_providers"].append({
+                "id": p["id"],
+                "name": p["name"],
+                "base_url": PRESET_LLM_BASE_URL,
+                "model": p["model"],
+                "api_key": PRESET_LLM_API_KEY,
+                "temperature": 0.7,
+                "max_tokens": 1000,
+            })
+    if not (data.get("llm_bindings") or {}) and data["llm_providers"]:
+        default_provider_id = data["llm_providers"][0]["id"]
+        for scope in ("guide_bot", "assistant_bot", "orchestrator", "system_llm"):
+            data["llm_bindings"][scope] = default_provider_id
     save_admin_settings(data)
 
 
@@ -117,7 +232,8 @@ def get_llm_providers_list() -> list[dict[str, Any]]:
     data = load_admin_settings()
     _ensure_llm_structures(data)
     out = []
-    for p in data["llm_providers"]:
+    providers = _load_ai_model_providers() + list(data["llm_providers"])
+    for p in providers:
         out.append({
             "id": p.get("id", ""),
             "name": p.get("name", ""),
@@ -143,6 +259,9 @@ def _get_provider_by_id(provider_id: str) -> dict[str, Any] | None:
     for p in data["llm_providers"]:
         if p.get("id") == provider_id:
             return p
+    for p in _load_ai_model_providers():
+        if p.get("id") == provider_id or p.get("model_id") == provider_id:
+            return p
     return None
 
 
@@ -158,34 +277,30 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
     if pid:
         p = _get_provider_by_id(pid)
         if p:
-            return {
-                "base_url": (p.get("base_url") or "").strip(),
-                "model": (p.get("model") or "").strip(),
-                "api_key": (p.get("api_key") or "").strip(),
-                "temperature": float(p.get("temperature", 0.7)),
-                "max_tokens": int(p.get("max_tokens", 1000)),
-            }
+            return _normalize_provider_config(p)
+    if data["llm_providers"]:
+        return _normalize_provider_config(data["llm_providers"][0])
     # 回退：旧版扁平键（env + admin 覆盖）
     from app.config import settings as s
     if scope == "guide_bot":
-        return {
+        return _normalize_provider_config({
             "base_url": (data.get("guide_llm_base_url") or s.guide_llm_base_url or "").strip(),
             "model": (data.get("guide_llm_model") or s.guide_llm_model or "").strip(),
             "api_key": (data.get("guide_llm_api_key") or s.guide_llm_api_key or "").strip(),
             "temperature": float(data.get("guide_llm_temperature", s.guide_llm_temperature)),
             "max_tokens": int(data.get("guide_llm_max_tokens", s.guide_llm_max_tokens)),
-        }
+        })
     if scope == "assistant_bot":
         # 无独立绑定时回退到 guide_bot 配置
         return get_provider_for_scope("guide_bot")
     if scope in ("system_llm", "log_analyze", "qa_summarize", "orchestrator"):
-        return {
+        return _normalize_provider_config({
             "base_url": (data.get("system_llm_base_url") or s.system_llm_base_url or "").strip(),
             "model": (data.get("system_llm_model") or s.system_llm_model or "gpt-4o-mini").strip(),
             "api_key": (data.get("system_llm_api_key") or s.system_llm_api_key or "").strip(),
             "temperature": 0.5,
             "max_tokens": 1500,
-        }
+        })
     return None
 
 

@@ -1,9 +1,12 @@
-"""文件上传与状态查询 API."""
-import shutil
+"""文件上传与状态查询 API。"""
+from __future__ import annotations
+
+import logging
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,26 +14,41 @@ from app.config import settings
 from app.db.models import Channel, FileRecord
 from app.db.session import get_session
 from app.file_processor.convert import to_markdown
+from app.file_processor.service import FileFlowError, FilePipelineService
+from app.storage.base import StorageError
+
+logger = logging.getLogger("app.file_processor.routes")
 
 router = APIRouter(prefix="/api/files", tags=["files"])
+
+
+class FilePresignRequest(BaseModel):
+    """生成前端直传 RustFS 的 presigned URL。"""
+
+    channel_id: str = Field(..., min_length=1)
+    uploader_id: str = Field(..., min_length=1)
+    filename: str = Field(..., min_length=1, max_length=255)
+    content_type: str = Field(..., min_length=1, max_length=255)
+    size: int = Field(..., gt=0)
 
 
 def _data_dir() -> Path:
     base = Path(settings.data_dir)
     if not base.is_absolute():
-        base = Path(__file__).resolve().parent.parent.parent.parent / base
+        base = Path(__file__).resolve().parent.parent.parent / base
     return base
 
 
 @router.post("/upload")
-async def upload_file(
+async def upload_file_legacy(
     request: Request,
     channel_id: str = Query(...),
     uploader_id: str = Query(...),
     filename: str = Query(..., description="原始文件名，如 doc.pdf"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """上传文件（body 为文件二进制），创建 FileRecord 并转换（M1 支持 .txt/.md/.docx）。"""
+    """旧版后端转传上传接口已停用，强制走 presign + 直传。"""
+
     result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="channel not found")
@@ -43,38 +61,93 @@ async def upload_file(
     upload_dir = data_dir / "uploads" / channel_id
     upload_dir.mkdir(parents=True, exist_ok=True)
     raw_path = upload_dir / f"{file_id}{ext}"
-    body = await request.body()
-    raw_path.write_bytes(body)
+    raw_path.write_bytes(await request.body())
     conv_dir = data_dir / "converted" / channel_id
     conv_dir.mkdir(parents=True, exist_ok=True)
     md_path = conv_dir / f"{file_id}.md"
     status = "converting"
+    last_error: str | None = None
     try:
         content = to_markdown(raw_path)
         md_path.write_text(content, encoding="utf-8")
         status = "ready"
-    except Exception:
+    except Exception as exc:
         status = "failed"
+        last_error = str(exc)
     record = FileRecord(
         file_id=file_id,
         channel_id=channel_id,
         uploader_id=uploader_id,
         original_path=str(raw_path),
+        original_filename=filename,
         md_path=str(md_path) if status == "ready" else None,
         status=status,
+        last_error=last_error,
     )
     session.add(record)
     await session.flush()
     return {"status": "success", "data": {"file_id": file_id, "status": record.status}}
 
 
+@router.post("/presign")
+async def create_presigned_upload(
+    body: FilePresignRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """生成 file_id 与 RustFS presigned PUT URL。"""
+
+    result = await session.execute(select(Channel).where(Channel.channel_id == body.channel_id))
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="channel not found")
+
+    try:
+        service = FilePipelineService()
+        record, upload, metadata = service.create_presigned_upload(
+            channel_id=body.channel_id,
+            uploader_id=body.uploader_id,
+            filename=body.filename,
+            content_type=body.content_type,
+            size_bytes=body.size,
+        )
+    except FileFlowError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except StorageError as exc:
+        logger.exception("failed to create presigned upload")
+        raise HTTPException(status_code=503, detail=f"storage unavailable: {exc}") from exc
+
+    session.add(record)
+    await session.flush()
+    try:
+        await service.write_upload_metadata(upload.file_id, metadata)
+    except StorageError:
+        logger.warning("failed to write file metadata sidecar file_id=%s", upload.file_id, exc_info=True)
+
+    return {
+        "status": "success",
+        "data": {
+            "file_id": upload.file_id,
+            "object_key": upload.object_key,
+            "upload_url": upload.upload_url,
+            "headers": upload.headers,
+            "expires_in": upload.expires_in,
+        },
+    }
+
+
 @router.get("/{file_id}/status")
 async def file_status(
     file_id: str,
+    channel_id: str = Query(..., description="用于限制只能查询当前频道下的文件"),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """查询文件转换状态."""
-    result = await session.execute(select(FileRecord).where(FileRecord.file_id == file_id))
+    """查询文件状态，不暴露内部文件系统路径。"""
+
+    result = await session.execute(
+        select(FileRecord).where(
+            FileRecord.file_id == file_id,
+            FileRecord.channel_id == channel_id,
+        )
+    )
     rec = result.scalar_one_or_none()
     if not rec:
         raise HTTPException(status_code=404, detail="file not found")
@@ -82,7 +155,12 @@ async def file_status(
         "status": "success",
         "data": {
             "file_id": rec.file_id,
+            "channel_id": rec.channel_id,
+            "original_filename": rec.original_filename,
+            "content_type": rec.content_type,
+            "size_bytes": rec.size_bytes,
             "status": rec.status,
-            "md_path": rec.md_path,
+            "uploaded_at": rec.uploaded_at.isoformat() if rec.uploaded_at else None,
+            "last_error": rec.last_error,
         },
     }

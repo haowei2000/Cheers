@@ -13,6 +13,7 @@
 - [关键技术文档](docs/关键技术文档.md)
 - [开发计划与里程碑](docs/开发计划与里程碑.md)
 - [TodoList](docs/TodoList.md)
+- [RustFS 对象存储部署说明](docs/RustFS对象存储部署说明.md)
 
 ## 技术栈
 
