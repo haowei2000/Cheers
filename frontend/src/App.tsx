@@ -971,6 +971,8 @@ export default function App() {
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [inviteWsMemberOpen, setInviteWsMemberOpen] = useState(false);
+  const [inviteWsIdentifier, setInviteWsIdentifier] = useState("");
   const [newChannelName, setNewChannelName] = useState("");
   const [allBots, setAllBots] = useState<BotItem[]>([]);
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
@@ -1059,6 +1061,33 @@ export default function App() {
         }
       })
       .catch(() => toast.error("创建失败"));
+  };
+
+  // 邀请成员加入工作空间
+  const handleInviteWsMember = () => {
+    if (!inviteWsIdentifier.trim()) {
+      toast.error("请输入用户名");
+      return;
+    }
+    if (!selectedWorkspaceId) {
+      toast.error("请先选择工作空间");
+      return;
+    }
+    authFetch(`${API}/workspaces/${selectedWorkspaceId}/invite`, {
+      method: "POST",
+      body: JSON.stringify({ identifier: inviteWsIdentifier.trim() }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          toast.success(d.message || "邀请成功");
+          setInviteWsIdentifier("");
+          setInviteWsMemberOpen(false);
+        } else {
+          toast.error(d.detail || "邀请失败");
+        }
+      })
+      .catch(() => toast.error("邀请失败"));
   };
 
   // 创建频道（项目）
@@ -1693,6 +1722,18 @@ export default function App() {
               {selectedWorkspaceId && (
                 <button
                   type="button"
+                  onClick={() => setInviteWsMemberOpen(true)}
+                  className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
+                  title="邀请成员"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M11 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM2.046 15.253c-.058.468.172.92.57 1.174A9.953 9.953 0 0 0 8 18c1.536 0 2.991-.346 4.184-.964l-4.253-4.25A3.5 3.5 0 0 0 5.6 11.5H5.5a3.5 3.5 0 0 0-3.454 3.753ZM15.5 9.5a.75.75 0 0 0-1.5 0v1.5H12.5a.75.75 0 0 0 0 1.5H14v1.5a.75.75 0 0 0 1.5 0V12.5h1.5a.75.75 0 0 0 0-1.5H15.5V9.5Z" />
+                  </svg>
+                </button>
+              )}
+              {selectedWorkspaceId && (
+                <button
+                  type="button"
                   onClick={() => {
                     if (confirm("确定删除该工作空间？删除后其下的频道也将被删除。")) {
                       authFetch(`${API}/workspaces/${selectedWorkspaceId}`, { method: "DELETE" })
@@ -1951,6 +1992,66 @@ export default function App() {
                   className="px-4 py-2 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]"
                 >
                   创建
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 邀请工作空间成员 Modal */}
+      {inviteWsMemberOpen && (
+        <div
+          className="fixed inset-0 z-10 flex items-center justify-center bg-black/40"
+          onClick={() => setInviteWsMemberOpen(false)}
+          aria-modal="true"
+          role="dialog"
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900">邀请成员</h2>
+              <button
+                type="button"
+                onClick={() => setInviteWsMemberOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none"
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              被邀请的成员将自动加入该工作空间下的所有频道。
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+                <input
+                  type="text"
+                  value={inviteWsIdentifier}
+                  onChange={(e) => setInviteWsIdentifier(e.target.value)}
+                  placeholder="输入用户名"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+                  onKeyDown={(e) => e.key === "Enter" && handleInviteWsMember()}
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInviteWsMemberOpen(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleInviteWsMember}
+                  className="px-4 py-2 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]"
+                >
+                  邀请
                 </button>
               </div>
             </div>
