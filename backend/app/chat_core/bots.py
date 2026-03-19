@@ -18,7 +18,7 @@ from app.chat_core.schemas import (
 )
 from app.db.models import BotAccount, BotRegistrationRequest, gen_uuid, AIModel, PromptTemplate, User
 from app.db.session import get_session
-from app.auth.routes import require_permission
+from app.auth.routes import get_current_user
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
 
@@ -82,6 +82,7 @@ async def list_bots(
             status=row.status,
             model_name=row.ai_model.name if row.ai_model else None,
             template_name=row.prompt_template.name if row.prompt_template else None,
+            created_by=row.created_by,
             created_at=row.created_at,
         ).model_dump()
         if row.created_at:
@@ -93,10 +94,10 @@ async def list_bots(
 @router.post("")
 async def create_bot(
     body: BotCreate,
-    _: User = Depends(require_permission("bot_config")),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """创建 Bot：选择模型 + 选择提示词模板."""
+    """创建 Bot：任意登录用户均可创建，Bot 归属于创建者。"""
     bot_id = body.bot_id
     if not bot_id or not bot_id.strip():
         bot_id = gen_uuid()
@@ -135,6 +136,7 @@ async def create_bot(
         status=body.status.strip() or "online",
         intro=intro_val,
         avatar_url=body.avatar_url.strip() if body.avatar_url else None,
+        created_by=current_user.user_id,
     )
     session.add(bot)
     await session.commit()
@@ -154,6 +156,7 @@ async def create_bot(
         template_id=bot.template_id,
         model_name=model.name,
         template_name=template.name,
+        created_by=bot.created_by,
     ).model_dump()
     if bot.created_at:
         d["created_at"] = bot.created_at.isoformat()
@@ -187,6 +190,7 @@ async def get_bot(
         template_id=bot.template_id,
         model_name=bot.ai_model.name if bot.ai_model else None,
         template_name=bot.prompt_template.name if bot.prompt_template else None,
+        created_by=bot.created_by,
     ).model_dump()
     if bot.created_at:
         d["created_at"] = bot.created_at.isoformat()
@@ -197,16 +201,18 @@ async def get_bot(
 async def update_bot(
     bot_id: str,
     body: BotUpdate,
-    _: User = Depends(require_permission("bot_config")),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """更新 Bot 信息."""
+    """更新 Bot 信息：仅创建者或管理员可操作。"""
     result = await session.execute(
         select(BotAccount).where(BotAccount.bot_id == bot_id)
     )
     bot = result.scalar_one_or_none()
     if not bot:
         raise HTTPException(status_code=404, detail="Bot 不存在")
+    if bot.created_by != current_user.user_id and current_user.role not in ("system_admin", "space_admin"):
+        raise HTTPException(status_code=403, detail="权限不足，仅 Bot 创建者或管理员可编辑")
 
     if body.username is not None:
         uname = body.username.strip()
@@ -264,6 +270,7 @@ async def update_bot(
         template_id=bot.template_id,
         model_name=bot.ai_model.name if bot.ai_model else None,
         template_name=bot.prompt_template.name if bot.prompt_template else None,
+        created_by=bot.created_by,
     ).model_dump()
     if bot.created_at:
         d["created_at"] = bot.created_at.isoformat()
@@ -273,16 +280,18 @@ async def update_bot(
 @router.delete("/{bot_id}")
 async def delete_bot(
     bot_id: str,
-    _: User = Depends(require_permission("bot_config")),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """删除 Bot 账号."""
+    """删除 Bot 账号：仅创建者或管理员可操作。"""
     result = await session.execute(
         select(BotAccount).where(BotAccount.bot_id == bot_id)
     )
     bot = result.scalar_one_or_none()
     if not bot:
         raise HTTPException(status_code=404, detail="Bot 不存在")
+    if bot.created_by != current_user.user_id and current_user.role not in ("system_admin", "space_admin"):
+        raise HTTPException(status_code=403, detail="权限不足，仅 Bot 创建者或管理员可删除")
     await session.delete(bot)
     await session.commit()
     return {"status": "success", "message": "已删除"}

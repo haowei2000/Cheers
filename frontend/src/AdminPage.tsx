@@ -47,6 +47,7 @@ type BotItem = {
   template_id: string;
   model_name?: string;
   template_name?: string;
+  created_by?: string;
   created_at?: string;
 };
 
@@ -100,7 +101,7 @@ export default function AdminPage() {
       },
     });
 
-  const [activeTab, setActiveTab] = useState<TabId>(() => (userRole === "system_admin" ? "models" : "bot"));
+  const [activeTab, setActiveTab] = useState<TabId>("models");
 
   // ==================== Workspace & Channel States ====================
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -675,14 +676,14 @@ export default function AdminPage() {
 
   // ==================== Render ====================
 
-  // 权限检查：未登录或无管理员权限则显示提示
-  if (!currentUser || (userRole !== "system_admin" && userRole !== "space_admin")) {
+  // 权限检查：未登录则显示提示
+  if (!currentUser) {
     return (
       <div className="min-h-screen bg-[#F8F8F8] flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4">🔒</div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">权限不足</h2>
-          <p className="text-gray-500 mb-6">您需要管理员权限才能访问此页面。</p>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">请先登录</h2>
+          <p className="text-gray-500 mb-6">您需要登录后才能访问此页面。</p>
           <Link to="/" className="px-4 py-2 bg-[#4A154B] text-white rounded-lg hover:bg-[#611f69] text-sm font-medium">
             返回聊天
           </Link>
@@ -709,12 +710,8 @@ export default function AdminPage() {
           {/* Sidebar */}
           <aside className="w-48 flex-shrink-0">
             <nav className="space-y-1">
-              {(userRole === "system_admin" || userRole === "space_admin") && (
-                <>
-                  <button onClick={() => setActiveTab("models")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "models" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>AI 模型</button>
-                  <button onClick={() => setActiveTab("templates")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "templates" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>提示词模板</button>
-                </>
-              )}
+              <button onClick={() => setActiveTab("models")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "models" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>AI 模型</button>
+              <button onClick={() => setActiveTab("templates")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "templates" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>提示词模板</button>
               <button onClick={() => setActiveTab("bot")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "bot" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>Bot 管理</button>
               <button onClick={() => setActiveTab("workspace")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "workspace" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>工作区与项目</button>
               {userRole === "system_admin" && (
@@ -744,7 +741,6 @@ export default function AdminPage() {
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm">{m.name}</span>
-                              {m.is_builtin && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">内置</span>}
                               {!m.is_enabled && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">已禁用</span>}
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
@@ -756,9 +752,7 @@ export default function AdminPage() {
                           </div>
                           <div className="flex gap-2">
                             <button onClick={() => startEditModel(m)} className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50">编辑</button>
-                            {!m.is_builtin && (
-                              <button onClick={() => deleteModel(m.model_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
-                            )}
+                            <button onClick={() => deleteModel(m.model_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
                           </div>
                         </div>
                       ))}
@@ -844,16 +838,13 @@ export default function AdminPage() {
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm">{t.name}</span>
-                              {t.is_builtin && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">内置</span>}
                             </div>
                             {t.description && <div className="text-xs text-gray-500 mt-1">{t.description}</div>}
                             <div className="text-xs text-gray-400 mt-1">变量: {t.variables?.join(", ") || "message"}</div>
                           </div>
                           <div className="flex gap-2">
                             <button onClick={() => startEditTemplate(t)} className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50">编辑</button>
-                            {!t.is_builtin && (
-                              <button onClick={() => deleteTemplate(t.template_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
-                            )}
+                            <button onClick={() => deleteTemplate(t.template_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
                           </div>
                         </div>
                       ))}
@@ -912,16 +903,21 @@ export default function AdminPage() {
                             <span className="font-medium text-sm">@{b.username}</span>
                             {b.display_name && <span className="text-xs text-gray-500">({b.display_name})</span>}
                             <span className={`text-xs px-2 py-0.5 rounded ${b.status === "online" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"}`}>{b.status}</span>
+                            {b.created_by === currentUser?.user_id && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-600">我的</span>
+                            )}
                           </div>
                           <div className="text-xs text-gray-500 mt-1">
                             模型: {b.model_name || "未知"} | 模板: {b.template_name || "未知"}
                           </div>
                           {b.description && <div className="text-xs text-gray-400 mt-1">{b.description}</div>}
                         </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => startEditBot(b)} className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50">编辑</button>
-                          <button onClick={() => deleteBot(b.bot_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
-                        </div>
+                        {(b.created_by === currentUser?.user_id || userRole === "system_admin" || userRole === "space_admin") && (
+                          <div className="flex gap-2">
+                            <button onClick={() => startEditBot(b)} className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50">编辑</button>
+                            <button onClick={() => deleteBot(b.bot_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
+                          </div>
+                        )}
                       </div>
                     ))}
                     {botList.length === 0 && <div className="text-sm text-gray-400 py-4 text-center">暂无 Bot</div>}

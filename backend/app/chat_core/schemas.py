@@ -131,12 +131,13 @@ class BotInResponse(BaseModel):
     template_id: str
     model_name: str | None = None  # AIModel.name
     template_name: str | None = None  # PromptTemplate.name
+    created_by: str | None = None  # 创建者 user_id
 
 
 class BotSimpleInResponse(BaseModel):
     """简化版 Bot 响应（用于列表）."""
     model_config = ConfigDict(from_attributes=True)
-    
+
     bot_id: str
     username: str
     display_name: str | None = None
@@ -144,6 +145,7 @@ class BotSimpleInResponse(BaseModel):
     status: str
     model_name: str | None = None
     template_name: str | None = None
+    created_by: str | None = None
     created_at: datetime | None = None
 
 

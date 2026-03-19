@@ -10,7 +10,7 @@ from app.chat_core.schemas import (
     MemberAdd,
     MemberInResponse,
 )
-from app.db.models import BotAccount, Channel, ChannelMembership, User, Workspace
+from app.db.models import BotAccount, Channel, ChannelMembership, User, Workspace, WorkspaceMembership
 from app.db.session import get_session
 from app.auth.routes import get_current_user, try_get_current_user
 from app.guide.constants import GUIDE_BOT_ID
@@ -104,8 +104,23 @@ async def create_channel(
                     member_type="bot",
                 )
             )
-    # 自动将创建者加入频道成员
-    if current_user:
+    # 自动将工作空间所有成员加入新频道
+    ws_members_result = await session.execute(
+        select(WorkspaceMembership).where(WorkspaceMembership.workspace_id == body.workspace_id)
+    )
+    existing_member_ids = set()
+    for wm in ws_members_result.scalars().all():
+        session.add(
+            ChannelMembership(
+                channel_id=ch.channel_id,
+                member_id=wm.user_id,
+                member_type="user",
+            )
+        )
+        existing_member_ids.add(wm.user_id)
+
+    # 若创建者不在工作空间成员列表中（如未登录场景）则单独加入
+    if current_user and current_user.user_id not in existing_member_ids:
         session.add(
             ChannelMembership(
                 channel_id=ch.channel_id,
