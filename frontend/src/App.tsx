@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import FriendsPanel from "./FriendsPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
+import { MessageMarkdown } from "./MessageMarkdown";
 
 const API = "/api";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -91,108 +92,11 @@ function parseGuidePayload(content: string): { text: string; form?: GuideFormSch
 }
 
 
-/** 将消息内容中的 [text](url) 转为可点击链接，仅允许 / 或 http(s) 的 url */
-function renderMessageContent(content: string, keyPrefix = ""): (string | JSX.Element)[] {
-  const re = /\[([^\]]+)\]\(([^)]+)\)/g;
-  const out: (string | React.ReactElement)[] = [];
-  let lastIndex = 0;
-  let key = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    out.push(content.slice(lastIndex, m.index));
-    const rawUrl = m[2].trim();
-    const safe = rawUrl.startsWith("/") || rawUrl.startsWith("http://") || rawUrl.startsWith("https://");
-    out.push(
-      <a
-        key={`${keyPrefix}link-${key++}`}
-        href={safe ? rawUrl : "#"}
-        target="_blank"
-        rel="noreferrer"
-        className="text-[#1264A3] underline"
-      >
-        {m[1]}
-      </a>
-    );
-    lastIndex = re.lastIndex;
-  }
-  out.push(content.slice(lastIndex));
-  return out;
-}
-
-// ── Lightweight Markdown renderer (no external library) ──────────────────────
-function renderMd(md: string): string {
-  if (!md.trim()) return "";
-  const esc = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const inline = (s: string) =>
-    esc(s)
-      .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-xs font-mono">$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
-      .replace(
-        /\[([^\]]+)\]\(([^)]+)\)/g,
-        '<a href="$2" target="_blank" rel="noreferrer" class="text-[#1264A3] underline">$1</a>'
-      );
-  const lines = md.split("\n");
-  const out: string[] = [];
-  let inCode = false, codeBuf: string[] = [], inUl = false, inOl = false;
-  const flushList = () => {
-    if (inUl) { out.push("</ul>"); inUl = false; }
-    if (inOl) { out.push("</ol>"); inOl = false; }
-  };
-  for (const raw of lines) {
-    if (raw.startsWith("```")) {
-      if (!inCode) { flushList(); inCode = true; codeBuf = []; }
-      else {
-        out.push(`<pre class="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
-        inCode = false;
-      }
-      continue;
-    }
-    if (inCode) { codeBuf.push(raw); continue; }
-    if (/^---+$/.test(raw.trim())) { flushList(); out.push('<hr class="my-3 border-gray-200"/>'); continue; }
-    const hm = raw.match(/^(#{1,6})\s+(.*)/);
-    if (hm) {
-      flushList();
-      const lvl = hm[1].length;
-      const sz = ["text-lg font-bold mt-4 mb-1","text-base font-bold mt-3 mb-1","text-sm font-semibold mt-2 mb-0.5","text-sm font-semibold","text-xs font-semibold","text-xs font-semibold"][lvl-1];
-      const border = lvl <= 2 ? " border-b border-gray-200 pb-1" : "";
-      out.push(`<h${lvl} class="${sz} text-gray-900${border}">${inline(hm[2])}</h${lvl}>`);
-      continue;
-    }
-    if (raw.startsWith("> ")) {
-      flushList();
-      out.push(`<blockquote class="border-l-4 border-blue-300 bg-blue-50 pl-3 py-0.5 my-1 text-gray-600 text-sm italic">${inline(raw.slice(2))}</blockquote>`);
-      continue;
-    }
-    const ulm = raw.match(/^[-*+]\s+(.*)/);
-    if (ulm) {
-      if (inOl) { out.push("</ol>"); inOl = false; }
-      if (!inUl) { out.push('<ul class="list-disc pl-5 my-1 space-y-0.5 text-sm text-gray-800">'); inUl = true; }
-      out.push(`<li>${inline(ulm[1])}</li>`);
-      continue;
-    }
-    const olm = raw.match(/^\d+\.\s+(.*)/);
-    if (olm) {
-      if (inUl) { out.push("</ul>"); inUl = false; }
-      if (!inOl) { out.push('<ol class="list-decimal pl-5 my-1 space-y-0.5 text-sm text-gray-800">'); inOl = true; }
-      out.push(`<li>${inline(olm[1])}</li>`);
-      continue;
-    }
-    flushList();
-    if (raw.trim() === "") { out.push('<div class="my-1.5"></div>'); continue; }
-    out.push(`<p class="text-sm text-gray-800 leading-relaxed my-0.5">${inline(raw)}</p>`);
-  }
-  if (inCode && codeBuf.length) out.push(`<pre class="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
-  flushList();
-  return out.join("\n");
-}
 
 const THINK_BLOCK = /<think>([\s\S]*?)<\/think>/gi;
 
 /** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
-function renderWithThinkFolding(content: string, keyPrefix = ""): (string | JSX.Element)[] {
+function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boolean): (string | JSX.Element)[] {
   const parts: (string | JSX.Element)[] = [];
   let lastIndex = 0;
   let key = 0;
@@ -200,7 +104,8 @@ function renderWithThinkFolding(content: string, keyPrefix = ""): (string | JSX.
   THINK_BLOCK.lastIndex = 0;
   while ((match = THINK_BLOCK.exec(content)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(...renderMessageContent(content.slice(lastIndex, match.index), `${keyPrefix}seg-${key}-`));
+      const seg = content.slice(lastIndex, match.index).replace(/\n/g, "  \n");
+      parts.push(<MessageMarkdown key={`${keyPrefix}seg-${key++}`} text={seg} streaming={streaming} />);
     }
     const thinkContent = match[1]?.trim() || "";
     parts.push(
@@ -209,9 +114,14 @@ function renderWithThinkFolding(content: string, keyPrefix = ""): (string | JSX.
     lastIndex = THINK_BLOCK.lastIndex;
   }
   if (lastIndex < content.length) {
-    parts.push(...renderMessageContent(content.slice(lastIndex), `${keyPrefix}tail-${key}-`));
+    const seg = content.slice(lastIndex).replace(/\n/g, "  \n");
+    parts.push(<MessageMarkdown key={`${keyPrefix}tail-${key++}`} text={seg} streaming={streaming} />);
   }
-  return parts.length > 0 ? parts : renderMessageContent(content, `${keyPrefix}full-`);
+  if (parts.length === 0) {
+    const seg = content.replace(/\n/g, "  \n");
+    parts.push(<MessageMarkdown key={`${keyPrefix}full-0`} text={seg} streaming={streaming} />);
+  }
+  return parts;
 }
 
 function ThinkFold({ content }: { content: string }) {
@@ -441,10 +351,9 @@ function MemoryPanel({
             spellCheck={false}
           />
         ) : rawContent.trim() ? (
-          <div
-            className="px-3 py-3 text-sm"
-            dangerouslySetInnerHTML={{ __html: renderMd(rawContent) }}
-          />
+          <div className="px-3 py-3 text-sm">
+            <MessageMarkdown text={rawContent} />
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
             <span className="text-3xl opacity-30">{meta.icon}</span>
@@ -2891,10 +2800,10 @@ export default function App() {
                             {m.sender_type === "bot" && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>}
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
-                          <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words">
+                          <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
                             {m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
-                              : renderWithThinkFolding(text, `${m.msg_id}-`)}
+                              : renderWithThinkFolding(text, `${m.msg_id}-`, !!m._streaming)}
                             {m._streaming && !!text && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                           </div>
                           {form && selectedId && m.sender_type === "bot" && (
@@ -3024,10 +2933,10 @@ export default function App() {
                                 </div>
                                 {!rCollapsed && (
                                   <>
-                                    <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed whitespace-pre-wrap break-words ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
+                                    <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
                                       {r._streaming && !rTextRaw
                                         ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
-                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`)}
+                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming)}
                                       {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                                     </div>
                                     {rForm && selectedId && r.sender_type === "bot" && (
