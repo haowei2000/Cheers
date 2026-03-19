@@ -875,6 +875,381 @@ function ThinkingIndicator() {
   );
 }
 
+// ── User Profile Modal ────────────────────────────────────────────────────────
+function UserProfileModal({
+  currentUser,
+  userToken,
+  onClose,
+  onProfileUpdated,
+}: {
+  currentUser: { user_id: string; username: string; display_name: string; role: string };
+  userToken: string;
+  onClose: () => void;
+  onProfileUpdated: (data: { display_name: string; bio?: string }) => void;
+}) {
+  const [displayName, setDisplayName] = useState(currentUser.display_name || "");
+  const [bio, setBio] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [tab, setTab] = useState<"profile" | "password">("profile");
+
+  useEffect(() => {
+    fetch(`${API}/auth/users/me`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.display_name !== undefined) setDisplayName(d.display_name || "");
+        if (d.bio !== undefined) setBio(d.bio || "");
+      })
+      .catch(() => {});
+  }, [userToken]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/auth/users/me`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({ display_name: displayName, bio }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "保存失败");
+      onProfileUpdated({ display_name: data.display_name || displayName, bio: data.bio });
+      toast.success("个人资料已更新");
+      onClose();
+    } catch (e: any) {
+      toast.error(e.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    if (!newPassword || !currentPassword) return;
+    if (newPassword !== confirmPassword) {
+      toast.error("两次输入的新密码不一致");
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      const res = await fetch(`${API}/auth/users/me/password`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "密码修改失败");
+      toast.success("密码已更新");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (e: any) {
+      toast.error(e.message || "密码修改失败");
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]";
+
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+      aria-modal="true"
+      role="dialog"
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-center px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
+          <h2 className="text-lg font-bold text-gray-900">个人资料</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Avatar + username */}
+        <div className="flex items-center gap-4 px-6 py-4 flex-shrink-0">
+          <div className="w-16 h-16 rounded-full bg-[#1264A3] text-white flex items-center justify-center text-2xl font-bold flex-shrink-0">
+            {(displayName || currentUser.username).slice(0, 1).toUpperCase()}
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">{displayName || currentUser.username}</p>
+            <p className="text-xs text-gray-400">@{currentUser.username}</p>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 mt-1 inline-block">{currentUser.role}</span>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-100 px-6 flex-shrink-0">
+          {(["profile", "password"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`pb-2 mr-4 text-sm font-medium border-b-2 transition-colors ${
+                tab === t ? "border-[#1264A3] text-[#1264A3]" : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {t === "profile" ? "基本信息" : "修改密码"}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {tab === "profile" ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">显示名称</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="输入你的显示名称"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">个人简介</label>
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="介绍一下你自己…"
+                  className={`${inputCls} resize-none`}
+                  rows={4}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">当前密码</label>
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="输入当前密码"
+                  className={inputCls}
+                  autoComplete="current-password"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">新密码</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="输入新密码"
+                  className={inputCls}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">确认新密码</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="再次输入新密码"
+                  className={inputCls}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+          >
+            取消
+          </button>
+          {tab === "profile" ? (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="px-4 py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50"
+            >
+              {saving ? "保存中…" : "保存"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handlePasswordChange}
+              disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword}
+              className="px-4 py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50"
+            >
+              {passwordSaving ? "更新中…" : "更新密码"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Channel Profile Modal ─────────────────────────────────────────────────────
+function ChannelProfileModal({
+  channelId,
+  channelName,
+  userToken,
+  onClose,
+}: {
+  channelId: string;
+  channelName: string;
+  userToken: string;
+  onClose: () => void;
+}) {
+  const [nickname, setNickname] = useState("");
+  const [bio, setBio] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API}/channels/${channelId}/my-profile`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.data) {
+          setNickname(d.data.nickname || "");
+          setBio(d.data.bio || "");
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [channelId, userToken]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/channels/${channelId}/my-profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({ nickname: nickname || null, bio: bio || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "保存失败");
+      toast.success("频道资料已更新");
+      onClose();
+    } catch (e: any) {
+      toast.error(e.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]";
+
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+      aria-modal="true"
+      role="dialog"
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-center px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">我在频道的资料</h2>
+            <p className="text-xs text-gray-400 mt-0.5">#{channelName}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-gray-400 text-sm">加载中…</div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                在这里设置的昵称和简介仅在本频道内显示，不影响其他频道。
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">频道昵称</label>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  placeholder="留空则使用全局显示名称"
+                  className={inputCls}
+                  maxLength={64}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">频道简介</label>
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="在本频道的身份介绍…"
+                  className={`${inputCls} resize-none`}
+                  rows={4}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="px-4 py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50"
+          >
+            {saving ? "保存中…" : "保存"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // 用户认证状态
   type CurrentUser = { user_id: string; username: string; display_name: string; role: string } | null;
@@ -979,6 +1354,8 @@ export default function App() {
   const [addingBots, setAddingBots] = useState(false);
   const [manageMembersOpen, setManageMembersOpen] = useState(false);
   const [friendsPanelOpen, setFriendsPanelOpen] = useState(false);
+  const [userProfileOpen, setUserProfileOpen] = useState(false);
+  const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(new Set());
   const [, setHasMore] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1691,15 +2068,28 @@ export default function App() {
               <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
             </svg>
           </div>
-          <div className="flex-shrink-0">
+          <div className="flex items-center gap-1 flex-shrink-0">
             {currentUser ? (
-              <button
-                onClick={handleLogout}
-                className="w-7 h-7 rounded-full bg-[#D0B3D3] text-[#3F0E40] text-xs font-bold flex items-center justify-center hover:bg-white transition-colors"
-                title={`${currentUser.display_name} · 退出`}
-              >
-                {currentUser.display_name.slice(0, 1).toUpperCase()}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setUserProfileOpen(true)}
+                  className="w-7 h-7 rounded-full bg-[#D0B3D3] text-[#3F0E40] text-xs font-bold flex items-center justify-center hover:bg-white transition-colors"
+                  title={`${currentUser.display_name} · 编辑资料`}
+                >
+                  {currentUser.display_name.slice(0, 1).toUpperCase()}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-6 h-6 flex items-center justify-center rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                  title="退出登录"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                    <path fillRule="evenodd" d="M2 4.75A2.75 2.75 0 0 1 4.75 2h3a2.75 2.75 0 0 1 2.75 2.75v.5a.75.75 0 0 1-1.5 0v-.5c0-.69-.56-1.25-1.25-1.25h-3c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h3c.69 0 1.25-.56 1.25-1.25v-.5a.75.75 0 0 1 1.5 0v.5A2.75 2.75 0 0 1 7.75 14h-3A2.75 2.75 0 0 1 2 11.25v-6.5Zm9.47.47a.75.75 0 0 1 1.06 0l2.25 2.25a.75.75 0 0 1 0 1.06l-2.25 2.25a.75.75 0 1 1-1.06-1.06l.97-.97H6.75a.75.75 0 0 1 0-1.5h5.69l-.97-.97a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </>
             ) : (
               <button onClick={() => setLoginModalOpen(true)} className="text-xs text-white/70 hover:text-white px-2 py-1">登录</button>
             )}
@@ -2238,6 +2628,30 @@ export default function App() {
         />
       )}
 
+      {/* 个人资料模态框 */}
+      {userProfileOpen && currentUser && (
+        <UserProfileModal
+          currentUser={currentUser}
+          userToken={currentUser.user_id}
+          onClose={() => setUserProfileOpen(false)}
+          onProfileUpdated={(data) => {
+            const updated = { ...currentUser, display_name: data.display_name };
+            setCurrentUser(updated);
+            localStorage.setItem("currentUser", JSON.stringify({ user: updated, loginTime: Date.now() }));
+          }}
+        />
+      )}
+
+      {/* 频道资料模态框 */}
+      {channelProfileOpen && currentUser && selectedId && (
+        <ChannelProfileModal
+          channelId={selectedId}
+          channelName={selectedChannel?.name || ""}
+          userToken={currentUser.user_id}
+          onClose={() => setChannelProfileOpen(false)}
+        />
+      )}
+
       {/* Summary Modal */}
       {summaryModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSummaryModalOpen(false)}>
@@ -2394,6 +2808,18 @@ export default function App() {
                   <path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM6 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM1.49 15.326a.78.78 0 0 1-.358-.442 3 3 0 0 1 4.308-3.516 6.484 6.484 0 0 0-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 0 1-2.07-.655ZM16.44 15.98a4.97 4.97 0 0 0 2.07-.654.78.78 0 0 0 .357-.442 3 3 0 0 0-4.308-3.517 6.484 6.484 0 0 1 1.907 3.96 2.32 2.32 0 0 1-.026.654ZM18 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM5.304 16.19a.844.844 0 0 1-.277-.71 5 5 0 0 1 9.947 0 .843.843 0 0 1-.277.71A6.975 6.975 0 0 1 10 18a6.974 6.974 0 0 1-4.696-1.81Z" />
                 </svg>
               </button>
+              {currentUser && (
+                <button
+                  type="button"
+                  onClick={() => setChannelProfileOpen(true)}
+                  title="我的频道资料"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" />
+                  </svg>
+                </button>
+              )}
             </div>
 
             <div ref={messagesContainerRef} className="flex-1 overflow-auto">

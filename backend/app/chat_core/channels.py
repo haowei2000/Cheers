@@ -1,4 +1,6 @@
 """频道与成员 REST 路由."""
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, and_, or_
@@ -358,6 +360,76 @@ async def get_friends_to_invite(
     return {
         "status": "success",
         "data": friends,
+    }
+
+
+class ChannelProfileUpdate(BaseModel):
+    """频道内个性资料更新."""
+    nickname: Optional[str] = None
+    bio: Optional[str] = None
+
+
+@router.get("/{channel_id}/my-profile")
+async def get_my_channel_profile(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """获取当前用户在指定频道的个性化资料."""
+    from app.db.models import ChannelProfile
+    result = await session.execute(
+        select(ChannelProfile).where(
+            ChannelProfile.channel_id == channel_id,
+            ChannelProfile.user_id == current_user.user_id,
+        )
+    )
+    profile = result.scalar_one_or_none()
+    return {
+        "status": "success",
+        "data": {
+            "channel_id": channel_id,
+            "user_id": current_user.user_id,
+            "nickname": profile.nickname if profile else None,
+            "bio": profile.bio if profile else None,
+        },
+    }
+
+
+@router.put("/{channel_id}/my-profile")
+async def update_my_channel_profile(
+    channel_id: str,
+    body: ChannelProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """更新当前用户在指定频道的个性化资料（昵称、简介）."""
+    from app.db.models import ChannelProfile
+    result = await session.execute(
+        select(ChannelProfile).where(
+            ChannelProfile.channel_id == channel_id,
+            ChannelProfile.user_id == current_user.user_id,
+        )
+    )
+    profile = result.scalar_one_or_none()
+    if not profile:
+        profile = ChannelProfile(
+            channel_id=channel_id,
+            user_id=current_user.user_id,
+        )
+        session.add(profile)
+    if body.nickname is not None:
+        profile.nickname = body.nickname or None
+    if body.bio is not None:
+        profile.bio = body.bio or None
+    await session.flush()
+    return {
+        "status": "success",
+        "data": {
+            "channel_id": channel_id,
+            "user_id": current_user.user_id,
+            "nickname": profile.nickname,
+            "bio": profile.bio,
+        },
     }
 
 
