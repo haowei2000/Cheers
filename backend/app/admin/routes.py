@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.admin.log_buffer import get_formatted_log_excerpt, get_recent_logs
 from app.auth.routes import require_permission
 from app.admin.settings_store import (
+    SCOPES,
     create_llm_provider,
     delete_llm_provider,
     get_clarify_settings,
@@ -122,6 +123,31 @@ async def put_llm_bindings(body: LLMBindingsBody) -> dict:
     return {"status": "success", "data": {"bindings": get_llm_bindings()}}  # type: ignore[return-value]
 
 
+class LLMBindBody(BaseModel):
+    scope: str
+    provider_id: str = ""
+
+
+@router.post("/settings/llm/bind")
+async def post_llm_bind(body: LLMBindBody) -> dict:
+    """兼容旧前端：按 scope 保存单个功能绑定。"""
+    scope = (body.scope or "").strip()
+    if scope not in SCOPES:
+        raise HTTPException(status_code=400, detail="未知的 LLM 绑定范围")
+    provider_id = (body.provider_id or "").strip()
+    payload = {
+        "guide_bot": None,
+        "assistant_bot": None,
+        "system_llm": None,
+        "log_analyze": None,
+        "qa_summarize": None,
+        "orchestrator": None,
+    }
+    payload[scope] = provider_id
+    set_llm_bindings(**payload)
+    return {"status": "success", "data": {"bindings": get_llm_bindings()}}  # type: ignore[return-value]
+
+
 class ClarifySettingsBody(BaseModel):
     clarify_strict_mode: bool | None = None
     clarify_force_rule: bool | None = None
@@ -153,6 +179,12 @@ async def put_admin_clarify_settings(body: ClarifySettingsBody) -> dict:
     }
 
 
+@router.post("/settings/clarify")
+async def post_admin_clarify_settings(body: ClarifySettingsBody) -> dict:
+    """兼容旧前端：POST 保存澄清策略设置。"""
+    return await put_admin_clarify_settings(body)
+
+
 class OrchestratorSettingsBody(BaseModel):
     orchestrator_direct_answer: bool | None = None
     orchestrator_auto_takeover: bool | None = None
@@ -180,6 +212,12 @@ async def put_admin_orchestrator_settings(body: OrchestratorSettingsBody) -> dic
         "message": "updated",
         "data": updated,
     }
+
+
+@router.post("/settings/orchestrator")
+async def post_admin_orchestrator_settings(body: OrchestratorSettingsBody) -> dict:
+    """兼容旧前端：POST 保存 Orchestrator 设置。"""
+    return await put_admin_orchestrator_settings(body)
 
 
 # ---------- 日志（面向 LLM） ----------

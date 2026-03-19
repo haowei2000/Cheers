@@ -225,6 +225,63 @@ def _strip_tool_calls(text: str) -> str:
     return _TOOL_CALL_RE.sub("", text).strip()
 
 
+def _merge_attachments_into_text(user_text: str, attachments: list[dict[str, str]] | None) -> str:
+    """将文件解析结果拼接进内置 Bot 的用户消息。"""
+    if not attachments:
+        return user_text
+    parts = [user_text.strip(), "", "以下是用户上传文件的解析结果，请结合这些内容处理："]
+    for index, attachment in enumerate(attachments, start=1):
+        parts.append(f"## 文件 {index}")
+        parts.append(f"文件名: {attachment.get('filename') or attachment.get('file_id') or 'unknown'}")
+        if attachment.get("content_type"):
+            parts.append(f"类型: {attachment['content_type']}")
+        if attachment.get("summary"):
+            parts.append("摘要:")
+            parts.append(attachment["summary"])
+        parts.append("正文:")
+        parts.append(attachment.get("content") or "")
+        if attachment.get("truncated") == "true":
+            parts.append("注意: 该文件文本已按长度限制截断。")
+        parts.append("")
+    return "\n".join(parts).strip()
+
+
+def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str, str]] | None) -> str:
+    """LLM 不可用时，基于已解析的附件内容给出保底回答。"""
+    if not attachments:
+        return ""
+    normalized = (user_text or "").lower()
+    wants_summary = any(keyword in normalized for keyword in ("概括", "摘要", "总结", "概述", "summary", "summar"))
+    sections = ["当前 LLM 服务暂时不可用，但我已经成功读取了上传文件内容。"]
+    for index, attachment in enumerate(attachments, start=1):
+        filename = attachment.get("filename") or attachment.get("file_id") or f"文件 {index}"
+        summary = (attachment.get("summary") or "").strip()
+        content = (attachment.get("content") or "").strip()
+        excerpt = content[:280].strip()
+        if len(content) > 280:
+            excerpt += "..."
+        sections.append(f"### 文件 {index}: {filename}")
+        if wants_summary:
+            sections.append("基于已解析文本的概括：")
+            if summary:
+                sections.append(summary)
+            elif excerpt:
+                sections.append(f"- {excerpt}")
+            else:
+                sections.append("- 文件已读取，但暂时没有可提取的文本内容。")
+        else:
+            if summary:
+                sections.append("我先提取出文件的关键内容：")
+                sections.append(summary)
+            elif excerpt:
+                sections.append("我先提取出文件的关键片段：")
+                sections.append(f"- {excerpt}")
+            else:
+                sections.append("文件已读取，但暂时没有可提取的文本内容。")
+    sections.append("如果你配置好可用的 LLM 服务后再次提问，我会在完整上下文上继续给出更深入的回答。")
+    return "\n\n".join(part for part in sections if part).strip()
+
+
 # ─── 工具实现 ─────────────────────────────────────────────────────────────────
 
 async def _exec_update_anchor(args: dict, ctx: dict) -> str:
@@ -265,6 +322,7 @@ async def _exec_call_bot(args: dict, ctx: dict) -> str:
 
     bot_id_by_username: dict = ctx.get("bot_id_by_username") or {}
     adapter_factory = ctx.get("adapter_factory")
+    create_and_broadcast = ctx.get("create_and_broadcast")
 
     if username not in bot_id_by_username:
         available = list(bot_id_by_username.keys())
@@ -284,10 +342,14 @@ async def _exec_call_bot(args: dict, ctx: dict) -> str:
                 "timestamp": "",
             },
             memory_context=ctx.get("memory") or {},
-            attachments=[],
+            attachments=ctx.get("attachments") or [],
         )
         resp: AgentResponse = await adapter.execute(sub_payload)
         result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
+
+        # 广播被调用 Bot 的回复到频道（用户可见）
+        if create_and_broadcast:
+            await create_and_broadcast(bot_id, result)
 
         logger.info("unified_builtin[tool]: call_bot @%s completed channel=%s", username, ctx["channel_id"])
         return f"@{username} 回复：\n{result}"
@@ -360,6 +422,9 @@ async def _agent_loop(system_prompt: str, user_text: str, ctx: dict, stream_cb=N
         # 流式调用 LLM，过滤掉 tool-call 块的可见输出
         if stream_cb:
             raw = await _stream_llm_filtered(messages, stream_cb)
+            if not raw:
+                logger.info("unified_builtin: streaming returned empty, fallback to non-stream mode")
+                raw = await _call_llm_messages(messages)
         else:
             raw = await _call_llm_messages(messages)
 
@@ -459,6 +524,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text") or ""
+        user_text = _merge_attachments_into_text(user_text, payload.attachments)
         memory = payload.memory_context or {}
         channel_id = payload.channel_id
         pconfig = payload.process_config or {}
@@ -540,6 +606,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "memory": memory,
             "task_id": payload.task_id,
             "sender_id": sender_id,
+            "attachments": payload.attachments or [],
         }
 
         # ── 5. Agent Loop ──────────────────────────────────────────────────────
@@ -548,7 +615,11 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
 
         # ── 6. 关键词兜底（LLM 不可用时） ────────────────────────────────────
         if not content:
-            content = build_guide_content_with_form(user_text) or _DEFAULT_REPLY
+            content = (
+                _build_attachment_fallback_reply(user_text, payload.attachments)
+                or build_guide_content_with_form(user_text)
+                or _DEFAULT_REPLY
+            )
             logger.info(
                 "unified_builtin: LLM unavailable, keyword fallback channel=%s msg=%s",
                 channel_id,

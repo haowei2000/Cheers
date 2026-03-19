@@ -6,6 +6,7 @@ import time
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.chat_core import bots as chat_core_bots
 from app.chat_core import channels as chat_core_channels
@@ -23,9 +24,10 @@ from app.auth.routes import router as auth_router
 from app.file_processor import routes as file_routes
 from app.logging_config import setup_logging
 from app.manual_routes import router as manual_router
-from app.db.session import init_db
+from app.db.session import async_engine, init_db
 from app.memory.context_store import init_context_db
 from app.public_routes import router as public_router
+from app.storage.bootstrap import initialize_storage, is_storage_enabled
 
 logger = logging.getLogger("app.main")
 
@@ -112,6 +114,38 @@ app.include_router(public_router)
 app.include_router(auth_router)
 
 
+async def _ensure_sqlite_column(table_name: str, column_name: str, ddl: str) -> None:
+    async with async_engine.begin() as conn:
+        result = await conn.execute(text(f"PRAGMA table_info({table_name})"))
+        existing = {str(row[1]) for row in result.fetchall()}
+        if column_name in existing:
+            return
+        await conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {ddl}"))
+
+
+async def _run_lightweight_schema_migrations() -> None:
+    """为现有 SQLite 库补齐本次版本新增的轻量列。"""
+
+    migrations = [
+        ("channels", "auto_assist", "auto_assist INTEGER NOT NULL DEFAULT 0"),
+        ("bot_accounts", "created_by", "created_by VARCHAR(36)"),
+        ("file_records", "object_key", "object_key VARCHAR(512)"),
+        ("file_records", "storage_bucket", "storage_bucket VARCHAR(255)"),
+        ("file_records", "original_filename", "original_filename VARCHAR(255)"),
+        ("file_records", "content_type", "content_type VARCHAR(255)"),
+        ("file_records", "size_bytes", "size_bytes INTEGER"),
+        ("file_records", "last_error", "last_error TEXT"),
+        ("file_records", "uploaded_at", "uploaded_at DATETIME"),
+        ("file_records", "created_at", "created_at DATETIME"),
+        ("users", "bio", "bio TEXT"),
+    ]
+    for table_name, column_name, ddl in migrations:
+        try:
+            await _ensure_sqlite_column(table_name, column_name, ddl)
+        except Exception:
+            logger.exception("schema migration failed table=%s column=%s", table_name, column_name)
+
+
 @app.websocket("/ws/channels/{channel_id}")
 async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
     """连接频道 WebSocket，接收实时消息推送."""
@@ -157,24 +191,16 @@ async def startup() -> None:
     except Exception as e:
         logger.exception("preset LLM providers: %s", e)
 
-    # Column migrations for existing databases (must run before ensure_builtin_bot)
-    import sqlalchemy
-    from app.db.session import async_engine
-    for _sql in [
-        "ALTER TABLE channels ADD COLUMN auto_assist INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE bot_accounts ADD COLUMN created_by VARCHAR(36)",
-    ]:
-        try:
-            async with async_engine.begin() as conn:
-                await conn.execute(sqlalchemy.text(_sql))
-        except Exception:
-            pass  # Column already exists
+    await _run_lightweight_schema_migrations()
 
     try:
         from app.db.seed import ensure_builtin_bot
         await ensure_builtin_bot()
     except Exception as e:
         logger.exception("ensure builtin bot failed: %s", e)
+
+    if is_storage_enabled():
+        await initialize_storage()
 
 
 @app.get("/health")

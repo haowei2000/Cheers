@@ -1,13 +1,11 @@
-"""LLM Bot 适配器：根据 Bot 配置的模型和模板直接调用 LLM API.
+"""LLM Bot 适配器：将消息、记忆和上传文件解析结果一起发送给模型。"""
+from __future__ import annotations
 
-架构：Bot = AIModel + PromptTemplate
-- AIModel 提供模型参数（provider, model_name, base_url, api_key）
-- PromptTemplate 提供提示词（system_prompt, user_template）
-"""
 import json
 import logging
 import re
-from typing import Any, Callable, Awaitable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 
@@ -21,11 +19,7 @@ DEFAULT_MAX_TOKENS = 2000
 
 
 class LLMBotAdapter(OpenClawAdapter):
-    """内置 LLM Bot 适配器：根据 Bot 的 model + template 配置调用 LLM.
-    
-    Args:
-        bot: BotAccount 实例（包含关联的 ai_model 和 prompt_template）
-    """
+    """根据 Bot 的 model + template 配置调用 OpenAI-compatible LLM。"""
 
     def __init__(self, bot: BotAccount) -> None:
         self.bot = bot
@@ -33,61 +27,64 @@ class LLMBotAdapter(OpenClawAdapter):
         self.template: PromptTemplate = bot.prompt_template
 
     def _get_system_prompt(self) -> str:
-        """获取系统提示词（优先使用自定义的）."""
         if self.bot.custom_system_prompt:
             return self.bot.custom_system_prompt
         return self.template.system_prompt
 
-    def _apply_user_template(self, user_message: str, context: dict | None = None) -> str:
-        """应用用户消息模板.
-        
-        支持 {{message}} 占位符，以及模板中定义的其他变量。
-        """
+    def _apply_user_template(self, user_message: str, context: dict[str, Any] | None = None) -> str:
         template = self.template.user_template
-        
-        # 构建变量映射
-        variables = {"message": user_message}
+        variables: dict[str, Any] = {"message": user_message}
         if context:
             variables.update(context)
-        
-        # 替换所有 {{variable}} 格式的占位符
-        def replace_var(match: re.Match) -> str:
+
+        def replace_var(match: re.Match[str]) -> str:
             var_name = match.group(1)
             return str(variables.get(var_name, f"{{{{{var_name}}}}}"))
-        
-        result = re.sub(r'\{\{(\w+)\}\}', replace_var, template)
-        return result
 
-    def _build_messages(self, user_message: str, context: dict | None = None) -> list[dict[str, str]]:
-        """构建消息列表（System + User）."""
-        system_prompt = self._get_system_prompt()
-        formatted_user_msg = self._apply_user_template(user_message, context)
-        
+        return re.sub(r"\{\{(\w+)\}\}", replace_var, template)
+
+    def _build_messages(self, user_message: str, context: dict[str, Any] | None = None) -> list[dict[str, str]]:
         return [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": formatted_user_msg},
+            {"role": "system", "content": self._get_system_prompt()},
+            {"role": "user", "content": self._apply_user_template(user_message, context)},
         ]
 
+    def _merge_attachments_into_message(self, user_message: str, attachments: list[dict[str, str]]) -> str:
+        if not attachments:
+            return user_message
+
+        parts = [user_message.strip(), "", "以下是用户上传文件的解析结果，请优先基于这些内容回答："]
+        for index, attachment in enumerate(attachments, start=1):
+            parts.append(f"## 文件 {index}")
+            parts.append(f"文件名: {attachment.get('filename') or attachment.get('file_id') or 'unknown'}")
+            if attachment.get("content_type"):
+                parts.append(f"类型: {attachment['content_type']}")
+            if attachment.get("summary"):
+                parts.append("摘要:")
+                parts.append(attachment["summary"])
+            parts.append("正文:")
+            parts.append(attachment.get("content") or "")
+            if attachment.get("truncated") == "true":
+                parts.append("注意: 该文件文本已因长度限制被截断。")
+            parts.append("")
+        return "\n".join(parts).strip()
+
     def _get_api_config(self) -> dict[str, Any]:
-        """获取 API 配置."""
-        config = {
+        config: dict[str, Any] = {
             "provider": self.model.provider,
             "model_name": self.model.model_name,
             "base_url": self.model.base_url.rstrip("/"),
             "api_key": self.model.api_key,
         }
-        
-        # 合并模型配置
         if self.model.config:
             config.update(self.model.config)
-        
         return config
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
-        """调用 LLM API 获取响应."""
         user_text = (payload.trigger_message or {}).get("text", "")
+        user_text = self._merge_attachments_into_message(user_text, payload.attachments or [])
         task_id = payload.task_id
-        
+
         if not self.model or not self.template:
             return AgentResponse(
                 content="",
@@ -96,20 +93,17 @@ class LLMBotAdapter(OpenClawAdapter):
                 error_message="Bot 未配置模型或模板",
             )
 
-        # 构建请求
         api_config = self._get_api_config()
         url = f"{api_config['base_url']}/chat/completions"
-        
+
         headers = {"Content-Type": "application/json"}
         if api_config.get("api_key"):
             headers["Authorization"] = f"Bearer {api_config['api_key']}"
-        extra = api_config.get("extra_headers")
-        if isinstance(extra, dict):
-            headers.update({str(k): str(v) for k, v in extra.items()})
+        extra_headers = api_config.get("extra_headers")
+        if isinstance(extra_headers, dict):
+            headers.update({str(key): str(value) for key, value in extra_headers.items()})
 
-        # 构建消息
-        # 从 memory_context 中提取可能的上下文变量
-        context_vars = {}
+        context_vars: dict[str, str] = {}
         if payload.memory_context:
             context_vars = {
                 "anchor": payload.memory_context.get("anchor", ""),
@@ -117,7 +111,6 @@ class LLMBotAdapter(OpenClawAdapter):
                 "files_index": payload.memory_context.get("files_index", ""),
                 "recent": payload.memory_context.get("recent", ""),
             }
-        
         messages = self._build_messages(user_text, context_vars)
 
         body: dict[str, Any] = {
@@ -126,32 +119,29 @@ class LLMBotAdapter(OpenClawAdapter):
             "temperature": api_config.get("temperature", DEFAULT_TEMPERATURE),
             "max_tokens": api_config.get("max_tokens", DEFAULT_MAX_TOKENS),
         }
-
-        # 添加额外配置
-        for key in ["top_p", "presence_penalty", "frequency_penalty"]:
+        for key in ("top_p", "presence_penalty", "frequency_penalty"):
             if key in api_config:
                 body[key] = api_config[key]
 
         logger.info(
-            "llm_bot: bot=%s model=%s/%s task_id=%s",
+            "llm_bot: bot=%s model=%s/%s task_id=%s attachments=%d",
             self.bot.username,
             api_config["provider"],
             api_config["model_name"],
             task_id,
+            len(payload.attachments or []),
         )
 
-        stream_token_cb: Callable[[str], Awaitable[None]] | None = (
-            (payload.process_config or {}).get("_stream_token")
-        )
+        stream_token_cb: Callable[[str], Awaitable[None]] | None = (payload.process_config or {}).get("_stream_token")
 
         try:
             if stream_token_cb:
                 body["stream"] = True
                 full_content = ""
                 async with httpx.AsyncClient(timeout=120.0) as client:
-                    async with client.stream("POST", url, json=body, headers=headers) as r:
-                        r.raise_for_status()
-                        async for line in r.aiter_lines():
+                    async with client.stream("POST", url, json=body, headers=headers) as response:
+                        response.raise_for_status()
+                        async for line in response.aiter_lines():
                             if not line.startswith("data: "):
                                 continue
                             data_str = line[6:].strip()
@@ -159,90 +149,79 @@ class LLMBotAdapter(OpenClawAdapter):
                                 break
                             try:
                                 chunk = json.loads(data_str)
-                                delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
-                                if delta:
-                                    full_content += delta
-                                    await stream_token_cb(delta)
-                            except (json.JSONDecodeError, KeyError):
-                                pass
+                            except json.JSONDecodeError:
+                                continue
+                            delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+                            if not delta:
+                                continue
+                            full_content += delta
+                            await stream_token_cb(delta)
                 if not full_content:
-                    return AgentResponse(content="", task_id=task_id, success=False, error_message="LLM 返回空内容")
-                logger.info("llm_bot: stream success bot=%s content_len=%d", self.bot.username, len(full_content))
-                return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
-
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                r = await client.post(url, json=body, headers=headers)
-                r.raise_for_status()
-                data = r.json()
-
-                choices = data.get("choices", [])
-                if not choices:
-                    return AgentResponse(
-                        content="",
-                        task_id=task_id,
-                        success=False,
-                        error_message="LLM 返回空响应 (no choices)",
-                    )
-
-                content = (choices[0].get("message") or {}).get("content", "")
-                if not content:
                     return AgentResponse(
                         content="",
                         task_id=task_id,
                         success=False,
                         error_message="LLM 返回空内容",
                     )
+                return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
 
-                logger.info(
-                    "llm_bot: success bot=%s content_len=%d",
-                    self.bot.username,
-                    len(content),
-                )
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(url, json=body, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+
+            choices = data.get("choices", [])
+            if not choices:
                 return AgentResponse(
-                    content=content.strip(),
+                    content="",
                     task_id=task_id,
-                    success=True,
+                    success=False,
+                    error_message="LLM 返回空响应 (no choices)",
                 )
 
-        except httpx.HTTPStatusError as e:
+            content = (choices[0].get("message") or {}).get("content", "")
+            if not content:
+                return AgentResponse(
+                    content="",
+                    task_id=task_id,
+                    success=False,
+                    error_message="LLM 返回空内容",
+                )
+            return AgentResponse(content=content.strip(), task_id=task_id, success=True)
+
+        except httpx.HTTPStatusError as exc:
             error_body = ""
             try:
-                error_body = e.response.text[:500]
+                error_body = exc.response.text[:500]
             except Exception:
                 pass
             logger.error(
                 "llm_bot: HTTP error status=%s body=%s",
-                e.response.status_code,
+                exc.response.status_code,
                 error_body,
             )
             return AgentResponse(
                 content="",
                 task_id=task_id,
                 success=False,
-                error_message=f"LLM API 错误 (HTTP {e.response.status_code}): {error_body}",
+                error_message=f"LLM API 错误 (HTTP {exc.response.status_code}): {error_body}",
             )
-
-        except httpx.ConnectError as e:
-            logger.error("llm_bot: connection error %s", e)
+        except httpx.ConnectError as exc:
+            logger.error("llm_bot: connection error %s", exc)
             return AgentResponse(
                 content="",
                 task_id=task_id,
                 success=False,
                 error_message=f"无法连接到 LLM API: {api_config['base_url']}",
             )
-
-        except Exception as e:
+        except Exception as exc:
             logger.exception("llm_bot: unexpected error")
             return AgentResponse(
                 content="",
                 task_id=task_id,
                 success=False,
-                error_message=f"调用 LLM 时发生错误: {e!s}",
+                error_message=f"调用 LLM 时发生错误: {exc}",
             )
 
     async def health_check(self) -> bool:
-        """检查 LLM API 是否可用."""
-        if not self.model:
-            return False
-        # 简单检查配置是否完整
-        return bool(self.model.model_name and self.model.base_url)
+        return bool(self.model and self.model.model_name and self.model.base_url)

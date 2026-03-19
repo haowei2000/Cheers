@@ -41,6 +41,25 @@ class Settings(BaseSettings):
     # 数据目录（相对项目根或绝对路径）
     data_dir: str = "data"
 
+    # S3-compatible object storage (RustFS / MinIO / AWS S3 / Cloudflare R2)
+    storage_backend: str = "none"
+    storage_s3_endpoint: str = ""
+    storage_s3_public_endpoint: str = ""
+    storage_s3_region: str = "us-east-1"
+    storage_s3_access_key: str = ""
+    storage_s3_secret_key: str = ""
+    storage_s3_bucket: str = ""
+    storage_s3_force_path_style: bool = True
+    storage_s3_auto_create_bucket: bool = True
+    storage_presign_expires_seconds: int = 900
+    file_upload_max_bytes: int = 25 * 1024 * 1024
+    file_upload_allowed_types: str = (
+        "application/pdf,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "text/plain"
+    )
+    file_parse_max_chars: int = 12000
+
     # 调试
     debug: bool = False
 
@@ -56,6 +75,7 @@ class Settings(BaseSettings):
     guide_llm_api_key: str = ""
     guide_llm_temperature: float = 0.7
     guide_llm_max_tokens: int = 1000
+    llm_localhost_alias: str = ""
 
     # 系统 LLM（RECENT 压缩、文件摘要等；不配置则简单截断）
     system_llm_api_key: str = ""

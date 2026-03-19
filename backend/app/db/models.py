@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -57,14 +57,14 @@ class BotAccount(Base):
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # 显示名称
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Bot 描述
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    
+
     # 关联模型和模板
     model_id: Mapped[str] = mapped_column(String(36), ForeignKey("ai_models.model_id"), nullable=False)
     template_id: Mapped[str] = mapped_column(String(36), ForeignKey("prompt_templates.template_id"), nullable=False)
-    
+
     # 可选：自定义覆盖
     custom_system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 覆盖模板的 system_prompt
-    
+
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online")  # online | offline | busy
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
     created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # 创建者 user_id
@@ -192,10 +192,18 @@ class FileRecord(Base):
     )
     uploader_id: Mapped[str] = mapped_column(String(36), nullable=False)
     original_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    object_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    storage_bucket: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    content_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     md_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     summary_3lines: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    uploaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     converted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="file_records")
 
