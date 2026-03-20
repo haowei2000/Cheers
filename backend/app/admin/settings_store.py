@@ -20,6 +20,12 @@ DEFAULT_ORCHESTRATOR_SETTINGS = {
     "orchestrator_direct_answer": False,
     "orchestrator_auto_takeover": False,
 }
+DEFAULT_IMAGE_GEN_SETTINGS: dict[str, Any] = {
+    "base_url": "",
+    "api_key": "",
+    "default_model": "qwen-image-edit-max",
+}
+
 AI_MODEL_PROVIDER_PREFIX = "ai-model:"
 
 # 与 config 一致：相对 data_dir 基于 backend 根目录（3 个 parent：app/admin -> app -> backend）
@@ -490,3 +496,48 @@ def set_orchestrator_settings(
         data["orchestrator_auto_takeover"] = bool(orchestrator_auto_takeover)
     save_admin_settings(data)
     return get_orchestrator_settings()
+
+
+# ---------- 图片 API 设置 ----------
+
+
+def get_image_gen_settings() -> dict[str, Any]:
+    """返回图片 API 设置（api_key 脱敏）。"""
+    data = load_admin_settings()
+    raw = data.get("image_gen", {})
+    return {
+        "base_url": raw.get("base_url", ""),
+        "api_key_set": bool(raw.get("api_key")),
+        "api_key_masked": ("****" + raw["api_key"][-6:]) if raw.get("api_key") and len(raw["api_key"]) > 6 else ("****" if raw.get("api_key") else ""),
+        "default_model": raw.get("default_model", "qwen-image-edit-max"),
+    }
+
+
+def get_image_gen_effective_config() -> tuple[str, str, str]:
+    """返回生效的 (base_url, api_key, default_model)，admin 设置优先于 env。"""
+    data = load_admin_settings()
+    admin = data.get("image_gen", {})
+    base_url = (admin.get("base_url") or "").strip() or settings.image_gen_base_url
+    api_key = (admin.get("api_key") or "").strip() or settings.image_gen_api_key
+    default_model = (admin.get("default_model") or "").strip() or settings.image_gen_default_model
+    return base_url, api_key, default_model
+
+
+def set_image_gen_settings(
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    default_model: str | None = None,
+) -> dict[str, Any]:
+    """更新图片 API 设置并返回脱敏后的最新值。"""
+    data = load_admin_settings()
+    current = data.get("image_gen", {})
+    if base_url is not None:
+        current["base_url"] = base_url.strip()
+    if api_key is not None:
+        current["api_key"] = api_key.strip()
+    if default_model is not None:
+        current["default_model"] = default_model.strip()
+    data["image_gen"] = current
+    save_admin_settings(data)
+    return get_image_gen_settings()

@@ -49,6 +49,27 @@ class LLMBotAdapter(OpenClawAdapter):
             {"role": "user", "content": self._apply_user_template(user_message, context)},
         ]
 
+    def _has_image_attachments(self, attachments: list[dict[str, str]]) -> bool:
+        return any(a.get("is_image") == "true" and a.get("image_b64") for a in attachments)
+
+    def _build_vision_user_content(
+        self, user_text: str, attachments: list[dict[str, str]],
+    ) -> list[dict]:
+        """构建 OpenAI Vision 格式的多模态 content 数组。"""
+        parts: list[dict] = [{"type": "text", "text": user_text}]
+        for att in attachments:
+            if att.get("is_image") != "true":
+                continue
+            b64 = att.get("image_b64", "")
+            if not b64:
+                continue
+            mime = att.get("content_type") or "image/jpeg"
+            parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{b64}"},
+            })
+        return parts
+
     def _merge_attachments_into_message(self, user_message: str, attachments: list[dict[str, str]]) -> str:
         if not attachments:
             return user_message
@@ -82,8 +103,15 @@ class LLMBotAdapter(OpenClawAdapter):
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text", "")
-        user_text = self._merge_attachments_into_message(user_text, payload.attachments or [])
         task_id = payload.task_id
+        all_attachments = payload.attachments or []
+
+        # 分离图片与文档附件
+        image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
+        doc_attachments = [a for a in all_attachments if a.get("is_image") != "true"]
+
+        # 文档附件合并到文本
+        user_text = self._merge_attachments_into_message(user_text, doc_attachments)
 
         if not self.model or not self.template:
             return AgentResponse(
@@ -111,7 +139,20 @@ class LLMBotAdapter(OpenClawAdapter):
                 "files_index": payload.memory_context.get("files_index", ""),
                 "recent": payload.memory_context.get("recent", ""),
             }
-        messages = self._build_messages(user_text, context_vars)
+
+        # Vision 路径：模型支持且有图片时，构建多模态消息
+        supports_vision = (self.model.config or {}).get("supports_vision", True)
+        if supports_vision and self._has_image_attachments(all_attachments):
+            templated_text = self._apply_user_template(user_text, context_vars)
+            vision_content = self._build_vision_user_content(templated_text, all_attachments)
+            messages = [
+                {"role": "system", "content": self._get_system_prompt()},
+                {"role": "user", "content": vision_content},
+            ]
+        else:
+            if image_attachments:
+                user_text += "\n\n（注：该 Bot 未启用图片识别，已忽略图片附件。如需识别图片，请在模型配置中开启 supports_vision。）"
+            messages = self._build_messages(user_text, context_vars)
 
         body: dict[str, Any] = {
             "model": api_config["model_name"],

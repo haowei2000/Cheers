@@ -75,9 +75,10 @@ function MermaidBlock({ code, streaming }: MermaidBlockProps) {
 interface MessageMarkdownProps {
   text: string;
   streaming?: boolean;
+  onImageClick?: (src: string) => void;
 }
 
-export function MessageMarkdown({ text, streaming }: MessageMarkdownProps) {
+export function MessageMarkdown({ text, streaming, onImageClick }: MessageMarkdownProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -116,6 +117,21 @@ export function MessageMarkdown({ text, streaming }: MessageMarkdownProps) {
             <code className="bg-gray-100 px-1 rounded text-xs font-mono" {...props}>
               {children}
             </code>
+          );
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        img({ src, alt, ...props }: any) {
+          const safe = src && (src.startsWith("/") || src.startsWith("http://") || src.startsWith("https://"));
+          const safeSrc = safe ? src : "";
+          return (
+            <img
+              src={safeSrc}
+              alt={alt || "image"}
+              className="max-w-full max-h-[400px] rounded-lg my-2 border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+              loading="lazy"
+              onClick={safeSrc && onImageClick ? () => onImageClick(safeSrc) : undefined}
+              {...props}
+            />
           );
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

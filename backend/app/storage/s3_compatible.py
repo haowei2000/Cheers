@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote as _url_quote, urlparse
 
 from app.storage.base import (
     PresignedUpload,
@@ -132,8 +132,9 @@ class S3CompatibleStorageService(StorageProvider):
         metadata = {"file-id": ref.file_id}
         headers = {"Content-Type": content_type}
         if filename:
-            metadata["original-filename"] = filename
-            headers["x-amz-meta-original-filename"] = filename
+            ascii_safe_name = _url_quote(filename)
+            metadata["original-filename"] = ascii_safe_name
+            headers["x-amz-meta-original-filename"] = ascii_safe_name
         headers["x-amz-meta-file-id"] = ref.file_id
 
         params = {
@@ -180,6 +181,39 @@ class S3CompatibleStorageService(StorageProvider):
             return
         ref = self.resolve_file_id(file_id, scope=scope)
         await asyncio.to_thread(self._put_metadata_sidecar_sync, ref, metadata)
+
+    async def put_object(
+        self,
+        file_id: str,
+        data: bytes,
+        content_type: str,
+        *,
+        scope: str = "uploads",
+    ) -> StorageObjectRef:
+        ref = self.resolve_file_id(file_id, scope=scope)
+        await asyncio.to_thread(self._put_object_sync, ref, data, content_type)
+        return ref
+
+    def create_presigned_get_url(
+        self,
+        file_id: str,
+        *,
+        expires_in: int | None = None,
+        scope: str = "uploads",
+    ) -> str:
+        ref = self.resolve_file_id(file_id, scope=scope)
+        effective_expires = expires_in or self.config.presign_expires_seconds
+        try:
+            return self._get_presign_client().generate_presigned_url(
+                "get_object",
+                Params={"Bucket": ref.bucket, "Key": ref.object_key},
+                ExpiresIn=effective_expires,
+                HttpMethod="GET",
+            )
+        except self._client_errors() as exc:
+            raise StorageClientInitError(
+                f"failed to generate presigned GET URL: {exc}"
+            ) from exc
 
     def _validate_file_id(self, file_id: str) -> str:
         value = (file_id or "").strip()
@@ -289,6 +323,20 @@ class S3CompatibleStorageService(StorageProvider):
             metadata={str(k): str(v) for k, v in (response.get("Metadata") or {}).items()},
         )
         return StorageObject(head=head, body=body)
+
+    def _put_object_sync(self, ref: StorageObjectRef, data: bytes, content_type: str) -> None:
+        client = self._get_client()
+        try:
+            client.put_object(
+                Bucket=ref.bucket,
+                Key=ref.object_key,
+                Body=data,
+                ContentType=content_type,
+            )
+        except self._client_errors() as exc:
+            raise StorageClientInitError(
+                f"failed to put object for file_id={ref.file_id}: {exc}"
+            ) from exc
 
     def _put_metadata_sidecar_sync(self, ref: StorageObjectRef, metadata: dict[str, str]) -> None:
         client = self._get_client()

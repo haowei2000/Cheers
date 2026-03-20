@@ -14,6 +14,25 @@ SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
     ".pdf": {"application/pdf"},
 }
 
+SUPPORTED_IMAGE_TYPES: dict[str, set[str]] = {
+    ".png":  {"image/png"},
+    ".jpg":  {"image/jpeg"},
+    ".jpeg": {"image/jpeg"},
+    ".webp": {"image/webp"},
+    ".gif":  {"image/gif"},
+}
+
+# 所有支持类型合集，用于 presign 校验
+ALL_SUPPORTED_TYPES: dict[str, set[str]] = {**SUPPORTED_DOCUMENT_TYPES, **SUPPORTED_IMAGE_TYPES}
+
+
+def is_image_type(content_type_or_suffix: str) -> bool:
+    """判断 MIME 类型或文件扩展名是否为图片类型。"""
+    s = content_type_or_suffix.lower()
+    return s in SUPPORTED_IMAGE_TYPES or s in {
+        mime for mimes in SUPPORTED_IMAGE_TYPES.values() for mime in mimes
+    }
+
 
 class FileParseError(Exception):
     """文件解析失败。"""

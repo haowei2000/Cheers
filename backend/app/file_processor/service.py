@@ -1,6 +1,7 @@
 """文件上传与解析服务：封装 presign、校验、对象读取与文本解析。"""
 from __future__ import annotations
 
+import base64
 import logging
 import mimetypes
 import uuid
@@ -16,8 +17,10 @@ from app.db.models import FileRecord
 from app.file_processor.convert import (
     FileParseError,
     ParsedDocument,
+    ALL_SUPPORTED_TYPES,
     SUPPORTED_DOCUMENT_TYPES,
     UnsupportedFileTypeError,
+    is_image_type,
     parse_document_bytes,
 )
 from app.storage.base import (
@@ -140,6 +143,33 @@ class FilePipelineService:
         for record in records:
             record.status = "processing"
             await session.flush()
+
+            # 图片文件：读取字节并 base64 编码，供 Vision LLM 使用
+            if is_image_type(record.content_type or ""):
+                image_b64 = ""
+                try:
+                    obj = await self._load_record_object(record)
+                    if obj.body:
+                        image_b64 = base64.b64encode(obj.body).decode("ascii")
+                except Exception:
+                    logger.warning("failed to load image for vision file_id=%s", record.file_id, exc_info=True)
+                record.status = "ready"
+                record.last_error = None
+                record.converted_at = datetime.utcnow()
+                if not record.uploaded_at:
+                    record.uploaded_at = datetime.utcnow()
+                attachments.append({
+                    "file_id": record.file_id,
+                    "filename": record.original_filename or record.file_id,
+                    "content_type": record.content_type or "",
+                    "is_image": "true",
+                    "image_b64": image_b64,
+                    "summary": "",
+                    "content": "",
+                    "truncated": "false",
+                })
+                continue
+
             try:
                 obj = await self._load_record_object(record)
                 if not obj.body:
@@ -207,14 +237,14 @@ class FilePipelineService:
         if not normalized_name or normalized_name in {".", ".."}:
             raise FileFlowError("文件名不能为空")
         suffix = Path(normalized_name).suffix.lower()
-        if suffix not in SUPPORTED_DOCUMENT_TYPES:
-            raise FileFlowError("当前仅支持 pdf / docx / txt 文件")
+        if suffix not in ALL_SUPPORTED_TYPES:
+            raise FileFlowError("当前仅支持 pdf / docx / txt / png / jpg / jpeg / webp / gif 文件")
 
         allowed_mime_types = self.allowed_mime_types
         normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
         if not normalized_type:
             normalized_type = self._default_content_type_for_suffix(suffix)
-        if normalized_type not in SUPPORTED_DOCUMENT_TYPES[suffix]:
+        if normalized_type not in ALL_SUPPORTED_TYPES[suffix]:
             raise FileFlowError(f"文件类型与扩展名不匹配：{normalized_name}")
         if allowed_mime_types and normalized_type not in allowed_mime_types:
             raise FileFlowError(f"当前环境不允许上传该类型：{normalized_type}")
@@ -281,8 +311,10 @@ class FilePipelineService:
     async def _ensure_remote_object_ready(self, record: FileRecord) -> StorageObjectHead:
         if self.storage is None:
             raise FileFlowError("对象存储未初始化，无法读取上传文件", status_code=503)
+        # 根据 object_key 前缀推断 scope（generated/ 或 uploads/）
+        scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
         try:
-            head = await self.storage.head_object(record.file_id)
+            head = await self.storage.head_object(record.file_id, scope=scope)
         except StorageObjectNotFoundError as exc:
             record.status = "pending_upload"
             record.last_error = "object not found"

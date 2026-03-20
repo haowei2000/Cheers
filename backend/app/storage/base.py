@@ -112,3 +112,24 @@ class StorageProvider(ABC):
         scope: str = "uploads",
     ) -> None:
         raise NotImplementedError
+
+    @abstractmethod
+    async def put_object(
+        self,
+        file_id: str,
+        data: bytes,
+        content_type: str,
+        *,
+        scope: str = "uploads",
+    ) -> StorageObjectRef:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_presigned_get_url(
+        self,
+        file_id: str,
+        *,
+        expires_in: int | None = None,
+        scope: str = "uploads",
+    ) -> str:
+        raise NotImplementedError
