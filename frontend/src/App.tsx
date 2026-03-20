@@ -12,6 +12,13 @@ const API_DOCS_URL = "/docs";
 
 type Channel = { channel_id: string; name: string; type: string; workspace_id?: string; auto_assist?: boolean };
 type Workspace = { workspace_id: string; name: string };
+type FileInfo = {
+  file_id: string;
+  original_filename?: string;
+  content_type?: string;
+  size_bytes?: number;
+  status?: string;
+};
 type Message = {
   msg_id: string;
   sender_id: string;
@@ -20,6 +27,8 @@ type Message = {
   created_at?: string;
   _streaming?: boolean;
   in_reply_to_msg_id?: string | null;
+  file_ids?: string[];
+  files?: FileInfo[];
 };
 type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
@@ -96,7 +105,7 @@ function parseGuidePayload(content: string): { text: string; form?: GuideFormSch
 const THINK_BLOCK = /<think>([\s\S]*?)<\/think>/gi;
 
 /** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
-function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boolean): (string | JSX.Element)[] {
+function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boolean, onImageClick?: (src: string) => void): (string | JSX.Element)[] {
   const parts: (string | JSX.Element)[] = [];
   let lastIndex = 0;
   let key = 0;
@@ -105,7 +114,7 @@ function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boo
   while ((match = THINK_BLOCK.exec(content)) !== null) {
     if (match.index > lastIndex) {
       const seg = content.slice(lastIndex, match.index).replace(/\n/g, "  \n");
-      parts.push(<MessageMarkdown key={`${keyPrefix}seg-${key++}`} text={seg} streaming={streaming} />);
+      parts.push(<MessageMarkdown key={`${keyPrefix}seg-${key++}`} text={seg} streaming={streaming} onImageClick={onImageClick} />);
     }
     const thinkContent = match[1]?.trim() || "";
     parts.push(
@@ -115,11 +124,11 @@ function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boo
   }
   if (lastIndex < content.length) {
     const seg = content.slice(lastIndex).replace(/\n/g, "  \n");
-    parts.push(<MessageMarkdown key={`${keyPrefix}tail-${key++}`} text={seg} streaming={streaming} />);
+    parts.push(<MessageMarkdown key={`${keyPrefix}tail-${key++}`} text={seg} streaming={streaming} onImageClick={onImageClick} />);
   }
   if (parts.length === 0) {
     const seg = content.replace(/\n/g, "  \n");
-    parts.push(<MessageMarkdown key={`${keyPrefix}full-0`} text={seg} streaming={streaming} />);
+    parts.push(<MessageMarkdown key={`${keyPrefix}full-0`} text={seg} streaming={streaming} onImageClick={onImageClick} />);
   }
   return parts;
 }
@@ -1251,6 +1260,24 @@ export default function App() {
   const [showMentionDropdown, setShowMentionDropdown] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
   const [mentionDropdownPlacement, setMentionDropdownPlacement] = useState<"top" | "bottom">("bottom");
+  // 文生图 / 图生图状态
+  const [imageGenOpen, setImageGenOpen] = useState(false);
+  const [imageGenTab, setImageGenTab] = useState<"gen" | "edit">("gen");
+  const [imageGenPrompt, setImageGenPrompt] = useState("");
+  const [imageGenModel, setImageGenModel] = useState("qwen-image-2.0-pro");
+  const [imageGenSize, setImageGenSize] = useState("1024*1024");
+  const [imageGenLoading, setImageGenLoading] = useState(false);
+  const [imageGenPreview, setImageGenPreview] = useState<{ file_id: string; preview_url: string } | null>(null);
+  // 图生图源图片
+  const [imageEditModel, setImageEditModel] = useState("qwen-image-edit-max");
+  const [imageEditSourceFileId, setImageEditSourceFileId] = useState("");
+  const [imageEditPrompt, setImageEditPrompt] = useState("");
+  const [imageEditSize, setImageEditSize] = useState("1024*1024");
+  const [imageEditLoading, setImageEditLoading] = useState(false);
+  const [imageEditPreview, setImageEditPreview] = useState<{ file_id: string; preview_url: string } | null>(null);
+  // Lightbox 状态
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
@@ -1707,28 +1734,142 @@ export default function App() {
     });
   };
 
-  const uploadFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const PRESIGN_EXTS = new Set([".txt", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+  const CONTENT_TYPE_MAP: Record<string, string> = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".webp": "image/webp", ".gif": "image/gif",
+    ".pdf": "application/pdf", ".txt": "text/plain",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  };
+
+  const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedId) return;
+    e.target.value = "";
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-    const allowed = [".txt", ".md", ".docx", ".pdf", ".xlsx", ".png", ".jpg", ".jpeg", ".webp"];
+    const allowed = [".txt", ".md", ".docx", ".pdf", ".xlsx", ".png", ".jpg", ".jpeg", ".webp", ".gif"];
     if (!allowed.includes(ext)) {
       toast.error("支持格式: " + allowed.join(", "));
       return;
     }
-    fetch(
-      `${API}/files/upload?channel_id=${encodeURIComponent(selectedId)}&uploader_id=${encodeURIComponent(currentUserId)}&filename=${encodeURIComponent(file.name)}`,
-      { method: "POST", body: file }
-    )
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.data?.file_id) {
-          setPendingFileIds((prev) => [...prev, d.data.file_id]);
-          setPendingFileNames((prev) => [...prev, file.name]);
+
+    if (PRESIGN_EXTS.has(ext)) {
+      // presign 流程直传 RustFS（支持中文文件名）
+      const contentType = file.type || CONTENT_TYPE_MAP[ext] || "application/octet-stream";
+      try {
+        const presignRes = await fetch(`${API}/files/presign`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channel_id: selectedId,
+            uploader_id: currentUserId,
+            filename: file.name,
+            content_type: contentType,
+            size: file.size,
+          }),
+        });
+        const presignData = await presignRes.json();
+        if (!presignRes.ok || !presignData.data?.upload_url) {
+          toast.error(presignData.detail || "获取上传凭证失败");
+          return;
         }
-      })
-      .catch(console.error);
-    e.target.value = "";
+        const { file_id, upload_url, headers: uploadHeaders } = presignData.data;
+        const putRes = await fetch(upload_url, {
+          method: "PUT",
+          headers: uploadHeaders,
+          body: file,
+        });
+        if (!putRes.ok) {
+          toast.error("文件上传失败，请重试");
+          return;
+        }
+        setPendingFileIds((prev) => [...prev, file_id]);
+        setPendingFileNames((prev) => [...prev, file.name]);
+      } catch (err) {
+        toast.error("文件上传出错");
+        console.error(err);
+      }
+    } else {
+      // md/xlsx 等暂不支持 presign 的类型：沿用旧版后端转传接口
+      fetch(
+        `${API}/files/upload?channel_id=${encodeURIComponent(selectedId)}&uploader_id=${encodeURIComponent(currentUserId)}&filename=${encodeURIComponent(file.name)}`,
+        { method: "POST", body: file }
+      )
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.data?.file_id) {
+            setPendingFileIds((prev) => [...prev, d.data.file_id]);
+            setPendingFileNames((prev) => [...prev, file.name]);
+          }
+        })
+        .catch(console.error);
+    }
+  };
+
+  // ── 文件附件渲染辅助 ──────────────────────────────────────────────────────
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const fileTypeLabel = (ct?: string) => {
+    if (!ct) return "文件";
+    if (ct.includes("pdf")) return "PDF";
+    if (ct.includes("wordprocessingml") || ct.includes("docx")) return "Word";
+    if (ct.includes("text/plain")) return "文本";
+    if (ct.startsWith("image/")) return "图片";
+    return "文件";
+  };
+
+  const renderFileAttachments = (msg: Message, alignRight = false) => {
+    const files = msg.files;
+    if (!files || files.length === 0) return null;
+    const images = files.filter((f) => (f.content_type || "").startsWith("image/"));
+    const docs = files.filter((f) => !(f.content_type || "").startsWith("image/"));
+    if (images.length === 0 && docs.length === 0) return null;
+    return (
+      <div className={`mb-1.5 space-y-1.5 ${alignRight ? "flex flex-col items-end" : ""}`}>
+        {images.map((f) => (
+          <div
+            key={f.file_id}
+            className="cursor-pointer rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-shadow inline-block"
+            onClick={() => { setLightboxSrc(`${API}/files/${f.file_id}/preview`); setLightboxFileId(f.file_id); }}
+          >
+            <img
+              src={`${API}/files/${f.file_id}/preview`}
+              alt={f.original_filename || "image"}
+              className="max-w-[280px] max-h-[200px] object-cover block"
+              loading="lazy"
+            />
+            {f.original_filename && (
+              <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-gray-400">
+                  <path fillRule="evenodd" d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Zm10.5 5.707a.5.5 0 0 0-.146-.353l-2.5-2.5a.5.5 0 0 0-.708 0L7.5 8.5 6.354 7.354a.5.5 0 0 0-.708 0l-3.146 3.15V12a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-2.293ZM11 5.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" clipRule="evenodd" />
+                </svg>
+                <span className="truncate max-w-[200px]">{f.original_filename}</span>
+                {f.size_bytes ? <span className="text-gray-400">{formatFileSize(f.size_bytes)}</span> : null}
+              </div>
+            )}
+          </div>
+        ))}
+        {docs.map((f) => (
+          <a key={f.file_id} href={`${API}/files/${f.file_id}/download`} target="_blank" rel="noreferrer"
+            className="flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[300px] hover:bg-gray-50 transition-colors cursor-pointer no-underline">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-blue-500">
+                <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-medium text-gray-700 truncate">{f.original_filename || f.file_id}</div>
+              <div className="text-[11px] text-gray-400">{fileTypeLabel(f.content_type)}{f.size_bytes ? ` \u00B7 ${formatFileSize(f.size_bytes)}` : ""}</div>
+            </div>
+          </a>
+        ))}
+      </div>
+    );
   };
 
   const saveContextLayer = (layer: string, content: string) => {
@@ -2777,8 +2918,9 @@ export default function App() {
                           </button>
                           <div className="flex flex-col items-end max-w-[72%]">
                             <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
+                            {renderFileAttachments(m, true)}
                             <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                              {displayContent}
+                              {displayContent.replace(/!\[.*?\]\(.*?\)\s*/g, "").trim() || displayContent}
                             </div>
                           </div>
                         </div>
@@ -2800,10 +2942,11 @@ export default function App() {
                             {m.sender_type === "bot" && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>}
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
+                          {renderFileAttachments(m)}
                           <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
                             {m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
-                              : renderWithThinkFolding(text, `${m.msg_id}-`, !!m._streaming)}
+                              : renderWithThinkFolding(text, `${m.msg_id}-`, !!m._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); })}
                             {m._streaming && !!text && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                           </div>
                           {form && selectedId && m.sender_type === "bot" && (
@@ -2933,10 +3076,11 @@ export default function App() {
                                 </div>
                                 {!rCollapsed && (
                                   <>
+                                    {renderFileAttachments(r)}
                                     <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
                                       {r._streaming && !rTextRaw
                                         ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
-                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming)}
+                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); })}
                                       {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                                     </div>
                                     {rForm && selectedId && r.sender_type === "bot" && (
@@ -3104,11 +3248,21 @@ export default function App() {
                       </svg>
                       <input
                         type="file"
-                        accept=".txt,.md,.docx,.pdf,.xlsx,.png,.jpg,.jpeg,.webp"
+                        accept=".txt,.md,.docx,.pdf,.xlsx,.png,.jpg,.jpeg,.webp,.gif"
                         className="hidden"
                         onChange={uploadFile}
                       />
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => { setImageGenOpen(true); setImageGenPreview(null); setImageGenPrompt(""); }}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                      title="AI 生成图片"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4.5 h-4.5">
+                        <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909-3.22-3.22a.75.75 0 0 0-1.06 0L2.5 11.06Zm12.5-3.81a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z" clipRule="evenodd" />
+                      </svg>
+                    </button>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[12px] text-gray-400 hidden sm:inline select-none">Ctrl+Enter</span>
@@ -3178,6 +3332,248 @@ export default function App() {
               })()}
               </div>
             </div>
+
+            {/* 文生图 / 图生图 Modal */}
+            {imageGenOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                    <h3 className="text-[15px] font-semibold text-gray-800">AI 图片</h3>
+                    <button type="button" onClick={() => setImageGenOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+                        <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                      </svg>
+                    </button>
+                  </div>
+                  {/* Tab 切换 */}
+                  <div className="flex border-b border-gray-100">
+                    <button type="button" onClick={() => setImageGenTab("gen")}
+                      className={`flex-1 py-2.5 text-[13px] font-medium text-center transition-colors ${imageGenTab === "gen" ? "text-[#1264A3] border-b-2 border-[#1264A3]" : "text-gray-500 hover:text-gray-700"}`}>
+                      文生图
+                    </button>
+                    <button type="button" onClick={() => setImageGenTab("edit")}
+                      className={`flex-1 py-2.5 text-[13px] font-medium text-center transition-colors ${imageGenTab === "edit" ? "text-[#1264A3] border-b-2 border-[#1264A3]" : "text-gray-500 hover:text-gray-700"}`}>
+                      图生图
+                    </button>
+                  </div>
+
+                  {/* ─── 文生图 Tab ─── */}
+                  {imageGenTab === "gen" && (
+                    <>
+                      <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+                        <div>
+                          <label className="block text-[13px] font-medium text-gray-600 mb-1.5">描述词</label>
+                          <textarea value={imageGenPrompt} onChange={(e) => setImageGenPrompt(e.target.value)}
+                            placeholder="描述你想要生成的图片，例如：一只在星空下奔跑的白色猫咪"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] resize-none outline-none focus:border-gray-400 min-h-[80px]" rows={3} />
+                        </div>
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-gray-600 mb-1.5">模型</label>
+                            <select value={imageGenModel} onChange={(e) => setImageGenModel(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] outline-none focus:border-gray-400 bg-white">
+                              <option value="qwen-image-2.0-pro">qwen-image-2.0-pro (推荐)</option>
+                              <option value="qwen-image-2.0-pro-2026-03-03">qwen-image-2.0-pro-2026-03-03</option>
+                              <option value="qwen-image-2.0">qwen-image-2.0</option>
+                              <option value="qwen-image-2.0-2026-03-03">qwen-image-2.0-2026-03-03</option>
+                              <option value="qwen-image-max">qwen-image-max</option>
+                              <option value="qwen-image-max-2025-12-30">qwen-image-max-2025-12-30</option>
+                              <option value="qwen-image-plus-2026-01-09">qwen-image-plus-2026-01-09</option>
+                              <option value="z-image-turbo">z-image-turbo (快速)</option>
+                            </select>
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-gray-600 mb-1.5">尺寸</label>
+                            <select value={imageGenSize} onChange={(e) => setImageGenSize(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] outline-none focus:border-gray-400 bg-white">
+                              <option value="1024*1024">1024 x 1024</option>
+                              <option value="720*1280">720 x 1280 (竖版)</option>
+                              <option value="1280*720">1280 x 720 (横版)</option>
+                              <option value="768*1024">768 x 1024</option>
+                              <option value="1024*768">1024 x 768</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      {/* 生成结果预览 — 固定在按钮栏上方，不在滚动区域内 */}
+                      {imageGenPreview && (
+                        <div className="px-5 py-3 border-t border-gray-100">
+                          <div className="border border-gray-200 rounded-xl overflow-hidden">
+                            <img src={`${API}/files/${imageGenPreview.file_id}/preview`} alt="AI generated" className="w-full max-h-[300px] object-contain bg-gray-50" />
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50">
+                        {imageGenPreview && (
+                          <>
+                          <button type="button" onClick={() => {
+                            setImageEditSourceFileId(imageGenPreview.file_id);
+                            setImageGenTab("edit");
+                            setImageEditPreview(null);
+                            setImageEditPrompt("");
+                          }} className="px-4 py-1.5 rounded-xl text-[13px] font-semibold bg-gray-600 text-white hover:bg-gray-700 shadow-sm transition-all">
+                            用此图编辑
+                          </button>
+                          <button type="button" onClick={async () => {
+                            if (!selectedId || !imageGenPreview) return;
+                            try {
+                              const res = await fetch(`${API}/channels/${selectedId}/messages`, {
+                                method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ content: `[AI 生成图片] ${imageGenPrompt}`, sender_id: currentUserId, sender_type: "user", file_ids: [imageGenPreview.file_id] }),
+                              });
+                              const d = await res.json();
+                              if (!res.ok) { toast.error(d.detail || "发送失败"); return; }
+                              if (d.data) setMessages((prev) => prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]);
+                              setImageGenOpen(false); setImageGenPreview(null); setImageGenPrompt("");
+                            } catch { toast.error("发送失败"); }
+                          }} className="px-4 py-1.5 rounded-xl text-[13px] font-semibold bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm transition-all">
+                            发送到频道
+                          </button>
+                          </>
+                        )}
+                        <button type="button" disabled={!imageGenPrompt.trim() || imageGenLoading} onClick={async () => {
+                          if (!selectedId || !imageGenPrompt.trim()) return;
+                          setImageGenLoading(true); setImageGenPreview(null);
+                          try {
+                            const res = await fetch(`${API}/images/generate`, {
+                              method: "POST", headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ channel_id: selectedId, sender_id: currentUserId, prompt: imageGenPrompt.trim(), model: imageGenModel, size: imageGenSize }),
+                            });
+                            const data = await res.json();
+                            if (!res.ok) { toast.error(data.detail || "图片生成失败"); return; }
+                            setImageGenPreview({ file_id: data.data.file_id, preview_url: data.data.preview_url });
+                          } catch (err) { toast.error("图片生成出错"); console.error(err); } finally { setImageGenLoading(false); }
+                        }} className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${imageGenPrompt.trim() && !imageGenLoading ? "bg-[#1264A3] text-white hover:bg-[#0e5a96] shadow-sm" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+                          {imageGenLoading ? "生成中..." : imageGenPreview ? "重新生成" : "生成"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* ─── 图生图 Tab ─── */}
+                  {imageGenTab === "edit" && (
+                    <>
+                      <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+                        {/* 源图片 */}
+                        <div>
+                          <label className="block text-[13px] font-medium text-gray-600 mb-1.5">源图片</label>
+                          {imageEditSourceFileId ? (
+                            <div className="relative border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+                              <img src={`${API}/files/${imageEditSourceFileId}/preview`} alt="source" className="w-full max-h-[200px] object-contain" />
+                              <button type="button" onClick={() => { setImageEditSourceFileId(""); setImageEditPreview(null); }}
+                                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs hover:bg-black/70">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                                  <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                                </svg>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center text-gray-400 text-[13px] space-y-3">
+                              {/* 从聊天中选择已有图片 */}
+                              {(() => {
+                                const imageFiles = messages.flatMap((m) => (m.files || []).filter((f) => (f.content_type || "").startsWith("image/")));
+                                if (imageFiles.length > 0) {
+                                  return (
+                                    <div>
+                                      <p className="text-gray-500 mb-2">从聊天中选择图片：</p>
+                                      <div className="flex flex-wrap gap-2 justify-center">
+                                        {imageFiles.slice(-8).map((f) => (
+                                          <div key={f.file_id}
+                                            className="w-16 h-16 rounded-lg border-2 border-gray-200 overflow-hidden cursor-pointer hover:border-blue-400 transition-colors"
+                                            onClick={() => { setImageEditSourceFileId(f.file_id); setImageEditPreview(null); }}>
+                                            <img src={`${API}/files/${f.file_id}/preview`} alt={f.original_filename || "image"} className="w-full h-full object-cover" />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return <p>当前频道暂无图片，请先上传或生成一张图片</p>;
+                              })()}
+                              <p className="text-[11px] text-gray-300">也可在聊天中点击图片放大后选择「编辑此图」</p>
+                            </div>
+                          )}
+                        </div>
+                        {/* 编辑提示词 */}
+                        <div>
+                          <label className="block text-[13px] font-medium text-gray-600 mb-1.5">编辑描述</label>
+                          <textarea value={imageEditPrompt} onChange={(e) => setImageEditPrompt(e.target.value)}
+                            placeholder="描述你想要如何编辑这张图片，例如：将背景改为夕阳海滩"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] resize-none outline-none focus:border-gray-400 min-h-[80px]" rows={3} />
+                        </div>
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-gray-600 mb-1.5">模型</label>
+                            <select value={imageEditModel} onChange={(e) => setImageEditModel(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] outline-none focus:border-gray-400 bg-white">
+                              <option value="qwen-image-edit-max">qwen-image-edit-max (推荐)</option>
+                              <option value="qwen-image-edit-plus">qwen-image-edit-plus</option>
+                            </select>
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-[13px] font-medium text-gray-600 mb-1.5">尺寸</label>
+                            <select value={imageEditSize} onChange={(e) => setImageEditSize(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] outline-none focus:border-gray-400 bg-white">
+                              <option value="1024*1024">1024 x 1024</option>
+                              <option value="720*1280">720 x 1280 (竖版)</option>
+                              <option value="1280*720">1280 x 720 (横版)</option>
+                              <option value="768*1024">768 x 1024</option>
+                              <option value="1024*768">1024 x 768</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      {/* 编辑结果预览 — 固定在按钮栏上方，不在滚动区域内 */}
+                      {imageEditPreview && (
+                        <div className="px-5 py-3 border-t border-gray-100">
+                          <label className="block text-[13px] font-medium text-gray-600 mb-1.5">编辑结果</label>
+                          <div className="border border-gray-200 rounded-xl overflow-hidden">
+                            <img src={`${API}/files/${imageEditPreview.file_id}/preview`} alt="edited" className="w-full max-h-[300px] object-contain bg-gray-50" />
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50">
+                        {imageEditPreview && (
+                          <button type="button" onClick={async () => {
+                            if (!selectedId || !imageEditPreview) return;
+                            try {
+                              const res = await fetch(`${API}/channels/${selectedId}/messages`, {
+                                method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ content: `[AI 编辑图片] ${imageEditPrompt}`, sender_id: currentUserId, sender_type: "user", file_ids: [imageEditPreview.file_id] }),
+                              });
+                              const d = await res.json();
+                              if (!res.ok) { toast.error(d.detail || "发送失败"); return; }
+                              if (d.data) setMessages((prev) => prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]);
+                              setImageGenOpen(false); setImageEditPreview(null); setImageEditPrompt(""); setImageEditSourceFileId("");
+                            } catch { toast.error("发送失败"); }
+                          }} className="px-4 py-1.5 rounded-xl text-[13px] font-semibold bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm transition-all">
+                            发送到频道
+                          </button>
+                        )}
+                        <button type="button"
+                          disabled={!imageEditSourceFileId || !imageEditPrompt.trim() || imageEditLoading}
+                          onClick={async () => {
+                            if (!selectedId || !imageEditSourceFileId || !imageEditPrompt.trim()) return;
+                            setImageEditLoading(true); setImageEditPreview(null);
+                            try {
+                              const res = await fetch(`${API}/images/edit`, {
+                                method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ channel_id: selectedId, sender_id: currentUserId, source_file_id: imageEditSourceFileId, prompt: imageEditPrompt.trim(), model: imageEditModel, size: imageEditSize }),
+                              });
+                              const data = await res.json();
+                              if (!res.ok) { toast.error(data.detail || "图片编辑失败"); return; }
+                              setImageEditPreview({ file_id: data.data.file_id, preview_url: data.data.preview_url });
+                            } catch (err) { toast.error("图片编辑出错"); console.error(err); } finally { setImageEditLoading(false); }
+                          }}
+                          className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${imageEditSourceFileId && imageEditPrompt.trim() && !imageEditLoading ? "bg-[#1264A3] text-white hover:bg-[#0e5a96] shadow-sm" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}>
+                          {imageEditLoading ? "编辑中..." : imageEditPreview ? "重新编辑" : "开始编辑"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
@@ -3205,6 +3601,49 @@ export default function App() {
       )}
       </div>
     </div>
+
+    {/* Lightbox 图片放大 */}
+    {lightboxSrc && (
+      <div
+        className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center cursor-zoom-out"
+        onClick={() => { setLightboxSrc(null); setLightboxFileId(null); }}
+      >
+        <button
+          type="button"
+          onClick={() => { setLightboxSrc(null); setLightboxFileId(null); }}
+          className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-xl transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+          </svg>
+        </button>
+        {lightboxFileId && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setImageEditSourceFileId(lightboxFileId);
+              setImageGenTab("edit");
+              setImageGenOpen(true);
+              setLightboxSrc(null);
+              setLightboxFileId(null);
+            }}
+            className="absolute top-4 left-4 flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-[13px] font-medium transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="m2.695 14.762-1.262 3.155a.5.5 0 0 0 .65.65l3.155-1.262a4 4 0 0 0 1.343-.886L17.5 5.501a2.121 2.121 0 0 0-3-3L3.58 13.42a4 4 0 0 0-.885 1.343Z" />
+            </svg>
+            编辑此图
+          </button>
+        )}
+        <img
+          src={lightboxSrc}
+          alt="preview"
+          className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl cursor-default"
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+    )}
     </>
   );
 }

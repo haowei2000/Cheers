@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 
 const API = "/api";
 
-type TabId = "models" | "templates" | "bot" | "llm" | "perf" | "logs" | "health" | "user" | "workspace";
+type TabId = "models" | "templates" | "bot" | "llm" | "perf" | "logs" | "health" | "user" | "workspace" | "image_api";
 
 // ==================== AI Model Types ====================
 type AIModel = {
@@ -131,6 +131,7 @@ export default function AdminPage() {
     api_key: "",
     description: "",
     is_enabled: true,
+    supports_vision: false,
     extra_headers: "",   // JSON 字符串，如 {"x-my-header":"value"}
   });
   const [modelEditingId, setModelEditingId] = useState<string | null>(null);
@@ -196,6 +197,12 @@ export default function AdminPage() {
   const [healthStatus, setHealthStatus] = useState<{ database: string; redis: string; guide_llm?: string } | null>(null);
   type UserItem = { user_id: string; username: string; display_name?: string; role: string; created_at?: string };
   const [userList, setUserList] = useState<UserItem[]>([]);
+  // 图片 API 设置
+  const [imgApiBaseUrl, setImgApiBaseUrl] = useState("");
+  const [imgApiKey, setImgApiKey] = useState("");
+  const [imgApiKeyMasked, setImgApiKeyMasked] = useState("");
+  const [imgApiDefaultModel, setImgApiDefaultModel] = useState("qwen-image-edit-max");
+  const [imgApiSaving, setImgApiSaving] = useState(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [workspaceUsers, setWorkspaceUsers] = useState<UserItem[]>([]);
   const [workspaceChannels, setWorkspaceChannels] = useState<Channel[]>([]);
@@ -277,6 +284,19 @@ export default function AdminPage() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab === "image_api") {
+      fetch(`${API}/images/settings`).then((r) => r.json()).then((d) => {
+        if (d.data) {
+          setImgApiBaseUrl(d.data.base_url || "");
+          setImgApiKeyMasked(d.data.api_key_masked || "");
+          setImgApiDefaultModel(d.data.default_model || "qwen-image-edit-max");
+          setImgApiKey("");
+        }
+      }).catch(console.error);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     if (selectedWorkspaceId) {
       fetch(`${API}/workspaces/${selectedWorkspaceId}/users`).then((r) => r.json()).then((d) => { if (d.data) setWorkspaceUsers(d.data); }).catch(console.error);
       fetch(`${API}/workspaces/${selectedWorkspaceId}/channels`).then((r) => r.json()).then((d) => { if (d.data) setWorkspaceChannels(d.data); }).catch(console.error);
@@ -304,8 +324,9 @@ export default function AdminPage() {
       try { extraHeaders = JSON.parse(modelForm.extra_headers); }
       catch { toast.error("额外 Headers 格式错误，须为合法 JSON 对象"); return; }
     }
-    const config = extraHeaders ? { extra_headers: extraHeaders } : {};
-    const { extra_headers: _eh, ...rest } = modelForm;
+    const config: Record<string, unknown> = extraHeaders ? { extra_headers: extraHeaders } : {};
+    if (modelForm.supports_vision) config.supports_vision = true;
+    const { extra_headers: _eh, supports_vision: _sv, ...rest } = modelForm;
     authFetch(`${API}/admin/models`, {
       method: "POST",
       body: JSON.stringify({ ...rest, config }),
@@ -315,7 +336,7 @@ export default function AdminPage() {
         if (d.status === "success") {
           toast.success("模型创建成功");
           loadModels();
-          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, extra_headers: "" });
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "" });
         } else {
           toast.error(d.message || d.detail || "创建失败");
         }
@@ -329,7 +350,8 @@ export default function AdminPage() {
       try { extraHeaders = JSON.parse(modelForm.extra_headers); }
       catch { toast.error("额外 Headers 格式错误，须为合法 JSON 对象"); return; }
     }
-    const config = extraHeaders !== null ? { extra_headers: extraHeaders } : {};
+    const config: Record<string, unknown> = extraHeaders !== null ? { extra_headers: extraHeaders } : {};
+    if (modelForm.supports_vision) config.supports_vision = true;
     authFetch(`${API}/admin/models/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -350,7 +372,7 @@ export default function AdminPage() {
           toast.success("已更新");
           loadModels();
           setModelEditingId(null);
-          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, extra_headers: "" });
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "" });
         } else {
           toast.error(d.message || d.detail || "更新失败");
         }
@@ -384,6 +406,7 @@ export default function AdminPage() {
       api_key: "",
       description: m.description || "",
       is_enabled: m.is_enabled,
+      supports_vision: !!m.config?.supports_vision,
       extra_headers: eh && typeof eh === "object" ? JSON.stringify(eh) : "",
     });
   };
@@ -717,6 +740,7 @@ export default function AdminPage() {
               {userRole === "system_admin" && (
                 <>
                   <button onClick={() => setActiveTab("llm")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "llm" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>LLM 设置</button>
+                  <button onClick={() => setActiveTab("image_api")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "image_api" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>图片 API</button>
                   <button onClick={() => setActiveTab("perf")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "perf" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>性能监控</button>
                   <button onClick={() => setActiveTab("logs")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "logs" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>日志查看</button>
                   <button onClick={() => setActiveTab("health")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "health" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>健康检查</button>
@@ -804,16 +828,22 @@ export default function AdminPage() {
                           />
                           <p className="text-xs text-gray-400 mt-0.5">每次调用 LLM 时附加到请求头，用于需要自定义鉴权头的 endpoint</p>
                         </div>
-                        <div className="col-span-2 flex items-center gap-2">
-                          <input type="checkbox" id="is_enabled" checked={modelForm.is_enabled} onChange={(e) => setModelForm({ ...modelForm, is_enabled: e.target.checked })} className="rounded" />
-                          <label htmlFor="is_enabled" className="text-xs text-gray-500">启用此模型</label>
+                        <div className="col-span-2 flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <input type="checkbox" id="is_enabled" checked={modelForm.is_enabled} onChange={(e) => setModelForm({ ...modelForm, is_enabled: e.target.checked })} className="rounded" />
+                            <label htmlFor="is_enabled" className="text-xs text-gray-500">启用此模型</label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input type="checkbox" id="supports_vision" checked={modelForm.supports_vision} onChange={(e) => setModelForm({ ...modelForm, supports_vision: e.target.checked })} className="rounded" />
+                            <label htmlFor="supports_vision" className="text-xs text-gray-500">支持图片识别（Vision）</label>
+                          </div>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-3">
                         {modelEditingId ? (
                           <>
                             <button onClick={() => updateModel(modelEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
-                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, extra_headers: "" }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "" }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
                           </>
                         ) : (
                           <button onClick={createModel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建模型</button>
@@ -1290,6 +1320,74 @@ export default function AdminPage() {
                       <span className="text-gray-400">{u.role}</span>
                     </div>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {/* ==================== 图片 API 设置 Tab ==================== */}
+            {activeTab === "image_api" && userRole === "system_admin" && (
+              <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <h3 className="text-sm font-semibold text-gray-800 mb-4">图片 API 设置（文生图 / 图生图）</h3>
+                <p className="text-xs text-gray-400 mb-4">配置 DashScope 图片生成 API。设置后可在聊天中使用「AI 图片」功能（文生图 + 图生图）。</p>
+                <div className="space-y-4 max-w-md">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
+                    <input type="text" value={imgApiBaseUrl} onChange={(e) => setImgApiBaseUrl(e.target.value)}
+                      placeholder="https://dashscope.aliyuncs.com"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-400" />
+                    <p className="text-xs text-gray-400 mt-1">留空则使用环境变量 IMAGE_GEN_BASE_URL 的值</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                    <input type="password" value={imgApiKey} onChange={(e) => setImgApiKey(e.target.value)}
+                      placeholder={imgApiKeyMasked || "sk-xxxxxxxx"}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-400" />
+                    <p className="text-xs text-gray-400 mt-1">
+                      {imgApiKeyMasked ? `当前已配置: ${imgApiKeyMasked}` : "留空则使用环境变量 IMAGE_GEN_API_KEY 的值"}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">默认模型</label>
+                    <select value={imgApiDefaultModel} onChange={(e) => setImgApiDefaultModel(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-400 bg-white">
+                      <optgroup label="文生图">
+                        <option value="qwen-image-2.0-pro">qwen-image-2.0-pro</option>
+                        <option value="qwen-image-2.0">qwen-image-2.0</option>
+                        <option value="qwen-image-max">qwen-image-max</option>
+                        <option value="z-image-turbo">z-image-turbo</option>
+                      </optgroup>
+                      <optgroup label="图生图">
+                        <option value="qwen-image-edit-max">qwen-image-edit-max</option>
+                        <option value="qwen-image-edit-plus">qwen-image-edit-plus</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={imgApiSaving}
+                    onClick={async () => {
+                      setImgApiSaving(true);
+                      try {
+                        const payload: Record<string, string> = { default_model: imgApiDefaultModel };
+                        if (imgApiBaseUrl.trim()) payload.base_url = imgApiBaseUrl.trim();
+                        if (imgApiKey.trim()) payload.api_key = imgApiKey.trim();
+                        const res = await fetch(`${API}/images/settings`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(payload),
+                        });
+                        const d = await res.json();
+                        if (d.data) {
+                          setImgApiKeyMasked(d.data.api_key_masked || "");
+                          setImgApiKey("");
+                          toast.success("图片 API 设置已保存");
+                        }
+                      } catch { toast.error("保存失败"); } finally { setImgApiSaving(false); }
+                    }}
+                    className="px-4 py-2 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3b1040] transition disabled:opacity-50"
+                  >
+                    {imgApiSaving ? "保存中..." : "保存设置"}
+                  </button>
                 </div>
               </section>
             )}

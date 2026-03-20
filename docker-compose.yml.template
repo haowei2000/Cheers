@@ -8,7 +8,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8002:8000"
+      - "${BACKEND_HOST_PORT:-8002}:8000"
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///data/main.db
       - REDIS_URL=redis://redis:6379/0
@@ -25,8 +25,11 @@ services:
       - STORAGE_S3_AUTO_CREATE_BUCKET=${STORAGE_S3_AUTO_CREATE_BUCKET:-true}
       - STORAGE_PRESIGN_EXPIRES_SECONDS=${STORAGE_PRESIGN_EXPIRES_SECONDS:-900}
       - FILE_UPLOAD_MAX_BYTES=${FILE_UPLOAD_MAX_BYTES:-26214400}
-      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain}
+      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,image/webp,image/gif}
       - LLM_LOCALHOST_ALIAS=${LLM_LOCALHOST_ALIAS:-host.docker.internal}
+      - IMAGE_GEN_BASE_URL=${IMAGE_GEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      - IMAGE_GEN_API_KEY=${IMAGE_GEN_API_KEY:-}
+      - IMAGE_GEN_DEFAULT_MODEL=${IMAGE_GEN_DEFAULT_MODEL:-qwen-image-2.0-pro}
       - SEED_DATA=${SEED_DATA:-1}
     volumes:
       - agentnexus_data:/app/data
@@ -40,7 +43,7 @@ services:
     build: ./frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "${FRONTEND_HOST_PORT:-80}:80"
     depends_on:
       - backend
 
@@ -48,7 +51,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6389:6379"
+      - "${REDIS_HOST_PORT:-6389}:6379"
 
   rustfs:
     image: rustfs/rustfs:latest
@@ -56,8 +59,8 @@ services:
     security_opt:
       - "no-new-privileges:true"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${RUSTFS_API_HOST_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_HOST_PORT:-9001}:9001"
     environment:
       - RUSTFS_VOLUMES=/data
       - RUSTFS_ADDRESS=0.0.0.0:9000

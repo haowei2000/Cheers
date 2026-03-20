@@ -119,6 +119,7 @@ async def _persist_message(
     sender_type: str,
     file_ids: list[str],
     mention_bot_ids: list[str],
+    in_reply_to_msg_id: str | None = None,
 ) -> tuple[Message, dict]:
     msg = Message(
         channel_id=channel_id,
@@ -127,6 +128,7 @@ async def _persist_message(
         content=content,
         file_ids=file_ids,
         mention_bot_ids=mention_bot_ids,
+        in_reply_to_msg_id=in_reply_to_msg_id,
     )
     session.add(msg)
     await session.flush()

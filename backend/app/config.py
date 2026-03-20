@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     file_upload_allowed_types: str = (
         "application/pdf,"
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
-        "text/plain"
+        "text/plain,"
+        "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000
 
@@ -81,6 +82,11 @@ class Settings(BaseSettings):
     system_llm_api_key: str = ""
     system_llm_base_url: str = ""  # OpenAI 兼容
     system_llm_model: str = "gpt-4o-mini"
+
+    # 文生图（DashScope 原生 API）
+    image_gen_base_url: str = "https://dashscope.aliyuncs.com"
+    image_gen_api_key: str = ""
+    image_gen_default_model: str = "qwen-image-2.0-pro"
 
     model_config = {
         "env_file": ".env",

@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.admin.log_buffer import get_formatted_log_excerpt, get_recent_logs
-from app.auth.routes import require_permission
+from app.auth.routes import require_permission, _user_to_info
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import User
+from app.db.session import get_session
 from app.admin.settings_store import (
     SCOPES,
     create_llm_provider,
@@ -383,6 +388,17 @@ async def summarize_qa_with_llm(body: QaSummarizeBody) -> dict:
     except Exception as e:
         logger.exception("qa/summarize: %s", e)
         raise HTTPException(status_code=500, detail=f"总结失败: {e!s}")
+
+
+# ---------- 用户列表 ----------
+
+
+@router.get("/users")
+async def admin_list_users(db: AsyncSession = Depends(get_session)) -> dict:
+    """管理端获取用户列表。"""
+    result = await db.execute(select(User))
+    users = result.scalars().all()
+    return {"status": "success", "data": [_user_to_info(u) for u in users]}
 
 
 # ---------- 系统状态（可选） ----------

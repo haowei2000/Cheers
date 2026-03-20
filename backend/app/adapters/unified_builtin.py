@@ -246,6 +246,23 @@ def _merge_attachments_into_text(user_text: str, attachments: list[dict[str, str
     return "\n".join(parts).strip()
 
 
+def _build_vision_content(user_text: str, attachments: list[dict[str, str]] | None) -> list[dict]:
+    """将文本和图片附件构建为 OpenAI Vision 格式的多模态 content 数组。"""
+    parts: list[dict] = [{"type": "text", "text": user_text}]
+    for att in (attachments or []):
+        if att.get("is_image") != "true":
+            continue
+        b64 = att.get("image_b64", "")
+        if not b64:
+            continue
+        mime = att.get("content_type") or "image/jpeg"
+        parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime};base64,{b64}"},
+        })
+    return parts
+
+
 def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str, str]] | None) -> str:
     """LLM 不可用时，基于已解析的附件内容给出保底回答。"""
     if not attachments:
@@ -403,7 +420,7 @@ def _tool_label(tool_name: str, args: dict) -> str:
     return tool_name
 
 
-async def _agent_loop(system_prompt: str, user_text: str, ctx: dict, stream_cb=None) -> str:
+async def _agent_loop(system_prompt: str, user_content: str | list, ctx: dict, stream_cb=None) -> str:
     """
     核心 Agent 循环：
       1. 调用 LLM（携带完整对话历史）；若有 stream_cb 则流式输出可见文本
@@ -411,11 +428,12 @@ async def _agent_loop(system_prompt: str, user_text: str, ctx: dict, stream_cb=N
       3. 执行工具，将结果注回对话
       4. 重复，直到：无工具调用 / ask_user 触发 / 达到 MAX_LOOP_ITERATIONS
 
+    user_content 可以是 str（纯文本）或 list[dict]（OpenAI Vision 多模态格式）。
     返回最终回复内容（字符串）。
     """
     messages: list[dict] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_text},
+        {"role": "user", "content": user_content},
     ]
 
     for iteration in range(MAX_LOOP_ITERATIONS):
@@ -524,7 +542,15 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text") or ""
-        user_text = _merge_attachments_into_text(user_text, payload.attachments)
+        all_attachments = payload.attachments or []
+
+        # 分离图片与文档附件
+        image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
+        doc_attachments = [a for a in all_attachments if a.get("is_image") != "true"]
+
+        # 文档附件合并为文本
+        user_text = _merge_attachments_into_text(user_text, doc_attachments)
+
         memory = payload.memory_context or {}
         channel_id = payload.channel_id
         pconfig = payload.process_config or {}
@@ -609,9 +635,19 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "attachments": payload.attachments or [],
         }
 
-        # ── 5. Agent Loop ──────────────────────────────────────────────────────
+        # ── 5. Agent Loop（支持 Vision 多模态）────────────────────────────────
         stream_cb = pconfig.get("_stream_token")
-        content = await _agent_loop(system_prompt, user_text, tool_ctx, stream_cb=stream_cb)
+        cfg = _get_llm_config()
+        supports_vision = (cfg or {}).get("supports_vision", True) if cfg else True
+
+        if supports_vision and any(a.get("image_b64") for a in image_attachments):
+            user_content: str | list = _build_vision_content(user_text, image_attachments)
+        else:
+            if image_attachments:
+                user_text += "\n\n（注：当前 LLM 未启用图片识别，已忽略图片附件。）"
+            user_content = user_text
+
+        content = await _agent_loop(system_prompt, user_content, tool_ctx, stream_cb=stream_cb)
 
         # ── 6. 关键词兜底（LLM 不可用时） ────────────────────────────────────
         if not content:

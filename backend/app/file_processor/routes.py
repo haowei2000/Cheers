@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +15,10 @@ from app.config import settings
 from app.db.models import Channel, FileRecord
 from app.db.session import get_session
 from app.file_processor.convert import to_markdown
+from app.file_processor.convert import is_image_type
 from app.file_processor.service import FileFlowError, FilePipelineService
-from app.storage.base import StorageError
+from app.storage.base import StorageError, StorageObjectNotFoundError
+from app.storage.bootstrap import get_storage_service, is_storage_enabled
 
 logger = logging.getLogger("app.file_processor.routes")
 
@@ -164,3 +167,73 @@ async def file_status(
             "last_error": rec.last_error,
         },
     }
+
+
+@router.get("/{file_id}/preview")
+async def file_preview(
+    file_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """返回图片文件的原始字节（用于 <img src> 预览）。"""
+    result = await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="file not found")
+    if not is_image_type(rec.content_type or ""):
+        raise HTTPException(status_code=400, detail="not an image file")
+
+    if not is_storage_enabled():
+        raise HTTPException(status_code=503, detail="storage not enabled")
+    storage = get_storage_service()
+    scope = "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
+    try:
+        obj = await storage.get_object(rec.file_id, scope=scope)
+    except StorageObjectNotFoundError:
+        raise HTTPException(status_code=404, detail="image not found in storage")
+    except Exception as exc:
+        logger.exception("failed to load image file_id=%s", file_id)
+        raise HTTPException(status_code=500, detail="failed to load image") from exc
+
+    return Response(
+        content=obj.body,
+        media_type=rec.content_type or "image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@router.get("/{file_id}/download")
+async def file_download(
+    file_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """下载文件（任意类型）。"""
+    result = await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise HTTPException(status_code=404, detail="file not found")
+
+    if not is_storage_enabled():
+        raise HTTPException(status_code=503, detail="storage not enabled")
+    storage = get_storage_service()
+    scope = "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
+    try:
+        obj = await storage.get_object(rec.file_id, scope=scope)
+    except StorageObjectNotFoundError:
+        raise HTTPException(status_code=404, detail="file not found in storage")
+    except Exception as exc:
+        logger.exception("failed to load file file_id=%s", file_id)
+        raise HTTPException(status_code=500, detail="failed to load file") from exc
+
+    filename = rec.original_filename or f"{file_id}"
+    return Response(
+        content=obj.body,
+        media_type=rec.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
