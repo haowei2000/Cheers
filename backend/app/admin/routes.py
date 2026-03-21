@@ -18,11 +18,13 @@ from app.admin.settings_store import (
     SCOPES,
     create_llm_provider,
     delete_llm_provider,
+    get_builtin_llm_settings,
     get_clarify_settings,
     get_llm_bindings,
     get_orchestrator_settings,
     get_llm_providers_list,
     get_provider_for_scope,
+    set_builtin_llm_settings,
     set_clarify_settings,
     set_llm_bindings,
     set_orchestrator_settings,
@@ -151,6 +153,32 @@ async def post_llm_bind(body: LLMBindBody) -> dict:
     payload[scope] = provider_id
     set_llm_bindings(**payload)
     return {"status": "success", "data": {"bindings": get_llm_bindings()}}  # type: ignore[return-value]
+
+
+# ---------- 内置助手 LLM 配置 ----------
+
+
+class BuiltinLLMBody(BaseModel):
+    base_url: str | None = None
+    model: str | None = None
+    api_key: str | None = None
+
+
+@router.get("/settings/builtin-llm")
+async def get_builtin_llm() -> dict:
+    """获取内置助手 LLM 配置（api_key 脱敏）。"""
+    return {"status": "success", "data": get_builtin_llm_settings()}
+
+
+@router.put("/settings/builtin-llm")
+async def put_builtin_llm(body: BuiltinLLMBody) -> dict:
+    """更新内置助手 LLM 配置（base_url / model / api_key）。"""
+    updated = set_builtin_llm_settings(
+        base_url=body.base_url,
+        api_key=body.api_key,
+        model=body.model,
+    )
+    return {"status": "success", "data": updated}
 
 
 class ClarifySettingsBody(BaseModel):
