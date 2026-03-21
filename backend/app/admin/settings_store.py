@@ -278,6 +278,13 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
     """
     data = load_admin_settings()
     _ensure_llm_structures(data)
+
+    # 内置助手直接配置优先于绑定（guide_bot / assistant_bot）
+    if scope in ("guide_bot", "assistant_bot"):
+        builtin = data.get("builtin_llm", {})
+        if builtin.get("base_url") or builtin.get("model"):
+            return _normalize_provider_config(builtin)
+
     bindings = data.get("llm_bindings") or {}
     pid = bindings.get(scope)
     if pid:
@@ -496,6 +503,42 @@ def set_orchestrator_settings(
         data["orchestrator_auto_takeover"] = bool(orchestrator_auto_takeover)
     save_admin_settings(data)
     return get_orchestrator_settings()
+
+
+# ---------- 内置助手 LLM 设置 ----------
+
+
+def get_builtin_llm_settings() -> dict[str, Any]:
+    """返回内置助手 LLM 设置（api_key 脱敏）。"""
+    data = load_admin_settings()
+    raw = data.get("builtin_llm", {})
+    api_key = raw.get("api_key", "")
+    return {
+        "base_url": raw.get("base_url", ""),
+        "model": raw.get("model", ""),
+        "api_key_set": bool(api_key),
+        "api_key_masked": ("****" + api_key[-6:]) if api_key and len(api_key) > 6 else ("****" if api_key else ""),
+    }
+
+
+def set_builtin_llm_settings(
+    *,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """更新内置助手 LLM 设置并返回脱敏后的最新值。"""
+    data = load_admin_settings()
+    current = data.get("builtin_llm", {})
+    if base_url is not None:
+        current["base_url"] = base_url.strip()
+    if api_key is not None:
+        current["api_key"] = api_key.strip()
+    if model is not None:
+        current["model"] = model.strip()
+    data["builtin_llm"] = current
+    save_admin_settings(data)
+    return get_builtin_llm_settings()
 
 
 # ---------- 图片 API 设置 ----------
