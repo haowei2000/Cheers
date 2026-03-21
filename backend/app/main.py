@@ -6,7 +6,6 @@ import time
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 
 from app.chat_core import bots as chat_core_bots
 from app.chat_core import channels as chat_core_channels
@@ -25,8 +24,6 @@ from app.file_processor import routes as file_routes
 from app.image_gen.routes import router as image_gen_router
 from app.logging_config import setup_logging
 from app.manual_routes import router as manual_router
-from app.db.session import async_engine, init_db
-from app.memory.context_store import init_context_db
 from app.public_routes import router as public_router
 from app.storage.bootstrap import initialize_storage, is_storage_enabled
 
@@ -116,37 +113,6 @@ app.include_router(auth_router)
 app.include_router(image_gen_router)
 
 
-async def _ensure_sqlite_column(table_name: str, column_name: str, ddl: str) -> None:
-    async with async_engine.begin() as conn:
-        result = await conn.execute(text(f"PRAGMA table_info({table_name})"))
-        existing = {str(row[1]) for row in result.fetchall()}
-        if column_name in existing:
-            return
-        await conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {ddl}"))
-
-
-async def _run_lightweight_schema_migrations() -> None:
-    """为现有 SQLite 库补齐本次版本新增的轻量列。"""
-
-    migrations = [
-        ("channels", "auto_assist", "auto_assist INTEGER NOT NULL DEFAULT 0"),
-        ("bot_accounts", "created_by", "created_by VARCHAR(36)"),
-        ("file_records", "object_key", "object_key VARCHAR(512)"),
-        ("file_records", "storage_bucket", "storage_bucket VARCHAR(255)"),
-        ("file_records", "original_filename", "original_filename VARCHAR(255)"),
-        ("file_records", "content_type", "content_type VARCHAR(255)"),
-        ("file_records", "size_bytes", "size_bytes INTEGER"),
-        ("file_records", "last_error", "last_error TEXT"),
-        ("file_records", "uploaded_at", "uploaded_at DATETIME"),
-        ("file_records", "created_at", "created_at DATETIME"),
-        ("users", "bio", "bio TEXT"),
-    ]
-    for table_name, column_name, ddl in migrations:
-        try:
-            await _ensure_sqlite_column(table_name, column_name, ddl)
-        except Exception:
-            logger.exception("schema migration failed table=%s column=%s", table_name, column_name)
-
 
 @app.websocket("/ws/channels/{channel_id}")
 async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
@@ -168,17 +134,9 @@ async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    """启动时配置日志与 Context Store；可选执行种子数据."""
+    """启动时配置日志；可选执行种子数据。数据库表结构由 Alembic 管理，启动前请先执行迁移。"""
     setup_logging()
     logger.info("AgentNexus startup")
-    await init_db()
-
-    from pathlib import Path
-    from app.config import settings
-    p = Path(settings.sqlite_context_path)
-    if not p.is_absolute():
-        p = Path(__file__).resolve().parent.parent.parent / p
-    await init_context_db(str(p))
 
     if os.environ.get("SEED_DATA", "").strip().lower() in ("1", "true", "yes"):
         try:
@@ -192,8 +150,6 @@ async def startup() -> None:
         ensure_preset_llm_providers()
     except Exception as e:
         logger.exception("preset LLM providers: %s", e)
-
-    await _run_lightweight_schema_migrations()
 
     try:
         from app.db.seed import ensure_builtin_bot

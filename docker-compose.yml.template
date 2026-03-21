@@ -32,7 +32,7 @@ services:
       - IMAGE_GEN_DEFAULT_MODEL=${IMAGE_GEN_DEFAULT_MODEL:-qwen-image-2.0-pro}
       - SEED_DATA=${SEED_DATA:-1}
     volumes:
-      - agentnexus_data:/app/data
+      - ./data/backend:/app/data
     depends_on:
       redis:
         condition: service_started
@@ -74,8 +74,8 @@ services:
       - RUSTFS_OBJECT_CACHE_ENABLE=${RUSTFS_OBJECT_CACHE_ENABLE:-true}
       - RUSTFS_OBJECT_CACHE_TTL_SECS=${RUSTFS_OBJECT_CACHE_TTL_SECS:-300}
     volumes:
-      - rustfs_data:/data
-      - rustfs_logs:/logs
+      - ./data/rustfs:/data
+      - ./data/rustfs_logs:/logs
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f http://127.0.0.1:9000/health && curl -f http://127.0.0.1:9001/health"]
       interval: 30s
@@ -83,7 +83,3 @@ services:
       retries: 3
       start_period: 40s
 
-volumes:
-  agentnexus_data:
-  rustfs_data:
-  rustfs_logs:
