@@ -57,6 +57,6 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """创建所有表（仅用于测试或非迁移场景；生产用 Alembic 迁移）."""
+    """仅测试用：在内存 SQLite 中直接建表。生产环境请用 alembic upgrade head。"""
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

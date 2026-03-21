@@ -30,9 +30,25 @@ Lint:
 cd backend && flake8 app/
 ```
 
-Database initialization (tables only, no migrations):
+Database migrations (Alembic — must run before starting the server):
 ```bash
-# Tables are auto-created on first startup via SQLAlchemy metadata.create_all
+cd backend
+
+# 主数据库（main.db）
+alembic upgrade head
+
+# Context Store（context.db，四层记忆）
+alembic -c alembic_context.ini upgrade head
+
+# 新建迁移（主库）
+alembic revision -m "描述"
+
+# 新建迁移（context store）
+alembic -c alembic_context.ini revision -m "描述"
+```
+
+Seed data (optional, run after migrations):
+```bash
 # For seed data: set SEED_DATA=1 before starting the server
 SEED_DATA=1 uvicorn app.main:app --reload
 ```
