@@ -158,6 +158,9 @@ def _make_tools(ctx: dict) -> list:
         bot_id_by_username: dict = ctx.get("bot_id_by_username") or {}
         adapter_factory = ctx.get("adapter_factory")
         create_and_broadcast = ctx.get("create_and_broadcast")
+        pre_create_bot_msg = ctx.get("_pre_create_bot_msg")
+        finalize_bot_msg = ctx.get("_finalize_bot_msg")
+        make_stream_token_cb = ctx.get("_make_stream_token_cb")
 
         if username not in bot_id_by_username:
             available = list(bot_id_by_username.keys())
@@ -168,22 +171,43 @@ def _make_tools(ctx: dict) -> list:
         bot_id = bot_id_by_username[username]
         try:
             adapter = await adapter_factory(bot_id)
-            sub_payload = AgentPayload(
-                task_id=ctx.get("task_id", ""),
-                channel_id=ctx["channel_id"],
-                trigger_message={
-                    "user": ctx.get("sender_id", ""),
-                    "text": message,
-                    "timestamp": "",
-                },
-                memory_context=ctx.get("memory") or {},
-                attachments=ctx.get("attachments") or [],
-            )
-            resp: AgentResponse = await adapter.execute(sub_payload)
-            result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
+            task_id = ctx.get("task_id", "")
 
-            if create_and_broadcast:
-                await create_and_broadcast(bot_id, result)
+            if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
+                # 流式路径：预先创建空消息气泡，边生成边推送 delta，完成后写入最终内容
+                bot_msg = await pre_create_bot_msg(bot_id, task_id)
+                sub_payload = AgentPayload(
+                    task_id=task_id,
+                    channel_id=ctx["channel_id"],
+                    trigger_message={
+                        "user": ctx.get("sender_id", ""),
+                        "text": message,
+                        "timestamp": "",
+                    },
+                    memory_context=ctx.get("memory") or {},
+                    attachments=ctx.get("attachments") or [],
+                    process_config={"_stream_token": make_stream_token_cb(bot_msg.msg_id)},
+                )
+                resp: AgentResponse = await adapter.execute(sub_payload)
+                result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
+                await finalize_bot_msg(bot_msg, result)
+            else:
+                # 降级路径：非流式，执行完成后一次性广播
+                sub_payload = AgentPayload(
+                    task_id=task_id,
+                    channel_id=ctx["channel_id"],
+                    trigger_message={
+                        "user": ctx.get("sender_id", ""),
+                        "text": message,
+                        "timestamp": "",
+                    },
+                    memory_context=ctx.get("memory") or {},
+                    attachments=ctx.get("attachments") or [],
+                )
+                resp = await adapter.execute(sub_payload)
+                result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
+                if create_and_broadcast:
+                    await create_and_broadcast(bot_id, result)
 
             logger.info(
                 "unified_builtin[tool]: call_bot @%s completed channel=%s",
