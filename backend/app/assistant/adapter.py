@@ -9,7 +9,7 @@ from app.admin.settings_store import get_provider_for_scope
 logger = logging.getLogger("app.assistant.adapter")
 
 _NOT_CONFIGURED_REPLY = (
-    "当前 AI 助手未配置 LLM，请在「管理」→「LLM 设置」中绑定 guide_bot 或 assistant_bot。"
+    "当前 AI 助手未配置 LLM，请在「管理」→「LLM 设置」→「功能绑定」中为「频道助手」选择 LLM。"
 )
 
 SYSTEM_PROMPT_TEMPLATE = """\
@@ -32,11 +32,11 @@ SYSTEM_PROMPT_TEMPLATE = """\
 
 
 def _get_llm_config() -> dict | None:
-    """优先 assistant_bot scope，回退到 guide_bot。"""
-    cfg = get_provider_for_scope("assistant_bot")
+    """使用 channel_bot scope，回退到 system_llm。"""
+    cfg = get_provider_for_scope("channel_bot")
     if cfg and cfg.get("base_url") and cfg.get("model"):
         return cfg
-    cfg = get_provider_for_scope("guide_bot")
+    cfg = get_provider_for_scope("system_llm")
     if cfg and cfg.get("base_url") and cfg.get("model"):
         return cfg
     return None
