@@ -17,7 +17,6 @@ DEFAULT_CLARIFY_SETTINGS = {
 }
 
 DEFAULT_ORCHESTRATOR_SETTINGS = {
-    "orchestrator_direct_answer": False,
     "orchestrator_auto_takeover": False,
 }
 DEFAULT_IMAGE_GEN_SETTINGS: dict[str, Any] = {
@@ -489,29 +488,34 @@ def set_clarify_settings(
     return get_clarify_settings()
 
 
-def get_orchestrator_settings() -> dict[str, Any]:
-    """获取 Orchestrator 配置（直接回答、自动接手）。"""
+def get_assist_settings() -> dict[str, Any]:
+    """获取系统助手配置（LLM 绑定 + 自动接管）。"""
     data = load_admin_settings()
     _ensure_orchestrator_settings(data)
+    _ensure_llm_structures(data)
+    bindings = data.get("llm_bindings") or {}
     return {
-        "orchestrator_direct_answer": bool(data.get("orchestrator_direct_answer", False)),
-        "orchestrator_auto_takeover": bool(data.get("orchestrator_auto_takeover", False)),
+        "llm_provider_id": bindings.get("channel_bot") or bindings.get("guide_bot") or "",
+        "auto_takeover": bool(data.get("orchestrator_auto_takeover", False)),
     }
 
 
-def set_orchestrator_settings(
-    orchestrator_direct_answer: bool | None = None,
-    orchestrator_auto_takeover: bool | None = None,
+def set_assist_settings(
+    llm_provider_id: str | None = None,
+    auto_takeover: bool | None = None,
 ) -> dict[str, Any]:
-    """更新 Orchestrator 配置并返回最新值。"""
+    """更新系统助手配置并返回最新值。"""
     data = load_admin_settings()
     _ensure_orchestrator_settings(data)
-    if orchestrator_direct_answer is not None:
-        data["orchestrator_direct_answer"] = bool(orchestrator_direct_answer)
-    if orchestrator_auto_takeover is not None:
-        data["orchestrator_auto_takeover"] = bool(orchestrator_auto_takeover)
+    _ensure_llm_structures(data)
+    if llm_provider_id is not None:
+        bindings = data.get("llm_bindings") or {}
+        bindings["channel_bot"] = (llm_provider_id or "").strip()
+        data["llm_bindings"] = bindings
+    if auto_takeover is not None:
+        data["orchestrator_auto_takeover"] = bool(auto_takeover)
     save_admin_settings(data)
-    return get_orchestrator_settings()
+    return get_assist_settings()
 
 
 # ---------- 图片 API 设置 ----------

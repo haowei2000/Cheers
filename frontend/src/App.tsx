@@ -2792,7 +2792,7 @@ export default function App() {
               <h1 className="font-semibold text-gray-900 text-base truncate flex-1">{selectedChannel?.name || ""}</h1>
               {/* Auto-assist toggle */}
               <label className="flex items-center gap-1.5 cursor-pointer select-none" title={autoAssist ? "自动调用内置助手（开启中）" : "自动调用内置助手（关闭）"}>
-                <span className="text-xs text-gray-500 whitespace-nowrap">自动助手</span>
+                <span className="text-xs text-gray-500 whitespace-nowrap">自动接管</span>
                 <button
                   type="button"
                   role="switch"
