@@ -12,7 +12,7 @@ logger = logging.getLogger("app.guide.llm_client")
 
 
 def _config() -> dict | None:
-    return get_provider_for_scope("guide_bot")
+    return get_provider_for_scope("channel_bot")
 
 
 def _base_url() -> str:

@@ -65,7 +65,7 @@ type LLMProvider = {
   temperature: number;
   max_tokens: number;
 };
-type LLMBindings = { guide_bot?: string; system_llm?: string; log_analyze?: string; qa_summarize?: string };
+type LLMBindings = { channel_bot?: string; system_llm?: string; log_analyze?: string; qa_summarize?: string };
 type ClarifySettings = {
   clarify_strict_mode: boolean;
   clarify_force_rule: boolean;
@@ -173,10 +173,8 @@ export default function AdminPage() {
   const [_llmEditingId, _setLlmEditingId] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_llmSaveLoading, _setLlmSaveLoading] = useState(false);
-  const [bindingGuideBot, setBindingGuideBot] = useState("");
+  const [bindingChannelBot, setBindingChannelBot] = useState("");
   const [bindingSystemLlm, setBindingSystemLlm] = useState("");
-  const [builtinLlm, setBuiltinLlm] = useState({ base_url: "", model: "", api_key: "", api_key_set: false, api_key_masked: "" });
-  const [builtinLlmSaving, setBuiltinLlmSaving] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_bindingLogAnalyze, setBindingLogAnalyze] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -233,17 +231,13 @@ export default function AdminPage() {
           if (d.data) {
             setLlmProviders(d.data.providers || []);
             setLlmBindings(d.data.bindings || {});
-            setBindingGuideBot(d.data.bindings?.guide_bot ?? "");
+            setBindingChannelBot(d.data.bindings?.channel_bot ?? d.data.bindings?.guide_bot ?? "");
             setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
             setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
             setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
             setBindingOrchestrator(d.data.bindings?.orchestrator ?? "");
           }
         })
-      authFetch(`${API}/admin/settings/builtin-llm`)
-        .then((r) => r.json())
-        .then((d) => { if (d.data) setBuiltinLlm({ ...d.data, api_key: "" }); })
-        .catch(console.error);
       authFetch(`${API}/admin/settings/clarify`)
         .then((r) => r.json())
         .then((d) => {
@@ -680,20 +674,6 @@ export default function AdminPage() {
   };
 
 
-
-  const saveBuiltinLlm = () => {
-    setBuiltinLlmSaving(true);
-    authFetch(`${API}/admin/settings/builtin-llm`, {
-      method: "PUT",
-      body: JSON.stringify({ base_url: builtinLlm.base_url, model: builtinLlm.model, api_key: builtinLlm.api_key || undefined }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success") { toast.success("内置助手配置已保存"); setBuiltinLlm({ ...d.data, api_key: "" }); }
-        else toast.error(d.message || "保存失败");
-      })
-      .finally(() => setBuiltinLlmSaving(false));
-  };
 
   const saveLlmBinding = (scope: string, providerId: string) => {
     authFetch(`${API}/admin/settings/llm/bind`, { method: "POST", body: JSON.stringify({ scope, provider_id: providerId }) })
@@ -1202,53 +1182,12 @@ export default function AdminPage() {
             {activeTab === "llm" && userRole === "system_admin" && (
               <>
                 <section className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-1">内置助手</h3>
-                  <p className="text-xs text-gray-400 mb-4">配置内置助手使用的 OpenAI 兼容 API，优先级高于功能绑定</p>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">API Base URL</label>
-                      <input
-                        type="text"
-                        placeholder="https://api.openai.com/v1"
-                        value={builtinLlm.base_url}
-                        onChange={(e) => setBuiltinLlm({ ...builtinLlm, base_url: e.target.value })}
-                        className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">模型名称</label>
-                      <input
-                        type="text"
-                        placeholder="gpt-4o-mini"
-                        value={builtinLlm.model}
-                        onChange={(e) => setBuiltinLlm({ ...builtinLlm, model: e.target.value })}
-                        className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">
-                        API Key {builtinLlm.api_key_set && <span className="text-gray-400">（已设置：{builtinLlm.api_key_masked}，留空不修改）</span>}
-                      </label>
-                      <input
-                        type="password"
-                        placeholder={builtinLlm.api_key_set ? "留空保持不变" : "sk-..."}
-                        value={builtinLlm.api_key}
-                        onChange={(e) => setBuiltinLlm({ ...builtinLlm, api_key: e.target.value })}
-                        className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm"
-                      />
-                    </div>
-                    <button onClick={saveBuiltinLlm} disabled={builtinLlmSaving} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm disabled:opacity-50">
-                      {builtinLlmSaving ? "保存中…" : "保存"}
-                    </button>
-                  </div>
-                </section>
-
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">功能绑定</h3>
+                  <p className="text-xs text-gray-400 mb-4">在「AI 模型」中添加模型后，在此处为各功能选择要使用的 LLM</p>
                   <div className="space-y-3">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">引导 Bot LLM</label>
-                      <select value={bindingGuideBot} onChange={(e) => { setBindingGuideBot(e.target.value); saveLlmBinding("guide_bot", e.target.value); }} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                      <label className="block text-xs text-gray-500 mb-1">频道助手 LLM</label>
+                      <select value={bindingChannelBot} onChange={(e) => { setBindingChannelBot(e.target.value); saveLlmBinding("channel_bot", e.target.value); }} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
                         <option value="">不绑定</option>
                         {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
