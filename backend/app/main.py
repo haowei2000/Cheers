@@ -1,9 +1,10 @@
 """FastAPI 应用入口."""
+import json
 import logging
 import os
 import time
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -15,7 +16,10 @@ from app.chat_core import mcp_import as chat_core_mcp
 from app.chat_core import messages as chat_core_messages
 from app.chat_core import tasks_api as chat_core_tasks
 from app.chat_core import workspaces as chat_core_workspaces
+from app.chat_core.messages import _handle_send_message
+from app.chat_core.schemas import MessageCreate
 from app.chat_core.ws_manager import ws_manager
+from app.db.session import async_session_factory
 from app.admin.routes import router as admin_router
 from app.admin.models import router as admin_models_router
 from app.admin.templates import router as admin_templates_router
@@ -116,16 +120,34 @@ app.include_router(image_gen_router)
 
 @app.websocket("/ws/channels/{channel_id}")
 async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
-    """连接频道 WebSocket，接收实时消息推送."""
+    """连接频道 WebSocket，接收实时消息推送 & send_message 动作."""
     await ws_manager.connect(websocket, channel_id)
     try:
         while True:
-            data = await websocket.receive_text()
+            raw = await websocket.receive_text()
             try:
-                obj = {"type": "echo", "data": data}
-                await ws_manager.broadcast_to_channel(channel_id, obj)
-            except Exception as e:
-                logger.warning("ws broadcast channel=%s: %s", channel_id, e)
+                obj = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                await websocket.send_json({"type": "error", "data": {"detail": "invalid JSON"}})
+                continue
+
+            if obj.get("type") == "send_message":
+                data = obj.get("data") or {}
+                try:
+                    body = MessageCreate(**data)
+                except Exception as exc:
+                    await websocket.send_json({"type": "error", "data": {"detail": f"invalid payload: {exc}"}})
+                    continue
+                try:
+                    async with async_session_factory() as session:
+                        await _handle_send_message(session, channel_id=channel_id, body=body)
+                except HTTPException as exc:
+                    await websocket.send_json({"type": "error", "data": {"detail": exc.detail}})
+                except Exception as exc:
+                    logger.exception("ws send_message failed channel_id=%s: %s", channel_id, exc)
+                    await websocket.send_json({"type": "error", "data": {"detail": "internal server error"}})
+            else:
+                await ws_manager.broadcast_to_channel(channel_id, {"type": "echo", "data": raw})
     except WebSocketDisconnect:
         pass
     finally:

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
-from app.admin.settings_store import get_orchestrator_settings
+from app.admin.settings_store import get_assist_settings
 from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message
 from app.file_processor.service import FileFlowError, FilePipelineService
 from app.orchestrator.mention import extract_mentions, filter_mentioned_bots
@@ -118,16 +118,14 @@ async def run_orchestrator(
     target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_msg.content)
     direct_answer_mode = False
     if not target_usernames:
-        orch_settings = get_orchestrator_settings()
         channel_result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
         channel_obj = channel_result.scalar_one_or_none()
         channel_auto_assist = bool(channel_obj.auto_assist) if channel_obj else False
-        global_direct_answer = bool(orch_settings.get("orchestrator_direct_answer"))
         has_uploaded_files = bool(trigger_msg.file_ids)
         if (
             not mentioned
             and COORDINATOR_USERNAME in channel_bot_usernames
-            and (has_uploaded_files or channel_auto_assist or global_direct_answer)
+            and (has_uploaded_files or channel_auto_assist)
         ):
             target_usernames = [COORDINATOR_USERNAME]
             direct_answer_mode = True
@@ -292,6 +290,7 @@ async def run_orchestrator(
                     "_adapter_factory": adapter_factory,
                     "_create_and_broadcast": _create_msg_and_broadcast,
                     "_stream_token": _make_stream_token_cb(orch_msg.msg_id),
+                    "_db_session": session,
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
@@ -300,8 +299,8 @@ async def run_orchestrator(
             await _record_agent_task(bot_id, orch_msg.msg_id)
             created.append(orch_msg)
 
-            orch_settings = get_orchestrator_settings()
-            if orch_settings.get("orchestrator_auto_takeover"):
+            orch_settings = get_assist_settings()
+            if orch_settings.get("auto_takeover"):
                 suggested = extract_suggested_bots(content)
                 for sug_username in suggested:
                     if sug_username not in channel_bot_usernames or sug_username == COORDINATOR_USERNAME:
@@ -363,6 +362,7 @@ async def run_orchestrator(
                 "_adapter_factory": adapter_factory,
                 "_create_and_broadcast": _create_msg_and_broadcast,
                 "_stream_token": _make_stream_token_cb(bot_msg.msg_id),
+                "_db_session": session,
             },
         )
         logger.info("orchestrator: calling bot bot_id=%s username=%s", bot_id, username)

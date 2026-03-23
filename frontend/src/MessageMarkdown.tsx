@@ -3,6 +3,70 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js";
 
+// ── AgentNexus file URL detection ────────────────────────────────────────────
+
+/** Matches /api/files/{id}/preview|download (relative or absolute origin). */
+const FILE_URL_RE = /(?:https?:\/\/[^/]+)?\/api\/files\/([^/]+)\/(preview|download)/;
+
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
+
+function fileIconColors(filename: string): { bg: string; fg: string } {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return { bg: "bg-red-50", fg: "text-red-500" };
+  if (["doc", "docx"].includes(ext)) return { bg: "bg-blue-50", fg: "text-blue-500" };
+  if (["xls", "xlsx", "csv"].includes(ext)) return { bg: "bg-green-50", fg: "text-green-600" };
+  if (["md", "txt"].includes(ext)) return { bg: "bg-gray-50", fg: "text-gray-500" };
+  if (IMAGE_EXTS.has(ext)) return { bg: "bg-purple-50", fg: "text-purple-500" };
+  return { bg: "bg-blue-50", fg: "text-blue-500" };
+}
+
+function childrenToText(children: unknown): string {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children)) return children.map((c) => childrenToText(c)).join("");
+  return "";
+}
+
+interface FileChipProps {
+  href: string;
+  fileId: string;
+  filename: string;
+  onImageClick?: (src: string) => void;
+  onFileClick?: (url: string, filename: string) => void;
+}
+
+function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChipProps) {
+  const ext = (filename.split(".").pop() ?? "").toLowerCase();
+  const isImage = IMAGE_EXTS.has(ext);
+  const previewUrl = href.replace(/\/(download|preview)$/, "/preview");
+  const { bg, fg } = fileIconColors(filename);
+  const displayName = filename && filename !== previewUrl ? filename : `file-${fileId.slice(0, 8)}`;
+
+  const handleClick = () => {
+    if (isImage && onImageClick) {
+      onImageClick(previewUrl);
+    } else if (onFileClick) {
+      onFileClick(previewUrl, displayName);
+    } else {
+      window.open(previewUrl, "_blank", "noreferrer");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm max-w-[280px] hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer my-0.5 align-middle"
+    >
+      <span className={`w-7 h-7 rounded-md ${bg} flex items-center justify-center flex-shrink-0`}>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 ${fg}`}>
+          <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
+        </svg>
+      </span>
+      <span className="text-[13px] font-medium text-gray-700 truncate">{displayName}</span>
+    </button>
+  );
+}
+
 // ── MermaidBlock ──────────────────────────────────────────────────────────────
 
 interface MermaidBlockProps {
@@ -76,9 +140,10 @@ interface MessageMarkdownProps {
   text: string;
   streaming?: boolean;
   onImageClick?: (src: string) => void;
+  onFileClick?: (url: string, filename: string) => void;
 }
 
-export function MessageMarkdown({ text, streaming, onImageClick }: MessageMarkdownProps) {
+export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: MessageMarkdownProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -137,6 +202,20 @@ export function MessageMarkdown({ text, streaming, onImageClick }: MessageMarkdo
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         a({ href, children, ...props }: any) {
           const raw = href ?? "";
+          const fileMatch = FILE_URL_RE.exec(raw);
+          if (fileMatch) {
+            const fileId = fileMatch[1];
+            const filename = childrenToText(children);
+            return (
+              <FileChip
+                href={raw}
+                fileId={fileId}
+                filename={filename}
+                onImageClick={onImageClick}
+                onFileClick={onFileClick}
+              />
+            );
+          }
           const safe = raw.startsWith("/") || raw.startsWith("http://") || raw.startsWith("https://");
           return (
             <a
