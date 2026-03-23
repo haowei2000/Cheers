@@ -154,6 +154,15 @@ function ThinkFold({ content }: { content: string }) {
   );
 }
 
+// ── Quote prefix helpers ──────────────────────────────────────────────────────
+const QUOTE_PREFIX_RE = /^> \[([^\]]+)\]: ([\s\S]+?)\n\n([\s\S]*)$/;
+
+function parseQuotePrefix(text: string): { label: string; quote: string; rest: string } | null {
+  const m = QUOTE_PREFIX_RE.exec(text);
+  if (!m) return null;
+  return { label: m[1], quote: m[2], rest: m[3] };
+}
+
 // ── Resize handle hook ────────────────────────────────────────────────────────
 function useResize(initialWidth: number, min: number, max: number, direction: "right" | "left" = "right") {
   const [width, setWidth] = useState(initialWidth);
@@ -1775,8 +1784,20 @@ export default function App() {
 
   const send = () => {
     if (!selectedId || !input.trim()) return;
+    let content = input.trim();
+    if (replyingTo) {
+      const refBot = replyingTo.sender_type === "bot"
+        ? channelBots.find((b) => b.member_id === replyingTo.sender_id)
+        : null;
+      const refLabel = replyingTo.sender_type === "bot"
+        ? (refBot?.display_name || refBot?.username || "Bot")
+        : (currentUser?.display_name || "用户");
+      const quotedRaw = parseGuidePayload(replyingTo.content).text || replyingTo.content;
+      const quotedText = quotedRaw.replace(/\n+/g, " ").trim().slice(0, 400);
+      content = `> [${refLabel}]: ${quotedText}\n\n${content}`;
+    }
     const body: Record<string, unknown> = {
-      content: input.trim(),
+      content,
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: pendingFileIds,
@@ -3025,8 +3046,20 @@ export default function App() {
                           <div className="flex flex-col items-end max-w-[72%]">
                             <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
                             {renderFileAttachments(m, true)}
-                            <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed whitespace-pre-wrap break-words">
-                              {displayContent.replace(/!\[.*?\]\(.*?\)\s*/g, "").trim() || displayContent}
+                            <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words">
+                              {(() => {
+                                const q = parseQuotePrefix(displayContent);
+                                if (q) return (
+                                  <>
+                                    <div className="border-l-2 border-white/50 pl-2 mb-2 text-[12px] leading-snug opacity-80">
+                                      <span className="font-semibold block">{q.label}</span>
+                                      <span className="block line-clamp-2">{q.quote}</span>
+                                    </div>
+                                    <div className="whitespace-pre-wrap">{q.rest.replace(/!\[.*?\]\(.*?\)\s*/g, "").trim() || q.rest}</div>
+                                  </>
+                                );
+                                return <span className="whitespace-pre-wrap">{displayContent.replace(/!\[.*?\]\(.*?\)\s*/g, "").trim() || displayContent}</span>;
+                              })()}
                             </div>
                           </div>
                         </div>
