@@ -234,13 +234,13 @@ async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
                 logger.debug("background session rollback skipped", exc_info=True)
 
 
-@router.post("/{channel_id}/messages")
-async def create_message(
+async def _handle_send_message(
+    session: AsyncSession,
+    *,
     channel_id: str,
     body: MessageCreate,
-    session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """发送消息并持久化，并广播到频道 WebSocket。Orchestrator 在后台异步运行，不阻塞响应。"""
+    """共享的发送消息核心逻辑，供 HTTP 与 WebSocket 路径复用。"""
     await _ensure_channel_exists(session, channel_id)
     file_ids = _normalize_file_ids(body.file_ids)
     await _validate_message_files(session, channel_id=channel_id, file_ids=file_ids)
@@ -254,17 +254,25 @@ async def create_message(
         mention_bot_ids=body.mention_bot_ids or [],
         in_reply_to_msg_id=body.in_reply_to_msg_id or None,
     )
-    # 先提交用户消息，确保后台任务可以读取到
     await session.commit()
     await _broadcast_message(channel_id, d)
-    # 每条消息都立即更新 recent.md
     _schedule_recent_update(channel_id)
-    # 生产与正常开发环境保持后台异步；内存 SQLite（测试）改为内联执行，避免临时连接回收造成时序抖动。
     if _should_run_orchestrator_inline(session):
         await _run_orchestrator_bg(channel_id, msg.msg_id)
     else:
         asyncio.create_task(_run_orchestrator_bg(channel_id, msg.msg_id))
         await asyncio.sleep(0)
+    return d
+
+
+@router.post("/{channel_id}/messages")
+async def create_message(
+    channel_id: str,
+    body: MessageCreate,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """发送消息并持久化，并广播到频道 WebSocket。Orchestrator 在后台异步运行，不阻塞响应。"""
+    d = await _handle_send_message(session, channel_id=channel_id, body=body)
     return {"status": "success", "data": d}
 
 
