@@ -105,7 +105,7 @@ function parseGuidePayload(content: string): { text: string; form?: GuideFormSch
 const THINK_BLOCK = /<think>([\s\S]*?)<\/think>/gi;
 
 /** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
-function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boolean, onImageClick?: (src: string) => void): (string | JSX.Element)[] {
+function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boolean, onImageClick?: (src: string) => void, onFileClick?: (url: string, filename: string) => void): (string | JSX.Element)[] {
   const parts: (string | JSX.Element)[] = [];
   let lastIndex = 0;
   let key = 0;
@@ -114,7 +114,7 @@ function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boo
   while ((match = THINK_BLOCK.exec(content)) !== null) {
     if (match.index > lastIndex) {
       const seg = content.slice(lastIndex, match.index).replace(/\n/g, "  \n");
-      parts.push(<MessageMarkdown key={`${keyPrefix}seg-${key++}`} text={seg} streaming={streaming} onImageClick={onImageClick} />);
+      parts.push(<MessageMarkdown key={`${keyPrefix}seg-${key++}`} text={seg} streaming={streaming} onImageClick={onImageClick} onFileClick={onFileClick} />);
     }
     const thinkContent = match[1]?.trim() || "";
     parts.push(
@@ -124,11 +124,11 @@ function renderWithThinkFolding(content: string, keyPrefix = "", streaming?: boo
   }
   if (lastIndex < content.length) {
     const seg = content.slice(lastIndex).replace(/\n/g, "  \n");
-    parts.push(<MessageMarkdown key={`${keyPrefix}tail-${key++}`} text={seg} streaming={streaming} onImageClick={onImageClick} />);
+    parts.push(<MessageMarkdown key={`${keyPrefix}tail-${key++}`} text={seg} streaming={streaming} onImageClick={onImageClick} onFileClick={onFileClick} />);
   }
   if (parts.length === 0) {
     const seg = content.replace(/\n/g, "  \n");
-    parts.push(<MessageMarkdown key={`${keyPrefix}full-0`} text={seg} streaming={streaming} onImageClick={onImageClick} />);
+    parts.push(<MessageMarkdown key={`${keyPrefix}full-0`} text={seg} streaming={streaming} onImageClick={onImageClick} onFileClick={onFileClick} />);
   }
   return parts;
 }
@@ -151,6 +151,101 @@ function ThinkFold({ content }: { content: string }) {
         </pre>
       )}
     </div>
+  );
+}
+
+// ── Resize handle hook ────────────────────────────────────────────────────────
+function useResize(initialWidth: number, min: number, max: number, direction: "right" | "left" = "right") {
+  const [width, setWidth] = useState(initialWidth);
+  const widthRef = useRef(initialWidth);
+  widthRef.current = width;
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = widthRef.current;
+    const onMove = (ev: MouseEvent) => {
+      const delta = direction === "right" ? ev.clientX - startX : startX - ev.clientX;
+      setWidth(Math.max(min, Math.min(max, startW + delta)));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [direction, min, max]);
+  return [width, onMouseDown] as const;
+}
+
+// ── File Preview Sidebar ──────────────────────────────────────────────────────
+function FilePreviewSidebar({
+  url,
+  filename,
+  onClose,
+}: {
+  url: string;
+  filename: string;
+  onClose: () => void;
+}) {
+  const downloadUrl = url.replace(/\/preview$/, "/download");
+  return (
+    <aside className="w-full border-l border-gray-200 bg-white flex flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
+        <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-blue-500">
+            <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
+          </svg>
+        </div>
+        <span className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0">{filename}</span>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <a
+            href={downloadUrl}
+            download={filename}
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            title="下载文件"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+              <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+            </svg>
+          </a>
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            title="在新标签页打开"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z" clipRule="evenodd" />
+              <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z" clipRule="evenodd" />
+            </svg>
+          </a>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none transition-colors"
+            title="关闭"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      {/* iframe preview */}
+      <div className="flex-1 overflow-hidden">
+        <iframe
+          key={url}
+          src={url}
+          title={filename}
+          className="w-full h-full border-0"
+        />
+      </div>
+    </aside>
   );
 }
 
@@ -228,7 +323,7 @@ function MemoryPanel({
   };
 
   return (
-    <aside className="w-72 flex-shrink-0 border-l border-gray-200 bg-white flex flex-col">
+    <aside className="w-full border-l border-gray-200 bg-white flex flex-col">
       {/* Panel header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
         <div className="min-w-0">
@@ -1278,6 +1373,12 @@ export default function App() {
   // Lightbox 状态
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
+  // 文件预览侧边栏
+  const [filePreviewPanel, setFilePreviewPanel] = useState<{ url: string; filename: string } | null>(null);
+  // 可伸缩面板宽度
+  const [leftWidth, onLeftResize] = useResize(256, 160, 480, "right");
+  const [memoryWidth, onMemoryResize] = useResize(288, 200, 600, "left");
+  const [filePreviewWidth, onFilePreviewResize] = useResize(420, 280, 720, "left");
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
@@ -2109,7 +2210,7 @@ export default function App() {
 
     <div className="flex h-screen bg-white">
       {/* Slack-style dark purple sidebar */}
-      <aside className="w-64 bg-[#3F0E40] flex flex-col flex-shrink-0">
+      <aside className="bg-[#3F0E40] flex flex-col flex-shrink-0 relative" style={{ width: leftWidth }}>
         {/* Workspace header */}
         <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
@@ -2336,6 +2437,11 @@ export default function App() {
             <span>帮助</span>
           </button>
         </div>
+        {/* Left sidebar resize handle */}
+        <div
+          onMouseDown={onLeftResize}
+          className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-white/30 transition-colors z-10"
+        />
       </aside>
 
       {helpOpen && (
@@ -2946,7 +3052,7 @@ export default function App() {
                           <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
                             {m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
-                              : renderWithThinkFolding(text, `${m.msg_id}-`, !!m._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); })}
+                              : renderWithThinkFolding(text, `${m.msg_id}-`, !!m._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
                             {m._streaming && !!text && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                           </div>
                           {form && selectedId && m.sender_type === "bot" && (
@@ -3080,7 +3186,7 @@ export default function App() {
                                     <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
                                       {r._streaming && !rTextRaw
                                         ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
-                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); })}
+                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
                                       {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                                     </div>
                                     {rForm && selectedId && r.sender_type === "bot" && (
@@ -3590,14 +3696,34 @@ export default function App() {
 
       {/* Memory right panel */}
       {memoryPanelOpen && selectedId && (
-        <MemoryPanel
-          channelId={selectedId}
-          channelName={selectedChannel?.name ?? ""}
-          contextData={contextData}
-          onSave={saveContextLayer}
-          onDataChange={(layer, val) => setContextData((prev) => ({ ...prev, [layer.toLowerCase()]: val }))}
-          onClose={() => setMemoryPanelOpen(false)}
-        />
+        <div className="relative flex-shrink-0 flex" style={{ width: memoryWidth }}>
+          <div
+            onMouseDown={onMemoryResize}
+            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
+          />
+          <MemoryPanel
+            channelId={selectedId}
+            channelName={selectedChannel?.name ?? ""}
+            contextData={contextData}
+            onSave={saveContextLayer}
+            onDataChange={(layer, val) => setContextData((prev) => ({ ...prev, [layer.toLowerCase()]: val }))}
+            onClose={() => setMemoryPanelOpen(false)}
+          />
+        </div>
+      )}
+      {/* File preview sidebar */}
+      {filePreviewPanel && (
+        <div className="relative flex-shrink-0 flex" style={{ width: filePreviewWidth }}>
+          <div
+            onMouseDown={onFilePreviewResize}
+            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
+          />
+          <FilePreviewSidebar
+            url={filePreviewPanel.url}
+            filename={filePreviewPanel.filename}
+            onClose={() => setFilePreviewPanel(null)}
+          />
+        </div>
       )}
       </div>
     </div>
