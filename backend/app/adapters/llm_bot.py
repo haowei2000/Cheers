@@ -174,12 +174,13 @@ class LLMBotAdapter(OpenClawAdapter):
         )
 
         stream_token_cb: Callable[[str], Awaitable[None]] | None = (payload.process_config or {}).get("_stream_token")
+        timeout = float(api_config.get("timeout", 600))
 
         try:
             if stream_token_cb:
                 body["stream"] = True
                 full_content = ""
-                async with httpx.AsyncClient(timeout=120.0) as client:
+                async with httpx.AsyncClient(timeout=timeout) as client:
                     async with client.stream("POST", url, json=body, headers=headers) as response:
                         response.raise_for_status()
                         async for line in response.aiter_lines():
@@ -206,7 +207,7 @@ class LLMBotAdapter(OpenClawAdapter):
                     )
                 return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
 
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(url, json=body, headers=headers)
                 response.raise_for_status()
                 data = response.json()
@@ -230,6 +231,17 @@ class LLMBotAdapter(OpenClawAdapter):
                 )
             return AgentResponse(content=content.strip(), task_id=task_id, success=True)
 
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "llm_bot: timeout after %.0fs bot=%s: %s",
+                timeout, self.bot.username, type(exc).__name__,
+            )
+            return AgentResponse(
+                content="",
+                task_id=task_id,
+                success=False,
+                error_message=f"LLM 响应超时（>{timeout:.0f}s），请检查模型服务或在模型配置中增大 timeout 值",
+            )
         except httpx.HTTPStatusError as exc:
             error_body = ""
             try:
