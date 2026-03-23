@@ -4,7 +4,7 @@
 
 1. **步骤一：OpenClaw 开启 HTTP 端口**
    1. 进入 OpenClaw 设置界面
-   2. 开启 HTTP API 端口（默认端口：18789）![openclaw-http-api-enable](imgs/openclaw_http_endpoint.png "openclaw-http-api-enable")
+   2. 开启 HTTP API 端口（默认端口：18789）![openclaw-http-api-enable](../imgs/openclaw_http_endpoint.png "openclaw-http-api-enable")
    3. 设置监听地址为 `0.0.0.0`，允许局域网访问
       ```shell
       openclaw config set gateway.bind lan
@@ -87,7 +87,7 @@ nginx -s reload # 热重载
    - **Provider**：`openai-compatible`
    - **API Key**： `<openclaw token>`
    - **额外请求 Headers** `{"x-openclaw-agent-id": "main"}`
-   ![openclaw-config](imgs/config_ai_model.png "openclaw-config")
+   ![openclaw-config](../imgs/config_ai_model.png "openclaw-config")
 3. 保存后，在 **Bots** 中新建或编辑 Bot，关联上述 AI Model 及对应的 Prompt Template
 4. 在频道中 `@mention` 该 Bot，确认能收到正常回复
 5. 如出现异常，可在 **Admin > Logs** 查看调用日志排查问题
