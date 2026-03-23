@@ -74,6 +74,12 @@ _TOOLS_DESC = """\
 ```
 - 调用后当前轮次立即结束，等待用户选择后自动继续
 
+### create_file — 将内容保存为 MD 文件，返回下载链接
+```tool-call
+{"tool": "create_file", "args": {"filename": "文件名（不含扩展名）", "content": "文件的完整 Markdown 内容"}}
+```
+- 返回可供用户点击下载的链接
+
 **规则**：
 - 用户消息信息不足、意图模糊或需要关键决策时，**第一步必须调用 ask_user** 收集信息，不要猜测或直接执行
 - 先调用所有必要工具，结果返回后再输出最终回复
@@ -403,6 +409,64 @@ def _exec_ask_user(args: dict) -> tuple[str, bool]:
     return content, True
 
 
+async def _exec_create_file(args: dict, ctx: dict) -> str:
+    """将内容保存为 MD 文件，写入 FileRecord，返回下载路径。"""
+    import uuid
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    filename = re.sub(r'[^\w\-. ]', '_', str(args.get("filename") or "output").strip()) or "output"
+    content = str(args.get("content") or "").strip()
+    if not content:
+        return "错误：content 不能为空"
+
+    from app.config import settings
+    from app.db.models import FileRecord
+
+    file_id = str(uuid.uuid4())
+    channel_id = ctx["channel_id"]
+
+    base = Path(settings.data_dir)
+    if not base.is_absolute():
+        base = Path(__file__).resolve().parent.parent.parent / settings.data_dir
+    gen_dir = base / "generated" / channel_id
+    gen_dir.mkdir(parents=True, exist_ok=True)
+
+    md_path = gen_dir / f"{file_id}.md"
+    md_path.write_text(content, encoding="utf-8")
+
+    original_filename = f"{filename}.md"
+    now = datetime.now(timezone.utc)
+
+    record = FileRecord(
+        file_id=file_id,
+        channel_id=channel_id,
+        uploader_id=ctx.get("sender_id") or "system",
+        original_path=str(md_path),
+        original_filename=original_filename,
+        content_type="text/markdown",
+        size_bytes=len(content.encode("utf-8")),
+        md_path=str(md_path),
+        status="ready",
+        uploaded_at=now,
+        converted_at=now,
+    )
+    db_session = ctx.get("_db_session")
+    if db_session:
+        # 复用 orchestrator 的已有 session，避免 SQLite 写锁冲突；由外层统一 commit
+        db_session.add(record)
+        await db_session.flush()
+    else:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as s:
+            s.add(record)
+            await s.commit()
+
+    download_url = f"/api/files/{file_id}/download"
+    logger.info("unified_builtin[tool]: create_file %s channel=%s", original_filename, channel_id)
+    return f"文件已创建：[{original_filename}]({download_url})\n\n下载链接：`{download_url}`"
+
+
 # ─── Agent Loop ───────────────────────────────────────────────────────────────
 
 def _tool_label(tool_name: str, args: dict) -> str:
@@ -417,6 +481,8 @@ def _tool_label(tool_name: str, args: dict) -> str:
         return "更新项目进度"
     if tool_name == "ask_user":
         return "向用户提问"
+    if tool_name == "create_file":
+        return f"创建文件 {args.get('filename', '?')}.md"
     return tool_name
 
 
@@ -491,6 +557,10 @@ async def _agent_loop(system_prompt: str, user_content: str | list, ctx: dict, s
             elif tool_name == "ask_user":
                 pause_content, should_pause = _exec_ask_user(args)
                 tool_results.append("[ask_user]: 已向用户发送选择题，等待回答")
+
+            elif tool_name == "create_file":
+                result = await _exec_create_file(args, ctx)
+                tool_results.append(f"[create_file]: {result}")
 
             else:
                 tool_results.append(f"[{tool_name}]: 未知工具，跳过")
@@ -633,6 +703,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "task_id": payload.task_id,
             "sender_id": sender_id,
             "attachments": payload.attachments or [],
+            "_db_session": pconfig.get("_db_session"),
         }
 
         # ── 5. Agent Loop（支持 Vision 多模态）────────────────────────────────
