@@ -291,6 +291,9 @@ async def run_orchestrator(
                     "_create_and_broadcast": _create_msg_and_broadcast,
                     "_stream_token": _make_stream_token_cb(orch_msg.msg_id),
                     "_db_session": session,
+                    "_pre_create_bot_msg": _pre_create_bot_msg,
+                    "_finalize_bot_msg": _finalize_bot_msg,
+                    "_make_stream_token_cb": _make_stream_token_cb,
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
