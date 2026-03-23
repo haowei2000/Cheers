@@ -42,7 +42,7 @@
       - Base URL: `https://<nginx域名>/api/bot1/v1`
       - Model Name: `openclaw`
       - API Key: 填写 <openclaw token>
-      ![openclaw-config](imgs/openclaw_config.png "openclaw-config")
+      ![openclaw-config](imgs/config_ai_model.png "openclaw-config")
    3. 保存 AI Model 配置
    4. 导航至 **Bots**，新建或编辑 Bot，关联上述 AI Model 并设置对应的 Prompt Template
    5. 保存 Bot 配置
