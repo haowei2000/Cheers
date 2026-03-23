@@ -84,8 +84,8 @@ _TOOLS_DESC = """\
 # ─── LLM 调用 ────────────────────────────────────────────────────────────────
 
 def _get_llm_config() -> dict | None:
-    """优先 guide_bot，依次回退 assistant_bot / orchestrator / system_llm。"""
-    for scope in ("guide_bot", "assistant_bot", "orchestrator", "system_llm"):
+    """优先 channel_bot，依次回退 orchestrator / system_llm。"""
+    for scope in ("channel_bot", "orchestrator", "system_llm"):
         cfg = get_provider_for_scope(scope)
         if cfg and cfg.get("base_url") and cfg.get("model"):
             return cfg

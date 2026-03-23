@@ -18,13 +18,11 @@ from app.admin.settings_store import (
     SCOPES,
     create_llm_provider,
     delete_llm_provider,
-    get_builtin_llm_settings,
     get_clarify_settings,
     get_llm_bindings,
     get_orchestrator_settings,
     get_llm_providers_list,
     get_provider_for_scope,
-    set_builtin_llm_settings,
     set_clarify_settings,
     set_llm_bindings,
     set_orchestrator_settings,
@@ -108,8 +106,7 @@ async def delete_llm_provider_route(provider_id: str) -> dict:
 
 
 class LLMBindingsBody(BaseModel):
-    guide_bot: str | None = None
-    assistant_bot: str | None = None
+    channel_bot: str | None = None
     system_llm: str | None = None
     log_analyze: str | None = None
     qa_summarize: str | None = None
@@ -120,8 +117,7 @@ class LLMBindingsBody(BaseModel):
 async def put_llm_bindings(body: LLMBindingsBody) -> dict:
     """更新功能绑定：各功能使用哪个 LLM（传 provider id，传空串表示不绑定）。"""
     set_llm_bindings(
-        guide_bot=body.guide_bot,
-        assistant_bot=body.assistant_bot,
+        channel_bot=body.channel_bot,
         system_llm=body.system_llm,
         log_analyze=body.log_analyze,
         qa_summarize=body.qa_summarize,
@@ -143,8 +139,7 @@ async def post_llm_bind(body: LLMBindBody) -> dict:
         raise HTTPException(status_code=400, detail="未知的 LLM 绑定范围")
     provider_id = (body.provider_id or "").strip()
     payload = {
-        "guide_bot": None,
-        "assistant_bot": None,
+        "channel_bot": None,
         "system_llm": None,
         "log_analyze": None,
         "qa_summarize": None,
@@ -153,32 +148,6 @@ async def post_llm_bind(body: LLMBindBody) -> dict:
     payload[scope] = provider_id
     set_llm_bindings(**payload)
     return {"status": "success", "data": {"bindings": get_llm_bindings()}}  # type: ignore[return-value]
-
-
-# ---------- 内置助手 LLM 配置 ----------
-
-
-class BuiltinLLMBody(BaseModel):
-    base_url: str | None = None
-    model: str | None = None
-    api_key: str | None = None
-
-
-@router.get("/settings/builtin-llm")
-async def get_builtin_llm() -> dict:
-    """获取内置助手 LLM 配置（api_key 脱敏）。"""
-    return {"status": "success", "data": get_builtin_llm_settings()}
-
-
-@router.put("/settings/builtin-llm")
-async def put_builtin_llm(body: BuiltinLLMBody) -> dict:
-    """更新内置助手 LLM 配置（base_url / model / api_key）。"""
-    updated = set_builtin_llm_settings(
-        base_url=body.base_url,
-        api_key=body.api_key,
-        model=body.model,
-    )
-    return {"status": "success", "data": updated}
 
 
 class ClarifySettingsBody(BaseModel):

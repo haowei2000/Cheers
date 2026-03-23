@@ -9,7 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 from app.config import settings
 
 ADMIN_SETTINGS_FILENAME = "admin_settings.json"
-SCOPES = ("guide_bot", "assistant_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")
+SCOPES = ("channel_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")
 DEFAULT_CLARIFY_SETTINGS = {
     "clarify_strict_mode": False,
     "clarify_force_rule": True,
@@ -228,7 +228,7 @@ def ensure_preset_llm_providers() -> None:
             })
     if not (data.get("llm_bindings") or {}) and data["llm_providers"]:
         default_provider_id = data["llm_providers"][0]["id"]
-        for scope in ("guide_bot", "assistant_bot", "orchestrator", "system_llm"):
+        for scope in ("channel_bot", "orchestrator", "system_llm"):
             data["llm_bindings"][scope] = default_provider_id
     save_admin_settings(data)
 
@@ -274,16 +274,40 @@ def _get_provider_by_id(provider_id: str) -> dict[str, Any] | None:
 def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
     """
     按功能范围返回当前绑定的 LLM 配置（base_url, model, api_key, temperature, max_tokens）。
-    若使用「二层绑定」则从绑定的 provider 取；否则回退到旧版扁平键（env + admin 覆盖）。
+    channel_bot 为频道内置助手的统一 scope，兼容旧版 guide_bot / assistant_bot / builtin_llm。
     """
     data = load_admin_settings()
     _ensure_llm_structures(data)
 
-    # 内置助手直接配置优先于绑定（guide_bot / assistant_bot）
-    if scope in ("guide_bot", "assistant_bot"):
+    # channel_bot：频道助手统一 scope（兼容旧版 guide_bot / assistant_bot / builtin_llm）
+    if scope in ("channel_bot", "guide_bot", "assistant_bot"):
+        # 1. 旧版 builtin_llm 直接配置优先（向后兼容，界面已迁移到绑定方式）
         builtin = data.get("builtin_llm", {})
         if builtin.get("base_url") or builtin.get("model"):
             return _normalize_provider_config(builtin)
+        # 2. 新版 channel_bot 绑定
+        bindings = data.get("llm_bindings") or {}
+        pid = bindings.get("channel_bot") or bindings.get("guide_bot")
+        if pid:
+            p = _get_provider_by_id(pid)
+            if p:
+                return _normalize_provider_config(p)
+        # 3. 回退到第一个可用 provider
+        if data["llm_providers"]:
+            return _normalize_provider_config(data["llm_providers"][0])
+        # 4. 最终回退：env 配置（兼容旧部署）
+        from app.config import settings as s
+        base = (data.get("guide_llm_base_url") or s.guide_llm_base_url or "").strip()
+        model = (data.get("guide_llm_model") or s.guide_llm_model or "").strip()
+        if base and model:
+            return _normalize_provider_config({
+                "base_url": base,
+                "model": model,
+                "api_key": (data.get("guide_llm_api_key") or s.guide_llm_api_key or "").strip(),
+                "temperature": float(data.get("guide_llm_temperature", s.guide_llm_temperature)),
+                "max_tokens": int(data.get("guide_llm_max_tokens", s.guide_llm_max_tokens)),
+            })
+        return None
 
     bindings = data.get("llm_bindings") or {}
     pid = bindings.get(scope)
@@ -293,20 +317,8 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
             return _normalize_provider_config(p)
     if data["llm_providers"]:
         return _normalize_provider_config(data["llm_providers"][0])
-    # 回退：旧版扁平键（env + admin 覆盖）
-    from app.config import settings as s
-    if scope == "guide_bot":
-        return _normalize_provider_config({
-            "base_url": (data.get("guide_llm_base_url") or s.guide_llm_base_url or "").strip(),
-            "model": (data.get("guide_llm_model") or s.guide_llm_model or "").strip(),
-            "api_key": (data.get("guide_llm_api_key") or s.guide_llm_api_key or "").strip(),
-            "temperature": float(data.get("guide_llm_temperature", s.guide_llm_temperature)),
-            "max_tokens": int(data.get("guide_llm_max_tokens", s.guide_llm_max_tokens)),
-        })
-    if scope == "assistant_bot":
-        # 无独立绑定时回退到 guide_bot 配置
-        return get_provider_for_scope("guide_bot")
     if scope in ("system_llm", "log_analyze", "qa_summarize", "orchestrator"):
+        from app.config import settings as s
         return _normalize_provider_config({
             "base_url": (data.get("system_llm_base_url") or s.system_llm_base_url or "").strip(),
             "model": (data.get("system_llm_model") or s.system_llm_model or "gpt-4o-mini").strip(),
@@ -392,8 +404,7 @@ def delete_llm_provider(provider_id: str) -> bool:
 
 
 def set_llm_bindings(
-    guide_bot: str | None = None,
-    assistant_bot: str | None = None,
+    channel_bot: str | None = None,
     system_llm: str | None = None,
     log_analyze: str | None = None,
     qa_summarize: str | None = None,
@@ -403,10 +414,8 @@ def set_llm_bindings(
     data = load_admin_settings()
     _ensure_llm_structures(data)
     bindings = data.get("llm_bindings") or {}
-    if guide_bot is not None:
-        bindings["guide_bot"] = (guide_bot or "").strip() or ""
-    if assistant_bot is not None:
-        bindings["assistant_bot"] = (assistant_bot or "").strip() or ""
+    if channel_bot is not None:
+        bindings["channel_bot"] = (channel_bot or "").strip() or ""
     if system_llm is not None:
         bindings["system_llm"] = (system_llm or "").strip() or ""
     if log_analyze is not None:
@@ -503,42 +512,6 @@ def set_orchestrator_settings(
         data["orchestrator_auto_takeover"] = bool(orchestrator_auto_takeover)
     save_admin_settings(data)
     return get_orchestrator_settings()
-
-
-# ---------- 内置助手 LLM 设置 ----------
-
-
-def get_builtin_llm_settings() -> dict[str, Any]:
-    """返回内置助手 LLM 设置（api_key 脱敏）。"""
-    data = load_admin_settings()
-    raw = data.get("builtin_llm", {})
-    api_key = raw.get("api_key", "")
-    return {
-        "base_url": raw.get("base_url", ""),
-        "model": raw.get("model", ""),
-        "api_key_set": bool(api_key),
-        "api_key_masked": ("****" + api_key[-6:]) if api_key and len(api_key) > 6 else ("****" if api_key else ""),
-    }
-
-
-def set_builtin_llm_settings(
-    *,
-    base_url: str | None = None,
-    api_key: str | None = None,
-    model: str | None = None,
-) -> dict[str, Any]:
-    """更新内置助手 LLM 设置并返回脱敏后的最新值。"""
-    data = load_admin_settings()
-    current = data.get("builtin_llm", {})
-    if base_url is not None:
-        current["base_url"] = base_url.strip()
-    if api_key is not None:
-        current["api_key"] = api_key.strip()
-    if model is not None:
-        current["model"] = model.strip()
-    data["builtin_llm"] = current
-    save_admin_settings(data)
-    return get_builtin_llm_settings()
 
 
 # ---------- 图片 API 设置 ----------
