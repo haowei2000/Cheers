@@ -173,7 +173,8 @@ export default function AdminPage() {
   const [_llmEditingId, _setLlmEditingId] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_llmSaveLoading, _setLlmSaveLoading] = useState(false);
-  const [bindingChannelBot, setBindingChannelBot] = useState("");
+  const [assistSettings, setAssistSettings] = useState<{ llm_provider_id: string; auto_takeover: boolean }>({ llm_provider_id: "", auto_takeover: false });
+  const [channelBotForm, setChannelBotForm] = useState({ display_name: "", description: "" });
   const [bindingSystemLlm, setBindingSystemLlm] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_bindingLogAnalyze, setBindingLogAnalyze] = useState("");
@@ -181,7 +182,6 @@ export default function AdminPage() {
   const [_bindingQaSummarize, setBindingQaSummarize] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_bindingOrchestrator, setBindingOrchestrator] = useState("");
-  const [orchestratorSettings, setOrchestratorSettings] = useState({ orchestrator_direct_answer: false, orchestrator_auto_takeover: false });
   const [clarifySettings, setClarifySettings] = useState<ClarifySettings>({
     clarify_strict_mode: false,
     clarify_force_rule: true,
@@ -216,6 +216,13 @@ export default function AdminPage() {
     loadBots();
   }, []);
 
+  const GUIDE_BOT_ID = "bot-guide-001";
+
+  useEffect(() => {
+    const cb = botList.find(b => b.bot_id === GUIDE_BOT_ID);
+    if (cb) setChannelBotForm({ display_name: cb.display_name || "", description: cb.description || "" });
+  }, [botList]);
+
   useEffect(() => {
     if (activeTab === "perf") {
       fetch(`${API}/tasks?limit=50`).then((r) => r.json()).then((d) => setTaskList(d.data || [])).catch(() => setTaskList([]));
@@ -231,7 +238,6 @@ export default function AdminPage() {
           if (d.data) {
             setLlmProviders(d.data.providers || []);
             setLlmBindings(d.data.bindings || {});
-            setBindingChannelBot(d.data.bindings?.channel_bot ?? d.data.bindings?.guide_bot ?? "");
             setBindingSystemLlm(d.data.bindings?.system_llm ?? "");
             setBindingLogAnalyze(d.data.bindings?.log_analyze ?? "");
             setBindingQaSummarize(d.data.bindings?.qa_summarize ?? "");
@@ -250,13 +256,13 @@ export default function AdminPage() {
           }
         })
         .catch(console.error);
-      authFetch(`${API}/admin/settings/orchestrator`)
+      authFetch(`${API}/admin/settings/assist`)
         .then((r) => r.json())
         .then((d) => {
           if (d.data) {
-            setOrchestratorSettings({
-              orchestrator_direct_answer: !!d.data.orchestrator_direct_answer,
-              orchestrator_auto_takeover: !!d.data.orchestrator_auto_takeover,
+            setAssistSettings({
+              llm_provider_id: d.data.llm_provider_id ?? "",
+              auto_takeover: !!d.data.auto_takeover,
             });
           }
         })
@@ -682,18 +688,18 @@ export default function AdminPage() {
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
-  const saveOrchestratorSettings = () => {
-    authFetch(`${API}/admin/settings/orchestrator`, { method: "POST", body: JSON.stringify(orchestratorSettings) })
-      .then((r) => r.json())
-      .then((d) => { if (d.status === "success") toast.success("设置已保存"); else toast.error(d.message || "保存失败"); })
-      .catch((e) => toast.error("请求失败: " + String(e)));
-  };
-
-  const saveClarifySettings = () => {
-    authFetch(`${API}/admin/settings/clarify`, { method: "POST", body: JSON.stringify(clarifySettings) })
-      .then((r) => r.json())
-      .then((d) => { if (d.status === "success") toast.success("设置已保存"); else toast.error(d.message || "保存失败"); })
-      .catch((e) => toast.error("请求失败: " + String(e)));
+  const saveAssistAll = async () => {
+    try {
+      await Promise.all([
+        authFetch(`${API}/bots/${GUIDE_BOT_ID}`, { method: "PUT", body: JSON.stringify(channelBotForm) }),
+        authFetch(`${API}/admin/settings/assist`, { method: "PUT", body: JSON.stringify(assistSettings) }),
+        authFetch(`${API}/admin/settings/clarify`, { method: "POST", body: JSON.stringify(clarifySettings) }),
+      ]);
+      toast.success("已保存");
+      loadBots();
+    } catch (e) {
+      toast.error("保存失败: " + String(e));
+    }
   };
 
   // ==================== Render ====================
@@ -738,7 +744,7 @@ export default function AdminPage() {
               <button onClick={() => setActiveTab("workspace")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "workspace" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>工作区与项目</button>
               {userRole === "system_admin" && (
                 <>
-                  <button onClick={() => setActiveTab("llm")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "llm" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>LLM 设置</button>
+                  <button onClick={() => setActiveTab("llm")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "llm" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>系统助手</button>
                   <button onClick={() => setActiveTab("image_api")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "image_api" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>图片 API</button>
                   <button onClick={() => setActiveTab("perf")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "perf" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>性能监控</button>
                   <button onClick={() => setActiveTab("logs")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "logs" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>日志查看</button>
@@ -925,7 +931,7 @@ export default function AdminPage() {
                 <section className="bg-white rounded-xl border border-gray-200 p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">Bot 列表</h3>
                   <div className="space-y-2">
-                    {botList.map((b) => (
+                    {botList.filter(b => b.bot_id !== GUIDE_BOT_ID).map((b) => (
                       <div key={b.bot_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
@@ -949,7 +955,7 @@ export default function AdminPage() {
                         )}
                       </div>
                     ))}
-                    {botList.length === 0 && <div className="text-sm text-gray-400 py-4 text-center">暂无 Bot</div>}
+                    {botList.filter(b => b.bot_id !== GUIDE_BOT_ID).length === 0 && <div className="text-sm text-gray-400 py-4 text-center">暂无 Bot</div>}
                   </div>
                 </section>
 
@@ -1178,64 +1184,63 @@ export default function AdminPage() {
               </>
             )}
 
-            {/* ==================== LLM Settings Tab ==================== */}
+            {/* ==================== System Assistant Tab ==================== */}
             {activeTab === "llm" && userRole === "system_admin" && (
-              <>
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-4">功能绑定</h3>
-                  <p className="text-xs text-gray-400 mb-4">在「AI 模型」中添加模型后，在此处为各功能选择要使用的 LLM</p>
-                  <div className="space-y-3">
+              <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <h3 className="text-sm font-semibold text-gray-800 mb-4">系统助手</h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">频道助手 LLM</label>
-                      <select value={bindingChannelBot} onChange={(e) => { setBindingChannelBot(e.target.value); saveLlmBinding("channel_bot", e.target.value); }} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                      <label className="block text-xs text-gray-500 mb-1">显示名称</label>
+                      <input type="text" value={channelBotForm.display_name} onChange={(e) => setChannelBotForm({ ...channelBotForm, display_name: e.target.value })} placeholder="内置助手" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">描述</label>
+                      <input type="text" value={channelBotForm.description} onChange={(e) => setChannelBotForm({ ...channelBotForm, description: e.target.value })} placeholder="系统内置助手" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">助手 LLM</label>
+                      <select value={assistSettings.llm_provider_id} onChange={(e) => setAssistSettings({ ...assistSettings, llm_provider_id: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
                         <option value="">不绑定</option>
                         {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">系统 LLM</label>
+                      <label className="block text-xs text-gray-500 mb-1">系统 LLM（日志/摘要）</label>
                       <select value={bindingSystemLlm} onChange={(e) => { setBindingSystemLlm(e.target.value); saveLlmBinding("system_llm", e.target.value); }} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
                         <option value="">不绑定</option>
                         {llmProviders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </div>
                   </div>
-                </section>
-
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-4">澄清设置</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="clarify_strict" checked={clarifySettings.clarify_strict_mode} onChange={(e) => setClarifySettings({ ...clarifySettings, clarify_strict_mode: e.target.checked })} />
-                      <label htmlFor="clarify_strict" className="text-sm">严格模式</label>
+                  <div className="border-t border-gray-100 pt-3 space-y-2">
+                    <p className="text-xs text-gray-400 font-medium">澄清策略</p>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-1.5 text-sm">
+                        <input type="checkbox" checked={clarifySettings.clarify_strict_mode} onChange={(e) => setClarifySettings({ ...clarifySettings, clarify_strict_mode: e.target.checked })} />
+                        严格模式
+                      </label>
+                      <label className="flex items-center gap-1.5 text-sm">
+                        <input type="checkbox" checked={clarifySettings.clarify_force_rule} onChange={(e) => setClarifySettings({ ...clarifySettings, clarify_force_rule: e.target.checked })} />
+                        强制规则兜底
+                      </label>
+                      <label className="flex items-center gap-1.5 text-sm text-gray-500">
+                        阈值
+                        <input type="number" step={0.1} min={0} max={1} value={clarifySettings.clarify_threshold} onChange={(e) => setClarifySettings({ ...clarifySettings, clarify_threshold: parseFloat(e.target.value) })} className="border border-gray-300 rounded-lg px-2 py-1 text-sm w-16" />
+                      </label>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="clarify_force" checked={clarifySettings.clarify_force_rule} onChange={(e) => setClarifySettings({ ...clarifySettings, clarify_force_rule: e.target.checked })} />
-                      <label htmlFor="clarify_force" className="text-sm">强制规则兜底</label>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">阈值</label>
-                      <input type="number" step={0.1} min={0} max={1} value={clarifySettings.clarify_threshold} onChange={(e) => setClarifySettings({ ...clarifySettings, clarify_threshold: parseFloat(e.target.value) })} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
-                    </div>
-                    <button onClick={saveClarifySettings} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存澄清设置</button>
                   </div>
-                </section>
-
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-4">Orchestrator 设置</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="orch_direct" checked={orchestratorSettings.orchestrator_direct_answer} onChange={(e) => setOrchestratorSettings({ ...orchestratorSettings, orchestrator_direct_answer: e.target.checked })} />
-                      <label htmlFor="orch_direct" className="text-sm">直接回答</label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input type="checkbox" id="orch_takeover" checked={orchestratorSettings.orchestrator_auto_takeover} onChange={(e) => setOrchestratorSettings({ ...orchestratorSettings, orchestrator_auto_takeover: e.target.checked })} />
-                      <label htmlFor="orch_takeover" className="text-sm">自动接管</label>
-                    </div>
-                    <button onClick={saveOrchestratorSettings} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存 Orchestrator 设置</button>
+                  <div className="flex items-center gap-4 border-t border-gray-100 pt-3">
+                    <label className="flex items-center gap-1.5 text-sm">
+                      <input type="checkbox" id="assist_takeover" checked={assistSettings.auto_takeover} onChange={(e) => setAssistSettings({ ...assistSettings, auto_takeover: e.target.checked })} />
+                      自动接管
+                    </label>
+                    <button onClick={saveAssistAll} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
                   </div>
-                </section>
-              </>
+                </div>
+              </section>
             )}
 
             {/* ==================== Performance Tab ==================== */}
