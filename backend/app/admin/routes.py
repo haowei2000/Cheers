@@ -18,14 +18,14 @@ from app.admin.settings_store import (
     SCOPES,
     create_llm_provider,
     delete_llm_provider,
+    get_assist_settings,
     get_clarify_settings,
     get_llm_bindings,
-    get_orchestrator_settings,
     get_llm_providers_list,
     get_provider_for_scope,
+    set_assist_settings,
     set_clarify_settings,
     set_llm_bindings,
-    set_orchestrator_settings,
     update_llm_provider,
 )
 
@@ -187,39 +187,33 @@ async def post_admin_clarify_settings(body: ClarifySettingsBody) -> dict:
     return await put_admin_clarify_settings(body)
 
 
-class OrchestratorSettingsBody(BaseModel):
-    orchestrator_direct_answer: bool | None = None
-    orchestrator_auto_takeover: bool | None = None
+class AssistSettingsBody(BaseModel):
+    llm_provider_id: str | None = None
+    auto_takeover: bool | None = None
 
 
-@router.get("/settings/orchestrator")
-async def get_admin_orchestrator_settings() -> dict:
-    """获取 Orchestrator 配置（直接回答、自动接手）。"""
+@router.get("/settings/assist")
+async def get_admin_assist_settings() -> dict:
+    """获取系统助手配置（LLM 绑定 + 自动接管）。"""
     return {
         "status": "success",
         "message": "ok",
-        "data": get_orchestrator_settings(),
+        "data": get_assist_settings(),
     }
 
 
-@router.put("/settings/orchestrator")
-async def put_admin_orchestrator_settings(body: OrchestratorSettingsBody) -> dict:
-    """更新 Orchestrator 配置。"""
-    updated = set_orchestrator_settings(
-        orchestrator_direct_answer=body.orchestrator_direct_answer,
-        orchestrator_auto_takeover=body.orchestrator_auto_takeover,
+@router.put("/settings/assist")
+async def put_admin_assist_settings(body: AssistSettingsBody) -> dict:
+    """更新系统助手配置。"""
+    updated = set_assist_settings(
+        llm_provider_id=body.llm_provider_id,
+        auto_takeover=body.auto_takeover,
     )
     return {
         "status": "success",
         "message": "updated",
         "data": updated,
     }
-
-
-@router.post("/settings/orchestrator")
-async def post_admin_orchestrator_settings(body: OrchestratorSettingsBody) -> dict:
-    """兼容旧前端：POST 保存 Orchestrator 设置。"""
-    return await put_admin_orchestrator_settings(body)
 
 
 # ---------- 日志（面向 LLM） ----------

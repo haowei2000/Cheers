@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -21,6 +22,12 @@ from app.storage.base import StorageError, StorageObjectNotFoundError
 from app.storage.bootstrap import get_storage_service, is_storage_enabled
 
 logger = logging.getLogger("app.file_processor.routes")
+
+
+def _content_disposition(filename: str) -> str:
+    """生成兼容非 ASCII 文件名的 Content-Disposition header 值（RFC 5987）。"""
+    encoded = quote(filename, safe="")
+    return f"attachment; filename*=UTF-8''{encoded}"
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 
@@ -169,20 +176,45 @@ async def file_status(
     }
 
 
+def _inline_disposition(content_type: str) -> bool:
+    """True if the browser can display this type natively (inline)."""
+    ct = content_type.lower()
+    return (
+        is_image_type(ct)
+        or "pdf" in ct
+        or ct.startswith("text/")
+    )
+
+
 @router.get("/{file_id}/preview")
 async def file_preview(
     file_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    """返回图片文件的原始字节（用于 <img src> 预览）。"""
+    """预览文件：图片/PDF/文本以 inline 方式返回；其他类型触发附件下载。"""
     result = await session.execute(
         select(FileRecord).where(FileRecord.file_id == file_id)
     )
     rec = result.scalar_one_or_none()
     if not rec:
         raise HTTPException(status_code=404, detail="file not found")
-    if not is_image_type(rec.content_type or ""):
-        raise HTTPException(status_code=400, detail="not an image file")
+
+    content_type = rec.content_type or "application/octet-stream"
+    filename = rec.original_filename or file_id
+    disposition = "inline" if _inline_disposition(content_type) else _content_disposition(filename)
+
+    # Local-path files first (generate_file tool, legacy upload)
+    if not rec.object_key and rec.original_path:
+        local_path = Path(rec.original_path)
+        if local_path.exists():
+            return Response(
+                content=local_path.read_bytes(),
+                media_type=content_type,
+                headers={
+                    "Content-Disposition": disposition,
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
 
     if not is_storage_enabled():
         raise HTTPException(status_code=503, detail="storage not enabled")
@@ -191,15 +223,18 @@ async def file_preview(
     try:
         obj = await storage.get_object(rec.file_id, scope=scope)
     except StorageObjectNotFoundError:
-        raise HTTPException(status_code=404, detail="image not found in storage")
+        raise HTTPException(status_code=404, detail="file not found in storage")
     except Exception as exc:
-        logger.exception("failed to load image file_id=%s", file_id)
-        raise HTTPException(status_code=500, detail="failed to load image") from exc
+        logger.exception("failed to load file file_id=%s", file_id)
+        raise HTTPException(status_code=500, detail="failed to load file") from exc
 
     return Response(
         content=obj.body,
-        media_type=rec.content_type or "image/png",
-        headers={"Cache-Control": "public, max-age=3600"},
+        media_type=content_type,
+        headers={
+            "Content-Disposition": disposition,
+            "Cache-Control": "public, max-age=3600",
+        },
     )
 
 
@@ -208,13 +243,27 @@ async def file_download(
     file_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    """下载文件（任意类型）。"""
+    """下载文件（任意类型）。优先从本地路径读取，其次走对象存储。"""
     result = await session.execute(
         select(FileRecord).where(FileRecord.file_id == file_id)
     )
     rec = result.scalar_one_or_none()
     if not rec:
         raise HTTPException(status_code=404, detail="file not found")
+
+    # 本地文件优先（generate_file 工具生成的文件无 object_key）
+    if not rec.object_key and rec.original_path:
+        local_path = Path(rec.original_path)
+        if local_path.exists():
+            filename = rec.original_filename or f"{file_id}"
+            return Response(
+                content=local_path.read_bytes(),
+                media_type=rec.content_type or "application/octet-stream",
+                headers={
+                    "Content-Disposition": _content_disposition(filename),
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
 
     if not is_storage_enabled():
         raise HTTPException(status_code=503, detail="storage not enabled")
@@ -233,7 +282,7 @@ async def file_download(
         content=obj.body,
         media_type=rec.content_type or "application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": _content_disposition(filename),
             "Cache-Control": "public, max-age=3600",
         },
     )

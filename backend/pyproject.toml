@@ -34,6 +34,8 @@ dependencies = [
     # 密码哈希
     "passlib>=1.7.4",
     "httpx>=0.28.1",
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
 ]
 
 [project.optional-dependencies]
