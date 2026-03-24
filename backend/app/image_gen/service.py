@@ -215,6 +215,11 @@ class ImageGenService:
         if size not in SUPPORTED_SIZES:
             size = "1024*1024"
 
+        # 若配置的 default_model 是编辑专用模型，自动回退到文生图模型
+        if model_name in IMAGE_EDIT_MODELS:
+            model_name = IMAGE_GEN_MODELS[0]
+            logger.warning("image_gen: default_model is an edit-only model, falling back to %s", model_name)
+
         # DashScope 原生 API 端点
         url = f"{base_url}{DASHSCOPE_IMAGE_PATH}"
         headers = {
