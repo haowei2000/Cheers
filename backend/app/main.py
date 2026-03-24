@@ -160,6 +160,9 @@ async def startup() -> None:
     setup_logging()
     logger.info("AgentNexus startup")
 
+    from app.http_client import init_http_client
+    await init_http_client()
+
     if os.environ.get("SEED_DATA", "").strip().lower() in ("1", "true", "yes"):
         try:
             from app.db.seed import run_seed
@@ -181,6 +184,12 @@ async def startup() -> None:
 
     if is_storage_enabled():
         await initialize_storage()
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    from app.http_client import close_http_client
+    await close_http_client()
 
 
 @app.get("/health")

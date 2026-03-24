@@ -201,6 +201,27 @@ function FilePreviewSidebar({
   onClose: () => void;
 }) {
   const downloadUrl = url.replace(/\/preview$/, "/download");
+  const ext = (filename.split(".").pop() ?? "").toLowerCase();
+  const isMarkdown = ext === "md" || ext === "markdown";
+
+  const [mdContent, setMdContent] = useState<string | null>(null);
+  const [mdLoading, setMdLoading] = useState(false);
+  const [mdError, setMdError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isMarkdown) return;
+    setMdLoading(true);
+    setMdContent(null);
+    setMdError(null);
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      })
+      .then((text) => { setMdContent(text); setMdLoading(false); })
+      .catch((e) => { setMdError(String(e)); setMdLoading(false); });
+  }, [url, isMarkdown]);
+
   return (
     <aside className="w-full border-l border-gray-200 bg-white flex flex-col">
       {/* Header */}
@@ -245,14 +266,27 @@ function FilePreviewSidebar({
           </button>
         </div>
       </div>
-      {/* iframe preview */}
-      <div className="flex-1 overflow-hidden">
-        <iframe
-          key={url}
-          src={url}
-          title={filename}
-          className="w-full h-full border-0"
-        />
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {isMarkdown ? (
+          mdLoading ? (
+            <div className="flex items-center justify-center h-full text-sm text-gray-400">加载中…</div>
+          ) : mdError ? (
+            <div className="flex items-center justify-center h-full text-sm text-red-400">{mdError}</div>
+          ) : (
+            <div className="px-5 py-4">
+              <MessageMarkdown text={mdContent ?? ""} />
+            </div>
+          )
+        ) : (
+          <iframe
+            key={url}
+            src={url}
+            title={filename}
+            className="w-full h-full border-0"
+          />
+        )}
       </div>
     </aside>
   );
