@@ -1332,8 +1332,23 @@ export default function App() {
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
+  const [pendingFilePreviews, setPendingFilePreviews] = useState<(string | null)[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounterRef = useRef(0);
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+  const uploadMenuRef = useRef<HTMLDivElement>(null);
+  const fileImgInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!uploadMenuOpen) return;
+    const handle = (e: MouseEvent) => {
+      if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target as Node)) {
+        setUploadMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [uploadMenuOpen]);
   const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>({});
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [summaryBusy, setSummaryBusy] = useState(false);
@@ -1808,6 +1823,7 @@ export default function App() {
     setInput("");
     setPendingFileIds([]);
     setPendingFileNames([]);
+    setPendingFilePreviews((prev) => { prev.forEach((u) => { if (u) URL.revokeObjectURL(u); }); return []; });
     setReplyingTo(null);
     fetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
@@ -1866,6 +1882,8 @@ export default function App() {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   };
 
+  const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+
   const uploadFileObject = async (file: File) => {
     if (!selectedId) return;
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
@@ -1874,6 +1892,7 @@ export default function App() {
       toast.error(`不支持的格式：${ext}`);
       return;
     }
+    const localPreview = IMAGE_EXTS.has(ext) ? URL.createObjectURL(file) : null;
     if (PRESIGN_EXTS.has(ext)) {
       const contentType = file.type || CONTENT_TYPE_MAP[ext] || "application/octet-stream";
       try {
@@ -1891,6 +1910,7 @@ export default function App() {
         const presignData = await presignRes.json();
         if (!presignRes.ok || !presignData.data?.upload_url) {
           toast.error(presignData.detail || "获取上传凭证失败");
+          if (localPreview) URL.revokeObjectURL(localPreview);
           return;
         }
         const { file_id, upload_url, headers: uploadHeaders } = presignData.data;
@@ -1901,12 +1921,15 @@ export default function App() {
         });
         if (!putRes.ok) {
           toast.error("文件上传失败，请重试");
+          if (localPreview) URL.revokeObjectURL(localPreview);
           return;
         }
         setPendingFileIds((prev) => [...prev, file_id]);
         setPendingFileNames((prev) => [...prev, file.name]);
+        setPendingFilePreviews((prev) => [...prev, localPreview]);
       } catch (err) {
         toast.error("文件上传出错");
+        if (localPreview) URL.revokeObjectURL(localPreview);
         console.error(err);
       }
     } else {
@@ -1919,6 +1942,9 @@ export default function App() {
           if (d.data?.file_id) {
             setPendingFileIds((prev) => [...prev, d.data.file_id]);
             setPendingFileNames((prev) => [...prev, file.name]);
+            setPendingFilePreviews((prev) => [...prev, localPreview]);
+          } else if (localPreview) {
+            URL.revokeObjectURL(localPreview);
           }
         })
         .catch(console.error);
@@ -3406,15 +3432,49 @@ export default function App() {
                 );
               })()}
               {pendingFileNames.length > 0 && (
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {pendingFileNames.map((name, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 border border-gray-200 rounded-full text-xs text-gray-600">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-gray-400">
-                        <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h4.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12A1.5 1.5 0 0 1 13 5.622V12.5A1.5 1.5 0 0 1 11.5 14h-7A1.5 1.5 0 0 1 3 12.5v-9Z" />
-                      </svg>
-                      {name}
-                    </span>
-                  ))}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {pendingFileNames.map((name, i) => {
+                    const preview = pendingFilePreviews[i] ?? null;
+                    const removeItem = () => {
+                      if (preview) URL.revokeObjectURL(preview);
+                      setPendingFileIds((p) => p.filter((_, j) => j !== i));
+                      setPendingFileNames((p) => p.filter((_, j) => j !== i));
+                      setPendingFilePreviews((p) => p.filter((_, j) => j !== i));
+                    };
+                    return preview ? (
+                      <div key={i} className="relative group cursor-pointer rounded-xl overflow-hidden border border-gray-200 shadow-sm inline-block">
+                        <img src={preview} alt={name} className="max-w-[180px] max-h-[140px] object-cover block" />
+                        <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5 max-w-[180px]">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-gray-400 flex-shrink-0">
+                            <path fillRule="evenodd" d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Zm10.5 5.707a.5.5 0 0 0-.146-.353l-2.5-2.5a.5.5 0 0 0-.708 0L7.5 8.5 6.354 7.354a.5.5 0 0 0-.708 0l-3.146 3.15V12a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-2.293ZM11 5.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" clipRule="evenodd" />
+                          </svg>
+                          <span className="truncate">{name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={removeItem}
+                          className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-[11px] leading-none items-center justify-center hidden group-hover:flex"
+                        >×</button>
+                      </div>
+                    ) : (
+                      <div key={i} className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[240px]">
+                        <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-blue-500">
+                            <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[13px] font-medium text-gray-700 truncate">{name}</div>
+                          <div className="text-[11px] text-gray-400">待发送</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={removeItem}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-500 text-white rounded-full text-[11px] leading-none items-center justify-center hidden group-hover:flex"
+                        >×</button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               <div className="relative">
@@ -3466,30 +3526,34 @@ export default function App() {
                 {/* Input toolbar */}
                 <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
                   <div className="flex items-center gap-0.5">
-                    <label
-                      className="w-8 h-8 flex items-center justify-center rounded-lg cursor-pointer text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-                      title="上传文件"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4.5 h-4.5">
-                        <path fillRule="evenodd" d="M15.621 4.379a3 3 0 0 0-4.242 0l-7 7a3 3 0 0 0 4.241 4.243h.001l.497-.5a.75.75 0 0 1 1.064 1.057l-.498.501-.002.002a4.5 4.5 0 0 1-6.364-6.364l7-7a4.5 4.5 0 0 1 6.368 6.36l-3.455 3.553A2.625 2.625 0 1 1 9.52 9.52l3.45-3.451a.75.75 0 1 1 1.061 1.06l-3.45 3.451a1.125 1.125 0 0 0 1.587 1.595l3.454-3.553a3 3 0 0 0 0-4.242Z" clipRule="evenodd" />
-                      </svg>
-                      <input
-                        type="file"
-                        accept=".txt,.md,.docx,.pdf,.xlsx,.png,.jpg,.jpeg,.webp,.gif"
-                        className="hidden"
-                        onChange={uploadFile}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => { setImageGenOpen(true); setImageGenPreview(null); setImageGenPrompt(""); }}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-                      title="AI 生成图片"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4.5 h-4.5">
-                        <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 0 1 3.25 3h13.5A2.25 2.25 0 0 1 19 5.25v9.5A2.25 2.25 0 0 1 16.75 17H3.25A2.25 2.25 0 0 1 1 14.75v-9.5Zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75v-2.69l-2.22-2.219a.75.75 0 0 0-1.06 0l-1.91 1.909-3.22-3.22a.75.75 0 0 0-1.06 0L2.5 11.06Zm12.5-3.81a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z" clipRule="evenodd" />
-                      </svg>
-                    </button>
+                    {/* 上传文件和图片菜单 */}
+                    <input ref={fileImgInputRef} type="file" accept=".txt,.md,.docx,.pdf,.xlsx,.png,.jpg,.jpeg,.webp,.gif" className="hidden" onChange={uploadFile} />
+                    <div ref={uploadMenuRef} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setUploadMenuOpen((o) => !o)}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                        title="上传文件和图片"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4.5 h-4.5">
+                          <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
+                        </svg>
+                      </button>
+                      {uploadMenuOpen && (
+                        <div className="absolute bottom-10 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[160px]">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50 rounded-lg"
+                            onClick={() => { setUploadMenuOpen(false); fileImgInputRef.current?.click(); }}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4 text-gray-400 flex-shrink-0">
+                              <path fillRule="evenodd" d="M15.621 4.379a3 3 0 0 0-4.242 0l-7 7a3 3 0 0 0 4.241 4.243h.001l.497-.5a.75.75 0 0 1 1.064 1.057l-.498.501-.002.002a4.5 4.5 0 0 1-6.364-6.364l7-7a4.5 4.5 0 0 1 6.368 6.36l-3.455 3.553A2.625 2.625 0 1 1 9.52 9.52l3.45-3.451a.75.75 0 1 1 1.061 1.06l-3.45 3.451a1.125 1.125 0 0 0 1.587 1.595l3.454-3.553a3 3 0 0 0 0-4.242Z" clipRule="evenodd" />
+                            </svg>
+                            上传文件和图片
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[12px] text-gray-400 hidden sm:inline select-none">Ctrl+Enter</span>
@@ -3497,11 +3561,11 @@ export default function App() {
                       type="button"
                       onClick={send}
                       className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${
-                        input.trim()
+                        input.trim() || pendingFileIds.length > 0
                           ? "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
                           : "bg-gray-100 text-gray-400 cursor-not-allowed"
                       }`}
-                      disabled={!input.trim()}
+                      disabled={!input.trim() && pendingFileIds.length === 0}
                     >
                       发送
                     </button>
