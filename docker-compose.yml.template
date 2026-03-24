@@ -22,7 +22,7 @@ services:
       - STORAGE_S3_VERIFY_SSL=${STORAGE_S3_VERIFY_SSL:-true}
       - STORAGE_PRESIGN_EXPIRES_SECONDS=${STORAGE_PRESIGN_EXPIRES_SECONDS:-900}
       - FILE_UPLOAD_MAX_BYTES=${FILE_UPLOAD_MAX_BYTES:-26214400}
-      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,image/webp,image/gif}
+      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,image/png,image/jpeg,image/webp,image/gif}
       - LLM_LOCALHOST_ALIAS=${LLM_LOCALHOST_ALIAS:-host.docker.internal}
       - IMAGE_GEN_BASE_URL=${IMAGE_GEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       - IMAGE_GEN_API_KEY=${IMAGE_GEN_API_KEY:-}

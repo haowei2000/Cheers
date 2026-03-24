@@ -1858,11 +1858,11 @@ export default function App() {
     });
   };
 
-  const PRESIGN_EXTS = new Set([".txt", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+  const PRESIGN_EXTS = new Set([".txt", ".md", ".docx", ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif"]);
   const CONTENT_TYPE_MAP: Record<string, string> = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".webp": "image/webp", ".gif": "image/gif",
-    ".pdf": "application/pdf", ".txt": "text/plain",
+    ".pdf": "application/pdf", ".txt": "text/plain", ".md": "text/markdown",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   };
 
@@ -1944,6 +1944,7 @@ export default function App() {
     if (!ct) return "文件";
     if (ct.includes("pdf")) return "PDF";
     if (ct.includes("wordprocessingml") || ct.includes("docx")) return "Word";
+    if (ct.includes("text/markdown")) return "Markdown";
     if (ct.includes("text/plain")) return "文本";
     if (ct.startsWith("image/")) return "图片";
     return "文件";
