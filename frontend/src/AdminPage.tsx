@@ -133,6 +133,8 @@ export default function AdminPage() {
     is_enabled: true,
     supports_vision: false,
     extra_headers: "",   // JSON 字符串，如 {"x-my-header":"value"}
+    temperature: 0.7,
+    max_tokens: 4096,
   });
   const [modelEditingId, setModelEditingId] = useState<string | null>(null);
 
@@ -331,7 +333,9 @@ export default function AdminPage() {
     }
     const config: Record<string, unknown> = extraHeaders ? { extra_headers: extraHeaders } : {};
     if (modelForm.supports_vision) config.supports_vision = true;
-    const { extra_headers: _eh, supports_vision: _sv, ...rest } = modelForm;
+    config.temperature = modelForm.temperature;
+    config.max_tokens = modelForm.max_tokens;
+    const { extra_headers: _eh, supports_vision: _sv, temperature: _t, max_tokens: _mt, ...rest } = modelForm;
     authFetch(`${API}/admin/models`, {
       method: "POST",
       body: JSON.stringify({ ...rest, config }),
@@ -341,7 +345,7 @@ export default function AdminPage() {
         if (d.status === "success") {
           toast.success("模型创建成功");
           loadModels();
-          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "" });
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096 });
         } else {
           toast.error(d.message || d.detail || "创建失败");
         }
@@ -357,6 +361,8 @@ export default function AdminPage() {
     }
     const config: Record<string, unknown> = extraHeaders !== null ? { extra_headers: extraHeaders } : {};
     if (modelForm.supports_vision) config.supports_vision = true;
+    config.temperature = modelForm.temperature;
+    config.max_tokens = modelForm.max_tokens;
     authFetch(`${API}/admin/models/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -377,7 +383,7 @@ export default function AdminPage() {
           toast.success("已更新");
           loadModels();
           setModelEditingId(null);
-          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "" });
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096 });
         } else {
           toast.error(d.message || d.detail || "更新失败");
         }
@@ -413,6 +419,8 @@ export default function AdminPage() {
       is_enabled: m.is_enabled,
       supports_vision: !!m.config?.supports_vision,
       extra_headers: eh && typeof eh === "object" ? JSON.stringify(eh) : "",
+      temperature: typeof m.config?.temperature === "number" ? m.config.temperature : 0.7,
+      max_tokens: typeof m.config?.max_tokens === "number" ? m.config.max_tokens : 4096,
     });
   };
 
@@ -822,6 +830,14 @@ export default function AdminPage() {
                           <label className="block text-xs text-gray-500 mb-1">描述</label>
                           <input type="text" value={modelForm.description} onChange={(e) => setModelForm({ ...modelForm, description: e.target.value })} placeholder="模型描述" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                         </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Temperature</label>
+                          <input type="number" min="0" max="2" step="0.1" value={modelForm.temperature} onChange={(e) => setModelForm({ ...modelForm, temperature: parseFloat(e.target.value) || 0.7 })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Max Tokens</label>
+                          <input type="number" min="1" step="1" value={modelForm.max_tokens} onChange={(e) => setModelForm({ ...modelForm, max_tokens: parseInt(e.target.value) || 4096 })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
+                        </div>
                         <div className="col-span-2">
                           <label className="block text-xs text-gray-500 mb-1">额外请求 Headers <span className="text-gray-400">（JSON 对象，可选）</span></label>
                           <textarea
@@ -848,7 +864,7 @@ export default function AdminPage() {
                         {modelEditingId ? (
                           <>
                             <button onClick={() => updateModel(modelEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
-                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "" }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096 }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
                           </>
                         ) : (
                           <button onClick={createModel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建模型</button>
