@@ -18,7 +18,6 @@ from app.file_processor.convert import (
     FileParseError,
     ParsedDocument,
     ALL_SUPPORTED_TYPES,
-    SUPPORTED_DOCUMENT_TYPES,
     UnsupportedFileTypeError,
     is_image_type,
     parse_document_bytes,
@@ -189,7 +188,7 @@ class FilePipelineService:
                 raise FileFlowError("对象存储中找不到已上传文件，请重新上传后再试") from exc
             except UnsupportedFileTypeError as exc:
                 await self._mark_failed(session, record, str(exc))
-                raise FileFlowError("当前仅支持 pdf / docx / txt / md 文件") from exc
+                raise FileFlowError("当前仅支持 pdf / docx / txt 文件") from exc
             except FileParseError as exc:
                 await self._mark_failed(
                     session,
@@ -238,16 +237,14 @@ class FilePipelineService:
             raise FileFlowError("文件名不能为空")
         suffix = Path(normalized_name).suffix.lower()
         if suffix not in ALL_SUPPORTED_TYPES:
-            raise FileFlowError("当前仅支持 pdf / docx / txt / md / png / jpg / jpeg / webp / gif 文件")
-
+            raise FileFlowError("当前仅支持 pdf / docx / txt / png / jpg / jpeg / webp / gif 文件")
         allowed_mime_types = self.allowed_mime_types
         normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
         if not normalized_type:
             normalized_type = self._default_content_type_for_suffix(suffix)
         if normalized_type not in ALL_SUPPORTED_TYPES[suffix]:
             raise FileFlowError(f"文件类型与扩展名不匹配：{normalized_name}")
-        if allowed_mime_types and normalized_type not in allowed_mime_types:
-            raise FileFlowError(f"当前环境不允许上传该类型：{normalized_type}")
+
 
         if size_bytes <= 0:
             raise FileFlowError("空文件无法上传")
@@ -269,7 +266,7 @@ class FilePipelineService:
     def allowed_mime_types(self) -> set[str]:
         raw = (getattr(self.settings, "file_upload_allowed_types", "") or "").strip()
         if not raw:
-            values = {mime for mime_types in SUPPORTED_DOCUMENT_TYPES.values() for mime in mime_types}
+            values = {mime for mime_types in ALL_SUPPORTED_TYPES.values() for mime in mime_types}
             return values
         return {part.strip().lower() for part in raw.split(",") if part.strip()}
 
@@ -402,8 +399,6 @@ class FilePipelineService:
         suffix = (record.original_filename or path.name).lower()
         if suffix.endswith(".txt"):
             return "text/plain"
-        if suffix.endswith(".md"):
-            return "text/markdown"
         if suffix.endswith(".docx"):
             return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         if suffix.endswith(".pdf"):
@@ -413,8 +408,6 @@ class FilePipelineService:
     def _default_content_type_for_suffix(self, suffix: str) -> str:
         if suffix == ".txt":
             return "text/plain"
-        if suffix == ".md":
-            return "text/markdown"
         if suffix == ".docx":
             return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         if suffix == ".pdf":
