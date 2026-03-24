@@ -240,14 +240,12 @@ class FilePipelineService:
         if suffix not in ALL_SUPPORTED_TYPES:
             raise FileFlowError("当前仅支持 pdf / docx / txt / md / png / jpg / jpeg / webp / gif 文件")
 
-        allowed_mime_types = self.allowed_mime_types
+        # allowed_mime_types = self.allowed_mime_types
         normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
         if not normalized_type:
             normalized_type = self._default_content_type_for_suffix(suffix)
         if normalized_type not in ALL_SUPPORTED_TYPES[suffix]:
             raise FileFlowError(f"文件类型与扩展名不匹配：{normalized_name}")
-        if allowed_mime_types and normalized_type not in allowed_mime_types:
-            raise FileFlowError(f"当前环境不允许上传该类型：{normalized_type}")
 
         if size_bytes <= 0:
             raise FileFlowError("空文件无法上传")
