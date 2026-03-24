@@ -380,7 +380,8 @@ class FilePipelineService:
         if record.object_key or record.storage_bucket:
             if self.storage is None:
                 raise FileFlowError("对象存储未初始化，无法读取上传文件", status_code=503)
-            return await self.storage.get_object(record.file_id)
+            scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
+            return await self.storage.get_object(record.file_id, scope=scope)
         return await self._load_local_object(record)
 
     async def _load_local_object(self, record: FileRecord) -> StorageObject:
