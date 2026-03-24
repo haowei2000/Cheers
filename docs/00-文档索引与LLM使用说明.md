@@ -19,8 +19,7 @@
 | **系统管理说明书.md** | 管理员：建空间/项目、加人、接 Bot、审核申请、配置 | 怎么建项目、加人、接入 OpenClaw、创建 Bot、待审核申请、引导 LLM、日志配置 | 一～七；§二 创建工作空间与项目；§三 成员；§四 OpenClaw 接入；§五 发现与自动注册；§六 速查表；日志文件 |
 | **安装部署说明.md** | 部署与首次安装：环境、Docker/本地、迁移、初始化 | 怎么安装、部署、环境要求、数据库迁移、种子数据 | 一～六；§二 Docker；§三 本地安装；§四 配置 |
 | **技术排查Q&A.md** | 故障排查：现象→原因→步骤→解决；日志与接口 | 报错、503/404、连不上、列表为空、日志在哪、如何排查 | 一～五；§二 日志与诊断；§三 现象与处理；§四 常见 Q&A |
-| **OpenClaw接入指南.md** | OpenClaw 开发者：发现、注册、审核流程 | 如何接入、curl 示例、常见错误（404、路径） | 一～四；完整步骤与命令 |
-| **OpenClaw接入AgentNexus指南.md** | 结合 AgentNexus 视角的接入说明 | 既要看前端/管理操作，又要看 OpenClaw 侧配置时 | 一～五；完整接入流程 |
+| **OpenClaw接入指南.md** | OpenClaw 开发者与管理员：统一接入文档 | OpenClaw 作为 OpenAI 模型接入、HTTP/WS 适配器路径、常见错误排查 | 一～五；完整接入流程 |
 
 ### 1.2 设计文档（DESIGN，内部/LLM 使用）
 
@@ -50,11 +49,11 @@ LLM 在回答中应使用以下统一术语，与文档内表述一致。
 | **工作空间（Workspace）** | 顶层组织容器；创建项目前必须先有工作空间 | 对应 API/DB：workspace_id |
 | **项目 / 频道（Channel）** | 协作单元，用户在此聊天、@ Bot、发文件 | 用户面称「项目」，API/DB 称 channel，channel_id 即项目 ID |
 | **成员** | 项目内的用户（user）或 Bot（bot）；须被「加入」项目后才在该项目生效 | member_id 为 user_id 或 bot_id |
-| **Bot** | 可被 @ 的 AI 助手；每个 Bot 有唯一 bot_id 与 username（@ 时使用的名字） | 引导 Bot 的 username 为「引导」，bot_id 常为 bot-guide-001 |
+| **Bot** | 可被 @ 的 AI 助手；每个 Bot 有唯一 bot_id 与 username（@ 时使用的名字） | 统一内置 Bot 的 username 为 `channel bot`，bot_id 为 `bot-guide-001` |
 | **内置 Bot** | 系统自带的 Bot，如引导 Bot、Orchestrator | 可 @ 部门 Bot 或人类；详见《AgentNexus门户与知识平台设计》§二 |
 | **外部 Bot / 部门 Bot** | 部门注册的 OpenClaw 实例 | 仅可 @ 人类，不可 @ 另一个 Bot |
 | **Orchestrator** | 系统内置的业务问答 Bot，可建议 @ 部门 Bot | 可配置：必须 @ 才回答，或直接回答未 @ 的问题 |
-| **@引导** | 在消息中 @ 名为「引导」的 Bot，用于获取使用帮助与动态表单 | 仅当引导 Bot 已加入当前项目时有效 |
+| **@channel bot** | 在消息中 @ 内置统一 Bot，用于使用引导、澄清表单、路由建议 | 仅当内置 Bot 已加入当前项目时有效 |
 | **openclaw_endpoint** | Bot 配置中的服务地址；为 http(s) 时系统会向该地址 POST /execute 调用 | guide:// 表示引导 Bot；mock:// 为占位 |
 | **API 基础地址** | 后端服务根 URL，默认 `http://localhost:8000` | 文档中示例均以此为准，实际部署需替换 |
 | **前端地址** | 用户打开的网页；Docker 默认 80，本地开发 5173 | 与后端 8000 分离 |
@@ -130,8 +129,8 @@ LLM 在回答中应使用以下统一术语，与文档内表述一致。
 | 健康检查 | `GET http://localhost:8000/health`，正常返回 `{"status":"ok"}` |
 | OpenClaw 发现与注册指南（机器可读） | `GET http://localhost:8000/api/public/agentnexus-discovery` |
 | 后端日志目录（默认） | 相对 backend：`data/logs`；通用日志 `agentnexus.log`，仅错误 `error.log` |
-| 引导 Bot 的 bot_id | `bot-guide-001`（加入老项目时添加成员填此 ID，类型选 bot） |
-| Orchestrator 的 bot_id | `bot-coordinator-001`（加入项目时添加成员填此 ID，类型选 bot） |
+| 内置 channel bot 的 bot_id | `bot-guide-001`（加入项目时添加成员填此 ID，类型选 bot） |
+| 协调者 username | `channel bot`（统一内置协作入口） |
 | 数据库迁移命令 | 在 backend 目录：`alembic upgrade head`；Docker：`docker compose exec backend sh -c "cd /app && alembic upgrade head"` |
 | 种子数据（创建测试项目与 @引导） | 启动时 `SEED_DATA=1` 或执行：`cd backend && python -m app.db.seed` |
 | 资源监控 API | `GET http://localhost:8000/api/tasks/stats?limit_days=7` |

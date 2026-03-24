@@ -43,3 +43,9 @@
 
 - 握手完成后自动创建 BotAccount、ChannelMembership、OpenClawAdapter 实例；向 Context Store 注入 ANCHOR 摘要与当前成员列表。
 - Receptionist 作为常驻内置 Bot，只监听 /a2a/enroll，握手所用 LLM 归属系统级 LLM（附件一）。
+
+## 8. 当前实现对齐（2026-03）
+
+- A2A `/a2a/enroll` 握手流程目前为设计摘要，不是当前默认生产接入链路。
+- 当前主路径是：管理端创建 Bot（模型+模板）+ 可选 OpenClaw HTTP/WS 接入。
+- 信任等级自动审批、Receptionist 专用握手机制仍属于后续阶段能力。

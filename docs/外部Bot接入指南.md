@@ -15,7 +15,7 @@ AgentNexus 支持三种外部 Bot 接入方式，按适用场景选择：
 | **③ WebSocket OpenClaw（推荐 OpenClaw 用户）** | 已有 OpenClaw 实例，需展示真实 AI 回复 | ★★★ 高 | 需运行 OpenClaw Gateway | ✅ 是 |
 
 > **大多数用户首选方式①**：只需提供一个 OpenAI 兼容的 API 地址和 Key，无需额外服务。
-> 方式②③ 专为 OpenClaw 用户设计，详见本文 §四、§五 及《OpenClaw接入AgentNexus指南》。
+> 方式②③ 专为 OpenClaw 用户设计，详见本文 §四、§五 及《OpenClaw接入指南》。
 
 ---
 
@@ -252,7 +252,7 @@ curl -X POST "http://localhost:8000/api/bots/register-request" \
 
 WebSocket 模式下，AgentNexus 与 OpenClaw 建立持久连接，等待并接收完整 AI 回复，实时写入频道。
 
-详细配置步骤见：[OpenClaw接入AgentNexus指南](OpenClaw接入AgentNexus指南.md)
+详细配置步骤见：[OpenClaw接入指南](OpenClaw接入指南.md)
 
 **关键点摘要：**
 
@@ -489,7 +489,7 @@ API Key  : 在 DeepSeek 开放平台获取
 ## 十一、相关文档
 
 - [普通用户使用说明](普通用户使用说明.md)——如何 @ Bot、上传文件、查看频道记忆
-- [OpenClaw接入AgentNexus指南](OpenClaw接入AgentNexus指南.md)——WebSocket 模式详细步骤与 OpenClaw 配置
+- [OpenClaw接入指南](OpenClaw接入指南.md)——OpenClaw 模型接入与 HTTP/WS 适配器路径
 - [OpenClaw接入指南](OpenClaw接入指南.md)——OpenClaw 注册申请流程
 - [安装部署说明](安装部署说明.md)——系统部署与环境配置
 - [技术排查Q&A](技术排查Q&A.md)——故障现象、日志诊断
