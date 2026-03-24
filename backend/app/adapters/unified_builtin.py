@@ -57,7 +57,7 @@ def _make_llm(cfg: dict) -> ChatOpenAI:
         "api_key": cfg.get("api_key") or "none",
         "model": cfg["model"],
         "temperature": float(cfg.get("temperature", 0.7)),
-        "max_tokens": int(cfg.get("max_tokens", 2000)),
+        "max_tokens": min(int(cfg.get("max_tokens") or 2000), 65536),
         "streaming": True,
         "timeout": float(cfg.get("timeout", 600)),
     }
