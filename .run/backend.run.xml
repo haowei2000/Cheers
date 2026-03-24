@@ -7,7 +7,7 @@
         <option value="--host" />
         <option value="0.0.0.0" />
         <option value="--port" />
-        <option value="8000" />
+        <option value="8002" />
       </list>
     </option>
     <option name="checkSync" value="false" />
