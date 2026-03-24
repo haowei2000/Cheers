@@ -23,6 +23,7 @@ services:
       - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-agentnexus-files}
       - STORAGE_S3_FORCE_PATH_STYLE=${STORAGE_S3_FORCE_PATH_STYLE:-true}
       - STORAGE_S3_AUTO_CREATE_BUCKET=${STORAGE_S3_AUTO_CREATE_BUCKET:-true}
+      - STORAGE_S3_VERIFY_SSL=${STORAGE_S3_VERIFY_SSL:-true}
       - STORAGE_PRESIGN_EXPIRES_SECONDS=${STORAGE_PRESIGN_EXPIRES_SECONDS:-900}
       - FILE_UPLOAD_MAX_BYTES=${FILE_UPLOAD_MAX_BYTES:-26214400}
       - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,image/webp,image/gif}
@@ -73,8 +74,8 @@ services:
       - RUSTFS_OBS_LOGGER_LEVEL=${RUSTFS_OBS_LOGGER_LEVEL:-info}
       - RUSTFS_OBJECT_CACHE_ENABLE=${RUSTFS_OBJECT_CACHE_ENABLE:-true}
       - RUSTFS_OBJECT_CACHE_TTL_SECS=${RUSTFS_OBJECT_CACHE_TTL_SECS:-300}
-      - RUSTFS_TLS_PATH=${RUSTFS_TLS_PATH:-/opt/tls}
+      - RUSTFS_TLS_PATH=/opt/tls
     volumes:
       - ./data/rustfs:/data
       - ./data/rustfs_logs:/logs
-      - ${RUSTFS_TLS_PATH:-/opt/tls}:/opt/tls:ro
+      - ${RUSTFS_TLS_HOST_PATH:-/opt/tls}:/opt/tls:ro
