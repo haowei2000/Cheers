@@ -83,6 +83,10 @@ def _tool_label(tool_name: str, args: dict) -> str:
         return "向用户提问"
     if tool_name == "create_file":
         return f"创建文件 {args.get('filename', '?')}.md"
+    if tool_name == "generate_image":
+        return f"生成图片：{args.get('prompt', '?')[:30]}"
+    if tool_name == "edit_image":
+        return f"编辑图片：{args.get('prompt', '?')[:30]}"
     return tool_name
 
 
@@ -312,7 +316,180 @@ def _make_tools(ctx: dict) -> list:
         )
         return f"文件已创建：[{original_filename}]({download_url})\n\n下载链接：`{download_url}`"
 
-    return [update_anchor, update_progress, update_decision, call_bot, ask_user, create_file]
+    @tool
+    async def generate_image(prompt: str, size: str = "1024*1024") -> str:
+        """根据文字描述生成图片，并将图片发送到频道。
+
+        Args:
+            prompt: 图片描述，越详细效果越好
+            size: 图片尺寸，支持 1024*1024 / 720*1280 / 1280*720 / 768*1024 / 1024*768，默认 1024*1024
+        """
+        import uuid
+        from datetime import datetime
+
+        from app.chat_core.ws_manager import ws_manager
+        from app.db.models import FileRecord, Message
+        from app.image_gen.service import ImageGenError, ImageGenService
+
+        channel_id = ctx["channel_id"]
+        sender_id = ctx.get("sender_id") or "system"
+        db_session = ctx.get("_db_session")
+
+        if not db_session:
+            return "错误：数据库会话未注入（内部错误）"
+
+        try:
+            from app.storage.bootstrap import get_storage_service
+            storage = get_storage_service()
+        except Exception:
+            storage = None
+
+        svc = ImageGenService(storage=storage)
+        last_err = ""
+        for attempt in range(1, 4):
+            try:
+                result = await svc.generate(
+                    session=db_session,
+                    channel_id=channel_id,
+                    sender_id=sender_id,
+                    prompt=prompt,
+                    size=size,
+                )
+                await db_session.commit()
+                break
+            except ImageGenError as exc:
+                last_err = exc.detail
+                logger.warning("generate_image attempt %d failed: %s", attempt, exc.detail)
+                if attempt == 3:
+                    return f"图片生成失败（已重试 3 次）：{last_err}"
+            except Exception as exc:
+                last_err = str(exc)
+                logger.exception("unified_builtin[tool]: generate_image attempt %d unexpected error", attempt)
+                if attempt == 3:
+                    return f"图片生成失败（已重试 3 次）：{last_err}"
+        else:
+            return f"图片生成失败：{last_err}"
+
+        # 创建带 file_ids 的消息并广播
+        bot_id = ctx.get("task_id", sender_id)  # 用 bot_id 发送图片消息
+        # 用 sender_id 对应的 bot（即当前 bot）发图片消息
+        # sender_id here is the user, we need bot_id — use _bot_id from ctx if available
+        actual_bot_id = ctx.get("_bot_id") or sender_id
+        img_msg = Message(
+            channel_id=channel_id,
+            sender_id=actual_bot_id,
+            sender_type="bot",
+            content="",
+            file_ids=[result.file_id],
+            task_id=ctx.get("task_id"),
+        )
+        db_session.add(img_msg)
+        await db_session.flush()
+        from app.chat_core.schemas import MessageInResponse
+        data = MessageInResponse.model_validate(img_msg).model_dump()
+        if img_msg.created_at:
+            data["created_at"] = img_msg.created_at.isoformat()
+        data["files"] = [{"file_id": result.file_id, "preview_url": result.preview_url, "content_type": result.content_type}]
+        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
+        stream_event = ctx.get("_stream_event")
+        if stream_event:
+            await stream_event("message", data)
+        await db_session.commit()
+
+        logger.info("unified_builtin[tool]: generate_image ok file_id=%s", result.file_id)
+        return f"图片已生成并发送到频道（file_id: {result.file_id}）"
+
+    @tool
+    async def edit_image(prompt: str, source_file_id: str = "", size: str = "1024*1024") -> str:
+        """对已上传的图片进行 AI 编辑/风格转换（添加元素、替换背景、改变风格等），并将结果发送到频道。
+        用户上传了图片并要求修改、添加元素、换背景、调整风格时，必须使用此工具而非 generate_image。
+
+        Args:
+            prompt: 编辑描述，例如"将背景换成火山景观""给图中的鸟添加一只羚羊"
+            source_file_id: 源图片的 file_id；留空则自动使用用户最近上传的图片
+            size: 输出尺寸，支持 1024*1024 / 720*1280 / 1280*720 / 768*1024 / 1024*768
+        """
+        from app.chat_core.ws_manager import ws_manager
+        from app.db.models import Message
+        from app.image_gen.service import ImageGenError, ImageGenService
+
+        channel_id = ctx["channel_id"]
+        sender_id = ctx.get("sender_id") or "system"
+        db_session = ctx.get("_db_session")
+
+        if not db_session:
+            return "错误：数据库会话未注入（内部错误）"
+
+        # 自动推断 source_file_id：优先用参数，否则用第一个图片附件
+        fid = (source_file_id or "").strip()
+        if not fid:
+            for att in (ctx.get("attachments") or []):
+                if att.get("is_image") == "true" and att.get("file_id"):
+                    fid = att["file_id"]
+                    logger.info("edit_image: auto-detected source_file_id=%s", fid)
+                    break
+        if not fid:
+            return "错误：未找到源图片，请先上传要编辑的图片"
+
+        try:
+            from app.storage.bootstrap import get_storage_service
+            storage = get_storage_service()
+        except Exception:
+            storage = None
+
+        svc = ImageGenService(storage=storage)
+        last_err = ""
+        for attempt in range(1, 4):
+            try:
+                result = await svc.edit(
+                    session=db_session,
+                    channel_id=channel_id,
+                    sender_id=sender_id,
+                    source_file_id=fid,
+                    prompt=prompt,
+                    size=size,
+                )
+                await db_session.commit()
+                break
+            except ImageGenError as exc:
+                last_err = exc.detail
+                logger.warning("edit_image attempt %d failed: %s", attempt, exc.detail)
+                if attempt == 3:
+                    return f"图片编辑失败（已重试 3 次）：{last_err}"
+            except Exception as exc:
+                last_err = str(exc)
+                logger.exception("unified_builtin[tool]: edit_image attempt %d unexpected error", attempt)
+                if attempt == 3:
+                    return f"图片编辑失败（已重试 3 次）：{last_err}"
+        else:
+            return f"图片编辑失败：{last_err}"
+
+        actual_bot_id = ctx.get("_bot_id") or sender_id
+        img_msg = Message(
+            channel_id=channel_id,
+            sender_id=actual_bot_id,
+            sender_type="bot",
+            content="",
+            file_ids=[result.file_id],
+            task_id=ctx.get("task_id"),
+        )
+        db_session.add(img_msg)
+        await db_session.flush()
+        from app.chat_core.schemas import MessageInResponse
+        data = MessageInResponse.model_validate(img_msg).model_dump()
+        if img_msg.created_at:
+            data["created_at"] = img_msg.created_at.isoformat()
+        data["files"] = [{"file_id": result.file_id, "preview_url": result.preview_url, "content_type": result.content_type}]
+        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
+        stream_event = ctx.get("_stream_event")
+        if stream_event:
+            await stream_event("message", data)
+        await db_session.commit()
+
+        logger.info("unified_builtin[tool]: edit_image ok file_id=%s", result.file_id)
+        return f"图片已编辑并发送到频道（file_id: {result.file_id}）"
+
+    return [update_anchor, update_progress, update_decision, call_bot, ask_user, create_file, generate_image, edit_image]
 
 
 # ─── 附件处理 ──────────────────────────────────────────────────────────────────
@@ -584,6 +761,11 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 "- 用户消息信息不足、意图模糊或需要关键决策时，**第一步必须调用 ask_user** 收集信息，不要猜测或直接执行\n"
                 "- 先调用所有必要工具，结果返回后再输出最终回复\n"
                 "- 最终回复使用简洁专业的 Markdown 格式\n\n"
+                "## 图片工具使用准则（严格遵守）\n\n"
+                "- **用户上传了图片** 且要求「添加/替换/修改/编辑/改变/调整/换背景/添加元素」→ **必须调用 edit_image**，"
+                "source_file_id 留空即可（工具会自动使用上传的图片）\n"
+                "- **没有上传图片**，用户要求「生成/画/创作一张」新图片 → 调用 generate_image\n"
+                "- **绝对禁止**：用户上传了图片却调用 generate_image；这会创建全新图片而非编辑原图\n\n"
                 "## 记忆维护职责（必须严格执行）\n\n"
                 "在每次对话中，你必须主动判断是否需要更新以下记忆层，**不要等用户主动要求**：\n\n"
                 "- **update_anchor**：若用户提到项目目标、范围、核心约束、背景发生变化，或锚点为空，立即更新。"
@@ -622,12 +804,21 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "sender_id": sender_id,
             "attachments": payload.attachments or [],
             "_db_session": pconfig.get("_db_session"),
+            "_bot_id": pconfig.get("_bot_id"),
         }
 
         # ── 4. Agent（支持 Vision 多模态）─────────────────────────────────────
         stream_cb = pconfig.get("_stream_token")
         cfg = _get_llm_config()
         supports_vision = (cfg or {}).get("supports_vision", True) if cfg else True
+
+        # 若有图片附件，将 file_id 注入到文本，确保 LLM 调用 edit_image 时知道 file_id
+        if image_attachments:
+            img_ids_note = "\n\n[系统提示] 用户本次上传了以下图片（edit_image 工具可使用这些 file_id）：\n" + "\n".join(
+                f"- file_id: {a['file_id']}  文件名: {a.get('filename') or a.get('file_id')}"
+                for a in image_attachments if a.get("file_id")
+            )
+            user_text = user_text + img_ids_note
 
         if supports_vision and any(a.get("image_b64") for a in image_attachments):
             user_content: str | list = _build_vision_content(user_text, image_attachments)

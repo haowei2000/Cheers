@@ -294,6 +294,7 @@ async def run_orchestrator(
                     "_pre_create_bot_msg": _pre_create_bot_msg,
                     "_finalize_bot_msg": _finalize_bot_msg,
                     "_make_stream_token_cb": _make_stream_token_cb,
+                    "_bot_id": bot_id,
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
@@ -366,6 +367,7 @@ async def run_orchestrator(
                 "_create_and_broadcast": _create_msg_and_broadcast,
                 "_stream_token": _make_stream_token_cb(bot_msg.msg_id),
                 "_db_session": session,
+                "_bot_id": bot_id,
             },
         )
         logger.info("orchestrator: calling bot bot_id=%s username=%s", bot_id, username)
