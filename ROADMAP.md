@@ -93,3 +93,5 @@
 - [ ] **Human-in-the-loop**：Task 生命周期确认节点、Critique Loop、自主错误恢复
 - [ ] **多租户 / 权限体系**：工作空间隔离、成员角色细化、Auth 完整集成
 - [ ] **主库迁移**：SQLite → PostgreSQL（规模超出阈值时，迁移路径见 [docs/关键技术文档.md](docs/关键技术文档.md)）
+- [ ] **知识库**: 知识库语义搜索、Grep等搜索方式内置支持
+- [ ] **Threads API**: 线程级对话，频道内频繁记录合为threads，保证记忆隔离
