@@ -1,4 +1,4 @@
-"""文件解析能力：支持 txt / docx / pdf，供文件推理链路复用。"""
+"""文件解析能力：支持 txt / md / docx / pdf，供文件推理链路复用。"""
 from __future__ import annotations
 
 import io
@@ -8,6 +8,7 @@ from pathlib import Path
 
 SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
     ".txt": {"text/plain"},
+    ".md": {"text/markdown", "text/plain"},
     ".docx": {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     },
@@ -76,7 +77,7 @@ def parse_document_bytes(
     if not payload:
         raise FileParseError("empty file")
 
-    if suffix == ".txt":
+    if suffix in (".txt", ".md"):
         text = _parse_text(payload)
     elif suffix == ".docx":
         text = _parse_docx(payload)
