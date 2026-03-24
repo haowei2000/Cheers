@@ -232,6 +232,8 @@ class S3CompatibleStorageService(StorageProvider):
         boto3, Config, errors = _import_boto3()
         client_config = Config(
             signature_version="s3v4",
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
             s3={"addressing_style": "path" if self.config.force_path_style else "auto"},
         )
         try:
@@ -336,7 +338,6 @@ class S3CompatibleStorageService(StorageProvider):
                 Key=ref.object_key,
                 Body=data,
                 ContentType=content_type,
-                ContentLength=len(data),
             )
         except self._client_errors() as exc:
             raise StorageClientInitError(
@@ -353,7 +354,6 @@ class S3CompatibleStorageService(StorageProvider):
                 Key=sidecar_key,
                 Body=payload,
                 ContentType="application/json",
-                ContentLength=len(payload),
             )
         except self._client_errors() as exc:
             raise StorageClientInitError(
