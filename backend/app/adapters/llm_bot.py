@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.http_client import get_http_client
 from app.db.models import AIModel, BotAccount, PromptTemplate
 
 logger = logging.getLogger("app.adapters.llm_bot")
@@ -177,27 +178,27 @@ class LLMBotAdapter(OpenClawAdapter):
         timeout = float(api_config.get("timeout", 600))
 
         try:
+            client = get_http_client()
             if stream_token_cb:
                 body["stream"] = True
                 full_content = ""
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    async with client.stream("POST", url, json=body, headers=headers) as response:
-                        response.raise_for_status()
-                        async for line in response.aiter_lines():
-                            if not line.startswith("data: "):
-                                continue
-                            data_str = line[6:].strip()
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                chunk = json.loads(data_str)
-                            except json.JSONDecodeError:
-                                continue
-                            delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
-                            if not delta:
-                                continue
-                            full_content += delta
-                            await stream_token_cb(delta)
+                async with client.stream("POST", url, json=body, headers=headers, timeout=timeout) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+                        if not delta:
+                            continue
+                        full_content += delta
+                        await stream_token_cb(delta)
                 if not full_content:
                     return AgentResponse(
                         content="",
@@ -207,10 +208,9 @@ class LLMBotAdapter(OpenClawAdapter):
                     )
                 return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
 
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(url, json=body, headers=headers)
-                response.raise_for_status()
-                data = response.json()
+            response = await client.post(url, json=body, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
 
             choices = data.get("choices", [])
             if not choices:

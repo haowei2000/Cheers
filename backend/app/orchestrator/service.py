@@ -1,6 +1,7 @@
 """Agent Orchestrator：解析 @ 提及、准备附件、调用 Bot，并通过 WebSocket 流式广播。"""
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -257,17 +258,15 @@ async def run_orchestrator(
         created.append(bot_msg)
         return bot_msg
 
-    for username in target_usernames:
-        bot_id = bot_id_by_username[username]
-
-        if username == COORDINATOR_USERNAME and direct_answer_mode:
-            adapter = await adapter_factory(bot_id)
-            task_id = root_task_id
-            other_bots = [item for item in channel_bot_usernames if item != COORDINATOR_USERNAME]
-            if attachment_error:
-                await _finish_with_attachment_error(bot_id, task_id)
-                continue
-
+    # ── Coordinator（direct_answer_mode）─────────────────────────────────────
+    if COORDINATOR_USERNAME in target_usernames and direct_answer_mode:
+        bot_id = bot_id_by_username[COORDINATOR_USERNAME]
+        adapter = await adapter_factory(bot_id)
+        task_id = root_task_id
+        other_bots = [item for item in channel_bot_usernames if item != COORDINATOR_USERNAME]
+        if attachment_error:
+            await _finish_with_attachment_error(bot_id, task_id)
+        else:
             orch_msg = await _pre_create_bot_msg(bot_id, task_id)
             payload = AgentPayload(
                 task_id=task_id,
@@ -306,19 +305,23 @@ async def run_orchestrator(
             orch_settings = get_assist_settings()
             if orch_settings.get("auto_takeover"):
                 suggested = extract_suggested_bots(content)
-                for sug_username in suggested:
-                    if sug_username not in channel_bot_usernames or sug_username == COORDINATOR_USERNAME:
-                        continue
+                valid_suggested = [
+                    sug for sug in suggested
+                    if sug in channel_bot_usernames and sug != COORDINATOR_USERNAME
+                ]
+
+                # 阶段1：串行 broadcast + 预建消息（需要 DB session）
+                pending_sug: list[tuple[str, str, Message, AgentPayload, OpenClawAdapter]] = []
+                for sug_username in valid_suggested:
                     sug_bot_id = bot_id_by_username[sug_username]
                     sug_template = bot_template_by_username.get(sug_username)
                     if broadcast_processing:
                         await broadcast_processing(channel_id, sug_bot_id, sug_username)
                     sug_adapter = await adapter_factory(sug_bot_id)
-                    sug_task_id = root_task_id
                     sug_templated_text = _apply_prompt_template(sug_template, trigger_msg.content)
-                    sug_msg = await _pre_create_bot_msg(sug_bot_id, sug_task_id)
+                    sug_msg = await _pre_create_bot_msg(sug_bot_id, root_task_id)
                     sug_payload = AgentPayload(
-                        task_id=sug_task_id,
+                        task_id=root_task_id,
                         channel_id=channel_id,
                         trigger_message={
                             "user": trigger_msg.sender_id,
@@ -329,28 +332,45 @@ async def run_orchestrator(
                         attachments=attachments,
                         process_config={"_stream_token": _make_stream_token_cb(sug_msg.msg_id)},
                     )
-                    sug_resp: AgentResponse = await sug_adapter.execute(sug_payload)
-                    sug_content = sug_resp.content if sug_resp.success else (sug_resp.error_message or "处理出错")
-                    await _finalize_bot_msg(sug_msg, sug_content)
-                    await _record_agent_task(sug_bot_id, sug_msg.msg_id)
-                    created.append(sug_msg)
-                    logger.info("orchestrator_auto_takeover: triggered @%s", sug_username)
-            continue
+                    pending_sug.append((sug_username, sug_bot_id, sug_msg, sug_payload, sug_adapter))
 
+                # 阶段2：并发调用所有 auto_takeover Bot 的 LLM（无 DB 操作）
+                if pending_sug:
+                    sug_results = await asyncio.gather(
+                        *[_sug_adapter.execute(_sug_payload) for _, _, _, _sug_payload, _sug_adapter in pending_sug],
+                        return_exceptions=True,
+                    )
+                    # 阶段3：串行写库 + 广播（需要 DB session）
+                    for (sug_username, sug_bot_id, sug_msg, _, _), sug_resp in zip(pending_sug, sug_results):
+                        if isinstance(sug_resp, BaseException):
+                            logger.warning("orchestrator_auto_takeover: bot %s raised: %s", sug_username, sug_resp)
+                            sug_content = f"处理出错: {sug_resp}"
+                        else:
+                            sug_content = sug_resp.content if sug_resp.success else (sug_resp.error_message or "处理出错")
+                        await _finalize_bot_msg(sug_msg, sug_content)
+                        await _record_agent_task(sug_bot_id, sug_msg.msg_id)
+                        created.append(sug_msg)
+                        logger.info("orchestrator_auto_takeover: triggered @%s", sug_username)
+
+    # ── 普通 Bot（并发执行）────────────────────────────────────────────────
+    regular_targets = [u for u in target_usernames if not (u == COORDINATOR_USERNAME and direct_answer_mode)]
+
+    # 阶段1：串行 broadcast + 预建消息（需要 DB session）
+    pending_bots: list[tuple[str, str, Message, AgentPayload, OpenClawAdapter]] = []
+    for username in regular_targets:
+        bot_id = bot_id_by_username[username]
         if broadcast_processing:
             await broadcast_processing(channel_id, bot_id, username)
+        if attachment_error:
+            await _finish_with_attachment_error(bot_id, root_task_id)
+            continue
         adapter = await adapter_factory(bot_id)
-        task_id = root_task_id
         bot_template = bot_template_by_username.get(username)
         templated_text = _apply_prompt_template(bot_template, trigger_msg.content)
         other_bots = [item for item in channel_bot_usernames if item != username]
-        if attachment_error:
-            await _finish_with_attachment_error(bot_id, task_id)
-            continue
-
-        bot_msg = await _pre_create_bot_msg(bot_id, task_id)
+        bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
         payload = AgentPayload(
-            task_id=task_id,
+            task_id=root_task_id,
             channel_id=channel_id,
             trigger_message={
                 "user": trigger_msg.sender_id,
@@ -370,13 +390,26 @@ async def run_orchestrator(
                 "_bot_id": bot_id,
             },
         )
-        logger.info("orchestrator: calling bot bot_id=%s username=%s", bot_id, username)
-        resp: AgentResponse = await adapter.execute(payload)
-        if not resp.success:
-            logger.warning("orchestrator: bot %s failed: %s", username, resp.error_message or "unknown")
-        content = resp.content if resp.success else (resp.error_message or "处理出错")
-        await _finalize_bot_msg(bot_msg, content)
-        await _record_agent_task(bot_id, bot_msg.msg_id)
-        created.append(bot_msg)
+        logger.info("orchestrator: queuing bot bot_id=%s username=%s", bot_id, username)
+        pending_bots.append((username, bot_id, bot_msg, payload, adapter))
+
+    # 阶段2：并发调用所有 Bot 的 LLM（无 DB 操作）
+    if pending_bots:
+        responses = await asyncio.gather(
+            *[_adapter.execute(_payload) for _, _, _, _payload, _adapter in pending_bots],
+            return_exceptions=True,
+        )
+        # 阶段3：串行写库 + 广播（需要 DB session）
+        for (username, bot_id, bot_msg, _, _), resp in zip(pending_bots, responses):
+            if isinstance(resp, BaseException):
+                logger.warning("orchestrator: bot %s raised exception: %s", username, resp)
+                content = f"处理出错: {resp}"
+            else:
+                if not resp.success:
+                    logger.warning("orchestrator: bot %s failed: %s", username, resp.error_message or "unknown")
+                content = resp.content if resp.success else (resp.error_message or "处理出错")
+            await _finalize_bot_msg(bot_msg, content)
+            await _record_agent_task(bot_id, bot_msg.msg_id)
+            created.append(bot_msg)
 
     return created, already_broadcast
