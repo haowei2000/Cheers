@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     storage_s3_bucket: str = ""
     storage_s3_force_path_style: bool = True
     storage_s3_auto_create_bucket: bool = True
+    storage_s3_verify_ssl: bool = True
     storage_presign_expires_seconds: int = 900
     file_upload_max_bytes: int = 25 * 1024 * 1024
     file_upload_allowed_types: str = (

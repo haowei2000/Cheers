@@ -51,6 +51,7 @@ class S3CompatibleStorageSettings:
     force_path_style: bool
     presign_expires_seconds: int
     auto_create_bucket: bool
+    verify_ssl: bool
 
     @classmethod
     def from_app_settings(cls, app_settings: Any) -> "S3CompatibleStorageSettings":
@@ -63,6 +64,7 @@ class S3CompatibleStorageSettings:
         force_path_style = bool(getattr(app_settings, "storage_s3_force_path_style", True))
         presign_expires = int(getattr(app_settings, "storage_presign_expires_seconds", 900) or 900)
         auto_create_bucket = bool(getattr(app_settings, "storage_s3_auto_create_bucket", True))
+        verify_ssl = bool(getattr(app_settings, "storage_s3_verify_ssl", True))
 
         missing = []
         if not endpoint:
@@ -87,6 +89,7 @@ class S3CompatibleStorageSettings:
             force_path_style=force_path_style,
             presign_expires_seconds=presign_expires,
             auto_create_bucket=auto_create_bucket,
+            verify_ssl=verify_ssl,
         )
 
 
@@ -229,7 +232,10 @@ class S3CompatibleStorageService(StorageProvider):
         boto3, Config, errors = _import_boto3()
         client_config = Config(
             signature_version="s3v4",
-            s3={"addressing_style": "path" if self.config.force_path_style else "auto"},
+            s3={
+                "addressing_style": "path" if self.config.force_path_style else "auto",
+                "payload_signing_enabled": False,
+            },
         )
         try:
             return boto3.client(
@@ -239,6 +245,7 @@ class S3CompatibleStorageService(StorageProvider):
                 aws_access_key_id=self.config.access_key,
                 aws_secret_access_key=self.config.secret_key,
                 config=client_config,
+                verify=self.config.verify_ssl,
             )
         except errors as exc:
             raise StorageClientInitError(f"failed to initialize S3-compatible client: {exc}") from exc
