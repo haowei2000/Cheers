@@ -17,12 +17,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    conn = op.get_bind()
-    existing = conn.execute(
-        sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name='workspace_memberships'")
-    ).fetchone()
-    if existing:
-        return
     op.create_table(
         "workspace_memberships",
         sa.Column("workspace_id", sa.String(36), sa.ForeignKey("workspaces.workspace_id"), primary_key=True),

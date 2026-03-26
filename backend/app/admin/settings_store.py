@@ -1,6 +1,7 @@
 """管理端 LLM 等参数持久化：一层 LLM 设定（增删改列表），二层功能绑定（按功能选 LLM）。"""
+import asyncio
+import concurrent.futures
 import json
-import sqlite3
 import uuid
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,6 @@ from urllib.parse import urlsplit, urlunsplit
 from app.config import settings
 from app.utils.crypto import decrypt_value, encrypt_value
 
-ADMIN_SETTINGS_FILENAME = "admin_settings.json"
 SCOPES = ("channel_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")
 DEFAULT_CLARIFY_SETTINGS = {
     "clarify_strict_mode": False,
@@ -28,48 +28,96 @@ DEFAULT_IMAGE_GEN_SETTINGS: dict[str, Any] = {
 
 AI_MODEL_PROVIDER_PREFIX = "ai-model:"
 
-# 与 config 一致：相对 data_dir 基于 backend 根目录（3 个 parent：app/admin -> app -> backend）
+_SETTINGS_DB_KEY = "admin_settings"
+# 旧 JSON 路径（仅用于一次性数据迁移）
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
+_LEGACY_JSON_PATHS = [
+    _BACKEND_ROOT / settings.data_dir / "admin_settings.json",
+    _BACKEND_ROOT.parent / settings.data_dir / "admin_settings.json",
+]
 
 
-def _settings_path() -> Path:
-    base = Path(settings.data_dir)
-    if not base.is_absolute():
-        base = _BACKEND_ROOT / base
-    return base / ADMIN_SETTINGS_FILENAME
+def _run_async(coro) -> Any:
+    """在独立线程的新事件循环中运行协程，避免与 FastAPI 事件循环冲突。"""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(asyncio.run, coro).result(timeout=10)
 
 
-def _settings_path_project_root_fallback() -> Path:
-    """兼容旧部署：项目根目录下的 data/admin_settings.json。"""
-    return _BACKEND_ROOT.parent / settings.data_dir / ADMIN_SETTINGS_FILENAME
+def _make_engine():
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+    return create_async_engine(settings.database_url, poolclass=NullPool, echo=False)
 
 
-def load_admin_settings() -> dict[str, Any]:
-    """读取管理端保存的配置，不存在或异常则返回空 dict。优先 backend/data，若无则尝试项目根 data/ 并回写迁移。"""
-    path = _settings_path()
-    fallback = _settings_path_project_root_fallback()
+async def _load_settings_async() -> dict[str, Any]:
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.db.models import SystemSetting
+
+    engine = _make_engine()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
+        async with factory() as session:
+            row = (await session.execute(
+                select(SystemSetting).where(SystemSetting.key == _SETTINGS_DB_KEY)
+            )).scalar_one_or_none()
+            return dict(row.value) if row and row.value else {}
+    finally:
+        await engine.dispose()
+
+
+async def _save_settings_async(data: dict[str, Any]) -> None:
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.db.models import SystemSetting
+
+    engine = _make_engine()
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with factory() as session:
+            row = (await session.execute(
+                select(SystemSetting).where(SystemSetting.key == _SETTINGS_DB_KEY)
+            )).scalar_one_or_none()
+            if row:
+                row.value = data
+            else:
+                session.add(SystemSetting(key=_SETTINGS_DB_KEY, value=data))
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+
+def _migrate_from_json() -> dict[str, Any]:
+    """读取旧 JSON 文件并写入 DB（仅首次）；读取失败则返回空 dict。"""
+    for path in _LEGACY_JSON_PATHS:
         if path.is_file():
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        if fallback.is_file():
-            with open(fallback, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            return data
-    except (json.JSONDecodeError, OSError):
-        pass
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                _run_async(_save_settings_async(data))
+                return data
+            except Exception:
+                pass
     return {}
 
 
+def load_admin_settings() -> dict[str, Any]:
+    """从 DB 读取管理端配置；若 DB 中不存在则尝试从旧 JSON 迁移。"""
+    try:
+        data = _run_async(_load_settings_async())
+        if not data:
+            data = _migrate_from_json()
+        return data
+    except Exception:
+        return {}
+
+
 def save_admin_settings(data: dict[str, Any]) -> None:
-    """写入管理端配置到 JSON 文件。"""
-    path = _settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    """将管理端配置写入 DB。"""
+    try:
+        _run_async(_save_settings_async(data))
+    except Exception:
+        pass
 
 
 def _ensure_llm_structures(data: dict[str, Any]) -> None:
@@ -129,19 +177,6 @@ def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _resolve_sqlite_database_path() -> Path | None:
-    url = (settings.database_url or "").strip()
-    if not url.startswith("sqlite") or "///" not in url:
-        return None
-    database_path = url.split("///", 1)[1].split("?", 1)[0]
-    if not database_path or database_path == ":memory:":
-        return None
-    path = Path(database_path)
-    if not path.is_absolute():
-        path = (_BACKEND_ROOT / path).resolve()
-    return path
-
-
 def _parse_json_object(raw_value: Any) -> dict[str, Any]:
     if isinstance(raw_value, dict):
         return raw_value
@@ -154,43 +189,41 @@ def _parse_json_object(raw_value: Any) -> dict[str, Any]:
     return {}
 
 
-def _load_ai_model_providers() -> list[dict[str, Any]]:
-    db_path = _resolve_sqlite_database_path()
-    if not db_path or not db_path.is_file():
-        return []
+async def _fetch_ai_models_async() -> list[dict[str, Any]]:
+    """从数据库异步加载已启用的 AI 模型列表。在独立事件循环中运行，使用独立引擎。"""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+    from app.db.models import AIModel
 
-    query = """
-        SELECT model_id, name, provider, model_name, base_url, api_key, config
-        FROM ai_models
-        WHERE is_enabled = 1
-        ORDER BY datetime(created_at) DESC, name ASC
-    """
-    conn: sqlite3.Connection | None = None
+    engine = create_async_engine(settings.database_url, poolclass=NullPool, echo=False)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(query).fetchall()
-    except sqlite3.Error:
-        return []
+        async with factory() as session:
+            result = await session.execute(
+                select(AIModel)
+                .where(AIModel.is_enabled == True)  # noqa: E712
+                .order_by(AIModel.created_at.desc(), AIModel.name.asc())
+            )
+            rows = result.scalars().all()
     finally:
-        if conn is not None:
-            conn.close()
+        await engine.dispose()
 
     providers: list[dict[str, Any]] = []
     for row in rows:
-        config = _parse_json_object(row["config"])
+        config = _parse_json_object(row.config)
         extra_headers = config.get("extra_headers")
         provider: dict[str, Any] = {
-            "id": f"{AI_MODEL_PROVIDER_PREFIX}{row['model_id']}",
-            "model_id": row["model_id"],
-            "name": row["name"] or row["model_name"] or "未命名模型",
-            "base_url": (row["base_url"] or "").strip(),
-            "model": (row["model_name"] or "").strip(),
-            "api_key": (row["api_key"] or "").strip(),
+            "id": f"{AI_MODEL_PROVIDER_PREFIX}{row.model_id}",
+            "model_id": row.model_id,
+            "name": row.name or row.model_name or "未命名模型",
+            "base_url": (row.base_url or "").strip(),
+            "model": (row.model_name or "").strip(),
+            "api_key": (row.api_key or "").strip(),
             "temperature": float(config.get("temperature", 0.7)),
             "max_tokens": int(config.get("max_tokens", 1000)),
             "source": "ai_model",
-            "provider": (row["provider"] or "").strip(),
+            "provider": (row.provider or "").strip(),
         }
         if isinstance(extra_headers, dict) and extra_headers:
             provider["extra_headers"] = extra_headers
@@ -201,37 +234,15 @@ def _load_ai_model_providers() -> list[dict[str, Any]]:
     return providers
 
 
-# 预设本地模型（Ollama，OpenAI 兼容）
-PRESET_LLM_BASE_URL = "http://localhost:11434/v1"
-PRESET_LLM_API_KEY = "ollama"
-PRESET_LLM_PROVIDERS = [
-    {"id": "preset-llama", "name": "Llama 3.3 70B", "model": "llama3.3:70b"},
-    {"id": "preset-gemma", "name": "Gemma 3 27B", "model": "gemma3:27b"},
-    {"id": "preset-qwen", "name": "Qwen3 32B", "model": "qwen3:32b"},
-    {"id": "preset-mistral", "name": "Mistral latest", "model": "mistral:latest"},
-]
+def _load_ai_model_providers() -> list[dict[str, Any]]:
+    """同步包装器：在独立线程中运行异步查询，避免嵌套事件循环冲突。"""
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, _fetch_ai_models_async())
+            return future.result(timeout=10)
+    except Exception:
+        return []
 
-
-def ensure_preset_llm_providers() -> None:
-    """若当前无任何 LLM 设定，则写入预设的本地 Ollama 模型（仅执行一次）。"""
-    data = load_admin_settings()
-    _ensure_llm_structures(data)
-    if not data["llm_providers"]:
-        for p in PRESET_LLM_PROVIDERS:
-            data["llm_providers"].append({
-                "id": p["id"],
-                "name": p["name"],
-                "base_url": PRESET_LLM_BASE_URL,
-                "model": p["model"],
-                "api_key": encrypt_value(PRESET_LLM_API_KEY),
-                "temperature": 0.7,
-                "max_tokens": 1000,
-            })
-    if not (data.get("llm_bindings") or {}) and data["llm_providers"]:
-        default_provider_id = data["llm_providers"][0]["id"]
-        for scope in ("channel_bot", "orchestrator", "system_llm"):
-            data["llm_bindings"][scope] = default_provider_id
-    save_admin_settings(data)
 
 
 def get_llm_providers_list() -> list[dict[str, Any]]:

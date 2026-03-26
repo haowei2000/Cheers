@@ -3,7 +3,6 @@
     <option name="args">
       <list>
         <option value="app.main:app" />
-        <option value="--reload" />
         <option value="--host" />
         <option value="0.0.0.0" />
         <option value="--port" />
@@ -12,7 +11,11 @@
     </option>
     <option name="checkSync" value="false" />
     <option name="env">
-      <map />
+      <map>
+        <entry key="all_proxy" value="" />
+        <entry key="http_proxy" value="" />
+        <entry key="https_proxy" value="" />
+      </map>
     </option>
     <option name="runType" value="MODULE" />
     <option name="scriptOrModule" value="uvicorn" />

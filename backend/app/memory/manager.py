@@ -1,18 +1,8 @@
 """MemoryManager：四层记忆读写、上下文拼接（供 Orchestrator 注入）."""
-import os
 from pathlib import Path
 
 from app.config import settings
 from app.memory.context_store import LAYERS, get_all_layers, get_layer, init_context_db, set_layer
-
-
-def _context_db_path() -> str:
-    p = settings.sqlite_context_path
-    if not os.path.isabs(p):
-        # 相对于 backend/ 或项目根
-        base = Path(__file__).resolve().parent.parent.parent.parent
-        p = str(base / p)
-    return p
 
 
 def _md_dir(channel_id: str) -> Path:
@@ -24,25 +14,22 @@ def _md_dir(channel_id: str) -> Path:
 
 async def load(channel_id: str) -> dict[str, str]:
     """加载频道四层记忆，键为 anchor/decisions/files_index/recent."""
-    db_path = _context_db_path()
-    await init_context_db(db_path)
-    return await get_all_layers(db_path, channel_id)
+    await init_context_db()
+    return await get_all_layers(channel_id)
 
 
 async def save_layer(channel_id: str, layer: str, content: str) -> None:
-    """写入一层到 SQLite。layer 统一大写以与 get_all_layers 保持一致。"""
-    db_path = _context_db_path()
-    await init_context_db(db_path)
-    await set_layer(db_path, channel_id, layer.upper(), content)
+    """写入一层。layer 统一大写以与 get_all_layers 保持一致。"""
+    await init_context_db()
+    await set_layer(channel_id, layer.upper(), content)
 
 
 async def sync_channel_to_md(channel_id: str) -> None:
-    """将 SQLite 中该频道四层内容同步到 MD 文件（管理员可编辑）."""
-    db_path = _context_db_path()
+    """将 DB 中该频道四层内容同步到 MD 文件（管理员可编辑）."""
     md_dir = _md_dir(channel_id)
     md_dir.mkdir(parents=True, exist_ok=True)
     for layer in LAYERS:
-        content = await get_layer(db_path, channel_id, layer)
+        content = await get_layer(channel_id, layer)
         (md_dir / f"{layer}.md").write_text(content or "", encoding="utf-8")
 
 

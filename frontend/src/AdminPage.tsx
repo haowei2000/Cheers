@@ -143,6 +143,7 @@ export default function AdminPage() {
     extra_headers: "",   // JSON 字符串，如 {"x-my-header":"value"}
     temperature: 0.7,
     max_tokens: 4096,
+    stream: true,
   });
   const [modelEditingId, setModelEditingId] = useState<string | null>(null);
 
@@ -343,7 +344,9 @@ export default function AdminPage() {
     if (modelForm.supports_vision) config.supports_vision = true;
     config.temperature = modelForm.temperature;
     config.max_tokens = modelForm.max_tokens;
-    const { extra_headers: _eh, supports_vision: _sv, temperature: _t, max_tokens: _mt, ...rest } = modelForm;
+    config.stream = modelForm.stream;
+    config.stream = modelForm.stream;
+    const { extra_headers: _eh, supports_vision: _sv, temperature: _t, max_tokens: _mt, stream: _s, ...rest } = modelForm;
     authFetch(`${API}/admin/models`, {
       method: "POST",
       body: JSON.stringify({ ...rest, config }),
@@ -353,7 +356,7 @@ export default function AdminPage() {
         if (d.status === "success") {
           toast.success("模型创建成功");
           loadModels();
-          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096 });
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
         } else {
           toast.error(d.message || d.detail || "创建失败");
         }
@@ -371,6 +374,7 @@ export default function AdminPage() {
     if (modelForm.supports_vision) config.supports_vision = true;
     config.temperature = modelForm.temperature;
     config.max_tokens = modelForm.max_tokens;
+    config.stream = modelForm.stream;
     authFetch(`${API}/admin/models/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -391,7 +395,7 @@ export default function AdminPage() {
           toast.success("已更新");
           loadModels();
           setModelEditingId(null);
-          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096 });
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
         } else {
           toast.error(d.message || d.detail || "更新失败");
         }
@@ -429,6 +433,7 @@ export default function AdminPage() {
       extra_headers: eh && typeof eh === "object" ? JSON.stringify(eh) : "",
       temperature: typeof m.config?.temperature === "number" ? m.config.temperature : 0.7,
       max_tokens: typeof m.config?.max_tokens === "number" ? m.config.max_tokens : 4096,
+      stream: typeof m.config?.stream === "boolean" ? m.config.stream : true,
     });
   };
 
@@ -866,13 +871,17 @@ export default function AdminPage() {
                             <input type="checkbox" id="supports_vision" checked={modelForm.supports_vision} onChange={(e) => setModelForm({ ...modelForm, supports_vision: e.target.checked })} className="rounded" />
                             <label htmlFor="supports_vision" className="text-xs text-gray-500">支持图片识别（Vision）</label>
                           </div>
+                          <div className="flex items-center gap-2">
+                            <input type="checkbox" id="stream" checked={modelForm.stream} onChange={(e) => setModelForm({ ...modelForm, stream: e.target.checked })} className="rounded" />
+                            <label htmlFor="stream" className="text-xs text-gray-500">启用流式响应 (Stream)</label>
+                          </div>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-3">
                         {modelEditingId ? (
                           <>
                             <button onClick={() => updateModel(modelEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
-                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096 }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
                           </>
                         ) : (
                           <button onClick={createModel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建模型</button>

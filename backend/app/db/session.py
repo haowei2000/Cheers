@@ -20,14 +20,17 @@ async_engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     future=True,
-    **({"poolclass": NullPool, "connect_args": {"timeout": 30}} if _is_sqlite else {}),
+    **({"poolclass": NullPool, "connect_args": {"timeout": 30, "check_same_thread": False}} if _is_sqlite else {}),
 )
 
 
 def _set_sqlite_pragma(dbapi_connection, connection_record):
-    """启用 WAL 模式，进一步降低读写并发冲突。"""
+    """启用 WAL 模式并优化并发性能。"""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA temp_store=MEMORY")
+    cursor.execute("PRAGMA mmap_size=30000000000")
     cursor.close()
 
 

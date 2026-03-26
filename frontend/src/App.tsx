@@ -1751,17 +1751,19 @@ export default function App() {
 
   useEffect(() => {
     if (addBotOpen) {
-      fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
+      const headers: Record<string, string> = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+      fetch(`${API}/bots`, { headers }).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
       setSelectedBotIds(new Set());
     }
-  }, [addBotOpen]);
+  }, [addBotOpen, authToken]);
 
 
 
   useEffect(() => {
     if (showMentionDropdown && selectedId) {
-      fetch(`${API}/bots`).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
-      fetch(`${API}/channels/${selectedId}/members?with_username=1`)
+      const headers: Record<string, string> = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+      fetch(`${API}/bots`, { headers }).then((r) => r.json()).then((d) => setAllBots(d.data || [])).catch(() => setAllBots([]));
+      fetch(`${API}/channels/${selectedId}/members?with_username=1`, { headers })
         .then((r) => r.json())
         .then((d) => {
           if (!d.data) return;
@@ -1778,7 +1780,7 @@ export default function App() {
         })
         .catch(console.error);
     }
-  }, [showMentionDropdown, selectedId]);
+  }, [showMentionDropdown, selectedId, authToken]);
 
   const addBotToChannel = (botId: string): Promise<void> => {
     if (!selectedId) return Promise.resolve();

@@ -183,12 +183,6 @@ async def startup() -> None:
             logger.exception("seed data failed: %s", e)
 
     try:
-        from app.admin.settings_store import ensure_preset_llm_providers
-        ensure_preset_llm_providers()
-    except Exception as e:
-        logger.exception("preset LLM providers: %s", e)
-
-    try:
         from app.db.seed import ensure_builtin_bot
         await ensure_builtin_bot()
     except Exception as e:

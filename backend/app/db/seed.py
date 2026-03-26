@@ -1,14 +1,13 @@
-"""种子数据：默认工作空间、AI 模型、提示词模板、Bot、测试用户."""
+"""种子数据：默认工作空间、提示词模板、Bot、测试用户."""
 import asyncio
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.auth.routes import hash_password
+from app.config import settings
 from app.db.models import (
-    AIModel,
     BotAccount,
     Channel,
     ChannelMembership,
@@ -18,69 +17,16 @@ from app.db.models import (
     WorkspaceMembership,
 )
 from app.db.session import async_session_factory
-from app.guide.constants import (
-    GUIDE_BOT_ID,
-    SYSTEM_MODEL_ID,
-    SYSTEM_TEMPLATE_ID,
-)
+from app.guide.constants import GUIDE_BOT_ID
 
 # 固定 ID，便于文档与脚本引用
 WORKSPACE_ID = "ws-default-001"
 CHANNEL_ID = "ch-seed-001"
-DEV_USER_ID = "a0000000-0000-0000-0000-000000000001"
 ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
 
-# 普通示例 Bot
-MODEL_OLLAMA_ID = "model-ollama-001"
-MODEL_OPENAI_ID = "model-openai-001"
 TEMPLATE_GENERAL_ID = "template-general-001"
 TEMPLATE_CODE_REVIEW_ID = "template-codereview-001"
 TEMPLATE_CREATIVE_ID = "template-creative-001"
-BOT_CODE_REVIEWER_ID = "bot-codereviewer-001"
-
-
-async def _seed_system_model_and_template(session: AsyncSession) -> bool:
-    """创建系统内置占位 AIModel 和 PromptTemplate（供统一内置 Bot 满足 FK 约束）。
-
-    运行时 adapter_resolver 识别 GUIDE_BOT_ID 后直接返回 UnifiedBuiltinBotAdapter，
-    不会实际调用这里的 model / template。
-    """
-    did_write = False
-
-    r = await session.execute(select(AIModel).where(AIModel.model_id == SYSTEM_MODEL_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(
-            AIModel(
-                model_id=SYSTEM_MODEL_ID,
-                name="系统内置（占位）",
-                provider="system",
-                model_name="builtin",
-                base_url="http://localhost",
-                api_key=None,
-                description="供内置统一 Bot 满足数据库 FK 约束，运行时不实际调用",
-                is_enabled=True,
-                is_builtin=True,
-                config={},
-            )
-        )
-        did_write = True
-
-    r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == SYSTEM_TEMPLATE_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(
-            PromptTemplate(
-                template_id=SYSTEM_TEMPLATE_ID,
-                name="系统内置（占位）",
-                description="供内置统一 Bot 满足数据库 FK 约束，运行时不实际调用",
-                system_prompt="（系统占位，不会被实际使用）",
-                user_template="{{message}}",
-                variables=["message"],
-                is_builtin=True,
-            )
-        )
-        did_write = True
-
-    return did_write
 
 
 async def _seed_unified_bot(session: AsyncSession) -> bool:
@@ -104,8 +50,8 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
                 "可回答系统使用问题、结合项目记忆回答业务问题、"
                 "读写四层项目记忆、并在需要时建议路由到专业 Bot。"
             ),
-            model_id=SYSTEM_MODEL_ID,
-            template_id=SYSTEM_TEMPLATE_ID,
+            model_id=None,
+            template_id=None,
             status="online",
             intro=(
                 '{"capabilities":["系统引导","项目问答","记忆读写","澄清弹窗","动态表单","Bot路由建议"],'
@@ -116,51 +62,8 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
     return True
 
 
-async def _seed_models(session: AsyncSession) -> bool:
-    """创建普通示例 AI 模型."""
-    did_write = False
-
-    r = await session.execute(select(AIModel).where(AIModel.model_id == MODEL_OLLAMA_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(
-            AIModel(
-                model_id=MODEL_OLLAMA_ID,
-                name="Ollama (Llama 3.2)",
-                provider="ollama",
-                model_name="llama3.2",
-                base_url="http://localhost:11434/v1",
-                api_key=None,
-                description="本地 Ollama 运行的 Llama 3.2 模型，无需联网，适合代码和一般问答",
-                is_enabled=True,
-                is_builtin=True,
-                config={"temperature": 0.7, "max_tokens": 2000},
-            )
-        )
-        did_write = True
-
-    r = await session.execute(select(AIModel).where(AIModel.model_id == MODEL_OPENAI_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(
-            AIModel(
-                model_id=MODEL_OPENAI_ID,
-                name="OpenAI GPT-4o",
-                provider="openai",
-                model_name="gpt-4o",
-                base_url="https://api.openai.com/v1",
-                api_key=None,
-                description="OpenAI GPT-4o，强大的通用能力，需要配置 API Key",
-                is_enabled=False,
-                is_builtin=True,
-                config={"temperature": 0.7, "max_tokens": 4000},
-            )
-        )
-        did_write = True
-
-    return did_write
-
-
 async def _seed_templates(session: AsyncSession) -> bool:
-    """创建普通示例提示词模板."""
+    """创建示例提示词模板."""
     did_write = False
 
     r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_GENERAL_ID))
@@ -218,29 +121,8 @@ async def _seed_templates(session: AsyncSession) -> bool:
     return did_write
 
 
-async def _seed_example_bots(session: AsyncSession) -> bool:
-    """创建普通示例 Bot（演示如何自定义 Bot）。"""
-    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == BOT_CODE_REVIEWER_ID))
-    if r.scalar_one_or_none() is not None:
-        return False
-
-    session.add(
-        BotAccount(
-            bot_id=BOT_CODE_REVIEWER_ID,
-            username="代码审查",
-            display_name="Code Reviewer",
-            description="专业的代码审查助手，帮助发现代码中的问题和优化点",
-            model_id=MODEL_OLLAMA_ID,
-            template_id=TEMPLATE_CODE_REVIEW_ID,
-            status="online",
-            intro='{"capabilities":["代码审查","Bug 发现","优化建议","安全检测"],"description":"专业代码审查助手"}',
-        )
-    )
-    return True
-
-
 async def _seed_workspace_and_users(session: AsyncSession) -> bool:
-    """创建工作区、频道、用户."""
+    """创建工作区、频道、管理员用户."""
     did_write = False
 
     r = await session.execute(select(Workspace).where(Workspace.workspace_id == WORKSPACE_ID))
@@ -254,22 +136,9 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
             Channel(
                 channel_id=CHANNEL_ID,
                 workspace_id=WORKSPACE_ID,
-                name="测试项目",
+                name="通用",
                 type="public",
-                purpose="开箱测试与 Bot 演示",
-            )
-        )
-        did_write = True
-
-    r = await session.execute(select(User).where(User.user_id == DEV_USER_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(
-            User(
-                user_id=DEV_USER_ID,
-                username="dev",
-                password_hash=hash_password("dev#Nexus2024"),
-                display_name="开发测试用户",
-                role="member",
+                purpose="默认频道",
             )
         )
         did_write = True
@@ -279,69 +148,51 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
         session.add(
             User(
                 user_id=ADMIN_USER_ID,
-                username="admin",
-                password_hash=hash_password("admin#Nexus2024"),
-                display_name="系统管理员",
+                username=settings.admin_username,
+                password_hash=hash_password(settings.admin_password),
+                display_name=settings.admin_display_name,
                 role="system_admin",
             )
         )
         did_write = True
 
-    # 工作空间成员关系（dev 为 member，admin 为 owner）
-    for uid, ws_role in ((DEV_USER_ID, "member"), (ADMIN_USER_ID, "owner")):
-        r = await session.execute(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.workspace_id == WORKSPACE_ID,
-                WorkspaceMembership.user_id == uid,
-            )
+    r = await session.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == WORKSPACE_ID,
+            WorkspaceMembership.user_id == ADMIN_USER_ID,
         )
-        if r.scalar_one_or_none() is None:
-            session.add(WorkspaceMembership(
-                workspace_id=WORKSPACE_ID,
-                user_id=uid,
-                role=ws_role,
-            ))
-            did_write = True
+    )
+    if r.scalar_one_or_none() is None:
+        session.add(WorkspaceMembership(
+            workspace_id=WORKSPACE_ID,
+            user_id=ADMIN_USER_ID,
+            role="owner",
+        ))
+        did_write = True
 
     return did_write
 
 
 async def _seed_memberships(session: AsyncSession) -> bool:
-    """创建频道成员关系（统一内置 Bot + 示例 Bot + 测试用户）."""
+    """创建频道成员关系（统一内置 Bot + 管理员）."""
     did_write = False
 
-    for bot_id in (GUIDE_BOT_ID, BOT_CODE_REVIEWER_ID):
+    for member_id, member_type in ((GUIDE_BOT_ID, "bot"), (ADMIN_USER_ID, "user")):
         r = await session.execute(
             select(ChannelMembership).where(
                 ChannelMembership.channel_id == CHANNEL_ID,
-                ChannelMembership.member_id == bot_id,
+                ChannelMembership.member_id == member_id,
             )
         )
         if r.scalar_one_or_none() is None:
             session.add(
                 ChannelMembership(
                     channel_id=CHANNEL_ID,
-                    member_id=bot_id,
-                    member_type="bot",
+                    member_id=member_id,
+                    member_type=member_type,
                 )
             )
             did_write = True
-
-    r = await session.execute(
-        select(ChannelMembership).where(
-            ChannelMembership.channel_id == CHANNEL_ID,
-            ChannelMembership.member_id == DEV_USER_ID,
-        )
-    )
-    if r.scalar_one_or_none() is None:
-        session.add(
-            ChannelMembership(
-                channel_id=CHANNEL_ID,
-                member_id=DEV_USER_ID,
-                member_type="user",
-            )
-        )
-        did_write = True
 
     return did_write
 
@@ -350,12 +201,8 @@ async def seed(session: AsyncSession) -> bool:
     """写入种子数据（若已存在则跳过）。返回是否执行了写入。"""
     did_write = False
 
-    # 顺序：系统占位 -> 普通示例模型/模板 -> 统一内置 Bot -> 示例 Bot -> 工作区/用户 -> 成员关系
-    did_write |= await _seed_system_model_and_template(session)
-    did_write |= await _seed_models(session)
     did_write |= await _seed_templates(session)
     did_write |= await _seed_unified_bot(session)
-    did_write |= await _seed_example_bots(session)
     did_write |= await _seed_workspace_and_users(session)
     did_write |= await _seed_memberships(session)
 
@@ -380,13 +227,9 @@ async def ensure_builtin_bot() -> None:
     """
     async with async_session_factory() as session:
         try:
-            # 1. 确保系统占位 model / template 存在
-            await _seed_system_model_and_template(session)
-
-            # 2. 确保 @channel bot BotAccount 存在
             await _seed_unified_bot(session)
 
-            # 3. 确保 @channel bot 加入所有现有频道（补齐旧频道缺失的 membership）
+            # 确保 @channel bot 加入所有现有频道（补齐旧频道缺失的 membership）
             all_channels = (await session.execute(select(Channel))).scalars().all()
             for ch in all_channels:
                 r = await session.execute(
@@ -432,8 +275,6 @@ if __name__ == "__main__":
         "Seed done.\n"
         f"  Workspace: {WORKSPACE_ID}\n"
         f"  Channel: {CHANNEL_ID}\n"
-        f"  System: 系统内置占位 model/template\n"
-        f"  Models: Ollama (Llama 3.2), OpenAI GPT-4o\n"
         f"  Templates: 通用助手, 代码审查, 创意写作\n"
-        f"  Bots: @channel bot（内置统一Bot） @代码审查"
+        f"  Bots: @channel bot（内置统一Bot）"
     )

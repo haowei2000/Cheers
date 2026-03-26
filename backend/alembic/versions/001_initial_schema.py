@@ -1,6 +1,6 @@
 """Initial schema: workspaces, channels, users, bot_accounts, channel_memberships, messages, file_records, agent_tasks.
 
-SQLite 兼容：主键/外键 String(36)，JSON 用 sa.JSON；时间默认 datetime('now')。
+主键/外键 String(36)，JSON 用 sa.JSON；时间默认 NOW()。
 Revision ID: 001
 Revises:
 Create Date: 2026-03-07
@@ -18,7 +18,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 # SQLite 时间默认
-TS_DEFAULT = sa.text("(datetime('now'))")
+TS_DEFAULT = sa.text("NOW()")
 
 
 def upgrade() -> None:

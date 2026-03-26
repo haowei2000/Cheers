@@ -17,12 +17,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    conn = op.get_bind()
-    existing = conn.execute(
-        sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name='context_store'")
-    ).fetchone()
-    if existing:
-        return
     op.create_table(
         "context_store",
         sa.Column("channel_id", sa.Text(), nullable=False),
