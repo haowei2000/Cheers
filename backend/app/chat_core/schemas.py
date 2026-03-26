@@ -200,6 +200,7 @@ class MessageCreate(BaseModel):
     file_ids: list[str] = Field(default_factory=list)
     mention_bot_ids: list[str] = Field(default_factory=list)
     in_reply_to_msg_id: str | None = None
+    is_secret: bool = False
 
 
 class MessageStreamCreate(BaseModel):
@@ -235,6 +236,7 @@ class MessageInResponse(BaseModel):
     task_id: str | None = None
     in_reply_to_msg_id: str | None = None
     created_at: datetime | None = None
+    is_secret: bool = False
 
 
 # ==================== Legacy Schemas (for compatibility) ====================

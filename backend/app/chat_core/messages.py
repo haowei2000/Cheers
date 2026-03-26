@@ -13,13 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.chat_core.schemas import MessageCreate, MessageFileInResponse, MessageInResponse, MessageStreamCreate
 from app.chat_core.ws_manager import ws_manager
-from app.db.models import Channel, FileRecord, Message
+from app.db.models import Channel, FileRecord, Message, User
+from app.utils.crypto import decrypt_value, encrypt_value
 from app.db.session import async_session_factory, get_session
 from app.file_processor.service import FileFlowError, FilePipelineService
 from app.guide.constants import GUIDE_BOT_ID
 from app.orchestrator.adapter_resolver import get_adapter_for_bot
 from app.orchestrator.service import run_orchestrator
 from app.storage.base import StorageError
+from app.auth.routes import get_current_user
 
 logger = logging.getLogger("app.chat_core.messages")
 router = APIRouter(prefix="/api/channels", tags=["messages"])
@@ -110,6 +112,9 @@ async def _validate_message_files(
         raise HTTPException(status_code=503, detail=f"storage unavailable: {exc}") from exc
 
 
+_SECRET_PLACEHOLDER = "🔒 [加密消息]"
+
+
 async def _persist_message(
     session: AsyncSession,
     *,
@@ -120,15 +125,24 @@ async def _persist_message(
     file_ids: list[str],
     mention_bot_ids: list[str],
     in_reply_to_msg_id: str | None = None,
+    is_secret: bool = False,
 ) -> tuple[Message, dict]:
+    if is_secret:
+        encrypted = encrypt_value(content)
+        stored_content = _SECRET_PLACEHOLDER
+    else:
+        encrypted = None
+        stored_content = content
     msg = Message(
         channel_id=channel_id,
         sender_id=sender_id,
         sender_type=sender_type,
-        content=content,
+        content=stored_content,
         file_ids=file_ids,
         mention_bot_ids=mention_bot_ids,
         in_reply_to_msg_id=in_reply_to_msg_id,
+        is_secret=is_secret,
+        secret_encrypted=encrypted,
     )
     session.add(msg)
     await session.flush()
@@ -253,8 +267,10 @@ async def _handle_send_message(
         file_ids=file_ids,
         mention_bot_ids=body.mention_bot_ids or [],
         in_reply_to_msg_id=body.in_reply_to_msg_id or None,
+        is_secret=body.is_secret,
     )
     await session.commit()
+    # Broadcast without revealing secret content
     await _broadcast_message(channel_id, d)
     _schedule_recent_update(channel_id)
     if _should_run_orchestrator_inline(session):
@@ -357,6 +373,32 @@ async def create_message_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/{channel_id}/messages/{msg_id}/secret")
+async def reveal_secret_message(
+    channel_id: str,
+    msg_id: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """解密并返回加密消息的原始内容（仅发送者本人可操作）。"""
+    result = await session.execute(
+        select(Message).where(Message.channel_id == channel_id, Message.msg_id == msg_id)
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="message not found")
+    if not msg.is_secret or not msg.secret_encrypted:
+        raise HTTPException(status_code=400, detail="not a secret message")
+    # 仅发送者本人可解密
+    if msg.sender_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="only sender can reveal this message")
+    try:
+        plaintext = decrypt_value(msg.secret_encrypted)
+    except Exception:
+        raise HTTPException(status_code=500, detail="decryption failed")
+    return {"status": "success", "data": {"content": plaintext}}
 
 
 @router.post("/{channel_id}/guide-reply")

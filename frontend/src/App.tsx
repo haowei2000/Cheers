@@ -29,6 +29,8 @@ type Message = {
   in_reply_to_msg_id?: string | null;
   file_ids?: string[];
   files?: FileInfo[];
+  is_secret?: boolean;
+  secret_token?: string;
 };
 type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
@@ -1316,15 +1318,28 @@ export default function App() {
       const stored = localStorage.getItem("currentUser");
       if (!stored) return null;
       const data = JSON.parse(stored);
-      // 检查是否在1小时内
-      if (data.loginTime && Date.now() - data.loginTime < 3600000) {
+      // 检查是否在24小时内
+      if (data.loginTime && Date.now() - data.loginTime < 86400000) {
         return data.user;
       }
     } catch {}
     return null;
   };
 
+  const getStoredToken = (): string | null => {
+    try {
+      const stored = localStorage.getItem("currentUser");
+      if (!stored) return null;
+      const data = JSON.parse(stored);
+      if (data.loginTime && Date.now() - data.loginTime < 86400000) {
+        return data.token ?? data.user?.user_id ?? null;
+      }
+    } catch {}
+    return null;
+  };
+
   const [currentUser, setCurrentUser] = useState<CurrentUser>(getStoredUser);
+  const [authToken, setAuthToken] = useState<string | null>(getStoredToken);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -1340,11 +1355,11 @@ export default function App() {
         ...options,
         headers: {
           "Content-Type": "application/json",
-          ...(currentUser ? { Authorization: `Bearer ${currentUser.user_id}` } : {}),
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           ...(options.headers as Record<string, string> | undefined),
         },
       }),
-    [currentUser]
+    [authToken]
   );
 
   // 初始化时检查登录状态
@@ -1430,6 +1445,9 @@ export default function App() {
   const [imageEditSize, setImageEditSize] = useState("1024*1024");
   const [imageEditLoading, setImageEditLoading] = useState(false);
   const [imageEditPreview, setImageEditPreview] = useState<{ file_id: string; preview_url: string } | null>(null);
+  // 加密消息状态
+  const [secretMode, setSecretMode] = useState(false);
+  const [revealedSecrets, setRevealedSecrets] = useState<Record<string, string>>({});
   // Lightbox 状态
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
@@ -1456,6 +1474,7 @@ export default function App() {
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(new Set());
   const [, setHasMore] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [waitingForBotReply, setWaitingForBotReply] = useState(false);
   const [processingBots, setProcessingBots] = useState<Record<string, string>>({});
@@ -1473,9 +1492,11 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "登录失败");
       const user = { user_id: data.user_id, username: data.username, display_name: data.display_name || data.username, role: data.role };
+      const token: string = data.token || data.user_id;
       setCurrentUser(user);
-      // 保存到 localStorage（1小时有效）
-      localStorage.setItem("currentUser", JSON.stringify({ user, loginTime: Date.now() }));
+      setAuthToken(token);
+      // 保存到 localStorage（24小时有效）
+      localStorage.setItem("currentUser", JSON.stringify({ user, token, loginTime: Date.now() }));
       setLoginModalOpen(false);
     } catch (e: any) {
       setLoginError(e.message);
@@ -1495,9 +1516,18 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "注册失败");
+      // 注册后自动登录以获取 JWT token
+      const loginRes = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const loginData = await loginRes.json();
       const user = { user_id: data.user_id, username: data.username, display_name: data.display_name || data.username, role: data.role };
+      const token: string = loginData.token || data.user_id;
       setCurrentUser(user);
-      localStorage.setItem("currentUser", JSON.stringify({ user, loginTime: Date.now() }));
+      setAuthToken(token);
+      localStorage.setItem("currentUser", JSON.stringify({ user, token, loginTime: Date.now() }));
       setLoginModalOpen(false);
     } catch (e: any) {
       setLoginError(e.message);
@@ -1508,6 +1538,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setAuthToken(null);
     localStorage.removeItem("currentUser");
     setLoginModalOpen(true);
   };
@@ -1528,7 +1559,7 @@ export default function App() {
           toast.success("工作空间创建成功");
           setNewWorkspaceName("");
           setCreateWsOpen(false);
-          refreshWorkspaces(setWorkspaces, currentUser?.user_id);
+          refreshWorkspaces(setWorkspaces, authToken ?? undefined);
           setSelectedWorkspaceId(d.data.workspace_id);
         } else {
           toast.error(d.detail || "创建失败");
@@ -1589,7 +1620,7 @@ export default function App() {
           toast.success("频道创建成功");
           setNewChannelName("");
           setCreateChannelOpen(false);
-          refreshChannels(setChannels, currentUser?.user_id);
+          refreshChannels(setChannels, authToken ?? undefined);
           setSelectedId(d.data.channel_id);
         } else {
           toast.error(d.detail || "创建失败");
@@ -1611,9 +1642,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    refreshChannels(setChannels, currentUser?.user_id);
-    refreshWorkspaces(setWorkspaces, currentUser?.user_id);
-  }, [currentUser?.user_id]);
+    refreshChannels(setChannels, authToken ?? undefined);
+    refreshWorkspaces(setWorkspaces, authToken ?? undefined);
+  }, [authToken]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1847,14 +1878,17 @@ export default function App() {
       const quotedText = quotedRaw.replace(/\n+/g, " ").trim().slice(0, 400);
       content = `> [${refLabel}]: ${quotedText}\n\n${content}`;
     }
+    const isSecretSend = secretMode;
     const body: Record<string, unknown> = {
       content,
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: pendingFileIds,
+      is_secret: isSecretSend,
     };
     if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
     setInput("");
+    setSecretMode(false);
     setPendingFileIds([]);
     setPendingFileNames([]);
     setPendingFilePreviews((prev) => { prev.forEach((u) => { if (u) URL.revokeObjectURL(u); }); return []; });
@@ -2368,8 +2402,8 @@ export default function App() {
                           if (d.status === "success") {
                             toast.success("工作空间已删除");
                             setSelectedWorkspaceId("");
-                            refreshWorkspaces(setWorkspaces, currentUser?.user_id);
-                            refreshChannels(setChannels, currentUser?.user_id);
+                            refreshWorkspaces(setWorkspaces, authToken ?? undefined);
+                            refreshChannels(setChannels, authToken ?? undefined);
                           } else {
                             toast.error(d.detail || "删除失败");
                           }
@@ -2852,7 +2886,7 @@ export default function App() {
       {/* 好友管理面板 */}
       <FriendsPanel
         currentUserId={currentUserId}
-        userToken={currentUser?.user_id}
+        userToken={authToken ?? undefined}
         isOpen={friendsPanelOpen}
         onClose={() => setFriendsPanelOpen(false)}
       />
@@ -2863,7 +2897,7 @@ export default function App() {
           channelId={selectedId}
           channelName={selectedChannel?.name || ""}
           currentUserId={currentUserId}
-          userToken={currentUser?.user_id}
+          userToken={authToken ?? undefined}
           isOpen={manageMembersOpen}
           onClose={() => setManageMembersOpen(false)}
         />
@@ -2873,12 +2907,12 @@ export default function App() {
       {userProfileOpen && currentUser && (
         <UserProfileModal
           currentUser={currentUser}
-          userToken={currentUser.user_id}
+          userToken={authToken!}
           onClose={() => setUserProfileOpen(false)}
           onProfileUpdated={(data) => {
             const updated = { ...currentUser, display_name: data.display_name };
             setCurrentUser(updated);
-            localStorage.setItem("currentUser", JSON.stringify({ user: updated, loginTime: Date.now() }));
+            localStorage.setItem("currentUser", JSON.stringify({ user: updated, token: authToken, loginTime: Date.now() }));
           }}
         />
       )}
@@ -2888,7 +2922,7 @@ export default function App() {
         <ChannelProfileModal
           channelId={selectedId}
           channelName={selectedChannel?.name || ""}
-          userToken={currentUser.user_id}
+          userToken={authToken!}
           onClose={() => setChannelProfileOpen(false)}
         />
       )}
@@ -3163,7 +3197,9 @@ export default function App() {
                     );
 
                     // ── root message ───────────────────────────────────────
-                    const { text, form, clarify } = parseGuidePayload(m.content);
+                    const revealedContent = revealedSecrets[m.msg_id];
+                    const effectiveContent = m.is_secret ? (revealedContent ?? m.content) : m.content;
+                    const { text, form, clarify } = parseGuidePayload(effectiveContent);
                     const clarifyAnswered = !!clarify && messages.some(
                       (r) => r.in_reply_to_msg_id === m.msg_id && isClarifyReplyUserMessage(r.content)
                     );
@@ -3172,9 +3208,9 @@ export default function App() {
                       clarify && m.sender_type === "bot"
                         ? clarifyWaiting ? "waiting" : clarifyAnswered ? "answered" : "form"
                         : null;
-                    const displayContent = isClarifyReplyUserMessage(m.content)
-                      ? m.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
-                      : (text || m.content);
+                    const displayContent = isClarifyReplyUserMessage(effectiveContent)
+                      ? effectiveContent.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                      : (text || effectiveContent);
                     const isOwn = m.sender_type === "user" && m.sender_id === currentUserId;
                     const senderBot = m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
                     const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
@@ -3183,19 +3219,39 @@ export default function App() {
                       ? new Date(m.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
                       : "";
 
+                    const isSecretUnrevealed = m.is_secret && !revealedContent;
                     const rootBubble = isOwn ? (
                       <div id={`msg-${m.msg_id}`} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
                         <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">我</div>
                         <div className="flex items-end gap-1.5">
-                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
+                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                             className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1">
                             {replyIcon}
                           </button>
                           <div className="flex flex-col items-end max-w-[72%]">
                             <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
                             {renderFileAttachments(m, true)}
-                            <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words">
-                              {(() => {
+                            <div className={`${isSecretUnrevealed ? "bg-amber-500" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}>
+                              {isSecretUnrevealed ? (
+                                <div className="flex items-center gap-2">
+                                  <span>🔒 加密消息</span>
+                                  <button type="button" onClick={() => {
+                                    fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret`, {
+                                      headers: { Authorization: `Bearer ${authToken}` },
+                                    })
+                                      .then((r) => r.json())
+                                      .then((d) => {
+                                        if (d.data?.content) {
+                                          setRevealedSecrets((prev) => ({ ...prev, [m.msg_id]: d.data.content }));
+                                        } else {
+                                          alert(d.detail || "无法查看加密内容");
+                                        }
+                                      })
+                                      .catch(() => alert("请求失败"));
+                                  }}
+                                    className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
+                                </div>
+                              ) : (() => {
                                 const q = parseQuotePrefix(displayContent);
                                 if (q) return (
                                   <>
@@ -3230,17 +3286,36 @@ export default function App() {
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
                           {renderFileAttachments(m)}
-                          <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
-                            {m._streaming && !text
+                          <div className={`${isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}>
+                            {isSecretUnrevealed ? (
+                              <div className="flex items-center gap-2 text-amber-700">
+                                <span>🔒 加密消息</span>
+                                <button type="button" onClick={() => {
+                                  fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret`, {
+                                    headers: { Authorization: `Bearer ${authToken}` },
+                                  })
+                                    .then((r) => r.json())
+                                    .then((d) => {
+                                      if (d.data?.content) {
+                                        setRevealedSecrets((prev) => ({ ...prev, [m.msg_id]: d.data.content }));
+                                      } else {
+                                        alert(d.detail || "无法查看加密内容");
+                                      }
+                                    })
+                                    .catch(() => alert("请求失败"));
+                                }}
+                                  className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
+                              </div>
+                            ) : m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                               : renderWithThinkFolding(text, `${m.msg_id}-`, !!m._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
-                            {m._streaming && !!text && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
+                            {!isSecretUnrevealed && m._streaming && !!text && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                           </div>
                           {form && selectedId && m.sender_type === "bot" && (
                             <GuideFormBlock msgId={m.msg_id} form={form} channelId={selectedId}
                               onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                              onChannelsRefresh={() => refreshChannels(setChannels, currentUser?.user_id)}
-                              userToken={currentUser?.user_id} />
+                              onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
+                              userToken={authToken ?? undefined} />
                           )}
                           {clarifyStatus !== null && selectedId && (
                             <ClarifyInlineBlock msgId={m.msg_id} schema={clarify!} status={clarifyStatus}
@@ -3249,7 +3324,7 @@ export default function App() {
                               onSkip={() => handleClarifySkip(m.msg_id)} />
                           )}
                         </div>
-                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
+                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                           className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
                           {replyIcon}
                         </button>
@@ -3373,8 +3448,8 @@ export default function App() {
                                     {rForm && selectedId && r.sender_type === "bot" && (
                                       <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
                                         onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                                        onChannelsRefresh={() => refreshChannels(setChannels, currentUser?.user_id)}
-                                        userToken={currentUser?.user_id} />
+                                        onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
+                                        userToken={authToken ?? undefined} />
                                     )}
                                     {rClarifyStatus !== null && selectedId && (
                                       <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
@@ -3385,7 +3460,7 @@ export default function App() {
                                   </>
                                 )}
                               </div>
-                              <button type="button" title="回复" onClick={() => { setReplyingTo(r); inputRef.current?.focus(); }}
+                              <button type="button" title="回复" onClick={() => { setReplyingTo(r); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                                 className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
                                   <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
@@ -3521,23 +3596,23 @@ export default function App() {
                       const v = e.target.value;
                       const pos = e.target.selectionStart ?? v.length;
                       setInput(v);
-                      const lastAt = v.lastIndexOf("@", pos - 1);
-                      if (lastAt !== -1) {
-                        const after = v.slice(lastAt + 1, pos);
-                        if (!after.includes(" ") && !after.includes("\n")) {
-                          // 根据当前输入框在视口中的位置，动态决定下拉在上方还是下方展示
-                          const rect = e.target.getBoundingClientRect();
-                          const spaceBelow = window.innerHeight - rect.bottom;
-                          const spaceAbove = rect.top;
-                          // 预留约 180px 作为下拉所需空间，不够则优先放到上方
-                          if (spaceBelow < 180 && spaceAbove > spaceBelow) {
-                            setMentionDropdownPlacement("top");
-                          } else {
-                            setMentionDropdownPlacement("bottom");
+                      if (!secretMode) {
+                        const lastAt = v.lastIndexOf("@", pos - 1);
+                        if (lastAt !== -1) {
+                          const after = v.slice(lastAt + 1, pos);
+                          if (!after.includes(" ") && !after.includes("\n")) {
+                            const rect = e.target.getBoundingClientRect();
+                            const spaceBelow = window.innerHeight - rect.bottom;
+                            const spaceAbove = rect.top;
+                            if (spaceBelow < 180 && spaceAbove > spaceBelow) {
+                              setMentionDropdownPlacement("top");
+                            } else {
+                              setMentionDropdownPlacement("bottom");
+                            }
+                            setShowMentionDropdown(true);
+                            setMentionFilter(after);
+                            return;
                           }
-                          setShowMentionDropdown(true);
-                          setMentionFilter(after);
-                          return;
                         }
                       }
                       setShowMentionDropdown(false);
@@ -3552,8 +3627,8 @@ export default function App() {
                         send();
                       }
                     }}
-                    placeholder={`发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`}
-                    className="w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] text-gray-900 placeholder-gray-400 bg-transparent"
+                    placeholder={secretMode ? "输入加密内容（仅 Bot 可读取原文）…" : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`}
+                    className={`w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] placeholder-gray-400 bg-transparent ${secretMode ? "text-amber-700" : "text-gray-900"}`}
                     rows={1}
                   />
                 </div>
@@ -3590,18 +3665,26 @@ export default function App() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSecretMode((v) => !v)}
+                      title={secretMode ? "取消加密模式" : "开启加密模式（仅 Bot 可读原文）"}
+                      className={`w-8 h-8 flex items-center justify-center rounded-lg text-base transition-colors ${
+                        secretMode ? "bg-amber-100 text-amber-600 hover:bg-amber-200" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                      }`}
+                    >🔒</button>
                     <span className="text-[12px] text-gray-400 hidden sm:inline select-none">Ctrl+Enter</span>
                     <button
                       type="button"
                       onClick={send}
                       className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${
                         input.trim() || pendingFileIds.length > 0
-                          ? "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
+                          ? secretMode ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm" : "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
                           : "bg-gray-100 text-gray-400 cursor-not-allowed"
                       }`}
                       disabled={!input.trim() && pendingFileIds.length === 0}
                     >
-                      发送
+                      {secretMode ? "加密发送" : "发送"}
                     </button>
                   </div>
                 </div>

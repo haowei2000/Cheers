@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # OpenClaw Hook 集成（/hooks/agent）
-    openclaw_hook_token: str = "7k9P8s7X2q5R9t8Y7u6I8o9P0l8K7j6H8g7F6d"  # Authorization: Bearer <token>
+    openclaw_hook_token: str = ""  # Authorization: Bearer <token>，留空则 hook 端点不校验（需在 .env 中配置）
     openclaw_agent_id: str = "main"
     openclaw_session_prefix: str = "nexus:"
 
@@ -61,6 +61,14 @@ class Settings(BaseSettings):
         "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000
+
+    # JWT 认证
+    jwt_secret_key: str = ""  # 留空则启动时自动生成（非持久化），建议在 .env 中配置
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 1440  # 24 小时
+
+    # API Key 加密存储（Fernet 对称加密）
+    api_key_encryption_key: str = ""  # Base64 Fernet 密钥；留空则自动生成并持久化到 data/.encryption_key
 
     # 调试
     debug: bool = False
@@ -90,7 +98,7 @@ class Settings(BaseSettings):
     image_gen_default_model: str = "qwen-image-2.0-pro"
 
     model_config = {
-        "env_file": ".env",
+        "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }

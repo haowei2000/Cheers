@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.settings_store import get_image_gen_settings, set_image_gen_settings
+from app.auth.routes import require_permission
+from app.db.models import User
 from app.db.session import get_session
 from app.image_gen.service import (
     IMAGE_EDIT_MODELS,
@@ -149,8 +151,11 @@ async def get_settings() -> dict:
 
 
 @router.put("/settings")
-async def update_settings(body: ImageSettingsBody) -> dict:
-    """更新图片 API 设置。"""
+async def update_settings(
+    body: ImageSettingsBody,
+    _: User = Depends(require_permission("system_settings")),
+) -> dict:
+    """更新图片 API 设置（需要系统管理员权限）。"""
     updated = set_image_gen_settings(
         base_url=body.base_url,
         api_key=body.api_key,

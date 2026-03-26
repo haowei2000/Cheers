@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from app.config import settings
+from app.utils.crypto import decrypt_value, encrypt_value
 
 ADMIN_SETTINGS_FILENAME = "admin_settings.json"
 SCOPES = ("channel_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")
@@ -108,10 +109,11 @@ def _rewrite_localhost_base_url(base_url: str) -> str:
 
 
 def _normalize_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_key = (payload.get("api_key") or "").strip()
     normalized = {
         "base_url": _rewrite_localhost_base_url((payload.get("base_url") or "").strip()),
         "model": (payload.get("model") or "").strip(),
-        "api_key": (payload.get("api_key") or "").strip(),
+        "api_key": decrypt_value(raw_key),
         "temperature": float(payload.get("temperature", 0.7)),
         "max_tokens": int(payload.get("max_tokens", 1000)),
     }
@@ -221,7 +223,7 @@ def ensure_preset_llm_providers() -> None:
                 "name": p["name"],
                 "base_url": PRESET_LLM_BASE_URL,
                 "model": p["model"],
-                "api_key": PRESET_LLM_API_KEY,
+                "api_key": encrypt_value(PRESET_LLM_API_KEY),
                 "temperature": 0.7,
                 "max_tokens": 1000,
             })
@@ -340,12 +342,13 @@ def create_llm_provider(
     data = load_admin_settings()
     _ensure_llm_structures(data)
     pid = str(uuid.uuid4())
+    plain_key = (api_key or "").strip()
     data["llm_providers"].append({
         "id": pid,
         "name": (name or "").strip() or "未命名",
         "base_url": (base_url or "").strip(),
         "model": (model or "").strip(),
-        "api_key": (api_key or "").strip(),
+        "api_key": encrypt_value(plain_key) if plain_key else "",
         "temperature": temperature,
         "max_tokens": max_tokens,
     })
@@ -374,7 +377,7 @@ def update_llm_provider(
             if model is not None:
                 p["model"] = (model or "").strip()
             if api_key is not None and (api_key or "").strip():
-                p["api_key"] = api_key.strip()
+                p["api_key"] = encrypt_value(api_key.strip())
             if temperature is not None:
                 p["temperature"] = temperature
             if max_tokens is not None:
@@ -525,10 +528,11 @@ def get_image_gen_settings() -> dict[str, Any]:
     """返回图片 API 设置（api_key 脱敏）。"""
     data = load_admin_settings()
     raw = data.get("image_gen", {})
+    plain_key = decrypt_value(raw.get("api_key") or "")
     return {
         "base_url": raw.get("base_url", ""),
-        "api_key_set": bool(raw.get("api_key")),
-        "api_key_masked": ("****" + raw["api_key"][-6:]) if raw.get("api_key") and len(raw["api_key"]) > 6 else ("****" if raw.get("api_key") else ""),
+        "api_key_set": bool(plain_key),
+        "api_key_masked": ("****" + plain_key[-6:]) if plain_key and len(plain_key) > 6 else ("****" if plain_key else ""),
         "default_model": raw.get("default_model", "qwen-image-edit-max"),
     }
 
@@ -538,7 +542,8 @@ def get_image_gen_effective_config() -> tuple[str, str, str]:
     data = load_admin_settings()
     admin = data.get("image_gen", {})
     base_url = (admin.get("base_url") or "").strip() or settings.image_gen_base_url
-    api_key = (admin.get("api_key") or "").strip() or settings.image_gen_api_key
+    stored_key = decrypt_value((admin.get("api_key") or "").strip())
+    api_key = stored_key or settings.image_gen_api_key
     default_model = (admin.get("default_model") or "").strip() or settings.image_gen_default_model
     return base_url, api_key, default_model
 
@@ -555,7 +560,8 @@ def set_image_gen_settings(
     if base_url is not None:
         current["base_url"] = base_url.strip()
     if api_key is not None:
-        current["api_key"] = api_key.strip()
+        plain = api_key.strip()
+        current["api_key"] = encrypt_value(plain) if plain else ""
     if default_model is not None:
         current["default_model"] = default_model.strip()
     data["image_gen"] = current

@@ -1,14 +1,21 @@
 """认证模块：用户注册、登录、角色管理."""
+import logging
+import re
+import secrets
 from typing import Optional
 
+import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.jwt_utils import create_access_token, decode_access_token
 from app.db.models import User
 from app.db.session import async_session_factory, get_session
+
+logger = logging.getLogger("app.auth")
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
@@ -64,6 +71,16 @@ ROLE_PERMISSIONS = {
 }
 
 
+def validate_password(password: str) -> None:
+    """校验密码强度：至少8位，包含字母和数字。不符合则抛 HTTPException 400。"""
+    if len(password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码不符合要求：至少 8 位")
+    if not re.search(r"[A-Za-z]", password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码不符合要求：需包含字母")
+    if not re.search(r"\d", password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码不符合要求：需包含数字")
+
+
 def hash_password(password: str) -> str:
     """哈希密码."""
     return pwd_context.hash(password)
@@ -81,16 +98,36 @@ PERMISSIONS: dict[str, list[str]] = {
 }
 
 
+async def _resolve_user_from_token(token: str, db: AsyncSession) -> Optional[User]:
+    """从 JWT token 解析用户 ID，再查数据库返回用户。
+    为保持向下兼容，JWT 解码失败时尝试将 token 作为 UUID 直接查询（打印弃用警告）。
+    """
+    user_id: str | None = None
+    try:
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token 已过期，请重新登录")
+    except jwt.InvalidTokenError:
+        # 兼容旧版：token 可能是裸 user_id UUID
+        logger.warning("JWT 解码失败，尝试 UUID 回退（旧版兼容，请更新客户端）")
+        user_id = token
+
+    if not user_id:
+        return None
+    result = await db.execute(select(User).where(User.user_id == user_id))
+    return result.scalar_one_or_none()
+
+
 async def get_current_user(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_session),
 ) -> User:
-    """从 Authorization: Bearer <user_id> 中验证当前用户."""
+    """从 Authorization: Bearer <JWT> 中验证当前用户."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="未登录")
     token = authorization.removeprefix("Bearer ").strip()
-    result = await db.execute(select(User).where(User.user_id == token))
-    user = result.scalar_one_or_none()
+    user = await _resolve_user_from_token(token, db)
     if not user:
         raise HTTPException(status_code=401, detail="无效 Token")
     return user
@@ -104,8 +141,10 @@ async def try_get_current_user(
     if not authorization or not authorization.startswith("Bearer "):
         return None
     token = authorization.removeprefix("Bearer ").strip()
-    result = await db.execute(select(User).where(User.user_id == token))
-    return result.scalar_one_or_none()
+    try:
+        return await _resolve_user_from_token(token, db)
+    except HTTPException:
+        return None
 
 
 def require_permission(permission: str):
@@ -138,7 +177,8 @@ class LoginResponse(BaseModel):
     username: str
     display_name: Optional[str]
     role: str
-    token: str  # 简化：直接返回 user_id 作为 token
+    token: str  # JWT access token
+    expires_in: int  # token 有效期（秒）
 
 
 class UserInfo(BaseModel):
@@ -214,6 +254,7 @@ async def change_my_password(
     """修改当前用户密码."""
     if not verify_password(req.current_password, current_user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码不正确")
+    validate_password(req.new_password)
     current_user.password_hash = hash_password(req.new_password)
     await db.commit()
     return {"status": "success", "message": "密码已更新"}
@@ -222,6 +263,9 @@ async def change_my_password(
 @router.post("/register", response_model=UserInfo)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_session)):
     """用户注册."""
+    # 校验密码强度
+    validate_password(req.password)
+
     # 检查用户名是否已存在
     result = await db.execute(select(User).where(User.username == req.username))
     if result.scalar_one_or_none():
@@ -256,18 +300,22 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_session)):
             detail="用户名或密码错误",
         )
 
-    # 简化：返回 user_id 作为 token
+    from app.config import settings
     return LoginResponse(
         user_id=user.user_id,
         username=user.username,
         display_name=user.display_name,
         role=user.role,
-        token=user.user_id,
+        token=create_access_token(user.user_id, user.role),
+        expires_in=settings.jwt_access_token_expire_minutes * 60,
     )
 
 
 @router.get("/users", response_model=list[UserInfo])
-async def list_users(db: AsyncSession = Depends(get_session)):
+async def list_users(
+    _: User = Depends(require_permission("user_management")),
+    db: AsyncSession = Depends(get_session),
+):
     """获取用户列表（系统管理员专用）."""
     result = await db.execute(select(User))
     users = result.scalars().all()
@@ -382,7 +430,8 @@ async def reset_password(
             detail="用户不存在",
         )
 
-    user.password_hash = hash_password("123456")
+    temp_pw = secrets.token_urlsafe(12)
+    user.password_hash = hash_password(temp_pw)
     await db.commit()
 
-    return {"status": "success", "message": "密码已重置为 123456"}
+    return {"status": "success", "message": "密码已重置", "temporary_password": temp_pw}
