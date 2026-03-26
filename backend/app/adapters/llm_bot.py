@@ -12,6 +12,7 @@ import httpx
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.http_client import get_http_client
 from app.db.models import AIModel, BotAccount, PromptTemplate
+from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.adapters.llm_bot")
 
@@ -96,7 +97,7 @@ class LLMBotAdapter(OpenClawAdapter):
             "provider": self.model.provider,
             "model_name": self.model.model_name,
             "base_url": self.model.base_url.rstrip("/"),
-            "api_key": self.model.api_key,
+            "api_key": decrypt_value(self.model.api_key or "") or None,
         }
         if self.model.config:
             config.update(self.model.config)

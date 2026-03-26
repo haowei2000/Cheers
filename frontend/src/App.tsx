@@ -1316,15 +1316,28 @@ export default function App() {
       const stored = localStorage.getItem("currentUser");
       if (!stored) return null;
       const data = JSON.parse(stored);
-      // 检查是否在1小时内
-      if (data.loginTime && Date.now() - data.loginTime < 3600000) {
+      // 检查是否在24小时内
+      if (data.loginTime && Date.now() - data.loginTime < 86400000) {
         return data.user;
       }
     } catch {}
     return null;
   };
 
+  const getStoredToken = (): string | null => {
+    try {
+      const stored = localStorage.getItem("currentUser");
+      if (!stored) return null;
+      const data = JSON.parse(stored);
+      if (data.loginTime && Date.now() - data.loginTime < 86400000) {
+        return data.token ?? data.user?.user_id ?? null;
+      }
+    } catch {}
+    return null;
+  };
+
   const [currentUser, setCurrentUser] = useState<CurrentUser>(getStoredUser);
+  const [authToken, setAuthToken] = useState<string | null>(getStoredToken);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -1340,11 +1353,11 @@ export default function App() {
         ...options,
         headers: {
           "Content-Type": "application/json",
-          ...(currentUser ? { Authorization: `Bearer ${currentUser.user_id}` } : {}),
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           ...(options.headers as Record<string, string> | undefined),
         },
       }),
-    [currentUser]
+    [authToken]
   );
 
   // 初始化时检查登录状态
@@ -1473,9 +1486,11 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "登录失败");
       const user = { user_id: data.user_id, username: data.username, display_name: data.display_name || data.username, role: data.role };
+      const token: string = data.token || data.user_id;
       setCurrentUser(user);
-      // 保存到 localStorage（1小时有效）
-      localStorage.setItem("currentUser", JSON.stringify({ user, loginTime: Date.now() }));
+      setAuthToken(token);
+      // 保存到 localStorage（24小时有效）
+      localStorage.setItem("currentUser", JSON.stringify({ user, token, loginTime: Date.now() }));
       setLoginModalOpen(false);
     } catch (e: any) {
       setLoginError(e.message);
@@ -1495,9 +1510,18 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "注册失败");
+      // 注册后自动登录以获取 JWT token
+      const loginRes = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const loginData = await loginRes.json();
       const user = { user_id: data.user_id, username: data.username, display_name: data.display_name || data.username, role: data.role };
+      const token: string = loginData.token || data.user_id;
       setCurrentUser(user);
-      localStorage.setItem("currentUser", JSON.stringify({ user, loginTime: Date.now() }));
+      setAuthToken(token);
+      localStorage.setItem("currentUser", JSON.stringify({ user, token, loginTime: Date.now() }));
       setLoginModalOpen(false);
     } catch (e: any) {
       setLoginError(e.message);
@@ -1508,6 +1532,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setAuthToken(null);
     localStorage.removeItem("currentUser");
     setLoginModalOpen(true);
   };
@@ -1528,7 +1553,7 @@ export default function App() {
           toast.success("工作空间创建成功");
           setNewWorkspaceName("");
           setCreateWsOpen(false);
-          refreshWorkspaces(setWorkspaces, currentUser?.user_id);
+          refreshWorkspaces(setWorkspaces, authToken ?? undefined);
           setSelectedWorkspaceId(d.data.workspace_id);
         } else {
           toast.error(d.detail || "创建失败");
@@ -1589,7 +1614,7 @@ export default function App() {
           toast.success("频道创建成功");
           setNewChannelName("");
           setCreateChannelOpen(false);
-          refreshChannels(setChannels, currentUser?.user_id);
+          refreshChannels(setChannels, authToken ?? undefined);
           setSelectedId(d.data.channel_id);
         } else {
           toast.error(d.detail || "创建失败");
@@ -1611,9 +1636,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    refreshChannels(setChannels, currentUser?.user_id);
-    refreshWorkspaces(setWorkspaces, currentUser?.user_id);
-  }, [currentUser?.user_id]);
+    refreshChannels(setChannels, authToken ?? undefined);
+    refreshWorkspaces(setWorkspaces, authToken ?? undefined);
+  }, [authToken]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -2368,8 +2393,8 @@ export default function App() {
                           if (d.status === "success") {
                             toast.success("工作空间已删除");
                             setSelectedWorkspaceId("");
-                            refreshWorkspaces(setWorkspaces, currentUser?.user_id);
-                            refreshChannels(setChannels, currentUser?.user_id);
+                            refreshWorkspaces(setWorkspaces, authToken ?? undefined);
+                            refreshChannels(setChannels, authToken ?? undefined);
                           } else {
                             toast.error(d.detail || "删除失败");
                           }
@@ -2852,7 +2877,7 @@ export default function App() {
       {/* 好友管理面板 */}
       <FriendsPanel
         currentUserId={currentUserId}
-        userToken={currentUser?.user_id}
+        userToken={authToken ?? undefined}
         isOpen={friendsPanelOpen}
         onClose={() => setFriendsPanelOpen(false)}
       />
@@ -2863,7 +2888,7 @@ export default function App() {
           channelId={selectedId}
           channelName={selectedChannel?.name || ""}
           currentUserId={currentUserId}
-          userToken={currentUser?.user_id}
+          userToken={authToken ?? undefined}
           isOpen={manageMembersOpen}
           onClose={() => setManageMembersOpen(false)}
         />
@@ -2873,12 +2898,12 @@ export default function App() {
       {userProfileOpen && currentUser && (
         <UserProfileModal
           currentUser={currentUser}
-          userToken={currentUser.user_id}
+          userToken={authToken!}
           onClose={() => setUserProfileOpen(false)}
           onProfileUpdated={(data) => {
             const updated = { ...currentUser, display_name: data.display_name };
             setCurrentUser(updated);
-            localStorage.setItem("currentUser", JSON.stringify({ user: updated, loginTime: Date.now() }));
+            localStorage.setItem("currentUser", JSON.stringify({ user: updated, token: authToken, loginTime: Date.now() }));
           }}
         />
       )}
@@ -2888,7 +2913,7 @@ export default function App() {
         <ChannelProfileModal
           channelId={selectedId}
           channelName={selectedChannel?.name || ""}
-          userToken={currentUser.user_id}
+          userToken={authToken!}
           onClose={() => setChannelProfileOpen(false)}
         />
       )}
@@ -3239,8 +3264,8 @@ export default function App() {
                           {form && selectedId && m.sender_type === "bot" && (
                             <GuideFormBlock msgId={m.msg_id} form={form} channelId={selectedId}
                               onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                              onChannelsRefresh={() => refreshChannels(setChannels, currentUser?.user_id)}
-                              userToken={currentUser?.user_id} />
+                              onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
+                              userToken={authToken ?? undefined} />
                           )}
                           {clarifyStatus !== null && selectedId && (
                             <ClarifyInlineBlock msgId={m.msg_id} schema={clarify!} status={clarifyStatus}
@@ -3373,8 +3398,8 @@ export default function App() {
                                     {rForm && selectedId && r.sender_type === "bot" && (
                                       <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
                                         onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                                        onChannelsRefresh={() => refreshChannels(setChannels, currentUser?.user_id)}
-                                        userToken={currentUser?.user_id} />
+                                        onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
+                                        userToken={authToken ?? undefined} />
                                     )}
                                     {rClarifyStatus !== null && selectedId && (
                                       <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
