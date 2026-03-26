@@ -72,7 +72,7 @@ type ClarifySettings = {
   clarify_threshold: number;
 };
 
-function refreshChannels(setChannels: (c: Channel[]) => void, token?: string) {
+function refreshChannels(setChannels: (c: Channel[]) => void, token?: string | null) {
   const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   fetch(`${API}/channels`, { headers }).then((r) => r.json()).then((d) => d.data && setChannels(d.data)).catch(console.error);
 }
