@@ -267,7 +267,7 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
             User(
                 user_id=DEV_USER_ID,
                 username="dev",
-                password_hash=hash_password("dev"),
+                password_hash=hash_password("dev#Nexus2024"),
                 display_name="开发测试用户",
                 role="member",
             )
@@ -280,7 +280,7 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
             User(
                 user_id=ADMIN_USER_ID,
                 username="admin",
-                password_hash=hash_password("admin"),
+                password_hash=hash_password("admin#Nexus2024"),
                 display_name="系统管理员",
                 role="system_admin",
             )
