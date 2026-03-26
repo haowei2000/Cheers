@@ -89,8 +89,16 @@ export default function AdminPage() {
   const currentUser = getCurrentUser();
   const userRole = currentUser?.role || "";
 
-  // 带认证头的 fetch 工具
-  const token = currentUser?.user_id;
+  // 带认证头的 fetch 工具（使用 JWT token）
+  const getAuthToken = (): string | null => {
+    try {
+      const stored = localStorage.getItem("currentUser");
+      if (!stored) return null;
+      const data = JSON.parse(stored);
+      return data.token ?? data.user?.user_id ?? null;
+    } catch { return null; }
+  };
+  const token = getAuthToken();
   const authFetch = (url: string, options: RequestInit = {}) =>
     fetch(url, {
       ...options,

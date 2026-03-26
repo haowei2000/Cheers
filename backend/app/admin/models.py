@@ -11,6 +11,7 @@ from app.chat_core.schemas import (
 from app.db.models import AIModel, User
 from app.db.session import get_session
 from app.auth.routes import get_current_user
+from app.utils.crypto import decrypt_value, encrypt_value
 
 router = APIRouter(
     prefix="/api/admin/models",
@@ -19,12 +20,15 @@ router = APIRouter(
 
 
 def _mask_api_key(key: str | None) -> str | None:
-    """隐藏 API Key，只显示前4位和后4位."""
+    """隐藏 API Key，只显示前4位和后4位（解密后再脱敏）."""
     if not key:
         return None
-    if len(key) <= 8:
+    plain = decrypt_value(key)
+    if not plain:
+        return None
+    if len(plain) <= 8:
         return "****"
-    return key[:4] + "****" + key[-4:]
+    return plain[:4] + "****" + plain[-4:]
 
 
 @router.get("")
@@ -67,7 +71,7 @@ async def create_model(
         provider=body.provider.strip().lower(),
         model_name=body.model_name.strip(),
         base_url=body.base_url.strip(),
-        api_key=body.api_key.strip() if body.api_key else None,
+        api_key=encrypt_value(body.api_key.strip()) if body.api_key else None,
         description=body.description.strip() if body.description else None,
         is_enabled=body.is_enabled,
         config=body.config or {},
@@ -135,7 +139,7 @@ async def update_model(
     if body.base_url is not None:
         model.base_url = body.base_url.strip()
     if body.api_key is not None:
-        model.api_key = body.api_key.strip() if body.api_key else None
+        model.api_key = encrypt_value(body.api_key.strip()) if body.api_key else None
     if body.description is not None:
         model.description = body.description.strip() if body.description else None
     if body.is_enabled is not None:
