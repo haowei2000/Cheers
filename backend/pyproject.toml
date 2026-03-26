@@ -61,3 +61,8 @@ pythonpath = ["."]
 [tool.flake8]
 max-line-length = 120
 extend-ignore = ["E501"]
+
+# uv 镜像配置 - 使用阿里云 PyPI 镜像
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true
