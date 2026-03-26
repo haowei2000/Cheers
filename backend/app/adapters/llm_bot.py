@@ -166,6 +166,11 @@ class LLMBotAdapter(OpenClawAdapter):
             if key in api_config:
                 body[key] = api_config[key]
 
+        # 重要：如果模型配置中有 stream=true，必须忽略它，由代码根据 stream_token_cb 决定是否流式
+        # 否则 LLM 会返回流式响应，导致非流式处理的 response.json() 挂起
+        if api_config.get("stream"):
+            logger.warning("llm_bot: model config has stream=true, ignoring it")
+
         logger.info(
             "llm_bot: bot=%s model=%s/%s task_id=%s attachments=%d",
             self.bot.username,
@@ -211,6 +216,33 @@ class LLMBotAdapter(OpenClawAdapter):
 
             response = await client.post(url, json=body, headers=headers, timeout=timeout)
             response.raise_for_status()
+
+            # 检测：如果响应是流式 (text/event-stream)，即使没设置 stream=true 也要按流式处理
+            content_type = response.headers.get("content-type", "")
+            if "text/event-stream" in content_type:
+                logger.warning("llm_bot: received streaming response unexpectedly, draining stream")
+                full_content = ""
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+                    full_content += delta
+                if not full_content:
+                    return AgentResponse(
+                        content="",
+                        task_id=task_id,
+                        success=False,
+                        error_message="LLM 返回空内容",
+                    )
+                return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
+
             data = response.json()
 
             choices = data.get("choices", [])

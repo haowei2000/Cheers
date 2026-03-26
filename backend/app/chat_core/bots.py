@@ -66,9 +66,10 @@ async def _validate_model_and_template(
 
 @router.get("")
 async def list_bots(
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取所有 Bot 账号列表."""
+    """获取所有 Bot 账号列表（需要登录）."""
     result = await session.execute(
         select(BotAccount).order_by(BotAccount.created_at.desc())
     )
@@ -166,9 +167,10 @@ async def create_bot(
 @router.get("/{bot_id}")
 async def get_bot(
     bot_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取单个 Bot 详情."""
+    """获取单个 Bot 详情（需要登录）."""
     result = await session.execute(
         select(BotAccount).where(BotAccount.bot_id == bot_id)
     )
