@@ -58,9 +58,9 @@ class BotAccount(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Bot 描述
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
-    # 关联模型和模板
-    model_id: Mapped[str] = mapped_column(String(36), ForeignKey("ai_models.model_id"), nullable=False)
-    template_id: Mapped[str] = mapped_column(String(36), ForeignKey("prompt_templates.template_id"), nullable=False)
+    # 关联模型和模板（内置 Bot 可为 None）
+    model_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("ai_models.model_id"), nullable=True)
+    template_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("prompt_templates.template_id"), nullable=True)
 
     # 可选：自定义覆盖
     custom_system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 覆盖模板的 system_prompt
@@ -71,8 +71,8 @@ class BotAccount(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     # Relationships
-    ai_model: Mapped["AIModel"] = relationship("AIModel", lazy="joined")
-    prompt_template: Mapped["PromptTemplate"] = relationship("PromptTemplate", lazy="joined")
+    ai_model: Mapped[Optional["AIModel"]] = relationship("AIModel", lazy="joined")
+    prompt_template: Mapped[Optional["PromptTemplate"]] = relationship("PromptTemplate", lazy="joined")
 
 
 class BotRegistrationRequest(Base):
@@ -250,3 +250,11 @@ class Friendship(Base):
     # Relationships
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id], lazy="joined")
     friend: Mapped["User"] = relationship("User", foreign_keys=[friend_id], lazy="joined")
+
+
+class SystemSetting(Base):
+    """系统配置键值表（替代 admin_settings.json）。"""
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

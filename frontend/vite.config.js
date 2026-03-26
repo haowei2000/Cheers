@@ -7,7 +7,7 @@ export default defineConfig({
         proxy: {
             "/api": { target: "http://localhost:8000", changeOrigin: true },
             "/ws": { target: "ws://localhost:8000", ws: true },
-            "/docs": { target: "http://localhost:8000", changeOrigin: true },
+            "/docs": { target: "http://localhost:0000", changeOrigin: true },
             "/health": { target: "http://localhost:8000", changeOrigin: true },
             "/manual": { target: "http://localhost:8000", changeOrigin: true },
         },

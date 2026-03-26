@@ -1,61 +1,60 @@
-"""Context Store：SQLite（WAL）主存储 + 四层 key 读写（ADR D-02）."""
-import os
-from pathlib import Path
+"""Context Store：四层 key 读写（ADR D-02）."""
+from datetime import datetime, timezone
 
-import aiosqlite
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.config import settings
 
 LAYERS = ("ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "PROGRESS")
 
+_engine = create_async_engine(settings.context_db_url, echo=False, future=True)
+_session_factory = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
-async def init_context_db(db_path: str) -> None:
-    """创建 SQLite 数据库并开启 WAL，建表."""
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    async with aiosqlite.connect(db_path) as conn:
-        await conn.execute("PRAGMA journal_mode=WAL")
-        await conn.execute(
-            """
+
+async def init_context_db() -> None:
+    """创建 context_store 表（如果不存在）."""
+    async with _engine.begin() as conn:
+        await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS context_store (
-                channel_id TEXT NOT NULL,
-                layer TEXT NOT NULL,
+                channel_id VARCHAR(255) NOT NULL,
+                layer VARCHAR(50) NOT NULL,
                 content TEXT NOT NULL DEFAULT '',
                 updated_at TEXT,
                 PRIMARY KEY (channel_id, layer)
             )
-            """
-        )
-        await conn.commit()
+        """))
 
 
-async def get_layer(db_path: str, channel_id: str, layer: str) -> str:
+async def get_layer(channel_id: str, layer: str) -> str:
     """读取一层内容，不存在则返回空字符串."""
-    async with aiosqlite.connect(db_path) as conn:
-        cursor = await conn.execute(
-            "SELECT content FROM context_store WHERE channel_id = ? AND layer = ?",
-            (channel_id, layer),
+    async with _session_factory() as session:
+        result = await session.execute(
+            text("SELECT content FROM context_store WHERE channel_id = :cid AND layer = :layer"),
+            {"cid": channel_id, "layer": layer},
         )
-        row = await cursor.fetchone()
+        row = result.fetchone()
         return (row[0] or "") if row else ""
 
 
-async def set_layer(db_path: str, channel_id: str, layer: str, content: str) -> None:
-    """写入一层（先 SQLite），调用方负责异步同步到 MD."""
-    from datetime import datetime, timezone
+async def set_layer(channel_id: str, layer: str, content: str) -> None:
+    """写入一层（UPSERT）."""
     now = datetime.now(timezone.utc).isoformat()
-    async with aiosqlite.connect(db_path) as conn:
-        await conn.execute(
-            """
-            INSERT INTO context_store (channel_id, layer, content, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (channel_id, layer) DO UPDATE SET content = ?, updated_at = ?
-            """,
-            (channel_id, layer, content, now, content, now),
+    async with _session_factory() as session:
+        await session.execute(
+            text("""
+                INSERT INTO context_store (channel_id, layer, content, updated_at)
+                VALUES (:cid, :layer, :content, :now)
+                ON CONFLICT (channel_id, layer) DO UPDATE SET content = :content, updated_at = :now
+            """),
+            {"cid": channel_id, "layer": layer, "content": content, "now": now},
         )
-        await conn.commit()
+        await session.commit()
 
 
-async def get_all_layers(db_path: str, channel_id: str) -> dict[str, str]:
+async def get_all_layers(channel_id: str) -> dict[str, str]:
     """读取频道四层记忆，供 Orchestrator 注入."""
     result = {}
     for layer in LAYERS:
-        result[layer.lower()] = await get_layer(db_path, channel_id, layer)
+        result[layer.lower()] = await get_layer(channel_id, layer)
     return result

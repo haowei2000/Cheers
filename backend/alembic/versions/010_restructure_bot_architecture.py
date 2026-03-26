@@ -30,7 +30,7 @@ def upgrade() -> None:
         sa.Column("is_enabled", sa.Boolean(), nullable=False, default=True),
         sa.Column("is_builtin", sa.Boolean(), nullable=False, default=False),
         sa.Column("config", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("(datetime('now'))")),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.PrimaryKeyConstraint("model_id"),
         sa.UniqueConstraint("name"),
     )
@@ -45,7 +45,7 @@ def upgrade() -> None:
         sa.Column("user_template", sa.Text(), nullable=False, default="{{message}}"),
         sa.Column("variables", sa.JSON(), nullable=True),
         sa.Column("is_builtin", sa.Boolean(), nullable=False, default=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("(datetime('now'))")),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.PrimaryKeyConstraint("template_id"),
         sa.UniqueConstraint("name"),
     )
@@ -66,7 +66,7 @@ def upgrade() -> None:
         sa.Column("custom_system_prompt", sa.Text(), nullable=True),
         sa.Column("status", sa.String(32), nullable=False, server_default="online"),
         sa.Column("intro", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("(datetime('now'))")),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.PrimaryKeyConstraint("bot_id"),
         sa.UniqueConstraint("username"),
     )
@@ -102,7 +102,7 @@ def downgrade() -> None:
         sa.Column("model_temperature", sa.Float(), nullable=True),
         sa.Column("model_max_tokens", sa.Integer(), nullable=True),
         sa.Column("model_extra_config", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("(datetime('now'))")),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.PrimaryKeyConstraint("bot_id"),
         sa.UniqueConstraint("username"),
     )

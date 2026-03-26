@@ -1,22 +1,11 @@
 """RECENT 层异步更新：Bot 响应后压缩近期消息（系统 LLM 或简单截断），不阻塞主消息流。"""
 import asyncio
-import os
-from pathlib import Path
 
 from sqlalchemy import select
-from app.config import settings
 from app.db.models import Message
 from app.db.session import async_session_factory
 from app.memory.context_store import init_context_db, set_layer
 from app.memory.manager import sync_channel_to_md
-
-
-def _context_db_path() -> str:
-    p = settings.sqlite_context_path
-    if not os.path.isabs(p):
-        base = Path(__file__).resolve().parent.parent.parent.parent
-        p = str(base / p)
-    return p
 
 RECENT_MAX_CHARS = 1500
 LAST_N_MESSAGES = 50
@@ -101,9 +90,8 @@ async def update_recent_async(channel_id: str) -> None:
         else:
             content = _truncate_recent(raw)
 
-        db_path = _context_db_path()
-        await init_context_db(db_path)
-        await set_layer(db_path, channel_id, "RECENT", content)
+        await init_context_db()
+        await set_layer(channel_id, "RECENT", content)
         await sync_channel_to_md(channel_id)
     except Exception:
         pass

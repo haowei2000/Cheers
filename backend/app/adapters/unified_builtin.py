@@ -223,13 +223,23 @@ def _make_tools(ctx: dict) -> list:
             return f"@{username} 调用出错：{e}"
 
     @tool(return_direct=True)
-    async def ask_user(question: str, options: list[str], allow_multiple: bool = False) -> str:
+    async def ask_user(
+        question: str,
+        options: list[str],
+        allow_multiple: bool = False,
+        allow_manual: bool = False,
+        manual_label: str = "其他（手动输入）",
+        manual_placeholder: str = "请输入您的回答...",
+    ) -> str:
         """向用户发出选择题，Agent 立即暂停等待用户回答后再继续。
 
         Args:
             question: 问题标题
             options: 选项列表（至少 2 个）
             allow_multiple: 是否允许多选，默认 False
+            allow_manual: 是否允许手动输入，默认 False。设为 True 时会在选项末尾添加手动输入框
+            manual_label: 手动输入选项的显示标签，默认 "其他（手动输入）"
+            manual_placeholder: 手动输入框的占位提示文字，默认 "请输入您的回答..."
         """
         if not question.strip() or len(options) < 2:
             return "错误：ask_user 需要 question 和至少 2 个选项"
@@ -243,9 +253,9 @@ def _make_tools(ctx: dict) -> list:
                     "prompt": question,
                     "allow_multiple": allow_multiple,
                     "options": [{"id": f"a{i}", "label": str(opt)} for i, opt in enumerate(options)],
-                    "other_enabled": False,
-                    "other_label": "其他",
-                    "other_placeholder": "",
+                    "other_enabled": allow_manual,
+                    "other_label": manual_label or "其他（手动输入）",
+                    "other_placeholder": manual_placeholder or "请输入您的回答...",
                 }
             ],
         }
