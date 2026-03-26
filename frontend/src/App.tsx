@@ -1448,6 +1448,12 @@ export default function App() {
   // 加密消息状态
   const [secretMode, setSecretMode] = useState(false);
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, string>>({});
+  const [secretTokens, setSecretTokens] = useState<Record<string, string>>({}); // msg_id -> token（仅发送方当次 session 持有）
+  const [secretNow, setSecretNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setSecretNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
   // Lightbox 状态
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
@@ -1907,6 +1913,10 @@ export default function App() {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]
           );
+          // 保存 secret_token（仅发送方当次 session 持有，不通过 WS 广播）
+          if (d.data.secret_token) {
+            setSecretTokens((prev) => ({ ...prev, [d.data.msg_id]: d.data.secret_token }));
+          }
         }
       })
       .catch(console.error);
@@ -3221,7 +3231,11 @@ export default function App() {
                       ? new Date(m.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
                       : "";
 
-                    const isSecretUnrevealed = m.is_secret && !revealedContent;
+                    const secretSecsLeft = (m.is_secret && !revealedContent && m.created_at)
+                      ? Math.max(0, 60 - Math.floor((secretNow - new Date(m.created_at).getTime()) / 1000))
+                      : null;
+                    const isSecretExpired = secretSecsLeft !== null && secretSecsLeft <= 0;
+                    const isSecretUnrevealed = m.is_secret && !revealedContent && !isSecretExpired;
                     const rootBubble = isOwn ? (
                       <div id={`msg-${m.msg_id}`} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
                         <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">我</div>
@@ -3233,12 +3247,15 @@ export default function App() {
                           <div className="flex flex-col items-end max-w-[72%]">
                             <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
                             {renderFileAttachments(m, true)}
-                            <div className={`${isSecretUnrevealed ? "bg-amber-500" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}>
-                              {isSecretUnrevealed ? (
+                            <div className={`${isSecretUnrevealed ? "bg-amber-500" : isSecretExpired ? "bg-gray-400" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}>
+                              {isSecretExpired ? (
+                                <span className="opacity-80">🔒 加密消息（已过期）</span>
+                              ) : isSecretUnrevealed ? (
                                 <div className="flex items-center gap-2">
                                   <span>🔒 加密消息</span>
-                                  <button type="button" onClick={() => {
-                                    fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret`, {
+                                  {secretSecsLeft !== null && <span className="text-[11px] opacity-70 tabular-nums">{secretSecsLeft}s</span>}
+                                  {secretTokens[m.msg_id] && <button type="button" onClick={() => {
+                                    fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret?token=${encodeURIComponent(secretTokens[m.msg_id])}`, {
                                       headers: { Authorization: `Bearer ${authToken}` },
                                     })
                                       .then((r) => r.json())
@@ -3251,7 +3268,7 @@ export default function App() {
                                       })
                                       .catch(() => alert("请求失败"));
                                   }}
-                                    className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
+                                    className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>}
                                 </div>
                               ) : (() => {
                                 const q = parseQuotePrefix(displayContent);
@@ -3288,12 +3305,15 @@ export default function App() {
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
                           {renderFileAttachments(m)}
-                          <div className={`${isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}>
-                            {isSecretUnrevealed ? (
+                          <div className={`${isSecretExpired ? "bg-gray-100" : isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}>
+                            {isSecretExpired ? (
+                              <span className="text-gray-400">🔒 加密消息（已过期）</span>
+                            ) : isSecretUnrevealed ? (
                               <div className="flex items-center gap-2 text-amber-700">
                                 <span>🔒 加密消息</span>
-                                <button type="button" onClick={() => {
-                                  fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret`, {
+                                {secretSecsLeft !== null && <span className="text-[11px] opacity-70 tabular-nums">{secretSecsLeft}s</span>}
+                                {secretTokens[m.msg_id] && <button type="button" onClick={() => {
+                                  fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret?token=${encodeURIComponent(secretTokens[m.msg_id])}`, {
                                     headers: { Authorization: `Bearer ${authToken}` },
                                   })
                                     .then((r) => r.json())
@@ -3306,7 +3326,7 @@ export default function App() {
                                     })
                                     .catch(() => alert("请求失败"));
                                 }}
-                                  className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
+                                  className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>}
                               </div>
                             ) : m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
