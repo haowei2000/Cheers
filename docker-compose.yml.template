@@ -4,14 +4,16 @@ services:
       context: ./backend
     restart: unless-stopped
     ports:
-      - "${BACKEND_HOST_PORT:-8002}:8000"
+      - "${BACKEND_HOST_PORT:-8000}:8000"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///data/main.db
       - REDIS_URL=redis://redis:6379/0
       - SQLITE_CONTEXT_PATH=data/context_store/context.db
       - DATA_DIR=data
       - STORAGE_BACKEND=${STORAGE_BACKEND:-s3}
-      - STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT:-http://rustfs:9000}
+      - STORAGE_S3_ENDPOINT=http://rustfs:9000
       - STORAGE_S3_PUBLIC_ENDPOINT=${STORAGE_S3_PUBLIC_ENDPOINT:-http://localhost:9000}
       - STORAGE_S3_REGION=${STORAGE_S3_REGION:-us-east-1}
       - STORAGE_S3_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-admin}
@@ -48,7 +50,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "${REDIS_HOST_PORT:-6389}:6379"
+      - "${REDIS_HOST_PORT:-6379}:6379"
 
   rustfs:
     image: rustfs/rustfs:latest
