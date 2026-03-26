@@ -1447,8 +1447,6 @@ export default function App() {
   const [imageEditPreview, setImageEditPreview] = useState<{ file_id: string; preview_url: string } | null>(null);
   // 加密消息状态
   const [secretMode, setSecretMode] = useState(false);
-  const [secretTokenDialog, setSecretTokenDialog] = useState<{ msgId: string; channelId: string } | null>(null);
-  const [secretTokenInput, setSecretTokenInput] = useState("");
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, string>>({});
   // Lightbox 状态
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -1476,6 +1474,7 @@ export default function App() {
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(new Set());
   const [, setHasMore] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [waitingForBotReply, setWaitingForBotReply] = useState(false);
   const [processingBots, setProcessingBots] = useState<Record<string, string>>({});
@@ -1906,10 +1905,6 @@ export default function App() {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]
           );
-          // 如果是加密消息，记录 secret_token 供发送者直接查看
-          if (isSecretSend && d.data.secret_token) {
-            setRevealedSecrets((prev) => ({ ...prev, [d.data.msg_id]: content }));
-          }
         }
       })
       .catch(console.error);
@@ -3229,7 +3224,7 @@ export default function App() {
                       <div id={`msg-${m.msg_id}`} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
                         <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">我</div>
                         <div className="flex items-end gap-1.5">
-                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
+                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                             className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1">
                             {replyIcon}
                           </button>
@@ -3240,7 +3235,20 @@ export default function App() {
                               {isSecretUnrevealed ? (
                                 <div className="flex items-center gap-2">
                                   <span>🔒 加密消息</span>
-                                  <button type="button" onClick={() => { setSecretTokenDialog({ msgId: m.msg_id, channelId: selectedId ?? "" }); setSecretTokenInput(""); }}
+                                  <button type="button" onClick={() => {
+                                    fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret`, {
+                                      headers: { Authorization: `Bearer ${authToken}` },
+                                    })
+                                      .then((r) => r.json())
+                                      .then((d) => {
+                                        if (d.data?.content) {
+                                          setRevealedSecrets((prev) => ({ ...prev, [m.msg_id]: d.data.content }));
+                                        } else {
+                                          alert(d.detail || "无法查看加密内容");
+                                        }
+                                      })
+                                      .catch(() => alert("请求失败"));
+                                  }}
                                     className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
                                 </div>
                               ) : (() => {
@@ -3282,7 +3290,20 @@ export default function App() {
                             {isSecretUnrevealed ? (
                               <div className="flex items-center gap-2 text-amber-700">
                                 <span>🔒 加密消息</span>
-                                <button type="button" onClick={() => { setSecretTokenDialog({ msgId: m.msg_id, channelId: selectedId ?? "" }); setSecretTokenInput(""); }}
+                                <button type="button" onClick={() => {
+                                  fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret`, {
+                                    headers: { Authorization: `Bearer ${authToken}` },
+                                  })
+                                    .then((r) => r.json())
+                                    .then((d) => {
+                                      if (d.data?.content) {
+                                        setRevealedSecrets((prev) => ({ ...prev, [m.msg_id]: d.data.content }));
+                                      } else {
+                                        alert(d.detail || "无法查看加密内容");
+                                      }
+                                    })
+                                    .catch(() => alert("请求失败"));
+                                }}
                                   className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
                               </div>
                             ) : m._streaming && !text
@@ -3303,7 +3324,7 @@ export default function App() {
                               onSkip={() => handleClarifySkip(m.msg_id)} />
                           )}
                         </div>
-                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); inputRef.current?.focus(); }}
+                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                           className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
                           {replyIcon}
                         </button>
@@ -3439,7 +3460,7 @@ export default function App() {
                                   </>
                                 )}
                               </div>
-                              <button type="button" title="回复" onClick={() => { setReplyingTo(r); inputRef.current?.focus(); }}
+                              <button type="button" title="回复" onClick={() => { setReplyingTo(r); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                                 className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
                                   <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
@@ -3575,23 +3596,23 @@ export default function App() {
                       const v = e.target.value;
                       const pos = e.target.selectionStart ?? v.length;
                       setInput(v);
-                      const lastAt = v.lastIndexOf("@", pos - 1);
-                      if (lastAt !== -1) {
-                        const after = v.slice(lastAt + 1, pos);
-                        if (!after.includes(" ") && !after.includes("\n")) {
-                          // 根据当前输入框在视口中的位置，动态决定下拉在上方还是下方展示
-                          const rect = e.target.getBoundingClientRect();
-                          const spaceBelow = window.innerHeight - rect.bottom;
-                          const spaceAbove = rect.top;
-                          // 预留约 180px 作为下拉所需空间，不够则优先放到上方
-                          if (spaceBelow < 180 && spaceAbove > spaceBelow) {
-                            setMentionDropdownPlacement("top");
-                          } else {
-                            setMentionDropdownPlacement("bottom");
+                      if (!secretMode) {
+                        const lastAt = v.lastIndexOf("@", pos - 1);
+                        if (lastAt !== -1) {
+                          const after = v.slice(lastAt + 1, pos);
+                          if (!after.includes(" ") && !after.includes("\n")) {
+                            const rect = e.target.getBoundingClientRect();
+                            const spaceBelow = window.innerHeight - rect.bottom;
+                            const spaceAbove = rect.top;
+                            if (spaceBelow < 180 && spaceAbove > spaceBelow) {
+                              setMentionDropdownPlacement("top");
+                            } else {
+                              setMentionDropdownPlacement("bottom");
+                            }
+                            setShowMentionDropdown(true);
+                            setMentionFilter(after);
+                            return;
                           }
-                          setShowMentionDropdown(true);
-                          setMentionFilter(after);
-                          return;
                         }
                       }
                       setShowMentionDropdown(false);
@@ -4049,43 +4070,6 @@ export default function App() {
           className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl cursor-default"
           onClick={(e) => e.stopPropagation()}
         />
-      </div>
-    )}
-    {/* 加密消息解密对话框 */}
-    {secretTokenDialog && (
-      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40" onClick={() => setSecretTokenDialog(null)}>
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-[15px] font-semibold text-gray-800 mb-1">查看加密消息</h3>
-          <p className="text-[13px] text-gray-500 mb-4">请输入发送方提供的解密 Token</p>
-          <input
-            type="text"
-            value={secretTokenInput}
-            onChange={(e) => setSecretTokenInput(e.target.value)}
-            placeholder="粘贴解密 Token…"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-amber-400 mb-3"
-            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.closest("div")?.querySelector<HTMLButtonElement>("button[data-confirm]")?.click(); }}
-          />
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={() => setSecretTokenDialog(null)}
-              className="px-4 py-1.5 rounded-lg text-[13px] text-gray-600 hover:bg-gray-100">取消</button>
-            <button type="button" data-confirm
-              onClick={() => {
-                if (!secretTokenInput.trim()) return;
-                fetch(`${API}/channels/${secretTokenDialog.channelId}/messages/${secretTokenDialog.msgId}/secret?token=${encodeURIComponent(secretTokenInput.trim())}`)
-                  .then((r) => r.json())
-                  .then((d) => {
-                    if (d.data?.content) {
-                      setRevealedSecrets((prev) => ({ ...prev, [secretTokenDialog.msgId]: d.data.content }));
-                      setSecretTokenDialog(null);
-                    } else {
-                      alert(d.detail || "Token 无效或已过期");
-                    }
-                  })
-                  .catch(() => alert("解密失败，请检查 Token"));
-              }}
-              className="px-4 py-1.5 rounded-lg text-[13px] font-semibold bg-amber-500 text-white hover:bg-amber-600">解密查看</button>
-          </div>
-        </div>
       </div>
     )}
     </>

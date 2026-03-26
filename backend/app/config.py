@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     image_gen_default_model: str = "qwen-image-2.0-pro"
 
     model_config = {
-        "env_file": ".env",
+        "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }
