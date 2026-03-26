@@ -29,6 +29,8 @@ type Message = {
   in_reply_to_msg_id?: string | null;
   file_ids?: string[];
   files?: FileInfo[];
+  is_secret?: boolean;
+  secret_token?: string;
 };
 type QaPair = { question: Message; answer: Message };
 type ContextData = Record<string, string>;
@@ -1443,6 +1445,11 @@ export default function App() {
   const [imageEditSize, setImageEditSize] = useState("1024*1024");
   const [imageEditLoading, setImageEditLoading] = useState(false);
   const [imageEditPreview, setImageEditPreview] = useState<{ file_id: string; preview_url: string } | null>(null);
+  // 加密消息状态
+  const [secretMode, setSecretMode] = useState(false);
+  const [secretTokenDialog, setSecretTokenDialog] = useState<{ msgId: string; channelId: string } | null>(null);
+  const [secretTokenInput, setSecretTokenInput] = useState("");
+  const [revealedSecrets, setRevealedSecrets] = useState<Record<string, string>>({});
   // Lightbox 状态
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
@@ -1872,14 +1879,17 @@ export default function App() {
       const quotedText = quotedRaw.replace(/\n+/g, " ").trim().slice(0, 400);
       content = `> [${refLabel}]: ${quotedText}\n\n${content}`;
     }
+    const isSecretSend = secretMode;
     const body: Record<string, unknown> = {
       content,
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: pendingFileIds,
+      is_secret: isSecretSend,
     };
     if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
     setInput("");
+    setSecretMode(false);
     setPendingFileIds([]);
     setPendingFileNames([]);
     setPendingFilePreviews((prev) => { prev.forEach((u) => { if (u) URL.revokeObjectURL(u); }); return []; });
@@ -1896,6 +1906,10 @@ export default function App() {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]
           );
+          // 如果是加密消息，记录 secret_token 供发送者直接查看
+          if (isSecretSend && d.data.secret_token) {
+            setRevealedSecrets((prev) => ({ ...prev, [d.data.msg_id]: content }));
+          }
         }
       })
       .catch(console.error);
@@ -3188,7 +3202,9 @@ export default function App() {
                     );
 
                     // ── root message ───────────────────────────────────────
-                    const { text, form, clarify } = parseGuidePayload(m.content);
+                    const revealedContent = revealedSecrets[m.msg_id];
+                    const effectiveContent = m.is_secret ? (revealedContent ?? m.content) : m.content;
+                    const { text, form, clarify } = parseGuidePayload(effectiveContent);
                     const clarifyAnswered = !!clarify && messages.some(
                       (r) => r.in_reply_to_msg_id === m.msg_id && isClarifyReplyUserMessage(r.content)
                     );
@@ -3197,9 +3213,9 @@ export default function App() {
                       clarify && m.sender_type === "bot"
                         ? clarifyWaiting ? "waiting" : clarifyAnswered ? "answered" : "form"
                         : null;
-                    const displayContent = isClarifyReplyUserMessage(m.content)
-                      ? m.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
-                      : (text || m.content);
+                    const displayContent = isClarifyReplyUserMessage(effectiveContent)
+                      ? effectiveContent.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                      : (text || effectiveContent);
                     const isOwn = m.sender_type === "user" && m.sender_id === currentUserId;
                     const senderBot = m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
                     const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
@@ -3208,6 +3224,7 @@ export default function App() {
                       ? new Date(m.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
                       : "";
 
+                    const isSecretUnrevealed = m.is_secret && !revealedContent;
                     const rootBubble = isOwn ? (
                       <div id={`msg-${m.msg_id}`} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
                         <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">我</div>
@@ -3219,8 +3236,14 @@ export default function App() {
                           <div className="flex flex-col items-end max-w-[72%]">
                             <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
                             {renderFileAttachments(m, true)}
-                            <div className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words">
-                              {(() => {
+                            <div className={`${isSecretUnrevealed ? "bg-amber-500" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}>
+                              {isSecretUnrevealed ? (
+                                <div className="flex items-center gap-2">
+                                  <span>🔒 加密消息</span>
+                                  <button type="button" onClick={() => { setSecretTokenDialog({ msgId: m.msg_id, channelId: selectedId ?? "" }); setSecretTokenInput(""); }}
+                                    className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
+                                </div>
+                              ) : (() => {
                                 const q = parseQuotePrefix(displayContent);
                                 if (q) return (
                                   <>
@@ -3255,11 +3278,17 @@ export default function App() {
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
                           {renderFileAttachments(m)}
-                          <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
-                            {m._streaming && !text
+                          <div className={`${isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}>
+                            {isSecretUnrevealed ? (
+                              <div className="flex items-center gap-2 text-amber-700">
+                                <span>🔒 加密消息</span>
+                                <button type="button" onClick={() => { setSecretTokenDialog({ msgId: m.msg_id, channelId: selectedId ?? "" }); setSecretTokenInput(""); }}
+                                  className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
+                              </div>
+                            ) : m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                               : renderWithThinkFolding(text, `${m.msg_id}-`, !!m._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
-                            {m._streaming && !!text && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
+                            {!isSecretUnrevealed && m._streaming && !!text && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
                           </div>
                           {form && selectedId && m.sender_type === "bot" && (
                             <GuideFormBlock msgId={m.msg_id} form={form} channelId={selectedId}
@@ -3577,8 +3606,8 @@ export default function App() {
                         send();
                       }
                     }}
-                    placeholder={`发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`}
-                    className="w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] text-gray-900 placeholder-gray-400 bg-transparent"
+                    placeholder={secretMode ? "输入加密内容（仅 Bot 可读取原文）…" : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`}
+                    className={`w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] placeholder-gray-400 bg-transparent ${secretMode ? "text-amber-700" : "text-gray-900"}`}
                     rows={1}
                   />
                 </div>
@@ -3615,18 +3644,26 @@ export default function App() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSecretMode((v) => !v)}
+                      title={secretMode ? "取消加密模式" : "开启加密模式（仅 Bot 可读原文）"}
+                      className={`w-8 h-8 flex items-center justify-center rounded-lg text-base transition-colors ${
+                        secretMode ? "bg-amber-100 text-amber-600 hover:bg-amber-200" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                      }`}
+                    >🔒</button>
                     <span className="text-[12px] text-gray-400 hidden sm:inline select-none">Ctrl+Enter</span>
                     <button
                       type="button"
                       onClick={send}
                       className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${
                         input.trim() || pendingFileIds.length > 0
-                          ? "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
+                          ? secretMode ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm" : "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
                           : "bg-gray-100 text-gray-400 cursor-not-allowed"
                       }`}
                       disabled={!input.trim() && pendingFileIds.length === 0}
                     >
-                      发送
+                      {secretMode ? "加密发送" : "发送"}
                     </button>
                   </div>
                 </div>
@@ -4012,6 +4049,43 @@ export default function App() {
           className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl cursor-default"
           onClick={(e) => e.stopPropagation()}
         />
+      </div>
+    )}
+    {/* 加密消息解密对话框 */}
+    {secretTokenDialog && (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40" onClick={() => setSecretTokenDialog(null)}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+          <h3 className="text-[15px] font-semibold text-gray-800 mb-1">查看加密消息</h3>
+          <p className="text-[13px] text-gray-500 mb-4">请输入发送方提供的解密 Token</p>
+          <input
+            type="text"
+            value={secretTokenInput}
+            onChange={(e) => setSecretTokenInput(e.target.value)}
+            placeholder="粘贴解密 Token…"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-[13px] outline-none focus:border-amber-400 mb-3"
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.closest("div")?.querySelector<HTMLButtonElement>("button[data-confirm]")?.click(); }}
+          />
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => setSecretTokenDialog(null)}
+              className="px-4 py-1.5 rounded-lg text-[13px] text-gray-600 hover:bg-gray-100">取消</button>
+            <button type="button" data-confirm
+              onClick={() => {
+                if (!secretTokenInput.trim()) return;
+                fetch(`${API}/channels/${secretTokenDialog.channelId}/messages/${secretTokenDialog.msgId}/secret?token=${encodeURIComponent(secretTokenInput.trim())}`)
+                  .then((r) => r.json())
+                  .then((d) => {
+                    if (d.data?.content) {
+                      setRevealedSecrets((prev) => ({ ...prev, [secretTokenDialog.msgId]: d.data.content }));
+                      setSecretTokenDialog(null);
+                    } else {
+                      alert(d.detail || "Token 无效或已过期");
+                    }
+                  })
+                  .catch(() => alert("解密失败，请检查 Token"));
+              }}
+              className="px-4 py-1.5 rounded-lg text-[13px] font-semibold bg-amber-500 text-white hover:bg-amber-600">解密查看</button>
+          </div>
+        </div>
       </div>
     )}
     </>

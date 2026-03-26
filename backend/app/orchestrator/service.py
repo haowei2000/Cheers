@@ -15,6 +15,7 @@ from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Mes
 from app.file_processor.service import FileFlowError, FilePipelineService
 from app.orchestrator.mention import extract_mentions, filter_mentioned_bots
 from app.orchestrator.orchestrator_adapter import extract_suggested_bots
+from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.orchestrator.service")
 
@@ -79,6 +80,16 @@ def _apply_prompt_template(template: str | None, user_message: str) -> str:
     return result
 
 
+def _get_trigger_content(msg: Message) -> str:
+    """返回触发消息的真实文本（加密消息自动解密后返回）。"""
+    if msg.is_secret and msg.secret_encrypted:
+        try:
+            return decrypt_value(msg.secret_encrypted)
+        except Exception:
+            logger.warning("orchestrator: failed to decrypt secret message msg_id=%s", msg.msg_id)
+    return msg.content
+
+
 async def run_orchestrator(
     channel_id: str,
     trigger_msg: Message,
@@ -115,8 +126,9 @@ async def run_orchestrator(
         for row in rows
     }
 
-    mentioned = extract_mentions(trigger_msg.content)
-    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_msg.content)
+    trigger_content = _get_trigger_content(trigger_msg)
+    mentioned = extract_mentions(trigger_content)
+    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_content)
     direct_answer_mode = False
     if not target_usernames:
         channel_result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
@@ -273,7 +285,7 @@ async def run_orchestrator(
                 channel_id=channel_id,
                 trigger_message={
                     "user": trigger_msg.sender_id,
-                    "text": trigger_msg.content,
+                    "text": trigger_content,
                     "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                 },
                 memory_context=memory_context,
@@ -318,7 +330,7 @@ async def run_orchestrator(
                     if broadcast_processing:
                         await broadcast_processing(channel_id, sug_bot_id, sug_username)
                     sug_adapter = await adapter_factory(sug_bot_id)
-                    sug_templated_text = _apply_prompt_template(sug_template, trigger_msg.content)
+                    sug_templated_text = _apply_prompt_template(sug_template, trigger_content)
                     sug_msg = await _pre_create_bot_msg(sug_bot_id, root_task_id)
                     sug_payload = AgentPayload(
                         task_id=root_task_id,
@@ -366,7 +378,7 @@ async def run_orchestrator(
             continue
         adapter = await adapter_factory(bot_id)
         bot_template = bot_template_by_username.get(username)
-        templated_text = _apply_prompt_template(bot_template, trigger_msg.content)
+        templated_text = _apply_prompt_template(bot_template, trigger_content)
         other_bots = [item for item in channel_bot_usernames if item != username]
         bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
         payload = AgentPayload(
