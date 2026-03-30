@@ -127,6 +127,12 @@ async def run_orchestrator(
     }
 
     trigger_content = _get_trigger_content(trigger_msg)
+    
+    # 澄清场景：若为澄清回答，提取原问题
+    original_question = None
+    if _is_guide_clarify_reply(trigger_content):
+        original_question = await _fetch_original_question_for_clarify(session, channel_id, trigger_msg)
+
     mentioned = extract_mentions(trigger_content)
     target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_content)
     direct_answer_mode = False
@@ -290,6 +296,7 @@ async def run_orchestrator(
                 },
                 memory_context=memory_context,
                 attachments=attachments,
+                original_question_text=original_question,
                 process_config={
                     "channel_bot_usernames": other_bots,
                     "channel_bot_details": {
@@ -342,6 +349,7 @@ async def run_orchestrator(
                         },
                         memory_context=memory_context,
                         attachments=attachments,
+                        original_question_text=original_question,
                         process_config={"_stream_token": _make_stream_token_cb(sug_msg.msg_id)},
                     )
                     pending_sug.append((sug_username, sug_bot_id, sug_msg, sug_payload, sug_adapter))
@@ -381,6 +389,7 @@ async def run_orchestrator(
         templated_text = _apply_prompt_template(bot_template, trigger_content)
         other_bots = [item for item in channel_bot_usernames if item != username]
         bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
+        
         payload = AgentPayload(
             task_id=root_task_id,
             channel_id=channel_id,
@@ -391,6 +400,7 @@ async def run_orchestrator(
             },
             memory_context=memory_context,
             attachments=attachments,
+            original_question_text=original_question,
             process_config={
                 "channel_bot_usernames": other_bots,
                 "channel_bot_details": {key: value for key, value in bot_details_by_username.items() if key != username},

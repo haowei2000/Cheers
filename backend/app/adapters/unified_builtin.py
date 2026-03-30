@@ -190,6 +190,7 @@ def _make_tools(ctx: dict) -> list:
                     },
                     memory_context=ctx.get("memory") or {},
                     attachments=ctx.get("attachments") or [],
+                    original_question_text=ctx.get("original_question_text"),
                     process_config={"_stream_token": make_stream_token_cb(bot_msg.msg_id)},
                 )
                 resp: AgentResponse = await adapter.execute(sub_payload)
@@ -207,6 +208,7 @@ def _make_tools(ctx: dict) -> list:
                     },
                     memory_context=ctx.get("memory") or {},
                     attachments=ctx.get("attachments") or [],
+                    original_question_text=ctx.get("original_question_text"),
                 )
                 resp = await adapter.execute(sub_payload)
                 result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
@@ -763,7 +765,11 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 f"【项目进度】\n{memory.get('progress') or '（暂无）'}\n\n"
                 f"【决策记录】\n{memory.get('decisions') or '（暂无）'}\n\n"
                 f"【资料索引】\n{memory.get('files_index') or '（暂无）'}\n\n"
-                f"【近期动态】\n{memory.get('recent') or '（暂无）'}"
+                f"【最近关注】\n{memory.get('recent') or '（暂无）'}"
+            ),
+            (
+                f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.original_question_text}\n"
+                if payload.original_question_text else ""
             ),
             "=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n" + members_section,
             (
@@ -813,6 +819,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "task_id": payload.task_id,
             "sender_id": sender_id,
             "attachments": payload.attachments or [],
+            "original_question_text": payload.original_question_text,
             "_db_session": pconfig.get("_db_session"),
             "_bot_id": pconfig.get("_bot_id"),
         }

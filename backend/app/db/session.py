@@ -1,41 +1,21 @@
 """异步数据库引擎与会话."""
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.db.models import Base
 
-_is_sqlite = "sqlite" in settings.database_url
-
-# SQLite 用 NullPool：禁用连接池，每次请求独占一个连接，彻底避免并发写锁死
-# connect_args timeout 是 sqlite3.connect() 原生的写锁等待（秒）
+# 默认使用 SQLAlchemy 默认连接池配置，适合 PostgreSQL
 async_engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     future=True,
-    **({"poolclass": NullPool, "connect_args": {"timeout": 30, "check_same_thread": False}} if _is_sqlite else {}),
 )
-
-
-def _set_sqlite_pragma(dbapi_connection, connection_record):
-    """启用 WAL 模式并优化并发性能。"""
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA temp_store=MEMORY")
-    cursor.execute("PRAGMA mmap_size=30000000000")
-    cursor.close()
-
-
-if _is_sqlite:
-    event.listen(async_engine.sync_engine, "connect", _set_sqlite_pragma)
 
 async_session_factory = async_sessionmaker(
     async_engine,

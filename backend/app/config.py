@@ -66,8 +66,8 @@ class Settings(BaseSettings):
     log_backup_count: int = 3
 
     # 引导 Bot 使用的 LLM（可选；不配置则用关键词匹配；默认连本地 Ollama）
-    guide_llm_base_url: str = "http://localhost:11434/v1"
-    guide_llm_model: str = "llama3.2"
+    guide_llm_base_url: str = ""
+    guide_llm_model: str = ""
     guide_llm_api_key: str = ""
     guide_llm_temperature: float = 0.7
     guide_llm_max_tokens: int = 1000
@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     # 系统 LLM（RECENT 压缩、文件摘要等；不配置则简单截断）
     system_llm_api_key: str = ""
     system_llm_base_url: str = ""  # OpenAI 兼容
-    system_llm_model: str = "gpt-4o-mini"
+    system_llm_model: str = ""
 
     # 文生图（DashScope 原生 API）
     image_gen_base_url: str = "https://dashscope.aliyuncs.com"

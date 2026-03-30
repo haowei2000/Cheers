@@ -16,6 +16,7 @@ class AIModelCreate(BaseModel):
     api_key: str | None = Field(default=None, description="API Key")
     description: str | None = Field(default=None, description="模型描述")
     is_enabled: bool = Field(default=True)
+    is_public: bool = Field(default=True, description="是否公开（False 则仅管理员可见）")
     config: dict[str, Any] | None = Field(default=None, description="额外配置如 temperature, max_tokens")
 
 
@@ -28,6 +29,7 @@ class AIModelUpdate(BaseModel):
     api_key: str | None = Field(default=None)
     description: str | None = Field(default=None)
     is_enabled: bool | None = Field(default=None)
+    is_public: bool | None = Field(default=None, description="是否公开")
     config: dict[str, Any] | None = Field(default=None)
 
 
@@ -43,6 +45,7 @@ class AIModelInResponse(BaseModel):
     description: str | None = None
     is_enabled: bool
     is_builtin: bool
+    is_public: bool = True
     config: dict[str, Any] | None = None
     created_at: datetime | None = None
     # API Key 掩码显示
@@ -95,6 +98,7 @@ class BotCreate(BaseModel):
     template_id: str = Field(..., description="关联的提示词模板 ID")
     custom_system_prompt: str | None = Field(default=None, description="可选：覆盖模板的系统提示词")
     status: str = Field(default="online", pattern="^(online|offline|busy)$")
+    is_public: bool = Field(default=True, description="是否公开（False 则仅创建者和管理员可见）")
     intro: str | None = Field(default=None, description='JSON: {"capabilities": [...], "description": "..."}')
     avatar_url: str | None = Field(default=None)
 
@@ -108,6 +112,7 @@ class BotUpdate(BaseModel):
     template_id: str | None = Field(default=None)
     custom_system_prompt: str | None = Field(default=None)
     status: str | None = Field(default=None, pattern="^(online|offline|busy)$")
+    is_public: bool | None = Field(default=None, description="是否公开")
     intro: str | None = Field(default=None)
     avatar_url: str | None = Field(default=None)
 
@@ -122,6 +127,7 @@ class BotInResponse(BaseModel):
     description: str | None = None
     avatar_url: str | None = None
     status: str
+    is_public: bool = True
     intro: str | None = None
     custom_system_prompt: str | None = None
     created_at: datetime | None = None
@@ -143,6 +149,7 @@ class BotSimpleInResponse(BaseModel):
     display_name: str | None = None
     description: str | None = None
     status: str
+    is_public: bool = True
     model_name: str | None = None
     template_name: str | None = None
     created_by: str | None = None

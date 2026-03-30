@@ -1,6 +1,6 @@
 """AI 模型管理 API."""
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat_core.schemas import (
@@ -12,6 +12,7 @@ from app.db.models import AIModel, User
 from app.db.session import get_session
 from app.auth.routes import get_current_user
 from app.utils.crypto import decrypt_value, encrypt_value
+from app.utils.permissions import can_access, get_friend_ids, is_admin
 
 router = APIRouter(
     prefix="/api/admin/models",
@@ -31,41 +32,60 @@ def _mask_api_key(key: str | None) -> str | None:
     return plain[:4] + "****" + plain[-4:]
 
 
+def _to_response(model: AIModel) -> dict:
+    d = AIModelInResponse.model_validate(model).model_dump()
+    d["api_key_masked"] = _mask_api_key(model.api_key)
+    d["created_by"] = model.created_by
+    if model.created_at:
+        d["created_at"] = model.created_at.isoformat()
+    return d
+
+
 @router.get("")
 async def list_models(
     include_disabled: bool = False,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取所有 AI 模型列表."""
+    """获取 AI 模型列表。
+
+    可见规则：
+    - 管理员：全部
+    - 普通用户：自己创建的 + 好友公开的
+    """
     q = select(AIModel).order_by(AIModel.created_at.desc())
     if not include_disabled:
         q = q.where(AIModel.is_enabled == True)
-    
+
     result = await session.execute(q)
-    items = []
-    for row in result.scalars().all():
-        d = AIModelInResponse.model_validate(row).model_dump()
-        d["api_key_masked"] = _mask_api_key(row.api_key)
-        if row.created_at:
-            d["created_at"] = row.created_at.isoformat()
-        items.append(d)
-    return {"status": "success", "data": items}
+    all_models = result.scalars().all()
+
+    if is_admin(current_user):
+        visible = all_models
+    else:
+        friend_ids = await get_friend_ids(session, current_user.user_id)
+        visible = [
+            m for m in all_models
+            if m.created_by == current_user.user_id
+            or (m.is_public and m.created_by in friend_ids)
+        ]
+
+    return {"status": "success", "data": [_to_response(m) for m in visible]}
 
 
 @router.post("")
 async def create_model(
     body: AIModelCreate,
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """创建 AI 模型配置."""
-    # 检查名称是否已存在
     existing = await session.execute(
         select(AIModel).where(AIModel.name == body.name.strip())
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="模型名称已存在")
-    
+
     model = AIModel(
         name=body.name.strip(),
         provider=body.provider.strip().lower(),
@@ -74,53 +94,50 @@ async def create_model(
         api_key=encrypt_value(body.api_key.strip()) if body.api_key else None,
         description=body.description.strip() if body.description else None,
         is_enabled=body.is_enabled,
+        is_public=body.is_public,
+        created_by=current_user.user_id,
         config=body.config or {},
     )
     session.add(model)
     await session.commit()
     await session.refresh(model)
-    
-    d = AIModelInResponse.model_validate(model).model_dump()
-    d["api_key_masked"] = _mask_api_key(model.api_key)
-    if model.created_at:
-        d["created_at"] = model.created_at.isoformat()
-    return {"status": "success", "data": d}
+    return {"status": "success", "data": _to_response(model)}
 
 
 @router.get("/{model_id}")
 async def get_model(
     model_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取单个 AI 模型详情."""
+    """获取单个 AI 模型详情（须有访问权限）."""
     result = await session.execute(
         select(AIModel).where(AIModel.model_id == model_id)
     )
     model = result.scalar_one_or_none()
     if not model:
         raise HTTPException(status_code=404, detail="模型不存在")
-    
-    d = AIModelInResponse.model_validate(model).model_dump()
-    d["api_key_masked"] = _mask_api_key(model.api_key)
-    if model.created_at:
-        d["created_at"] = model.created_at.isoformat()
-    return {"status": "success", "data": d}
+    if not await can_access(session, current_user, model.created_by, model.is_public):
+        raise HTTPException(status_code=403, detail="无权访问该模型")
+    return {"status": "success", "data": _to_response(model)}
 
 
 @router.put("/{model_id}")
 async def update_model(
     model_id: str,
     body: AIModelUpdate,
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """更新 AI 模型配置."""
+    """更新 AI 模型配置（仅创建者或管理员）."""
     result = await session.execute(
         select(AIModel).where(AIModel.model_id == model_id)
     )
     model = result.scalar_one_or_none()
     if not model:
         raise HTTPException(status_code=404, detail="模型不存在")
+    if model.created_by != current_user.user_id and not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="权限不足，仅创建者或管理员可编辑")
 
     if body.name is not None:
         name = body.name.strip()
@@ -131,7 +148,7 @@ async def update_model(
             if existing.scalar_one_or_none():
                 raise HTTPException(status_code=400, detail="模型名称已存在")
             model.name = name
-    
+
     if body.provider is not None:
         model.provider = body.provider.strip().lower()
     if body.model_name is not None:
@@ -144,41 +161,39 @@ async def update_model(
         model.description = body.description.strip() if body.description else None
     if body.is_enabled is not None:
         model.is_enabled = body.is_enabled
+    if body.is_public is not None:
+        model.is_public = body.is_public
     if body.config is not None:
         model.config = body.config
-    
+
     await session.commit()
     await session.refresh(model)
-    
-    d = AIModelInResponse.model_validate(model).model_dump()
-    d["api_key_masked"] = _mask_api_key(model.api_key)
-    if model.created_at:
-        d["created_at"] = model.created_at.isoformat()
-    return {"status": "success", "data": d}
+    return {"status": "success", "data": _to_response(model)}
 
 
 @router.delete("/{model_id}")
 async def delete_model(
     model_id: str,
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """删除 AI 模型."""
+    """删除 AI 模型（仅创建者或管理员）."""
     result = await session.execute(
         select(AIModel).where(AIModel.model_id == model_id)
     )
     model = result.scalar_one_or_none()
     if not model:
         raise HTTPException(status_code=404, detail="模型不存在")
+    if model.created_by != current_user.user_id and not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="权限不足，仅创建者或管理员可删除")
 
-    # 检查是否有 Bot 正在使用此模型
     from app.db.models import BotAccount
     using_bots = await session.execute(
         select(BotAccount).where(BotAccount.model_id == model_id)
     )
     if using_bots.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="有 Bot 正在使用此模型，无法删除")
-    
+
     await session.delete(model)
     await session.commit()
     return {"status": "success", "message": "已删除"}

@@ -30,7 +30,9 @@ class AIModel(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 模型描述
     is_enabled: Mapped[bool] = mapped_column(default=True)  # 是否启用
     is_builtin: Mapped[bool] = mapped_column(default=False)  # 是否内置（不可删除）
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1", default=True)  # 公开/私有
     config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)  # 额外配置（temperature 等）
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # 创建者 user_id
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -66,6 +68,7 @@ class BotAccount(Base):
     custom_system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 覆盖模板的 system_prompt
 
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online")  # online | offline | busy
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1", default=True)  # 公开/私有
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
     created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # 创建者 user_id
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

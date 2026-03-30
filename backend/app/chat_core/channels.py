@@ -16,19 +16,18 @@ from app.db.models import BotAccount, Channel, ChannelMembership, User, Workspac
 from app.db.session import get_session
 from app.auth.routes import get_current_user, try_get_current_user
 from app.guide.constants import GUIDE_BOT_ID
+from app.utils.permissions import is_admin
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 
 class MemberInviteRequest(BaseModel):
     """邀请成员请求（支持通过用户ID或用户名）."""
-    inviter_id: str  # 邀请者ID
     identifier: str  # 用户ID 或 用户名
 
 
 class MemberInviteByFriendRequest(BaseModel):
     """通过好友关系邀请成员."""
-    inviter_id: str  # 邀请者ID
     friend_id: str  # 好友用户ID
 
 
@@ -61,13 +60,27 @@ async def list_channels(
 @router.get("/by-workspace/{workspace_id}")
 async def list_channels_by_workspace(
     workspace_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取指定工作空间的所有频道."""
-    result = await session.execute(
-        select(Channel).where(Channel.workspace_id == workspace_id).order_by(Channel.created_at)
-    )
-    channels = result.scalars().all()
+    """获取指定工作空间的频道列表（仅返回当前用户已加入的频道，管理员可见全部）."""
+    if is_admin(current_user):
+        result = await session.execute(
+            select(Channel).where(Channel.workspace_id == workspace_id).order_by(Channel.created_at)
+        )
+        channels = result.scalars().all()
+    else:
+        result = await session.execute(
+            select(Channel)
+            .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
+            .where(
+                Channel.workspace_id == workspace_id,
+                ChannelMembership.member_id == current_user.user_id,
+                ChannelMembership.member_type == "user",
+            )
+            .order_by(Channel.created_at)
+        )
+        channels = result.scalars().all()
     return {
         "status": "success",
         "data": [ChannelInResponse.model_validate(c).model_dump() for c in channels],
@@ -209,20 +222,58 @@ async def list_members(
     return {"status": "success", "data": out}
 
 
+async def _require_channel_member(channel_id: str, current_user: User, session: AsyncSession) -> None:
+    """Raise 403 if current_user is not a member of the channel (admins bypass)."""
+    if is_admin(current_user):
+        return
+    r = await session.execute(
+        select(ChannelMembership).where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.member_id == current_user.user_id,
+            ChannelMembership.member_type == "user",
+        )
+    )
+    if not r.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="您不是该频道的成员")
+
+
 @router.post("/{channel_id}/members")
 async def add_member(
     channel_id: str,
     body: MemberAdd,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """添加频道成员."""
+    """添加频道成员。
+
+    规则：
+    - 操作者须为频道成员（或管理员）
+    - 添加 bot 时：只能添加自己创建的 Bot 或系统内置 Bot（管理员除外）
+    - 添加 user 时：需为好友关系（管理员除外）
+    """
     result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="channel not found")
+
+    await _require_channel_member(channel_id, current_user, session)
+
+    if body.member_type == "bot" and not is_admin(current_user):
+        bot_result = await session.execute(
+            select(BotAccount).where(BotAccount.bot_id == body.member_id)
+        )
+        bot = bot_result.scalar_one_or_none()
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot 不存在")
+        
+        # 允许添加内置 Bot (GUIDE_BOT_ID) 或自己创建的 Bot
+        if bot.bot_id != GUIDE_BOT_ID and bot.created_by != current_user.user_id:
+            raise HTTPException(status_code=403, detail="只能将内置助手或自己创建的 Bot 添加到频道")
+
     m = ChannelMembership(
         channel_id=channel_id,
         member_id=body.member_id,
         member_type=body.member_type,
+        added_by=current_user.user_id,
     )
     session.add(m)
     await session.flush()
@@ -233,9 +284,17 @@ async def add_member(
 async def remove_member(
     channel_id: str,
     member_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """移除频道成员."""
+    """移除频道成员。
+
+    规则：
+    - 移除自己：任意频道成员均可
+    - 移除内置 Bot：仅管理员
+    - 移除自己的 Bot：Bot 创建者可以操作
+    - 移除其他用户/Bot：仅管理员
+    """
     result = await session.execute(
         select(ChannelMembership).where(
             ChannelMembership.channel_id == channel_id,
@@ -245,6 +304,22 @@ async def remove_member(
     m = result.scalar_one_or_none()
     if not m:
         raise HTTPException(status_code=404, detail="membership not found")
+
+    if not is_admin(current_user):
+        # 即使是内置助手，普通用户也禁止移除
+        if member_id == GUIDE_BOT_ID:
+            raise HTTPException(status_code=403, detail="内置助手只能由管理员移除")
+
+        if m.member_type == "user" and member_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="只能移除自己")
+        if m.member_type == "bot":
+            bot_result = await session.execute(
+                select(BotAccount).where(BotAccount.bot_id == member_id)
+            )
+            bot = bot_result.scalar_one_or_none()
+            if not bot or bot.created_by != current_user.user_id:
+                raise HTTPException(status_code=403, detail="只能移除自己创建的 Bot")
+
     await session.delete(m)
     await session.flush()
     return {"status": "success"}
@@ -254,17 +329,18 @@ async def remove_member(
 async def invite_member_by_identifier(
     channel_id: str,
     body: MemberInviteRequest,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """通过用户ID或用户名邀请用户加入频道."""
-    # 检查频道是否存在
+    """通过用户ID或用户名邀请用户加入频道（邀请者须为频道成员）."""
     result = await session.execute(
         select(Channel).where(Channel.channel_id == channel_id)
     )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="频道不存在")
-    
-    # 查找用户（通过ID或用户名）
+
+    await _require_channel_member(channel_id, current_user, session)
+
     result = await session.execute(
         select(User).where(
             or_(
@@ -274,11 +350,9 @@ async def invite_member_by_identifier(
         )
     )
     user = result.scalar_one_or_none()
-    
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    
-    # 检查是否已经在频道中
+
     result = await session.execute(
         select(ChannelMembership).where(
             and_(
@@ -289,17 +363,16 @@ async def invite_member_by_identifier(
     )
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="用户已在频道中")
-    
-    # 添加成员
+
     membership = ChannelMembership(
         channel_id=channel_id,
         member_id=user.user_id,
         member_type="user",
-        added_by=body.inviter_id,
+        added_by=current_user.user_id,
     )
     session.add(membership)
     await session.flush()
-    
+
     return {
         "status": "success",
         "message": f"已邀请 @{user.username} 加入频道",
@@ -315,21 +388,21 @@ async def invite_member_by_identifier(
 @router.get("/{channel_id}/friends-to-invite")
 async def get_friends_to_invite(
     channel_id: str,
-    user_id: str = Query(..., description="当前用户ID"),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """获取可以邀请加入频道的好友列表（排除已在频道中的）."""
     from app.db.models import Friendship
-    
-    # 获取当前频道成员ID
+
+    user_id = current_user.user_id
+
     result = await session.execute(
         select(ChannelMembership.member_id).where(
             ChannelMembership.channel_id == channel_id
         )
     )
     member_ids = {row[0] for row in result.all()}
-    
-    # 获取好友列表
+
     result = await session.execute(
         select(Friendship, User).join(
             User,
@@ -347,7 +420,7 @@ async def get_friends_to_invite(
             )
         )
     )
-    
+
     friends = []
     for friendship, user in result.all():
         friends.append({
@@ -356,7 +429,7 @@ async def get_friends_to_invite(
             "display_name": user.display_name,
             "avatar_url": user.avatar_url,
         })
-    
+
     return {
         "status": "success",
         "data": friends,

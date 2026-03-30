@@ -253,23 +253,7 @@ async def ensure_builtin_bot() -> None:
             raise
 
 
-def _ensure_data_dir() -> None:
-    """确保主库所在目录存在（SQLite 文件路径）。"""
-    url = settings.database_url
-    if not url.startswith("sqlite"):
-        return
-    path = url.split("///")[-1].split("?")[0]
-    if not path:
-        return
-    dir_path = Path(path).parent
-    if not dir_path.is_absolute():
-        base = Path(__file__).resolve().parent.parent.parent
-        dir_path = base / dir_path
-    dir_path.mkdir(parents=True, exist_ok=True)
-
-
 if __name__ == "__main__":
-    _ensure_data_dir()
     asyncio.run(run_seed())
     print(
         "Seed done.\n"
