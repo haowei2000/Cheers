@@ -953,6 +953,11 @@ function UserProfileModal({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [tab, setTab] = useState<"profile" | "password">("profile");
+  const [pwVerifyMode, setPwVerifyMode] = useState<"password" | "email">("password");
+  const [emailCode, setEmailCode] = useState("");
+  const [emailCodeSent, setEmailCodeSent] = useState(false);
+  const [emailCodeLoading, setEmailCodeLoading] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>("");
 
   useEffect(() => {
     fetch(`${API}/auth/users/me`, {
@@ -962,6 +967,7 @@ function UserProfileModal({
       .then((d) => {
         if (d.display_name !== undefined) setDisplayName(d.display_name || "");
         if (d.bio !== undefined) setBio(d.bio || "");
+        if (d.email !== undefined) setUserEmail(d.email || "");
       })
       .catch(() => {});
   }, [userToken]);
@@ -989,28 +995,46 @@ function UserProfileModal({
     }
   };
 
-  const handlePasswordChange = async () => {
-    if (!newPassword || !currentPassword) return;
-    if (newPassword !== confirmPassword) {
-      toast.error("两次输入的新密码不一致");
-      return;
+  const handleSendEmailCode = async () => {
+    if (!userEmail) { toast.error("账号未绑定邮箱"); return; }
+    setEmailCodeLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/send-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({ email: userEmail, purpose: "change_password" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "发送失败");
+      setEmailCodeSent(true);
+      toast.success("验证码已发送至 " + userEmail);
+    } catch (e: any) {
+      toast.error(e.message || "发送失败");
+    } finally {
+      setEmailCodeLoading(false);
     }
+  };
+
+  const handlePasswordChange = async () => {
+    if (!newPassword) return;
+    if (newPassword !== confirmPassword) { toast.error("两次输入的新密码不一致"); return; }
+    if (pwVerifyMode === "password" && !currentPassword) return;
+    if (pwVerifyMode === "email" && !emailCode) return;
     setPasswordSaving(true);
     try {
+      const body: Record<string, string> = { new_password: newPassword };
+      if (pwVerifyMode === "password") body.current_password = currentPassword;
+      else body.email_code = emailCode;
       const res = await fetch(`${API}/auth/users/me/password`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${userToken}`,
-        },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "密码修改失败");
       toast.success("密码已更新");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+      setEmailCode(""); setEmailCodeSent(false);
     } catch (e: any) {
       toast.error(e.message || "密码修改失败");
     } finally {
@@ -1098,38 +1122,41 @@ function UserProfileModal({
             </div>
           ) : (
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">当前密码</label>
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="输入当前密码"
-                  className={inputCls}
-                  autoComplete="current-password"
-                />
+              {/* Verify mode toggle */}
+              <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
+                <button type="button" onClick={() => setPwVerifyMode("password")} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${pwVerifyMode === "password" ? "bg-white shadow text-gray-800" : "text-gray-500 hover:text-gray-700"}`}>密码验证</button>
+                <button type="button" onClick={() => setPwVerifyMode("email")} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${pwVerifyMode === "email" ? "bg-white shadow text-gray-800" : "text-gray-500 hover:text-gray-700"}`}>邮箱验证</button>
               </div>
+
+              {pwVerifyMode === "password" ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">当前密码</label>
+                  <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="输入当前密码" className={inputCls} autoComplete="current-password" />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">邮箱验证码</label>
+                  {userEmail ? (
+                    <div className="flex gap-2">
+                      <input value={emailCode} onChange={(e) => setEmailCode(e.target.value)} placeholder="输入验证码" className={`${inputCls} flex-1`} />
+                      <button type="button" disabled={emailCodeLoading} onClick={handleSendEmailCode} className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap">
+                        {emailCodeLoading ? "发送中" : emailCodeSent ? "重新发送" : "获取验证码"}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-red-500">账号未绑定邮箱，无法使用邮箱验证</p>
+                  )}
+                  {userEmail && <p className="text-xs text-gray-400 mt-1">验证码将发送至 {userEmail}</p>}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">新密码</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="输入新密码"
-                  className={inputCls}
-                  autoComplete="new-password"
-                />
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="输入新密码" className={inputCls} autoComplete="new-password" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">确认新密码</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="再次输入新密码"
-                  className={inputCls}
-                  autoComplete="new-password"
-                />
+                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="再次输入新密码" className={inputCls} autoComplete="new-password" />
               </div>
             </div>
           )}
@@ -1157,7 +1184,7 @@ function UserProfileModal({
             <button
               type="button"
               onClick={handlePasswordChange}
-              disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword}
+              disabled={passwordSaving || !newPassword || !confirmPassword || (pwVerifyMode === "password" && !currentPassword) || (pwVerifyMode === "email" && !emailCode)}
               className="px-4 py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50"
             >
               {passwordSaving ? "更新中…" : "更新密码"}
@@ -1343,7 +1370,17 @@ export default function App() {
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
-  const [registerMode, setRegisterMode] = useState(false);
+  // mode: "login" | "register" | "forgot"
+  const [authMode, setAuthMode] = useState<"login" | "register" | "forgot">("login");
+  const [regEmail, setRegEmail] = useState("");
+  const [regCode, setRegCode] = useState("");
+  const [regCodeSent, setRegCodeSent] = useState(false);
+  const [regCodeLoading, setRegCodeLoading] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotNewPw, setForgotNewPw] = useState("");
+  const [forgotCodeSent, setForgotCodeSent] = useState(false);
+  const [forgotCodeLoading, setForgotCodeLoading] = useState(false);
 
   // 当前用户ID（用于API调用）
   const currentUserId = currentUser?.user_id || DEV_USER_ID;
@@ -1511,6 +1548,29 @@ export default function App() {
     }
   };
 
+  const handleSendCode = async (email: string, purpose: string, onSent: () => void) => {
+    if (!email.trim() || !email.includes("@")) { setLoginError("请输入有效的邮箱地址"); return; }
+    if (purpose === "register") setRegCodeLoading(true);
+    else setForgotCodeLoading(true);
+    setLoginError("");
+    try {
+      const res = await fetch(`${API}/auth/send-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), purpose }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "发送失败");
+      onSent();
+      toast.success("验证码已发送，请查收邮件");
+    } catch (e: any) {
+      setLoginError(e.message);
+    } finally {
+      if (purpose === "register") setRegCodeLoading(false);
+      else setForgotCodeLoading(false);
+    }
+  };
+
   const handleRegister = async (username: string, password: string, displayName: string) => {
     setLoginLoading(true);
     setLoginError("");
@@ -1518,11 +1578,10 @@ export default function App() {
       const res = await fetch(`${API}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, display_name: displayName }),
+        body: JSON.stringify({ username, email: regEmail.trim(), password, display_name: displayName, code: regCode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "注册失败");
-      // 注册后自动登录以获取 JWT token
       const loginRes = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1535,6 +1594,29 @@ export default function App() {
       setAuthToken(token);
       localStorage.setItem("currentUser", JSON.stringify({ user, token, loginTime: Date.now() }));
       setLoginModalOpen(false);
+      setRegEmail(""); setRegCode(""); setRegCodeSent(false);
+    } catch (e: any) {
+      setLoginError(e.message);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!forgotCode.trim() || !forgotNewPw.trim()) { setLoginError("请填写验证码和新密码"); return; }
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      const res = await fetch(`${API}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim(), code: forgotCode, new_password: forgotNewPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "重置失败");
+      toast.success("密码已重置，请重新登录");
+      setAuthMode("login");
+      setForgotEmail(""); setForgotCode(""); setForgotNewPw(""); setForgotCodeSent(false);
     } catch (e: any) {
       setLoginError(e.message);
     } finally {
@@ -2295,44 +2377,71 @@ export default function App() {
                   <path d="M4.5 6.375a4.125 4.125 0 118.25 0 4.125 4.125 0 01-8.25 0zM14.25 8.625a3.375 3.375 0 116.75 0 3.375 3.375 0 01-6.75 0zM1.5 19.125a7.125 7.125 0 0114.25 0v.003l-.001.119a.75.75 0 01-.363.63 13.067 13.067 0 01-6.761 1.873c-2.472 0-4.786-.684-6.76-1.873a.75.75 0 01-.364-.63l-.001-.122zM17.25 19.128l-.001.144a2.25 2.25 0 01-.233.96 10.088 10.088 0 005.06-1.01.75.75 0 00.42-.643 4.875 4.875 0 00-6.957-4.611 8.586 8.586 0 011.71 5.157v.003z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">{registerMode ? "创建账号" : "登录到智枢"}</h2>
-              <p className="text-gray-500 text-sm mt-1">{registerMode ? "填写信息以创建新账号" : "欢迎回来！"}</p>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {authMode === "login" ? "登录到智枢" : authMode === "register" ? "创建账号" : "重置密码"}
+              </h2>
+              <p className="text-gray-500 text-sm mt-1">
+                {authMode === "login" ? "欢迎回来！" : authMode === "register" ? "填写信息以创建新账号" : "通过邮箱验证重置密码"}
+              </p>
             </div>
             {loginError && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">{loginError}</div>}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const fd = new FormData(e.currentTarget);
-                const username = fd.get("username") as string;
-                const password = fd.get("password") as string;
-                if (registerMode) {
-                  const displayName = fd.get("display_name") as string;
-                  handleRegister(username, password, displayName);
-                } else {
-                  handleLogin(username, password);
-                }
-              }}
-            >
-              {registerMode && (
+
+            {/* ── Login ── */}
+            {authMode === "login" && (
+              <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleLogin(fd.get("username") as string, fd.get("password") as string); }}>
+                <input name="username" placeholder="用户名或邮箱" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <input name="password" type="password" placeholder="密码" required className="w-full mb-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <div className="text-right mb-4">
+                  <button type="button" onClick={() => { setAuthMode("forgot"); setLoginError(""); }} className="text-xs text-[#1264A3] hover:underline">忘记密码？</button>
+                </div>
+                <button type="submit" disabled={loginLoading} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
+                  {loginLoading ? "处理中..." : "登录"}
+                </button>
+              </form>
+            )}
+
+            {/* ── Register ── */}
+            {authMode === "register" && (
+              <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleRegister(fd.get("username") as string, fd.get("password") as string, fd.get("display_name") as string); }}>
                 <input name="display_name" placeholder="显示名称" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-              )}
-              <input name="username" placeholder="用户名" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-              <input name="password" type="password" placeholder="密码" required className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-              <button type="submit" disabled={loginLoading} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
-                {loginLoading ? "处理中..." : registerMode ? "注册" : "登录"}
-              </button>
-            </form>
+                <input name="username" placeholder="用户名（登录用）" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <input name="password" type="password" placeholder="密码（8位以上，含字母和数字）" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                {/* Email + code */}
+                <div className="flex gap-2 mb-3">
+                  <input value={regEmail} onChange={(e) => setRegEmail(e.target.value)} type="email" placeholder="邮箱地址" required className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                  <button type="button" disabled={regCodeLoading || !regEmail.includes("@")} onClick={() => handleSendCode(regEmail, "register", () => setRegCodeSent(true))} className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap">
+                    {regCodeLoading ? "发送中" : regCodeSent ? "重新发送" : "获取验证码"}
+                  </button>
+                </div>
+                <input value={regCode} onChange={(e) => setRegCode(e.target.value)} placeholder="邮箱验证码" required className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <button type="submit" disabled={loginLoading || !regCodeSent} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
+                  {loginLoading ? "处理中..." : "注册"}
+                </button>
+              </form>
+            )}
+
+            {/* ── Forgot Password ── */}
+            {authMode === "forgot" && (
+              <div>
+                <div className="flex gap-2 mb-3">
+                  <input value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} type="email" placeholder="注册邮箱" required className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                  <button type="button" disabled={forgotCodeLoading || !forgotEmail.includes("@")} onClick={() => handleSendCode(forgotEmail, "reset_password", () => setForgotCodeSent(true))} className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap">
+                    {forgotCodeLoading ? "发送中" : forgotCodeSent ? "重新发送" : "获取验证码"}
+                  </button>
+                </div>
+                <input value={forgotCode} onChange={(e) => setForgotCode(e.target.value)} placeholder="邮箱验证码" className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <input value={forgotNewPw} onChange={(e) => setForgotNewPw(e.target.value)} type="password" placeholder="新密码（8位以上，含字母和数字）" className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <button onClick={handleForgotPassword} disabled={loginLoading || !forgotCodeSent} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
+                  {loginLoading ? "处理中..." : "重置密码"}
+                </button>
+              </div>
+            )}
+
             <div className="mt-4 text-center text-sm text-gray-500">
-              {registerMode ? (
-                <>
-                  已有账号？{" "}
-                  <button onClick={() => setRegisterMode(false)} className="text-[#1264A3] font-medium hover:underline">登录</button>
-                </>
+              {authMode === "login" ? (
+                <>没有账号？ <button onClick={() => { setAuthMode("register"); setLoginError(""); }} className="text-[#1264A3] font-medium hover:underline">注册</button></>
               ) : (
-                <>
-                  没有账号？{" "}
-                  <button onClick={() => setRegisterMode(true)} className="text-[#1264A3] font-medium hover:underline">注册</button>
-                </>
+                <button onClick={() => { setAuthMode("login"); setLoginError(""); }} className="text-[#1264A3] font-medium hover:underline">返回登录</button>
               )}
             </div>
           </div>

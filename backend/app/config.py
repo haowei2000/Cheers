@@ -83,6 +83,15 @@ class Settings(BaseSettings):
     image_gen_api_key: str = ""
     image_gen_default_model: str = "qwen-image-2.0-pro"
 
+    # 邮件 SMTP 配置（留空则仅打印验证码到日志，适合开发环境）
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""          # 发件人地址，留空则用 smtp_username
+    smtp_use_tls: bool = True    # True=STARTTLS(587)；False=SSL(465) 时建议改 smtp_port=465
+    smtp_ssl: bool = False       # True 时用 SSL 直连（465端口）
+
     # 种子数据：初始管理员账号
     admin_username: str = "admin"
     admin_password: str = "admin#Nexus2024"

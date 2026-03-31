@@ -1,18 +1,21 @@
 """认证模块：用户注册、登录、角色管理."""
 import logging
+import random
 import re
 import secrets
+import string
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt_utils import create_access_token, decode_access_token
-from app.db.models import User
+from app.db.models import EmailCode, User
 from app.db.session import async_session_factory, get_session
 
 logger = logging.getLogger("app.auth")
@@ -72,22 +75,20 @@ ROLE_PERMISSIONS = {
 
 
 def validate_password(password: str) -> None:
-    """校验密码强度：至少8位，包含字母和数字。不符合则抛 HTTPException 400。"""
+    """校验密码强度：至少8位，包含字母和数字。"""
     if len(password) < 8:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码不符合要求：至少 8 位")
+        raise HTTPException(status_code=400, detail="密码不符合要求：至少 8 位")
     if not re.search(r"[A-Za-z]", password):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码不符合要求：需包含字母")
+        raise HTTPException(status_code=400, detail="密码不符合要求：需包含字母")
     if not re.search(r"\d", password):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="密码不符合要求：需包含数字")
+        raise HTTPException(status_code=400, detail="密码不符合要求：需包含数字")
 
 
 def hash_password(password: str) -> str:
-    """哈希密码."""
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码."""
     return pwd_context.verify(plain_password, hashed_password)
 
 
@@ -99,9 +100,6 @@ PERMISSIONS: dict[str, list[str]] = {
 
 
 async def _resolve_user_from_token(token: str, db: AsyncSession) -> Optional[User]:
-    """从 JWT token 解析用户 ID，再查数据库返回用户。
-    为保持向下兼容，JWT 解码失败时尝试将 token 作为 UUID 直接查询（打印弃用警告）。
-    """
     user_id: str | None = None
     try:
         payload = decode_access_token(token)
@@ -109,7 +107,6 @@ async def _resolve_user_from_token(token: str, db: AsyncSession) -> Optional[Use
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token 已过期，请重新登录")
     except jwt.InvalidTokenError:
-        # 兼容旧版：token 可能是裸 user_id UUID
         logger.warning("JWT 解码失败，尝试 UUID 回退（旧版兼容，请更新客户端）")
         user_id = token
 
@@ -123,7 +120,6 @@ async def get_current_user(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_session),
 ) -> User:
-    """从 Authorization: Bearer <JWT> 中验证当前用户."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="未登录")
     token = authorization.removeprefix("Bearer ").strip()
@@ -137,7 +133,6 @@ async def try_get_current_user(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_session),
 ) -> Optional[User]:
-    """可选认证：有 token 则验证并返回用户，无 token 则返回 None."""
     if not authorization or not authorization.startswith("Bearer "):
         return None
     token = authorization.removeprefix("Bearer ").strip()
@@ -148,7 +143,6 @@ async def try_get_current_user(
 
 
 def require_permission(permission: str):
-    """返回一个检查调用方是否拥有指定权限的 FastAPI 依赖."""
     async def _check(current_user: User = Depends(get_current_user)) -> User:
         allowed = PERMISSIONS.get(permission, [])
         if current_user.role not in allowed:
@@ -157,14 +151,75 @@ def require_permission(permission: str):
     return _check
 
 
+# ============ OTP helpers ============
+
+_OTP_VALID_PURPOSES = {"register", "reset_password", "change_password"}
+_OTP_COOLDOWN_SECONDS = 60      # 同一邮箱同一用途最短间隔
+_OTP_EXPIRE_MINUTES = 10
+
+
+def _gen_code() -> str:
+    return "".join(random.choices(string.digits, k=6))
+
+
+async def _issue_code(db: AsyncSession, email: str, purpose: str) -> str:
+    """生成并存储验证码，返回明文验证码。限速：同邮箱+用途 60s 内不重复发。"""
+    now = datetime.now(timezone.utc)
+    cooldown_threshold = now - timedelta(seconds=_OTP_COOLDOWN_SECONDS)
+    recent = await db.execute(
+        select(EmailCode).where(
+            EmailCode.email == email,
+            EmailCode.purpose == purpose,
+            EmailCode.created_at >= cooldown_threshold,
+        )
+    )
+    if recent.scalar_one_or_none():
+        raise HTTPException(status_code=429, detail=f"请 {_OTP_COOLDOWN_SECONDS} 秒后再发送")
+
+    code = _gen_code()
+    entry = EmailCode(
+        email=email,
+        code=code,
+        purpose=purpose,
+        expires_at=now + timedelta(minutes=_OTP_EXPIRE_MINUTES),
+    )
+    db.add(entry)
+    await db.flush()
+    return code
+
+
+async def _verify_code(db: AsyncSession, email: str, purpose: str, code: str) -> None:
+    """校验验证码；通过后标记为已使用。失败抛 400。"""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(EmailCode).where(
+            EmailCode.email == email,
+            EmailCode.purpose == purpose,
+            EmailCode.code == code,
+            EmailCode.used == False,
+            EmailCode.expires_at > now,
+        ).order_by(EmailCode.created_at.desc()).limit(1)
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=400, detail="验证码无效或已过期")
+    entry.used = True
+    await db.flush()
+
+
 # ============ Schemas ============
+
+class SendCodeRequest(BaseModel):
+    email: str
+    purpose: str  # register | reset_password | change_password
 
 
 class RegisterRequest(BaseModel):
     username: str
+    email: str
     password: str
+    code: str
     display_name: Optional[str] = None
-
 
 
 class LoginRequest(BaseModel):
@@ -177,13 +232,14 @@ class LoginResponse(BaseModel):
     username: str
     display_name: Optional[str]
     role: str
-    token: str  # JWT access token
-    expires_in: int  # token 有效期（秒）
+    token: str
+    expires_in: int
 
 
 class UserInfo(BaseModel):
     user_id: str
     username: str
+    email: Optional[str] = None
     display_name: Optional[str]
     role: str
     avatar_url: Optional[str]
@@ -197,7 +253,15 @@ class UpdateProfileRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    current_password: str
+    """修改密码：传 current_password（旧密码验证）或 email_code（邮箱验证），二选一。"""
+    new_password: str
+    current_password: Optional[str] = None
+    email_code: Optional[str] = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+    code: str
     new_password: str
 
 
@@ -208,11 +272,11 @@ class UpdateRoleRequest(BaseModel):
 
 # ============ Routes ============
 
-
 def _user_to_info(user: User) -> UserInfo:
     return UserInfo(
         user_id=user.user_id,
         username=user.username,
+        email=user.email,
         display_name=user.display_name,
         role=user.role,
         avatar_url=user.avatar_url,
@@ -221,11 +285,46 @@ def _user_to_info(user: User) -> UserInfo:
     )
 
 
+@router.post("/send-code")
+async def send_verification_code(
+    req: SendCodeRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    """发送邮件验证码。
+
+    - purpose=register：邮箱不能已注册
+    - purpose=reset_password：邮箱必须已注册
+    - purpose=change_password：邮箱必须已注册（由前端传入已登录用户的邮箱）
+    """
+    if req.purpose not in _OTP_VALID_PURPOSES:
+        raise HTTPException(status_code=400, detail="无效的 purpose")
+
+    email = req.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="邮箱格式不正确")
+
+    result = await db.execute(select(User).where(User.email == email))
+    existing = result.scalar_one_or_none()
+
+    if req.purpose == "register" and existing:
+        raise HTTPException(status_code=400, detail="该邮箱已被注册")
+    if req.purpose in ("reset_password", "change_password") and not existing:
+        raise HTTPException(status_code=404, detail="该邮箱未注册")
+
+    code = await _issue_code(db, email, req.purpose)
+    await db.commit()
+
+    from app.auth.email_service import send_verification_code as _send
+    try:
+        await _send(email, code, req.purpose)
+    except Exception:
+        raise HTTPException(status_code=500, detail="验证码发送失败，请稍后重试")
+
+    return {"status": "success", "message": "验证码已发送"}
+
+
 @router.get("/users/me", response_model=UserInfo)
-async def get_my_profile(
-    current_user: User = Depends(get_current_user),
-) -> UserInfo:
-    """获取当前用户个人资料."""
+async def get_my_profile(current_user: User = Depends(get_current_user)) -> UserInfo:
     return _user_to_info(current_user)
 
 
@@ -235,7 +334,6 @@ async def update_my_profile(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ) -> UserInfo:
-    """更新当前用户个人资料（显示名称、简介）."""
     if req.display_name is not None:
         current_user.display_name = req.display_name
     if req.bio is not None:
@@ -251,10 +349,20 @@ async def change_my_password(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """修改当前用户密码."""
-    if not verify_password(req.current_password, current_user.password_hash):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码不正确")
+    """修改密码：传 current_password 或 email_code（二选一）。"""
+    if not req.current_password and not req.email_code:
+        raise HTTPException(status_code=400, detail="需提供当前密码或邮箱验证码")
+
     validate_password(req.new_password)
+
+    if req.email_code:
+        if not current_user.email:
+            raise HTTPException(status_code=400, detail="账号未绑定邮箱，无法使用邮箱验证")
+        await _verify_code(db, current_user.email, "change_password", req.email_code)
+    else:
+        if not verify_password(req.current_password, current_user.password_hash):
+            raise HTTPException(status_code=400, detail="当前密码不正确")
+
     current_user.password_hash = hash_password(req.new_password)
     await db.commit()
     return {"status": "success", "message": "密码已更新"}
@@ -262,43 +370,73 @@ async def change_my_password(
 
 @router.post("/register", response_model=UserInfo)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_session)):
-    """用户注册."""
-    # 校验密码强度
+    """用户注册（必须通过邮箱验证码）."""
     validate_password(req.password)
 
-    # 检查用户名是否已存在
+    email = req.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="邮箱格式不正确")
+
+    # 验证码校验
+    await _verify_code(db, email, "register", req.code)
+
+    # 用户名唯一
     result = await db.execute(select(User).where(User.username == req.username))
     if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="用户名已存在",
-        )
+        raise HTTPException(status_code=400, detail="用户名已存在")
 
-    # 创建用户
+    # 邮箱唯一（理论上 send-code 时已判断，这里双保险）
+    result = await db.execute(select(User).where(User.email == email))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="该邮箱已被注册")
+
     user = User(
         username=req.username,
+        email=email,
         password_hash=hash_password(req.password),
         display_name=req.display_name or req.username,
-        role=ROLE_MEMBER,  # 默认角色为成员
+        role=ROLE_MEMBER,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
-
     return _user_to_info(user)
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    req: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    """通过邮箱验证码重置密码。"""
+    email = req.email.strip().lower()
+    validate_password(req.new_password)
+
+    await _verify_code(db, email, "reset_password", req.code)
+
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    user.password_hash = hash_password(req.new_password)
+    await db.commit()
+    return {"status": "success", "message": "密码已重置，请重新登录"}
 
 
 @router.post("/login", response_model=LoginResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_session)):
-    """用户登录."""
-    result = await db.execute(select(User).where(User.username == req.username))
+    """用户登录（用户名/邮箱 + 密码）."""
+    # 支持用用户名或邮箱登录
+    result = await db.execute(
+        select(User).where(
+            (User.username == req.username) | (User.email == req.username.strip().lower())
+        )
+    )
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(req.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
-        )
+        raise HTTPException(status_code=401, detail="用户名/邮箱或密码错误")
 
     from app.config import settings
     return LoginResponse(
@@ -316,11 +454,8 @@ async def list_users(
     _: User = Depends(require_permission("user_management")),
     db: AsyncSession = Depends(get_session),
 ):
-    """获取用户列表（系统管理员专用）."""
     result = await db.execute(select(User))
-    users = result.scalars().all()
-
-    return [_user_to_info(u) for u in users]
+    return [_user_to_info(u) for u in result.scalars().all()]
 
 
 @router.put("/users/{user_id}/role", response_model=UserInfo)
@@ -330,38 +465,26 @@ async def update_user_role(
     _: User = Depends(require_permission("user_management")),
     db: AsyncSession = Depends(get_session),
 ):
-    """更新用户角色（系统管理员专用）."""
     if req.role not in ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"无效的角色: {req.role}",
-        )
-
+        raise HTTPException(status_code=400, detail=f"无效的角色: {req.role}")
     result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalar_one_or_none()
-
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在",
-        )
-
+        raise HTTPException(status_code=404, detail="用户不存在")
     user.role = req.role
     await db.commit()
     await db.refresh(user)
-
     return _user_to_info(user)
 
 
 @router.get("/roles")
 async def list_roles():
-    """获取角色列表及权限."""
     return {
         "roles": [
             {
                 "name": "system_admin",
                 "display_name": "系统管理员",
-                "description": "系统级管理：全局 LLM 设置、策略配置、系统健康度检查（不具备对他人私有数据的访问权）",
+                "description": "系统级管理：全局 LLM 设置、策略配置、系统健康度检查",
                 "permissions": ROLE_PERMISSIONS[ROLE_SYSTEM_ADMIN],
             },
             {
@@ -398,40 +521,27 @@ async def delete_user(
     _: User = Depends(require_permission("user_management")),
     db: AsyncSession = Depends(get_session),
 ):
-    """删除用户（系统管理员专用）."""
     result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalar_one_or_none()
-
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在",
-        )
-
+        raise HTTPException(status_code=404, detail="用户不存在")
     await db.delete(user)
     await db.commit()
-
     return {"status": "success", "message": "用户已删除"}
 
 
 @router.post("/users/reset-password/{user_id}")
-async def reset_password(
+async def reset_password_admin(
     user_id: str,
     _: User = Depends(require_permission("user_management")),
     db: AsyncSession = Depends(get_session),
 ):
-    """重置用户密码为 123456（系统管理员专用）."""
+    """管理员重置用户密码（生成临时密码）."""
     result = await db.execute(select(User).where(User.user_id == user_id))
     user = result.scalar_one_or_none()
-
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在",
-        )
-
+        raise HTTPException(status_code=404, detail="用户不存在")
     temp_pw = secrets.token_urlsafe(12)
     user.password_hash = hash_password(temp_pw)
     await db.commit()
-
     return {"status": "success", "message": "密码已重置", "temporary_password": temp_pw}
