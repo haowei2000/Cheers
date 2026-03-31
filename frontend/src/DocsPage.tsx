@@ -157,6 +157,19 @@ function extractToc(md: string): TocEntry[] {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function DocsPage() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const [files, setFiles] = useState<DocFile[]>([]);
   const [selected, setSelected] = useState<DocFile | null>(null);
   const [content, setContent] = useState("");
@@ -232,9 +245,12 @@ export default function DocsPage() {
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
   return (
-    <div className="flex h-screen bg-gray-50 font-sans text-gray-900">
+    <div className="flex h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden">
+      {isMobile && sidebarOpen && (
+        <div className="fixed inset-0 bg-black/40 z-[65]" onClick={() => setSidebarOpen(false)} />
+      )}
       {/* ── Left sidebar ── */}
-      <aside className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+      <aside className={`bg-white border-r border-gray-200 flex flex-col flex-shrink-0 ${isMobile ? "fixed inset-y-0 left-0 z-[70] w-64 transition-transform duration-300 ease-in-out shadow-xl" : "w-64"} ${isMobile && !sidebarOpen ? "-translate-x-full" : "translate-x-0"}`}>
         {/* Header */}
         <div className="px-4 py-3 border-b border-gray-200">
           <div className="flex items-center justify-between mb-2">
@@ -263,7 +279,7 @@ export default function DocsPage() {
           {filtered.map((f) => (
             <button
               key={f.name}
-              onClick={() => { setSelected(f); setMode("preview"); }}
+              onClick={() => { setSelected(f); setMode("preview"); if (isMobile) setSidebarOpen(false); }}
               className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex flex-col gap-0.5 ${
                 selected?.name === f.name
                   ? "bg-blue-50 text-blue-700 border-r-2 border-blue-500"
@@ -283,24 +299,34 @@ export default function DocsPage() {
       </aside>
 
       {/* ── Main content ── */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 bg-white">
         {!selected ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center text-gray-400">
-              <div className="text-5xl mb-3">📄</div>
-              <p className="text-base font-medium">Select a document</p>
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            {isMobile && (
+              <button onClick={() => setSidebarOpen(true)} className="mb-8 px-4 py-2 border border-gray-200 rounded-lg text-sm text-blue-600 font-medium">
+                Browse Files
+              </button>
+            )}
+            <div className="text-gray-400">
+              <div className="text-5xl mb-3 text-gray-300">📄</div>
+              <p className="text-base font-medium text-gray-600">Select a document</p>
               <p className="text-sm mt-1">Choose a file from the sidebar to view or edit.</p>
             </div>
           </div>
         ) : (
           <>
             {/* Toolbar */}
-            <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200 flex-shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 bg-white border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                {isMobile && (
+                  <button onClick={() => setSidebarOpen(true)} className="p-1 -ml-1 text-gray-400 hover:text-gray-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>
+                  </button>
+                )}
                 <h1 className="text-base font-semibold text-gray-900 truncate">
                   {selected.stem}
                 </h1>
-                {content && (
+                {!isMobile && content && (
                   <span className="text-xs text-gray-400 flex-shrink-0">
                     {wordCount.toLocaleString()} words · {formatSize(selected.size)}
                   </span>
@@ -312,7 +338,7 @@ export default function DocsPage() {
                 {toc.length > 0 && mode === "preview" && (
                   <button
                     onClick={() => setTocOpen((o) => !o)}
-                    className="text-xs px-2.5 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
+                    className={`text-xs px-2.5 py-1.5 rounded-md border transition-colors ${tocOpen ? "bg-blue-50 border-blue-200 text-blue-600" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
                   >
                     TOC
                   </button>
@@ -324,7 +350,7 @@ export default function DocsPage() {
                     onClick={() => setMode("preview")}
                     className={`px-3 py-1.5 ${mode === "preview" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
                   >
-                    Preview
+                    View
                   </button>
                   <button
                     onClick={() => setMode("edit")}
@@ -339,7 +365,7 @@ export default function DocsPage() {
                   <>
                     <button
                       onClick={handleDiscard}
-                      className="text-xs px-3 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
+                      className="hidden sm:block text-xs px-3 py-1.5 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
                     >
                       Discard
                     </button>
@@ -348,7 +374,7 @@ export default function DocsPage() {
                       disabled={saving}
                       className="text-xs px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                     >
-                      {saving ? "Saving…" : "Save"}
+                      {saving ? "…" : "Save"}
                     </button>
                   </>
                 )}
@@ -356,18 +382,18 @@ export default function DocsPage() {
             </div>
 
             {/* Body */}
-            <div className="flex-1 flex min-h-0">
+            <div className="flex-1 flex min-h-0 relative">
               {loading ? (
                 <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
                   Loading…
                 </div>
               ) : mode === "edit" ? (
                 /* Edit mode */
-                <div className="flex-1 flex flex-col p-4">
+                <div className="flex-1 flex flex-col p-4 bg-gray-50">
                   <textarea
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
-                    className="flex-1 w-full font-mono text-sm border border-gray-200 rounded-lg p-4 resize-none focus:outline-none focus:border-blue-400 bg-white leading-relaxed"
+                    className="flex-1 w-full font-mono text-sm border border-gray-200 rounded-lg p-4 resize-none focus:outline-none focus:border-blue-400 bg-white leading-relaxed shadow-sm"
                     spellCheck={false}
                   />
                 </div>
@@ -376,34 +402,45 @@ export default function DocsPage() {
                 <div className="flex-1 flex min-w-0">
                   <div
                     ref={previewRef}
-                    className="flex-1 overflow-y-auto px-10 py-6 min-w-0"
+                    className="flex-1 overflow-y-auto px-6 sm:px-10 py-6 min-w-0 scroll-smooth"
                     dangerouslySetInnerHTML={{ __html: htmlContent }}
                   />
 
                   {/* Table of Contents panel */}
                   {tocOpen && toc.length > 0 && (
-                    <aside className="w-56 flex-shrink-0 border-l border-gray-200 bg-white overflow-y-auto py-4 px-3">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                        Contents
-                      </p>
-                      <nav className="space-y-0.5">
-                        {toc.map((entry, i) => (
-                          <button
-                            key={i}
-                            onClick={() => {
-                              previewRef.current
-                                ?.querySelector(`[id="${entry.id}"]`)
-                                ?.scrollIntoView({ behavior: "smooth" });
-                            }}
-                            className={`w-full text-left text-xs py-0.5 text-gray-600 hover:text-blue-600 truncate ${
-                              entry.level === 1 ? "font-semibold" : entry.level === 2 ? "pl-3" : "pl-6 text-gray-400"
-                            }`}
-                          >
-                            {entry.text}
-                          </button>
-                        ))}
-                      </nav>
-                    </aside>
+                    <>
+                      {isMobile && (
+                        <div className="fixed inset-0 bg-black/20 z-[75]" onClick={() => setTocOpen(false)} />
+                      )}
+                      <aside className={`${isMobile ? "fixed inset-y-0 right-0 z-[80] shadow-2xl w-64" : "w-56 border-l"} flex-shrink-0 border-gray-200 bg-white overflow-y-auto py-4 px-3`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            Contents
+                          </p>
+                          {isMobile && (
+                            <button onClick={() => setTocOpen(false)} className="text-gray-400">×</button>
+                          )}
+                        </div>
+                        <nav className="space-y-0.5">
+                          {toc.map((entry, i) => (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                previewRef.current
+                                  ?.querySelector(`[id="${entry.id}"]`)
+                                  ?.scrollIntoView({ behavior: "smooth" });
+                                if (isMobile) setTocOpen(false);
+                              }}
+                              className={`w-full text-left text-xs py-1 text-gray-600 hover:text-blue-600 truncate ${
+                                entry.level === 1 ? "font-semibold" : entry.level === 2 ? "pl-3" : "pl-6 text-gray-400"
+                              }`}
+                            >
+                              {entry.text}
+                            </button>
+                          ))}
+                        </nav>
+                      </aside>
+                    </>
                   )}
                 </div>
               )}

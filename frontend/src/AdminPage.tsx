@@ -800,22 +800,22 @@ export default function AdminPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
-        <div className="flex gap-6">
+        <div className="flex flex-col md:flex-row gap-6">
           {/* Sidebar */}
-          <aside className="w-48 flex-shrink-0">
-            <nav className="space-y-1">
-              <button onClick={() => setActiveTab("models")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "models" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>AI 模型</button>
-              <button onClick={() => setActiveTab("templates")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "templates" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>提示词模板</button>
-              <button onClick={() => setActiveTab("bot")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "bot" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>Bot 管理</button>
-              <button onClick={() => setActiveTab("workspace")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "workspace" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>工作区与项目</button>
+          <aside className="w-full md:w-48 flex-shrink-0">
+            <nav className="flex md:flex-col overflow-x-auto md:overflow-x-visible space-x-1 md:space-x-0 md:space-y-1 pb-2 md:pb-0 scrollbar-hide">
+              <button onClick={() => setActiveTab("models")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "models" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>AI 模型</button>
+              <button onClick={() => setActiveTab("templates")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "templates" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>提示词模板</button>
+              <button onClick={() => setActiveTab("bot")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "bot" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>Bot 管理</button>
+              <button onClick={() => setActiveTab("workspace")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "workspace" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>工作区与项目</button>
               {userRole === "system_admin" && (
                 <>
-                  <button onClick={() => setActiveTab("llm")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "llm" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>系统助手</button>
-                  <button onClick={() => setActiveTab("image_api")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "image_api" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>图片 API</button>
-                  <button onClick={() => setActiveTab("perf")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "perf" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>性能监控</button>
-                  <button onClick={() => setActiveTab("logs")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "logs" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>日志查看</button>
-                  <button onClick={() => setActiveTab("health")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "health" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>健康检查</button>
-                  <button onClick={() => setActiveTab("user")} className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "user" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>用户管理</button>
+                  <button onClick={() => setActiveTab("llm")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "llm" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>系统助手</button>
+                  <button onClick={() => setActiveTab("image_api")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "image_api" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>图片 API</button>
+                  <button onClick={() => setActiveTab("perf")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "perf" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>性能监控</button>
+                  <button onClick={() => setActiveTab("logs")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "logs" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>日志查看</button>
+                  <button onClick={() => setActiveTab("health")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "health" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>健康检查</button>
+                  <button onClick={() => setActiveTab("user")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "user" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>用户管理</button>
                 </>
               )}
             </nav>
