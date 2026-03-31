@@ -1749,7 +1749,7 @@ export default function App() {
     const ch = channels.find((c) => c.channel_id === selectedId);
     setAutoAssist(ch?.auto_assist ?? false);
     setLoading(true);
-    fetch(`${API}/channels/${selectedId}/members?with_username=1`)
+    authFetch(`${API}/channels/${selectedId}/members?with_username=1`)
       .then((r) => r.json())
       .then((d) => {
         if (d.data) {
@@ -1766,7 +1766,7 @@ export default function App() {
       .catch(() => {
         setChannelBots([]);
       });
-    fetch(`${API}/channels/${selectedId}/messages`)
+    authFetch(`${API}/channels/${selectedId}/messages`)
       .then((r) => r.json())
       .then((d) => {
         const data = d.data || [];
@@ -1872,15 +1872,14 @@ export default function App() {
 
   const addBotToChannel = (botId: string): Promise<void> => {
     if (!selectedId) return Promise.resolve();
-    return fetch(`${API}/channels/${selectedId}/members`, {
+    return authFetch(`${API}/channels/${selectedId}/members`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ member_id: botId, member_type: "bot" }),
     })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
-          fetch(`${API}/channels/${selectedId}/members?with_username=1`)
+          authFetch(`${API}/channels/${selectedId}/members?with_username=1`)
             .then((res) => res.json())
             .then((res) => {
               if (res.data) {
@@ -1901,7 +1900,7 @@ export default function App() {
 
   const removeBotFromChannel = (memberId: string) => {
     if (!selectedId) return;
-    fetch(`${API}/channels/${selectedId}/members/${encodeURIComponent(memberId)}`, { method: "DELETE" })
+    authFetch(`${API}/channels/${selectedId}/members/${encodeURIComponent(memberId)}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
@@ -1938,9 +1937,8 @@ export default function App() {
       file_ids: [] as string[],
     };
     if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
-    return fetch(`${API}/channels/${selectedId}/messages`, {
+    return authFetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
@@ -1983,9 +1981,8 @@ export default function App() {
     setPendingFileNames([]);
     setPendingFilePreviews((prev) => { prev.forEach((u) => { if (u) URL.revokeObjectURL(u); }); return []; });
     setReplyingTo(null);
-    fetch(`${API}/channels/${selectedId}/messages`, {
+    authFetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
@@ -2188,9 +2185,8 @@ export default function App() {
 
   const saveContextLayer = (layer: string, content: string) => {
     if (!selectedId) return;
-    fetch(`${API}/channels/${selectedId}/context`, {
+    authFetch(`${API}/channels/${selectedId}/context`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ layer, content }),
     })
       .then((r) => r.json())
@@ -2619,7 +2615,7 @@ export default function App() {
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!confirm(`确定删除频道「${c.name}」？此操作不可恢复。`)) return;
-                    fetch(`${API}/channels/${c.channel_id}`, { method: "DELETE" })
+                    authFetch(`${API}/channels/${c.channel_id}`, { method: "DELETE" })
                       .then((r) => {
                         if (!r.ok) throw new Error("删除失败");
                         setChannels((prev) => prev.filter((x) => x.channel_id !== c.channel_id));
@@ -3231,9 +3227,8 @@ export default function App() {
                   onClick={() => {
                     const next = !autoAssist;
                     setAutoAssist(next);
-                    fetch(`${API}/channels/${selectedId}`, {
+                    authFetch(`${API}/channels/${selectedId}`, {
                       method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ auto_assist: next }),
                     })
                       .then((r) => r.json())

@@ -165,10 +165,14 @@ async def run_orchestrator(
 
     from app.memory.manager import load as memory_load
 
-    memory_context = await memory_load(channel_id)
+    # 并发加载记忆和附件
     attachments: list[dict[str, str]] = []
     attachment_error: str | None = None
-    if trigger_msg.file_ids:
+
+    async def _load_attachments() -> None:
+        nonlocal attachments, attachment_error
+        if not trigger_msg.file_ids:
+            return
         try:
             attachments = await FilePipelineService().prepare_attachments(
                 session,
@@ -180,6 +184,11 @@ async def run_orchestrator(
         except Exception as exc:
             logger.exception("failed to prepare attachments channel_id=%s", channel_id)
             attachment_error = f"读取上传文件失败：{exc}"
+
+    memory_context, _ = await asyncio.gather(
+        memory_load(channel_id),
+        _load_attachments(),
+    )
 
     created: list[Message] = []
     already_broadcast: set[str] = set()

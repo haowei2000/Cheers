@@ -687,7 +687,7 @@ export default function AdminPage() {
       .then(([botsRes, usersRes]) => {
         const bots: BotItem[] = botsRes.data || [];
         const users: UserItem[] = usersRes.data || [];
-        fetch(`${API}/channels/${channelId}/members`).then((r) => r.json()).then((membersRes) => {
+        authFetch(`${API}/channels/${channelId}/members`).then((r) => r.json()).then((membersRes) => {
           const existing = new Set((membersRes.data || []).map((m: MemberOption & { member_id?: string }) => m.member_id || m.id));
           const options: MemberOption[] = [
             ...bots.filter((b) => !existing.has(b.bot_id)).map((b) => ({ id: b.bot_id, type: "bot" as const, label: `@${b.username}${b.display_name ? ` (${b.display_name})` : ""}` })),
@@ -705,7 +705,7 @@ export default function AdminPage() {
     setAddingMembers(true);
     const promises = Array.from(addSelectedIds).map((id) => {
       const opt = addChOptions.find((o) => o.id === id);
-      return fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: id, member_type: opt?.type || "bot" }) }).then((r) => r.json());
+      return authFetch(`${API}/channels/${addCh}/members`, { method: "POST", body: JSON.stringify({ member_id: id, member_type: opt?.type || "bot" }) }).then((r) => r.json());
     });
     Promise.all(promises).then(() => { toast.success("已添加"); setAddSelectedIds(new Set()); setAddingMembers(false); refreshAddChOptions(addCh); }).catch(() => setAddingMembers(false));
   };
@@ -713,7 +713,7 @@ export default function AdminPage() {
   const refreshRmChMembers = (channelId: string) => {
     if (!channelId) { setRmChMembers([]); return; }
     setRmChLoading(true);
-    fetch(`${API}/channels/${channelId}/members`).then((r) => r.json()).then((d) => {
+    authFetch(`${API}/channels/${channelId}/members`).then((r) => r.json()).then((d) => {
       const list = (d.data || []).map((m: MemberOption & { username?: string; display_name?: string; member_type?: string }) => ({ ...m, label: m.label || `${m.display_name || m.username} (@${m.username}) [${m.member_type || m.type}]` }));
       setRmChMembers(list);
       setRmChLoading(false);
@@ -723,13 +723,13 @@ export default function AdminPage() {
   const removeMembersFromChannel = () => {
     if (!rmCh || rmSelectedIds.size === 0) return;
     setRemovingMembers(true);
-    const promises = Array.from(rmSelectedIds).map((id) => fetch(`${API}/channels/${rmCh}/members/${id}`, { method: "DELETE" }).then((r) => r.json()));
+    const promises = Array.from(rmSelectedIds).map((id) => authFetch(`${API}/channels/${rmCh}/members/${id}`, { method: "DELETE" }).then((r) => r.json()));
     Promise.all(promises).then(() => { toast.success("已移除"); setRmSelectedIds(new Set()); setRemovingMembers(false); refreshRmChMembers(rmCh); }).catch(() => setRemovingMembers(false));
   };
 
   const addBotToChannel = () => {
     if (!addCh || !lastCreatedBotId) return;
-    fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: lastCreatedBotId, member_type: "bot" }) })
+    authFetch(`${API}/channels/${addCh}/members`, { method: "POST", body: JSON.stringify({ member_id: lastCreatedBotId, member_type: "bot" }) })
       .then((r) => r.json())
       .then((d) => { if (d.status === "success") { toast.success("Bot 已加入项目"); setLastCreatedBotId(""); } else toast.error(d.message || "加入失败"); })
       .catch((e) => toast.error("请求失败: " + String(e)));
