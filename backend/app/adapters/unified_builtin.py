@@ -33,6 +33,7 @@ logger = logging.getLogger("app.adapters.unified_builtin")
 MAX_LOOP_ITERATIONS = 8
 HISTORY_MSG_COUNT = 20       # 注入 LLM 的历史消息条数上限
 HISTORY_MSG_MAX_CHARS = 600  # 单条历史消息截断长度
+_CLARIFY_PREFIX = "@channel bot 澄清回答："
 
 _DEFAULT_REPLY = (
     "您可以说：怎么创建项目、怎么加入项目、怎么接入 OpenClaw、怎么发消息、"
@@ -584,6 +585,17 @@ def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str,
 
 # ─── 历史消息加载 ─────────────────────────────────────────────────────────────
 
+_UI_BLOCK_RE = re.compile(
+    r"```(?:guide-clarify|guide-form)[^`]*```",
+    re.DOTALL,
+)
+
+
+def _strip_ui_blocks(text: str) -> str:
+    """移除消息中的 guide-clarify / guide-form JSON 代码块（UI 指令，对 LLM 无意义）。"""
+    return _UI_BLOCK_RE.sub("", text).strip()
+
+
 async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
     """批量解析消息列表中所有发送者的显示名称，返回 {sender_id: name}。"""
     from sqlalchemy import select
@@ -633,7 +645,7 @@ async def _fetch_reply_context(session, replied_msg_id: str) -> str:
     if not msg:
         return ""
 
-    quoted = (msg.content or "").strip()
+    quoted = _strip_ui_blocks(msg.content or "")
     if not quoted:
         return ""
     if len(quoted) > 300:
@@ -693,7 +705,7 @@ async def _fetch_recent_history(
 
     lc_messages: list = []
     for m in msgs:
-        content = (m.content or "").strip()
+        content = _strip_ui_blocks(m.content or "")
         if not content:
             continue
         if len(content) > HISTORY_MSG_MAX_CHARS:
@@ -924,7 +936,6 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
         ])
 
         # ── 2. 澄清回答自动存入 decisions ─────────────────────────────────────
-        _CLARIFY_PREFIX = "@channel bot 澄清回答："
         if user_text.startswith(_CLARIFY_PREFIX):
             answer_body = user_text[len(_CLARIFY_PREFIX):].strip()
             if answer_body:
@@ -992,6 +1003,13 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                     "unified_builtin: context fetch failed channel=%s, proceeding without",
                     channel_id,
                 )
+
+        # 澄清回答：剥去 "@channel bot 澄清回答：" 前缀，跳过 reply_prefix
+        # （原始问题已在 system_prompt 的「当前澄清上下文」中，无需重复引用 guide-clarify 消息）
+        _is_clarify = user_text.startswith(_CLARIFY_PREFIX)
+        if _is_clarify:
+            user_text = user_text[len(_CLARIFY_PREFIX):].strip()
+            reply_prefix = ""  # guide-clarify 消息对 LLM 无意义，不引用
 
         # 把回复上下文和发送者标识注入到当前用户消息
         if reply_prefix:
