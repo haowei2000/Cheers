@@ -3458,148 +3458,167 @@ export default function App() {
                       </div>
                     );
 
-                    // ── thread replies (collapsible) ──────────────────────
+                    // ── thread card ───────────────────────────────────────
                     const isExpanded = expandedThreads.has(m.msg_id);
-                    const threadSection = replies.length > 0 ? (
-                      <div className="ml-12 mb-1">
-                        {/* Collapsed summary */}
-                        {!isExpanded && (
-                          <button
-                            type="button"
-                            onClick={() => toggleThread(m.msg_id)}
-                            className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-gray-100 transition-colors group/th text-left"
-                          >
-                            {(() => {
-                              const last = replies[replies.length - 1];
-                              const { text: lt } = parseGuidePayload(last.content);
-                              const preview = (isClarifyReplyUserMessage(last.content)
-                                ? last.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
-                                : (lt || last.content)
-                              ).replace(/\s+/g, " ").slice(0, 10);
-                              return (
-                                <>
-                                  <span className="text-[12px] font-medium text-[#1264A3] group-hover/th:underline">
-                                    {replies.length} 条回复
-                                  </span>
-                                  {preview && (
-                                    <span className="text-[12px] text-gray-400 truncate max-w-[120px]">
-                                      {preview}{(lt || last.content).length > 10 ? "…" : ""}
-                                    </span>
-                                  )}
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-gray-400">
-                                    <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-                                  </svg>
-                                </>
-                              );
-                            })()}
-                          </button>
-                        )}
-                        {/* Expanded replies */}
-                        {isExpanded && (
-                        <div className="pl-3 border-l-2 border-gray-200 flex flex-col gap-0.5">
-                        {replies.map((r) => {
-                          const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
-                          const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
-                          const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
-                          const rInitials = rLabel.slice(0, 2).toUpperCase();
-                          const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
-                          const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
-                          const rDisplay = isClarifyReplyUserMessage(r.content)
-                            ? r.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
-                            : (rTextRaw || r.content);
-                          const rClarifyAnswered = !!rClarify && messages.some(
-                            (x) => x.in_reply_to_msg_id === r.msg_id && isClarifyReplyUserMessage(x.content)
-                          );
-                          const rClarifyWaiting = pendingClarifyReplyMsgId === r.msg_id;
-                          const rClarifyStatus: "form" | "waiting" | "answered" | null =
-                            rClarify && r.sender_type === "bot"
-                              ? rClarifyWaiting ? "waiting" : rClarifyAnswered ? "answered" : "form"
-                              : null;
-                          // Show "↩ name" if replying to a non-root message
-                          const rDirectParent = r.in_reply_to_msg_id !== m.msg_id
-                            ? messages.find((x) => x.msg_id === r.in_reply_to_msg_id)
-                            : null;
-                          const rParentBot = rDirectParent?.sender_type === "bot"
-                            ? channelBots.find((b) => b.member_id === rDirectParent.sender_id)
-                            : null;
-                          const rParentLabel = rDirectParent
-                            ? (rDirectParent.sender_type === "bot"
-                                ? (rParentBot?.display_name || rParentBot?.username || "Bot")
-                                : (rDirectParent.sender_id === currentUserId ? "我" : "用户"))
-                            : null;
 
-                          const rCollapsed = collapsedMessages.has(r.msg_id);
-                          const rPreview = rDisplay.replace(/\s+/g, " ").slice(0, 10) + (rDisplay.length > 10 ? "…" : "");
-                          return (
-                            <div key={r.msg_id} id={`msg-${r.msg_id}`} className="group/tr flex items-start gap-2 py-1">
+                    // No replies — render as a normal standalone bubble
+                    if (replies.length === 0) {
+                      return <div key={m.msg_id}>{rootBubble}</div>;
+                    }
+
+                    // Single reply — render root bubble + one reply inline (no card)
+                    if (replies.length === 1) {
+                      const r = replies[0];
+                      const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
+                      const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
+                      const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
+                      const rInitials = rLabel.slice(0, 2).toUpperCase();
+                      const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+                      const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
+                      const rDisplay = isClarifyReplyUserMessage(r.content)
+                        ? r.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                        : (rTextRaw || r.content);
+                      const rClarifyAnswered = !!rClarify && messages.some(
+                        (x) => x.in_reply_to_msg_id === r.msg_id && isClarifyReplyUserMessage(x.content)
+                      );
+                      const rClarifyWaiting = pendingClarifyReplyMsgId === r.msg_id;
+                      const rClarifyStatus: "form" | "waiting" | "answered" | null =
+                        rClarify && r.sender_type === "bot"
+                          ? rClarifyWaiting ? "waiting" : rClarifyAnswered ? "answered" : "form"
+                          : null;
+                      return (
+                        <div key={m.msg_id}>
+                          {rootBubble}
+                          <div id={`msg-${r.msg_id}`} className="group flex items-start gap-2.5 px-4 py-1 transition-all">
+                            <div className="flex-shrink-0 mt-0.5">
                               {r.sender_type === "bot" ? (
                                 rBot?.avatar_url
-                                  ? <img src={rBot.avatar_url} alt={rLabel} className="w-6 h-6 rounded-lg object-cover flex-shrink-0 mt-0.5" />
-                                  : <div className="w-6 h-6 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5">{rInitials}</div>
+                                  ? <img src={rBot.avatar_url} alt={rLabel} className="w-8 h-8 rounded-xl object-cover" />
+                                  : <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">{rInitials}</div>
                               ) : (
-                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5 ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
                                   {rIsOwn ? "我" : "U"}
                                 </div>
                               )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
-                                  <span className="font-semibold text-[12px] text-gray-900">{rLabel}</span>
-                                  {r.sender_type === "bot" && <span className="text-[9px] px-1 py-0.5 rounded bg-[#2EB67D]/10 text-[#2EB67D] font-medium">Bot</span>}
-                                  <span className="text-[11px] text-gray-400">{rTime}</span>
-                                  {rParentLabel && (
-                                    <span className="text-[11px] text-gray-400">↩ <span className="font-medium text-gray-500">{rParentLabel}</span></span>
-                                  )}
-                                  {rCollapsed && (
-                                    <span className="text-[11px] text-gray-400 truncate max-w-[120px]">{rPreview}</span>
-                                  )}
-                                  <button type="button" onClick={() => toggleMessage(r.msg_id)}
-                                    className="opacity-0 group-hover/tr:opacity-100 transition-opacity ml-0.5 flex items-center justify-center w-4 h-4 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                    title={rCollapsed ? "展开" : "折叠"}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-                                      {rCollapsed
-                                        ? <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-                                        : <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
-                                      }
-                                    </svg>
-                                  </button>
-                                </div>
-                                {!rCollapsed && (
-                                  <>
-                                    {renderFileAttachments(r)}
-                                    <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
-                                      {r._streaming && !rTextRaw
-                                        ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
-                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
-                                      {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
-                                    </div>
-                                    {rForm && selectedId && r.sender_type === "bot" && (
-                                      <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
-                                        onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                                        onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
-                                        userToken={authToken ?? undefined} />
-                                    )}
-                                    {rClarifyStatus !== null && selectedId && (
-                                      <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
-                                        replyContent={undefined}
-                                        onContinue={(answers) => handleClarifyContinue(r.msg_id, rClarify!, answers)}
-                                        onSkip={() => handleClarifySkip(r.msg_id)} />
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                              <button type="button" title="回复" onClick={() => { setReplyingTo(r); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
-                                className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-                                  <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
-                                </svg>
-                              </button>
                             </div>
-                          );
-                        })}
+                            <div className="flex flex-col max-w-[72%]">
+                              <div className="flex items-baseline gap-1.5 mb-1">
+                                <span className="font-semibold text-[13px] text-gray-900 leading-none">{rLabel}</span>
+                                {r.sender_type === "bot" && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>}
+                                <span className="text-[11px] text-gray-400 leading-none">{rTime}</span>
+                              </div>
+                              {renderFileAttachments(r)}
+                              <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
+                                {r._streaming && !rTextRaw
+                                  ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                                  : renderWithThinkFolding(rDisplay, `${r.msg_id}-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
+                                {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
+                              </div>
+                              {rForm && selectedId && r.sender_type === "bot" && (
+                                <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
+                                  onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                                  onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
+                                  userToken={authToken ?? undefined} />
+                              )}
+                              {rClarifyStatus !== null && selectedId && (
+                                <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
+                                  replyContent={undefined}
+                                  onContinue={(answers) => handleClarifyContinue(r.msg_id, rClarify!, answers)}
+                                  onSkip={() => handleClarifySkip(r.msg_id)} />
+                              )}
+                            </div>
+                            <button type="button" title="回复" onClick={() => { setReplyingTo(r); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                                <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // ≥2 replies — Collapsed thread card (overview) ───────────
+                    if (!isExpanded) {
+                      const qPreview = displayContent.replace(/\s+/g, " ").slice(0, 60);
+                      const qOverflow = displayContent.replace(/\s+/g, " ").length > 60;
+                      const lastReply = replies[replies.length - 1];
+                      const { text: lastRText } = parseGuidePayload(lastReply.content);
+                      const lastRDisplay = (isClarifyReplyUserMessage(lastReply.content)
+                        ? lastReply.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                        : (lastRText || lastReply.content)).replace(/\s+/g, " ");
+                      const replyBotIds = [...new Set(replies.filter((r) => r.sender_type === "bot").map((r) => r.sender_id))];
+                      return (
+                        <div key={m.msg_id} id={`msg-${m.msg_id}`} className="mx-3 my-1.5">
                           <button
                             type="button"
                             onClick={() => toggleThread(m.msg_id)}
-                            className="mt-0.5 flex items-center gap-1 px-1 py-0.5 text-[11px] text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors"
+                            className="w-full text-left rounded-xl border border-gray-200 bg-gray-50 hover:border-[#1264A3]/40 hover:shadow transition-all overflow-hidden"
+                          >
+                            {/* Question row */}
+                            <div className="flex items-center gap-2.5 px-3 pt-2.5 pb-2">
+                              {isOwn
+                                ? <div className="w-7 h-7 rounded-lg bg-[#1264A3] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">我</div>
+                                : m.sender_type === "bot"
+                                  ? (senderBot?.avatar_url
+                                    ? <img src={senderBot.avatar_url} alt={botLabel} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
+                                    : <div className="w-7 h-7 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">{botInitials}</div>)
+                                  : <div className="w-7 h-7 rounded-lg bg-gray-400 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">U</div>}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  <span className="text-[12px] font-semibold text-gray-600">
+                                    {isOwn ? "我" : m.sender_type === "bot" ? botLabel : "用户"}
+                                  </span>
+                                  <span className="text-[11px] text-gray-400">{msgTime}</span>
+                                </div>
+                                <p className="text-[13px] text-gray-800 truncate leading-snug font-medium">
+                                  {qPreview}{qOverflow ? "…" : ""}
+                                </p>
+                              </div>
+                            </div>
+                            {/* Bot reply preview row */}
+                            <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-200/60 bg-gray-100/60">
+                              {replyBotIds.length > 0 && (
+                                <div className="flex -space-x-1.5 flex-shrink-0">
+                                  {replyBotIds.slice(0, 4).map((bid) => {
+                                    const rb = channelBots.find((b) => b.member_id === bid);
+                                    const rl = rb?.display_name || rb?.username || "Bot";
+                                    return rb?.avatar_url
+                                      ? <img key={bid} src={rb.avatar_url} alt={rl} className="w-5 h-5 rounded-md object-cover border-2 border-white" />
+                                      : <div key={bid} className="w-5 h-5 rounded-md bg-[#2EB67D] flex items-center justify-center text-white text-[9px] font-bold border-2 border-white select-none">{rl.slice(0, 1).toUpperCase()}</div>;
+                                  })}
+                                </div>
+                              )}
+                              <span className="flex-1 min-w-0 text-[12px] text-gray-500 truncate">
+                                {lastRDisplay.slice(0, 80)}{lastRDisplay.length > 80 ? "…" : ""}
+                              </span>
+                              <span className="text-[11px] font-medium text-[#1264A3] whitespace-nowrap flex-shrink-0">
+                                {replies.length} 条回复
+                              </span>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-gray-400 flex-shrink-0">
+                                <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // ── Expanded thread card ───────────────────────────────
+                    return (
+                      <div key={m.msg_id} id={`msg-${m.msg_id}`} className="mx-3 my-1.5 rounded-xl border border-[#1264A3]/20 bg-gray-50 shadow-sm overflow-hidden">
+                        {/* Thread header */}
+                        <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
+                          <div className="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-[#1264A3]">
+                              <path fillRule="evenodd" d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v6A1.5 1.5 0 0 1 13.5 11H9.25l-2.35 2.35A.75.75 0 0 1 5.5 12.75V11H2.5A1.5 1.5 0 0 1 1 9.5v-6Z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-[12px] font-medium text-[#1264A3]">对话串 · {replies.length + 1} 条消息</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleThread(m.msg_id)}
+                            className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
                               <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
@@ -3607,14 +3626,127 @@ export default function App() {
                             收起
                           </button>
                         </div>
-                        )}
-                      </div>
-                    ) : null;
-
-                    return (
-                      <div key={m.msg_id}>
+                        {/* Root message */}
                         {rootBubble}
-                        {threadSection}
+                        {/* Replies divider */}
+                        <div className="flex items-center gap-2 px-4 py-1">
+                          <div className="flex-1 h-px bg-gray-200" />
+                          <span className="text-[11px] text-gray-400 whitespace-nowrap">{replies.length} 条回复</span>
+                          <div className="flex-1 h-px bg-gray-200" />
+                        </div>
+                        {/* Reply messages */}
+                        <div className="flex flex-col gap-0.5 pb-1.5">
+                          {replies.map((r) => {
+                            const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
+                            const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
+                            const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
+                            const rInitials = rLabel.slice(0, 2).toUpperCase();
+                            const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+                            const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
+                            const rDisplay = isClarifyReplyUserMessage(r.content)
+                              ? r.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                              : (rTextRaw || r.content);
+                            const rClarifyAnswered = !!rClarify && messages.some(
+                              (x) => x.in_reply_to_msg_id === r.msg_id && isClarifyReplyUserMessage(x.content)
+                            );
+                            const rClarifyWaiting = pendingClarifyReplyMsgId === r.msg_id;
+                            const rClarifyStatus: "form" | "waiting" | "answered" | null =
+                              rClarify && r.sender_type === "bot"
+                                ? rClarifyWaiting ? "waiting" : rClarifyAnswered ? "answered" : "form"
+                                : null;
+                            const rDirectParent = r.in_reply_to_msg_id !== m.msg_id
+                              ? messages.find((x) => x.msg_id === r.in_reply_to_msg_id)
+                              : null;
+                            const rParentBot = rDirectParent?.sender_type === "bot"
+                              ? channelBots.find((b) => b.member_id === rDirectParent.sender_id)
+                              : null;
+                            const rParentLabel = rDirectParent
+                              ? (rDirectParent.sender_type === "bot"
+                                  ? (rParentBot?.display_name || rParentBot?.username || "Bot")
+                                  : (rDirectParent.sender_id === currentUserId ? "我" : "用户"))
+                              : null;
+                            const rCollapsed = collapsedMessages.has(r.msg_id);
+                            const rPreview = rDisplay.replace(/\s+/g, " ").slice(0, 10) + (rDisplay.length > 10 ? "…" : "");
+                            return (
+                              <div key={r.msg_id} id={`msg-${r.msg_id}`} className="group/tr flex items-start gap-2 px-3 py-1">
+                                {r.sender_type === "bot" ? (
+                                  rBot?.avatar_url
+                                    ? <img src={rBot.avatar_url} alt={rLabel} className="w-6 h-6 rounded-lg object-cover flex-shrink-0 mt-0.5" />
+                                    : <div className="w-6 h-6 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5">{rInitials}</div>
+                                ) : (
+                                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5 ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
+                                    {rIsOwn ? "我" : "U"}
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
+                                    <span className="font-semibold text-[12px] text-gray-900">{rLabel}</span>
+                                    {r.sender_type === "bot" && <span className="text-[9px] px-1 py-0.5 rounded bg-[#2EB67D]/10 text-[#2EB67D] font-medium">Bot</span>}
+                                    <span className="text-[11px] text-gray-400">{rTime}</span>
+                                    {rParentLabel && (
+                                      <span className="text-[11px] text-gray-400">↩ <span className="font-medium text-gray-500">{rParentLabel}</span></span>
+                                    )}
+                                    {rCollapsed && (
+                                      <span className="text-[11px] text-gray-400 truncate max-w-[120px]">{rPreview}</span>
+                                    )}
+                                    <button type="button" onClick={() => toggleMessage(r.msg_id)}
+                                      className="opacity-0 group-hover/tr:opacity-100 transition-opacity ml-0.5 flex items-center justify-center w-4 h-4 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                      title={rCollapsed ? "展开" : "折叠"}>
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                                        {rCollapsed
+                                          ? <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                                          : <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                                        }
+                                      </svg>
+                                    </button>
+                                  </div>
+                                  {!rCollapsed && (
+                                    <>
+                                      {renderFileAttachments(r)}
+                                      <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
+                                        {r._streaming && !rTextRaw
+                                          ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                                          : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
+                                        {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
+                                      </div>
+                                      {rForm && selectedId && r.sender_type === "bot" && (
+                                        <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
+                                          onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                                          onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
+                                          userToken={authToken ?? undefined} />
+                                      )}
+                                      {rClarifyStatus !== null && selectedId && (
+                                        <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
+                                          replyContent={undefined}
+                                          onContinue={(answers) => handleClarifyContinue(r.msg_id, rClarify!, answers)}
+                                          onSkip={() => handleClarifySkip(r.msg_id)} />
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                                <button type="button" title="回复" onClick={() => { setReplyingTo(r); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                                  className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                                    <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                                  </svg>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {/* Bottom collapse button */}
+                        <div className="flex justify-center py-1.5 border-t border-gray-100">
+                          <button
+                            type="button"
+                            onClick={() => toggleThread(m.msg_id)}
+                            className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded hover:bg-gray-100 transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                              <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                            </svg>
+                            收起对话串
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
