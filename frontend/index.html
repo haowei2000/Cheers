@@ -2,8 +2,21 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AgentNexus 智枢协作平台</title>
+    <style>
+      /* Prevent iOS Safari from auto-zooming on input focus (requires font-size >= 16px) */
+      @media screen and (max-width: 767px) {
+        input, select, textarea { font-size: 16px !important; }
+      }
+      /* Smooth momentum scrolling on iOS */
+      * { -webkit-overflow-scrolling: touch; }
+      /* Hide scrollbar for horizontal nav on admin page */
+      .scrollbar-hide::-webkit-scrollbar { display: none; }
+      .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+      /* Fix h-dvh on iOS — ensure body fills the full dynamic viewport */
+      html, body, #root { height: 100%; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

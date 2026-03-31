@@ -55,7 +55,7 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
     <button
       type="button"
       onClick={handleClick}
-      className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm max-w-[280px] hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer my-0.5 align-middle"
+      className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm max-w-full hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer my-0.5 align-middle"
     >
       <span className={`w-7 h-7 rounded-md ${bg} flex items-center justify-center flex-shrink-0`}>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 ${fg}`}>
