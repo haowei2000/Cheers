@@ -15,7 +15,7 @@ _context_db_initialized = False
 
 
 async def init_context_db() -> None:
-    """创建 context_store 表（如果不存在）；只在进程内首次调用时执行 DDL。"""
+    """创建 context_store 表（如果不存在）."""
     global _context_db_initialized
     if _context_db_initialized:
         return

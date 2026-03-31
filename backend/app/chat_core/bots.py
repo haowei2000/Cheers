@@ -29,7 +29,6 @@ _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
 
 
 def _validate_username(username: str) -> None:
-    """校验 Bot 用户名：只允许字母、数字、下划线、连字符、单引号、中文，不含空格及其他特殊字符。"""
     if not username or not username.strip():
         raise HTTPException(status_code=400, detail="用户名不能为空")
     if not _USERNAME_RE.match(username.strip()):
