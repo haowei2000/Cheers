@@ -31,6 +31,8 @@ from app.guide.help_index import (
 logger = logging.getLogger("app.adapters.unified_builtin")
 
 MAX_LOOP_ITERATIONS = 8
+HISTORY_MSG_COUNT = 20       # 注入 LLM 的历史消息条数上限
+HISTORY_MSG_MAX_CHARS = 600  # 单条历史消息截断长度
 
 _DEFAULT_REPLY = (
     "您可以说：怎么创建项目、怎么加入项目、怎么接入 OpenClaw、怎么发消息、"
@@ -580,6 +582,132 @@ def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str,
     return "\n\n".join(part for part in sections if part).strip()
 
 
+# ─── 历史消息加载 ─────────────────────────────────────────────────────────────
+
+async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
+    """批量解析消息列表中所有发送者的显示名称，返回 {sender_id: name}。"""
+    from sqlalchemy import select
+    from app.db.models import BotAccount, User
+
+    user_ids = {m.sender_id for m in msgs if m.sender_type == "user"}
+    bot_ids = {m.sender_id for m in msgs if m.sender_type == "bot"}
+    names: dict[str, str] = {}
+
+    if user_ids:
+        ur = await session.execute(select(User).where(User.user_id.in_(user_ids)))
+        for u in ur.scalars().all():
+            names[u.user_id] = u.display_name or u.username
+    if bot_ids:
+        br = await session.execute(select(BotAccount).where(BotAccount.bot_id.in_(bot_ids)))
+        for b in br.scalars().all():
+            names[b.bot_id] = b.display_name or b.username
+
+    return names
+
+
+async def _fetch_user_display_name(session, user_id: str) -> str:
+    """获取单个用户的显示名称，失败时返回空字符串。"""
+    if not user_id:
+        return ""
+    from sqlalchemy import select
+    from app.db.models import User
+
+    r = await session.execute(select(User).where(User.user_id == user_id))
+    u = r.scalar_one_or_none()
+    return (u.display_name or u.username) if u else ""
+
+
+async def _fetch_reply_context(session, replied_msg_id: str) -> str:
+    """
+    获取被回复消息的摘要前缀，格式：「回复 [发送者]: <内容摘要>」
+
+    供内置助手理解当前消息所针对的上文，返回空字符串表示无回复上下文。
+    """
+    if not replied_msg_id:
+        return ""
+    from sqlalchemy import select
+    from app.db.models import BotAccount, Message as MsgModel, User
+
+    r = await session.execute(select(MsgModel).where(MsgModel.msg_id == replied_msg_id))
+    msg = r.scalar_one_or_none()
+    if not msg:
+        return ""
+
+    quoted = (msg.content or "").strip()
+    if not quoted:
+        return ""
+    if len(quoted) > 300:
+        quoted = quoted[:300] + "…"
+
+    # 解析发送者名称
+    sender_label = ""
+    if msg.sender_type == "user":
+        ur = await session.execute(select(User).where(User.user_id == msg.sender_id))
+        u = ur.scalar_one_or_none()
+        sender_label = (u.display_name or u.username) if u else ""
+    else:
+        br = await session.execute(select(BotAccount).where(BotAccount.bot_id == msg.sender_id))
+        b = br.scalar_one_or_none()
+        sender_label = (b.display_name or b.username) if b else ""
+
+    if sender_label:
+        return f"「回复 [{sender_label}]：{quoted}」\n\n"
+    return f"「回复：{quoted}」\n\n"
+
+
+async def _fetch_recent_history(
+    session,
+    channel_id: str,
+    before_msg_id: str | None,
+    limit: int = HISTORY_MSG_COUNT,
+) -> list:
+    """
+    从 DB 拉取当前触发消息之前的最近 limit 条非空消息，
+    转换为带发送者标识的 LangChain HumanMessage / AIMessage 列表（时间正序）。
+
+    每条消息格式：[发送者名称]: <内容>
+    使用 before_msg_id 精确定位，避免把当前轮次的消息重复带入。
+    """
+    from sqlalchemy import select
+    from app.db.models import Message as MsgModel
+
+    q = select(MsgModel).where(
+        MsgModel.channel_id == channel_id,
+        MsgModel.content != "",
+    )
+
+    if before_msg_id:
+        sub = (
+            select(MsgModel.created_at)
+            .where(MsgModel.msg_id == before_msg_id)
+            .scalar_subquery()
+        )
+        q = q.where(MsgModel.created_at < sub)
+
+    q = q.order_by(MsgModel.created_at.desc()).limit(limit)
+    result = await session.execute(q)
+    msgs = list(result.scalars().all())
+    msgs.reverse()  # 转为时间正序
+
+    display_names = await _resolve_display_names(session, msgs)
+
+    lc_messages: list = []
+    for m in msgs:
+        content = (m.content or "").strip()
+        if not content:
+            continue
+        if len(content) > HISTORY_MSG_MAX_CHARS:
+            content = content[:HISTORY_MSG_MAX_CHARS] + "…"
+        name = display_names.get(m.sender_id, "")
+        labeled = f"[{name}]: {content}" if name else content
+        if m.sender_type == "user":
+            lc_messages.append(HumanMessage(content=labeled))
+        else:
+            lc_messages.append(AIMessage(content=labeled))
+
+    return lc_messages
+
+
 # ─── Agent Loop ───────────────────────────────────────────────────────────────
 
 async def _run_agent(
@@ -587,6 +715,7 @@ async def _run_agent(
     user_content: str | list,
     ctx: dict,
     stream_cb=None,
+    history: list | None = None,
 ) -> str:
     """使用 LangChain bind_tools + 手动 agent loop 运行 Agent，支持流式输出。"""
     cfg = _get_llm_config()
@@ -605,6 +734,7 @@ async def _run_agent(
 
     messages: list = [
         SystemMessage(content=system_prompt),
+        *(history or []),
         HumanMessage(content=user_content),
     ]
 
@@ -824,7 +954,52 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "_bot_id": pconfig.get("_bot_id"),
         }
 
-        # ── 4. Agent（支持 Vision 多模态）─────────────────────────────────────
+        # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────
+        chat_history: list = []
+        db_session = pconfig.get("_db_session")
+        trigger_meta = payload.trigger_message or {}
+        trigger_msg_id = trigger_meta.get("msg_id")
+        in_reply_to_msg_id = trigger_meta.get("in_reply_to_msg_id")
+        current_user_name = ""
+        reply_prefix = ""
+
+        if db_session:
+            try:
+                import asyncio as _asyncio
+
+                async def _noop_list() -> list:
+                    return []
+
+                async def _noop_str() -> str:
+                    return ""
+
+                _results = await _asyncio.gather(
+                    _fetch_recent_history(db_session, channel_id, trigger_msg_id) if trigger_msg_id else _noop_list(),
+                    _fetch_user_display_name(db_session, sender_id),
+                    _fetch_reply_context(db_session, in_reply_to_msg_id) if in_reply_to_msg_id else _noop_str(),
+                    return_exceptions=True,
+                )
+                chat_history = _results[0] if not isinstance(_results[0], BaseException) else []
+                current_user_name = _results[1] if not isinstance(_results[1], BaseException) else ""
+                reply_prefix = _results[2] if not isinstance(_results[2], BaseException) else ""
+
+                logger.debug(
+                    "unified_builtin: history=%d user=%r reply=%s channel=%s",
+                    len(chat_history), current_user_name, bool(reply_prefix), channel_id,
+                )
+            except Exception:
+                logger.warning(
+                    "unified_builtin: context fetch failed channel=%s, proceeding without",
+                    channel_id,
+                )
+
+        # 把回复上下文和发送者标识注入到当前用户消息
+        if reply_prefix:
+            user_text = reply_prefix + user_text
+        if current_user_name:
+            user_text = f"[{current_user_name}]: {user_text}"
+
+        # ── 5. Agent（支持 Vision 多模态）─────────────────────────────────────
         stream_cb = pconfig.get("_stream_token")
         cfg = _get_llm_config()
         supports_vision = (cfg or {}).get("supports_vision", True) if cfg else True
@@ -844,7 +1019,10 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 user_text += "\n\n（注：当前 LLM 未启用图片识别，已忽略图片附件。）"
             user_content = user_text
 
-        content = await _run_agent(system_prompt, user_content, tool_ctx, stream_cb=stream_cb)
+        content = await _run_agent(
+            system_prompt, user_content, tool_ctx,
+            stream_cb=stream_cb, history=chat_history,
+        )
 
         # ── 5. 关键词兜底（LLM 不可用时） ─────────────────────────────────────
         if not content:

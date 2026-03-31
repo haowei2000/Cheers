@@ -303,6 +303,8 @@ async def run_orchestrator(
                     "user": trigger_msg.sender_id,
                     "text": trigger_content,
                     "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
+                    "msg_id": trigger_msg.msg_id,
+                    "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
                 },
                 memory_context=memory_context,
                 attachments=attachments,
@@ -399,7 +401,7 @@ async def run_orchestrator(
         templated_text = _apply_prompt_template(bot_template, trigger_content)
         other_bots = [item for item in channel_bot_usernames if item != username]
         bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
-        
+
         payload = AgentPayload(
             task_id=root_task_id,
             channel_id=channel_id,
@@ -407,6 +409,8 @@ async def run_orchestrator(
                 "user": trigger_msg.sender_id,
                 "text": templated_text,
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
+                "msg_id": trigger_msg.msg_id,
+                "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
             },
             memory_context=memory_context,
             attachments=attachments,
