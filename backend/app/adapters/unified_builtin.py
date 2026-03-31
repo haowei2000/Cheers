@@ -31,7 +31,7 @@ from app.guide.help_index import (
 logger = logging.getLogger("app.adapters.unified_builtin")
 
 MAX_LOOP_ITERATIONS = 8
-HISTORY_MSG_COUNT = 20       # 注入 LLM 的历史消息条数上限
+HISTORY_MSG_COUNT = 30       # 注入 LLM 的历史消息条数上限
 HISTORY_MSG_MAX_CHARS = 600  # 单条历史消息截断长度
 _CLARIFY_PREFIX = "@channel bot 澄清回答："
 
