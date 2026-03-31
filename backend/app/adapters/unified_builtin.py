@@ -331,6 +331,19 @@ def _make_tools(ctx: dict) -> list:
             "unified_builtin[tool]: create_file %s channel=%s",
             original_filename, channel_id,
         )
+
+        # 将生成的文件注册到 FILES_INDEX
+        from app.memory.files_index import update_files_index
+        # 取前 300 字作为摘要
+        summary = body[:300] + ("…" if len(body) > 300 else "")
+        await update_files_index(channel_id, [{
+            "file_id": file_id,
+            "filename": original_filename,
+            "content_type": "text/markdown",
+            "is_image": "false",
+            "summary": summary,
+        }])
+
         return f"文件已创建：[{original_filename}]({download_url})\n\n下载链接：`{download_url}`"
 
     @tool
