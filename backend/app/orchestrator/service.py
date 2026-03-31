@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
@@ -34,10 +35,11 @@ def _is_guide_clarify_reply(content: str) -> bool:
 
 async def _fetch_original_question_for_clarify(
     session: AsyncSession, channel_id: str, trigger_msg: Message
-) -> str | None:
+) -> tuple[str | None, list[str]]:
     """
-    当 trigger_msg 为澄清回答时，查找并返回原问题文本。
+    当 trigger_msg 为澄清回答时，查找并返回原问题文本及其附件 file_ids。
     逻辑：澄清回答前一条应为 Bot 的 guide-clarify 消息，其 in_reply_to_msg_id 指向原问题。
+    返回：(原问题文本 | None, 原问题 file_ids 列表)
     """
     r = await session.execute(
         select(Message)
@@ -61,14 +63,16 @@ async def _fetch_original_question_for_clarify(
         orig = orig_r.scalar_one_or_none()
         if orig and orig.sender_type == "user":
             out = (orig.content or "").strip()
+            orig_file_ids: list[str] = orig.file_ids or []
             logger.info(
-                "orchestrator: fetched original_question for clarify, len=%s",
+                "orchestrator: fetched original_question for clarify, len=%s file_ids=%s",
                 len(out),
+                orig_file_ids,
             )
-            return out
+            return out, orig_file_ids
         break
     logger.warning("orchestrator: no original_question found for clarify reply")
-    return None
+    return None, []
 
 
 def _apply_prompt_template(template: str | None, user_message: str) -> str:
@@ -109,6 +113,7 @@ async def run_orchestrator(
             ChannelMembership.channel_id == channel_id,
             ChannelMembership.member_type == "bot",
         )
+        .options(selectinload(BotAccount.prompt_template))
     )
     rows = result.all()
     channel_bot_usernames = [row[1].username for row in rows]
@@ -127,6 +132,13 @@ async def run_orchestrator(
     }
 
     trigger_content = _get_trigger_content(trigger_msg)
+    
+    # 澄清场景：若为澄清回答，提取原问题及其附件
+    original_question = None
+    original_file_ids: list[str] = []
+    if _is_guide_clarify_reply(trigger_content):
+        original_question, original_file_ids = await _fetch_original_question_for_clarify(session, channel_id, trigger_msg)
+
     mentioned = extract_mentions(trigger_content)
     target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_content)
     direct_answer_mode = False
@@ -159,21 +171,42 @@ async def run_orchestrator(
 
     from app.memory.manager import load as memory_load
 
-    memory_context = await memory_load(channel_id)
     attachments: list[dict[str, str]] = []
     attachment_error: str | None = None
-    if trigger_msg.file_ids:
+
+    async def _load_attachments() -> None:
+        nonlocal attachments, attachment_error
+        # 优先使用当前触发消息的附件；澄清回答场景下回退到原问题的附件
+        file_ids = trigger_msg.file_ids or original_file_ids
+        if not file_ids:
+            return
         try:
-            attachments = await FilePipelineService().prepare_attachments(
+            attachments = await FilePipelineService().prepare_metadata_only(
                 session,
                 channel_id=channel_id,
-                file_ids=trigger_msg.file_ids,
+                file_ids=file_ids,
             )
+            if original_file_ids and not trigger_msg.file_ids:
+                logger.info(
+                    "orchestrator: restored %d attachment(s) from original clarify question channel=%s",
+                    len(attachments),
+                    channel_id,
+                )
         except FileFlowError as exc:
             attachment_error = exc.detail
         except Exception as exc:
             logger.exception("failed to prepare attachments channel_id=%s", channel_id)
             attachment_error = f"读取上传文件失败：{exc}"
+
+    memory_context, _ = await asyncio.gather(
+        memory_load(channel_id),
+        _load_attachments(),
+    )
+
+    # 文档附件登记到 FILES_INDEX（后台非阻塞）
+    if attachments:
+        from app.memory.files_index import schedule_files_index_update
+        schedule_files_index_update(channel_id, attachments)
 
     created: list[Message] = []
     already_broadcast: set[str] = set()
@@ -287,9 +320,12 @@ async def run_orchestrator(
                     "user": trigger_msg.sender_id,
                     "text": trigger_content,
                     "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
+                    "msg_id": trigger_msg.msg_id,
+                    "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
                 },
                 memory_context=memory_context,
                 attachments=attachments,
+                original_question_text=original_question,
                 process_config={
                     "channel_bot_usernames": other_bots,
                     "channel_bot_details": {
@@ -342,6 +378,7 @@ async def run_orchestrator(
                         },
                         memory_context=memory_context,
                         attachments=attachments,
+                        original_question_text=original_question,
                         process_config={"_stream_token": _make_stream_token_cb(sug_msg.msg_id)},
                     )
                     pending_sug.append((sug_username, sug_bot_id, sug_msg, sug_payload, sug_adapter))
@@ -381,6 +418,7 @@ async def run_orchestrator(
         templated_text = _apply_prompt_template(bot_template, trigger_content)
         other_bots = [item for item in channel_bot_usernames if item != username]
         bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
+
         payload = AgentPayload(
             task_id=root_task_id,
             channel_id=channel_id,
@@ -388,9 +426,12 @@ async def run_orchestrator(
                 "user": trigger_msg.sender_id,
                 "text": templated_text,
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
+                "msg_id": trigger_msg.msg_id,
+                "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
             },
             memory_context=memory_context,
             attachments=attachments,
+            original_question_text=original_question,
             process_config={
                 "channel_bot_usernames": other_bots,
                 "channel_bot_details": {key: value for key, value in bot_details_by_username.items() if key != username},

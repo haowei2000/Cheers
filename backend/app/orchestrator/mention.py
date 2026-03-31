@@ -2,8 +2,8 @@
 import re
 
 
-# 匹配 @username 或 @botname（字母、数字、下划线、连字符、中文等，不含空格）
-MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_\-\u4e00-\u9fff]+)")
+# 匹配 @username 或 @botname（字母、数字、下划线、连字符、单引号、中文等，不含空格）
+MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_\-'\u4e00-\u9fff]+)")
 
 
 def extract_mentions(text: str) -> list[str]:

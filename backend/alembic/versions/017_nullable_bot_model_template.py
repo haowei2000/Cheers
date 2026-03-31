@@ -17,10 +17,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.alter_column("bot_accounts", "model_id", nullable=True)
-    op.alter_column("bot_accounts", "template_id", nullable=True)
+    with op.batch_alter_table("bot_accounts", schema=None) as batch_op:
+        batch_op.alter_column("model_id", nullable=True)
+        batch_op.alter_column("template_id", nullable=True)
 
 
 def downgrade() -> None:
-    op.alter_column("bot_accounts", "model_id", nullable=False)
-    op.alter_column("bot_accounts", "template_id", nullable=False)
+    with op.batch_alter_table("bot_accounts", schema=None) as batch_op:
+        batch_op.alter_column("model_id", nullable=False)
+        batch_op.alter_column("template_id", nullable=False)

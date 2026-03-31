@@ -77,7 +77,7 @@ export default function ChannelMembersModal({
   const loadFriendsToInvite = async () => {
     try {
       const res = await fetch(
-        `${API}/channels/${channelId}/friends-to-invite?user_id=${encodeURIComponent(currentUserId)}`,
+        `${API}/channels/${channelId}/friends-to-invite`,
         { headers: authHeaders }
       );
       const data = await res.json();
@@ -178,7 +178,6 @@ export default function ChannelMembersModal({
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
-          inviter_id: currentUserId,
           identifier: inviteQuery.trim(),
         }),
       });

@@ -3,6 +3,7 @@
 新架构：Bot = 模型 + 提示词模板
 """
 import json
+import re
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -19,8 +20,19 @@ from app.chat_core.schemas import (
 from app.db.models import BotAccount, BotRegistrationRequest, gen_uuid, AIModel, PromptTemplate, User
 from app.db.session import get_session
 from app.auth.routes import get_current_user
+from app.utils.permissions import can_access, get_friend_ids, is_admin
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
+
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
+
+
+def _validate_username(username: str) -> None:
+    if not username or not username.strip():
+        raise HTTPException(status_code=400, detail="用户名不能为空")
+    if not _USERNAME_RE.match(username.strip()):
+        raise HTTPException(status_code=400, detail="用户名只能包含字母、数字、下划线、连字符、单引号和中文")
 
 
 def _validate_intro(intro: str | None) -> str | None:
@@ -42,26 +54,71 @@ def _validate_intro(intro: str | None) -> str | None:
 
 
 async def _validate_model_and_template(
-    session: AsyncSession, model_id: str, template_id: str
+    session: AsyncSession, model_id: str, template_id: str, current_user: "User"
 ) -> tuple[AIModel, PromptTemplate]:
-    """验证模型和模板是否存在且可用."""
-    # 检查模型
+    """验证模型和模板是否存在、可用，且当前用户有权访问。"""
+    from app.utils.permissions import can_access as _can_access
+
     model_result = await session.execute(
         select(AIModel).where(AIModel.model_id == model_id, AIModel.is_enabled == True)
     )
     model = model_result.scalar_one_or_none()
     if not model:
         raise HTTPException(status_code=400, detail="指定的模型不存在或已禁用")
-    
-    # 检查模板
+    if not await _can_access(session, current_user, model.created_by, model.is_public):
+        raise HTTPException(status_code=403, detail="无权使用该模型")
+
     template_result = await session.execute(
         select(PromptTemplate).where(PromptTemplate.template_id == template_id)
     )
     template = template_result.scalar_one_or_none()
     if not template:
         raise HTTPException(status_code=400, detail="指定的提示词模板不存在")
-    
+
     return model, template
+
+
+def _bot_to_simple(row: BotAccount) -> dict:
+    d = BotSimpleInResponse(
+        bot_id=row.bot_id,
+        username=row.username,
+        display_name=row.display_name,
+        description=row.description,
+        status=row.status,
+        is_public=row.is_public,
+        model_name=row.ai_model.name if row.ai_model else None,
+        template_name=row.prompt_template.name if row.prompt_template else None,
+        created_by=row.created_by,
+        created_at=row.created_at,
+    ).model_dump()
+    if row.created_at:
+        d["created_at"] = row.created_at.isoformat()
+    return d
+
+
+def _bot_to_full(bot: BotAccount, model_name: str | None = None, template_name: str | None = None) -> dict:
+    mn = model_name if model_name is not None else (bot.ai_model.name if bot.ai_model else None)
+    tn = template_name if template_name is not None else (bot.prompt_template.name if bot.prompt_template else None)
+    d = BotInResponse(
+        bot_id=bot.bot_id,
+        username=bot.username,
+        display_name=bot.display_name,
+        description=bot.description,
+        avatar_url=bot.avatar_url,
+        status=bot.status,
+        is_public=bot.is_public,
+        intro=bot.intro,
+        custom_system_prompt=bot.custom_system_prompt,
+        created_at=bot.created_at,
+        model_id=bot.model_id,
+        template_id=bot.template_id,
+        model_name=mn,
+        template_name=tn,
+        created_by=bot.created_by,
+    ).model_dump()
+    if bot.created_at:
+        d["created_at"] = bot.created_at.isoformat()
+    return d
 
 
 @router.get("")
@@ -69,27 +126,24 @@ async def list_bots(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取所有 Bot 账号列表（需要登录）."""
+    """获取 Bot 列表。
+
+    可见规则：
+    - 仅限：自己创建的 + 好友公开的
+    """
     result = await session.execute(
         select(BotAccount).order_by(BotAccount.created_at.desc())
     )
-    items = []
-    for row in result.scalars().all():
-        d = BotSimpleInResponse(
-            bot_id=row.bot_id,
-            username=row.username,
-            display_name=row.display_name,
-            description=row.description,
-            status=row.status,
-            model_name=row.ai_model.name if row.ai_model else None,
-            template_name=row.prompt_template.name if row.prompt_template else None,
-            created_by=row.created_by,
-            created_at=row.created_at,
-        ).model_dump()
-        if row.created_at:
-            d["created_at"] = row.created_at.isoformat()
-        items.append(d)
-    return {"status": "success", "data": items}
+    all_bots = result.scalars().all()
+
+    friend_ids = await get_friend_ids(session, current_user.user_id)
+    visible = [
+        b for b in all_bots
+        if b.created_by == current_user.user_id
+        or (b.is_public and b.created_by in friend_ids)
+    ]
+
+    return {"status": "success", "data": [_bot_to_simple(b) for b in visible]}
 
 
 @router.post("")
@@ -112,6 +166,8 @@ async def create_bot(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="bot_id 已存在")
 
+    _validate_username(body.username)
+
     # 检查 username 是否已存在
     existing_user = await session.execute(
         select(BotAccount).where(BotAccount.username == body.username.strip())
@@ -121,7 +177,7 @@ async def create_bot(
 
     # 验证模型和模板
     model, template = await _validate_model_and_template(
-        session, body.model_id, body.template_id
+        session, body.model_id, body.template_id, current_user
     )
 
     intro_val = _validate_intro(body.intro) if body.intro else None
@@ -135,6 +191,7 @@ async def create_bot(
         template_id=body.template_id,
         custom_system_prompt=body.custom_system_prompt.strip() if body.custom_system_prompt else None,
         status=body.status.strip() or "online",
+        is_public=body.is_public,
         intro=intro_val,
         avatar_url=body.avatar_url.strip() if body.avatar_url else None,
         created_by=current_user.user_id,
@@ -143,25 +200,7 @@ async def create_bot(
     await session.commit()
     await session.refresh(bot)
 
-    d = BotInResponse(
-        bot_id=bot.bot_id,
-        username=bot.username,
-        display_name=bot.display_name,
-        description=bot.description,
-        avatar_url=bot.avatar_url,
-        status=bot.status,
-        intro=bot.intro,
-        custom_system_prompt=bot.custom_system_prompt,
-        created_at=bot.created_at,
-        model_id=bot.model_id,
-        template_id=bot.template_id,
-        model_name=model.name,
-        template_name=template.name,
-        created_by=bot.created_by,
-    ).model_dump()
-    if bot.created_at:
-        d["created_at"] = bot.created_at.isoformat()
-    return {"status": "success", "data": d}
+    return {"status": "success", "data": _bot_to_full(bot, model.name, template.name)}
 
 
 @router.get("/{bot_id}")
@@ -177,26 +216,9 @@ async def get_bot(
     bot = result.scalar_one_or_none()
     if not bot:
         raise HTTPException(status_code=404, detail="Bot 不存在")
-    
-    d = BotInResponse(
-        bot_id=bot.bot_id,
-        username=bot.username,
-        display_name=bot.display_name,
-        description=bot.description,
-        avatar_url=bot.avatar_url,
-        status=bot.status,
-        intro=bot.intro,
-        custom_system_prompt=bot.custom_system_prompt,
-        created_at=bot.created_at,
-        model_id=bot.model_id,
-        template_id=bot.template_id,
-        model_name=bot.ai_model.name if bot.ai_model else None,
-        template_name=bot.prompt_template.name if bot.prompt_template else None,
-        created_by=bot.created_by,
-    ).model_dump()
-    if bot.created_at:
-        d["created_at"] = bot.created_at.isoformat()
-    return {"status": "success", "data": d}
+    if not await can_access(session, current_user, bot.created_by, bot.is_public):
+        raise HTTPException(status_code=403, detail="无权访问该 Bot")
+    return {"status": "success", "data": _bot_to_full(bot)}
 
 
 @router.put("/{bot_id}")
@@ -213,11 +235,12 @@ async def update_bot(
     bot = result.scalar_one_or_none()
     if not bot:
         raise HTTPException(status_code=404, detail="Bot 不存在")
-    if bot.created_by != current_user.user_id and current_user.role not in ("system_admin", "space_admin"):
+    if bot.created_by != current_user.user_id and not is_admin(current_user):
         raise HTTPException(status_code=403, detail="权限不足，仅 Bot 创建者或管理员可编辑")
 
     if body.username is not None:
         uname = body.username.strip()
+        _validate_username(uname)
         if uname != bot.username:
             existing = await session.execute(
                 select(BotAccount).where(BotAccount.username == uname)
@@ -238,6 +261,9 @@ async def update_bot(
     if body.status is not None:
         bot.status = body.status.strip() or bot.status
 
+    if body.is_public is not None:
+        bot.is_public = body.is_public
+
     if body.intro is not None:
         bot.intro = _validate_intro(body.intro) if body.intro else None
 
@@ -251,32 +277,14 @@ async def update_bot(
     if new_model_id is not None or new_template_id is not None:
         model_id = new_model_id or bot.model_id
         template_id = new_template_id or bot.template_id
-        model, template = await _validate_model_and_template(session, model_id, template_id)
+        model, template = await _validate_model_and_template(session, model_id, template_id, current_user)
         bot.model_id = model_id
         bot.template_id = template_id
 
     await session.commit()
     await session.refresh(bot)
 
-    d = BotInResponse(
-        bot_id=bot.bot_id,
-        username=bot.username,
-        display_name=bot.display_name,
-        description=bot.description,
-        avatar_url=bot.avatar_url,
-        status=bot.status,
-        intro=bot.intro,
-        custom_system_prompt=bot.custom_system_prompt,
-        created_at=bot.created_at,
-        model_id=bot.model_id,
-        template_id=bot.template_id,
-        model_name=bot.ai_model.name if bot.ai_model else None,
-        template_name=bot.prompt_template.name if bot.prompt_template else None,
-        created_by=bot.created_by,
-    ).model_dump()
-    if bot.created_at:
-        d["created_at"] = bot.created_at.isoformat()
-    return {"status": "success", "data": d}
+    return {"status": "success", "data": _bot_to_full(bot)}
 
 
 @router.delete("/{bot_id}")
@@ -292,7 +300,7 @@ async def delete_bot(
     bot = result.scalar_one_or_none()
     if not bot:
         raise HTTPException(status_code=404, detail="Bot 不存在")
-    if bot.created_by != current_user.user_id and current_user.role not in ("system_admin", "space_admin"):
+    if bot.created_by != current_user.user_id and not is_admin(current_user):
         raise HTTPException(status_code=403, detail="权限不足，仅 Bot 创建者或管理员可删除")
     await session.delete(bot)
     await session.commit()

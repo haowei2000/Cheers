@@ -140,7 +140,7 @@ async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
                     continue
                 try:
                     async with async_session_factory() as session:
-                        await _handle_send_message(session, channel_id=channel_id, body=body)
+                        await _handle_send_message(session, channel_id=channel_id, body=body)  # token not returned over WS
                 except HTTPException as exc:
                     await websocket.send_json({"type": "error", "data": {"detail": exc.detail}})
                 except Exception as exc:

@@ -19,10 +19,10 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "如何创建项目",
         "【前端入口】左侧点击「管理」→ 创建项目：选择工作空间、填写项目名称后点击「创建」。\n\n"
         "若无工作空间，需先建一个（只需做一次）：\n"
-        "Docker：docker compose exec backend sqlite3 /app/data/main.db "
-        "\"INSERT INTO workspaces (workspace_id, name, created_at) "
-        "VALUES ('ws-default-001', '默认空间', datetime('now'));\"\n"
-        "本地：cd backend && sqlite3 ../data/main.db 同上。\n\n"
+        "Docker：docker compose exec postgres psql -U agentnexus -d agentnexus "
+        "-c \"INSERT INTO workspaces (workspace_id, name, created_at) "
+        "VALUES ('ws-default-001', '默认空间', NOW());\"\n"
+        "本地：psql -U agentnexus -d agentnexus -c \"...同上...\"\n\n"
         "也可用 API：POST /api/channels，body 含 workspace_id、name、type。"
         "详见《系统管理说明书》§二。",
     ),

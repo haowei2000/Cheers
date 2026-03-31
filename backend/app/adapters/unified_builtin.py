@@ -31,6 +31,9 @@ from app.guide.help_index import (
 logger = logging.getLogger("app.adapters.unified_builtin")
 
 MAX_LOOP_ITERATIONS = 8
+HISTORY_MSG_COUNT = 30       # 注入 LLM 的历史消息条数上限
+HISTORY_MSG_MAX_CHARS = 600  # 单条历史消息截断长度
+_CLARIFY_PREFIX = "@channel bot 澄清回答："
 
 _DEFAULT_REPLY = (
     "您可以说：怎么创建项目、怎么加入项目、怎么接入 OpenClaw、怎么发消息、"
@@ -83,6 +86,8 @@ def _tool_label(tool_name: str, args: dict) -> str:
         return "向用户提问"
     if tool_name == "create_file":
         return f"创建文件 {args.get('filename', '?')}.md"
+    if tool_name == "read_file":
+        return f"读取文件 {args.get('file_id', '?')[:8]}…"
     if tool_name == "generate_image":
         return f"生成图片：{args.get('prompt', '?')[:30]}"
     if tool_name == "edit_image":
@@ -190,6 +195,7 @@ def _make_tools(ctx: dict) -> list:
                     },
                     memory_context=ctx.get("memory") or {},
                     attachments=ctx.get("attachments") or [],
+                    original_question_text=ctx.get("original_question_text"),
                     process_config={"_stream_token": make_stream_token_cb(bot_msg.msg_id)},
                 )
                 resp: AgentResponse = await adapter.execute(sub_payload)
@@ -207,6 +213,7 @@ def _make_tools(ctx: dict) -> list:
                     },
                     memory_context=ctx.get("memory") or {},
                     attachments=ctx.get("attachments") or [],
+                    original_question_text=ctx.get("original_question_text"),
                 )
                 resp = await adapter.execute(sub_payload)
                 result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
@@ -324,6 +331,19 @@ def _make_tools(ctx: dict) -> list:
             "unified_builtin[tool]: create_file %s channel=%s",
             original_filename, channel_id,
         )
+
+        # 将生成的文件注册到 FILES_INDEX
+        from app.memory.files_index import update_files_index
+        # 取前 300 字作为摘要
+        summary = body[:300] + ("…" if len(body) > 300 else "")
+        await update_files_index(channel_id, [{
+            "file_id": file_id,
+            "filename": original_filename,
+            "content_type": "text/markdown",
+            "is_image": "false",
+            "summary": summary,
+        }])
+
         return f"文件已创建：[{original_filename}]({download_url})\n\n下载链接：`{download_url}`"
 
     @tool
@@ -499,30 +519,72 @@ def _make_tools(ctx: dict) -> list:
         logger.info("unified_builtin[tool]: edit_image ok file_id=%s", result.file_id)
         return f"图片已编辑并发送到频道（file_id: {result.file_id}）"
 
-    return [update_anchor, update_progress, update_decision, call_bot, ask_user, create_file, generate_image, edit_image]
+    @tool
+    async def read_file(file_id: str) -> str:
+        """读取频道内已上传文件的完整正文内容。
+        使用场景：用户消息中引用了某文件，或文件索引中列出了文件，需要查看具体内容时调用。
+        可从「=== 项目记忆 ===」的「资料索引」部分找到 file_id。
+
+        Args:
+            file_id: 文件的唯一 ID（形如 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx）
+        """
+        db_session = ctx.get("_db_session")
+        if not db_session:
+            return "错误：数据库会话未注入（内部错误）"
+
+        from app.file_processor.service import FilePipelineService, FileFlowError
+        try:
+            svc = FilePipelineService()
+            results = await svc.prepare_attachments(
+                db_session,
+                channel_id=ctx["channel_id"],
+                file_ids=[file_id.strip()],
+            )
+        except FileFlowError as exc:
+            return f"读取文件失败：{exc.detail}"
+        except Exception as exc:
+            logger.exception("unified_builtin[tool]: read_file error file_id=%s", file_id)
+            return f"读取文件出错：{exc}"
+
+        if not results:
+            return f"未找到 file_id={file_id!r} 的文件，请检查文件索引中的 file_id 是否正确"
+
+        att = results[0]
+        if att.get("is_image") == "true":
+            return f"文件「{att.get('filename')}」是图片，请直接查看图片附件，无需读取文本。"
+
+        parts = [f"=== 文件: {att.get('filename') or file_id} ==="]
+        if att.get("summary"):
+            parts.append(f"摘要: {att['summary']}")
+        content = (att.get("content") or "").strip()
+        if content:
+            parts.append("正文:")
+            parts.append(content)
+            if att.get("truncated") == "true":
+                parts.append("（注：文件内容已按长度限制截断，若需完整内容请联系上传者。）")
+        else:
+            parts.append("（文件内容为空或无法解析文本。）")
+        return "\n".join(parts)
+
+    return [update_anchor, update_progress, update_decision, call_bot, ask_user, create_file, generate_image, edit_image, read_file]
 
 
 # ─── 附件处理 ──────────────────────────────────────────────────────────────────
 
-def _merge_attachments_into_text(user_text: str, attachments: list[dict[str, str]] | None) -> str:
-    """将文件解析结果拼接进内置 Bot 的用户消息。"""
+def _build_file_refs_note(attachments: list[dict[str, str]] | None) -> str:
+    """为文档附件生成简短的文件引用提示（不注入正文，Agent 按需调用 read_file 工具读取）。"""
     if not attachments:
-        return user_text
-    parts = [user_text.strip(), "", "以下是用户上传文件的解析结果，请结合这些内容处理："]
-    for index, attachment in enumerate(attachments, start=1):
-        parts.append(f"## 文件 {index}")
-        parts.append(f"文件名: {attachment.get('filename') or attachment.get('file_id') or 'unknown'}")
-        if attachment.get("content_type"):
-            parts.append(f"类型: {attachment['content_type']}")
-        if attachment.get("summary"):
-            parts.append("摘要:")
-            parts.append(attachment["summary"])
-        parts.append("正文:")
-        parts.append(attachment.get("content") or "")
-        if attachment.get("truncated") == "true":
-            parts.append("注意: 该文件文本已按长度限制截断。")
-        parts.append("")
-    return "\n".join(parts).strip()
+        return ""
+    lines = ["[本次消息关联以下文件，已登记到文件索引，如需查看内容请调用 read_file 工具]"]
+    for att in attachments:
+        fname = att.get("filename") or att.get("file_id") or "unknown"
+        fid = att.get("file_id") or ""
+        summary = (att.get("summary") or "").strip()
+        line = f"- {fname}（file_id: `{fid}`）"
+        if summary:
+            line += f" — {summary[:80]}{'…' if len(summary) > 80 else ''}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _build_vision_content(user_text: str, attachments: list[dict[str, str]] | None) -> list[dict]:
@@ -578,6 +640,143 @@ def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str,
     return "\n\n".join(part for part in sections if part).strip()
 
 
+# ─── 历史消息加载 ─────────────────────────────────────────────────────────────
+
+_UI_BLOCK_RE = re.compile(
+    r"```(?:guide-clarify|guide-form)[^`]*```",
+    re.DOTALL,
+)
+
+
+def _strip_ui_blocks(text: str) -> str:
+    """移除消息中的 guide-clarify / guide-form JSON 代码块（UI 指令，对 LLM 无意义）。"""
+    return _UI_BLOCK_RE.sub("", text).strip()
+
+
+async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
+    """批量解析消息列表中所有发送者的显示名称，返回 {sender_id: name}。"""
+    from sqlalchemy import select
+    from app.db.models import BotAccount, User
+
+    user_ids = {m.sender_id for m in msgs if m.sender_type == "user"}
+    bot_ids = {m.sender_id for m in msgs if m.sender_type == "bot"}
+    names: dict[str, str] = {}
+
+    if user_ids:
+        ur = await session.execute(select(User).where(User.user_id.in_(user_ids)))
+        for u in ur.scalars().all():
+            names[u.user_id] = u.display_name or u.username
+    if bot_ids:
+        br = await session.execute(select(BotAccount).where(BotAccount.bot_id.in_(bot_ids)))
+        for b in br.scalars().all():
+            names[b.bot_id] = b.display_name or b.username
+
+    return names
+
+
+async def _fetch_user_display_name(session, user_id: str) -> str:
+    """获取单个用户的显示名称，失败时返回空字符串。"""
+    if not user_id:
+        return ""
+    from sqlalchemy import select
+    from app.db.models import User
+
+    r = await session.execute(select(User).where(User.user_id == user_id))
+    u = r.scalar_one_or_none()
+    return (u.display_name or u.username) if u else ""
+
+
+async def _fetch_reply_context(session, replied_msg_id: str) -> str:
+    """
+    获取被回复消息的摘要前缀，格式：「回复 [发送者]: <内容摘要>」
+
+    供内置助手理解当前消息所针对的上文，返回空字符串表示无回复上下文。
+    """
+    if not replied_msg_id:
+        return ""
+    from sqlalchemy import select
+    from app.db.models import BotAccount, Message as MsgModel, User
+
+    r = await session.execute(select(MsgModel).where(MsgModel.msg_id == replied_msg_id))
+    msg = r.scalar_one_or_none()
+    if not msg:
+        return ""
+
+    quoted = _strip_ui_blocks(msg.content or "")
+    if not quoted:
+        return ""
+    if len(quoted) > 300:
+        quoted = quoted[:300] + "…"
+
+    # 解析发送者名称
+    sender_label = ""
+    if msg.sender_type == "user":
+        ur = await session.execute(select(User).where(User.user_id == msg.sender_id))
+        u = ur.scalar_one_or_none()
+        sender_label = (u.display_name or u.username) if u else ""
+    else:
+        br = await session.execute(select(BotAccount).where(BotAccount.bot_id == msg.sender_id))
+        b = br.scalar_one_or_none()
+        sender_label = (b.display_name or b.username) if b else ""
+
+    if sender_label:
+        return f"「回复 [{sender_label}]：{quoted}」\n\n"
+    return f"「回复：{quoted}」\n\n"
+
+
+async def _fetch_recent_history(
+    session,
+    channel_id: str,
+    before_msg_id: str | None,
+    limit: int = HISTORY_MSG_COUNT,
+) -> list:
+    """
+    从 DB 拉取当前触发消息之前的最近 limit 条非空消息，
+    转换为带发送者标识的 LangChain HumanMessage / AIMessage 列表（时间正序）。
+
+    每条消息格式：[发送者名称]: <内容>
+    使用 before_msg_id 精确定位，避免把当前轮次的消息重复带入。
+    """
+    from sqlalchemy import select
+    from app.db.models import Message as MsgModel
+
+    q = select(MsgModel).where(
+        MsgModel.channel_id == channel_id,
+        MsgModel.content != "",
+    )
+
+    if before_msg_id:
+        sub = (
+            select(MsgModel.created_at)
+            .where(MsgModel.msg_id == before_msg_id)
+            .scalar_subquery()
+        )
+        q = q.where(MsgModel.created_at < sub)
+
+    q = q.order_by(MsgModel.created_at.desc()).limit(limit)
+    result = await session.execute(q)
+    msgs = list(result.scalars().all())
+    msgs.reverse()  # 转为时间正序
+
+    display_names = await _resolve_display_names(session, msgs)
+
+    lc_messages: list = []
+    for m in msgs:
+        content = _strip_ui_blocks(m.content or "")
+        if not content:
+            continue
+        if len(content) > HISTORY_MSG_MAX_CHARS:
+            content = content[:HISTORY_MSG_MAX_CHARS] + "…"
+        name = display_names.get(m.sender_id, "")
+        labeled = f"[{name}]: {content}" if name else content
+        if m.sender_type == "user":
+            lc_messages.append(HumanMessage(content=labeled))
+        else:
+            lc_messages.append(AIMessage(content=labeled))
+
+    return lc_messages
+
+
 # ─── Agent Loop ───────────────────────────────────────────────────────────────
 
 async def _run_agent(
@@ -585,6 +784,7 @@ async def _run_agent(
     user_content: str | list,
     ctx: dict,
     stream_cb=None,
+    history: list | None = None,
 ) -> str:
     """使用 LangChain bind_tools + 手动 agent loop 运行 Agent，支持流式输出。"""
     cfg = _get_llm_config()
@@ -603,6 +803,7 @@ async def _run_agent(
 
     messages: list = [
         SystemMessage(content=system_prompt),
+        *(history or []),
         HumanMessage(content=user_content),
     ]
 
@@ -721,8 +922,10 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
         doc_attachments = [a for a in all_attachments if a.get("is_image") != "true"]
 
-        # 文档附件合并为文本
-        user_text = _merge_attachments_into_text(user_text, doc_attachments)
+        # 文档附件：只注入文件引用，正文由 Agent 按需调用 read_file 工具获取
+        file_refs = _build_file_refs_note(doc_attachments)
+        if file_refs:
+            user_text = (user_text.strip() + "\n\n" + file_refs) if user_text.strip() else file_refs
 
         memory = payload.memory_context or {}
         channel_id = payload.channel_id
@@ -763,7 +966,11 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 f"【项目进度】\n{memory.get('progress') or '（暂无）'}\n\n"
                 f"【决策记录】\n{memory.get('decisions') or '（暂无）'}\n\n"
                 f"【资料索引】\n{memory.get('files_index') or '（暂无）'}\n\n"
-                f"【近期动态】\n{memory.get('recent') or '（暂无）'}"
+                f"【最近关注】\n{memory.get('recent') or '（暂无）'}"
+            ),
+            (
+                f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.original_question_text}\n"
+                if payload.original_question_text else ""
             ),
             "=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n" + members_section,
             (
@@ -788,7 +995,6 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
         ])
 
         # ── 2. 澄清回答自动存入 decisions ─────────────────────────────────────
-        _CLARIFY_PREFIX = "@channel bot 澄清回答："
         if user_text.startswith(_CLARIFY_PREFIX):
             answer_body = user_text[len(_CLARIFY_PREFIX):].strip()
             if answer_body:
@@ -813,11 +1019,64 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "task_id": payload.task_id,
             "sender_id": sender_id,
             "attachments": payload.attachments or [],
+            "original_question_text": payload.original_question_text,
             "_db_session": pconfig.get("_db_session"),
             "_bot_id": pconfig.get("_bot_id"),
         }
 
-        # ── 4. Agent（支持 Vision 多模态）─────────────────────────────────────
+        # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────
+        chat_history: list = []
+        db_session = pconfig.get("_db_session")
+        trigger_meta = payload.trigger_message or {}
+        trigger_msg_id = trigger_meta.get("msg_id")
+        in_reply_to_msg_id = trigger_meta.get("in_reply_to_msg_id")
+        current_user_name = ""
+        reply_prefix = ""
+
+        if db_session:
+            try:
+                import asyncio as _asyncio
+
+                async def _noop_list() -> list:
+                    return []
+
+                async def _noop_str() -> str:
+                    return ""
+
+                _results = await _asyncio.gather(
+                    _fetch_recent_history(db_session, channel_id, trigger_msg_id) if trigger_msg_id else _noop_list(),
+                    _fetch_user_display_name(db_session, sender_id),
+                    _fetch_reply_context(db_session, in_reply_to_msg_id) if in_reply_to_msg_id else _noop_str(),
+                    return_exceptions=True,
+                )
+                chat_history = _results[0] if not isinstance(_results[0], BaseException) else []
+                current_user_name = _results[1] if not isinstance(_results[1], BaseException) else ""
+                reply_prefix = _results[2] if not isinstance(_results[2], BaseException) else ""
+
+                logger.debug(
+                    "unified_builtin: history=%d user=%r reply=%s channel=%s",
+                    len(chat_history), current_user_name, bool(reply_prefix), channel_id,
+                )
+            except Exception:
+                logger.warning(
+                    "unified_builtin: context fetch failed channel=%s, proceeding without",
+                    channel_id,
+                )
+
+        # 澄清回答：剥去 "@channel bot 澄清回答：" 前缀，跳过 reply_prefix
+        # （原始问题已在 system_prompt 的「当前澄清上下文」中，无需重复引用 guide-clarify 消息）
+        _is_clarify = user_text.startswith(_CLARIFY_PREFIX)
+        if _is_clarify:
+            user_text = user_text[len(_CLARIFY_PREFIX):].strip()
+            reply_prefix = ""  # guide-clarify 消息对 LLM 无意义，不引用
+
+        # 把回复上下文和发送者标识注入到当前用户消息
+        if reply_prefix:
+            user_text = reply_prefix + user_text
+        if current_user_name:
+            user_text = f"[{current_user_name}]: {user_text}"
+
+        # ── 5. Agent（支持 Vision 多模态）─────────────────────────────────────
         stream_cb = pconfig.get("_stream_token")
         cfg = _get_llm_config()
         supports_vision = (cfg or {}).get("supports_vision", True) if cfg else True
@@ -837,7 +1096,10 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 user_text += "\n\n（注：当前 LLM 未启用图片识别，已忽略图片附件。）"
             user_content = user_text
 
-        content = await _run_agent(system_prompt, user_content, tool_ctx, stream_cb=stream_cb)
+        content = await _run_agent(
+            system_prompt, user_content, tool_ctx,
+            stream_cb=stream_cb, history=chat_history,
+        )
 
         # ── 5. 关键词兜底（LLM 不可用时） ─────────────────────────────────────
         if not content:

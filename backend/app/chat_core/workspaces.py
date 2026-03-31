@@ -67,20 +67,14 @@ async def list_workspaces(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取工作空间列表：system_admin 见全部，其他用户只见已加入的工作空间。"""
-    if current_user.role == "system_admin":
-        result = await session.execute(
-            select(Workspace).order_by(Workspace.created_at)
-        )
-        workspaces = result.scalars().all()
-    else:
-        result = await session.execute(
-            select(Workspace)
-            .join(WorkspaceMembership, Workspace.workspace_id == WorkspaceMembership.workspace_id)
-            .where(WorkspaceMembership.user_id == current_user.user_id)
-            .order_by(Workspace.created_at)
-        )
-        workspaces = result.scalars().all()
+    """获取工作空间列表：仅返回用户已加入的工作空间。"""
+    result = await session.execute(
+        select(Workspace)
+        .join(WorkspaceMembership, Workspace.workspace_id == WorkspaceMembership.workspace_id)
+        .where(WorkspaceMembership.user_id == current_user.user_id)
+        .order_by(Workspace.created_at)
+    )
+    workspaces = result.scalars().all()
 
     data = [WorkspaceInResponse.model_validate(w).model_dump() for w in workspaces]
     return {"status": "success", "data": data}
@@ -99,16 +93,15 @@ async def list_workspace_members(
     if not ws_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="工作空间不存在")
 
-    # 非 system_admin 须是该工作空间成员
-    if current_user.role != "system_admin":
-        mem = await session.execute(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.workspace_id == workspace_id,
-                WorkspaceMembership.user_id == current_user.user_id,
-            )
+    # 必须是该工作空间成员
+    mem = await session.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == current_user.user_id,
         )
-        if not mem.scalar_one_or_none():
-            raise HTTPException(status_code=403, detail="权限不足")
+    )
+    if not mem.scalar_one_or_none():
+        raise HTTPException(status_code=403, detail="权限不足")
 
     result = await session.execute(
         select(WorkspaceMembership, User)
