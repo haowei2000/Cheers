@@ -35,10 +35,11 @@ def _is_guide_clarify_reply(content: str) -> bool:
 
 async def _fetch_original_question_for_clarify(
     session: AsyncSession, channel_id: str, trigger_msg: Message
-) -> str | None:
+) -> tuple[str | None, list[str]]:
     """
-    当 trigger_msg 为澄清回答时，查找并返回原问题文本。
+    当 trigger_msg 为澄清回答时，查找并返回原问题文本及其附件 file_ids。
     逻辑：澄清回答前一条应为 Bot 的 guide-clarify 消息，其 in_reply_to_msg_id 指向原问题。
+    返回：(原问题文本 | None, 原问题 file_ids 列表)
     """
     r = await session.execute(
         select(Message)
@@ -62,14 +63,16 @@ async def _fetch_original_question_for_clarify(
         orig = orig_r.scalar_one_or_none()
         if orig and orig.sender_type == "user":
             out = (orig.content or "").strip()
+            orig_file_ids: list[str] = orig.file_ids or []
             logger.info(
-                "orchestrator: fetched original_question for clarify, len=%s",
+                "orchestrator: fetched original_question for clarify, len=%s file_ids=%s",
                 len(out),
+                orig_file_ids,
             )
-            return out
+            return out, orig_file_ids
         break
     logger.warning("orchestrator: no original_question found for clarify reply")
-    return None
+    return None, []
 
 
 def _apply_prompt_template(template: str | None, user_message: str) -> str:
@@ -130,10 +133,11 @@ async def run_orchestrator(
 
     trigger_content = _get_trigger_content(trigger_msg)
     
-    # 澄清场景：若为澄清回答，提取原问题
+    # 澄清场景：若为澄清回答，提取原问题及其附件
     original_question = None
+    original_file_ids: list[str] = []
     if _is_guide_clarify_reply(trigger_content):
-        original_question = await _fetch_original_question_for_clarify(session, channel_id, trigger_msg)
+        original_question, original_file_ids = await _fetch_original_question_for_clarify(session, channel_id, trigger_msg)
 
     mentioned = extract_mentions(trigger_content)
     target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_content)
@@ -172,14 +176,22 @@ async def run_orchestrator(
 
     async def _load_attachments() -> None:
         nonlocal attachments, attachment_error
-        if not trigger_msg.file_ids:
+        # 优先使用当前触发消息的附件；澄清回答场景下回退到原问题的附件
+        file_ids = trigger_msg.file_ids or original_file_ids
+        if not file_ids:
             return
         try:
             attachments = await FilePipelineService().prepare_attachments(
                 session,
                 channel_id=channel_id,
-                file_ids=trigger_msg.file_ids,
+                file_ids=file_ids,
             )
+            if original_file_ids and not trigger_msg.file_ids:
+                logger.info(
+                    "orchestrator: restored %d attachment(s) from original clarify question channel=%s",
+                    len(attachments),
+                    channel_id,
+                )
         except FileFlowError as exc:
             attachment_error = exc.detail
         except Exception as exc:
@@ -190,6 +202,11 @@ async def run_orchestrator(
         memory_load(channel_id),
         _load_attachments(),
     )
+
+    # 文档附件登记到 FILES_INDEX（后台非阻塞）
+    if attachments:
+        from app.memory.files_index import schedule_files_index_update
+        schedule_files_index_update(channel_id, attachments)
 
     created: list[Message] = []
     already_broadcast: set[str] = set()
