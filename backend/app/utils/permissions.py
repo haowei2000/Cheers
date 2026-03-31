@@ -6,9 +6,7 @@ from app.db.models import Friendship, User
 
 
 def is_admin(user: User) -> bool:
-    # 系统管理员 (system_admin) 不再拥有全局可见权限，仅 space_admin 在其管辖范围内可能有权限
-    # 根据需求，system_admin 的权限应限制在系统设置层面
-    return user.role in ("space_admin",)
+    return user.role in ("system_admin", "space_admin")
 
 
 async def get_friend_ids(session: AsyncSession, user_id: str) -> set[str]:

@@ -76,12 +76,6 @@ async def create_model(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """创建 AI 模型配置."""
-    existing = await session.execute(
-        select(AIModel).where(AIModel.name == body.name.strip())
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="模型名称已存在")
-
     model = AIModel(
         name=body.name.strip(),
         provider=body.provider.strip().lower(),
@@ -136,14 +130,7 @@ async def update_model(
         raise HTTPException(status_code=403, detail="权限不足，仅创建者或管理员可编辑")
 
     if body.name is not None:
-        name = body.name.strip()
-        if name != model.name:
-            existing = await session.execute(
-                select(AIModel).where(AIModel.name == name)
-            )
-            if existing.scalar_one_or_none():
-                raise HTTPException(status_code=400, detail="模型名称已存在")
-            model.name = name
+        model.name = body.name.strip()
 
     if body.provider is not None:
         model.provider = body.provider.strip().lower()

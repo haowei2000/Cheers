@@ -22,7 +22,7 @@ class AIModel(Base):
     __tablename__ = "ai_models"
 
     model_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # 显示名称，如 "GPT-4o"
+    name: Mapped[str] = mapped_column(String(64), nullable=False)  # 显示名称，如 "GPT-4o"
     provider: Mapped[str] = mapped_column(String(32), nullable=False)  # openai, ollama, anthropic, etc.
     model_name: Mapped[str] = mapped_column(String(64), nullable=False)  # API 使用的模型名，如 "gpt-4o"
     base_url: Mapped[str] = mapped_column(String(512), nullable=False)  # API Base URL

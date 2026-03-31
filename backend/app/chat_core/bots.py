@@ -3,6 +3,7 @@
 新架构：Bot = 模型 + 提示词模板
 """
 import json
+import re
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -22,6 +23,17 @@ from app.auth.routes import get_current_user
 from app.utils.permissions import can_access, get_friend_ids, is_admin
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
+
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
+
+
+def _validate_username(username: str) -> None:
+    """校验 Bot 用户名：只允许字母、数字、下划线、连字符、单引号、中文，不含空格及其他特殊字符。"""
+    if not username or not username.strip():
+        raise HTTPException(status_code=400, detail="用户名不能为空")
+    if not _USERNAME_RE.match(username.strip()):
+        raise HTTPException(status_code=400, detail="用户名只能包含字母、数字、下划线、连字符、单引号和中文")
 
 
 def _validate_intro(intro: str | None) -> str | None:
@@ -155,6 +167,8 @@ async def create_bot(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="bot_id 已存在")
 
+    _validate_username(body.username)
+
     # 检查 username 是否已存在
     existing_user = await session.execute(
         select(BotAccount).where(BotAccount.username == body.username.strip())
@@ -227,6 +241,7 @@ async def update_bot(
 
     if body.username is not None:
         uname = body.username.strip()
+        _validate_username(uname)
         if uname != bot.username:
             existing = await session.execute(
                 select(BotAccount).where(BotAccount.username == uname)
