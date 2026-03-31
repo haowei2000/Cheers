@@ -3553,7 +3553,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => toggleThread(m.msg_id)}
-                            className="w-full text-left rounded-xl border border-gray-200 bg-gray-50 hover:border-[#1264A3]/40 hover:shadow transition-all overflow-hidden"
+                            className="w-full text-left rounded-xl border border-gray-300 bg-gray-100 hover:border-[#1264A3]/50 hover:shadow transition-all overflow-hidden"
                           >
                             {/* Question row */}
                             <div className="flex items-center gap-2.5 px-3 pt-2.5 pb-2">
@@ -3577,7 +3577,7 @@ export default function App() {
                               </div>
                             </div>
                             {/* Bot reply preview row */}
-                            <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-200/60 bg-gray-100/60">
+                            <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-300/50 bg-gray-200/40">
                               {replyBotIds.length > 0 && (
                                 <div className="flex -space-x-1.5 flex-shrink-0">
                                   {replyBotIds.slice(0, 4).map((bid) => {
@@ -3606,7 +3606,7 @@ export default function App() {
 
                     // ── Expanded thread card ───────────────────────────────
                     return (
-                      <div key={m.msg_id} id={`msg-${m.msg_id}`} className="mx-3 my-1.5 rounded-xl border border-[#1264A3]/20 bg-gray-50 shadow-sm overflow-hidden">
+                      <div key={m.msg_id} id={`msg-${m.msg_id}`} className="mx-3 my-1.5 rounded-xl border border-[#1264A3]/30 bg-gray-100 shadow-sm overflow-hidden">
                         {/* Thread header */}
                         <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
                           <div className="flex items-center gap-1.5">
