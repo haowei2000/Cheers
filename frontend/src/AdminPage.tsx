@@ -360,7 +360,11 @@ export default function AdminPage() {
         if (d.status === "success") {
           toast.success("模型创建成功");
           loadModels();
+<<<<<<< HEAD
           setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, is_public: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
+=======
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
+>>>>>>> origin/main
         } else {
           toast.error(d.message || d.detail || "创建失败");
         }
@@ -400,7 +404,11 @@ export default function AdminPage() {
           toast.success("已更新");
           loadModels();
           setModelEditingId(null);
+<<<<<<< HEAD
           setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, is_public: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
+=======
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
+>>>>>>> origin/main
         } else {
           toast.error(d.message || d.detail || "更新失败");
         }
@@ -932,7 +940,11 @@ export default function AdminPage() {
                         {modelEditingId ? (
                           <>
                             <button onClick={() => updateModel(modelEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
+<<<<<<< HEAD
                             <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, is_public: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+=======
+                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+>>>>>>> origin/main
                           </>
                         ) : (
                           <button onClick={createModel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建模型</button>

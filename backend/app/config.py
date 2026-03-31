@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True    # True=STARTTLS(587)；False=SSL(465) 时建议改 smtp_port=465
     smtp_ssl: bool = False       # True 时用 SSL 直连（465端口）
 
+
     # 种子数据：初始管理员账号
     admin_username: str = "admin"
     admin_password: str = "admin#Nexus2024"
