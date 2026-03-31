@@ -1,4 +1,10 @@
-"""RECENT 层异步更新：Bot 响应后压缩近期消息（系统 LLM 或简单截断），不阻塞主消息流。"""
+"""RECENT 层异步更新：对超出直接历史窗口的消息做摘要，不阻塞主消息流。
+
+策略：
+  - 最近 DIRECT_HISTORY_COUNT 条消息已直接注入 LLM 上下文，无需摘要。
+  - 再往前的 RECENT_WINDOW 条消息（更老的部分）才写入 RECENT 层供 LLM 参考。
+  - 若没有超出窗口的消息，RECENT 写入占位提示，告知 LLM 近期消息均在对话历史中。
+"""
 import asyncio
 
 from sqlalchemy import select
@@ -7,8 +13,14 @@ from app.db.session import async_session_factory
 from app.memory.context_store import init_context_db, set_layer
 from app.memory.manager import sync_channel_to_md
 
+# 与 unified_builtin.HISTORY_MSG_COUNT 保持一致：直接注入 LLM 的最近消息条数
+DIRECT_HISTORY_COUNT = 30
+# RECENT 层额外向前摘要的消息条数
+RECENT_WINDOW = 50
+
 RECENT_MAX_CHARS = 1500
-LAST_N_MESSAGES = 50
+
+_RECENT_IN_HISTORY_NOTE = "（近期 {n} 条消息已在对话历史中直接提供，无需重复摘要）"
 
 
 async def _compress_with_system_llm(messages_text: str) -> str | None:
@@ -30,8 +42,8 @@ async def _compress_with_system_llm(messages_text: str) -> str | None:
             "messages": [
                 {
                     "role": "system",
-                    "content": "将以下频道近期对话压缩为一段简洁的「近期动态」摘要，不超过"
-                    f"{RECENT_MAX_CHARS}字，用于 AI 上下文。只输出摘要正文，不要标题。",
+                    "content": "将以下频道历史对话压缩为一段简洁的「近期动态」摘要，不超过"
+                    f"{RECENT_MAX_CHARS}字，用于 AI 上下文背景。只输出摘要正文，不要标题。",
                 },
                 {"role": "user", "content": messages_text[:12000]},
             ],
@@ -63,8 +75,12 @@ def _truncate_recent(messages_text: str, max_chars: int = RECENT_MAX_CHARS) -> s
 
 async def update_recent_async(channel_id: str) -> None:
     """
-    异步更新频道 RECENT 层：取最近 LAST_N_MESSAGES 条消息，系统 LLM 压缩或截断后写入。
-    不阻塞主消息流；失败时保留旧 RECENT。
+    异步更新频道 RECENT 层。
+
+    取最近 DIRECT_HISTORY_COUNT + RECENT_WINDOW 条消息，跳过前 DIRECT_HISTORY_COUNT 条
+    （已直接注入 LLM），对更早的 RECENT_WINDOW 条做摘要写入 RECENT 层。
+    若超出窗口的消息为空，写入占位提示。
+    失败时保留旧 RECENT。
     """
     try:
         async with async_session_factory() as session:
@@ -72,23 +88,28 @@ async def update_recent_async(channel_id: str) -> None:
                 select(Message)
                 .where(Message.channel_id == channel_id)
                 .order_by(Message.created_at.desc())
-                .limit(LAST_N_MESSAGES)
+                .limit(DIRECT_HISTORY_COUNT + RECENT_WINDOW)
             )
-            messages = list(result.scalars().all())
-        messages.reverse()
-        lines = []
-        for m in messages:
-            who = "用户" if m.sender_type == "user" else "Bot"
-            ts = m.created_at.strftime("%H:%M") if m.created_at else ""
-            lines.append(f"[{ts}] {who}: {m.content[:200]}")
-        raw = "\n".join(lines)
+            all_msgs = list(result.scalars().all())
 
-        content: str
-        compressed = await _compress_with_system_llm(raw)
-        if compressed:
-            content = compressed
+        # 前 DIRECT_HISTORY_COUNT 条（desc 顺序）是直接上下文，跳过
+        direct_count = min(DIRECT_HISTORY_COUNT, len(all_msgs))
+        older_msgs = all_msgs[direct_count:]  # 更旧的消息（仍为 desc 顺序）
+        older_msgs.reverse()  # 转为时间正序
+
+        if not older_msgs:
+            # 所有消息都在直接历史窗口内
+            content = _RECENT_IN_HISTORY_NOTE.format(n=direct_count)
         else:
-            content = _truncate_recent(raw)
+            lines = []
+            for m in older_msgs:
+                who = "用户" if m.sender_type == "user" else "Bot"
+                ts = m.created_at.strftime("%H:%M") if m.created_at else ""
+                lines.append(f"[{ts}] {who}: {m.content[:200]}")
+            raw = "\n".join(lines)
+
+            compressed = await _compress_with_system_llm(raw)
+            content = compressed if compressed else _truncate_recent(raw)
 
         await init_context_db()
         await set_layer(channel_id, "RECENT", content)

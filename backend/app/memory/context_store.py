@@ -11,9 +11,14 @@ LAYERS = ("ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "PROGRESS")
 _engine = create_async_engine(settings.context_db_url, echo=False, future=True)
 _session_factory = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
 
+_context_db_initialized = False
+
 
 async def init_context_db() -> None:
     """创建 context_store 表（如果不存在）."""
+    global _context_db_initialized
+    if _context_db_initialized:
+        return
     async with _engine.begin() as conn:
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS context_store (
@@ -24,6 +29,7 @@ async def init_context_db() -> None:
                 PRIMARY KEY (channel_id, layer)
             )
         """))
+    _context_db_initialized = True
 
 
 async def get_layer(channel_id: str, layer: str) -> str:
@@ -53,8 +59,11 @@ async def set_layer(channel_id: str, layer: str, content: str) -> None:
 
 
 async def get_all_layers(channel_id: str) -> dict[str, str]:
-    """读取频道四层记忆，供 Orchestrator 注入."""
-    result = {}
-    for layer in LAYERS:
-        result[layer.lower()] = await get_layer(channel_id, layer)
-    return result
+    """读取频道四层记忆，供 Orchestrator 注入（单次查询）."""
+    async with _session_factory() as session:
+        rows = await session.execute(
+            text("SELECT layer, content FROM context_store WHERE channel_id = :cid"),
+            {"cid": channel_id},
+        )
+        db_data = {row[0].lower(): (row[1] or "") for row in rows.fetchall()}
+    return {layer.lower(): db_data.get(layer.lower(), "") for layer in LAYERS}

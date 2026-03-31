@@ -17,6 +17,7 @@ type AIModel = {
   description?: string;
   is_enabled: boolean;
   is_builtin: boolean;
+  is_public: boolean;
   config?: Record<string, unknown>;
   created_at?: string;
 };
@@ -41,6 +42,7 @@ type BotItem = {
   description?: string;
   avatar_url?: string;
   status: string;
+  is_public: boolean;
   intro?: string;
   custom_system_prompt?: string;
   model_id: string;
@@ -139,6 +141,7 @@ export default function AdminPage() {
     api_key: "",
     description: "",
     is_enabled: true,
+    is_public: true,
     supports_vision: false,
     extra_headers: "",   // JSON 字符串，如 {"x-my-header":"value"}
     temperature: 0.7,
@@ -169,6 +172,7 @@ export default function AdminPage() {
     custom_system_prompt: "",
     intro: "",
     status: "online",
+    is_public: true,
   });
   const [botEditingId, setBotEditingId] = useState<string | null>(null);
   const [lastCreatedBotId, setLastCreatedBotId] = useState("");
@@ -356,7 +360,11 @@ export default function AdminPage() {
         if (d.status === "success") {
           toast.success("模型创建成功");
           loadModels();
+<<<<<<< HEAD
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, is_public: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
+=======
           setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
+>>>>>>> origin/main
         } else {
           toast.error(d.message || d.detail || "创建失败");
         }
@@ -386,6 +394,7 @@ export default function AdminPage() {
         api_key: modelForm.api_key || undefined,
         description: modelForm.description,
         is_enabled: modelForm.is_enabled,
+        is_public: modelForm.is_public,
         config,
       }),
     })
@@ -395,7 +404,11 @@ export default function AdminPage() {
           toast.success("已更新");
           loadModels();
           setModelEditingId(null);
+<<<<<<< HEAD
+          setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, is_public: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
+=======
           setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true });
+>>>>>>> origin/main
         } else {
           toast.error(d.message || d.detail || "更新失败");
         }
@@ -418,6 +431,24 @@ export default function AdminPage() {
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
+  const toggleModelPublic = (m: AIModel) => {
+    authFetch(`${API}/admin/models/${m.model_id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_public: !m.is_public }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          toast.success(!m.is_public ? "已设为公开" : "已设为私有");
+          loadModels();
+        } else {
+          toast.error(d.message || d.detail || "操作失败");
+        }
+      })
+      .catch((e) => toast.error("请求失败: " + String(e)));
+  };
+
   const startEditModel = (m: AIModel) => {
     setModelEditingId(m.model_id);
     const eh = m.config?.extra_headers;
@@ -429,6 +460,7 @@ export default function AdminPage() {
       api_key: "",
       description: m.description || "",
       is_enabled: m.is_enabled,
+      is_public: m.is_public ?? true,
       supports_vision: !!m.config?.supports_vision,
       extra_headers: eh && typeof eh === "object" ? JSON.stringify(eh) : "",
       temperature: typeof m.config?.temperature === "number" ? m.config.temperature : 0.7,
@@ -552,6 +584,7 @@ export default function AdminPage() {
             custom_system_prompt: "",
             intro: "",
             status: "online",
+            is_public: true,
           });
         } else {
           toast.error(d.message || d.detail || "创建失败");
@@ -581,9 +614,28 @@ export default function AdminPage() {
             custom_system_prompt: "",
             intro: "",
             status: "online",
+            is_public: true,
           });
         } else {
           toast.error(d.message || d.detail || "更新失败");
+        }
+      })
+      .catch((e) => toast.error("请求失败: " + String(e)));
+  };
+
+  const toggleBotPublic = (b: BotItem) => {
+    authFetch(`${API}/bots/${b.bot_id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_public: !b.is_public }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success") {
+          toast.success(!b.is_public ? "已设为公开" : "已设为私有");
+          loadBots();
+        } else {
+          toast.error(d.message || d.detail || "操作失败");
         }
       })
       .catch((e) => toast.error("请求失败: " + String(e)));
@@ -615,6 +667,7 @@ export default function AdminPage() {
       custom_system_prompt: b.custom_system_prompt || "",
       intro: b.intro || "",
       status: b.status,
+      is_public: b.is_public ?? true,
     });
   };
 
@@ -642,7 +695,7 @@ export default function AdminPage() {
       .then(([botsRes, usersRes]) => {
         const bots: BotItem[] = botsRes.data || [];
         const users: UserItem[] = usersRes.data || [];
-        fetch(`${API}/channels/${channelId}/members`).then((r) => r.json()).then((membersRes) => {
+        authFetch(`${API}/channels/${channelId}/members`).then((r) => r.json()).then((membersRes) => {
           const existing = new Set((membersRes.data || []).map((m: MemberOption & { member_id?: string }) => m.member_id || m.id));
           const options: MemberOption[] = [
             ...bots.filter((b) => !existing.has(b.bot_id)).map((b) => ({ id: b.bot_id, type: "bot" as const, label: `@${b.username}${b.display_name ? ` (${b.display_name})` : ""}` })),
@@ -660,7 +713,7 @@ export default function AdminPage() {
     setAddingMembers(true);
     const promises = Array.from(addSelectedIds).map((id) => {
       const opt = addChOptions.find((o) => o.id === id);
-      return fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: id, member_type: opt?.type || "bot" }) }).then((r) => r.json());
+      return authFetch(`${API}/channels/${addCh}/members`, { method: "POST", body: JSON.stringify({ member_id: id, member_type: opt?.type || "bot" }) }).then((r) => r.json());
     });
     Promise.all(promises).then(() => { toast.success("已添加"); setAddSelectedIds(new Set()); setAddingMembers(false); refreshAddChOptions(addCh); }).catch(() => setAddingMembers(false));
   };
@@ -668,7 +721,7 @@ export default function AdminPage() {
   const refreshRmChMembers = (channelId: string) => {
     if (!channelId) { setRmChMembers([]); return; }
     setRmChLoading(true);
-    fetch(`${API}/channels/${channelId}/members`).then((r) => r.json()).then((d) => {
+    authFetch(`${API}/channels/${channelId}/members`).then((r) => r.json()).then((d) => {
       const list = (d.data || []).map((m: MemberOption & { username?: string; display_name?: string; member_type?: string }) => ({ ...m, label: m.label || `${m.display_name || m.username} (@${m.username}) [${m.member_type || m.type}]` }));
       setRmChMembers(list);
       setRmChLoading(false);
@@ -678,13 +731,13 @@ export default function AdminPage() {
   const removeMembersFromChannel = () => {
     if (!rmCh || rmSelectedIds.size === 0) return;
     setRemovingMembers(true);
-    const promises = Array.from(rmSelectedIds).map((id) => fetch(`${API}/channels/${rmCh}/members/${id}`, { method: "DELETE" }).then((r) => r.json()));
+    const promises = Array.from(rmSelectedIds).map((id) => authFetch(`${API}/channels/${rmCh}/members/${id}`, { method: "DELETE" }).then((r) => r.json()));
     Promise.all(promises).then(() => { toast.success("已移除"); setRmSelectedIds(new Set()); setRemovingMembers(false); refreshRmChMembers(rmCh); }).catch(() => setRemovingMembers(false));
   };
 
   const addBotToChannel = () => {
     if (!addCh || !lastCreatedBotId) return;
-    fetch(`${API}/channels/${addCh}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ member_id: lastCreatedBotId, member_type: "bot" }) })
+    authFetch(`${API}/channels/${addCh}/members`, { method: "POST", body: JSON.stringify({ member_id: lastCreatedBotId, member_type: "bot" }) })
       .then((r) => r.json())
       .then((d) => { if (d.status === "success") { toast.success("Bot 已加入项目"); setLastCreatedBotId(""); } else toast.error(d.message || "加入失败"); })
       .catch((e) => toast.error("请求失败: " + String(e)));
@@ -792,6 +845,7 @@ export default function AdminPage() {
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm">{m.name}</span>
                               {!m.is_enabled && <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">已禁用</span>}
+                              <span className={`text-xs px-2 py-0.5 rounded ${m.is_public ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{m.is_public ? "公开" : "私有"}</span>
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
                               {m.provider} / {m.model_name} | {m.base_url}
@@ -801,6 +855,7 @@ export default function AdminPage() {
                             {m.description && <div className="text-xs text-gray-400 mt-1">{m.description}</div>}
                           </div>
                           <div className="flex gap-2">
+                            <button onClick={() => toggleModelPublic(m)} className={`px-3 py-1 text-xs border rounded ${m.is_public ? "bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100" : "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"}`}>{m.is_public ? "设为私有" : "设为公开"}</button>
                             <button onClick={() => startEditModel(m)} className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50">编辑</button>
                             <button onClick={() => deleteModel(m.model_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
                           </div>
@@ -868,6 +923,10 @@ export default function AdminPage() {
                             <label htmlFor="is_enabled" className="text-xs text-gray-500">启用此模型</label>
                           </div>
                           <div className="flex items-center gap-2">
+                            <input type="checkbox" id="model_is_public" checked={modelForm.is_public} onChange={(e) => setModelForm({ ...modelForm, is_public: e.target.checked })} className="rounded" />
+                            <label htmlFor="model_is_public" className="text-xs text-gray-500">公开（所有用户可见）</label>
+                          </div>
+                          <div className="flex items-center gap-2">
                             <input type="checkbox" id="supports_vision" checked={modelForm.supports_vision} onChange={(e) => setModelForm({ ...modelForm, supports_vision: e.target.checked })} className="rounded" />
                             <label htmlFor="supports_vision" className="text-xs text-gray-500">支持图片识别（Vision）</label>
                           </div>
@@ -881,7 +940,11 @@ export default function AdminPage() {
                         {modelEditingId ? (
                           <>
                             <button onClick={() => updateModel(modelEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
+<<<<<<< HEAD
+                            <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, is_public: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+=======
                             <button onClick={() => { setModelEditingId(null); setModelForm({ name: "", provider: "ollama", model_name: "", base_url: "", api_key: "", description: "", is_enabled: true, supports_vision: false, extra_headers: "", temperature: 0.7, max_tokens: 4096, stream: true }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+>>>>>>> origin/main
                           </>
                         ) : (
                           <button onClick={createModel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建模型</button>
@@ -971,6 +1034,7 @@ export default function AdminPage() {
                             <span className="font-medium text-sm">@{b.username}</span>
                             {b.display_name && <span className="text-xs text-gray-500">({b.display_name})</span>}
                             <span className={`text-xs px-2 py-0.5 rounded ${b.status === "online" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"}`}>{b.status}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded ${b.is_public ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{b.is_public ? "公开" : "私有"}</span>
                             {b.created_by === currentUser?.user_id && (
                               <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-600">我的</span>
                             )}
@@ -982,6 +1046,7 @@ export default function AdminPage() {
                         </div>
                         {(b.created_by === currentUser?.user_id || userRole === "system_admin" || userRole === "space_admin") && (
                           <div className="flex gap-2">
+                            <button onClick={() => toggleBotPublic(b)} className={`px-3 py-1 text-xs border rounded ${b.is_public ? "bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100" : "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"}`}>{b.is_public ? "设为私有" : "设为公开"}</button>
                             <button onClick={() => startEditBot(b)} className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50">编辑</button>
                             <button onClick={() => deleteBot(b.bot_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
                           </div>
@@ -1059,11 +1124,16 @@ export default function AdminPage() {
                       </div>
                     </div>
 
+                    <div className="flex items-center gap-2">
+                      <input type="checkbox" id="bot_is_public" checked={botForm.is_public} onChange={(e) => setBotForm({ ...botForm, is_public: e.target.checked })} className="rounded" />
+                      <label htmlFor="bot_is_public" className="text-xs text-gray-500">公开（所有用户可见，否则仅创建者和管理员可见）</label>
+                    </div>
+
                     <div className="flex gap-2">
                       {botEditingId ? (
                         <>
                           <button onClick={() => updateBot(botEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
-                          <button onClick={() => { setBotEditingId(null); setBotForm({ username: "", display_name: "", description: "", model_id: "", template_id: "", custom_system_prompt: "", intro: "", status: "online" }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+                          <button onClick={() => { setBotEditingId(null); setBotForm({ username: "", display_name: "", description: "", model_id: "", template_id: "", custom_system_prompt: "", intro: "", status: "online", is_public: true }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
                         </>
                       ) : (
                         <button onClick={createBot} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建 Bot</button>

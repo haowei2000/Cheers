@@ -953,6 +953,11 @@ function UserProfileModal({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [tab, setTab] = useState<"profile" | "password">("profile");
+  const [pwVerifyMode, setPwVerifyMode] = useState<"password" | "email">("password");
+  const [emailCode, setEmailCode] = useState("");
+  const [emailCodeSent, setEmailCodeSent] = useState(false);
+  const [emailCodeLoading, setEmailCodeLoading] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>("");
 
   useEffect(() => {
     fetch(`${API}/auth/users/me`, {
@@ -962,6 +967,7 @@ function UserProfileModal({
       .then((d) => {
         if (d.display_name !== undefined) setDisplayName(d.display_name || "");
         if (d.bio !== undefined) setBio(d.bio || "");
+        if (d.email !== undefined) setUserEmail(d.email || "");
       })
       .catch(() => {});
   }, [userToken]);
@@ -989,28 +995,46 @@ function UserProfileModal({
     }
   };
 
-  const handlePasswordChange = async () => {
-    if (!newPassword || !currentPassword) return;
-    if (newPassword !== confirmPassword) {
-      toast.error("两次输入的新密码不一致");
-      return;
+  const handleSendEmailCode = async () => {
+    if (!userEmail) { toast.error("账号未绑定邮箱"); return; }
+    setEmailCodeLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/send-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({ email: userEmail, purpose: "change_password" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "发送失败");
+      setEmailCodeSent(true);
+      toast.success("验证码已发送至 " + userEmail);
+    } catch (e: any) {
+      toast.error(e.message || "发送失败");
+    } finally {
+      setEmailCodeLoading(false);
     }
+  };
+
+  const handlePasswordChange = async () => {
+    if (!newPassword) return;
+    if (newPassword !== confirmPassword) { toast.error("两次输入的新密码不一致"); return; }
+    if (pwVerifyMode === "password" && !currentPassword) return;
+    if (pwVerifyMode === "email" && !emailCode) return;
     setPasswordSaving(true);
     try {
+      const body: Record<string, string> = { new_password: newPassword };
+      if (pwVerifyMode === "password") body.current_password = currentPassword;
+      else body.email_code = emailCode;
       const res = await fetch(`${API}/auth/users/me/password`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${userToken}`,
-        },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "密码修改失败");
       toast.success("密码已更新");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+      setEmailCode(""); setEmailCodeSent(false);
     } catch (e: any) {
       toast.error(e.message || "密码修改失败");
     } finally {
@@ -1098,38 +1122,41 @@ function UserProfileModal({
             </div>
           ) : (
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">当前密码</label>
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="输入当前密码"
-                  className={inputCls}
-                  autoComplete="current-password"
-                />
+              {/* Verify mode toggle */}
+              <div className="flex gap-2 p-1 bg-gray-100 rounded-lg">
+                <button type="button" onClick={() => setPwVerifyMode("password")} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${pwVerifyMode === "password" ? "bg-white shadow text-gray-800" : "text-gray-500 hover:text-gray-700"}`}>密码验证</button>
+                <button type="button" onClick={() => setPwVerifyMode("email")} className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${pwVerifyMode === "email" ? "bg-white shadow text-gray-800" : "text-gray-500 hover:text-gray-700"}`}>邮箱验证</button>
               </div>
+
+              {pwVerifyMode === "password" ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">当前密码</label>
+                  <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="输入当前密码" className={inputCls} autoComplete="current-password" />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">邮箱验证码</label>
+                  {userEmail ? (
+                    <div className="flex gap-2">
+                      <input value={emailCode} onChange={(e) => setEmailCode(e.target.value)} placeholder="输入验证码" className={`${inputCls} flex-1`} />
+                      <button type="button" disabled={emailCodeLoading} onClick={handleSendEmailCode} className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap">
+                        {emailCodeLoading ? "发送中" : emailCodeSent ? "重新发送" : "获取验证码"}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-red-500">账号未绑定邮箱，无法使用邮箱验证</p>
+                  )}
+                  {userEmail && <p className="text-xs text-gray-400 mt-1">验证码将发送至 {userEmail}</p>}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">新密码</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="输入新密码"
-                  className={inputCls}
-                  autoComplete="new-password"
-                />
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="输入新密码" className={inputCls} autoComplete="new-password" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">确认新密码</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="再次输入新密码"
-                  className={inputCls}
-                  autoComplete="new-password"
-                />
+                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="再次输入新密码" className={inputCls} autoComplete="new-password" />
               </div>
             </div>
           )}
@@ -1157,7 +1184,7 @@ function UserProfileModal({
             <button
               type="button"
               onClick={handlePasswordChange}
-              disabled={passwordSaving || !currentPassword || !newPassword || !confirmPassword}
+              disabled={passwordSaving || !newPassword || !confirmPassword || (pwVerifyMode === "password" && !currentPassword) || (pwVerifyMode === "email" && !emailCode)}
               className="px-4 py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50"
             >
               {passwordSaving ? "更新中…" : "更新密码"}
@@ -1343,7 +1370,17 @@ export default function App() {
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
-  const [registerMode, setRegisterMode] = useState(false);
+  // mode: "login" | "register" | "forgot"
+  const [authMode, setAuthMode] = useState<"login" | "register" | "forgot">("login");
+  const [regEmail, setRegEmail] = useState("");
+  const [regCode, setRegCode] = useState("");
+  const [regCodeSent, setRegCodeSent] = useState(false);
+  const [regCodeLoading, setRegCodeLoading] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotNewPw, setForgotNewPw] = useState("");
+  const [forgotCodeSent, setForgotCodeSent] = useState(false);
+  const [forgotCodeLoading, setForgotCodeLoading] = useState(false);
 
   // 当前用户ID（用于API调用）
   const currentUserId = currentUser?.user_id || DEV_USER_ID;
@@ -1448,6 +1485,12 @@ export default function App() {
   // 加密消息状态
   const [secretMode, setSecretMode] = useState(false);
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, string>>({});
+  const [secretTokens, setSecretTokens] = useState<Record<string, string>>({}); // msg_id -> token（仅发送方当次 session 持有）
+  const [secretNow, setSecretNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setSecretNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
   // Lightbox 状态
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
@@ -1505,6 +1548,29 @@ export default function App() {
     }
   };
 
+  const handleSendCode = async (email: string, purpose: string, onSent: () => void) => {
+    if (!email.trim() || !email.includes("@")) { setLoginError("请输入有效的邮箱地址"); return; }
+    if (purpose === "register") setRegCodeLoading(true);
+    else setForgotCodeLoading(true);
+    setLoginError("");
+    try {
+      const res = await fetch(`${API}/auth/send-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), purpose }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "发送失败");
+      onSent();
+      toast.success("验证码已发送，请查收邮件");
+    } catch (e: any) {
+      setLoginError(e.message);
+    } finally {
+      if (purpose === "register") setRegCodeLoading(false);
+      else setForgotCodeLoading(false);
+    }
+  };
+
   const handleRegister = async (username: string, password: string, displayName: string) => {
     setLoginLoading(true);
     setLoginError("");
@@ -1512,11 +1578,10 @@ export default function App() {
       const res = await fetch(`${API}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, display_name: displayName }),
+        body: JSON.stringify({ username, email: regEmail.trim(), password, display_name: displayName, code: regCode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "注册失败");
-      // 注册后自动登录以获取 JWT token
       const loginRes = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1529,6 +1594,29 @@ export default function App() {
       setAuthToken(token);
       localStorage.setItem("currentUser", JSON.stringify({ user, token, loginTime: Date.now() }));
       setLoginModalOpen(false);
+      setRegEmail(""); setRegCode(""); setRegCodeSent(false);
+    } catch (e: any) {
+      setLoginError(e.message);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!forgotCode.trim() || !forgotNewPw.trim()) { setLoginError("请填写验证码和新密码"); return; }
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      const res = await fetch(`${API}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim(), code: forgotCode, new_password: forgotNewPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "重置失败");
+      toast.success("密码已重置，请重新登录");
+      setAuthMode("login");
+      setForgotEmail(""); setForgotCode(""); setForgotNewPw(""); setForgotCodeSent(false);
     } catch (e: any) {
       setLoginError(e.message);
     } finally {
@@ -1661,7 +1749,7 @@ export default function App() {
     const ch = channels.find((c) => c.channel_id === selectedId);
     setAutoAssist(ch?.auto_assist ?? false);
     setLoading(true);
-    fetch(`${API}/channels/${selectedId}/members?with_username=1`)
+    authFetch(`${API}/channels/${selectedId}/members?with_username=1`)
       .then((r) => r.json())
       .then((d) => {
         if (d.data) {
@@ -1678,7 +1766,7 @@ export default function App() {
       .catch(() => {
         setChannelBots([]);
       });
-    fetch(`${API}/channels/${selectedId}/messages`)
+    authFetch(`${API}/channels/${selectedId}/messages`)
       .then((r) => r.json())
       .then((d) => {
         const data = d.data || [];
@@ -1784,15 +1872,14 @@ export default function App() {
 
   const addBotToChannel = (botId: string): Promise<void> => {
     if (!selectedId) return Promise.resolve();
-    return fetch(`${API}/channels/${selectedId}/members`, {
+    return authFetch(`${API}/channels/${selectedId}/members`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ member_id: botId, member_type: "bot" }),
     })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
-          fetch(`${API}/channels/${selectedId}/members?with_username=1`)
+          authFetch(`${API}/channels/${selectedId}/members?with_username=1`)
             .then((res) => res.json())
             .then((res) => {
               if (res.data) {
@@ -1813,7 +1900,7 @@ export default function App() {
 
   const removeBotFromChannel = (memberId: string) => {
     if (!selectedId) return;
-    fetch(`${API}/channels/${selectedId}/members/${encodeURIComponent(memberId)}`, { method: "DELETE" })
+    authFetch(`${API}/channels/${selectedId}/members/${encodeURIComponent(memberId)}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
@@ -1850,9 +1937,8 @@ export default function App() {
       file_ids: [] as string[],
     };
     if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
-    return fetch(`${API}/channels/${selectedId}/messages`, {
+    return authFetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
@@ -1895,9 +1981,8 @@ export default function App() {
     setPendingFileNames([]);
     setPendingFilePreviews((prev) => { prev.forEach((u) => { if (u) URL.revokeObjectURL(u); }); return []; });
     setReplyingTo(null);
-    fetch(`${API}/channels/${selectedId}/messages`, {
+    authFetch(`${API}/channels/${selectedId}/messages`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
@@ -1907,6 +1992,10 @@ export default function App() {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data]
           );
+          // 保存 secret_token（仅发送方当次 session 持有，不通过 WS 广播）
+          if (d.data.secret_token) {
+            setSecretTokens((prev) => ({ ...prev, [d.data.msg_id]: d.data.secret_token }));
+          }
         }
       })
       .catch(console.error);
@@ -2096,9 +2185,8 @@ export default function App() {
 
   const saveContextLayer = (layer: string, content: string) => {
     if (!selectedId) return;
-    fetch(`${API}/channels/${selectedId}/context`, {
+    authFetch(`${API}/channels/${selectedId}/context`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ layer, content }),
     })
       .then((r) => r.json())
@@ -2285,44 +2373,72 @@ export default function App() {
                   <path d="M4.5 6.375a4.125 4.125 0 118.25 0 4.125 4.125 0 01-8.25 0zM14.25 8.625a3.375 3.375 0 116.75 0 3.375 3.375 0 01-6.75 0zM1.5 19.125a7.125 7.125 0 0114.25 0v.003l-.001.119a.75.75 0 01-.363.63 13.067 13.067 0 01-6.761 1.873c-2.472 0-4.786-.684-6.76-1.873a.75.75 0 01-.364-.63l-.001-.122zM17.25 19.128l-.001.144a2.25 2.25 0 01-.233.96 10.088 10.088 0 005.06-1.01.75.75 0 00.42-.643 4.875 4.875 0 00-6.957-4.611 8.586 8.586 0 011.71 5.157v.003z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">{registerMode ? "创建账号" : "登录到智枢"}</h2>
-              <p className="text-gray-500 text-sm mt-1">{registerMode ? "填写信息以创建新账号" : "欢迎回来！"}</p>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {authMode === "login" ? "登录到智枢" : authMode === "register" ? "创建账号" : "重置密码"}
+              </h2>
+              <p className="text-gray-500 text-sm mt-1">
+                {authMode === "login" ? "欢迎回来！" : authMode === "register" ? "填写信息以创建新账号" : "通过邮箱验证重置密码"}
+              </p>
             </div>
             {loginError && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">{loginError}</div>}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const fd = new FormData(e.currentTarget);
-                const username = fd.get("username") as string;
-                const password = fd.get("password") as string;
-                if (registerMode) {
-                  const displayName = fd.get("display_name") as string;
-                  handleRegister(username, password, displayName);
-                } else {
-                  handleLogin(username, password);
-                }
-              }}
-            >
-              {registerMode && (
-                <input name="display_name" placeholder="显示名称" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-              )}
-              <input name="username" placeholder="用户名" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-              <input name="password" type="password" placeholder="密码" required className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-              <button type="submit" disabled={loginLoading} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
-                {loginLoading ? "处理中..." : registerMode ? "注册" : "登录"}
-              </button>
-            </form>
+
+            {/* ── Login ── */}
+            {authMode === "login" && (
+              <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleLogin(fd.get("username") as string, fd.get("password") as string); }}>
+                <input name="username" placeholder="用户名或邮箱" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <input name="password" type="password" placeholder="密码" required className="w-full mb-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <div className="text-right mb-4">
+                  <button type="button" onClick={() => { setAuthMode("forgot"); setLoginError(""); }} className="text-xs text-[#1264A3] hover:underline">忘记密码？</button>
+                </div>
+                <button type="submit" disabled={loginLoading} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
+                  {loginLoading ? "处理中..." : "登录"}
+                </button>
+              </form>
+            )}
+
+            {/* ── Register ── */}
+            {authMode === "register" && (
+              <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleRegister(fd.get("username") as string, fd.get("password") as string, fd.get("display_name") as string); }}>
+                {/* Step 1: Email verification */}
+                <div className="flex gap-2 mb-3">
+                  <input value={regEmail} onChange={(e) => { setRegEmail(e.target.value); setRegCodeSent(false); setRegCode(""); }} type="email" placeholder="邮箱地址（必填）" required className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                  <button type="button" disabled={regCodeLoading || !regEmail.includes("@")} onClick={() => handleSendCode(regEmail, "register", () => setRegCodeSent(true))} className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap">
+                    {regCodeLoading ? "发送中" : regCodeSent ? "重新发送" : "获取验证码"}
+                  </button>
+                </div>
+                <input value={regCode} onChange={(e) => setRegCode(e.target.value)} placeholder="邮箱验证码" required disabled={!regCodeSent} className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400" />
+                {/* Step 2: Account info (shown after code sent) */}
+                <input name="display_name" placeholder="显示名称" required disabled={!regCodeSent} className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400" />
+                <input name="username" placeholder="用户名（登录用）" required disabled={!regCodeSent} className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400" />
+                <input name="password" type="password" placeholder="密码（8位以上，含字母和数字）" required disabled={!regCodeSent} className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400" />
+                <button type="submit" disabled={loginLoading || !regCodeSent} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
+                  {loginLoading ? "处理中..." : "注册"}
+                </button>
+              </form>
+            )}
+
+            {/* ── Forgot Password ── */}
+            {authMode === "forgot" && (
+              <div>
+                <div className="flex gap-2 mb-3">
+                  <input value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} type="email" placeholder="注册邮箱" required className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                  <button type="button" disabled={forgotCodeLoading || !forgotEmail.includes("@")} onClick={() => handleSendCode(forgotEmail, "reset_password", () => setForgotCodeSent(true))} className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap">
+                    {forgotCodeLoading ? "发送中" : forgotCodeSent ? "重新发送" : "获取验证码"}
+                  </button>
+                </div>
+                <input value={forgotCode} onChange={(e) => setForgotCode(e.target.value)} placeholder="邮箱验证码" className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <input value={forgotNewPw} onChange={(e) => setForgotNewPw(e.target.value)} type="password" placeholder="新密码（8位以上，含字母和数字）" className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <button onClick={handleForgotPassword} disabled={loginLoading || !forgotCodeSent} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
+                  {loginLoading ? "处理中..." : "重置密码"}
+                </button>
+              </div>
+            )}
+
             <div className="mt-4 text-center text-sm text-gray-500">
-              {registerMode ? (
-                <>
-                  已有账号？{" "}
-                  <button onClick={() => setRegisterMode(false)} className="text-[#1264A3] font-medium hover:underline">登录</button>
-                </>
+              {authMode === "login" ? (
+                <>没有账号？ <button onClick={() => { setAuthMode("register"); setLoginError(""); }} className="text-[#1264A3] font-medium hover:underline">注册</button></>
               ) : (
-                <>
-                  没有账号？{" "}
-                  <button onClick={() => setRegisterMode(true)} className="text-[#1264A3] font-medium hover:underline">注册</button>
-                </>
+                <button onClick={() => { setAuthMode("login"); setLoginError(""); }} className="text-[#1264A3] font-medium hover:underline">返回登录</button>
               )}
             </div>
           </div>
@@ -2499,7 +2615,7 @@ export default function App() {
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!confirm(`确定删除频道「${c.name}」？此操作不可恢复。`)) return;
-                    fetch(`${API}/channels/${c.channel_id}`, { method: "DELETE" })
+                    authFetch(`${API}/channels/${c.channel_id}`, { method: "DELETE" })
                       .then((r) => {
                         if (!r.ok) throw new Error("删除失败");
                         setChannels((prev) => prev.filter((x) => x.channel_id !== c.channel_id));
@@ -3111,9 +3227,8 @@ export default function App() {
                   onClick={() => {
                     const next = !autoAssist;
                     setAutoAssist(next);
-                    fetch(`${API}/channels/${selectedId}`, {
+                    authFetch(`${API}/channels/${selectedId}`, {
                       method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ auto_assist: next }),
                     })
                       .then((r) => r.json())
@@ -3221,24 +3336,31 @@ export default function App() {
                       ? new Date(m.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
                       : "";
 
-                    const isSecretUnrevealed = m.is_secret && !revealedContent;
+                    const secretSecsLeft = (m.is_secret && !revealedContent && m.created_at)
+                      ? Math.max(0, 60 - Math.floor((secretNow - new Date(m.created_at).getTime()) / 1000))
+                      : null;
+                    const isSecretExpired = secretSecsLeft !== null && secretSecsLeft <= 0;
+                    const isSecretUnrevealed = m.is_secret && !revealedContent && !isSecretExpired;
                     const rootBubble = isOwn ? (
                       <div id={`msg-${m.msg_id}`} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
                         <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">我</div>
                         <div className="flex items-end gap-1.5">
-                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); const mention = m.sender_type === "bot" && senderBot?.username ? `@${senderBot.username} ` : ""; if (mention) setInput(mention); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                             className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1">
                             {replyIcon}
                           </button>
                           <div className="flex flex-col items-end max-w-[72%]">
                             <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
                             {renderFileAttachments(m, true)}
-                            <div className={`${isSecretUnrevealed ? "bg-amber-500" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}>
-                              {isSecretUnrevealed ? (
+                            <div className={`${isSecretUnrevealed ? "bg-amber-500" : isSecretExpired ? "bg-gray-400" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}>
+                              {isSecretExpired ? (
+                                <span className="opacity-80">🔒 加密消息（已过期）</span>
+                              ) : isSecretUnrevealed ? (
                                 <div className="flex items-center gap-2">
                                   <span>🔒 加密消息</span>
-                                  <button type="button" onClick={() => {
-                                    fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret`, {
+                                  {secretSecsLeft !== null && <span className="text-[11px] opacity-70 tabular-nums">{secretSecsLeft}s</span>}
+                                  {secretTokens[m.msg_id] && <button type="button" onClick={() => {
+                                    fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret?token=${encodeURIComponent(secretTokens[m.msg_id])}`, {
                                       headers: { Authorization: `Bearer ${authToken}` },
                                     })
                                       .then((r) => r.json())
@@ -3251,7 +3373,7 @@ export default function App() {
                                       })
                                       .catch(() => alert("请求失败"));
                                   }}
-                                    className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
+                                    className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>}
                                 </div>
                               ) : (() => {
                                 const q = parseQuotePrefix(displayContent);
@@ -3288,12 +3410,15 @@ export default function App() {
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
                           {renderFileAttachments(m)}
-                          <div className={`${isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}>
-                            {isSecretUnrevealed ? (
+                          <div className={`${isSecretExpired ? "bg-gray-100" : isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}>
+                            {isSecretExpired ? (
+                              <span className="text-gray-400">🔒 加密消息（已过期）</span>
+                            ) : isSecretUnrevealed ? (
                               <div className="flex items-center gap-2 text-amber-700">
                                 <span>🔒 加密消息</span>
-                                <button type="button" onClick={() => {
-                                  fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret`, {
+                                {secretSecsLeft !== null && <span className="text-[11px] opacity-70 tabular-nums">{secretSecsLeft}s</span>}
+                                {secretTokens[m.msg_id] && <button type="button" onClick={() => {
+                                  fetch(`${API}/channels/${selectedId}/messages/${m.msg_id}/secret?token=${encodeURIComponent(secretTokens[m.msg_id])}`, {
                                     headers: { Authorization: `Bearer ${authToken}` },
                                   })
                                     .then((r) => r.json())
@@ -3306,7 +3431,7 @@ export default function App() {
                                     })
                                     .catch(() => alert("请求失败"));
                                 }}
-                                  className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>
+                                  className="text-[12px] underline opacity-80 hover:opacity-100">查看</button>}
                               </div>
                             ) : m._streaming && !text
                               ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
@@ -3326,155 +3451,174 @@ export default function App() {
                               onSkip={() => handleClarifySkip(m.msg_id)} />
                           )}
                         </div>
-                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); const mention = m.sender_type === "bot" && senderBot?.username ? `@${senderBot.username} ` : ""; if (mention) setInput(mention); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                           className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
                           {replyIcon}
                         </button>
                       </div>
                     );
 
-                    // ── thread replies (collapsible) ──────────────────────
+                    // ── thread card ───────────────────────────────────────
                     const isExpanded = expandedThreads.has(m.msg_id);
-                    const threadSection = replies.length > 0 ? (
-                      <div className="ml-12 mb-1">
-                        {/* Collapsed summary */}
-                        {!isExpanded && (
-                          <button
-                            type="button"
-                            onClick={() => toggleThread(m.msg_id)}
-                            className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-gray-100 transition-colors group/th text-left"
-                          >
-                            {(() => {
-                              const last = replies[replies.length - 1];
-                              const { text: lt } = parseGuidePayload(last.content);
-                              const preview = (isClarifyReplyUserMessage(last.content)
-                                ? last.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
-                                : (lt || last.content)
-                              ).replace(/\s+/g, " ").slice(0, 10);
-                              return (
-                                <>
-                                  <span className="text-[12px] font-medium text-[#1264A3] group-hover/th:underline">
-                                    {replies.length} 条回复
-                                  </span>
-                                  {preview && (
-                                    <span className="text-[12px] text-gray-400 truncate max-w-[120px]">
-                                      {preview}{(lt || last.content).length > 10 ? "…" : ""}
-                                    </span>
-                                  )}
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-gray-400">
-                                    <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-                                  </svg>
-                                </>
-                              );
-                            })()}
-                          </button>
-                        )}
-                        {/* Expanded replies */}
-                        {isExpanded && (
-                        <div className="pl-3 border-l-2 border-gray-200 flex flex-col gap-0.5">
-                        {replies.map((r) => {
-                          const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
-                          const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
-                          const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
-                          const rInitials = rLabel.slice(0, 2).toUpperCase();
-                          const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
-                          const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
-                          const rDisplay = isClarifyReplyUserMessage(r.content)
-                            ? r.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
-                            : (rTextRaw || r.content);
-                          const rClarifyAnswered = !!rClarify && messages.some(
-                            (x) => x.in_reply_to_msg_id === r.msg_id && isClarifyReplyUserMessage(x.content)
-                          );
-                          const rClarifyWaiting = pendingClarifyReplyMsgId === r.msg_id;
-                          const rClarifyStatus: "form" | "waiting" | "answered" | null =
-                            rClarify && r.sender_type === "bot"
-                              ? rClarifyWaiting ? "waiting" : rClarifyAnswered ? "answered" : "form"
-                              : null;
-                          // Show "↩ name" if replying to a non-root message
-                          const rDirectParent = r.in_reply_to_msg_id !== m.msg_id
-                            ? messages.find((x) => x.msg_id === r.in_reply_to_msg_id)
-                            : null;
-                          const rParentBot = rDirectParent?.sender_type === "bot"
-                            ? channelBots.find((b) => b.member_id === rDirectParent.sender_id)
-                            : null;
-                          const rParentLabel = rDirectParent
-                            ? (rDirectParent.sender_type === "bot"
-                                ? (rParentBot?.display_name || rParentBot?.username || "Bot")
-                                : (rDirectParent.sender_id === currentUserId ? "我" : "用户"))
-                            : null;
 
-                          const rCollapsed = collapsedMessages.has(r.msg_id);
-                          const rPreview = rDisplay.replace(/\s+/g, " ").slice(0, 10) + (rDisplay.length > 10 ? "…" : "");
-                          return (
-                            <div key={r.msg_id} id={`msg-${r.msg_id}`} className="group/tr flex items-start gap-2 py-1">
+                    // No replies — render as a normal standalone bubble
+                    if (replies.length === 0) {
+                      return <div key={m.msg_id}>{rootBubble}</div>;
+                    }
+
+                    // Single reply — render root bubble + one reply inline (no card)
+                    if (replies.length === 1) {
+                      const r = replies[0];
+                      const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
+                      const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
+                      const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
+                      const rInitials = rLabel.slice(0, 2).toUpperCase();
+                      const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+                      const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
+                      const rDisplay = isClarifyReplyUserMessage(r.content)
+                        ? r.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                        : (rTextRaw || r.content);
+                      const rClarifyAnswered = !!rClarify && messages.some(
+                        (x) => x.in_reply_to_msg_id === r.msg_id && isClarifyReplyUserMessage(x.content)
+                      );
+                      const rClarifyWaiting = pendingClarifyReplyMsgId === r.msg_id;
+                      const rClarifyStatus: "form" | "waiting" | "answered" | null =
+                        rClarify && r.sender_type === "bot"
+                          ? rClarifyWaiting ? "waiting" : rClarifyAnswered ? "answered" : "form"
+                          : null;
+                      return (
+                        <div key={m.msg_id}>
+                          {rootBubble}
+                          <div id={`msg-${r.msg_id}`} className="group flex items-start gap-2.5 px-4 py-1 transition-all">
+                            <div className="flex-shrink-0 mt-0.5">
                               {r.sender_type === "bot" ? (
                                 rBot?.avatar_url
-                                  ? <img src={rBot.avatar_url} alt={rLabel} className="w-6 h-6 rounded-lg object-cover flex-shrink-0 mt-0.5" />
-                                  : <div className="w-6 h-6 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5">{rInitials}</div>
+                                  ? <img src={rBot.avatar_url} alt={rLabel} className="w-8 h-8 rounded-xl object-cover" />
+                                  : <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">{rInitials}</div>
                               ) : (
-                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5 ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
                                   {rIsOwn ? "我" : "U"}
                                 </div>
                               )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
-                                  <span className="font-semibold text-[12px] text-gray-900">{rLabel}</span>
-                                  {r.sender_type === "bot" && <span className="text-[9px] px-1 py-0.5 rounded bg-[#2EB67D]/10 text-[#2EB67D] font-medium">Bot</span>}
-                                  <span className="text-[11px] text-gray-400">{rTime}</span>
-                                  {rParentLabel && (
-                                    <span className="text-[11px] text-gray-400">↩ <span className="font-medium text-gray-500">{rParentLabel}</span></span>
-                                  )}
-                                  {rCollapsed && (
-                                    <span className="text-[11px] text-gray-400 truncate max-w-[120px]">{rPreview}</span>
-                                  )}
-                                  <button type="button" onClick={() => toggleMessage(r.msg_id)}
-                                    className="opacity-0 group-hover/tr:opacity-100 transition-opacity ml-0.5 flex items-center justify-center w-4 h-4 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                    title={rCollapsed ? "展开" : "折叠"}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-                                      {rCollapsed
-                                        ? <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-                                        : <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
-                                      }
-                                    </svg>
-                                  </button>
-                                </div>
-                                {!rCollapsed && (
-                                  <>
-                                    {renderFileAttachments(r)}
-                                    <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
-                                      {r._streaming && !rTextRaw
-                                        ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
-                                        : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
-                                      {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
-                                    </div>
-                                    {rForm && selectedId && r.sender_type === "bot" && (
-                                      <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
-                                        onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
-                                        onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
-                                        userToken={authToken ?? undefined} />
-                                    )}
-                                    {rClarifyStatus !== null && selectedId && (
-                                      <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
-                                        replyContent={undefined}
-                                        onContinue={(answers) => handleClarifyContinue(r.msg_id, rClarify!, answers)}
-                                        onSkip={() => handleClarifySkip(r.msg_id)} />
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                              <button type="button" title="回复" onClick={() => { setReplyingTo(r); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
-                                className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-                                  <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
-                                </svg>
-                              </button>
                             </div>
-                          );
-                        })}
+                            <div className="flex flex-col max-w-[72%]">
+                              <div className="flex items-baseline gap-1.5 mb-1">
+                                <span className="font-semibold text-[13px] text-gray-900 leading-none">{rLabel}</span>
+                                {r.sender_type === "bot" && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>}
+                                <span className="text-[11px] text-gray-400 leading-none">{rTime}</span>
+                              </div>
+                              {renderFileAttachments(r)}
+                              <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
+                                {r._streaming && !rTextRaw
+                                  ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                                  : renderWithThinkFolding(rDisplay, `${r.msg_id}-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
+                                {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
+                              </div>
+                              {rForm && selectedId && r.sender_type === "bot" && (
+                                <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
+                                  onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                                  onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
+                                  userToken={authToken ?? undefined} />
+                              )}
+                              {rClarifyStatus !== null && selectedId && (
+                                <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
+                                  replyContent={undefined}
+                                  onContinue={(answers) => handleClarifyContinue(r.msg_id, rClarify!, answers)}
+                                  onSkip={() => handleClarifySkip(r.msg_id)} />
+                              )}
+                            </div>
+                            <button type="button" title="回复" onClick={() => { setReplyingTo(r); const mention = r.sender_type === "bot" && rBot?.username ? `@${rBot.username} ` : ""; if (mention) setInput(mention); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                                <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // ≥2 replies — Collapsed thread card (overview) ───────────
+                    if (!isExpanded) {
+                      const qPreview = displayContent.replace(/\s+/g, " ").slice(0, 60);
+                      const qOverflow = displayContent.replace(/\s+/g, " ").length > 60;
+                      const lastReply = replies[replies.length - 1];
+                      const { text: lastRText } = parseGuidePayload(lastReply.content);
+                      const lastRDisplay = (isClarifyReplyUserMessage(lastReply.content)
+                        ? lastReply.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                        : (lastRText || lastReply.content)).replace(/\s+/g, " ");
+                      const replyBotIds = [...new Set(replies.filter((r) => r.sender_type === "bot").map((r) => r.sender_id))];
+                      return (
+                        <div key={m.msg_id} id={`msg-${m.msg_id}`} className="mx-3 my-1.5">
                           <button
                             type="button"
                             onClick={() => toggleThread(m.msg_id)}
-                            className="mt-0.5 flex items-center gap-1 px-1 py-0.5 text-[11px] text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100 transition-colors"
+                            className="w-full text-left rounded-xl border border-gray-300 bg-gray-100 hover:border-[#1264A3]/50 hover:shadow transition-all overflow-hidden"
+                          >
+                            {/* Question row */}
+                            <div className="flex items-center gap-2.5 px-3 pt-2.5 pb-2">
+                              {isOwn
+                                ? <div className="w-7 h-7 rounded-lg bg-[#1264A3] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">我</div>
+                                : m.sender_type === "bot"
+                                  ? (senderBot?.avatar_url
+                                    ? <img src={senderBot.avatar_url} alt={botLabel} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
+                                    : <div className="w-7 h-7 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">{botInitials}</div>)
+                                  : <div className="w-7 h-7 rounded-lg bg-gray-400 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">U</div>}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  <span className="text-[12px] font-semibold text-gray-600">
+                                    {isOwn ? "我" : m.sender_type === "bot" ? botLabel : "用户"}
+                                  </span>
+                                  <span className="text-[11px] text-gray-400">{msgTime}</span>
+                                </div>
+                                <p className="text-[13px] text-gray-800 truncate leading-snug font-medium">
+                                  {qPreview}{qOverflow ? "…" : ""}
+                                </p>
+                              </div>
+                            </div>
+                            {/* Bot reply preview row */}
+                            <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-300/50 bg-gray-200/40">
+                              {replyBotIds.length > 0 && (
+                                <div className="flex -space-x-1.5 flex-shrink-0">
+                                  {replyBotIds.slice(0, 4).map((bid) => {
+                                    const rb = channelBots.find((b) => b.member_id === bid);
+                                    const rl = rb?.display_name || rb?.username || "Bot";
+                                    return rb?.avatar_url
+                                      ? <img key={bid} src={rb.avatar_url} alt={rl} className="w-5 h-5 rounded-md object-cover border-2 border-white" />
+                                      : <div key={bid} className="w-5 h-5 rounded-md bg-[#2EB67D] flex items-center justify-center text-white text-[9px] font-bold border-2 border-white select-none">{rl.slice(0, 1).toUpperCase()}</div>;
+                                  })}
+                                </div>
+                              )}
+                              <span className="flex-1 min-w-0 text-[12px] text-gray-500 truncate">
+                                {lastRDisplay.slice(0, 80)}{lastRDisplay.length > 80 ? "…" : ""}
+                              </span>
+                              <span className="text-[11px] font-medium text-[#1264A3] whitespace-nowrap flex-shrink-0">
+                                {replies.length} 条回复
+                              </span>
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-gray-400 flex-shrink-0">
+                                <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // ── Expanded thread card ───────────────────────────────
+                    return (
+                      <div key={m.msg_id} id={`msg-${m.msg_id}`} className="mx-3 my-1.5 rounded-xl border border-[#1264A3]/30 bg-gray-100 shadow-sm overflow-hidden">
+                        {/* Thread header */}
+                        <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
+                          <div className="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-[#1264A3]">
+                              <path fillRule="evenodd" d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v6A1.5 1.5 0 0 1 13.5 11H9.25l-2.35 2.35A.75.75 0 0 1 5.5 12.75V11H2.5A1.5 1.5 0 0 1 1 9.5v-6Z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-[12px] font-medium text-[#1264A3]">对话串 · {replies.length + 1} 条消息</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleThread(m.msg_id)}
+                            className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
                               <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
@@ -3482,14 +3626,127 @@ export default function App() {
                             收起
                           </button>
                         </div>
-                        )}
-                      </div>
-                    ) : null;
-
-                    return (
-                      <div key={m.msg_id}>
+                        {/* Root message */}
                         {rootBubble}
-                        {threadSection}
+                        {/* Replies divider */}
+                        <div className="flex items-center gap-2 px-4 py-1">
+                          <div className="flex-1 h-px bg-gray-200" />
+                          <span className="text-[11px] text-gray-400 whitespace-nowrap">{replies.length} 条回复</span>
+                          <div className="flex-1 h-px bg-gray-200" />
+                        </div>
+                        {/* Reply messages */}
+                        <div className="flex flex-col gap-0.5 pb-1.5">
+                          {replies.map((r) => {
+                            const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
+                            const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
+                            const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
+                            const rInitials = rLabel.slice(0, 2).toUpperCase();
+                            const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+                            const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
+                            const rDisplay = isClarifyReplyUserMessage(r.content)
+                              ? r.content.replace(/^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i, "").trim()
+                              : (rTextRaw || r.content);
+                            const rClarifyAnswered = !!rClarify && messages.some(
+                              (x) => x.in_reply_to_msg_id === r.msg_id && isClarifyReplyUserMessage(x.content)
+                            );
+                            const rClarifyWaiting = pendingClarifyReplyMsgId === r.msg_id;
+                            const rClarifyStatus: "form" | "waiting" | "answered" | null =
+                              rClarify && r.sender_type === "bot"
+                                ? rClarifyWaiting ? "waiting" : rClarifyAnswered ? "answered" : "form"
+                                : null;
+                            const rDirectParent = r.in_reply_to_msg_id !== m.msg_id
+                              ? messages.find((x) => x.msg_id === r.in_reply_to_msg_id)
+                              : null;
+                            const rParentBot = rDirectParent?.sender_type === "bot"
+                              ? channelBots.find((b) => b.member_id === rDirectParent.sender_id)
+                              : null;
+                            const rParentLabel = rDirectParent
+                              ? (rDirectParent.sender_type === "bot"
+                                  ? (rParentBot?.display_name || rParentBot?.username || "Bot")
+                                  : (rDirectParent.sender_id === currentUserId ? "我" : "用户"))
+                              : null;
+                            const rCollapsed = collapsedMessages.has(r.msg_id);
+                            const rPreview = rDisplay.replace(/\s+/g, " ").slice(0, 10) + (rDisplay.length > 10 ? "…" : "");
+                            return (
+                              <div key={r.msg_id} id={`msg-${r.msg_id}`} className="group/tr flex items-start gap-2 px-3 py-1">
+                                {r.sender_type === "bot" ? (
+                                  rBot?.avatar_url
+                                    ? <img src={rBot.avatar_url} alt={rLabel} className="w-6 h-6 rounded-lg object-cover flex-shrink-0 mt-0.5" />
+                                    : <div className="w-6 h-6 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5">{rInitials}</div>
+                                ) : (
+                                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5 ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
+                                    {rIsOwn ? "我" : "U"}
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
+                                    <span className="font-semibold text-[12px] text-gray-900">{rLabel}</span>
+                                    {r.sender_type === "bot" && <span className="text-[9px] px-1 py-0.5 rounded bg-[#2EB67D]/10 text-[#2EB67D] font-medium">Bot</span>}
+                                    <span className="text-[11px] text-gray-400">{rTime}</span>
+                                    {rParentLabel && (
+                                      <span className="text-[11px] text-gray-400">↩ <span className="font-medium text-gray-500">{rParentLabel}</span></span>
+                                    )}
+                                    {rCollapsed && (
+                                      <span className="text-[11px] text-gray-400 truncate max-w-[120px]">{rPreview}</span>
+                                    )}
+                                    <button type="button" onClick={() => toggleMessage(r.msg_id)}
+                                      className="opacity-0 group-hover/tr:opacity-100 transition-opacity ml-0.5 flex items-center justify-center w-4 h-4 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                      title={rCollapsed ? "展开" : "折叠"}>
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                                        {rCollapsed
+                                          ? <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                                          : <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                                        }
+                                      </svg>
+                                    </button>
+                                  </div>
+                                  {!rCollapsed && (
+                                    <>
+                                      {renderFileAttachments(r)}
+                                      <div className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
+                                        {r._streaming && !rTextRaw
+                                          ? <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                                          : renderWithThinkFolding(rDisplay, `${r.msg_id}-t-`, !!r._streaming, (src) => { setLightboxSrc(src); const m2 = src.match(/\/files\/([^/]+)\/preview/); setLightboxFileId(m2 ? m2[1] : null); }, (url, name) => setFilePreviewPanel({ url, filename: name }))}
+                                        {r._streaming && !!rTextRaw && <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />}
+                                      </div>
+                                      {rForm && selectedId && r.sender_type === "bot" && (
+                                        <GuideFormBlock msgId={r.msg_id} form={rForm} channelId={selectedId}
+                                          onReply={(newMsg) => setMessages((prev) => [...prev, newMsg])}
+                                          onChannelsRefresh={() => refreshChannels(setChannels, authToken ?? undefined)}
+                                          userToken={authToken ?? undefined} />
+                                      )}
+                                      {rClarifyStatus !== null && selectedId && (
+                                        <ClarifyInlineBlock msgId={r.msg_id} schema={rClarify!} status={rClarifyStatus}
+                                          replyContent={undefined}
+                                          onContinue={(answers) => handleClarifyContinue(r.msg_id, rClarify!, answers)}
+                                          onSkip={() => handleClarifySkip(r.msg_id)} />
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                                <button type="button" title="回复" onClick={() => { setReplyingTo(r); const mention = r.sender_type === "bot" && rBot?.username ? `@${rBot.username} ` : ""; if (mention) setInput(mention); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                                  className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                                    <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
+                                  </svg>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {/* Bottom collapse button */}
+                        <div className="flex justify-center py-1.5 border-t border-gray-100">
+                          <button
+                            type="button"
+                            onClick={() => toggleThread(m.msg_id)}
+                            className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded hover:bg-gray-100 transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                              <path fillRule="evenodd" d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+                            </svg>
+                            收起对话串
+                          </button>
+                        </div>
                       </div>
                     );
                   })}

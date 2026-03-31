@@ -304,21 +304,6 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
             p = _get_provider_by_id(pid)
             if p:
                 return _normalize_provider_config(p)
-        # 3. 回退到第一个可用 provider
-        if data["llm_providers"]:
-            return _normalize_provider_config(data["llm_providers"][0])
-        # 4. 最终回退：env 配置（兼容旧部署）
-        from app.config import settings as s
-        base = (data.get("guide_llm_base_url") or s.guide_llm_base_url or "").strip()
-        model = (data.get("guide_llm_model") or s.guide_llm_model or "").strip()
-        if base and model:
-            return _normalize_provider_config({
-                "base_url": base,
-                "model": model,
-                "api_key": (data.get("guide_llm_api_key") or s.guide_llm_api_key or "").strip(),
-                "temperature": float(data.get("guide_llm_temperature", s.guide_llm_temperature)),
-                "max_tokens": int(data.get("guide_llm_max_tokens", s.guide_llm_max_tokens)),
-            })
         return None
 
     bindings = data.get("llm_bindings") or {}
@@ -327,17 +312,6 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
         p = _get_provider_by_id(pid)
         if p:
             return _normalize_provider_config(p)
-    if data["llm_providers"]:
-        return _normalize_provider_config(data["llm_providers"][0])
-    if scope in ("system_llm", "log_analyze", "qa_summarize", "orchestrator"):
-        from app.config import settings as s
-        return _normalize_provider_config({
-            "base_url": (data.get("system_llm_base_url") or s.system_llm_base_url or "").strip(),
-            "model": (data.get("system_llm_model") or s.system_llm_model or "gpt-4o-mini").strip(),
-            "api_key": (data.get("system_llm_api_key") or s.system_llm_api_key or "").strip(),
-            "temperature": 0.5,
-            "max_tokens": 1500,
-        })
     return None
 
 

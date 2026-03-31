@@ -128,11 +128,14 @@ async def _persist_message(
     is_secret: bool = False,
 ) -> tuple[Message, dict]:
     if is_secret:
+        import secrets as _secrets
         encrypted = encrypt_value(content)
         stored_content = _SECRET_PLACEHOLDER
+        token = _secrets.token_urlsafe(32)
     else:
         encrypted = None
         stored_content = content
+        token = None
     msg = Message(
         channel_id=channel_id,
         sender_id=sender_id,
@@ -143,6 +146,7 @@ async def _persist_message(
         in_reply_to_msg_id=in_reply_to_msg_id,
         is_secret=is_secret,
         secret_encrypted=encrypted,
+        secret_token=token,
     )
     session.add(msg)
     await session.flush()
@@ -253,8 +257,10 @@ async def _handle_send_message(
     *,
     channel_id: str,
     body: MessageCreate,
-) -> dict:
-    """共享的发送消息核心逻辑，供 HTTP 与 WebSocket 路径复用。"""
+) -> tuple[dict, str | None]:
+    """共享的发送消息核心逻辑，供 HTTP 与 WebSocket 路径复用。
+    返回 (broadcast_dict, secret_token)；secret_token 仅通过 HTTP 响应返回给发送方，不广播。
+    """
     await _ensure_channel_exists(session, channel_id)
     file_ids = _normalize_file_ids(body.file_ids)
     await _validate_message_files(session, channel_id=channel_id, file_ids=file_ids)
@@ -270,7 +276,7 @@ async def _handle_send_message(
         is_secret=body.is_secret,
     )
     await session.commit()
-    # Broadcast without revealing secret content
+    # Broadcast without token (secret_token must not be exposed to other clients)
     await _broadcast_message(channel_id, d)
     _schedule_recent_update(channel_id)
     if _should_run_orchestrator_inline(session):
@@ -278,7 +284,7 @@ async def _handle_send_message(
     else:
         asyncio.create_task(_run_orchestrator_bg(channel_id, msg.msg_id))
         await asyncio.sleep(0)
-    return d
+    return d, msg.secret_token
 
 
 @router.post("/{channel_id}/messages")
@@ -288,8 +294,11 @@ async def create_message(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """发送消息并持久化，并广播到频道 WebSocket。Orchestrator 在后台异步运行，不阻塞响应。"""
-    d = await _handle_send_message(session, channel_id=channel_id, body=body)
-    return {"status": "success", "data": d}
+    d, secret_token = await _handle_send_message(session, channel_id=channel_id, body=body)
+    response_data = dict(d)
+    if secret_token:
+        response_data["secret_token"] = secret_token
+    return {"status": "success", "data": response_data}
 
 
 @router.post("/{channel_id}/messages/stream")
@@ -379,25 +388,41 @@ async def create_message_stream(
 async def reveal_secret_message(
     channel_id: str,
     msg_id: str,
+    token: str,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """解密并返回加密消息的原始内容（仅发送者本人可操作）。"""
+    """解密并返回加密消息原始内容。需携带发送时颁发的 token（绑定到发送方的登录 session）。"""
     result = await session.execute(
-        select(Message).where(Message.channel_id == channel_id, Message.msg_id == msg_id)
+        select(Message)
+        .where(Message.channel_id == channel_id, Message.msg_id == msg_id)
+        .with_for_update()
     )
     msg = result.scalar_one_or_none()
     if not msg:
         raise HTTPException(status_code=404, detail="message not found")
-    if not msg.is_secret or not msg.secret_encrypted:
+    if not msg.is_secret:
         raise HTTPException(status_code=400, detail="not a secret message")
-    # 仅发送者本人可解密
-    if msg.sender_id != current_user.user_id:
-        raise HTTPException(status_code=403, detail="only sender can reveal this message")
+    # 密文已被消费（查看一次后服务端立即清除，下次登录无法再查看）
+    if not msg.secret_encrypted:
+        raise HTTPException(status_code=410, detail="secret message already revealed or expired")
+    # token 验证：仅持有发送时颁发的 token 才可解密（防止同账号多设备泄露）
+    import hmac as _hmac
+    if not msg.secret_token or not _hmac.compare_digest(token, msg.secret_token):
+        raise HTTPException(status_code=403, detail="invalid token")
+    # 1 分钟后过期
+    from datetime import timezone, datetime as _dt, timedelta
+    sent_at = msg.created_at
+    if sent_at.tzinfo is None:
+        sent_at = sent_at.replace(tzinfo=timezone.utc)
+    if _dt.now(timezone.utc) - sent_at > timedelta(minutes=1):
+        raise HTTPException(status_code=410, detail="secret message expired")
     try:
         plaintext = decrypt_value(msg.secret_encrypted)
     except Exception:
         raise HTTPException(status_code=500, detail="decryption failed")
+    # 查看后立即清除服务端密文
+    msg.secret_encrypted = None
     return {"status": "success", "data": {"content": plaintext}}
 
 
