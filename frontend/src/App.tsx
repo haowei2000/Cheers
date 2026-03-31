@@ -2403,17 +2403,18 @@ export default function App() {
             {/* ── Register ── */}
             {authMode === "register" && (
               <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); handleRegister(fd.get("username") as string, fd.get("password") as string, fd.get("display_name") as string); }}>
-                <input name="display_name" placeholder="显示名称" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-                <input name="username" placeholder="用户名（登录用）" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-                <input name="password" type="password" placeholder="密码（8位以上，含字母和数字）" required className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
-                {/* Email + code */}
+                {/* Step 1: Email verification */}
                 <div className="flex gap-2 mb-3">
-                  <input value={regEmail} onChange={(e) => setRegEmail(e.target.value)} type="email" placeholder="邮箱地址" required className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                  <input value={regEmail} onChange={(e) => { setRegEmail(e.target.value); setRegCodeSent(false); setRegCode(""); }} type="email" placeholder="邮箱地址（必填）" required className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
                   <button type="button" disabled={regCodeLoading || !regEmail.includes("@")} onClick={() => handleSendCode(regEmail, "register", () => setRegCodeSent(true))} className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap">
                     {regCodeLoading ? "发送中" : regCodeSent ? "重新发送" : "获取验证码"}
                   </button>
                 </div>
-                <input value={regCode} onChange={(e) => setRegCode(e.target.value)} placeholder="邮箱验证码" required className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]" />
+                <input value={regCode} onChange={(e) => setRegCode(e.target.value)} placeholder="邮箱验证码" required disabled={!regCodeSent} className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400" />
+                {/* Step 2: Account info (shown after code sent) */}
+                <input name="display_name" placeholder="显示名称" required disabled={!regCodeSent} className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400" />
+                <input name="username" placeholder="用户名（登录用）" required disabled={!regCodeSent} className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400" />
+                <input name="password" type="password" placeholder="密码（8位以上，含字母和数字）" required disabled={!regCodeSent} className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400" />
                 <button type="submit" disabled={loginLoading || !regCodeSent} className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm">
                   {loginLoading ? "处理中..." : "注册"}
                 </button>
