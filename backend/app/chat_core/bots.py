@@ -118,23 +118,19 @@ async def list_bots(
     """获取 Bot 列表。
 
     可见规则：
-    - 管理员：全部
-    - 普通用户：自己创建的 + 好友公开的
+    - 仅限：自己创建的 + 好友公开的
     """
     result = await session.execute(
         select(BotAccount).order_by(BotAccount.created_at.desc())
     )
     all_bots = result.scalars().all()
 
-    if is_admin(current_user):
-        visible = all_bots
-    else:
-        friend_ids = await get_friend_ids(session, current_user.user_id)
-        visible = [
-            b for b in all_bots
-            if b.created_by == current_user.user_id
-            or (b.is_public and b.created_by in friend_ids)
-        ]
+    friend_ids = await get_friend_ids(session, current_user.user_id)
+    visible = [
+        b for b in all_bots
+        if b.created_by == current_user.user_id
+        or (b.is_public and b.created_by in friend_ids)
+    ]
 
     return {"status": "success", "data": [_bot_to_simple(b) for b in visible]}
 

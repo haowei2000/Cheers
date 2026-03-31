@@ -34,10 +34,10 @@ ROLES = [ROLE_SYSTEM_ADMIN, ROLE_SPACE_ADMIN, ROLE_CHANNEL_ADMIN, ROLE_MEMBER, R
 # 角色权限映射
 ROLE_PERMISSIONS = {
     ROLE_SYSTEM_ADMIN: {
-        "user_management": True,
-        "space_management": True,
-        "channel_management": True,
-        "bot_config": True,
+        "user_management": False,
+        "space_management": False,
+        "channel_management": False,
+        "bot_config": False,
         "system_settings": True,
     },
     ROLE_SPACE_ADMIN: {
@@ -361,7 +361,7 @@ async def list_roles():
             {
                 "name": "system_admin",
                 "display_name": "系统管理员",
-                "description": "全系统最高权限：用户管理、空间管理、频道管理、Bot配置、系统设置",
+                "description": "系统级管理：全局 LLM 设置、策略配置、系统健康度检查（不具备对他人私有数据的访问权）",
                 "permissions": ROLE_PERMISSIONS[ROLE_SYSTEM_ADMIN],
             },
             {

@@ -50,8 +50,7 @@ async def list_models(
     """获取 AI 模型列表。
 
     可见规则：
-    - 管理员：全部
-    - 普通用户：自己创建的 + 好友公开的
+    - 仅限：自己创建的 + 好友公开的
     """
     q = select(AIModel).order_by(AIModel.created_at.desc())
     if not include_disabled:
@@ -60,15 +59,12 @@ async def list_models(
     result = await session.execute(q)
     all_models = result.scalars().all()
 
-    if is_admin(current_user):
-        visible = all_models
-    else:
-        friend_ids = await get_friend_ids(session, current_user.user_id)
-        visible = [
-            m for m in all_models
-            if m.created_by == current_user.user_id
-            or (m.is_public and m.created_by in friend_ids)
-        ]
+    friend_ids = await get_friend_ids(session, current_user.user_id)
+    visible = [
+        m for m in all_models
+        if m.created_by == current_user.user_id
+        or (m.is_public and m.created_by in friend_ids)
+    ]
 
     return {"status": "success", "data": [_to_response(m) for m in visible]}
 

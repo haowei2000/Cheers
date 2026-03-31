@@ -36,21 +36,17 @@ async def list_channels(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取频道列表：system_admin 见全部，其他用户只见已加入的频道。"""
-    if current_user.role == "system_admin":
-        result = await session.execute(select(Channel).order_by(Channel.created_at))
-        channels = result.scalars().all()
-    else:
-        result = await session.execute(
-            select(Channel)
-            .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
-            .where(
-                ChannelMembership.member_id == current_user.user_id,
-                ChannelMembership.member_type == "user",
-            )
-            .order_by(Channel.created_at)
+    """获取频道列表：仅返回用户已加入的频道。"""
+    result = await session.execute(
+        select(Channel)
+        .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
+        .where(
+            ChannelMembership.member_id == current_user.user_id,
+            ChannelMembership.member_type == "user",
         )
-        channels = result.scalars().all()
+        .order_by(Channel.created_at)
+    )
+    channels = result.scalars().all()
     return {
         "status": "success",
         "data": [ChannelInResponse.model_validate(c).model_dump() for c in channels],
@@ -63,24 +59,18 @@ async def list_channels_by_workspace(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """获取指定工作空间的频道列表（仅返回当前用户已加入的频道，管理员可见全部）."""
-    if is_admin(current_user):
-        result = await session.execute(
-            select(Channel).where(Channel.workspace_id == workspace_id).order_by(Channel.created_at)
+    """获取指定工作空间的频道列表（仅返回当前用户已加入的频道）。"""
+    result = await session.execute(
+        select(Channel)
+        .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
+        .where(
+            Channel.workspace_id == workspace_id,
+            ChannelMembership.member_id == current_user.user_id,
+            ChannelMembership.member_type == "user",
         )
-        channels = result.scalars().all()
-    else:
-        result = await session.execute(
-            select(Channel)
-            .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
-            .where(
-                Channel.workspace_id == workspace_id,
-                ChannelMembership.member_id == current_user.user_id,
-                ChannelMembership.member_type == "user",
-            )
-            .order_by(Channel.created_at)
-        )
-        channels = result.scalars().all()
+        .order_by(Channel.created_at)
+    )
+    channels = result.scalars().all()
     return {
         "status": "success",
         "data": [ChannelInResponse.model_validate(c).model_dump() for c in channels],
