@@ -1046,7 +1046,7 @@ function UserProfileModal({
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
       onClick={onClose}
       aria-modal="true"
       role="dialog"
@@ -1254,7 +1254,7 @@ function ChannelProfileModal({
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
       onClick={onClose}
       aria-modal="true"
       role="dialog"
@@ -1500,6 +1500,20 @@ export default function App() {
   const [leftWidth, onLeftResize] = useResize(256, 160, 480, "right");
   const [memoryWidth, onMemoryResize] = useResize(288, 200, 600, "left");
   const [filePreviewWidth, onFilePreviewResize] = useResize(420, 280, 720, "left");
+
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setSidebarOpen(false);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const [addBotOpen, setAddBotOpen] = useState(false);
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
@@ -2365,8 +2379,8 @@ export default function App() {
   return (
     <>
       {loginModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setLoginModalOpen(false)}>
-          <div className="bg-white rounded-xl p-8 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setLoginModalOpen(false)}>
+          <div className="bg-white rounded-xl p-8 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="text-center mb-6">
               <div className="w-12 h-12 rounded-lg bg-[#4A154B] flex items-center justify-center mx-auto mb-3">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-7 h-7">
@@ -2446,8 +2460,17 @@ export default function App() {
       )}
 
     <div className="flex h-screen bg-white">
+      {isMobile && sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[55]" onClick={() => setSidebarOpen(false)} />
+      )}
       {/* Slack-style dark purple sidebar */}
-      <aside className="bg-[#3F0E40] flex flex-col flex-shrink-0 relative" style={{ width: leftWidth }}>
+      <aside
+        className={`bg-[#3F0E40] flex flex-col flex-shrink-0 ${isMobile ? "fixed inset-y-0 left-0 z-[60] shadow-2xl transition-transform duration-300 ease-in-out" : "relative"}`}
+        style={{
+          width: isMobile ? "280px" : leftWidth,
+          transform: isMobile && !sidebarOpen ? "translateX(-100%)" : "translateX(0)"
+        }}
+      >
         {/* Workspace header */}
         <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
@@ -2587,7 +2610,7 @@ export default function App() {
           {channels
             .filter((c) => !selectedWorkspaceId || c.workspace_id === selectedWorkspaceId)
             .map((c) => (
-              <li key={c.channel_id} className="group relative">
+              <li key={c.channel_id} className="group relative" onClick={() => isMobile && setSidebarOpen(false)}>
                 <button
                   type="button"
                   onClick={() => setSelectedId(c.channel_id)}
@@ -2637,7 +2660,7 @@ export default function App() {
         <div className="px-2 py-2 border-t border-white/10 space-y-0.5">
           <button
             type="button"
-            onClick={() => setFriendsPanelOpen(true)}
+            onClick={() => { setFriendsPanelOpen(true); if (isMobile) setSidebarOpen(false); }}
             className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -2647,6 +2670,7 @@ export default function App() {
           </button>
           <Link
             to="/admin"
+            onClick={() => isMobile && setSidebarOpen(false)}
             className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -2656,6 +2680,7 @@ export default function App() {
           </Link>
           <Link
             to="/docs"
+            onClick={() => isMobile && setSidebarOpen(false)}
             className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -2665,7 +2690,7 @@ export default function App() {
           </Link>
           <button
             type="button"
-            onClick={() => setHelpOpen(true)}
+            onClick={() => { setHelpOpen(true); if (isMobile) setSidebarOpen(false); }}
             className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -2675,15 +2700,17 @@ export default function App() {
           </button>
         </div>
         {/* Left sidebar resize handle */}
-        <div
-          onMouseDown={onLeftResize}
-          className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-white/30 transition-colors z-10"
-        />
+        {!isMobile && (
+          <div
+            onMouseDown={onLeftResize}
+            className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-white/30 transition-colors z-10"
+          />
+        )}
       </aside>
 
       {helpOpen && (
         <div
-          className="fixed inset-0 z-10 flex items-center justify-center bg-black/40"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           onClick={() => setHelpOpen(false)}
           aria-modal="true"
           role="dialog"
@@ -2729,7 +2756,7 @@ export default function App() {
       {/* 创建工作空间 Modal */}
       {createWsOpen && (
         <div
-          className="fixed inset-0 z-10 flex items-center justify-center bg-black/40"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           onClick={() => setCreateWsOpen(false)}
           aria-modal="true"
           role="dialog"
@@ -2785,7 +2812,7 @@ export default function App() {
       {/* 邀请工作空间成员 Modal */}
       {inviteWsMemberOpen && (
         <div
-          className="fixed inset-0 z-10 flex items-center justify-center bg-black/40"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           onClick={() => setInviteWsMemberOpen(false)}
           aria-modal="true"
           role="dialog"
@@ -2845,7 +2872,7 @@ export default function App() {
       {/* 创建频道 Modal */}
       {createChannelOpen && (
         <div
-          className="fixed inset-0 z-10 flex items-center justify-center bg-black/40"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
           onClick={() => setCreateChannelOpen(false)}
           aria-modal="true"
           role="dialog"
@@ -2914,7 +2941,7 @@ export default function App() {
       )}
 
       {addBotOpen && selectedId && (
-        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40" onClick={() => setAddBotOpen(false)} aria-modal="true" role="dialog">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40" onClick={() => setAddBotOpen(false)} aria-modal="true" role="dialog">
           <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full mx-4 p-6 text-left max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-gray-900">管理频道 Bot</h2>
@@ -3021,7 +3048,7 @@ export default function App() {
         />
       )}
 
-      {/* 个人资料模态框 */}
+      {/* User profile modal */}
       {userProfileOpen && currentUser && (
         <UserProfileModal
           currentUser={currentUser}
@@ -3035,7 +3062,7 @@ export default function App() {
         />
       )}
 
-      {/* 频道资料模态框 */}
+      {/* Channel profile modal */}
       {channelProfileOpen && currentUser && selectedId && (
         <ChannelProfileModal
           channelId={selectedId}
@@ -3047,7 +3074,7 @@ export default function App() {
 
       {/* Summary Modal */}
       {summaryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSummaryModalOpen(false)}>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40" onClick={() => setSummaryModalOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-[680px] max-w-[95vw] max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Modal header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -3214,7 +3241,18 @@ export default function App() {
         {selectedId ? (
           <>
             {/* Channel header */}
-            <div className="px-5 py-3 border-b border-gray-100 bg-white flex items-center gap-3">
+            <div className="px-5 py-3 border-b border-gray-100 bg-white flex items-center gap-2 sm:gap-3">
+              {isMobile && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(true)}
+                  className="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 flex-shrink-0"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                  </svg>
+                </button>
+              )}
               <span className="text-gray-400 font-medium text-base select-none">#</span>
               <h1 className="font-semibold text-gray-900 text-base truncate flex-1">{selectedChannel?.name || ""}</h1>
               {/* Auto-assist toggle */}
@@ -3349,7 +3387,7 @@ export default function App() {
                             className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1">
                             {replyIcon}
                           </button>
-                          <div className="flex flex-col items-end max-w-[72%]">
+                          <div className="flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
                             <span className="text-[11px] text-gray-400 mb-1 mr-0.5">{msgTime}</span>
                             {renderFileAttachments(m, true)}
                             <div className={`${isSecretUnrevealed ? "bg-amber-500" : isSecretExpired ? "bg-gray-400" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}>
@@ -3403,7 +3441,7 @@ export default function App() {
                             <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">U</div>
                           )}
                         </div>
-                        <div className="flex flex-col max-w-[72%]">
+                        <div className="flex flex-col max-w-[85%] sm:max-w-[72%]">
                           <div className="flex items-baseline gap-1.5 mb-1">
                             <span className="font-semibold text-[13px] text-gray-900 leading-none">{m.sender_type === "bot" ? botLabel : "用户"}</span>
                             {m.sender_type === "bot" && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>}
@@ -3501,7 +3539,7 @@ export default function App() {
                                 </div>
                               )}
                             </div>
-                            <div className="flex flex-col max-w-[72%]">
+                            <div className="flex flex-col max-w-[85%] sm:max-w-[72%]">
                               <div className="flex items-baseline gap-1.5 mb-1">
                                 <span className="font-semibold text-[13px] text-gray-900 leading-none">{rLabel}</span>
                                 {r.sender_type === "bot" && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>}
@@ -4002,8 +4040,8 @@ export default function App() {
 
             {/* 文生图 / 图生图 Modal */}
             {imageGenOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+              <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setImageGenOpen(false)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                     <h3 className="text-[15px] font-semibold text-gray-800">AI 图片</h3>
                     <button type="button" onClick={() => setImageGenOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600">
@@ -4257,11 +4295,13 @@ export default function App() {
 
       {/* Memory right panel */}
       {memoryPanelOpen && selectedId && (
-        <div className="relative flex-shrink-0 flex" style={{ width: memoryWidth }}>
-          <div
-            onMouseDown={onMemoryResize}
-            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
-          />
+        <div className={isMobile ? "fixed inset-0 z-[70] bg-white" : "relative flex-shrink-0 flex"} style={{ width: isMobile ? "100%" : memoryWidth }}>
+          {!isMobile && (
+            <div
+              onMouseDown={onMemoryResize}
+              className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
+            />
+          )}
           <MemoryPanel
             channelId={selectedId}
             channelName={selectedChannel?.name ?? ""}
@@ -4274,11 +4314,13 @@ export default function App() {
       )}
       {/* File preview sidebar */}
       {filePreviewPanel && (
-        <div className="relative flex-shrink-0 flex" style={{ width: filePreviewWidth }}>
-          <div
-            onMouseDown={onFilePreviewResize}
-            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
-          />
+        <div className={isMobile ? "fixed inset-0 z-[70] bg-white" : "relative flex-shrink-0 flex"} style={{ width: isMobile ? "100%" : filePreviewWidth }}>
+          {!isMobile && (
+            <div
+              onMouseDown={onFilePreviewResize}
+              className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
+            />
+          )}
           <FilePreviewSidebar
             url={filePreviewPanel.url}
             filename={filePreviewPanel.filename}
