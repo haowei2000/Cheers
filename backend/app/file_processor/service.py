@@ -138,7 +138,8 @@ class FilePipelineService:
         channel_id: str,
         file_ids: list[str],
     ) -> list[dict[str, str]]:
-        records = await self.validate_message_files(session, channel_id=channel_id, file_ids=file_ids)
+        """完整加载附件（含正文）。文档优先读取磁盘缓存，避免重复下载解析。"""
+        records = await self._load_records(session, channel_id=channel_id, file_ids=file_ids)
         attachments: list[dict[str, str]] = []
         for record in records:
             record.status = "processing"
@@ -146,6 +147,7 @@ class FilePipelineService:
 
             # 图片文件：读取字节并 base64 编码，供 Vision LLM 使用
             if is_image_type(record.content_type or ""):
+                await self._ensure_object_ready(record)
                 image_b64 = ""
                 try:
                     obj = await self._load_record_object(record)
@@ -170,7 +172,33 @@ class FilePipelineService:
                 })
                 continue
 
+            # 文档文件：优先读取磁盘缓存（首次解析后由 _persist_parsed_cache 写入）
+            if record.md_path:
+                try:
+                    cache_path = Path(record.md_path)
+                    if cache_path.exists():
+                        text = cache_path.read_text(encoding="utf-8")
+                        record.status = "ready"
+                        if not record.uploaded_at:
+                            record.uploaded_at = datetime.utcnow()
+                        await session.flush()
+                        attachments.append({
+                            "file_id": record.file_id,
+                            "filename": record.original_filename or record.file_id,
+                            "content_type": record.content_type or "",
+                            "is_image": "false",
+                            "summary": record.summary_3lines or "",
+                            "content": text,
+                            "truncated": "false",
+                        })
+                        logger.debug("prepare_attachments: cache hit file_id=%s", record.file_id)
+                        continue
+                except Exception:
+                    logger.warning("prepare_attachments: cache read failed file_id=%s, falling back to storage", record.file_id)
+
+            # 缓存未命中：从存储下载并解析
             try:
+                await self._ensure_object_ready(record)
                 obj = await self._load_record_object(record)
                 if not obj.body:
                     raise FileFlowError(f"文件 {record.original_filename or record.file_id} 为空，无法推理")
@@ -210,11 +238,68 @@ class FilePipelineService:
                     "file_id": record.file_id,
                     "filename": record.original_filename or record.file_id,
                     "content_type": record.content_type or obj.head.content_type or "",
+                    "is_image": "false",
                     "summary": parsed.summary,
                     "content": parsed.text,
                     "truncated": "true" if parsed.truncated else "false",
                 }
             )
+        return attachments
+
+    async def prepare_metadata_only(
+        self,
+        session: AsyncSession,
+        *,
+        channel_id: str,
+        file_ids: list[str],
+    ) -> list[dict[str, str]]:
+        """轻量元信息加载，供 Orchestrator 构建文件引用提示用。
+
+        - 图片：完整处理（Vision LLM 需要 base64）
+        - 文档：仅读取 DB 元数据（filename、content_type、summary_3lines），不下载文件正文
+          → 减少存储 I/O 与 token 占用；Agent 按需通过 read_file 工具获取正文
+        """
+        records = await self._load_records(session, channel_id=channel_id, file_ids=file_ids)
+        attachments: list[dict[str, str]] = []
+        for record in records:
+            if is_image_type(record.content_type or ""):
+                # 图片仍需完整处理（Vision LLM 需要 base64）
+                record.status = "processing"
+                await session.flush()
+                image_b64 = ""
+                try:
+                    await self._ensure_object_ready(record)
+                    obj = await self._load_record_object(record)
+                    if obj.body:
+                        image_b64 = base64.b64encode(obj.body).decode("ascii")
+                except Exception:
+                    logger.warning("prepare_metadata_only: failed to load image file_id=%s", record.file_id, exc_info=True)
+                record.status = "ready"
+                record.last_error = None
+                record.converted_at = datetime.utcnow()
+                if not record.uploaded_at:
+                    record.uploaded_at = datetime.utcnow()
+                attachments.append({
+                    "file_id": record.file_id,
+                    "filename": record.original_filename or record.file_id,
+                    "content_type": record.content_type or "",
+                    "is_image": "true",
+                    "image_b64": image_b64,
+                    "summary": "",
+                    "content": "",
+                    "truncated": "false",
+                })
+            else:
+                # 文档：只返回 DB 元数据，不下载正文
+                attachments.append({
+                    "file_id": record.file_id,
+                    "filename": record.original_filename or record.file_id,
+                    "content_type": record.content_type or "",
+                    "is_image": "false",
+                    "summary": record.summary_3lines or "",
+                    "content": "",
+                    "truncated": "false",
+                })
         return attachments
 
     @property

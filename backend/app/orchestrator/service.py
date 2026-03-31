@@ -181,7 +181,7 @@ async def run_orchestrator(
         if not file_ids:
             return
         try:
-            attachments = await FilePipelineService().prepare_attachments(
+            attachments = await FilePipelineService().prepare_metadata_only(
                 session,
                 channel_id=channel_id,
                 file_ids=file_ids,
