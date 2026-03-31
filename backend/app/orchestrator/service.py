@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
@@ -109,6 +110,7 @@ async def run_orchestrator(
             ChannelMembership.channel_id == channel_id,
             ChannelMembership.member_type == "bot",
         )
+        .options(selectinload(BotAccount.prompt_template))
     )
     rows = result.all()
     channel_bot_usernames = [row[1].username for row in rows]
@@ -165,7 +167,6 @@ async def run_orchestrator(
 
     from app.memory.manager import load as memory_load
 
-    # 并发加载记忆和附件
     attachments: list[dict[str, str]] = []
     attachment_error: str | None = None
 
