@@ -2459,7 +2459,7 @@ export default function App() {
         </div>
       )}
 
-    <div className="flex h-screen bg-white">
+    <div className="flex h-dvh bg-white">
       {isMobile && sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-[55]" onClick={() => setSidebarOpen(false)} />
       )}
@@ -3241,7 +3241,7 @@ export default function App() {
         {selectedId ? (
           <>
             {/* Channel header */}
-            <div className="px-5 py-3 border-b border-gray-100 bg-white flex items-center gap-2 sm:gap-3">
+            <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-gray-100 bg-white flex items-center gap-2 sm:gap-3">
               {isMobile && (
                 <button
                   type="button"
@@ -3257,7 +3257,7 @@ export default function App() {
               <h1 className="font-semibold text-gray-900 text-base truncate flex-1">{selectedChannel?.name || ""}</h1>
               {/* Auto-assist toggle */}
               <label className="flex items-center gap-1.5 cursor-pointer select-none" title={autoAssist ? "自动调用内置助手（开启中）" : "自动调用内置助手（关闭）"}>
-                <span className="text-xs text-gray-500 whitespace-nowrap">自动接管</span>
+                <span className="text-xs text-gray-500 whitespace-nowrap hidden sm:inline">自动接管</span>
                 <button
                   type="button"
                   role="switch"
@@ -3291,7 +3291,7 @@ export default function App() {
                     setSummaryPreview("");
                     setSummaryModalOpen(true);
                   }}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                  className="w-8 h-8 hidden sm:flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
                 >
                   {/* document-text / notes icon */}
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -3327,7 +3327,7 @@ export default function App() {
                   type="button"
                   onClick={() => setChannelProfileOpen(true)}
                   title="我的频道资料"
-                  className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                  className="w-8 h-8 hidden sm:flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                     <path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" />
@@ -3815,7 +3815,7 @@ export default function App() {
             </div>
 
             {/* Input area */}
-            <div className="flex-shrink-0 px-4 pb-4 pt-2">
+            <div className="flex-shrink-0 px-3 sm:px-4 pb-4 pt-2" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
               {/* Reply bar */}
               {replyingTo && (() => {
                 const refBot = replyingTo.sender_type === "bot" ? channelBots.find((b) => b.member_id === replyingTo.sender_id) : null;
@@ -3859,7 +3859,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={removeItem}
-                          className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-[11px] leading-none items-center justify-center hidden group-hover:flex"
+                          className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-[11px] leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
                         >×</button>
                       </div>
                     ) : (
@@ -3876,7 +3876,7 @@ export default function App() {
                         <button
                           type="button"
                           onClick={removeItem}
-                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-500 text-white rounded-full text-[11px] leading-none items-center justify-center hidden group-hover:flex"
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-500 text-white rounded-full text-[11px] leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
                         >×</button>
                       </div>
                     );
@@ -4281,14 +4281,30 @@ export default function App() {
             )}
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-            <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 text-gray-300">
-                <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0 1 12 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 0 1-3.476.383.39.39 0 0 0-.297.17l-2.755 4.133a.75.75 0 0 1-1.248 0l-2.755-4.133a.39.39 0 0 0-.297-.17 48.9 48.9 0 0 1-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97Z" clipRule="evenodd" />
-              </svg>
+          <div className="flex-1 flex flex-col">
+            {isMobile && (
+              <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(true)}
+                  className="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 flex-shrink-0"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                  </svg>
+                </button>
+                <span className="text-sm font-semibold text-gray-700">智枢协作</span>
+              </div>
+            )}
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+              <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 text-gray-300">
+                  <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0 1 12 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 0 1-3.476.383.39.39 0 0 0-.297.17l-2.755 4.133a.75.75 0 0 1-1.248 0l-2.755-4.133a.39.39 0 0 0-.297-.17 48.9 48.9 0 0 1-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97Z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <p className="text-gray-700 text-[15px] font-semibold">选择一个频道</p>
+              <p className="text-gray-400 text-[13px] mt-1.5">从左侧选择频道开始对话，或 <span className="text-[#1264A3]">创建新频道</span></p>
             </div>
-            <p className="text-gray-700 text-[15px] font-semibold">选择一个频道</p>
-            <p className="text-gray-400 text-[13px] mt-1.5">从左侧选择频道开始对话，或 <span className="text-[#1264A3]">创建新频道</span></p>
           </div>
         )}
       </main>
