@@ -3345,7 +3345,7 @@ export default function App() {
                       <div id={`msg-${m.msg_id}`} className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all">
                         <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">我</div>
                         <div className="flex items-end gap-1.5">
-                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                          <button type="button" title="回复" onClick={() => { setReplyingTo(m); const mention = m.sender_type === "bot" && senderBot?.username ? `@${senderBot.username} ` : ""; if (mention) setInput(mention); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                             className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1">
                             {replyIcon}
                           </button>
@@ -3451,7 +3451,7 @@ export default function App() {
                               onSkip={() => handleClarifySkip(m.msg_id)} />
                           )}
                         </div>
-                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                        <button type="button" title="回复" onClick={() => { setReplyingTo(m); const mention = m.sender_type === "bot" && senderBot?.username ? `@${senderBot.username} ` : ""; if (mention) setInput(mention); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                           className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
                           {replyIcon}
                         </button>
@@ -3527,7 +3527,7 @@ export default function App() {
                                   onSkip={() => handleClarifySkip(r.msg_id)} />
                               )}
                             </div>
-                            <button type="button" title="回复" onClick={() => { setReplyingTo(r); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                            <button type="button" title="回复" onClick={() => { setReplyingTo(r); const mention = r.sender_type === "bot" && rBot?.username ? `@${rBot.username} ` : ""; if (mention) setInput(mention); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                               className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                                 <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />
@@ -3724,7 +3724,7 @@ export default function App() {
                                     </>
                                   )}
                                 </div>
-                                <button type="button" title="回复" onClick={() => { setReplyingTo(r); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
+                                <button type="button" title="回复" onClick={() => { setReplyingTo(r); const mention = r.sender_type === "bot" && rBot?.username ? `@${rBot.username} ` : ""; if (mention) setInput(mention); (secretMode ? secretInputRef.current : inputRef.current)?.focus(); }}
                                   className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0">
                                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
                                     <path fillRule="evenodd" d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z" clipRule="evenodd" />

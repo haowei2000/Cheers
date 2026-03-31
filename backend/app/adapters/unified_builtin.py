@@ -86,6 +86,8 @@ def _tool_label(tool_name: str, args: dict) -> str:
         return "向用户提问"
     if tool_name == "create_file":
         return f"创建文件 {args.get('filename', '?')}.md"
+    if tool_name == "read_file":
+        return f"读取文件 {args.get('file_id', '?')[:8]}…"
     if tool_name == "generate_image":
         return f"生成图片：{args.get('prompt', '?')[:30]}"
     if tool_name == "edit_image":
@@ -504,30 +506,72 @@ def _make_tools(ctx: dict) -> list:
         logger.info("unified_builtin[tool]: edit_image ok file_id=%s", result.file_id)
         return f"图片已编辑并发送到频道（file_id: {result.file_id}）"
 
-    return [update_anchor, update_progress, update_decision, call_bot, ask_user, create_file, generate_image, edit_image]
+    @tool
+    async def read_file(file_id: str) -> str:
+        """读取频道内已上传文件的完整正文内容。
+        使用场景：用户消息中引用了某文件，或文件索引中列出了文件，需要查看具体内容时调用。
+        可从「=== 项目记忆 ===」的「资料索引」部分找到 file_id。
+
+        Args:
+            file_id: 文件的唯一 ID（形如 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx）
+        """
+        db_session = ctx.get("_db_session")
+        if not db_session:
+            return "错误：数据库会话未注入（内部错误）"
+
+        from app.file_processor.service import FilePipelineService, FileFlowError
+        try:
+            svc = FilePipelineService()
+            results = await svc.prepare_attachments(
+                db_session,
+                channel_id=ctx["channel_id"],
+                file_ids=[file_id.strip()],
+            )
+        except FileFlowError as exc:
+            return f"读取文件失败：{exc.detail}"
+        except Exception as exc:
+            logger.exception("unified_builtin[tool]: read_file error file_id=%s", file_id)
+            return f"读取文件出错：{exc}"
+
+        if not results:
+            return f"未找到 file_id={file_id!r} 的文件，请检查文件索引中的 file_id 是否正确"
+
+        att = results[0]
+        if att.get("is_image") == "true":
+            return f"文件「{att.get('filename')}」是图片，请直接查看图片附件，无需读取文本。"
+
+        parts = [f"=== 文件: {att.get('filename') or file_id} ==="]
+        if att.get("summary"):
+            parts.append(f"摘要: {att['summary']}")
+        content = (att.get("content") or "").strip()
+        if content:
+            parts.append("正文:")
+            parts.append(content)
+            if att.get("truncated") == "true":
+                parts.append("（注：文件内容已按长度限制截断，若需完整内容请联系上传者。）")
+        else:
+            parts.append("（文件内容为空或无法解析文本。）")
+        return "\n".join(parts)
+
+    return [update_anchor, update_progress, update_decision, call_bot, ask_user, create_file, generate_image, edit_image, read_file]
 
 
 # ─── 附件处理 ──────────────────────────────────────────────────────────────────
 
-def _merge_attachments_into_text(user_text: str, attachments: list[dict[str, str]] | None) -> str:
-    """将文件解析结果拼接进内置 Bot 的用户消息。"""
+def _build_file_refs_note(attachments: list[dict[str, str]] | None) -> str:
+    """为文档附件生成简短的文件引用提示（不注入正文，Agent 按需调用 read_file 工具读取）。"""
     if not attachments:
-        return user_text
-    parts = [user_text.strip(), "", "以下是用户上传文件的解析结果，请结合这些内容处理："]
-    for index, attachment in enumerate(attachments, start=1):
-        parts.append(f"## 文件 {index}")
-        parts.append(f"文件名: {attachment.get('filename') or attachment.get('file_id') or 'unknown'}")
-        if attachment.get("content_type"):
-            parts.append(f"类型: {attachment['content_type']}")
-        if attachment.get("summary"):
-            parts.append("摘要:")
-            parts.append(attachment["summary"])
-        parts.append("正文:")
-        parts.append(attachment.get("content") or "")
-        if attachment.get("truncated") == "true":
-            parts.append("注意: 该文件文本已按长度限制截断。")
-        parts.append("")
-    return "\n".join(parts).strip()
+        return ""
+    lines = ["[本次消息关联以下文件，已登记到文件索引，如需查看内容请调用 read_file 工具]"]
+    for att in attachments:
+        fname = att.get("filename") or att.get("file_id") or "unknown"
+        fid = att.get("file_id") or ""
+        summary = (att.get("summary") or "").strip()
+        line = f"- {fname}（file_id: `{fid}`）"
+        if summary:
+            line += f" — {summary[:80]}{'…' if len(summary) > 80 else ''}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _build_vision_content(user_text: str, attachments: list[dict[str, str]] | None) -> list[dict]:
@@ -865,8 +909,10 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
         doc_attachments = [a for a in all_attachments if a.get("is_image") != "true"]
 
-        # 文档附件合并为文本
-        user_text = _merge_attachments_into_text(user_text, doc_attachments)
+        # 文档附件：只注入文件引用，正文由 Agent 按需调用 read_file 工具获取
+        file_refs = _build_file_refs_note(doc_attachments)
+        if file_refs:
+            user_text = (user_text.strip() + "\n\n" + file_refs) if user_text.strip() else file_refs
 
         memory = payload.memory_context or {}
         channel_id = payload.channel_id
