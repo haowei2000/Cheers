@@ -156,6 +156,18 @@ class BotSimpleInResponse(BaseModel):
     created_at: datetime | None = None
 
 
+# ==================== OpenClaw Quick Connect ====================
+
+class OpenClawQuickConnect(BaseModel):
+    """快速连接 OpenClaw：输入 URL + Token 一键创建 Bot 并探测能力."""
+    url: str = Field(..., description="OpenClaw gateway URL，如 http://host:port 或 http://host:port/v1")
+    token: str = Field(..., description="Bearer 鉴权 Token")
+    agent_id: str = Field(default="main", description="Agent ID（即模型名，如 main）")
+    bot_username: str | None = Field(default=None, description="Bot 用户名（为空则自动生成）")
+    display_name: str | None = Field(default=None, description="Bot 显示名称（为空则自动生成）")
+    channel_id: str | None = Field(default=None, description="创建后自动加入该频道")
+
+
 # ==================== Channel & Message Schemas ====================
 
 class ChannelCreate(BaseModel):

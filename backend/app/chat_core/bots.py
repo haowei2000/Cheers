@@ -16,11 +16,13 @@ from app.chat_core.schemas import (
     BotRegistrationRequestInResponse,
     BotSimpleInResponse,
     BotUpdate,
+    OpenClawQuickConnect,
 )
 from app.db.models import BotAccount, BotRegistrationRequest, gen_uuid, AIModel, PromptTemplate, User
 from app.db.session import get_session
 from app.auth.routes import get_current_user
 from app.utils.permissions import can_access, get_friend_ids, is_admin
+from app.utils.crypto import encrypt_value
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
 
@@ -305,6 +307,163 @@ async def delete_bot(
     await session.delete(bot)
     await session.commit()
     return {"status": "success", "message": "已删除"}
+
+
+# ========== OpenClaw 快速连接 ==========
+
+_PASSTHROUGH_TEMPLATE_NAME = "__openclaw_passthrough__"
+
+
+@router.post("/quick-connect")
+async def quick_connect_openclaw(
+    body: OpenClawQuickConnect,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """快速连接 OpenClaw：自动创建模型+Bot，并探测其能力（你是谁 / /skill）."""
+    import httpx as _httpx
+
+    # 1. 规范化 URL：确保以 /v1 结尾
+    base_url = body.url.strip().rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url = base_url + "/v1"
+
+    agent_id = (body.agent_id or "main").strip()
+
+    # 2. 生成 bot_username（若未指定）
+    raw_username = body.bot_username.strip() if body.bot_username else None
+    if not raw_username:
+        raw_username = "openclaw_" + re.sub(r"[^a-zA-Z0-9_\-]", "_", agent_id)
+
+    # 确保 username 唯一（冲突时追加数字后缀）
+    bot_username = raw_username
+    for suffix in range(1, 100):
+        dup = await session.execute(select(BotAccount).where(BotAccount.username == bot_username))
+        if not dup.scalar_one_or_none():
+            break
+        bot_username = f"{raw_username}_{suffix}"
+
+    _validate_username(bot_username)
+
+    display_name = (body.display_name or "").strip() or f"OpenClaw {agent_id}"
+
+    # 3. 探测能力：直接调 OpenClaw chat completions
+    #    - model 固定为 "openclaw"（OpenClaw 标准调用方式）
+    #    - agent_id 通过 x-openclaw-agent-id 请求头传递
+    probe_headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {body.token.strip()}",
+        "x-openclaw-agent-id": agent_id,
+    }
+
+    async def _probe(message: str) -> str:
+        try:
+            async with _httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.post(
+                    f"{base_url}/chat/completions",
+                    json={
+                        "model": "openclaw",
+                        "messages": [{"role": "user", "content": message}],
+                        "max_tokens": 800,
+                        "temperature": 0.3,
+                    },
+                    headers=probe_headers,
+                )
+                r.raise_for_status()
+                data = r.json()
+                return data["choices"][0]["message"]["content"]
+        except Exception as exc:
+            return f"[探测失败: {exc}]"
+
+    who_am_i = await _probe("你是谁")
+    skills = await _probe("/skill")
+
+    # 4. 找到或创建直通提示词模板
+    tmpl_q = await session.execute(
+        select(PromptTemplate).where(PromptTemplate.name == _PASSTHROUGH_TEMPLATE_NAME)
+    )
+    template = tmpl_q.scalar_one_or_none()
+    if not template:
+        template = PromptTemplate(
+            template_id=gen_uuid(),
+            name=_PASSTHROUGH_TEMPLATE_NAME,
+            description="OpenClaw 直通模板（自动创建，勿删）",
+            system_prompt="你是一个通过 OpenClaw 接入的 AI 助手，请直接响应用户请求。",
+            user_template="{{message}}",
+            variables=["message"],
+            is_builtin=True,
+        )
+        session.add(template)
+        await session.flush()
+
+    # 5. 创建 AIModel
+    #    - model_name 固定 "openclaw"，agent_id 存入 extra_headers 随每次请求携带
+    ai_model = AIModel(
+        name=f"openclaw-{agent_id}",
+        provider="openai",
+        model_name="openclaw",
+        base_url=base_url,
+        api_key=encrypt_value(body.token.strip()),
+        description=f"OpenClaw 快速接入 {base_url} (agent: {agent_id})",
+        is_enabled=True,
+        is_public=False,
+        created_by=current_user.user_id,
+        config={"extra_headers": {"x-openclaw-agent-id": agent_id}},
+    )
+    session.add(ai_model)
+    await session.flush()
+
+    # 6. 创建 BotAccount（将探测到的自我介绍写入 intro）
+    probe_ok = not who_am_i.startswith("[探测失败")
+    intro_dict: dict = {
+        "description": who_am_i if probe_ok else f"OpenClaw Agent: {agent_id}",
+    }
+    if skills and not skills.startswith("[探测失败"):
+        intro_dict["capabilities"] = skills
+    intro_str = json.dumps(intro_dict, ensure_ascii=False)
+
+    bot = BotAccount(
+        bot_id=gen_uuid(),
+        username=bot_username,
+        display_name=display_name,
+        description=f"OpenClaw Agent: {agent_id} @ {base_url}",
+        model_id=ai_model.model_id,
+        template_id=template.template_id,
+        status="online",
+        is_public=False,
+        intro=intro_str,
+        created_by=current_user.user_id,
+    )
+    session.add(bot)
+    await session.flush()
+
+    # 7. 可选：加入指定频道
+    if body.channel_id:
+        from app.db.models import Channel, ChannelMembership
+        ch_q = await session.execute(select(Channel).where(Channel.channel_id == body.channel_id))
+        if ch_q.scalar_one_or_none():
+            membership = ChannelMembership(
+                channel_id=body.channel_id,
+                member_id=bot.bot_id,
+                member_type="bot",
+                added_by=current_user.user_id,
+            )
+            session.add(membership)
+
+    await session.commit()
+    await session.refresh(bot)
+
+    return {
+        "status": "success",
+        "data": {
+            "bot": _bot_to_full(bot, ai_model.name, template.name),
+            "probe": {
+                "who_am_i": who_am_i,
+                "skills": skills,
+                "connected": probe_ok,
+            },
+        },
+    }
 
 
 # ========== 遗留：外部 OpenClaw 注册申请 ==========
