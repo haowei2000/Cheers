@@ -3,6 +3,24 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js";
 
+// ── @mention preprocessing ───────────────────────────────────────────────────
+
+/**
+ * Replace @username patterns (outside code blocks/fences) with markdown links
+ * using a `mention://` scheme so the custom `a` renderer can style them.
+ */
+function preprocessMentions(text: string): string {
+  // Split on code fences (```…```) and inline code (`…`) to skip them
+  const parts = text.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
+  return parts
+    .map((part, i) =>
+      i % 2 === 1
+        ? part // inside code — leave untouched
+        : part.replace(/@([a-zA-Z0-9_\-'\u4e00-\u9fff]+)/g, "[@$1](mention://$1)")
+    )
+    .join("");
+}
+
 // ── AgentNexus file URL detection ────────────────────────────────────────────
 
 /** Matches /api/files/{id}/preview|download (relative or absolute origin). */
@@ -144,6 +162,7 @@ interface MessageMarkdownProps {
 }
 
 export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: MessageMarkdownProps) {
+  const processedText = preprocessMentions(text);
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -202,6 +221,17 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         a({ href, children, ...props }: any) {
           const raw = href ?? "";
+
+          // @mention chip
+          if (raw.startsWith("mention://")) {
+            const username = raw.slice("mention://".length);
+            return (
+              <span className="inline-block bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded cursor-default">
+                @{username}
+              </span>
+            );
+          }
+
           const fileMatch = FILE_URL_RE.exec(raw);
           if (fileMatch) {
             const fileId = fileMatch[1];
@@ -311,7 +341,7 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
         },
       }}
     >
-      {text}
+      {processedText}
     </ReactMarkdown>
   );
 }

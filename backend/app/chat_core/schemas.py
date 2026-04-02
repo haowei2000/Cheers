@@ -252,6 +252,7 @@ class MessageInResponse(BaseModel):
     file_ids: list[str] | None = None
     files: list[MessageFileInResponse] | None = None
     mention_bot_ids: list[str] | None = None
+    mention_user_ids: list[str] | None = None
     task_id: str | None = None
     in_reply_to_msg_id: str | None = None
     created_at: datetime | None = None
