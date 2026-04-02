@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import App from "./App";
 import AdminPage from "./AdminPage";
 import DocsPage from "./DocsPage";
+import BulletinPage from "./BulletinPage";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -15,6 +16,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Route path="/" element={<App />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/docs" element={<DocsPage />} />
+        <Route path="/bulletin" element={<BulletinPage />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

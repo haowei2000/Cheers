@@ -26,6 +26,7 @@ from app.admin.templates import router as admin_templates_router
 from app.auth.routes import router as auth_router
 from app.file_processor import routes as file_routes
 from app.image_gen.routes import router as image_gen_router
+from app.bulletin.routes import router as bulletin_router
 from app.logging_config import setup_logging
 from app.manual_routes import router as manual_router
 from app.public_routes import router as public_router
@@ -115,6 +116,7 @@ app.include_router(manual_router)
 app.include_router(public_router)
 app.include_router(auth_router)
 app.include_router(image_gen_router)
+app.include_router(bulletin_router)
 
 
 

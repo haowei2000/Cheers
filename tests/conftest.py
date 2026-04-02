@@ -1,5 +1,6 @@
 """Pytest  fixtures：测试用 DB、客户端."""
 import asyncio
+import os
 from collections.abc import AsyncGenerator, Generator
 
 import pytest
@@ -18,16 +19,22 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop.close()
 
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus_test",
+)
 
 
 @pytest_asyncio.fixture
 async def db_engine():
-    """内存 SQLite 引擎（测试用）."""
+    """PostgreSQL 测试引擎（每次测试重建表结构）."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
 
