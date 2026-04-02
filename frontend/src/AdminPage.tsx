@@ -788,15 +788,15 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[#F8F8F8]">
-      <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4A154B] to-[#611f69] flex items-center justify-center text-white font-bold">A</div>
-            <h1 className="text-lg font-semibold text-gray-800">AgentNexus 管理</h1>
-          </div>
-          <Link to="/docs" className="text-sm text-[#1264A3] hover:underline mr-4">Docs</Link>
-          <Link to="/" className="text-sm text-[#1264A3] hover:underline">返回聊天</Link>
-        </div>
+      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4 sticky top-0 z-10">
+        <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+            <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+          </svg>
+          返回
+        </Link>
+        <h1 className="text-lg font-semibold text-gray-800">管理后台</h1>
+        <span className="text-xs text-gray-400 ml-1">Admin</span>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-6">
