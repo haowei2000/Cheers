@@ -27,10 +27,27 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" });
 }
 
+function getStoredAuth() {
+  try {
+    const stored = localStorage.getItem("currentUser");
+    if (!stored) return { token: null, userId: null, isAdmin: false };
+    const data = JSON.parse(stored);
+    if (data.loginTime && Date.now() - data.loginTime < 86400000) {
+      return {
+        token: data.token ?? data.user?.user_id ?? null,
+        userId: data.user?.user_id ?? null,
+        isAdmin: data.user?.role === "admin"
+      };
+    }
+  } catch {}
+  return { token: null, userId: null, isAdmin: false };
+}
+
 export default function BulletinPage() {
-  const authToken = localStorage.getItem("authToken");
-  const currentUserId = localStorage.getItem("userId");
-  const isAdmin = localStorage.getItem("userRole") === "admin";
+  const [auth] = useState(getStoredAuth);
+  const authToken = auth.token;
+  const currentUserId = auth.userId;
+  const isAdmin = auth.isAdmin;
 
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
