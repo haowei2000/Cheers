@@ -236,7 +236,7 @@ def _make_tools(ctx: dict) -> list:
     async def call_user(
         username: str,
         message: str,
-        options: list[str] | None = None,
+        options: list[str] | str | None = None,
         allow_multiple: bool = False,
         allow_manual: bool = False,
         manual_label: str = "其他（手动输入）",
@@ -250,7 +250,7 @@ def _make_tools(ctx: dict) -> list:
         Args:
             username: 用户名（不含 @ 符号，从对话历史中获取）
             message: 发给该用户的消息或问题描述
-            options: 选项列表（至少 2 个）；留空则仅发送通知消息
+            options: 选项列表（至少 2 个）；可传列表或 JSON 字符串；留空则仅发送通知消息
             allow_multiple: 是否允许多选，默认 False（仅 options 不为空时生效）
             allow_manual: 是否允许手动输入，默认 False
             manual_label: 手动输入选项的显示标签
@@ -260,6 +260,18 @@ def _make_tools(ctx: dict) -> list:
         message = (message or "").strip()
         if not username or not message:
             return "错误：需要提供 username 和 message"
+
+        # 增强容错：处理 options 可能是 JSON 字符串的情况
+        if isinstance(options, str) and options.strip().startswith("["):
+            try:
+                parsed = json.loads(options)
+                if isinstance(parsed, list):
+                    options = [str(o) for o in parsed]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        elif isinstance(options, str) and options.strip():
+            # 单个字符串作为选项（虽然通常不推荐，但增强健壮性）
+            options = [options.strip()]
 
         mention_prefix = f"@{username} {message}"
 

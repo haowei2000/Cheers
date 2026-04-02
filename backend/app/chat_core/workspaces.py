@@ -268,7 +268,7 @@ async def invite_workspace_member(
 @router.delete("/{workspace_id}")
 async def delete_workspace(
     workspace_id: str,
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """删除工作空间（同时删除该工作空间下的所有频道及成员关系）."""
@@ -278,6 +278,17 @@ async def delete_workspace(
     ws = result.scalar_one_or_none()
     if not ws:
         raise HTTPException(status_code=404, detail="工作空间不存在")
+
+    # 仅工作空间 owner 可删除
+    membership = await session.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.user_id == current_user.user_id,
+        )
+    )
+    wm = membership.scalar_one_or_none()
+    if not wm or wm.role != "owner":
+        raise HTTPException(status_code=403, detail="只有工作空间创建者可以删除工作空间")
 
     # 获取该工作空间下的所有频道
     result = await session.execute(
@@ -311,6 +322,7 @@ async def delete_workspace(
     for wm in ws_members.scalars().all():
         await session.delete(wm)
 
+    await session.flush()
     await session.delete(ws)
     await session.commit()
 

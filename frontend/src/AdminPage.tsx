@@ -787,19 +787,19 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F8F8]">
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4 sticky top-0 z-10">
-        <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-            <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
-          </svg>
-          返回
-        </Link>
-        <h1 className="text-lg font-semibold text-gray-800">管理后台</h1>
-        <span className="text-xs text-gray-400 ml-1">Admin</span>
+    <div className="h-screen overflow-y-auto bg-[#F8F8F8]">
+      <header className="border-b border-gray-200 bg-white sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4A154B] to-[#611f69] flex items-center justify-center text-white font-bold">A</div>
+            <h1 className="text-lg font-semibold text-gray-800">AgentNexus 管理</h1>
+          </div>
+          <Link to="/docs" className="text-sm text-[#1264A3] hover:underline mr-4">Docs</Link>
+          <Link to="/" className="text-sm text-[#1264A3] hover:underline">返回聊天</Link>
+        </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <div className="flex flex-col md:flex-row gap-6">
           {/* Sidebar */}
           <aside className="w-full md:w-48 flex-shrink-0">
@@ -826,13 +826,13 @@ export default function AdminPage() {
             {/* ==================== AI Models Tab ==================== */}
             {activeTab === "models" && (
               <>
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">AI 模型管理</h3>
                   <div className="space-y-4">
                     {/* Model List */}
                     <div className="space-y-2">
                       {models.map((m) => (
-                        <div key={m.model_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div key={m.model_id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm">{m.name}</span>
@@ -859,7 +859,7 @@ export default function AdminPage() {
                     {/* Create/Edit Form */}
                     <div className="border-t border-gray-200 pt-4">
                       <h4 className="text-sm font-medium text-gray-700 mb-3">{modelEditingId ? "编辑模型" : "创建模型"}</h4>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">显示名称 *</label>
                           <input type="text" value={modelForm.name} onChange={(e) => setModelForm({ ...modelForm, name: e.target.value })} placeholder="如：GPT-4o" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
@@ -882,11 +882,11 @@ export default function AdminPage() {
                           <label className="block text-xs text-gray-500 mb-1">Base URL *</label>
                           <input type="text" value={modelForm.base_url} onChange={(e) => setModelForm({ ...modelForm, base_url: e.target.value })} placeholder="如：http://localhost:11434/v1" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                         </div>
-                        <div className="col-span-2">
+                        <div className="col-span-full">
                           <label className="block text-xs text-gray-500 mb-1">API Key</label>
                           <input type="password" value={modelForm.api_key} onChange={(e) => setModelForm({ ...modelForm, api_key: e.target.value })} placeholder="可选，本地模型可留空" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                         </div>
-                        <div className="col-span-2">
+                        <div className="col-span-full">
                           <label className="block text-xs text-gray-500 mb-1">描述</label>
                           <input type="text" value={modelForm.description} onChange={(e) => setModelForm({ ...modelForm, description: e.target.value })} placeholder="模型描述" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                         </div>
@@ -898,7 +898,7 @@ export default function AdminPage() {
                           <label className="block text-xs text-gray-500 mb-1">Max Tokens</label>
                           <input type="number" min="1" step="1" value={modelForm.max_tokens} onChange={(e) => setModelForm({ ...modelForm, max_tokens: parseInt(e.target.value) || 4096 })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                         </div>
-                        <div className="col-span-2">
+                        <div className="col-span-full">
                           <label className="block text-xs text-gray-500 mb-1">额外请求 Headers <span className="text-gray-400">（JSON 对象，可选）</span></label>
                           <textarea
                             value={modelForm.extra_headers}
@@ -909,7 +909,7 @@ export default function AdminPage() {
                           />
                           <p className="text-xs text-gray-400 mt-0.5">每次调用 LLM 时附加到请求头，用于需要自定义鉴权头的 endpoint</p>
                         </div>
-                        <div className="col-span-2 flex items-center gap-4">
+                        <div className="col-span-full flex flex-wrap items-center gap-x-4 gap-y-2">
                           <div className="flex items-center gap-2">
                             <input type="checkbox" id="is_enabled" checked={modelForm.is_enabled} onChange={(e) => setModelForm({ ...modelForm, is_enabled: e.target.checked })} className="rounded" />
                             <label htmlFor="is_enabled" className="text-xs text-gray-500">启用此模型</label>
@@ -947,13 +947,13 @@ export default function AdminPage() {
             {/* ==================== Prompt Templates Tab ==================== */}
             {activeTab === "templates" && (
               <>
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">提示词模板管理</h3>
                   <div className="space-y-4">
                     {/* Template List */}
                     <div className="space-y-2">
                       {templates.map((t) => (
-                        <div key={t.template_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div key={t.template_id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-sm">{t.name}</span>
@@ -1012,11 +1012,11 @@ export default function AdminPage() {
             {activeTab === "bot" && (
               <>
                 {/* Bot List */}
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">Bot 列表</h3>
                   <div className="space-y-2">
                     {botList.filter(b => b.bot_id !== GUIDE_BOT_ID).map((b) => (
-                      <div key={b.bot_id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div key={b.bot_id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm">@{b.username}</span>
@@ -1046,10 +1046,10 @@ export default function AdminPage() {
                 </section>
 
                 {/* Create/Edit Bot Form */}
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">{botEditingId ? "编辑 Bot" : "创建 Bot"}</h3>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">用户名 (@名字) *</label>
                         <input type="text" value={botForm.username} onChange={(e) => setBotForm({ ...botForm, username: e.target.value })} placeholder="如：代码助手" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" disabled={!!botEditingId} />
@@ -1065,7 +1065,7 @@ export default function AdminPage() {
                       <input type="text" value={botForm.description} onChange={(e) => setBotForm({ ...botForm, description: e.target.value })} placeholder="Bot 的功能描述" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">选择 AI 模型 *</label>
                         <select value={botForm.model_id} onChange={(e) => setBotForm({ ...botForm, model_id: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
@@ -1097,7 +1097,7 @@ export default function AdminPage() {
                       <textarea value={botForm.custom_system_prompt} onChange={(e) => setBotForm({ ...botForm, custom_system_prompt: e.target.value })} placeholder="留空则使用模板默认的系统提示词" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 text-sm" />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">状态</label>
                         <select value={botForm.status} onChange={(e) => setBotForm({ ...botForm, status: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
@@ -1133,12 +1133,12 @@ export default function AdminPage() {
                   {lastCreatedBotId && !botEditingId && (
                     <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                       <p className="text-sm text-green-700 mb-2">Bot 创建成功！是否添加到项目？</p>
-                      <div className="flex gap-2">
-                        <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <select value={addCh} onChange={(e) => setAddCh(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm flex-1">
                           <option value="">选择项目...</option>
                           {channels.map((c) => <option key={c.channel_id} value={c.channel_id}># {c.name}</option>)}
                         </select>
-                        <button onClick={addBotToChannel} className="px-4 py-1.5 bg-[#1264A3] text-white rounded-lg text-sm">添加到项目</button>
+                        <button onClick={addBotToChannel} className="px-4 py-1.5 bg-[#1264A3] text-white rounded-lg text-sm whitespace-nowrap">添加到项目</button>
                         <button onClick={() => setLastCreatedBotId("")} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">跳过</button>
                       </div>
                     </div>
@@ -1150,11 +1150,11 @@ export default function AdminPage() {
             {/* ==================== Workspace Tab ==================== */}
             {activeTab === "workspace" && (
               <>
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">工作区</h3>
-                  <div className="flex gap-2 mb-4">
-                    <input type="text" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} placeholder="新工作区名称" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
-                    <button onClick={createWorkspace} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建工作区</button>
+                  <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                    <input type="text" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} placeholder="新工作区名称" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm flex-1" />
+                    <button onClick={createWorkspace} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm whitespace-nowrap">创建工作区</button>
                   </div>
                   <div className="space-y-1">
                     {workspaces.map((w) => (
@@ -1166,15 +1166,15 @@ export default function AdminPage() {
                   </div>
                 </section>
 
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">项目（频道）</h3>
-                  <div className="flex gap-2 mb-4">
-                    <select value={createWs} onChange={(e) => setCreateWs(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+                  <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                    <select value={createWs} onChange={(e) => setCreateWs(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm flex-1">
                       <option value="">选择工作区...</option>
                       {workspaces.map((w) => <option key={w.workspace_id} value={w.workspace_id}>{w.name}</option>)}
                     </select>
-                    <input type="text" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="新项目名称" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
-                    <button onClick={createChannel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建项目</button>
+                    <input type="text" value={createName} onChange={(e) => setCreateName(e.target.value)} placeholder="新项目名称" className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm flex-1" />
+                    <button onClick={createChannel} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm whitespace-nowrap">创建项目</button>
                   </div>
                   <div className="space-y-1">
                     {channels.map((c) => (
@@ -1186,9 +1186,9 @@ export default function AdminPage() {
                   </div>
                 </section>
 
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">成员管理</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">添加到项目</label>
                       <select value={addCh} onChange={(e) => { setAddCh(e.target.value); refreshAddChOptions(e.target.value); }} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm mb-2">
@@ -1239,7 +1239,7 @@ export default function AdminPage() {
                   </div>
                 </section>
 
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">工作区用户</h3>
                   <select value={selectedWorkspaceId} onChange={(e) => setSelectedWorkspaceId(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm mb-3">
                     <option value="">选择工作区...</option>
@@ -1277,10 +1277,10 @@ export default function AdminPage() {
 
             {/* ==================== System Assistant Tab ==================== */}
             {activeTab === "llm" && userRole === "system_admin" && (
-              <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-4">系统助手</h3>
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">显示名称</label>
                       <input type="text" value={channelBotForm.display_name} onChange={(e) => setChannelBotForm({ ...channelBotForm, display_name: e.target.value })} placeholder="内置助手" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
@@ -1290,7 +1290,7 @@ export default function AdminPage() {
                       <input type="text" value={channelBotForm.description} onChange={(e) => setChannelBotForm({ ...channelBotForm, description: e.target.value })} placeholder="系统内置助手" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">助手 LLM</label>
                       <select value={assistSettings.llm_provider_id} onChange={(e) => setAssistSettings({ ...assistSettings, llm_provider_id: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
@@ -1308,7 +1308,7 @@ export default function AdminPage() {
                   </div>
                   <div className="border-t border-gray-100 pt-3 space-y-2">
                     <p className="text-xs text-gray-400 font-medium">澄清策略</p>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                       <label className="flex items-center gap-1.5 text-sm">
                         <input type="checkbox" checked={clarifySettings.clarify_strict_mode} onChange={(e) => setClarifySettings({ ...clarifySettings, clarify_strict_mode: e.target.checked })} />
                         严格模式
@@ -1323,7 +1323,7 @@ export default function AdminPage() {
                       </label>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 border-t border-gray-100 pt-3">
+                  <div className="flex flex-wrap items-center gap-4 border-t border-gray-100 pt-3">
                     <label className="flex items-center gap-1.5 text-sm">
                       <input type="checkbox" id="assist_takeover" checked={assistSettings.auto_takeover} onChange={(e) => setAssistSettings({ ...assistSettings, auto_takeover: e.target.checked })} />
                       自动接管
@@ -1337,7 +1337,7 @@ export default function AdminPage() {
             {/* ==================== Performance Tab ==================== */}
             {activeTab === "perf" && userRole === "system_admin" && (
               <>
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">任务统计</h3>
                   {taskStats && (
                     <div className="space-y-3">
@@ -1353,7 +1353,7 @@ export default function AdminPage() {
                     </div>
                   )}
                 </section>
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">最近任务</h3>
                   <div className="space-y-1 max-h-96 overflow-y-auto">
                     {taskList.map((t) => (
@@ -1370,7 +1370,7 @@ export default function AdminPage() {
             {/* ==================== Logs Tab ==================== */}
             {activeTab === "logs" && userRole === "system_admin" && (
               <>
-                <section className="bg-white rounded-xl border border-gray-200 p-5">
+                <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">日志分析</h3>
                   <textarea value={logExcerpt} onChange={(e) => setLogExcerpt(e.target.value)} placeholder="粘贴日志片段..." className="border border-gray-300 rounded-lg px-3 py-2 w-full h-24 text-sm mb-2" />
                   <input type="text" value={logQuestion} onChange={(e) => setLogQuestion(e.target.value)} placeholder="你想问什么？" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm mb-2" />
@@ -1382,7 +1382,7 @@ export default function AdminPage() {
 
             {/* ==================== Health Tab ==================== */}
             {activeTab === "health" && userRole === "system_admin" && (
-              <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-4">健康检查</h3>
                 {healthStatus && (
                   <div className="space-y-2">
@@ -1407,7 +1407,7 @@ export default function AdminPage() {
 
             {/* ==================== User Tab ==================== */}
             {activeTab === "user" && userRole === "system_admin" && (
-              <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-4">用户列表</h3>
                 <div className="space-y-1">
                   {userList.map((u) => (
@@ -1422,10 +1422,10 @@ export default function AdminPage() {
 
             {/* ==================== 图片 API 设置 Tab ==================== */}
             {activeTab === "image_api" && userRole === "system_admin" && (
-              <section className="bg-white rounded-xl border border-gray-200 p-5">
+              <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                 <h3 className="text-sm font-semibold text-gray-800 mb-4">图片 API 设置（文生图 / 图生图）</h3>
                 <p className="text-xs text-gray-400 mb-4">配置 DashScope 图片生成 API。设置后可在聊天中使用「AI 图片」功能（文生图 + 图生图）。</p>
-                <div className="space-y-4 max-w-md">
+                <div className="space-y-4 max-w-full sm:max-w-md">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
                     <input type="text" value={imgApiBaseUrl} onChange={(e) => setImgApiBaseUrl(e.target.value)}
