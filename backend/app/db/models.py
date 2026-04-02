@@ -193,6 +193,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     file_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     mention_bot_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
+    mention_user_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     in_reply_to_msg_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     is_secret: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
@@ -275,3 +276,19 @@ class SystemSetting(Base):
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class BulletinIssue(Base):
+    """公共留言板 Issue。"""
+    __tablename__ = "bulletin_issues"
+
+    issue_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")    # open | closed
+    priority: Mapped[str] = mapped_column(String(32), nullable=False, default="medium")  # low | medium | high
+    tags: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
+    creator_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    creator_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

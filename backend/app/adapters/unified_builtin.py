@@ -2,11 +2,14 @@
 
 工具：
   call_bot        — @某Bot，将子任务委托给频道内专业 Bot
+  call_user       — 主动 @某位用户，可附带选择题等待其回答（合并原 ask_user）
   update_anchor   — 更新四层记忆中的锚点层
   update_decision — 更新四层记忆中的决策层
   update_progress — 更新四层记忆中的进度层
-  ask_user        — 向用户发出选择题，Agent 暂停等待回答
   create_file     — 将内容保存为 MD 文件，返回下载链接
+  read_file       — 读取频道内已上传文件的完整正文
+  generate_image  — 文生图，生成后发送到频道
+  edit_image      — 对已上传图片进行 AI 编辑
 
 Agent：使用 LangChain bind_tools + 手动 agent loop，
        通过 OpenAI function calling API 实现结构化工具调用。
@@ -82,8 +85,8 @@ def _tool_label(tool_name: str, args: dict) -> str:
         return "记录决策"
     if tool_name == "update_progress":
         return "更新项目进度"
-    if tool_name == "ask_user":
-        return "向用户提问"
+    if tool_name == "call_user":
+        return f"呼叫 @{args.get('username', '?')}"
     if tool_name == "create_file":
         return f"创建文件 {args.get('filename', '?')}.md"
     if tool_name == "read_file":
@@ -230,34 +233,50 @@ def _make_tools(ctx: dict) -> list:
             return f"@{username} 调用出错：{e}"
 
     @tool(return_direct=True)
-    async def ask_user(
-        question: str,
-        options: list[str],
+    async def call_user(
+        username: str,
+        message: str,
+        options: list[str] | None = None,
         allow_multiple: bool = False,
         allow_manual: bool = False,
         manual_label: str = "其他（手动输入）",
         manual_placeholder: str = "请输入您的回答...",
     ) -> str:
-        """向用户发出选择题，Agent 立即暂停等待用户回答后再继续。
+        """主动 @某位用户，向其发送消息或提出选择题，Agent 立即暂停等待其回应。
+
+        仅通知时：填 username 和 message，不填 options。
+        向用户提问时：同时填写 options（至少 2 个），将展示选择题 UI 并等待回答。
 
         Args:
-            question: 问题标题
-            options: 选项列表（至少 2 个）
-            allow_multiple: 是否允许多选，默认 False
-            allow_manual: 是否允许手动输入，默认 False。设为 True 时会在选项末尾添加手动输入框
-            manual_label: 手动输入选项的显示标签，默认 "其他（手动输入）"
-            manual_placeholder: 手动输入框的占位提示文字，默认 "请输入您的回答..."
+            username: 用户名（不含 @ 符号，从对话历史中获取）
+            message: 发给该用户的消息或问题描述
+            options: 选项列表（至少 2 个）；留空则仅发送通知消息
+            allow_multiple: 是否允许多选，默认 False（仅 options 不为空时生效）
+            allow_manual: 是否允许手动输入，默认 False
+            manual_label: 手动输入选项的显示标签
+            manual_placeholder: 手动输入框的占位提示文字
         """
-        if not question.strip() or len(options) < 2:
-            return "错误：ask_user 需要 question 和至少 2 个选项"
+        username = (username or "").strip().lstrip("@")
+        message = (message or "").strip()
+        if not username or not message:
+            return "错误：需要提供 username 和 message"
+
+        mention_prefix = f"@{username} {message}"
+
+        if not options:
+            # 仅 @通知，无选择题
+            return mention_prefix
+
+        if len(options) < 2:
+            return "错误：options 至少需要 2 个选项"
 
         clarify_schema = {
-            "title": question,
+            "title": message,
             "skip_policy": "allow",
             "questions": [
                 {
                     "id": "q0",
-                    "prompt": question,
+                    "prompt": message,
                     "allow_multiple": allow_multiple,
                     "options": [{"id": f"a{i}", "label": str(opt)} for i, opt in enumerate(options)],
                     "other_enabled": allow_manual,
@@ -266,7 +285,8 @@ def _make_tools(ctx: dict) -> list:
                 }
             ],
         }
-        return "```guide-clarify\n" + json.dumps(clarify_schema, ensure_ascii=False) + "\n```"
+        clarify_block = "```guide-clarify\n" + json.dumps(clarify_schema, ensure_ascii=False) + "\n```"
+        return f"{mention_prefix}\n\n{clarify_block}"
 
     @tool
     async def create_file(filename: str, content: str) -> str:
@@ -566,7 +586,7 @@ def _make_tools(ctx: dict) -> list:
             parts.append("（文件内容为空或无法解析文本。）")
         return "\n".join(parts)
 
-    return [update_anchor, update_progress, update_decision, call_bot, ask_user, create_file, generate_image, edit_image, read_file]
+    return [update_anchor, update_progress, update_decision, call_bot, call_user, create_file, generate_image, edit_image, read_file]
 
 
 # ─── 附件处理 ──────────────────────────────────────────────────────────────────
@@ -881,7 +901,7 @@ async def _run_agent(
                     logger.exception("unified_builtin[tool]: %s failed: %s", tool_name, e)
                     result_str = f"工具执行出错：{e}"
 
-            if stream_cb and tool_name != "ask_user":
+            if stream_cb and tool_name != "call_user":
                 await stream_cb(" ✓\n\n")
 
             messages.append(ToolMessage(content=result_str, tool_call_id=tool_call_id))
@@ -912,7 +932,7 @@ async def _run_agent(
 # ─── Adapter ──────────────────────────────────────────────────────────────────
 
 class UnifiedBuiltinBotAdapter(OpenClawAdapter):
-    """统一内置 Bot：LangChain Agent 驱动，支持 call_bot / update_anchor / update_decision / ask_user。"""
+    """统一内置 Bot：LangChain Agent 驱动，支持 call_bot / call_user / update_anchor / update_decision 等工具。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text") or ""
@@ -975,7 +995,8 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n" + members_section,
             (
                 "## 核心行为准则\n\n"
-                "- 用户消息信息不足、意图模糊或需要关键决策时，**第一步必须调用 ask_user** 收集信息，不要猜测或直接执行\n"
+                "- 用户消息信息不足、意图模糊或需要关键决策时，**第一步必须调用 call_user** 向相关用户收集信息，不要猜测或直接执行\n"
+                "- call_user 的 username 从对话历史中获取（历史消息格式为 [用户名]: 消息内容）；需要提问时填写 options\n"
                 "- 先调用所有必要工具，结果返回后再输出最终回复\n"
                 "- 最终回复使用简洁专业的 Markdown 格式\n\n"
                 "## 图片工具使用准则（严格遵守）\n\n"

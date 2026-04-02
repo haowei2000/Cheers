@@ -1,5 +1,11 @@
 """@mention 解析：从消息文本提取 @BotName，与频道已激活 Bot 匹配."""
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # 匹配 @username 或 @botname（字母、数字、下划线、连字符、单引号、中文等，不含空格）
@@ -18,6 +24,31 @@ def extract_mentions(text: str) -> list[str]:
             seen.add(name)
             result.append(name)
     return result
+
+
+async def resolve_user_mentions(
+    content: str,
+    session: "AsyncSession",
+    channel_id: str,
+) -> list[str]:
+    """从 bot 回复文本中提取 @username，解析为频道内匹配用户的 user_id 列表。"""
+    mentioned = extract_mentions(content)
+    if not mentioned:
+        return []
+
+    from sqlalchemy import select
+    from app.db.models import ChannelMembership, User
+
+    result = await session.execute(
+        select(User.user_id)
+        .join(ChannelMembership, ChannelMembership.member_id == User.user_id)
+        .where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.member_type == "user",
+            User.username.in_(mentioned),
+        )
+    )
+    return [row[0] for row in result.all()]
 
 
 def filter_mentioned_bots(

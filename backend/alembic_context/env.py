@@ -18,9 +18,7 @@ database_url = os.getenv(
     "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus",
 )
 # 确保使用异步驱动 URL
-if database_url.startswith("sqlite") and "+aiosqlite" not in database_url:
-    database_url = database_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
-elif database_url.startswith("postgresql") and "+asyncpg" not in database_url:
+if database_url.startswith("postgresql") and "+asyncpg" not in database_url:
     database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 config.set_main_option("sqlalchemy.url", database_url)
