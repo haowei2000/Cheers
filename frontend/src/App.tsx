@@ -3620,6 +3620,9 @@ export default function App() {
                     const senderBot = m.sender_type === "bot" ? channelBots.find((b) => b.member_id === m.sender_id) : undefined;
                     const botLabel = senderBot?.display_name || senderBot?.username || "Bot";
                     const botInitials = botLabel.slice(0, 2).toUpperCase();
+                    const senderUser = m.sender_type === "user" && !isOwn ? channelUsers.find((u) => u.member_id === m.sender_id) : undefined;
+                    const userLabel = senderUser?.display_name || senderUser?.username || "用户";
+                    const userInitials = userLabel.slice(0, 1).toUpperCase();
                     const msgTime = m.created_at
                       ? new Date(m.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
                       : "";
@@ -3688,12 +3691,12 @@ export default function App() {
                               ? <img src={senderBot.avatar_url} alt={botLabel} className="w-8 h-8 rounded-xl object-cover" />
                               : <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">{botInitials}</div>
                           ) : (
-                            <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">U</div>
+                            <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">{userInitials}</div>
                           )}
                         </div>
                         <div className="flex flex-col max-w-[85%] sm:max-w-[72%]">
                           <div className="flex items-baseline gap-1.5 mb-1">
-                            <span className="font-semibold text-[13px] text-gray-900 leading-none">{m.sender_type === "bot" ? botLabel : "用户"}</span>
+                            <span className="font-semibold text-[13px] text-gray-900 leading-none">{m.sender_type === "bot" ? botLabel : userLabel}</span>
                             {m.sender_type === "bot" && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">Bot</span>}
                             <span className="text-[11px] text-gray-400 leading-none">{msgTime}</span>
                           </div>
@@ -3759,7 +3762,8 @@ export default function App() {
                       const r = replies[0];
                       const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
                       const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
-                      const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
+                      const rSenderUser = r.sender_type === "user" && !rIsOwn ? channelUsers.find((u) => u.member_id === r.sender_id) : undefined;
+                      const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : (rSenderUser?.display_name || rSenderUser?.username || "用户"));
                       const rInitials = rLabel.slice(0, 2).toUpperCase();
                       const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
                       const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
@@ -3785,7 +3789,7 @@ export default function App() {
                                   : <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">{rInitials}</div>
                               ) : (
                                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
-                                  {rIsOwn ? "我" : "U"}
+                                  {rIsOwn ? "我" : rInitials}
                                 </div>
                               )}
                             </div>
@@ -3851,11 +3855,11 @@ export default function App() {
                                   ? (senderBot?.avatar_url
                                     ? <img src={senderBot.avatar_url} alt={botLabel} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
                                     : <div className="w-7 h-7 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">{botInitials}</div>)
-                                  : <div className="w-7 h-7 rounded-lg bg-gray-400 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">U</div>}
+                                  : <div className="w-7 h-7 rounded-lg bg-gray-400 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">{userInitials}</div>}
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   <span className="text-[12px] font-semibold text-gray-600">
-                                    {isOwn ? "我" : m.sender_type === "bot" ? botLabel : "用户"}
+                                    {isOwn ? "我" : m.sender_type === "bot" ? botLabel : userLabel}
                                   </span>
                                   <span className="text-[11px] text-gray-400">{msgTime}</span>
                                 </div>
@@ -3927,7 +3931,8 @@ export default function App() {
                           {replies.map((r) => {
                             const rIsOwn = r.sender_type === "user" && r.sender_id === currentUserId;
                             const rBot = r.sender_type === "bot" ? channelBots.find((b) => b.member_id === r.sender_id) : undefined;
-                            const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : "用户");
+                            const rSenderUser = r.sender_type === "user" && !rIsOwn ? channelUsers.find((u) => u.member_id === r.sender_id) : undefined;
+                            const rLabel = rBot ? (rBot.display_name || rBot.username || "Bot") : (rIsOwn ? "我" : (rSenderUser?.display_name || rSenderUser?.username || "用户"));
                             const rInitials = rLabel.slice(0, 2).toUpperCase();
                             const rTime = r.created_at ? new Date(r.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
                             const { text: rTextRaw, form: rForm, clarify: rClarify } = parseGuidePayload(r.content);
@@ -3948,10 +3953,13 @@ export default function App() {
                             const rParentBot = rDirectParent?.sender_type === "bot"
                               ? channelBots.find((b) => b.member_id === rDirectParent.sender_id)
                               : null;
+                            const rParentSenderUser = rDirectParent?.sender_type === "user" && rDirectParent.sender_id !== currentUserId
+                              ? channelUsers.find((u) => u.member_id === rDirectParent.sender_id)
+                              : undefined;
                             const rParentLabel = rDirectParent
                               ? (rDirectParent.sender_type === "bot"
                                   ? (rParentBot?.display_name || rParentBot?.username || "Bot")
-                                  : (rDirectParent.sender_id === currentUserId ? "我" : "用户"))
+                                  : (rDirectParent.sender_id === currentUserId ? "我" : (rParentSenderUser?.display_name || rParentSenderUser?.username || "用户")))
                               : null;
                             const rCollapsed = collapsedMessages.has(r.msg_id);
                             const rPreview = rDisplay.replace(/\s+/g, " ").slice(0, 10) + (rDisplay.length > 10 ? "…" : "");
@@ -3963,7 +3971,7 @@ export default function App() {
                                     : <div className="w-6 h-6 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5">{rInitials}</div>
                                 ) : (
                                   <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5 ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}>
-                                    {rIsOwn ? "我" : "U"}
+                                    {rIsOwn ? "我" : rInitials}
                                   </div>
                                 )}
                                 <div className="flex-1 min-w-0">
