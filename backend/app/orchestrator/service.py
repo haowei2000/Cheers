@@ -14,7 +14,7 @@ from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.admin.settings_store import get_assist_settings
 from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message
 from app.file_processor.service import FileFlowError, FilePipelineService
-from app.orchestrator.mention import extract_mentions, filter_mentioned_bots
+from app.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.orchestrator.orchestrator_adapter import extract_suggested_bots
 from app.utils.crypto import decrypt_value
 
@@ -215,6 +215,7 @@ async def run_orchestrator(
         from app.chat_core.schemas import MessageInResponse
         from app.chat_core.ws_manager import ws_manager
 
+        mention_user_ids = await resolve_user_mentions(content, session, channel_id)
         msg = Message(
             channel_id=channel_id,
             sender_id=sender_id,
@@ -222,6 +223,7 @@ async def run_orchestrator(
             content=content,
             task_id=root_task_id,
             in_reply_to_msg_id=trigger_msg.msg_id,
+            mention_user_ids=mention_user_ids,
         )
         session.add(msg)
         await session.flush()
@@ -275,6 +277,7 @@ async def run_orchestrator(
         from app.chat_core.ws_manager import ws_manager
 
         msg.content = content
+        msg.mention_user_ids = await resolve_user_mentions(content, session, channel_id)
         await session.flush()
         await ws_manager.broadcast_to_channel(
             channel_id,

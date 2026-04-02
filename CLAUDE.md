@@ -98,7 +98,7 @@ Username `coordinator` has two modes:
 
 ### Four-Layer Memory
 
-Each channel has four memory layers stored in a separate SQLite DB (`data/context_store/context.db`):
+Each channel has four memory layers stored in the PostgreSQL DB (`context_store` table, same or separate DB via `CONTEXT_DB_URL`):
 - `anchor` — project anchor (highest priority)
 - `decisions` — important decisions
 - `files_index` — uploaded files index
@@ -113,7 +113,7 @@ Loaded by `memory/manager.py` and injected into every `AgentPayload.memory_conte
 | `backend/app/main.py` | FastAPI app entry, router registration, startup hooks |
 | `backend/app/config.py` | All settings via `pydantic-settings` + `.env` |
 | `backend/app/db/models.py` | SQLAlchemy ORM models (UUID PKs as String(36)) |
-| `backend/app/db/session.py` | Async engine (SQLite: NullPool + WAL mode) |
+| `backend/app/db/session.py` | Async engine (PostgreSQL via asyncpg) |
 | `backend/app/orchestrator/service.py` | Core dispatch logic |
 | `backend/app/adapters/base.py` | `OpenClawAdapter` ABC, `AgentPayload`, `AgentResponse` |
 | `backend/app/adapters/llm_bot.py` | `LLMBotAdapter` — main bot implementation |
@@ -121,14 +121,13 @@ Loaded by `memory/manager.py` and injected into every `AgentPayload.memory_conte
 | `backend/app/admin/settings_store.py` | JSON-file-backed admin settings (LLM providers, orchestrator flags) |
 | `frontend/src/App.tsx` | Entire frontend SPA (single file, React + Tailwind) |
 | `frontend/src/AdminPage.tsx` | Admin panel SPA |
-| `tests/conftest.py` | Pytest fixtures: in-memory SQLite, HTTPX AsyncClient |
+| `tests/conftest.py` | Pytest fixtures: PostgreSQL test DB, HTTPX AsyncClient |
 
 ### Database
 
-- **Main DB**: `backend/data/main.db` (SQLite, all business entities)
-- **Context Store**: `backend/data/context_store/context.db` (four-layer memory, separate SQLite)
-- SQLite uses `NullPool` + WAL journal mode for concurrency safety
-- Tables are created via `Base.metadata.create_all` on startup (no Alembic migrations in current dev setup)
+- **Main DB**: PostgreSQL (`DATABASE_URL`, default `postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus`)
+- **Context Store**: PostgreSQL (`CONTEXT_DB_URL`, defaults to same DB as main; stores four-layer memory in `context_store` table)
+- Tables managed by Alembic migrations; run `alembic upgrade head` before first start
 - All IDs are `String(36)` UUIDs
 
 ### API Structure
@@ -148,8 +147,8 @@ All REST routes are prefixed under `/api/`:
 
 Key env vars (all have defaults in `config.py`):
 ```
-DATABASE_URL=sqlite+aiosqlite:///data/main.db
-SQLITE_CONTEXT_PATH=data/context_store/context.db
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus
+CONTEXT_DB_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus
 GUIDE_LLM_BASE_URL=http://localhost:11434/v1
 GUIDE_LLM_MODEL=llama3.2
 SYSTEM_LLM_API_KEY=
@@ -164,7 +163,7 @@ The frontend is a minimal React SPA (React 18 + Vite + Tailwind CSS + TypeScript
 ### Testing
 
 Tests live in `tests/` (at project root), configured in `backend/pyproject.toml` with `testpaths = ["../tests"]`. The conftest provides:
-- `db_session` — isolated in-memory SQLite session per test
+- `db_session` — isolated PostgreSQL session per test (uses `TEST_DATABASE_URL` env var)
 - `client` — HTTPX `AsyncClient` with dependency-injected test DB
 
 All tests are async (`asyncio_mode = "auto"`).
