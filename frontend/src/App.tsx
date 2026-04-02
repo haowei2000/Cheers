@@ -2711,6 +2711,16 @@ export default function App() {
             </svg>
             <span>Docs</span>
           </Link>
+          <Link
+            to="/bulletin"
+            onClick={() => isMobile && setSidebarOpen(false)}
+            className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M10 2a6 6 0 0 0-6 6v3.586l-.707.707A1 1 0 0 0 4 14h12a1 1 0 0 0 .707-1.707L16 11.586V8a6 6 0 0 0-6-6ZM10 18a3 3 0 0 1-2.83-2h5.66A3 3 0 0 1 10 18Z" />
+            </svg>
+            <span>留言板</span>
+          </Link>
           <button
             type="button"
             onClick={() => { setHelpOpen(true); if (isMobile) setSidebarOpen(false); }}
