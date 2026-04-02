@@ -146,18 +146,17 @@ async def run_orchestrator(
         channel_result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
         channel_obj = channel_result.scalar_one_or_none()
         channel_auto_assist = bool(channel_obj.auto_assist) if channel_obj else False
-        has_uploaded_files = bool(trigger_msg.file_ids)
         if (
             not mentioned
             and COORDINATOR_USERNAME in channel_bot_usernames
-            and (has_uploaded_files or channel_auto_assist)
+            and channel_auto_assist
         ):
             target_usernames = [COORDINATOR_USERNAME]
             direct_answer_mode = True
             logger.info(
-                "orchestrator route -> coordinator channel_id=%s has_files=%s",
+                "orchestrator route -> coordinator channel_id=%s auto_assist=%s",
                 channel_id,
-                has_uploaded_files,
+                channel_auto_assist,
             )
         else:
             if mentioned:
