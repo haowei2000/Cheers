@@ -311,6 +311,7 @@ async def delete_workspace(
     for wm in ws_members.scalars().all():
         await session.delete(wm)
 
+    await session.flush()
     await session.delete(ws)
     await session.commit()
 
