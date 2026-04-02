@@ -499,6 +499,7 @@ async def update_my_channel_profile(
 @router.delete("/{channel_id}")
 async def delete_channel(
     channel_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """删除频道（同时删除关联的成员、消息、文件记录）."""
@@ -508,6 +509,17 @@ async def delete_channel(
     ch = result.scalar_one_or_none()
     if not ch:
         raise HTTPException(status_code=404, detail="channel not found")
+
+    # 仅工作空间 owner/admin 可删除频道
+    membership = await session.execute(
+        select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == ch.workspace_id,
+            WorkspaceMembership.user_id == current_user.user_id,
+        )
+    )
+    wm = membership.scalar_one_or_none()
+    if not wm or wm.role not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="只有工作空间管理员可以删除频道")
 
     # 删除关联的成员记录
     result = await session.execute(
