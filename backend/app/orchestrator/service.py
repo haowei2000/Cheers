@@ -359,8 +359,8 @@ async def run_orchestrator(
                     sug for sug in suggested
                     if sug in channel_bot_usernames and sug != COORDINATOR_USERNAME
                 ]
-
-                # 阶段1：串行 broadcast + 预建消息（需要 DB session）
+            
+                # 阶段 1：串行 broadcast + 预建消息（需要 DB session）
                 pending_sug: list[tuple[str, str, Message, AgentPayload, OpenClawAdapter]] = []
                 for sug_username in valid_suggested:
                     sug_bot_id = bot_id_by_username[sug_username]
@@ -384,6 +384,10 @@ async def run_orchestrator(
                         process_config={"_stream_token": _make_stream_token_cb(sug_msg.msg_id)},
                     )
                     pending_sug.append((sug_username, sug_bot_id, sug_msg, sug_payload, sug_adapter))
+                    logger.info(
+                        "orchestrator_auto_takeover: triggered @%s memory_layers=%d",
+                        sug_username, len(memory_context),
+                    )
 
                 # 阶段2：并发调用所有 auto_takeover Bot 的 LLM（无 DB 操作）
                 if pending_sug:
@@ -445,7 +449,10 @@ async def run_orchestrator(
                 "_bot_id": bot_id,
             },
         )
-        logger.info("orchestrator: queuing bot bot_id=%s username=%s", bot_id, username)
+        logger.info(
+            "orchestrator: queuing bot bot_id=%s username=%s memory_layers=%d attachments=%d",
+            bot_id, username, len(memory_context), len(attachments),
+        )
         pending_bots.append((username, bot_id, bot_msg, payload, adapter))
 
     # 阶段2：并发调用所有 Bot 的 LLM（无 DB 操作）

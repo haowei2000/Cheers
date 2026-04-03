@@ -104,6 +104,14 @@ class LLMBotAdapter(OpenClawAdapter):
         return config
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
+        """执行 LLM 调用。
+        
+        上下文注入机制：
+        - payload.memory_context 包含四层记忆：anchor, decisions, files_index, recent
+        - 这些记忆会被注入为模板变量 {{anchor}}, {{decisions}}, {{files_index}}, {{recent}}
+        - 可以在 PromptTemplate 的 user_template 中使用这些变量来访问项目上下文
+        - 例如："请基于以下项目锚点回答：{{anchor}}\n\n用户问题：{{message}}"
+        """
         user_text = (payload.trigger_message or {}).get("text", "")
         task_id = payload.task_id
         all_attachments = payload.attachments or []
