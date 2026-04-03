@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     smtp_ssl: bool = False       # True 时用 SSL 直连（465端口）
 
 
+    # CORS 允许的前端 origin 列表（逗号分隔或直接配置为列表）
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+    # 日志格式（True = JSON 结构化日志；False = 人类可读文本）
+    log_json: bool = False
+
     # 种子数据：初始管理员账号
     admin_username: str = "admin"
     admin_password: str = "admin#Nexus2024"

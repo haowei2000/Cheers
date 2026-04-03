@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
-const API = "/api";
+const API = "/api/v1";
 
 type TabId = "models" | "templates" | "bot" | "llm" | "perf" | "logs" | "health" | "user" | "workspace" | "image_api";
 
@@ -318,7 +318,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (selectedWorkspaceId) {
-      fetch(`${API}/workspaces/${selectedWorkspaceId}/users`).then((r) => r.json()).then((d) => { if (d.data) setWorkspaceUsers(d.data); }).catch(console.error);
+      fetch(`${API}/workspaces/${selectedWorkspaceId}/members`).then((r) => r.json()).then((d) => { if (d.data) setWorkspaceUsers(d.data); }).catch(console.error);
       fetch(`${API}/workspaces/${selectedWorkspaceId}/channels`).then((r) => r.json()).then((d) => { if (d.data) setWorkspaceChannels(d.data); }).catch(console.error);
     } else {
       setWorkspaceUsers([]);

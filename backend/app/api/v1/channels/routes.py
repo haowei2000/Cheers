@@ -1,0 +1,236 @@
+"""Channel v1 路由."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.dependencies import get_current_user, get_session, try_get_current_user
+from app.core.responses import APIResponse
+from app.chat_core.schemas import ChannelInResponse
+from app.db.models import User
+from app.services.channel_service import ChannelService
+
+router = APIRouter(prefix="/channels", tags=["channels"])
+
+
+class ChannelCreateBody(BaseModel):
+    workspace_id: str
+    name: str
+    type: str = "public"
+    purpose: str | None = None
+
+
+class ChannelUpdateBody(BaseModel):
+    name: str | None = None
+    purpose: str | None = None
+    auto_assist: bool | None = None
+
+
+class AddMemberBody(BaseModel):
+    member_id: str
+    member_type: str
+
+
+class AddBotBody(BaseModel):
+    bot_id: str
+
+
+class InviteBody(BaseModel):
+    identifier: str
+
+
+class ChannelProfileUpdateBody(BaseModel):
+    nickname: str | None = None
+    bio: str | None = None
+
+
+@router.get("", response_model=APIResponse[list[ChannelInResponse]])
+async def list_channels(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    channels = await svc.list_for_user(current_user)
+    return APIResponse.ok([ChannelInResponse.model_validate(c) for c in channels])
+
+
+@router.get("/by-workspace/{workspace_id}", response_model=APIResponse[list[ChannelInResponse]])
+async def list_channels_by_workspace(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    channels = await svc.list_for_user_in_workspace(workspace_id, current_user)
+    return APIResponse.ok([ChannelInResponse.model_validate(c) for c in channels])
+
+
+@router.post("", response_model=APIResponse[ChannelInResponse])
+async def create_channel(
+    body: ChannelCreateBody,
+    session: AsyncSession = Depends(get_session),
+    current_user: User | None = Depends(try_get_current_user),
+) -> APIResponse:
+    svc = ChannelService(session)
+    ch = await svc.create(
+        workspace_id=body.workspace_id,
+        name=body.name,
+        type=body.type,
+        purpose=body.purpose,
+        creator=current_user,
+    )
+    return APIResponse.ok(ChannelInResponse.model_validate(ch))
+
+
+@router.get("/{channel_id}", response_model=APIResponse[ChannelInResponse])
+async def get_channel(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    ch = await svc.get_or_404(channel_id)
+    return APIResponse.ok(ChannelInResponse.model_validate(ch))
+
+
+@router.patch("/{channel_id}", response_model=APIResponse[ChannelInResponse])
+async def update_channel(
+    channel_id: str,
+    body: ChannelUpdateBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    ch = await svc.update(channel_id, **updates)
+    return APIResponse.ok(ChannelInResponse.model_validate(ch))
+
+
+@router.delete("/{channel_id}", response_model=APIResponse[None])
+async def delete_channel(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    await svc.delete(channel_id, current_user)
+    return APIResponse.ok(None)
+
+
+@router.get("/{channel_id}/members", response_model=APIResponse[list[dict]])
+async def list_members(
+    channel_id: str,
+    with_username: bool = Query(default=False),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    if with_username:
+        members = await svc.list_members_with_details(channel_id)
+        return APIResponse.ok(members)
+    memberships = await svc.repo.list_memberships(channel_id)
+    return APIResponse.ok([
+        {
+            "channel_id": m.channel_id,
+            "member_id": m.member_id,
+            "member_type": m.member_type,
+            "joined_at": m.joined_at.isoformat() if m.joined_at else None,
+        }
+        for m in memberships
+    ])
+
+
+@router.post("/{channel_id}/members", response_model=APIResponse[dict])
+async def add_member(
+    channel_id: str,
+    body: AddMemberBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    m = await svc.add_member(channel_id, body.member_id, body.member_type, current_user)
+    return APIResponse.ok({
+        "channel_id": m.channel_id,
+        "member_id": m.member_id,
+        "member_type": m.member_type,
+    })
+
+
+@router.post("/{channel_id}/bots", response_model=APIResponse[dict])
+async def add_bot(
+    channel_id: str,
+    body: AddBotBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    m = await svc.add_member(channel_id, body.bot_id, "bot", current_user)
+    return APIResponse.ok({
+        "channel_id": m.channel_id,
+        "member_id": m.member_id,
+        "member_type": m.member_type,
+    })
+
+
+@router.delete("/{channel_id}/members/{member_id}", response_model=APIResponse[None])
+async def remove_member(
+    channel_id: str,
+    member_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    await svc.remove_member(channel_id, member_id, current_user)
+    return APIResponse.ok(None)
+
+
+@router.post("/{channel_id}/invite", response_model=APIResponse[dict])
+async def invite_member(
+    channel_id: str,
+    body: InviteBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    result = await svc.invite_by_identifier(channel_id, body.identifier, current_user)
+    return APIResponse.ok(result)
+
+
+@router.get("/{channel_id}/friends-to-invite", response_model=APIResponse[list[dict]])
+async def get_friends_to_invite(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    friends = await svc.get_friends_to_invite(channel_id, current_user)
+    return APIResponse.ok(friends)
+
+
+@router.get("/{channel_id}/my-profile", response_model=APIResponse[dict])
+async def get_my_profile(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    profile = await svc.get_my_profile(channel_id, current_user.user_id)
+    return APIResponse.ok(profile)
+
+
+@router.put("/{channel_id}/my-profile", response_model=APIResponse[dict])
+async def update_my_profile(
+    channel_id: str,
+    body: ChannelProfileUpdateBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    profile = await svc.update_my_profile(
+        channel_id,
+        current_user.user_id,
+        nickname=body.nickname,
+        bio=body.bio,
+    )
+    return APIResponse.ok(profile)

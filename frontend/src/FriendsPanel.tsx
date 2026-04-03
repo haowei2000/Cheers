@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 
-const API = "/api";
+const API = "/api/v1";
 
 interface Friend {
   user_id: string;

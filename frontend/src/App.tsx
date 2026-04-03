@@ -5,7 +5,7 @@ import FriendsPanel from "./FriendsPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import { MessageMarkdown } from "./MessageMarkdown";
 
-const API = "/api";
+const API = "/api/v1";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
 const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
 const API_DOCS_URL = "/docs";
@@ -1560,9 +1560,11 @@ export default function App() {
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "登录失败");
-      const user = { user_id: data.user_id, username: data.username, display_name: data.display_name || data.username, role: data.role };
-      const token: string = data.token || data.user_id;
+      if (!res.ok) throw new Error(data.detail || data.message || "登录失败");
+      const payload = data.data ?? data;
+      const userInfo = payload.user ?? payload;
+      const user = { user_id: userInfo.user_id, username: userInfo.username, display_name: userInfo.display_name || userInfo.username, role: userInfo.role };
+      const token: string = payload.access_token || payload.token || userInfo.user_id;
       setCurrentUser(user);
       setAuthToken(token);
       // 保存到 localStorage（24小时有效）
@@ -1608,15 +1610,18 @@ export default function App() {
         body: JSON.stringify({ username, email: regEmail.trim(), password, display_name: displayName, code: regCode }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "注册失败");
+      if (!res.ok) throw new Error(data.detail || data.message || "注册失败");
       const loginRes = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
       const loginData = await loginRes.json();
-      const user = { user_id: data.user_id, username: data.username, display_name: data.display_name || data.username, role: data.role };
-      const token: string = loginData.token || data.user_id;
+      const loginPayload = loginData.data ?? loginData;
+      const regPayload = data.data ?? data;
+      const userInfo = loginPayload.user ?? regPayload;
+      const user = { user_id: userInfo.user_id, username: userInfo.username, display_name: userInfo.display_name || userInfo.username, role: userInfo.role };
+      const token: string = loginPayload.access_token || loginPayload.token || userInfo.user_id;
       setCurrentUser(user);
       setAuthToken(token);
       localStorage.setItem("currentUser", JSON.stringify({ user, token, loginTime: Date.now() }));
@@ -2082,15 +2087,14 @@ export default function App() {
     if (PRESIGN_EXTS.has(ext)) {
       const contentType = file.type || CONTENT_TYPE_MAP[ext] || "application/octet-stream";
       try {
-        const presignRes = await fetch(`${API}/files/presign`, {
+        const presignRes = await authFetch(`${API}/files/presign`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             channel_id: selectedId,
             uploader_id: currentUserId,
             filename: file.name,
             content_type: contentType,
-            size: file.size,
+            size_bytes: file.size,
           }),
         });
         const presignData = await presignRes.json();

@@ -1,0 +1,94 @@
+"""Message 业务逻辑层."""
+from __future__ import annotations
+
+import secrets as _secrets
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import NotFoundError, BadRequestError
+from app.db.models import Message, User
+from app.repositories.channel_repo import ChannelRepository
+from app.repositories.message_repo import MessageRepository
+from app.repositories.file_repo import FileRepository
+from app.utils.crypto import encrypt_value
+
+_SECRET_PLACEHOLDER = "🔒 [加密消息]"
+
+
+class MessageService:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.msg_repo = MessageRepository(session)
+        self.channel_repo = ChannelRepository(session)
+        self.file_repo = FileRepository(session)
+
+    async def list_messages(
+        self,
+        channel_id: str,
+        limit: int = 50,
+        before_id: str | None = None,
+    ) -> tuple[list[Message], dict]:
+        """返回消息列表及 file_map {file_id: FileRecord}."""
+        ch = await self.channel_repo.get_by_id(channel_id)
+        if not ch:
+            raise NotFoundError("channel not found")
+        messages = await self.msg_repo.list_by_channel(channel_id, limit=limit, before_id=before_id)
+        file_ids = sorted({fid for m in messages for fid in (m.file_ids or []) if fid})
+        file_map = await self.file_repo.get_many_by_ids(file_ids)
+        return messages, file_map
+
+    async def send_message(
+        self,
+        channel_id: str,
+        content: str,
+        sender_id: str,
+        sender_type: str,
+        *,
+        file_ids: list[str] | None = None,
+        mention_bot_ids: list[str] | None = None,
+        in_reply_to_msg_id: str | None = None,
+        is_secret: bool = False,
+    ) -> tuple[Message, dict]:
+        """持久化一条消息，返回 (Message, file_map)。不触发 orchestrator（由路由层负责）."""
+        ch = await self.channel_repo.get_by_id(channel_id)
+        if not ch:
+            raise NotFoundError("channel not found")
+
+        file_ids = file_ids or []
+        mention_bot_ids = mention_bot_ids or []
+
+        # 校验文件属于本频道且状态正常
+        if file_ids:
+            records = await self.file_repo.get_many_by_ids(file_ids)
+            for fid in file_ids:
+                rec = records.get(fid)
+                if not rec:
+                    raise BadRequestError(f"file {fid} not found")
+                if rec.channel_id != channel_id:
+                    raise BadRequestError(f"file {fid} does not belong to this channel")
+
+        # 加密消息处理
+        if is_secret:
+            encrypted = encrypt_value(content)
+            stored_content = _SECRET_PLACEHOLDER
+            token = _secrets.token_urlsafe(32)
+        else:
+            encrypted = None
+            stored_content = content
+            token = None
+
+        msg = await self.msg_repo.create(
+            channel_id=channel_id,
+            sender_id=sender_id,
+            sender_type=sender_type,
+            content=stored_content,
+            file_ids=file_ids,
+            mention_bot_ids=mention_bot_ids,
+            in_reply_to_msg_id=in_reply_to_msg_id,
+            is_secret=is_secret,
+            secret_encrypted=encrypted,
+            secret_token=token,
+        )
+
+        file_map = await self.file_repo.get_many_by_ids(file_ids)
+        return msg, file_map
