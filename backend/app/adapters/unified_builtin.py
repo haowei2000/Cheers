@@ -185,6 +185,9 @@ def _make_tools(ctx: dict) -> list:
             adapter = await adapter_factory(bot_id)
             task_id = ctx.get("task_id", "")
 
+            # 构建子 Bot 的完整上下文（四层记忆 + 当前会话历史）
+            memory_context = ctx.get("memory") or {}
+            
             if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
                 # 流式路径：预先创建空消息气泡，边生成边推送 delta，完成后写入最终内容
                 bot_msg = await pre_create_bot_msg(bot_id, task_id)
@@ -196,7 +199,7 @@ def _make_tools(ctx: dict) -> list:
                         "text": message,
                         "timestamp": "",
                     },
-                    memory_context=ctx.get("memory") or {},
+                    memory_context=memory_context,
                     attachments=ctx.get("attachments") or [],
                     original_question_text=ctx.get("original_question_text"),
                     process_config={"_stream_token": make_stream_token_cb(bot_msg.msg_id)},
@@ -214,7 +217,7 @@ def _make_tools(ctx: dict) -> list:
                         "text": message,
                         "timestamp": "",
                     },
-                    memory_context=ctx.get("memory") or {},
+                    memory_context=memory_context,
                     attachments=ctx.get("attachments") or [],
                     original_question_text=ctx.get("original_question_text"),
                 )
@@ -224,8 +227,8 @@ def _make_tools(ctx: dict) -> list:
                     await create_and_broadcast(bot_id, result)
 
             logger.info(
-                "unified_builtin[tool]: call_bot @%s completed channel=%s",
-                username, ctx["channel_id"],
+                "unified_builtin[tool]: call_bot @%s completed channel=%s memory_keys=%s",
+                username, ctx["channel_id"], list(memory_context.keys()),
             )
             return f"@{username} 回复：\n{result}"
         except Exception as e:
