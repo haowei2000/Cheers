@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, UnauthorizedError
 from app.db.models import EmailCode, User
 from app.repositories.user_repo import UserRepository
-from app.auth.jwt_utils import create_access_token
-from app.auth.password_utils import hash_password as _hash_password, verify_password as _verify_password
+from app.services.auth.jwt_utils import create_access_token
+from app.services.auth.password_utils import hash_password as _hash_password, verify_password as _verify_password
 
 _OTP_COOLDOWN_SECONDS = 60
 _OTP_EXPIRE_MINUTES = 10

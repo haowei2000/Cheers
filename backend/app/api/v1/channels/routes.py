@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session, try_get_current_user
 from app.core.responses import APIResponse
-from app.chat_core.schemas import ChannelInResponse
+from app.core.schemas import ChannelInResponse
 from app.db.models import User
 from app.services.channel_service import ChannelService
 

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user, get_session
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.core.responses import APIResponse
-from app.chat_core.schemas import BotCreate, BotInResponse, BotRegisterRequest, BotRegistrationRequestInResponse, BotSimpleInResponse, BotUpdate, OpenClawQuickConnect
+from app.core.schemas import BotCreate, BotInResponse, BotRegisterRequest, BotRegistrationRequestInResponse, BotSimpleInResponse, BotUpdate, OpenClawQuickConnect
 from app.db.models import BotAccount, BotRegistrationRequest, PromptTemplate, AIModel, gen_uuid, User
 from app.services.bot_service import BotService
 from app.utils.crypto import encrypt_value

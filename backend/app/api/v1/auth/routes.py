@@ -141,7 +141,7 @@ async def send_verification_code(
 ) -> APIResponse:
     svc = AuthService(session)
     code = await svc.send_verification_code(body.email, body.purpose)
-    from app.auth.email_service import send_verification_code as _send
+    from app.services.auth.email_service import send_verification_code as _send
     try:
         await _send(body.email.strip().lower(), code, body.purpose)
     except Exception:

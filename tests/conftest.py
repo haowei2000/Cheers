@@ -58,9 +58,9 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
     """
     from sqlalchemy.ext.asyncio import async_sessionmaker
     from app.db.session import get_session
-    from app.auth.routes import get_current_user
+    from app.services.auth.routes import get_current_user
     from app.db.models import User
-    import app.chat_core.messages as _messages_mod
+    import app.api.v1.messages.routes as _messages_mod
 
     test_session_factory = async_sessionmaker(
         db_engine, class_=AsyncSession, expire_on_commit=False, autocommit=False, autoflush=False

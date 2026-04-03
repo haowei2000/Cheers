@@ -36,7 +36,7 @@ class FileService:
         uploader: User,
     ) -> dict:
         """生成预签名上传 URL，返回 {file_id, upload_url, headers, expires_in}."""
-        from app.file_processor.service import FilePipelineService
+        from app.services.file_processor.service import FilePipelineService
         ch = await self.channel_repo.get_by_id(channel_id)
         if not ch:
             raise NotFoundError("channel not found")
@@ -72,7 +72,7 @@ class FileService:
 
     async def get_download_url(self, file_id: str) -> str:
         """获取文件预签名下载 URL."""
-        from app.storage.bootstrap import get_storage_service, is_storage_enabled
+        from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
         rec = await self.get_or_404(file_id)
         if not is_storage_enabled():
             raise BadRequestError("storage not enabled")

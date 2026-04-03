@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from app.config import settings
-from app.admin.log_buffer import LLMFriendlyBufferHandler
+from app.services.admin.log_buffer import LLMFriendlyBufferHandler
 
 
 def _resolve_log_dir() -> Path | None:

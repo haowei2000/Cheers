@@ -1,9 +1,9 @@
 """引导 Bot 与帮助索引单测."""
 import pytest
 
-from app.adapters.base import AgentPayload
-from app.guide.adapter import GuideBotAdapter
-from app.guide.help_index import find_help
+from app.services.adapters.base import AgentPayload
+from app.services.guide.adapter import GuideBotAdapter
+from app.services.guide.help_index import find_help
 
 
 def test_find_help_creation() -> None:
