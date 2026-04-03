@@ -1,7 +1,7 @@
 """@mention 解析与路由单测."""
 import pytest
 
-from app.orchestrator.mention import extract_mentions, filter_mentioned_bots
+from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots
 
 
 def test_extract_mentions_empty() -> None:

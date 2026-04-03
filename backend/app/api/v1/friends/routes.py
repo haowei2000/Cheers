@@ -3,13 +3,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_session
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.dependencies import get_session
 from app.core.responses import APIResponse
-from app.db.models import Friendship, User
+from app.services.friendship_service import FriendshipService
 
 router = APIRouter(prefix="/friends", tags=["friends"])
 
@@ -30,17 +28,8 @@ async def search_users(
     current_user_id: str = Query(...),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    result = await session.execute(
-        select(User).where(and_(User.user_id == query, User.user_id != current_user_id))
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        result = await session.execute(
-            select(User).where(and_(User.username.ilike(f"%{query}%"), User.user_id != current_user_id))
-        )
-        users = result.scalars().all()
-    else:
-        users = [user]
+    svc = FriendshipService(session)
+    users = await svc.search_users(query, current_user_id)
     return APIResponse.ok([
         {"user_id": u.user_id, "username": u.username, "display_name": u.display_name, "avatar_url": u.avatar_url}
         for u in users
@@ -52,31 +41,8 @@ async def get_friends(
     user_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    result = await session.execute(
-        select(Friendship, User).join(
-            User,
-            or_(
-                and_(Friendship.friend_id == User.user_id, Friendship.user_id == user_id),
-                and_(Friendship.user_id == User.user_id, Friendship.friend_id == user_id),
-            )
-        ).where(
-            or_(
-                and_(Friendship.user_id == user_id, Friendship.status == "accepted"),
-                and_(Friendship.friend_id == user_id, Friendship.status == "accepted"),
-            )
-        )
-    )
-    friends = [
-        {
-            "user_id": u.user_id,
-            "username": u.username,
-            "display_name": u.display_name,
-            "avatar_url": u.avatar_url,
-            "status": fs.status,
-            "created_at": fs.created_at.isoformat() if fs.created_at else None,
-        }
-        for fs, u in result.all()
-    ]
+    svc = FriendshipService(session)
+    friends = await svc.list_friends(user_id)
     return APIResponse.ok(friends)
 
 
@@ -85,42 +51,12 @@ async def add_friend(
     body: FriendAddBody,
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    if body.user_id == body.friend_identifier:
-        raise BadRequestError("不能添加自己为好友")
-    result = await session.execute(
-        select(User).where(or_(User.user_id == body.friend_identifier, User.username == body.friend_identifier))
-    )
-    target_user = result.scalar_one_or_none()
-    if not target_user:
-        raise NotFoundError("用户不存在")
-    friend_id = target_user.user_id
-    result = await session.execute(
-        select(Friendship).where(
-            or_(
-                and_(Friendship.user_id == body.user_id, Friendship.friend_id == friend_id),
-                and_(Friendship.user_id == friend_id, Friendship.friend_id == body.user_id),
-            )
-        )
-    )
-    existing = result.scalar_one_or_none()
-    if existing:
-        if existing.status == "accepted":
-            raise BadRequestError("已经是好友")
-        if existing.status == "pending":
-            existing.status = "accepted"
-            await session.flush()
-            return APIResponse.ok(
-                {"user_id": target_user.user_id, "username": target_user.username, "display_name": target_user.display_name, "avatar_url": target_user.avatar_url, "status": "accepted"},
-                message="已接受好友请求",
-            )
-        raise BadRequestError("无法添加该用户")
-    friendship = Friendship(user_id=body.user_id, friend_id=friend_id, status="accepted")
-    session.add(friendship)
-    await session.flush()
-    return APIResponse.ok(
-        {"user_id": target_user.user_id, "username": target_user.username, "display_name": target_user.display_name, "avatar_url": target_user.avatar_url, "status": "accepted"},
-        message="添加好友成功",
-    )
+    svc = FriendshipService(session)
+    result = await svc.add_friend(body.user_id, body.friend_identifier)
+    msg = "已接受好友请求" if result["action"] == "accepted_existing" else "添加好友成功"
+    # Remove action from response to match original schema
+    action = result.pop("action")
+    return APIResponse.ok(result, message=msg)
 
 
 @router.delete("", response_model=APIResponse[None])
@@ -128,19 +64,8 @@ async def remove_friend(
     body: FriendRemoveBody,
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    result = await session.execute(
-        select(Friendship).where(
-            or_(
-                and_(Friendship.user_id == body.user_id, Friendship.friend_id == body.friend_id),
-                and_(Friendship.user_id == body.friend_id, Friendship.friend_id == body.user_id),
-            )
-        )
-    )
-    friendship = result.scalar_one_or_none()
-    if not friendship:
-        raise NotFoundError("好友关系不存在")
-    await session.delete(friendship)
-    await session.flush()
+    svc = FriendshipService(session)
+    await svc.remove_friend(body.user_id, body.friend_id)
     return APIResponse.ok(None, message="已删除好友")
 
 
@@ -150,16 +75,6 @@ async def check_friendship(
     friend_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    result = await session.execute(
-        select(Friendship).where(
-            or_(
-                and_(Friendship.user_id == user_id, Friendship.friend_id == friend_id),
-                and_(Friendship.user_id == friend_id, Friendship.friend_id == user_id),
-            )
-        )
-    )
-    friendship = result.scalar_one_or_none()
-    return APIResponse.ok({
-        "is_friend": friendship is not None and friendship.status == "accepted",
-        "status": friendship.status if friendship else None,
-    })
+    svc = FriendshipService(session)
+    status = await svc.check_friendship(user_id, friend_id)
+    return APIResponse.ok(status)

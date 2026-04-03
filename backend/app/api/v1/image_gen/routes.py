@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin.settings_store import get_image_gen_settings, set_image_gen_settings
 from app.core.dependencies import get_session, require_permission
 from app.core.responses import APIResponse
 from app.db.models import User
-from app.image_gen.service import IMAGE_EDIT_MODELS, IMAGE_GEN_MODELS, SUPPORTED_SIZES, ImageGenError, ImageGenService
-from app.storage.bootstrap import get_storage_service, is_storage_enabled
+from app.services.image_gen.service import IMAGE_EDIT_MODELS, IMAGE_GEN_MODELS, SUPPORTED_SIZES, ImageGenError, ImageGenService
+from app.services.admin_service import SettingsService
+from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
 
 logger = logging.getLogger("app.api.v1.image_gen")
 
@@ -104,7 +104,7 @@ async def list_image_models() -> APIResponse:
 
 @router.get("/settings", response_model=APIResponse[dict])
 async def get_settings() -> APIResponse:
-    return APIResponse.ok(get_image_gen_settings())
+    return APIResponse.ok(SettingsService.get_image_gen_settings())
 
 
 @router.put("/settings", response_model=APIResponse[dict])
@@ -112,5 +112,9 @@ async def update_settings(
     body: ImageSettingsBody,
     _: User = Depends(require_permission("system_settings")),
 ) -> APIResponse:
-    updated = set_image_gen_settings(base_url=body.base_url, api_key=body.api_key, default_model=body.default_model)
+    updated = SettingsService.set_image_gen_settings(
+        base_url=body.base_url,
+        api_key=body.api_key,
+        default_model=body.default_model
+    )
     return APIResponse.ok(updated)

@@ -51,7 +51,7 @@ class ChannelService:
         ch = await self.repo.create(workspace_id=workspace_id, name=name, type=type, purpose=purpose)
 
         # 内置 Bot 自动加入
-        from app.guide.constants import GUIDE_BOT_ID
+        from app.services.guide.constants import GUIDE_BOT_ID
         if not await self.repo.get_membership(ch.channel_id, GUIDE_BOT_ID):
             await self.repo.add_member(ch.channel_id, GUIDE_BOT_ID, "bot")
 
@@ -148,7 +148,7 @@ class ChannelService:
         await self._require_channel_member(channel_id, current_user)
 
         if member_type == "bot" and not is_admin(current_user):
-            from app.guide.constants import GUIDE_BOT_ID
+            from app.services.guide.constants import GUIDE_BOT_ID
             bot = await self.bot_repo.get_by_id(member_id)
             if not bot:
                 raise NotFoundError("Bot 不存在")
@@ -193,7 +193,7 @@ class ChannelService:
             raise NotFoundError("membership not found")
 
         if not is_admin(current_user):
-            from app.guide.constants import GUIDE_BOT_ID
+            from app.services.guide.constants import GUIDE_BOT_ID
             if member_id == GUIDE_BOT_ID:
                 raise ForbiddenError("内置助手只能由管理员移除")
             if m.member_type == "user" and member_id != current_user.user_id:

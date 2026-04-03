@@ -13,13 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session, try_get_current_user
 from app.core.responses import APIResponse
-from app.chat_core.schemas import MessageCreate, MessageStreamCreate, MessageInResponse, MessageFileInResponse
-from app.chat_core.ws_manager import ws_manager
+from app.core.schemas import MessageCreate, MessageStreamCreate, MessageInResponse, MessageFileInResponse
+from app.services.ws_service import ws_manager
 from app.db.models import FileRecord, Message, User
 from app.db.session import async_session_factory, get_session
-from app.guide.constants import GUIDE_BOT_ID
-from app.orchestrator.adapter_resolver import get_adapter_for_bot
-from app.orchestrator.service import run_orchestrator
+from app.services.guide.constants import GUIDE_BOT_ID
+from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
+from app.services.orchestrator.service import run_orchestrator
 from app.services.message_service import MessageService
 from app.utils.crypto import decrypt_value, encrypt_value
 
@@ -63,7 +63,7 @@ async def _broadcast_message(channel_id: str, payload: dict) -> None:
 
 
 def _schedule_recent_update(channel_id: str) -> None:
-    from app.memory.recent_update import schedule_recent_update
+    from app.services.memory.recent_update import schedule_recent_update
     schedule_recent_update(channel_id)
 
 
@@ -144,8 +144,8 @@ async def _handle_send_message(
     """持久化消息、广播、调度 orchestrator。返回 (payload_dict, secret_token)。"""
     from sqlalchemy import select
     from app.db.models import Channel, FileRecord
-    from app.file_processor.service import FileFlowError, FilePipelineService
-    from app.storage.base import StorageError
+    from app.services.file_processor.service import FileFlowError, FilePipelineService
+    from app.services.storage.base import StorageError
     from app.config import settings
     from app.utils.crypto import encrypt_value
 
@@ -244,8 +244,8 @@ async def send_message_stream(
     body: MessageStreamCreate,
 ) -> StreamingResponse:
     """发送消息，通过 SSE 返回 Bot 流式输出。"""
-    from app.file_processor.service import FileFlowError, FilePipelineService
-    from app.storage.base import StorageError
+    from app.services.file_processor.service import FileFlowError, FilePipelineService
+    from app.services.storage.base import StorageError
     from sqlalchemy import select
     from app.db.models import Channel
 

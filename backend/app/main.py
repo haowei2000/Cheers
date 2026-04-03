@@ -15,7 +15,7 @@ from app.core.middleware import AccessLogMiddleware, RequestIDMiddleware
 from app.logging_config import setup_logging
 from app.manual_routes import router as manual_router
 from app.public_routes import router as public_router
-from app.storage.bootstrap import initialize_storage, is_storage_enabled
+from app.services.storage.bootstrap import initialize_storage, is_storage_enabled
 
 logger = logging.getLogger("app.main")
 

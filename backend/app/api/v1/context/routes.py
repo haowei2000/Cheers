@@ -3,14 +3,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_session
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.exceptions import BadRequestError
 from app.core.responses import APIResponse
-from app.db.models import Channel
-from app.memory.manager import load, save_layer
+from app.services.context_service import ContextService
 
 router = APIRouter(prefix="/channels", tags=["context"])
 
@@ -27,10 +25,8 @@ async def get_context(
     channel_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
-    if not result.scalar_one_or_none():
-        raise NotFoundError("channel not found")
-    data = await load(channel_id)
+    svc = ContextService(session)
+    data = await svc.get_context(channel_id)
     return APIResponse.ok(data)
 
 
@@ -42,8 +38,6 @@ async def update_context(
 ) -> APIResponse:
     if body.layer not in _VALID_LAYERS:
         raise BadRequestError(f"invalid layer, must be one of: {', '.join(_VALID_LAYERS)}")
-    result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
-    if not result.scalar_one_or_none():
-        raise NotFoundError("channel not found")
-    await save_layer(channel_id, body.layer, body.content)
+    svc = ContextService(session)
+    await svc.update_layer(channel_id, body.layer, body.content)
     return APIResponse.ok(None)

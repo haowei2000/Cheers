@@ -2,8 +2,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.adapters.base import AgentPayload, AgentResponse
-from app.adapters.unified_builtin import UnifiedBuiltinBotAdapter
+from app.services.adapters.base import AgentPayload, AgentResponse
+from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
 
 
 @pytest.mark.asyncio
@@ -57,7 +57,7 @@ async def test_call_bot_passes_memory_context():
         return cb
     
     # 执行测试
-    with patch.object(adapter, '_get_llm_config', return_value=None):
+    with patch("app.services.adapters.unified_builtin._get_llm_config", return_value=None):
         # 模拟 tool_ctx，包含 call_bot 需要的上下文
         tool_ctx = {
             "channel_id": "test-channel-001",
@@ -75,7 +75,7 @@ async def test_call_bot_passes_memory_context():
         
         # 直接调用 call_bot 工具
         from langchain_core.tools import tool as _tool_decorator
-        from app.adapters.unified_builtin import _make_tools
+        from app.services.adapters.unified_builtin import _make_tools
         
         tools = _make_tools(tool_ctx)
         call_bot_tool = next(t for t in tools if t.name == "call_bot")
@@ -102,7 +102,7 @@ async def test_call_bot_passes_memory_context():
 @pytest.mark.asyncio
 async def test_llm_bot_receives_memory_as_template_vars():
     """验证 LLM Bot 将记忆上下文注入为模板变量。"""
-    from app.adapters.llm_bot import LLMBotAdapter
+    from app.services.adapters.llm_bot import LLMBotAdapter
     from app.db.models import BotAccount, AIModel, PromptTemplate
     
     # 创建测试 Bot（使用记忆变量的模板）

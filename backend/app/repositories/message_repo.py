@@ -27,7 +27,10 @@ class MessageRepository:
             query = query.where(Message.created_at < sub)
         query = query.order_by(Message.created_at.desc()).limit(limit)
         result = await self.session.execute(query)
-        return list(reversed(result.scalars().all()))
+        # 数据库查出来是逆序（最新的在前面），返回给前端通常希望是正序
+        messages = list(result.scalars().all())
+        messages.reverse()
+        return messages
 
     async def create(
         self,

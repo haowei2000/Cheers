@@ -8,11 +8,11 @@ from httpx import AsyncClient
 @pytest.mark.asyncio
 async def test_post_llm_bind_compat_route_updates_binding(client: AsyncClient, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.admin.routes.set_llm_bindings",
+        "app.services.admin.routes.set_llm_bindings",
         lambda **kwargs: None,
     )
     monkeypatch.setattr(
-        "app.admin.routes.get_llm_bindings",
+        "app.services.admin.routes.get_llm_bindings",
         lambda: {"guide_bot": "ai-model:model-qwen-plus"},
     )
 
@@ -29,7 +29,7 @@ async def test_post_llm_bind_compat_route_updates_binding(client: AsyncClient, m
 @pytest.mark.asyncio
 async def test_post_orchestrator_compat_route_works(client: AsyncClient, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.admin.routes.set_orchestrator_settings",
+        "app.services.admin.routes.set_orchestrator_settings",
         lambda **kwargs: {
             "orchestrator_direct_answer": True,
             "orchestrator_auto_takeover": False,

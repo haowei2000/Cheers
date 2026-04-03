@@ -4,28 +4,12 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin.log_buffer import get_formatted_log_excerpt, get_recent_logs
-from app.admin.settings_store import (
-    SCOPES,
-    create_llm_provider,
-    delete_llm_provider,
-    get_assist_settings,
-    get_clarify_settings,
-    get_llm_bindings,
-    get_llm_providers_list,
-    get_provider_for_scope,
-    set_assist_settings,
-    set_clarify_settings,
-    set_llm_bindings,
-    update_llm_provider,
-)
-from app.chat_core.schemas import (
+from app.services.admin.log_buffer import get_formatted_log_excerpt, get_recent_logs
+from app.core.schemas import (
     AIModelCreate, AIModelInResponse, AIModelUpdate,
     PromptTemplateCreate, PromptTemplateInResponse, PromptTemplateUpdate,
 )
@@ -33,10 +17,12 @@ from app.core.dependencies import get_session, require_permission
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.responses import APIResponse
 from app.db.models import AIModel, PromptTemplate, User
-from app.services.admin_service import AIModelService, PromptTemplateService
+from app.services.admin_service import (
+    AIModelService, LogAnalysisService, PromptTemplateService, SettingsService,
+)
 from app.utils.crypto import decrypt_value
 
-logger = logging.getLogger("app.admin")
+logger = logging.getLogger("app.services.admin")
 
 router = APIRouter(
     prefix="/admin",
@@ -212,56 +198,58 @@ class LLMBindBody(BaseModel):
 
 @router.get("/settings/llm", response_model=APIResponse[dict])
 async def get_llm_settings() -> APIResponse:
-    return APIResponse.ok({"providers": get_llm_providers_list(), "bindings": get_llm_bindings()})
+    return APIResponse.ok(SettingsService.get_llm_settings())
 
 
 @router.post("/settings/llm/providers", response_model=APIResponse[dict])
 async def post_llm_provider(body: LLMProviderBody) -> APIResponse:
-    pid = create_llm_provider(
+    pid = SettingsService.create_llm_provider(
         name=body.name, base_url=body.base_url, model=body.model,
         api_key=body.api_key, temperature=body.temperature, max_tokens=body.max_tokens,
     )
-    return APIResponse.ok({"id": pid, "providers": get_llm_providers_list()})
+    return APIResponse.ok({"id": pid, "providers": SettingsService.get_llm_settings()["providers"]})
 
 
 @router.put("/settings/llm/providers/{provider_id}", response_model=APIResponse[dict])
 async def put_llm_provider(provider_id: str, body: LLMProviderBody) -> APIResponse:
-    ok = update_llm_provider(
+    ok = SettingsService.update_llm_provider(
         provider_id, name=body.name, base_url=body.base_url, model=body.model,
         api_key=body.api_key, temperature=body.temperature, max_tokens=body.max_tokens,
     )
     if not ok:
         raise NotFoundError("LLM 不存在")
-    return APIResponse.ok({"providers": get_llm_providers_list()})
+    return APIResponse.ok({"providers": SettingsService.get_llm_settings()["providers"]})
 
 
 @router.delete("/settings/llm/providers/{provider_id}", response_model=APIResponse[dict])
 async def delete_llm_provider_route(provider_id: str) -> APIResponse:
-    ok = delete_llm_provider(provider_id)
+    ok = SettingsService.delete_llm_provider(provider_id)
     if not ok:
         raise NotFoundError("LLM 不存在")
-    return APIResponse.ok({"providers": get_llm_providers_list(), "bindings": get_llm_bindings()})
+    settings = SettingsService.get_llm_settings()
+    return APIResponse.ok({"providers": settings["providers"], "bindings": settings["bindings"]})
 
 
 @router.put("/settings/llm/bindings", response_model=APIResponse[dict])
 async def put_llm_bindings(body: LLMBindingsBody) -> APIResponse:
-    set_llm_bindings(
+    SettingsService.set_llm_bindings(
         channel_bot=body.channel_bot, system_llm=body.system_llm,
         log_analyze=body.log_analyze, qa_summarize=body.qa_summarize,
         orchestrator=body.orchestrator,
     )
-    return APIResponse.ok({"bindings": get_llm_bindings()})
+    return APIResponse.ok({"bindings": SettingsService.get_llm_settings()["bindings"]})
 
 
 @router.post("/settings/llm/bind", response_model=APIResponse[dict])
 async def post_llm_bind(body: LLMBindBody) -> APIResponse:
     scope = (body.scope or "").strip()
+    from app.services.admin.settings_store import SCOPES
     if scope not in SCOPES:
         raise BadRequestError("未知的 LLM 绑定范围")
     payload = {s: None for s in ("channel_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")}
     payload[scope] = (body.provider_id or "").strip() or None
-    set_llm_bindings(**payload)
-    return APIResponse.ok({"bindings": get_llm_bindings()})
+    SettingsService.set_llm_bindings(**payload)
+    return APIResponse.ok({"bindings": SettingsService.get_llm_settings()["bindings"]})
 
 
 # ---- 澄清/辅助设置 ----
@@ -279,12 +267,12 @@ class AssistSettingsBody(BaseModel):
 
 @router.get("/settings/clarify", response_model=APIResponse[dict])
 async def get_clarify() -> APIResponse:
-    return APIResponse.ok(get_clarify_settings())
+    return APIResponse.ok(SettingsService.get_clarify_settings())
 
 
 @router.put("/settings/clarify", response_model=APIResponse[dict])
 async def put_clarify(body: ClarifySettingsBody) -> APIResponse:
-    updated = set_clarify_settings(
+    updated = SettingsService.set_clarify_settings(
         clarify_strict_mode=body.clarify_strict_mode,
         clarify_force_rule=body.clarify_force_rule,
         clarify_threshold=body.clarify_threshold,
@@ -299,12 +287,12 @@ async def post_clarify(body: ClarifySettingsBody) -> APIResponse:
 
 @router.get("/settings/assist", response_model=APIResponse[dict])
 async def get_assist() -> APIResponse:
-    return APIResponse.ok(get_assist_settings())
+    return APIResponse.ok(SettingsService.get_assist_settings())
 
 
 @router.put("/settings/assist", response_model=APIResponse[dict])
 async def put_assist(body: AssistSettingsBody) -> APIResponse:
-    updated = set_assist_settings(
+    updated = SettingsService.set_assist_settings(
         llm_provider_id=body.llm_provider_id,
         auto_takeover=body.auto_takeover,
     )
@@ -341,104 +329,20 @@ async def admin_logs(level: str | None = None, limit: int = 200) -> APIResponse:
 
 @router.post("/logs/analyze", response_model=APIResponse[dict])
 async def analyze_logs(body: LogAnalyzeBody) -> APIResponse:
-    c = get_provider_for_scope("log_analyze") or get_provider_for_scope("system_llm")
-    if not c:
-        raise BadRequestError("请先在管理页「LLM 参数」中添加 LLM 设定，并在「功能绑定」中为「日志分析」或「系统 LLM」选择 LLM。")
-    base_url = (c.get("base_url") or "").strip()
-    api_key = (c.get("api_key") or "").strip()
-    model = (c.get("model") or "gpt-4o-mini").strip()
-    if not base_url:
-        raise BadRequestError("所选 LLM 的 Base URL 为空")
-    log_text = (body.log_excerpt or "").strip() or get_formatted_log_excerpt(level="ERROR", limit=50)
-    if not log_text:
-        return APIResponse.ok({"analysis": "暂无错误日志可分析。"})
-    user_content = f"以下是一段系统错误日志：\n\n{log_text}"
-    if body.question.strip():
-        user_content += f"\n\n用户问题：{body.question.strip()}"
-    user_content += "\n\n请以运维助手身份分析：可能原因、建议排查步骤（简短分条）。"
-    try:
-        url = f"{base_url.rstrip('/')}/chat/completions"
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "你是运维与故障排查助手。根据错误日志给出可能原因和可操作的排查步骤，回答简洁、分条。"},
-                {"role": "user", "content": user_content},
-            ],
-            "max_tokens": 1500,
-        }
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            r = await client.post(url, json=payload, headers=headers)
-            r.raise_for_status()
-            data = r.json()
-            content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
-            return APIResponse.ok({"analysis": content.strip() or "无分析结果"})
-    except httpx.HTTPStatusError as e:
-        code = e.response.status_code
-        detail = "LLM 返回 503（服务繁忙或模型加载中），请稍后重试。" if code == 503 else f"LLM 请求失败: {code}"
-        from app.core.exceptions import AppError
-        raise AppError(detail)
-    except Exception as e:
-        logger.exception("logs/analyze: %s", e)
-        from app.core.exceptions import AppError
-        raise AppError(f"分析失败: {e!s}")
+    content = await LogAnalysisService.analyze_logs(
+        log_excerpt=body.log_excerpt,
+        question=body.question,
+    )
+    return APIResponse.ok({"analysis": content})
 
 
 @router.post("/qa/summarize", response_model=APIResponse[dict])
 async def summarize_qa(body: QaSummarizeBody) -> APIResponse:
-    if not body.pairs:
-        raise BadRequestError("请至少提供一组问答")
-    c = get_provider_for_scope("qa_summarize") or get_provider_for_scope("system_llm")
-    if not c:
-        raise BadRequestError("请先在管理页「LLM 参数」中添加 LLM 设定。")
-    base_url = (c.get("base_url") or "").strip()
-    api_key = (c.get("api_key") or "").strip()
-    model = (c.get("model") or "gpt-4o-mini").strip()
-    if not base_url:
-        raise BadRequestError("所选 LLM 的 Base URL 为空")
-    channel_name = (body.channel_name or "").strip() or "频道"
-    lines: list[str] = []
-    for idx, item in enumerate(body.pairs, start=1):
-        lines.extend([
-            f"## 问答 {idx}", f"问题时间: {item.question_time or '-'}", f"回答时间: {item.answer_time or '-'}",
-            "", "### 问题", item.question.strip() or "-", "", "### 回答", item.answer.strip() or "-", "",
-        ])
-    qa_text = "\n".join(lines)
-    prompt = (
-        f"频道：{channel_name}\n共有 {len(body.pairs)} 组问答。\n\n"
-        "请根据以下问答整理一份详细且结构化的 Markdown 文档，需包含：\n"
-        "1) 背景与目标\n2) 关键问题与结论\n3) 详细步骤/方法\n4) 注意事项与风险\n5) 后续建议\n\n"
-        f"问答原文：\n\n{qa_text}"
+    content = await LogAnalysisService.summarize_qa(
+        channel_name=body.channel_name,
+        pairs=[p.model_dump() for p in body.pairs],
     )
-    try:
-        url = f"{base_url.rstrip('/')}/chat/completions"
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "你是资深技术文档整理助手，擅长将问答记录整理为清晰、完整、可执行的 Markdown 文档。"},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": 2000,
-        }
-        headers = {"Content-Type": "application/json"}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            r = await client.post(url, json=payload, headers=headers)
-            r.raise_for_status()
-            data = r.json()
-            content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
-            return APIResponse.ok({"summary_markdown": content.strip() or "无总结结果"})
-    except httpx.HTTPStatusError as e:
-        code = e.response.status_code
-        from app.core.exceptions import AppError
-        raise AppError(f"LLM 请求失败: {code}")
-    except Exception as e:
-        logger.exception("qa/summarize: %s", e)
-        from app.core.exceptions import AppError
-        raise AppError(f"总结失败: {e!s}")
+    return APIResponse.ok({"summary_markdown": content})
 
 
 # ---- 用户列表 ----
@@ -492,7 +396,7 @@ def _health_redis_sync() -> str:
 
 async def _health_guide_llm_async() -> str:
     try:
-        from app.guide.llm_client import CONNECTION_503_BUSY, check_connection as guide_llm_check
+        from app.services.guide.llm_client import CONNECTION_503_BUSY, check_connection as guide_llm_check
         ok, msg = await guide_llm_check()
         if ok:
             return "degraded (503)" if msg == CONNECTION_503_BUSY else "ok"

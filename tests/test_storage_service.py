@@ -5,8 +5,8 @@ import io
 
 import pytest
 
-from app.storage.base import StorageObjectNotFoundError
-from app.storage.s3_compatible import S3CompatibleStorageService, S3CompatibleStorageSettings
+from app.services.storage.base import StorageObjectNotFoundError
+from app.services.storage.s3_compatible import S3CompatibleStorageService, S3CompatibleStorageSettings
 
 
 class FakeClientError(Exception):
@@ -97,9 +97,9 @@ def _make_service() -> S3CompatibleStorageService:
             force_path_style=True,
             presign_expires_seconds=900,
             auto_create_bucket=True,
-        )
-    )
-
+            verify_ssl=False,
+            )
+            )
 
 @pytest.fixture(autouse=True)
 def _patch_boto_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -114,7 +114,7 @@ def _patch_boto_import(monkeypatch: pytest.MonkeyPatch) -> None:
             self.kwargs = kwargs
 
     monkeypatch.setattr(
-        "app.storage.s3_compatible._import_boto3",
+        "app.services.storage.s3_compatible._import_boto3",
         lambda: (DummyBoto3, DummyConfig, (FakeClientError,)),
     )
 

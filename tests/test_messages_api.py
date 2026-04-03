@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, FileRecord, PromptTemplate, Workspace
-from app.file_processor.service import FilePipelineService
-from app.storage.base import PresignedUpload, StorageObject, StorageObjectHead, StorageObjectRef, StorageProvider
+from app.services.file_processor.service import FilePipelineService
+from app.services.storage.base import PresignedUpload, StorageObject, StorageObjectHead, StorageObjectRef, StorageProvider
 
 
 def _make_disabled_model(model_id: str) -> AIModel:
@@ -212,8 +212,8 @@ async def test_create_presigned_upload_returns_file_record(
     await db_session.commit()
 
     fake_storage = FakeStorageProvider()
-    monkeypatch.setattr("app.file_processor.service.is_storage_enabled", lambda: True)
-    monkeypatch.setattr("app.file_processor.service.get_storage_service", lambda: fake_storage)
+    monkeypatch.setattr("app.services.file_processor.service.is_storage_enabled", lambda: True)
+    monkeypatch.setattr("app.services.file_processor.service.get_storage_service", lambda: fake_storage)
 
     resp = await client.post(
         "/api/files/presign",

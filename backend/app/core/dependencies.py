@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.db.session import async_session_factory
 from app.db.models import User
-from app.auth.jwt_utils import decode_access_token
+from app.services.auth.jwt_utils import decode_access_token
 from sqlalchemy import select
 
 

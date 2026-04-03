@@ -6,8 +6,8 @@ import logging
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from app.chat_core.schemas import MessageCreate
-from app.chat_core.ws_manager import ws_manager
+from app.core.schemas import MessageCreate
+from app.services.ws_service import ws_manager
 from app.db.session import async_session_factory
 
 logger = logging.getLogger("app.ws")

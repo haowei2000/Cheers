@@ -1,11 +1,17 @@
-"""Admin 业务逻辑层（AIModel / PromptTemplate / 系统设置）."""
+"""Admin 业务逻辑层（AIModel / PromptTemplate / 系统设置 / 日志分析）."""
 from __future__ import annotations
 
+import logging
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.services.admin import settings_store
+from app.services.admin.log_buffer import get_formatted_log_excerpt
+from app.core.exceptions import AppError, BadRequestError, ConflictError, NotFoundError
 from app.db.models import AIModel, PromptTemplate
 from app.repositories.bot_repo import AIModelRepository, PromptTemplateRepository
+
+logger = logging.getLogger("app.services.admin")
 
 
 class AIModelService:
@@ -57,6 +63,173 @@ class AIModelService:
         if model.is_builtin:
             raise BadRequestError("内置模型不可删除")
         await self.repo.delete(model)
+
+
+class SettingsService:
+    """封装 admin.settings_store 的所有设置操作."""
+
+    @staticmethod
+    def get_llm_settings() -> dict:
+        return {
+            "providers": settings_store.get_llm_providers_list(),
+            "bindings": settings_store.get_llm_bindings()
+        }
+
+    @staticmethod
+    def create_llm_provider(**kwargs) -> str:
+        return settings_store.create_llm_provider(**kwargs)
+
+    @staticmethod
+    def update_llm_provider(provider_id: str, **kwargs) -> bool:
+        return settings_store.update_llm_provider(provider_id, **kwargs)
+
+    @staticmethod
+    def delete_llm_provider(provider_id: str) -> bool:
+        return settings_store.delete_llm_provider(provider_id)
+
+    @staticmethod
+    def set_llm_bindings(**kwargs) -> None:
+        settings_store.set_llm_bindings(**kwargs)
+
+    @staticmethod
+    def get_clarify_settings() -> dict:
+        return settings_store.get_clarify_settings()
+
+    @staticmethod
+    def set_clarify_settings(**kwargs) -> dict:
+        return settings_store.set_clarify_settings(**kwargs)
+
+    @staticmethod
+    def get_assist_settings() -> dict:
+        return settings_store.get_assist_settings()
+
+    @staticmethod
+    def set_assist_settings(**kwargs) -> dict:
+        return settings_store.set_assist_settings(**kwargs)
+
+    @staticmethod
+    def get_image_gen_settings() -> dict:
+        return settings_store.get_image_gen_settings()
+
+    @staticmethod
+    def set_image_gen_settings(**kwargs) -> dict:
+        return settings_store.set_image_gen_settings(**kwargs)
+
+
+class LogAnalysisService:
+    """封装基于 LLM 的日志分析与 QA 总结逻辑."""
+
+    @staticmethod
+    async def analyze_logs(log_excerpt: str | None = None, question: str | None = None) -> str:
+        c = settings_store.get_provider_for_scope("log_analyze") or settings_store.get_provider_for_scope("system_llm")
+        if not c:
+            raise BadRequestError("请先在管理页「LLM 参数」中添加 LLM 设定，并在「功能绑定」中为「日志分析」或「系统 LLM」选择 LLM。")
+        
+        base_url = (c.get("base_url") or "").strip()
+        api_key = (c.get("api_key") or "").strip()
+        model = (c.get("model") or "gpt-4o-mini").strip()
+        
+        if not base_url:
+            raise BadRequestError("所选 LLM 的 Base URL 为空")
+
+        log_text = (log_excerpt or "").strip() or get_formatted_log_excerpt(level="ERROR", limit=50)
+        if not log_text:
+            return "暂无错误日志可分析。"
+
+        user_content = f"以下是一段系统错误日志：\n\n{log_text}"
+        if question and question.strip():
+            user_content += f"\n\n用户问题：{question.strip()}"
+        user_content += "\n\n请以运维助手身份分析：可能原因、建议排查步骤（简短分条）。"
+
+        try:
+            url = f"{base_url.rstrip('/')}/chat/completions"
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "你是运维与故障排查助手。根据错误日志给出可能原因和可操作的排查步骤，回答简洁、分条。"},
+                    {"role": "user", "content": user_content},
+                ],
+                "max_tokens": 1500,
+            }
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                r = await client.post(url, json=payload, headers=headers)
+                r.raise_for_status()
+                data = r.json()
+                content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+                return content.strip() or "无分析结果"
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            detail = "LLM 返回 503（服务繁忙或模型加载中），请稍后重试。" if code == 503 else f"LLM 请求失败: {code}"
+            raise AppError(detail)
+        except Exception as e:
+            logger.exception("logs/analyze failed: %s", e)
+            raise AppError(f"分析失败: {e!s}")
+
+    @staticmethod
+    async def summarize_qa(channel_name: str, pairs: list[dict]) -> str:
+        if not pairs:
+            raise BadRequestError("请至少提供一组问答")
+            
+        c = settings_store.get_provider_for_scope("qa_summarize") or settings_store.get_provider_for_scope("system_llm")
+        if not c:
+            raise BadRequestError("请先在管理页「LLM 参数」中添加 LLM 设定。")
+            
+        base_url = (c.get("base_url") or "").strip()
+        api_key = (c.get("api_key") or "").strip()
+        model = (c.get("model") or "gpt-4o-mini").strip()
+        
+        if not base_url:
+            raise BadRequestError("所选 LLM 的 Base URL 为空")
+
+        channel_name = channel_name.strip() or "频道"
+        lines: list[str] = []
+        for idx, item in enumerate(pairs, start=1):
+            lines.extend([
+                f"## 问答 {idx}", 
+                f"问题时间: {item.get('question_time') or '-'}", 
+                f"回答时间: {item.get('answer_time') or '-'}",
+                "", "### 问题", (item.get('question') or "").strip() or "-", 
+                "", "### 回答", (item.get('answer') or "").strip() or "-", "",
+            ])
+        qa_text = "\n".join(lines)
+        
+        prompt = (
+            f"频道：{channel_name}\n共有 {len(pairs)} 组问答。\n\n"
+            "请根据以下问答整理一份详细且结构化的 Markdown 文档，需包含：\n"
+            "1) 背景与目标\n2) 关键问题与结论\n3) 详细步骤/方法\n4) 注意事项与风险\n5) 后续建议\n\n"
+            f"问答原文：\n\n{qa_text}"
+        )
+
+        try:
+            url = f"{base_url.rstrip('/')}/chat/completions"
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "你是资深技术文档整理助手，擅长将问答记录整理为清晰、完整、可执行的 Markdown 文档。"},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": 2000,
+            }
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                r = await client.post(url, json=payload, headers=headers)
+                r.raise_for_status()
+                data = r.json()
+                content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+                return content.strip() or "无总结结果"
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            raise AppError(f"LLM 请求失败: {code}")
+        except Exception as e:
+            logger.exception("qa/summarize failed: %s", e)
+            raise AppError(f"总结失败: {e!s}")
 
 
 class PromptTemplateService:

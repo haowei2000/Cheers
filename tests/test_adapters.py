@@ -2,9 +2,9 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
-from app.adapters.mock import MockOpenClawAdapter
-from app.adapters.unified_builtin import UnifiedBuiltinBotAdapter
+from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.services.adapters.mock import MockOpenClawAdapter
+from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
 
 
 @pytest.mark.asyncio
@@ -50,7 +50,7 @@ async def test_unified_builtin_attachment_fallback_uses_file_content() -> None:
         ],
     )
 
-    with patch("app.adapters.unified_builtin._agent_loop", new=AsyncMock(return_value="")):
+    with patch("app.services.adapters.unified_builtin._run_agent", new=AsyncMock(return_value="")):
         resp = await adapter.execute(payload)
 
     assert resp.success is True

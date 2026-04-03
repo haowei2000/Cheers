@@ -24,7 +24,7 @@ def _content_disposition(filename: str) -> str:
 
 
 def _inline_disposition(content_type: str) -> bool:
-    from app.file_processor.convert import is_image_type
+    from app.services.file_processor.convert import is_image_type
     ct = content_type.lower()
     return is_image_type(ct) or "pdf" in ct or ct.startswith("text/")
 
@@ -68,7 +68,7 @@ async def confirm_upload(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     from app.services.file_service import FileService
-    from app.chat_core.schemas import MessageFileInResponse
+    from app.core.schemas import MessageFileInResponse
     svc = FileService(session)
     rec = await svc.confirm_upload(file_id, current_user)
     return APIResponse.ok(MessageFileInResponse.model_validate(rec).model_dump())
@@ -133,8 +133,8 @@ async def file_preview(
                 headers={"Content-Disposition": disposition, "Cache-Control": "public, max-age=3600"},
             )
 
-    from app.storage.bootstrap import get_storage_service, is_storage_enabled
-    from app.storage.base import StorageObjectNotFoundError
+    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
+    from app.services.storage.base import StorageObjectNotFoundError
     if not is_storage_enabled():
         from app.core.exceptions import AppError
         raise AppError("storage not enabled")
@@ -174,8 +174,8 @@ async def file_download(
                 headers={"Content-Disposition": _content_disposition(filename), "Cache-Control": "public, max-age=3600"},
             )
 
-    from app.storage.bootstrap import get_storage_service, is_storage_enabled
-    from app.storage.base import StorageObjectNotFoundError
+    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
+    from app.services.storage.base import StorageObjectNotFoundError
     if not is_storage_enabled():
         from app.core.exceptions import AppError
         raise AppError("storage not enabled")
