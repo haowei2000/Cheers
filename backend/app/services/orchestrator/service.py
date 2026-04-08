@@ -202,6 +202,17 @@ async def run_orchestrator(
         _load_attachments(),
     )
 
+    # 注入待办事项到上下文
+    from app.db.models import TodoItem
+    todo_result = await session.execute(
+        select(TodoItem)
+        .where(TodoItem.channel_id == channel_id, TodoItem.status == "pending")
+        .order_by(TodoItem.created_at)
+    )
+    pending_todos = todo_result.scalars().all()
+    if pending_todos:
+        memory_context["todos"] = "\n".join(f"- [ ] {t.content}" for t in pending_todos)
+
     # 文档附件登记到 FILES_INDEX（后台非阻塞）
     if attachments:
         from app.services.memory.files_index import schedule_files_index_update

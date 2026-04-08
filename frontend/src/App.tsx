@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import FriendsPanel from "./FriendsPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
-import TodoPanel from "./TodoPanel";
 import { MessageMarkdown } from "./MessageMarkdown";
 
 const API = "/api/v1";
@@ -49,6 +48,7 @@ const LAYERS = [
   "FILES_INDEX",
   "RECENT",
   "MEMBERS",
+  "TODO",
 ] as const;
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
@@ -447,6 +447,13 @@ const LAYER_META: Record<
     icon: "👥",
     readonly: true,
   },
+  TODO: {
+    label: "待办事项",
+    desc: "频道任务清单",
+    color: "rose",
+    icon: "✅",
+    readonly: true,
+  },
 };
 
 export type MemberItem = {
@@ -456,6 +463,29 @@ export type MemberItem = {
   display_name?: string;
   avatar_url?: string;
 };
+
+type TodoItem = {
+  todo_id: string;
+  channel_id: string;
+  creator_id: string;
+  creator_type: string;
+  assignee_id: string | null;
+  assignee_type: string | null;
+  content: string;
+  status: string;
+};
+
+function getStoredToken(): string | null {
+  try {
+    const stored = localStorage.getItem("currentUser");
+    if (!stored) return null;
+    const data = JSON.parse(stored);
+    if (data.loginTime && Date.now() - data.loginTime < 86400000) {
+      return data.token ?? data.user?.user_id ?? null;
+    }
+  } catch {}
+  return null;
+}
 
 function MemoryPanel({
   channelId,
@@ -477,6 +507,10 @@ function MemoryPanel({
   const [editVal, setEditVal] = useState("");
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [todosLoading, setTodosLoading] = useState(false);
+  const [todoNewContent, setTodoNewContent] = useState("");
+  const [todoAssignee, setTodoAssignee] = useState("");
 
   const meta = LAYER_META[activeLayer];
   const isReadonly = !!meta.readonly;
@@ -484,6 +518,18 @@ function MemoryPanel({
   const wordCount = rawContent.trim()
     ? rawContent.trim().split(/\s+/).length
     : 0;
+
+  const loadTodos = () => {
+    const token = getStoredToken();
+    setTodosLoading(true);
+    fetch(`${API}/channels/${channelId}/todos/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setTodos)
+      .catch(() => {})
+      .finally(() => setTodosLoading(false));
+  };
 
   const switchLayer = (layer: string) => {
     setActiveLayer(layer);
@@ -496,6 +542,15 @@ function MemoryPanel({
         .then((d) => setMembers(d.data || []))
         .catch(() => {})
         .finally(() => setMembersLoading(false));
+    }
+    if (layer === "TODO") {
+      loadTodos();
+      if (members.length === 0) {
+        fetch(`${API}/channels/${channelId}/members?with_username=1`)
+          .then((r) => r.json())
+          .then((d) => setMembers(d.data || []))
+          .catch(() => {});
+      }
     }
   };
 
@@ -518,6 +573,46 @@ function MemoryPanel({
   const handleDiscard = () => {
     setEditVal(rawContent);
     setMode("preview");
+  };
+
+  const handleTodoCreate = async () => {
+    if (!todoNewContent.trim()) return;
+    const token = getStoredToken();
+    let assignee_id = null, assignee_type = null;
+    if (todoAssignee) {
+      const [type, id] = todoAssignee.split(":");
+      assignee_id = id; assignee_type = type;
+    }
+    const res = await fetch(`${API}/channels/${channelId}/todos/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ content: todoNewContent, assignee_id, assignee_type }),
+    }).catch(() => null);
+    if (res?.ok) { setTodoNewContent(""); setTodoAssignee(""); loadTodos(); }
+  };
+
+  const handleTodoToggle = async (todo: TodoItem) => {
+    const token = getStoredToken();
+    const res = await fetch(`${API}/channels/${channelId}/todos/${todo.todo_id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: todo.status === "completed" ? "pending" : "completed" }),
+    }).catch(() => null);
+    if (res?.ok) loadTodos();
+  };
+
+  const handleTodoDelete = async (todoId: string) => {
+    const token = getStoredToken();
+    const res = await fetch(`${API}/channels/${channelId}/todos/${todoId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => null);
+    if (res?.ok) loadTodos();
+  };
+
+  const getMemberName = (id: string, type: string) => {
+    const m = members.find((x) => x.member_id === id && x.member_type === type);
+    return m ? m.display_name || m.username || "Unknown" : null;
   };
 
   return (
@@ -545,7 +640,7 @@ function MemoryPanel({
         {LAYERS.map((layer) => {
           const m = LAYER_META[layer];
           const active = layer === activeLayer;
-          const filled = !!contextData[layer.toLowerCase()]?.trim();
+          const filled = layer === "TODO" ? todos.length > 0 : !!contextData[layer.toLowerCase()]?.trim();
           return (
             <button
               key={layer}
@@ -580,7 +675,7 @@ function MemoryPanel({
               {wordCount}w
             </span>
           )}
-          {isReadonly && (
+          {isReadonly && activeLayer !== "TODO" && (
             <span className="text-[10px] text-gray-400 flex-shrink-0">
               只读
             </span>
@@ -619,8 +714,82 @@ function MemoryPanel({
       </div>
 
       {/* Main content */}
-      <div className="flex-1 overflow-y-auto">
-        {isReadonly ? (
+      <div className="flex flex-col flex-1 overflow-hidden">
+        {activeLayer === "TODO" ? (
+          <>
+            {/* Todo create form */}
+            <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0 space-y-1.5">
+              <textarea
+                rows={2}
+                value={todoNewContent}
+                onChange={(e) => setTodoNewContent(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleTodoCreate(); }}
+                placeholder="新建任务…"
+                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
+              />
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={todoAssignee}
+                  onChange={(e) => setTodoAssignee(e.target.value)}
+                  className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:border-blue-400 text-gray-500"
+                >
+                  <option value="">指派给…</option>
+                  {members.map((m) => (
+                    <option key={m.member_id} value={`${m.member_type}:${m.member_id}`}>
+                      {m.member_type === "bot" ? "🤖 " : "👤 "}{m.display_name || m.username}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleTodoCreate}
+                  className="px-2.5 py-1 text-xs bg-[#1264A3] text-white rounded hover:bg-[#0f5a94] flex-shrink-0"
+                >
+                  添加
+                </button>
+              </div>
+            </div>
+            {/* Todo list */}
+            <div className="flex-1 overflow-y-auto">
+              {todosLoading ? (
+                <div className="flex items-center justify-center h-12 text-gray-400 text-xs">加载中…</div>
+              ) : todos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-20 text-gray-400 gap-1 text-center px-4">
+                  <span className="text-2xl opacity-30">✅</span>
+                  <p className="text-xs text-gray-400">暂无待办</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {todos.map((todo) => (
+                    <li key={todo.todo_id} className="flex items-start gap-2 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={todo.status === "completed"}
+                        onChange={() => handleTodoToggle(todo)}
+                        className="mt-0.5 flex-shrink-0 cursor-pointer"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs ${todo.status === "completed" ? "line-through text-gray-400" : "text-gray-800"}`}>
+                          {todo.content}
+                        </p>
+                        {todo.assignee_id && (
+                          <p className="text-[10px] text-gray-400 mt-0.5">
+                            → {getMemberName(todo.assignee_id, todo.assignee_type!) ?? todo.assignee_id}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleTodoDelete(todo.todo_id)}
+                        className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors text-[10px] leading-none mt-0.5"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        ) : isReadonly ? (
           membersLoading ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-xs">
               加载中…
@@ -1782,7 +1951,6 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
-  const [todoPanelOpen, setTodoPanelOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
@@ -5022,20 +5190,6 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTodoPanelOpen((o) => !o)}
-                    title="待办事项"
-                    className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${
-                      todoPanelOpen
-                        ? "bg-[#1264A3] text-white"
-                        : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                    }`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M6 4.75A.75.75 0 0 1 6.75 4h10.5a.75.75 0 0 1 0 1.5H6.75A.75.75 0 0 1 6 4.75ZM6 10a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H6.75A.75.75 0 0 1 6 10Zm0 5.25a.75.75 0 0 1 .75-.75h10.5a.75.75 0 0 1 0 1.5H6.75a.75.75 0 0 1-.75-.75ZM1.99 4.75a1 1 0 0 1 1-1H3a1 1 0 0 1 1 1v.01a1 1 0 0 1-1 1h-.01a1 1 0 0 1-1-1v-.01ZM1.99 15.25a1 1 0 0 1 1-1H3a1 1 0 0 1 1 1v.01a1 1 0 0 1-1 1h-.01a1 1 0 0 1-1-1v-.01ZM1.99 10a1 1 0 0 1 1-1H3a1 1 0 0 1 1 1v.01a1 1 0 0 1-1 1h-.01a1 1 0 0 1-1-1V10Z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setManageMembersOpen(true)}
                     title="成员管理"
                     className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -7273,22 +7427,6 @@ export default function App() {
                   }))
                 }
                 onClose={() => setMemoryPanelOpen(false)}
-              />
-            </div>
-          )}
-          {/* Todo right panel */}
-          {todoPanelOpen && selectedId && (
-            <div
-              className={
-                isMobile
-                  ? "fixed inset-0 z-[70] bg-white"
-                  : "relative flex-shrink-0 flex"
-              }
-              style={{ width: isMobile ? "100%" : 280 }}
-            >
-              <TodoPanel
-                channelId={selectedId}
-                onClose={() => setTodoPanelOpen(false)}
               />
             </div>
           )}
