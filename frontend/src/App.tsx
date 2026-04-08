@@ -2306,6 +2306,11 @@ export default function App() {
     setCurrentUser(null);
     setAuthToken(null);
     localStorage.removeItem("currentUser");
+    setSelectedId(null);
+    setSelectedWorkspaceId("");
+    setChannels([]);
+    setWorkspaces([]);
+    setMessages([]);
     setLoginModalOpen(true);
   };
 
@@ -3290,7 +3295,7 @@ export default function App() {
       {loginModalOpen && (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => setLoginModalOpen(false)}
+          onClick={() => { if (currentUser) setLoginModalOpen(false); }}
         >
           <div
             className="bg-white rounded-xl p-8 w-full max-w-sm shadow-2xl"
