@@ -187,7 +187,7 @@ def _make_tools(ctx: dict) -> list:
 
             # 构建子 Bot 的完整上下文（四层记忆 + 当前会话历史）
             memory_context = ctx.get("memory") or {}
-            
+
             if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
                 # 流式路径：预先创建空消息气泡，边生成边推送 delta，完成后写入最终内容
                 bot_msg = await pre_create_bot_msg(bot_id, task_id)
@@ -601,7 +601,57 @@ def _make_tools(ctx: dict) -> list:
             parts.append("（文件内容为空或无法解析文本。）")
         return "\n".join(parts)
 
-    return [update_anchor, update_progress, update_decision, call_bot, call_user, create_file, generate_image, edit_image, read_file]
+    @tool
+    async def create_todo(content: str, assignee_username: str = None) -> str:
+        """在当前频道创建一个待办事项 (Todo) 并可选地指派给某人或某个Bot。
+
+        Args:
+            content: 待办事项的内容描述。
+            assignee_username: 可选，指派给某人的用户名（不含@），如果为空则不指派。
+        """
+        db_session = ctx.get("_db_session")
+        if not db_session:
+            return "错误：数据库会话未注入"
+
+        channel_id = ctx["channel_id"]
+        creator_id = ctx.get("bot_id") or "system"
+        creator_type = "bot"
+
+        assignee_id = None
+        assignee_type = None
+
+        if assignee_username:
+            username = assignee_username.strip().lstrip("@")
+            from sqlalchemy import select
+            from app.db.models import User, BotAccount, TodoItem
+            stmt = select(User).where(User.username == username)
+            user = (await db_session.execute(stmt)).scalars().first()
+            if user:
+                assignee_id = user.user_id
+                assignee_type = "user"
+            else:
+                stmt = select(BotAccount).where(BotAccount.username == username)
+                bot = (await db_session.execute(stmt)).scalars().first()
+                if bot:
+                    assignee_id = bot.bot_id
+                    assignee_type = "bot"
+                else:
+                    return f"错误：找不到名为 {username} 的用户或Bot。"
+
+        todo = TodoItem(
+            channel_id=channel_id,
+            creator_id=creator_id,
+            creator_type=creator_type,
+            assignee_id=assignee_id,
+            assignee_type=assignee_type,
+            content=content,
+            status="pending"
+        )
+        db_session.add(todo)
+        await db_session.commit()
+        return "成功创建待办事项！"
+
+    return [update_anchor, update_progress, update_decision, call_bot, call_user, create_file, generate_image, edit_image, read_file, create_todo]
 
 
 # ─── 附件处理 ──────────────────────────────────────────────────────────────────
