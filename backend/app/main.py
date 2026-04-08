@@ -1,168 +1,31 @@
 """FastAPI 应用入口."""
-import json
 import logging
 import os
-import time
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.chat_core import bots as chat_core_bots
-from app.chat_core import channels as chat_core_channels
-from app.chat_core import context_api as chat_core_context
-from app.chat_core import friends as chat_core_friends
-from app.chat_core import mcp_import as chat_core_mcp
-from app.chat_core import messages as chat_core_messages
-from app.chat_core import tasks_api as chat_core_tasks
-from app.chat_core import workspaces as chat_core_workspaces
-from app.chat_core.messages import _handle_send_message
-from app.chat_core.schemas import MessageCreate
-from app.chat_core.ws_manager import ws_manager
-from app.db.session import async_session_factory
-from app.admin.routes import router as admin_router
-from app.admin.models import router as admin_models_router
-from app.admin.templates import router as admin_templates_router
-from app.auth.routes import router as auth_router
-from app.file_processor import routes as file_routes
-from app.image_gen.routes import router as image_gen_router
-from app.bulletin.routes import router as bulletin_router
+from app.api.v1.router import v1_router
+from app.api.v1.ws.handler import router as ws_router
+from app.config import settings
+from app.core.exceptions import AppError
+from app.core.middleware import AccessLogMiddleware, RequestIDMiddleware
 from app.logging_config import setup_logging
 from app.manual_routes import router as manual_router
 from app.public_routes import router as public_router
-from app.storage.bootstrap import initialize_storage, is_storage_enabled
+from app.services.storage.bootstrap import initialize_storage, is_storage_enabled
 
 logger = logging.getLogger("app.main")
 
-app = FastAPI(
-    title="AgentNexus",
-    description="智枢人机协作平台 API",
-    version="0.1.0",
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-
-@app.middleware("http")
-async def log_requests_for_debug(request: Request, call_next):
-    """记录 /api 请求便于排错，404 等错误写入 error.log."""
-    path = request.url.path
-    if not path.startswith("/api"):
-        return await call_next(request)
-    start = time.perf_counter()
-    response = await call_next(request)
-    elapsed = (time.perf_counter() - start) * 1000
-    msg = "api %s %s -> %d (%.0fms)" % (request.method, path, response.status_code, elapsed)
-    if response.status_code >= 400:
-        logger.error("请求失败 %s", msg)
-    else:
-        logger.info(msg)
-    return response
-
-
-@app.exception_handler(ConnectionRefusedError)
-async def database_connection_refused(
-    _request, exc: ConnectionRefusedError
-) -> JSONResponse:
-    """数据库不可达时返回 503."""
-    logger.error("database unavailable: %s", exc)
-    return JSONResponse(
-        status_code=503,
-        content={
-            "status": "error",
-            "message": "database unavailable",
-            "data": None,
-        },
-    )
-
-
-@app.exception_handler(Exception)
-async def unhandled_exception(request, exc: Exception) -> JSONResponse:
-    """未捕获异常：记录完整堆栈到日志并返回 500."""
-    logger.exception(
-        "unhandled exception: %s path=%s %s",
-        exc,
-        request.method,
-        request.url.path,
-    )
-    return JSONResponse(
-        status_code=500,
-        content={
-            "status": "error",
-            "message": "internal server error",
-            "data": None,
-        },
-    )
-
-
-app.include_router(chat_core_workspaces.router)
-app.include_router(chat_core_bots.router)
-app.include_router(chat_core_channels.router)
-app.include_router(chat_core_messages.router)
-app.include_router(chat_core_context.router)
-app.include_router(chat_core_tasks.router)
-app.include_router(chat_core_mcp.router)
-app.include_router(chat_core_friends.router)
-app.include_router(admin_router)
-app.include_router(admin_models_router)
-app.include_router(admin_templates_router)
-app.include_router(file_routes.router)
-app.include_router(manual_router)
-app.include_router(public_router)
-app.include_router(auth_router)
-app.include_router(image_gen_router)
-app.include_router(bulletin_router)
-
-
-
-@app.websocket("/ws/channels/{channel_id}")
-async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
-    """连接频道 WebSocket，接收实时消息推送 & send_message 动作."""
-    await ws_manager.connect(websocket, channel_id)
-    try:
-        while True:
-            raw = await websocket.receive_text()
-            try:
-                obj = json.loads(raw)
-            except (json.JSONDecodeError, ValueError):
-                await websocket.send_json({"type": "error", "data": {"detail": "invalid JSON"}})
-                continue
-
-            if obj.get("type") == "send_message":
-                data = obj.get("data") or {}
-                try:
-                    body = MessageCreate(**data)
-                except Exception as exc:
-                    await websocket.send_json({"type": "error", "data": {"detail": f"invalid payload: {exc}"}})
-                    continue
-                try:
-                    async with async_session_factory() as session:
-                        await _handle_send_message(session, channel_id=channel_id, body=body)  # token not returned over WS
-                except HTTPException as exc:
-                    await websocket.send_json({"type": "error", "data": {"detail": exc.detail}})
-                except Exception as exc:
-                    logger.exception("ws send_message failed channel_id=%s: %s", channel_id, exc)
-                    await websocket.send_json({"type": "error", "data": {"detail": "internal server error"}})
-            else:
-                await ws_manager.broadcast_to_channel(channel_id, {"type": "echo", "data": raw})
-    except WebSocketDisconnect:
-        pass
-    finally:
-        ws_manager.disconnect(websocket, channel_id)
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    """启动时配置日志；可选执行种子数据。数据库表结构由 Alembic 管理，启动前请先执行迁移。"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """管理应用生命周期：启动初始化 & 关闭清理."""
     setup_logging()
     logger.info("AgentNexus startup")
 
-    from app.config import settings
     if not (settings.openclaw_hook_token or "").strip():
         logger.warning(
             "OPENCLAW_HOOK_TOKEN 未配置，webhook 端点（/hooks/agent）将拒绝所有请求或不校验 token。"
@@ -177,6 +40,11 @@ async def startup() -> None:
     from app.http_client import init_http_client
     await init_http_client()
 
+    if is_storage_enabled():
+        app.state.storage = await initialize_storage()
+    else:
+        app.state.storage = None
+
     if os.environ.get("SEED_DATA", "").strip().lower() in ("1", "true", "yes"):
         try:
             from app.db.seed import run_seed
@@ -190,26 +58,74 @@ async def startup() -> None:
     except Exception as e:
         logger.exception("ensure builtin bot failed: %s", e)
 
-    if is_storage_enabled():
-        await initialize_storage()
+    yield
 
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
     from app.http_client import close_http_client
     await close_http_client()
+
+
+app = FastAPI(
+    title="AgentNexus",
+    description="智枢人机协作平台 API",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(AccessLogMiddleware)
+app.add_middleware(RequestIDMiddleware)
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"status": "error", "message": exc.message, "detail": exc.message, "code": exc.code, "data": None},
+    )
+
+
+@app.exception_handler(ConnectionRefusedError)
+async def database_connection_refused(_request, exc: ConnectionRefusedError) -> JSONResponse:
+    logger.error("database unavailable: %s", exc)
+    return JSONResponse(
+        status_code=503,
+        content={"status": "error", "message": "database unavailable", "detail": "database unavailable", "data": None},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception(request, exc: Exception) -> JSONResponse:
+    logger.exception("unhandled exception: %s path=%s %s", exc, request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"status": "error", "message": "internal server error", "detail": "internal server error", "data": None},
+    )
+
+
+# v1 架构路由（/api/v1/...）
+app.include_router(v1_router)
+
+# WebSocket 路由（/ws/channels/{id}，nginx location /ws 需要 upgrade 头）
+app.include_router(ws_router)
+
+# 静态功能路由（不含业务逻辑，保持不变）
+app.include_router(manual_router)
+app.include_router(public_router)
 
 
 @app.get("/health")
 @app.get("/api/health")
 def health():
-    """健康检查."""
     return {"status": "ok"}
 
 
 @app.post("/api/debug/client-error")
 async def log_client_error(request: Request) -> dict:
-    """前端上报错误信息，便于排错（不落库，仅写日志）。"""
     try:
         body = await request.json()
     except Exception:

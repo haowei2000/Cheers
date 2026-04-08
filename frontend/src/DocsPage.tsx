@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
-const API = "/api";
+const API = "/api";  // docs 端点由 manual_routes 提供，路径不含 /v1
 
 type DocFile = { name: string; stem: string; size: number };
 
@@ -217,7 +217,7 @@ export default function DocsPage() {
         body: JSON.stringify({ content: editContent }),
       });
       const d = await r.json();
-      if (d.status === "ok") {
+      if (d.status === "success") {
         setContent(editContent);
         toast.success("Saved");
         setMode("preview");

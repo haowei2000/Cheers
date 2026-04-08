@@ -4,7 +4,7 @@ import asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.routes import hash_password
+from app.services.auth.password_utils import hash_password, verify_password
 from app.config import settings
 from app.db.models import (
     BotAccount,
@@ -16,7 +16,7 @@ from app.db.models import (
     WorkspaceMembership,
 )
 from app.db.session import async_session_factory
-from app.guide.constants import GUIDE_BOT_ID
+from app.services.guide.constants import GUIDE_BOT_ID
 
 # 固定 ID，便于文档与脚本引用
 WORKSPACE_ID = "ws-default-001"
@@ -143,7 +143,8 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
         did_write = True
 
     r = await session.execute(select(User).where(User.user_id == ADMIN_USER_ID))
-    if r.scalar_one_or_none() is None:
+    existing_admin = r.scalar_one_or_none()
+    if existing_admin is None:
         session.add(
             User(
                 user_id=ADMIN_USER_ID,
@@ -153,6 +154,12 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
                 role="system_admin",
             )
         )
+        did_write = True
+    else:
+        existing_admin.username = settings.admin_username
+        existing_admin.display_name = settings.admin_display_name
+        if not verify_password(settings.admin_password, existing_admin.password_hash):
+            existing_admin.password_hash = hash_password(settings.admin_password)
         did_write = True
 
     r = await session.execute(
@@ -219,6 +226,18 @@ async def run_seed() -> None:
             raise
 
 
+async def _sync_admin_credentials(session: AsyncSession) -> None:
+    """每次启动时将 admin 账号的用户名/显示名同步为 .env 中的配置；仅在密码变更时重新哈希。"""
+    r = await session.execute(select(User).where(User.user_id == ADMIN_USER_ID))
+    admin = r.scalar_one_or_none()
+    if admin is None:
+        return
+    admin.username = settings.admin_username
+    admin.display_name = settings.admin_display_name
+    if not verify_password(settings.admin_password, admin.password_hash):
+        admin.password_hash = hash_password(settings.admin_password)
+
+
 async def ensure_builtin_bot() -> None:
     """每次启动时无条件确保内置统一 Bot 存在，并加入所有现有频道。
 
@@ -227,17 +246,22 @@ async def ensure_builtin_bot() -> None:
     async with async_session_factory() as session:
         try:
             await _seed_unified_bot(session)
+            await _sync_admin_credentials(session)
 
             # 确保 @channel bot 加入所有现有频道（补齐旧频道缺失的 membership）
             all_channels = (await session.execute(select(Channel))).scalars().all()
-            for ch in all_channels:
-                r = await session.execute(
-                    select(ChannelMembership).where(
-                        ChannelMembership.channel_id == ch.channel_id,
-                        ChannelMembership.member_id == GUIDE_BOT_ID,
+            existing = {
+                row
+                for row in (
+                    await session.execute(
+                        select(ChannelMembership.channel_id).where(
+                            ChannelMembership.member_id == GUIDE_BOT_ID
+                        )
                     )
-                )
-                if r.scalar_one_or_none() is None:
+                ).scalars()
+            }
+            for ch in all_channels:
+                if ch.channel_id not in existing:
                     session.add(
                         ChannelMembership(
                             channel_id=ch.channel_id,

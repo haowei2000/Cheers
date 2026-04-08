@@ -1,13 +1,13 @@
 """admin.settings_store 回退逻辑测试。"""
 from __future__ import annotations
 
-from app.admin.settings_store import get_llm_providers_list, get_provider_for_scope
+from app.services.admin.settings_store import get_llm_providers_list, get_provider_for_scope
 from app.config import settings
 
 
 def test_get_provider_for_scope_uses_existing_provider_when_bindings_empty(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.admin.settings_store.load_admin_settings",
+        "app.services.admin.settings_store.load_admin_settings",
         lambda: {
             "llm_providers": [
                 {
@@ -20,7 +20,7 @@ def test_get_provider_for_scope_uses_existing_provider_when_bindings_empty(monke
                     "max_tokens": 1000,
                 }
             ],
-            "llm_bindings": {},
+            "llm_bindings": {"guide_bot": "provider-1"},
         },
     )
     monkeypatch.setattr(settings, "llm_localhost_alias", "host.docker.internal", raising=False)
@@ -34,11 +34,11 @@ def test_get_provider_for_scope_uses_existing_provider_when_bindings_empty(monke
 
 def test_get_llm_providers_list_includes_enabled_ai_models(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.admin.settings_store.load_admin_settings",
+        "app.services.admin.settings_store.load_admin_settings",
         lambda: {"llm_providers": [], "llm_bindings": {}},
     )
     monkeypatch.setattr(
-        "app.admin.settings_store._load_ai_model_providers",
+        "app.services.admin.settings_store._load_ai_model_providers",
         lambda: [
             {
                 "id": "ai-model:model-qwen-plus",
@@ -63,11 +63,11 @@ def test_get_llm_providers_list_includes_enabled_ai_models(monkeypatch) -> None:
 
 def test_get_provider_for_scope_supports_ai_model_binding(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.admin.settings_store.load_admin_settings",
+        "app.services.admin.settings_store.load_admin_settings",
         lambda: {"llm_providers": [], "llm_bindings": {"guide_bot": "ai-model:model-qwen-plus"}},
     )
     monkeypatch.setattr(
-        "app.admin.settings_store._load_ai_model_providers",
+        "app.services.admin.settings_store._load_ai_model_providers",
         lambda: [
             {
                 "id": "ai-model:model-qwen-plus",

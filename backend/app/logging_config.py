@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from app.config import settings
-from app.admin.log_buffer import LLMFriendlyBufferHandler
+from app.services.admin.log_buffer import LLMFriendlyBufferHandler
 
 
 def _resolve_log_dir() -> Path | None:
@@ -18,16 +18,41 @@ def _resolve_log_dir() -> Path | None:
     return p
 
 
+class _JsonFormatter(logging.Formatter):
+    """结构化 JSON 日志格式化器（LOG_JSON=true 时启用）."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        import json as _json
+        import traceback as _tb
+
+        payload = {
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc"] = _tb.format_exception(*record.exc_info)
+        # 注入 request_id（若通过 extra 传入）
+        if hasattr(record, "request_id"):
+            payload["request_id"] = record.request_id
+        return _json.dumps(payload, ensure_ascii=False)
+
+
 def setup_logging() -> None:
     """
     配置根与 app 日志：控制台 + 文件（通用 + 仅错误）。
     log_dir 为空则只输出到控制台。
+    LOG_JSON=true 时使用结构化 JSON 格式。
     """
     log_dir = _resolve_log_dir()
-    fmt = logging.Formatter(
-        fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    if settings.log_json:
+        fmt: logging.Formatter = _JsonFormatter()
+    else:
+        fmt = logging.Formatter(
+            fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
