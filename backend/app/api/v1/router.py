@@ -15,6 +15,7 @@ from app.api.v1.mcp.routes import router as mcp_router
 from app.api.v1.image_gen.routes import router as image_gen_router
 from app.api.v1.bulletin.routes import router as bulletin_router
 from app.api.v1.todos.routes import router as todos_router
+from app.api.v1.notifications.routes import router as notifications_router
 v1_router = APIRouter(prefix="/api/v1")
 
 v1_router.include_router(workspaces_router)
@@ -31,6 +32,7 @@ v1_router.include_router(mcp_router)
 v1_router.include_router(image_gen_router)
 v1_router.include_router(bulletin_router)
 v1_router.include_router(todos_router)
+v1_router.include_router(notifications_router)
 
 @v1_router.get("/health")
 def v1_health():

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import FriendsPanel from "./FriendsPanel";
+import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import { MessageMarkdown } from "./MessageMarkdown";
 
@@ -2109,6 +2110,8 @@ export default function App() {
   const [addingBots, setAddingBots] = useState(false);
   const [manageMembersOpen, setManageMembersOpen] = useState(false);
   const [friendsPanelOpen, setFriendsPanelOpen] = useState(false);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const pendingScrollMsgIdRef = useRef<string | null>(null);
   const [userProfileOpen, setUserProfileOpen] = useState(false);
   const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
@@ -2174,6 +2177,12 @@ export default function App() {
     } finally {
       setLoginLoading(false);
     }
+  };
+
+  const handleNotifNavigate = (channelId: string, msgId?: string) => {
+    setSelectedId(channelId);
+    if (msgId) pendingScrollMsgIdRef.current = msgId;
+    setNotifPanelOpen(false);
   };
 
   const handleSendCode = async (
@@ -2478,6 +2487,16 @@ export default function App() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [selectedId]);
+
+  // Scroll to a pending message after channel switch + messages load
+  useEffect(() => {
+    const msgId = pendingScrollMsgIdRef.current;
+    if (!msgId || loading || messages.length === 0) return;
+    pendingScrollMsgIdRef.current = null;
+    setTimeout(() => {
+      document.getElementById(`msg-${msgId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  }, [messages, loading]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -3832,6 +3851,19 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                setNotifPanelOpen(true);
+                if (isMobile) setSidebarOpen(false);
+              }}
+              className="relative flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M4.214 3.227a.75.75 0 0 0-1.156-.956 8.97 8.97 0 0 0-1.856 5.476.75.75 0 0 0 1.498.066A7.47 7.47 0 0 1 4.214 3.227ZM16.942 2.271a.75.75 0 0 0-1.157.956 7.47 7.47 0 0 1 1.514 4.586.75.75 0 0 0 1.498-.066 8.97 8.97 0 0 0-1.855-5.476ZM10 2a6 6 0 0 0-6 6v1.076a2.25 2.25 0 0 1-.659 1.59l-.537.537a1.5 1.5 0 0 0 1.06 2.563h12.272a1.5 1.5 0 0 0 1.06-2.563l-.537-.537A2.25 2.25 0 0 1 16 9.076V8a6 6 0 0 0-6-6ZM8.5 17.5a1.5 1.5 0 0 0 3 0H8.5Z" />
+              </svg>
+              <span>通知</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setFriendsPanelOpen(true);
                 if (isMobile) setSidebarOpen(false);
               }}
@@ -4695,6 +4727,14 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* 通知面板 */}
+        <NotificationPanel
+          isOpen={notifPanelOpen}
+          onClose={() => setNotifPanelOpen(false)}
+          userToken={authToken ?? undefined}
+          onNavigate={handleNotifNavigate}
+        />
 
         {/* 好友管理面板 */}
         <FriendsPanel
