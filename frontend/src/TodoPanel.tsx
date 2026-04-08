@@ -49,7 +49,7 @@ export default function TodoPanel({ channelId, onClose }: TodoPanelProps) {
     setLoading(true);
     try {
       const token = getToken();
-      const res = await fetch(`/api/v1/channels/${channelId}/todos`, {
+      const res = await fetch(`/api/v1/channels/${channelId}/todos/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -70,8 +70,8 @@ export default function TodoPanel({ channelId, onClose }: TodoPanelProps) {
     fetch(`/api/v1/channels/${channelId}/members?with_username=1`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.ok ? r.json() : [])
-      .then(setMembers)
+      .then((r) => r.ok ? r.json() : { data: [] })
+      .then((json) => setMembers(Array.isArray(json) ? json : (json.data ?? [])))
       .catch(() => {});
   }, [channelId]);
 
@@ -86,7 +86,7 @@ export default function TodoPanel({ channelId, onClose }: TodoPanelProps) {
     }
     const token = getToken();
     try {
-      const res = await fetch(`/api/v1/channels/${channelId}/todos`, {
+      const res = await fetch(`/api/v1/channels/${channelId}/todos/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ content: newContent, assignee_id, assignee_type }),
