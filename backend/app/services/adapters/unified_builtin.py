@@ -651,7 +651,116 @@ def _make_tools(ctx: dict) -> list:
         await db_session.commit()
         return "成功创建待办事项！"
 
-    return [update_anchor, update_progress, update_decision, call_bot, call_user, create_file, generate_image, edit_image, read_file, create_todo]
+    @tool
+    async def list_todos() -> str:
+        """列出当前频道所有待办事项，返回编号、状态、内容和指派人。"""
+        db_session = ctx.get("_db_session")
+        if not db_session:
+            return "错误：数据库会话未注入"
+        from sqlalchemy import select
+        from app.db.models import TodoItem
+        result = await db_session.execute(
+            select(TodoItem)
+            .where(TodoItem.channel_id == ctx["channel_id"])
+            .order_by(TodoItem.created_at)
+        )
+        todos = result.scalars().all()
+        if not todos:
+            return "当前频道没有待办事项。"
+        lines = []
+        for i, t in enumerate(todos, 1):
+            status = "✅" if t.status == "completed" else "⬜"
+            assignee = f"（指派给：{t.assignee_id}）" if t.assignee_id else ""
+            lines.append(f"{i}. {status} {t.content}{assignee}")
+        return "\n".join(lines)
+
+    @tool
+    async def update_todo(content_keyword: str, new_content: str = None, status: str = None, assignee_username: str = None) -> str:
+        """修改当前频道中匹配关键词的待办事项。
+
+        Args:
+            content_keyword: 用于定位待办的关键词（与待办内容做子串匹配）。
+            new_content: 可选，新的内容文本。
+            status: 可选，新状态，"pending" 或 "completed"。
+            assignee_username: 可选，重新指派给某人的用户名（不含@），传空字符串可清除指派。
+        """
+        db_session = ctx.get("_db_session")
+        if not db_session:
+            return "错误：数据库会话未注入"
+        from sqlalchemy import select
+        from app.db.models import TodoItem, User, BotAccount
+        result = await db_session.execute(
+            select(TodoItem).where(
+                TodoItem.channel_id == ctx["channel_id"],
+                TodoItem.content.ilike(f"%{content_keyword}%"),
+            )
+        )
+        matches = result.scalars().all()
+        if not matches:
+            return f"错误：找不到包含"{content_keyword}"的待办事项。"
+        if len(matches) > 1:
+            preview = "、".join(f'"{t.content}"' for t in matches[:5])
+            return f"错误：关键词"{content_keyword}"匹配到多条（{preview}），请提供更精确的关键词。"
+        todo = matches[0]
+        if new_content is not None:
+            todo.content = new_content
+        if status is not None:
+            if status not in ("pending", "completed"):
+                return "错误：status 只能是 'pending' 或 'completed'。"
+            todo.status = status
+        if assignee_username is not None:
+            if assignee_username == "":
+                todo.assignee_id = None
+                todo.assignee_type = None
+            else:
+                username = assignee_username.strip().lstrip("@")
+                stmt = select(User).where(User.username == username)
+                user = (await db_session.execute(stmt)).scalars().first()
+                if user:
+                    todo.assignee_id = user.user_id
+                    todo.assignee_type = "user"
+                else:
+                    stmt = select(BotAccount).where(BotAccount.username == username)
+                    bot = (await db_session.execute(stmt)).scalars().first()
+                    if bot:
+                        todo.assignee_id = bot.bot_id
+                        todo.assignee_type = "bot"
+                    else:
+                        return f"错误：找不到名为 {username} 的用户或Bot。"
+        await db_session.commit()
+        return f"成功更新待办事项："{todo.content}""
+
+    @tool
+    async def delete_todo(content_keyword: str) -> str:
+        """删除当前频道中匹配关键词的待办事项。
+
+        Args:
+            content_keyword: 用于定位待办的关键词（与待办内容做子串匹配）。
+        """
+        db_session = ctx.get("_db_session")
+        if not db_session:
+            return "错误：数据库会话未注入"
+        from sqlalchemy import select
+        from app.db.models import TodoItem
+        result = await db_session.execute(
+            select(TodoItem).where(
+                TodoItem.channel_id == ctx["channel_id"],
+                TodoItem.content.ilike(f"%{content_keyword}%"),
+            )
+        )
+        matches = result.scalars().all()
+        if not matches:
+            return f"错误：找不到包含"{content_keyword}"的待办事项。"
+        if len(matches) > 1:
+            preview = "、".join(f'"{t.content}"' for t in matches[:5])
+            return f"错误：关键词"{content_keyword}"匹配到多条（{preview}），请提供更精确的关键词。"
+        todo = matches[0]
+        content = todo.content
+        await db_session.delete(todo)
+        await db_session.commit()
+        return f"成功删除待办事项："{content}""
+
+    return [update_anchor, update_progress, update_decision, call_bot, call_user, create_file, generate_image, edit_image, read_file, create_todo, list_todos, update_todo, delete_todo]
 
 
 # ─── 附件处理 ──────────────────────────────────────────────────────────────────
