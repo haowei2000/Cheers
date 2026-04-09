@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -201,6 +201,26 @@ class Message(Base):
     secret_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="messages")
+
+
+class HistoryPage(Base):
+    __tablename__ = "history_pages"
+    
+    page_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    channel_id: Mapped[str] = mapped_column(String(36), ForeignKey("channels.channel_id"), nullable=False)
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_msg_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    last_msg_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_content: Mapped[str] = mapped_column(Text, nullable=False)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("channel_id", "page_number", name="uq_history_pages_channel_page"),
+    )
 
 
 class FileRecord(Base):
