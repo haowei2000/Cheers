@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import TodoItem, User
 from app.core.dependencies import get_current_user, get_session
+from app.db.models import TodoItem, User
 
 router = APIRouter(prefix="/channels/{channel_id}/todos", tags=["todos"])
 

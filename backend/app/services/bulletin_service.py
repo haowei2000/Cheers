@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.bulletin.schemas import IssueCreate, IssueUpdate
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.models import BulletinIssue, User
 from app.repositories.bulletin_repo import BulletinRepository
+from app.services.bulletin.schemas import IssueCreate, IssueUpdate
 
 
 class BulletinService:

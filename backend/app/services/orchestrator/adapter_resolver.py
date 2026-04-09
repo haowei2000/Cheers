@@ -9,11 +9,11 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import BotAccount
 from app.services.adapters.base import OpenClawAdapter
 from app.services.adapters.llm_bot import LLMBotAdapter
 from app.services.adapters.mock import MockOpenClawAdapter
 from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
-from app.db.models import BotAccount
 from app.services.guide.constants import GUIDE_BOT_ID
 
 logger = logging.getLogger("app.services.orchestrator.adapter_resolver")

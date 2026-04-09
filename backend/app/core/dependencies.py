@@ -6,14 +6,13 @@ from typing import Optional
 
 import httpx
 from fastapi import Depends, Header, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ForbiddenError, UnauthorizedError
-from app.db.session import async_session_factory
 from app.db.models import User
+from app.db.session import async_session_factory
 from app.services.auth.jwt_utils import decode_access_token
-from sqlalchemy import select
-
 
 # ---------------------------------------------------------------------------
 # 数据库会话

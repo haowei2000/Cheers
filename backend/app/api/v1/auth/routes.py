@@ -1,8 +1,6 @@
 """Auth v1 路由."""
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession

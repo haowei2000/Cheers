@@ -4,7 +4,6 @@ import asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.auth.password_utils import hash_password, verify_password
 from app.config import settings
 from app.db.models import (
     BotAccount,
@@ -16,6 +15,7 @@ from app.db.models import (
     WorkspaceMembership,
 )
 from app.db.session import async_session_factory
+from app.services.auth.password_utils import hash_password, verify_password
 from app.services.guide.constants import GUIDE_BOT_ID
 
 # 固定 ID，便于文档与脚本引用
