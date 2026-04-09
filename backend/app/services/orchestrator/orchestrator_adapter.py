@@ -48,7 +48,6 @@ class OrchestratorAdapter(OpenClawAdapter):
     """Orchestrator 直接回答模式：用 LLM 回答业务问题，可建议 @部门bot。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
-        channel_id = payload.channel_id
         user_text = (payload.trigger_message or {}).get("text") or ""
         memory_context = payload.memory_context or {}
         channel_bots = (payload.process_config or {}).get("channel_bot_usernames") or []
