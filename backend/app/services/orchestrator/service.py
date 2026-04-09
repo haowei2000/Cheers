@@ -16,6 +16,7 @@ from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
+from app.services.orchestrator.secrets import extract_secret_refs, load_user_secrets
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.orchestrator.service")
@@ -131,16 +132,35 @@ async def run_orchestrator(
         for row in rows
     }
 
-    trigger_content = _get_trigger_content(trigger_msg)
+    # analysis_content: 真实文本（解密后），用于提取 @mentions / 密钥引用 / 澄清检测
+    # trigger_content:  发送给 LLM 的文本（加密消息保持占位符，不暴露原文）
+    analysis_content = _get_trigger_content(trigger_msg)
+    is_encrypted_msg = trigger_msg.is_secret and bool(trigger_msg.secret_encrypted)
+    trigger_content = trigger_msg.content if is_encrypted_msg else analysis_content
+
+    # 提取并加载用户密钥引用（从真实文本中提取）
+    secret_refs = extract_secret_refs(analysis_content)
+    user_secrets = {}
+    if secret_refs and trigger_msg.sender_type == "user":
+        user_secrets = await load_user_secrets(session, trigger_msg.sender_id, secret_refs)
+        logger.info(
+            "orchestrator: loaded %d/%d secrets for user %s",
+            len(user_secrets), len(secret_refs), trigger_msg.sender_id
+        )
+
+    # 加密消息：将解密后的原文作为命名密钥注入，LLM 只看到占位符
+    if is_encrypted_msg and trigger_msg.sender_type == "user":
+        user_secrets["_encrypted_msg"] = analysis_content
+        logger.info("orchestrator: encrypted message content injected as _encrypted_msg for user %s", trigger_msg.sender_id)
 
     # 澄清场景：若为澄清回答，提取原问题及其附件
     original_question = None
     original_file_ids: list[str] = []
-    if _is_guide_clarify_reply(trigger_content):
+    if _is_guide_clarify_reply(analysis_content):
         original_question, original_file_ids = await _fetch_original_question_for_clarify(session, channel_id, trigger_msg)
 
-    mentioned = extract_mentions(trigger_content)
-    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_content)
+    mentioned = extract_mentions(analysis_content)
+    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=analysis_content)
     direct_answer_mode = False
     if not target_usernames:
         channel_result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
@@ -355,6 +375,7 @@ async def run_orchestrator(
                     "_finalize_bot_msg": _finalize_bot_msg,
                     "_make_stream_token_cb": _make_stream_token_cb,
                     "_bot_id": bot_id,
+                    "_user_secrets": user_secrets,
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
@@ -392,7 +413,10 @@ async def run_orchestrator(
                         memory_context=memory_context,
                         attachments=attachments,
                         original_question_text=original_question,
-                        process_config={"_stream_token": _make_stream_token_cb(sug_msg.msg_id)},
+                        process_config={
+                            "_stream_token": _make_stream_token_cb(sug_msg.msg_id),
+                            "_user_secrets": user_secrets,
+                        },
                     )
                     pending_sug.append((sug_username, sug_bot_id, sug_msg, sug_payload, sug_adapter))
                     logger.info(
@@ -458,6 +482,7 @@ async def run_orchestrator(
                 "_stream_token": _make_stream_token_cb(bot_msg.msg_id),
                 "_db_session": session,
                 "_bot_id": bot_id,
+                "_user_secrets": user_secrets,
             },
         )
         logger.info(
