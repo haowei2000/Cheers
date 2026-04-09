@@ -7,8 +7,8 @@ import logging
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from app.core.schemas import MessageCreate
-from app.services.ws_service import ws_manager
 from app.db.session import async_session_factory
+from app.services.ws_service import ws_manager
 
 logger = logging.getLogger("app.ws")
 

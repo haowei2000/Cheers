@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BadRequestError, NotFoundError, ForbiddenError
+from app.core.exceptions import BadRequestError, NotFoundError
 from app.db.models import User, Workspace, WorkspaceMembership
-from app.repositories.workspace_repo import WorkspaceRepository
 from app.repositories.user_repo import UserRepository
+from app.repositories.workspace_repo import WorkspaceRepository
 
 
 class WorkspaceService:

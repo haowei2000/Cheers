@@ -1,4 +1,4 @@
-"""Pytest  fixtures：测试用 DB、客户端."""
+"""Pytest fixtures：测试用 DB、客户端."""
 import asyncio
 import os
 from collections.abc import AsyncGenerator, Generator
@@ -12,22 +12,23 @@ from app.db.models import Base
 from app.main import app
 
 
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus_test",
 )
 
 
-@pytest_asyncio.fixture
+@pytest.fixture(scope="session")
+def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+    """整个测试会话共用一个事件循环，避免 asyncpg Future 绑定不同 loop 的问题。"""
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest_asyncio.fixture(scope="session")
 async def db_engine():
-    """PostgreSQL 测试引擎（每次测试重建表结构）."""
+    """PostgreSQL 测试引擎（整个测试会话共用，建表一次）."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -40,7 +41,7 @@ async def db_engine():
 
 @pytest_asyncio.fixture
 async def db_session(db_engine) -> AsyncGenerator[AsyncSession, None]:
-    """每个测试独立的异步会话."""
+    """每个测试独立的异步会话，测试结束后回滚。"""
     factory = async_sessionmaker(
         db_engine, class_=AsyncSession, expire_on_commit=False, autocommit=False, autoflush=False
     )
@@ -56,9 +57,8 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
     同时将 messages.py 中的 async_session_factory 替换为测试用工厂，
     确保 _run_orchestrator_bg 后台任务也写入同一块测试 DB。
     """
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-    from app.db.session import get_session
-    from app.services.auth.routes import get_current_user
+    from app.core.dependencies import get_current_user, get_session as get_session_core
+    from app.db.session import get_session as get_session_db
     from app.db.models import User
     import app.api.v1.messages.routes as _messages_mod
 
@@ -69,21 +69,26 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
     async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
-    # 测试用 system_admin 用户（跳过认证）
+    # 测试用 system_admin 用户（跳过认证，并写入 DB 以满足 FK 约束）
+    TEST_USER_ID = "a0000000-0000-0000-0000-000000000099"
     test_user = User(
-        user_id="test-user-0000-0000-0000-000000000001",
+        user_id=TEST_USER_ID,
         username="test_admin",
         password_hash="x",
         display_name="Test Admin",
         role="system_admin",
     )
+    # Upsert test user into DB so FK constraints pass (merge handles duplicate across tests)
+    await db_session.merge(test_user)
+    await db_session.commit()
 
     async def override_get_current_user() -> User:
         return test_user
 
     original_factory = _messages_mod.async_session_factory
     _messages_mod.async_session_factory = test_session_factory
-    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_session_core] = override_get_session
+    app.dependency_overrides[get_session_db] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
 
     transport = ASGITransport(app=app)

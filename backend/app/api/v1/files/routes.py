@@ -67,8 +67,8 @@ async def confirm_upload(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    from app.services.file_service import FileService
     from app.core.schemas import MessageFileInResponse
+    from app.services.file_service import FileService
     svc = FileService(session)
     rec = await svc.confirm_upload(file_id, current_user)
     return APIResponse.ok(MessageFileInResponse.model_validate(rec).model_dump())
@@ -133,8 +133,8 @@ async def file_preview(
                 headers={"Content-Disposition": disposition, "Cache-Control": "public, max-age=3600"},
             )
 
-    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
     from app.services.storage.base import StorageObjectNotFoundError
+    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
     if not is_storage_enabled():
         from app.core.exceptions import AppError
         raise AppError("storage not enabled")
@@ -174,8 +174,8 @@ async def file_download(
                 headers={"Content-Disposition": _content_disposition(filename), "Cache-Control": "public, max-age=3600"},
             )
 
-    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
     from app.services.storage.base import StorageObjectNotFoundError
+    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
     if not is_storage_enabled():
         from app.core.exceptions import AppError
         raise AppError("storage not enabled")

@@ -5,7 +5,6 @@ import io
 from dataclasses import dataclass
 from pathlib import Path
 
-
 SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
     ".txt": {"text/plain"},
     ".md": {"text/markdown", "text/plain"},

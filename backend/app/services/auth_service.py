@@ -13,7 +13,8 @@ from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, U
 from app.db.models import EmailCode, User
 from app.repositories.user_repo import UserRepository
 from app.services.auth.jwt_utils import create_access_token
-from app.services.auth.password_utils import hash_password as _hash_password, verify_password as _verify_password
+from app.services.auth.password_utils import hash_password as _hash_password
+from app.services.auth.password_utils import verify_password as _verify_password
 
 _OTP_COOLDOWN_SECONDS = 60
 _OTP_EXPIRE_MINUTES = 10
@@ -62,7 +63,8 @@ class AuthService:
         if recent.scalar_one_or_none():
             raise BadRequestError(f"请 {_OTP_COOLDOWN_SECONDS} 秒后再发送")
 
-        import random, string
+        import random
+        import string
         code = "".join(random.choices(string.digits, k=6))
         entry = EmailCode(
             email=email,
@@ -81,7 +83,7 @@ class AuthService:
                 EmailCode.email == email,
                 EmailCode.purpose == purpose,
                 EmailCode.code == code,
-                EmailCode.used == False,
+                EmailCode.used.is_(False),
                 EmailCode.expires_at > now,
             ).order_by(EmailCode.created_at.desc()).limit(1)
         )

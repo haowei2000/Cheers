@@ -4,8 +4,8 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
-from app.services.memory.manager import load, save_layer
 from app.repositories.channel_repo import ChannelRepository
+from app.services.memory.manager import load, save_layer
 
 
 class ContextService:

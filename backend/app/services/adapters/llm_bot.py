@@ -9,9 +9,9 @@ from typing import Any
 
 import httpx
 
-from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
-from app.http_client import get_http_client
 from app.db.models import AIModel, BotAccount, PromptTemplate
+from app.http_client import get_http_client
+from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.adapters.llm_bot")
@@ -105,7 +105,7 @@ class LLMBotAdapter(OpenClawAdapter):
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         """执行 LLM 调用。
-        
+
         上下文注入机制：
         - payload.memory_context 包含四层记忆：anchor, decisions, files_index, recent
         - 这些记忆会被注入为模板变量 {{anchor}}, {{decisions}}, {{files_index}}, {{recent}}

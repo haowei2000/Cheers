@@ -20,7 +20,7 @@ async def test_list_members_empty(client: AsyncClient, db_session: AsyncSession)
     db_session.add(ch)
     await db_session.commit()
 
-    resp = await client.get("/api/channels/d0000000-0000-0000-0000-000000000001/members")
+    resp = await client.get("/api/v1/channels/d0000000-0000-0000-0000-000000000001/members")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"
@@ -42,14 +42,14 @@ async def test_add_member_and_list(client: AsyncClient, db_session: AsyncSession
     await db_session.commit()
 
     resp = await client.post(
-        "/api/channels/d0000000-0000-0000-0000-000000000002/members",
+        "/api/v1/channels/d0000000-0000-0000-0000-000000000002/members",
         json={"member_id": "e0000000-0000-0000-0000-000000000001", "member_type": "user"},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"
 
-    resp2 = await client.get("/api/channels/d0000000-0000-0000-0000-000000000002/members")
+    resp2 = await client.get("/api/v1/channels/d0000000-0000-0000-0000-000000000002/members")
     assert resp2.status_code == 200
     members = resp2.json()["data"]
     assert len(members) == 1
@@ -79,8 +79,8 @@ async def test_remove_member(client: AsyncClient, db_session: AsyncSession) -> N
     await db_session.commit()
 
     resp = await client.delete(
-        "/api/channels/d0000000-0000-0000-0000-000000000003/members/e0000000-0000-0000-0000-000000000002"
+        "/api/v1/channels/d0000000-0000-0000-0000-000000000003/members/e0000000-0000-0000-0000-000000000002"
     )
     assert resp.status_code == 200
-    resp2 = await client.get("/api/channels/d0000000-0000-0000-0000-000000000003/members")
+    resp2 = await client.get("/api/v1/channels/d0000000-0000-0000-0000-000000000003/members")
     assert len(resp2.json()["data"]) == 0

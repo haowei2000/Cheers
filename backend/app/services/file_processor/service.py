@@ -15,17 +15,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models import FileRecord
 from app.services.file_processor.convert import (
-    FileParseError,
-    ParsedDocument,
     ALL_SUPPORTED_TYPES,
     SUPPORTED_DOCUMENT_TYPES,
+    FileParseError,
+    ParsedDocument,
     UnsupportedFileTypeError,
     is_image_type,
     parse_document_bytes,
 )
 from app.services.storage.base import (
-    StorageObject,
     StorageClientInitError,
+    StorageObject,
     StorageObjectHead,
     StorageObjectNotFoundError,
     StorageProvider,

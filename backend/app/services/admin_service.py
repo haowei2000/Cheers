@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import logging
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.admin import settings_store
-from app.services.admin.log_buffer import get_formatted_log_excerpt
 from app.core.exceptions import AppError, BadRequestError, ConflictError, NotFoundError
 from app.db.models import AIModel, PromptTemplate
 from app.repositories.bot_repo import AIModelRepository, PromptTemplateRepository
+from app.services.admin import settings_store
+from app.services.admin.log_buffer import get_formatted_log_excerpt
 
 logger = logging.getLogger("app.services.admin")
 
@@ -124,11 +125,11 @@ class LogAnalysisService:
         c = settings_store.get_provider_for_scope("log_analyze") or settings_store.get_provider_for_scope("system_llm")
         if not c:
             raise BadRequestError("请先在管理页「LLM 参数」中添加 LLM 设定，并在「功能绑定」中为「日志分析」或「系统 LLM」选择 LLM。")
-        
+
         base_url = (c.get("base_url") or "").strip()
         api_key = (c.get("api_key") or "").strip()
         model = (c.get("model") or "gpt-4o-mini").strip()
-        
+
         if not base_url:
             raise BadRequestError("所选 LLM 的 Base URL 为空")
 
@@ -154,7 +155,7 @@ class LogAnalysisService:
             headers = {"Content-Type": "application/json"}
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
-            
+
             async with httpx.AsyncClient(timeout=60.0) as client:
                 r = await client.post(url, json=payload, headers=headers)
                 r.raise_for_status()
@@ -173,15 +174,15 @@ class LogAnalysisService:
     async def summarize_qa(channel_name: str, pairs: list[dict]) -> str:
         if not pairs:
             raise BadRequestError("请至少提供一组问答")
-            
+
         c = settings_store.get_provider_for_scope("qa_summarize") or settings_store.get_provider_for_scope("system_llm")
         if not c:
             raise BadRequestError("请先在管理页「LLM 参数」中添加 LLM 设定。")
-            
+
         base_url = (c.get("base_url") or "").strip()
         api_key = (c.get("api_key") or "").strip()
         model = (c.get("model") or "gpt-4o-mini").strip()
-        
+
         if not base_url:
             raise BadRequestError("所选 LLM 的 Base URL 为空")
 
@@ -189,14 +190,14 @@ class LogAnalysisService:
         lines: list[str] = []
         for idx, item in enumerate(pairs, start=1):
             lines.extend([
-                f"## 问答 {idx}", 
-                f"问题时间: {item.get('question_time') or '-'}", 
+                f"## 问答 {idx}",
+                f"问题时间: {item.get('question_time') or '-'}",
                 f"回答时间: {item.get('answer_time') or '-'}",
-                "", "### 问题", (item.get('question') or "").strip() or "-", 
+                "", "### 问题", (item.get('question') or "").strip() or "-",
                 "", "### 回答", (item.get('answer') or "").strip() or "-", "",
             ])
         qa_text = "\n".join(lines)
-        
+
         prompt = (
             f"频道：{channel_name}\n共有 {len(pairs)} 组问答。\n\n"
             "请根据以下问答整理一份详细且结构化的 Markdown 文档，需包含：\n"
@@ -217,7 +218,7 @@ class LogAnalysisService:
             headers = {"Content-Type": "application/json"}
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
-            
+
             async with httpx.AsyncClient(timeout=90.0) as client:
                 r = await client.post(url, json=payload, headers=headers)
                 r.raise_for_status()
