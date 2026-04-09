@@ -4,10 +4,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.bulletin.schemas import IssueCreate, IssueInResponse, IssueUpdate
 from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
 from app.db.models import User
+from app.services.bulletin.schemas import IssueCreate, IssueInResponse, IssueUpdate
 from app.services.bulletin_service import BulletinService
 
 router = APIRouter(prefix="/bulletin", tags=["bulletin"])

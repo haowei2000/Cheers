@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
-
 from pydantic import BaseModel
 
 router = APIRouter(tags=["manual"])

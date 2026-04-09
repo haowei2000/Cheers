@@ -26,7 +26,7 @@ class TaskRepository:
         )
         if channel_id:
             stmt = stmt.where(AgentTask.channel_id == channel_id)
-        
+
         result = await self.session.execute(stmt)
         return list(result.all())
 

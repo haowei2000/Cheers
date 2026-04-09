@@ -43,13 +43,13 @@ class MCPService:
             endpoint = f"mock://mcp-{server_name}"
         else:
             return None
-        
+
         username = server_name.lower().replace(" ", "-").replace("_", "-")
         if not username.startswith("mcp-"):
             username = f"mcp-{username}"
-        
+
         display_name = server_name.replace("-", " ").replace("_", " ").title()
-        
+
         intro = {
             "description": config.description or f"MCP Server: {server_name}",
             "capabilities": ["mcp"],
@@ -77,18 +77,18 @@ class MCPService:
             config_data = json.loads(config_json)
         except json.JSONDecodeError as e:
             raise BadRequestError(f"无效的 JSON: {e}")
-        
+
         try:
             mcp_config = MCPConfig.model_validate(config_data)
         except Exception as e:
             raise BadRequestError(f"无效的 MCP 配置格式: {e}")
-        
+
         if not mcp_config.mcpServers:
             raise BadRequestError("未找到 mcpServers 配置")
-        
+
         servers_found = list(mcp_config.mcpServers.keys())
         suggestions = []
-        
+
         if server_name:
             if server_name not in mcp_config.mcpServers:
                 raise NotFoundError(f"未找到 server: {server_name}")
@@ -100,7 +100,7 @@ class MCPService:
                 suggestion = MCPService._extract_bot_from_mcp_server(name, server_config)
                 if suggestion:
                     suggestions.append(suggestion)
-        
+
         return {
             "servers_found": servers_found,
             "suggestions": [s.model_dump() for s in suggestions],
@@ -113,11 +113,11 @@ class MCPService:
             config_data = json.loads(config_json)
         except json.JSONDecodeError as e:
             raise BadRequestError(f"无效的 JSON: {e}")
-        
+
         mcp_servers = config_data.get("mcpServers") or config_data.get("servers")
         if not mcp_servers:
             raise BadRequestError("未找到 MCP 服务器配置")
-        
+
         suggestions = []
         for name, server_data in mcp_servers.items():
             if not isinstance(server_data, dict):
@@ -126,7 +126,7 @@ class MCPService:
             suggestion = MCPService._extract_bot_from_mcp_server(name, config)
             if suggestion:
                 suggestions.append(suggestion.model_dump())
-        
+
         return {
             "servers_found": list(mcp_servers.keys()),
             "suggestions": suggestions,

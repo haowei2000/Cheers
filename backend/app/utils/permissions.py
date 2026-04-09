@@ -1,5 +1,5 @@
 """Shared permission helpers for bot/model visibility and friendship checks."""
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Friendship, User

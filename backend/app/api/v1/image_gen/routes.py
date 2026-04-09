@@ -10,8 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_session, require_permission
 from app.core.responses import APIResponse
 from app.db.models import User
-from app.services.image_gen.service import IMAGE_EDIT_MODELS, IMAGE_GEN_MODELS, SUPPORTED_SIZES, ImageGenError, ImageGenService
 from app.services.admin_service import SettingsService
+from app.services.image_gen.service import (
+    IMAGE_EDIT_MODELS,
+    IMAGE_GEN_MODELS,
+    SUPPORTED_SIZES,
+    ImageGenError,
+    ImageGenService,
+)
 from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
 
 logger = logging.getLogger("app.api.v1.image_gen")

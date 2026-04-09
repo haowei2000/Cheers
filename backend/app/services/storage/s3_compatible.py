@@ -7,7 +7,8 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote as _url_quote, urlparse
+from urllib.parse import quote as _url_quote
+from urllib.parse import urlparse
 
 from app.services.storage.base import (
     PresignedUpload,
