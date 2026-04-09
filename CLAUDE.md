@@ -88,7 +88,7 @@ Each `BotAccount` is composed of:
 - **`PromptTemplate`** — system_prompt + user_template with `{{message}}` placeholder
 - Optional `custom_system_prompt` overrides the template's system_prompt
 
-The `OpenClawAdapter` ABC (`adapters/base.py`) is the isolation boundary. Orchestrator only depends on this interface. Current implementations: `LLMBotAdapter`, `MockOpenClawAdapter`, `HttpOpenClawAdapter`, `WsOpenClawAdapter`.
+The `OpenClawAdapter` ABC (`adapters/base.py`) is the isolation boundary. Orchestrator only depends on this interface. Current implementations: `LLMBotAdapter`, `MockOpenClawAdapter`, `HttpOpenClawAdapter`, `WsOpenClawAdapter`, `UnifiedBuiltinBotAdapter`.
 
 ### Special Bot: coordinator
 
@@ -106,6 +106,26 @@ Each channel has four memory layers stored in the PostgreSQL DB (`context_store`
 
 Loaded by `memory/manager.py` and injected into every `AgentPayload.memory_context`. Written to `AgentPayload` and available as template variables in `LLMBotAdapter`.
 
+### Bot Tools (UnifiedBuiltinBotAdapter)
+
+Bots using `UnifiedBuiltinBotAdapter` have access to built-in tools via LangChain function calling:
+
+| Tool | Purpose |
+|------|---------|
+| `call_bot` | Delegate task to another channel bot |
+| `call_user` | @mention a user with optional question |
+| `update_anchor` | Update project anchor memory layer |
+| `update_decision` | Record decisions to memory layer |
+| `update_progress` | Update progress layer |
+| `create_file` | Save content as markdown file |
+| `read_file` | Read uploaded file content |
+| `generate_image` | Generate images via AI |
+| `edit_image` | Edit images via AI |
+| `web_fetch` | **Fetch webpage content from URL** |
+| `web_search` | **Search the web via DuckDuckGo** |
+
+Tools are defined in `backend/app/services/adapters/unified_builtin.py` (`_make_tools()`). Web tools implementation is in `backend/app/tools/web.py`.
+
 ### Key Files
 
 | File | Purpose |
@@ -119,6 +139,8 @@ Loaded by `memory/manager.py` and injected into every `AgentPayload.memory_conte
 | `backend/app/adapters/llm_bot.py` | `LLMBotAdapter` — main bot implementation |
 | `backend/app/memory/manager.py` | Four-layer memory read/write |
 | `backend/app/admin/settings_store.py` | JSON-file-backed admin settings (LLM providers, orchestrator flags) |
+| `backend/app/services/adapters/unified_builtin.py` | `UnifiedBuiltinBotAdapter` with tool system |
+| `backend/app/tools/web.py` | Web tools: `web_fetch` and `web_search` |
 | `frontend/src/App.tsx` | Entire frontend SPA (single file, React + Tailwind) |
 | `frontend/src/AdminPage.tsx` | Admin panel SPA |
 | `tests/conftest.py` | Pytest fixtures: PostgreSQL test DB, HTTPX AsyncClient |
@@ -167,3 +189,8 @@ Tests live in `tests/` (at project root), configured in `backend/pyproject.toml`
 - `client` — HTTPX `AsyncClient` with dependency-injected test DB
 
 All tests are async (`asyncio_mode = "auto"`).
+
+```bash
+cd backend && pytest ../tests/test_web_tools.py -v  # web tools tests
+cd backend && pytest ../tests/test_adapters.py -v   # adapter tests
+```
