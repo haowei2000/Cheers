@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessage
 
+from app.db.models import AIModel
 from app.services.adapters.base import AgentPayload
 from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
 from app.services.memory.context_store import get_layer, init_context_db
@@ -167,7 +168,6 @@ async def test_update_anchor_via_api(client, db_session) -> None:
 
 
 def _make_model(model_id: str) -> AIModel:
-    from app.db.models import AIModel
     return AIModel(
         model_id=model_id,
         name="test-model",
