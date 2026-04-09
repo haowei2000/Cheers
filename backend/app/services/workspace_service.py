@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import User, Workspace, WorkspaceMembership
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
+from app.utils.permissions import is_admin
 
 
 class WorkspaceService:
@@ -14,6 +15,14 @@ class WorkspaceService:
         self.session = session
         self.repo = WorkspaceRepository(session)
         self.user_repo = UserRepository(session)
+
+    async def _check_workspace_permission(self, workspace_id: str, current_user: User, allowed_roles=("owner", "admin")) -> None:
+        """检查用户是否有权限在工作空间内执行操作."""
+        if is_admin(current_user):
+            return
+        membership = await self.repo.get_membership(workspace_id, current_user.user_id)
+        if not membership or membership.role not in allowed_roles:
+            raise ForbiddenError("没有权限执行此操作（需要工作空间所有者或管理员权限）")
 
     async def create(self, name: str, creator: User) -> Workspace:
         name = name.strip()
@@ -37,6 +46,7 @@ class WorkspaceService:
 
     async def update(self, workspace_id: str, name: str, current_user: User) -> Workspace:
         ws = await self.get_or_404(workspace_id)
+        await self._check_workspace_permission(workspace_id, current_user)
         name = name.strip()
         if not name:
             raise BadRequestError("name 不能为空")
@@ -44,6 +54,8 @@ class WorkspaceService:
 
     async def delete(self, workspace_id: str, current_user: User) -> None:
         ws = await self.get_or_404(workspace_id)
+        # 只有 owner 或全局 admin 能删除
+        await self._check_workspace_permission(workspace_id, current_user, allowed_roles=("owner",))
         await self.repo.delete(ws)
 
     # --- Membership ---
@@ -52,6 +64,7 @@ class WorkspaceService:
         self, workspace_id: str, user_id: str, role: str, current_user: User
     ) -> WorkspaceMembership:
         await self.get_or_404(workspace_id)
+        await self._check_workspace_permission(workspace_id, current_user)
         user = await self.user_repo.get_by_id(user_id)
         if not user:
             raise NotFoundError("user not found")
@@ -64,6 +77,7 @@ class WorkspaceService:
         self, workspace_id: str, identifier: str, role: str, current_user: User
     ) -> WorkspaceMembership:
         await self.get_or_404(workspace_id)
+        await self._check_workspace_permission(workspace_id, current_user)
         user = await self.user_repo.get_by_username_or_email(identifier)
         if not user:
             raise NotFoundError(f"用户 '{identifier}' 不存在")
@@ -76,6 +90,10 @@ class WorkspaceService:
         self, workspace_id: str, user_id: str, current_user: User
     ) -> None:
         await self.get_or_404(workspace_id)
+        # 允许管理员操作，或者允许用户自己退出工作空间（如果不是最后一个 owner）
+        if user_id != current_user.user_id:
+            await self._check_workspace_permission(workspace_id, current_user)
+        
         membership = await self.repo.get_membership(workspace_id, user_id)
         if not membership:
             raise NotFoundError("membership not found")
