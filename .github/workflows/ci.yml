@@ -35,7 +35,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dev dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
 
       - name: Run ruff
         run: uv run ruff check app/
@@ -84,7 +84,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
 
       - name: Run migrations (main DB)
         run: uv run alembic upgrade head
