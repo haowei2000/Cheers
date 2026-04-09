@@ -207,7 +207,7 @@ class Message(Base):
 
 class HistoryPage(Base):
     __tablename__ = "history_pages"
-    
+
     page_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     channel_id: Mapped[str] = mapped_column(String(36), ForeignKey("channels.channel_id"), nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False)

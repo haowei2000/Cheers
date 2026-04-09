@@ -942,12 +942,13 @@ async def _fetch_reply_context(session, replied_msg_id: str, channel_id: str) ->
     """
     if not replied_msg_id:
         return ""
+    import xml.etree.ElementTree as ET
+
     from sqlalchemy import select
 
     from app.db.models import BotAccount, User
     from app.db.models import Message as MsgModel
     from app.services.memory.history_pager import get_full_text_for_msg
-    import xml.etree.ElementTree as ET
 
     r = await session.execute(select(MsgModel).where(MsgModel.msg_id == replied_msg_id))
     msg = r.scalar_one_or_none()
@@ -955,7 +956,7 @@ async def _fetch_reply_context(session, replied_msg_id: str, channel_id: str) ->
         return ""
 
     quoted = _strip_ui_blocks(msg.content or "")
-    
+
     # 尝试从老分页加载
     old_xml = await get_full_text_for_msg(session, replied_msg_id, channel_id)
     if old_xml:
@@ -996,7 +997,7 @@ async def _fetch_recent_history(
     转换为带发送者标识的 LangChain HumanMessage / AIMessage 列表（时间正序）。
     """
     from app.services.memory.history_pager import get_current_page_messages
-    
+
     msgs, _ = await get_current_page_messages(session, channel_id, before_msg_id)
 
     display_names = await _resolve_display_names(session, msgs)
