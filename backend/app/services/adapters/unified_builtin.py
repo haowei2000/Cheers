@@ -389,12 +389,10 @@ def _make_tools(ctx: dict) -> list:
             prompt: 图片描述，越详细效果越好
             size: 图片尺寸，支持 1024*1024 / 720*1280 / 1280*720 / 768*1024 / 1024*768，默认 1024*1024
         """
-        import uuid
-        from datetime import datetime
 
-        from app.services.ws_service import ws_manager
-        from app.db.models import FileRecord, Message
+        from app.db.models import Message
         from app.services.image_gen.service import ImageGenError, ImageGenService
+        from app.services.ws_service import ws_manager
 
         channel_id = ctx["channel_id"]
         sender_id = ctx.get("sender_id") or "system"
@@ -436,7 +434,6 @@ def _make_tools(ctx: dict) -> list:
             return f"图片生成失败：{last_err}"
 
         # 创建带 file_ids 的消息并广播
-        bot_id = ctx.get("task_id", sender_id)  # 用 bot_id 发送图片消息
         # 用 sender_id 对应的 bot（即当前 bot）发图片消息
         # sender_id here is the user, we need bot_id — use _bot_id from ctx if available
         actual_bot_id = ctx.get("_bot_id") or sender_id
@@ -474,9 +471,9 @@ def _make_tools(ctx: dict) -> list:
             source_file_id: 源图片的 file_id；留空则自动使用用户最近上传的图片
             size: 输出尺寸，支持 1024*1024 / 720*1280 / 1280*720 / 768*1024 / 1024*768
         """
-        from app.services.ws_service import ws_manager
         from app.db.models import Message
         from app.services.image_gen.service import ImageGenError, ImageGenService
+        from app.services.ws_service import ws_manager
 
         channel_id = ctx["channel_id"]
         sender_id = ctx.get("sender_id") or "system"
@@ -567,7 +564,7 @@ def _make_tools(ctx: dict) -> list:
         if not db_session:
             return "错误：数据库会话未注入（内部错误）"
 
-        from app.services.file_processor.service import FilePipelineService, FileFlowError
+        from app.services.file_processor.service import FileFlowError, FilePipelineService
         try:
             svc = FilePipelineService()
             results = await svc.prepare_attachments(
@@ -623,7 +620,8 @@ def _make_tools(ctx: dict) -> list:
         if assignee_username:
             username = assignee_username.strip().lstrip("@")
             from sqlalchemy import select
-            from app.db.models import User, BotAccount, TodoItem
+
+            from app.db.models import BotAccount, TodoItem, User
             stmt = select(User).where(User.username == username)
             user = (await db_session.execute(stmt)).scalars().first()
             if user:
@@ -658,6 +656,7 @@ def _make_tools(ctx: dict) -> list:
         if not db_session:
             return "错误：数据库会话未注入"
         from sqlalchemy import select
+
         from app.db.models import TodoItem
         result = await db_session.execute(
             select(TodoItem)
@@ -688,7 +687,8 @@ def _make_tools(ctx: dict) -> list:
         if not db_session:
             return "错误：数据库会话未注入"
         from sqlalchemy import select
-        from app.db.models import TodoItem, User, BotAccount
+
+        from app.db.models import BotAccount, TodoItem, User
         result = await db_session.execute(
             select(TodoItem).where(
                 TodoItem.channel_id == ctx["channel_id"],
@@ -741,6 +741,7 @@ def _make_tools(ctx: dict) -> list:
         if not db_session:
             return "错误：数据库会话未注入"
         from sqlalchemy import select
+
         from app.db.models import TodoItem
         result = await db_session.execute(
             select(TodoItem).where(
@@ -850,6 +851,7 @@ def _strip_ui_blocks(text: str) -> str:
 async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
     """批量解析消息列表中所有发送者的显示名称，返回 {sender_id: name}。"""
     from sqlalchemy import select
+
     from app.db.models import BotAccount, User
 
     user_ids = {m.sender_id for m in msgs if m.sender_type == "user"}
@@ -873,6 +875,7 @@ async def _fetch_user_display_name(session, user_id: str) -> str:
     if not user_id:
         return ""
     from sqlalchemy import select
+
     from app.db.models import User
 
     r = await session.execute(select(User).where(User.user_id == user_id))
@@ -889,7 +892,9 @@ async def _fetch_reply_context(session, replied_msg_id: str) -> str:
     if not replied_msg_id:
         return ""
     from sqlalchemy import select
-    from app.db.models import BotAccount, Message as MsgModel, User
+
+    from app.db.models import BotAccount, User
+    from app.db.models import Message as MsgModel
 
     r = await session.execute(select(MsgModel).where(MsgModel.msg_id == replied_msg_id))
     msg = r.scalar_one_or_none()
@@ -932,6 +937,7 @@ async def _fetch_recent_history(
     使用 before_msg_id 精确定位，避免把当前轮次的消息重复带入。
     """
     from sqlalchemy import select
+
     from app.db.models import Message as MsgModel
 
     q = select(MsgModel).where(
@@ -1193,8 +1199,9 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
         if user_text.startswith(_CLARIFY_PREFIX):
             answer_body = user_text[len(_CLARIFY_PREFIX):].strip()
             if answer_body:
-                from app.services.memory.manager import save_layer
                 from datetime import datetime, timezone
+
+                from app.services.memory.manager import save_layer
                 ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
                 entry = f"### 用户澄清选择（{ts}）\n{answer_body}"
                 existing = (memory.get("decisions") or "").rstrip()

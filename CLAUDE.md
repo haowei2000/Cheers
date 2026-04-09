@@ -27,7 +27,7 @@ cd backend && pytest ../tests/test_orchestrator_integration.py -v
 
 Lint:
 ```bash
-cd backend && flake8 app/
+cd backend && ruff check app/
 ```
 
 Database migrations (Alembic — must run before starting the server):
