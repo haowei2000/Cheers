@@ -52,6 +52,7 @@ def _make_engine():
 async def _load_settings_async() -> dict[str, Any]:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
     from app.db.models import SystemSetting
 
     engine = _make_engine()
@@ -69,6 +70,7 @@ async def _load_settings_async() -> dict[str, Any]:
 async def _save_settings_async(data: dict[str, Any]) -> None:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
     from app.db.models import SystemSetting
 
     engine = _make_engine()
@@ -194,6 +196,7 @@ async def _fetch_ai_models_async() -> list[dict[str, Any]]:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from sqlalchemy.pool import NullPool
+
     from app.db.models import AIModel
 
     engine = create_async_engine(settings.database_url, poolclass=NullPool, echo=False)

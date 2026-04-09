@@ -4,13 +4,13 @@ from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Channel, Workspace
+from app.db.models import Channel, ChannelMembership, Workspace
 
 
 @pytest.mark.asyncio
 async def test_list_channels_empty(client: AsyncClient, db_session: AsyncSession) -> None:
     """GET /api/channels 无频道时返回空列表."""
-    resp = await client.get("/api/channels")
+    resp = await client.get("/api/v1/channels")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"
@@ -26,7 +26,7 @@ async def test_create_channel(client: AsyncClient, db_session: AsyncSession) -> 
     await db_session.commit()
 
     resp = await client.post(
-        "/api/channels",
+        "/api/v1/channels",
         json={"workspace_id": "a0000000-0000-0000-0000-000000000001", "name": "general", "type": "public"},
     )
     assert resp.status_code == 200
@@ -51,9 +51,16 @@ async def test_list_channels_returns_created(client: AsyncClient, db_session: As
         type="public",
     )
     db_session.add(ch)
+    # Add test user as channel member so list_for_user returns the channel
+    membership = ChannelMembership(
+        channel_id="b0000000-0000-0000-0000-000000000001",
+        member_id="a0000000-0000-0000-0000-000000000099",
+        member_type="user",
+    )
+    db_session.add(membership)
     await db_session.commit()
 
-    resp = await client.get("/api/channels")
+    resp = await client.get("/api/v1/channels")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"

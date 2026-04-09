@@ -55,7 +55,7 @@ async def add_friend(
     result = await svc.add_friend(body.user_id, body.friend_identifier)
     msg = "已接受好友请求" if result["action"] == "accepted_existing" else "添加好友成功"
     # Remove action from response to match original schema
-    action = result.pop("action")
+    result.pop("action")
     return APIResponse.ok(result, message=msg)
 
 

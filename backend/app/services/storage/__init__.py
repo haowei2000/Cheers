@@ -11,7 +11,12 @@ from app.services.storage.base import (
     StorageObjectRef,
     StorageProvider,
 )
-from app.services.storage.bootstrap import build_storage_service, get_storage_service, initialize_storage, is_storage_enabled
+from app.services.storage.bootstrap import (
+    build_storage_service,
+    get_storage_service,
+    initialize_storage,
+    is_storage_enabled,
+)
 from app.services.storage.s3_compatible import S3CompatibleStorageService, S3CompatibleStorageSettings
 
 __all__ = [

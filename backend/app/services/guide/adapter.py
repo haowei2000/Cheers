@@ -3,8 +3,6 @@ import json
 import logging
 
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
-
-logger = logging.getLogger("app.services.guide.adapter")
 from app.services.admin.settings_store import get_clarify_settings
 from app.services.guide.help_index import (
     build_guide_content_with_form,
@@ -15,6 +13,8 @@ from app.services.guide.help_index import (
 from app.services.guide.llm_client import chat as llm_chat
 from app.services.guide.llm_client import generate_clarify_schema
 from app.services.guide.llm_client import is_configured as llm_configured
+
+logger = logging.getLogger("app.services.guide.adapter")
 
 DEFAULT_REPLY = (
     "您可以说：怎么创建项目、怎么加入项目、怎么接入 OpenClaw、怎么发消息、"

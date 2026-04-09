@@ -5,7 +5,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, NotFoundError
-from app.db.models import Friendship, User
+from app.db.models import User
 from app.repositories.friendship_repo import FriendshipRepository
 from app.repositories.user_repo import UserRepository
 
@@ -22,7 +22,7 @@ class FriendshipService:
         user = await self.user_repo.get_by_id(query)
         if user and user.user_id != current_user_id:
             return [user]
-        
+
         # 2. 模糊匹配用户名
         result = await self.session.execute(
             select(User).where(
@@ -55,10 +55,10 @@ class FriendshipService:
         target_user = await self.user_repo.get_by_id(friend_identifier)
         if not target_user:
             target_user = await self.user_repo.get_by_username(friend_identifier)
-        
+
         if not target_user:
             raise NotFoundError("用户不存在")
-        
+
         friend_id = target_user.user_id
         if user_id == friend_id:
             raise BadRequestError("不能添加自己为好友")

@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import cast, select, Text
+from sqlalchemy import Text, cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session

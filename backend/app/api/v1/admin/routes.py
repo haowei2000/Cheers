@@ -8,17 +8,24 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.admin.log_buffer import get_formatted_log_excerpt, get_recent_logs
-from app.core.schemas import (
-    AIModelCreate, AIModelInResponse, AIModelUpdate,
-    PromptTemplateCreate, PromptTemplateInResponse, PromptTemplateUpdate,
-)
 from app.core.dependencies import get_session, require_permission
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.responses import APIResponse
+from app.core.schemas import (
+    AIModelCreate,
+    AIModelInResponse,
+    AIModelUpdate,
+    PromptTemplateCreate,
+    PromptTemplateInResponse,
+    PromptTemplateUpdate,
+)
 from app.db.models import AIModel, PromptTemplate, User
+from app.services.admin.log_buffer import get_formatted_log_excerpt, get_recent_logs
 from app.services.admin_service import (
-    AIModelService, LogAnalysisService, PromptTemplateService, SettingsService,
+    AIModelService,
+    LogAnalysisService,
+    PromptTemplateService,
+    SettingsService,
 )
 from app.utils.crypto import decrypt_value
 
@@ -373,6 +380,7 @@ async def admin_list_users(session: AsyncSession = Depends(get_session)) -> APIR
 async def _health_database_async() -> str:
     try:
         from sqlalchemy import text
+
         from app.db.session import async_engine
         async with async_engine.connect() as conn:
             await asyncio.wait_for(conn.execute(text("SELECT 1")), timeout=5.0)
@@ -386,6 +394,7 @@ async def _health_database_async() -> str:
 def _health_redis_sync() -> str:
     try:
         import redis
+
         from app.config import settings
         r = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
         r.ping()
@@ -396,7 +405,8 @@ def _health_redis_sync() -> str:
 
 async def _health_guide_llm_async() -> str:
     try:
-        from app.services.guide.llm_client import CONNECTION_503_BUSY, check_connection as guide_llm_check
+        from app.services.guide.llm_client import CONNECTION_503_BUSY
+        from app.services.guide.llm_client import check_connection as guide_llm_check
         ok, msg = await guide_llm_check()
         if ok:
             return "degraded (503)" if msg == CONNECTION_503_BUSY else "ok"
