@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessage
 
-from app.db.models import AIModel
+from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, PromptTemplate, Workspace
 from app.services.adapters.base import AgentPayload
 from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
 from app.services.memory.context_store import get_layer, init_context_db
@@ -100,7 +100,6 @@ async def test_update_anchor_empty_content_returns_error() -> None:
 @pytest.mark.asyncio
 async def test_update_anchor_via_api(client, db_session) -> None:
     """通过 HTTP API 发送消息，触发 update_anchor，验证 context store 中锚点已更新。"""
-    from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, PromptTemplate, Workspace
     from app.services.guide.constants import GUIDE_BOT_ID
 
     ws = Workspace(workspace_id="anc0-0000-0000-0000-000000000001", name="AnchorWS")
@@ -181,7 +180,6 @@ def _make_model(model_id: str) -> AIModel:
 
 
 def _make_template(template_id: str) -> PromptTemplate:
-    from app.db.models import PromptTemplate
     return PromptTemplate(
         template_id=template_id,
         name="test-tpl",
