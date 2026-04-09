@@ -10,6 +10,8 @@
   read_file       — 读取频道内已上传文件的完整正文
   generate_image  — 文生图，生成后发送到频道
   edit_image      — 对已上传图片进行 AI 编辑
+  web_fetch       — 获取网页内容，用于读取外部文档或链接
+  web_search      — 网页搜索，用于查找当前信息或研究主题
 
 Agent：使用 LangChain bind_tools + 手动 agent loop，
        通过 OpenAI function calling API 实现结构化工具调用。
@@ -95,6 +97,12 @@ def _tool_label(tool_name: str, args: dict) -> str:
         return f"生成图片：{args.get('prompt', '?')[:30]}"
     if tool_name == "edit_image":
         return f"编辑图片：{args.get('prompt', '?')[:30]}"
+    if tool_name == "web_fetch":
+        url = args.get('url', '?')
+        return f"获取网页：{url[:50]}{'...' if len(url) > 50 else ''}"
+    if tool_name == "web_search":
+        query = args.get('query', '?')
+        return f"搜索：{query[:40]}{'...' if len(query) > 40 else ''}"
     return tool_name
 
 
@@ -761,7 +769,36 @@ def _make_tools(ctx: dict) -> list:
         await db_session.commit()
         return f"成功删除待办事项：'{content}'"
 
-    return [update_anchor, update_progress, update_decision, call_bot, call_user, create_file, generate_image, edit_image, read_file, create_todo, list_todos, update_todo, delete_todo]
+    @tool
+    async def web_fetch(url: str) -> str:
+        """Fetch and extract text content from a URL. Use when user references a webpage,
+        shares a link, or you need to read external documentation/articles.
+
+        Args:
+            url: The URL to fetch (must start with http:// or https://)
+        """
+        from app.tools.web import web_fetch as do_web_fetch
+
+        result = await do_web_fetch(url)
+        logger.info("unified_builtin[tool]: web_fetch url=%s len=%d", url[:80], len(result))
+        return result
+
+    @tool
+    async def web_search(query: str, num_results: int = 5) -> str:
+        """Search the web for information. Use when you need current information not in
+        your knowledge base, or to research topics, find documentation, or verify facts.
+
+        Args:
+            query: Search query string (be specific for better results)
+            num_results: Number of results to return (1-10, default 5)
+        """
+        from app.tools.web import web_search_formatted
+
+        result = await web_search_formatted(query, num_results)
+        logger.info("unified_builtin[tool]: web_search query='%s' num=%d", query, num_results)
+        return result
+
+    return [update_anchor, update_progress, update_decision, call_bot, call_user, create_file, generate_image, edit_image, read_file, create_todo, list_todos, update_todo, delete_todo, web_fetch, web_search]
 
 
 # ─── 附件处理 ──────────────────────────────────────────────────────────────────
