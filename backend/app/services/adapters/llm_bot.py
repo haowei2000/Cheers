@@ -308,6 +308,14 @@ class LLMBotAdapter(OpenClawAdapter):
                 success=False,
                 error_message=f"无法连接到 LLM API: {api_config['base_url']}",
             )
+        except httpx.RemoteProtocolError as exc:
+            logger.error("llm_bot: server disconnected without response %s", exc)
+            return AgentResponse(
+                content="",
+                task_id=task_id,
+                success=False,
+                error_message=f"LLM 服务断开连接（未返回响应），请检查模型服务是否正常: {api_config['base_url']}",
+            )
         except Exception as exc:
             logger.exception("llm_bot: unexpected error")
             return AgentResponse(

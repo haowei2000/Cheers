@@ -310,3 +310,19 @@ class TodoItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     channel: Mapped["Channel"] = relationship("Channel")
+
+
+class KeychainItem(Base):
+    """用户密钥链：存储个人敏感凭据。"""
+    __tablename__ = "keychain_items"
+
+    key_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)  # 用户定义的密钥名称
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # 加密存储的密钥值
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 可选描述
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    owner: Mapped["User"] = relationship("User", lazy="joined")
