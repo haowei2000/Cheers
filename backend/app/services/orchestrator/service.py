@@ -222,16 +222,27 @@ async def run_orchestrator(
         _load_attachments(),
     )
 
-    # 注入待办事项到上下文
+    # 注入待办事项到上下文（未完成保留完整内容，已完成仅保留索引 ID）
     from app.db.models import TodoItem
     todo_result = await session.execute(
         select(TodoItem)
-        .where(TodoItem.channel_id == channel_id, TodoItem.status == "pending")
+        .where(TodoItem.channel_id == channel_id)
         .order_by(TodoItem.created_at)
     )
-    pending_todos = todo_result.scalars().all()
+    all_todos = todo_result.scalars().all()
+    pending_todos = [t for t in all_todos if t.status == "pending"]
+    completed_todos = [t for t in all_todos if t.status == "completed"]
+    todos_parts: list[str] = []
     if pending_todos:
-        memory_context["todos"] = "\n".join(f"- [ ] {t.content}" for t in pending_todos)
+        todos_parts.append("## 未完成")
+        for t in pending_todos:
+            short_id = t.todo_id[:8]
+            todos_parts.append(f"- [ ] #{short_id}: {t.content}")
+    if completed_todos:
+        todos_parts.append("## 已完成（仅索引）")
+        todos_parts.append(" ".join(f"#{t.todo_id[:8]}" for t in completed_todos))
+    if todos_parts:
+        memory_context["todos"] = "\n".join(todos_parts)
 
     # 文档附件登记到 FILES_INDEX（后台非阻塞）
     if attachments:

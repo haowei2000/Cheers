@@ -76,21 +76,26 @@ class LLMBotAdapter(OpenClawAdapter):
         if not attachments:
             return user_message
 
-        parts = [user_message.strip(), "", "以下是用户上传文件的解析结果，请优先基于这些内容回答："]
-        for index, attachment in enumerate(attachments, start=1):
-            parts.append(f"## 文件 {index}")
-            parts.append(f"文件名: {attachment.get('filename') or attachment.get('file_id') or 'unknown'}")
+        file_parts = []
+        for attachment in attachments:
+            filename = attachment.get("filename") or attachment.get("file_id") or "unknown"
+            attrs = f'filename="{filename}"'
             if attachment.get("content_type"):
-                parts.append(f"类型: {attachment['content_type']}")
+                attrs += f' type="{attachment["content_type"]}"'
+            if attachment.get("file_id"):
+                attrs += f' file_id="{attachment["file_id"]}"'
+            lines = [f"  <file {attrs}>"]
             if attachment.get("summary"):
-                parts.append("摘要:")
-                parts.append(attachment["summary"])
-            parts.append("正文:")
-            parts.append(attachment.get("content") or "")
+                lines.append(f"    <summary>{attachment['summary']}</summary>")
+            content = attachment.get("content") or ""
+            lines.append(f"    <content>{content}</content>")
             if attachment.get("truncated") == "true":
-                parts.append("注意: 该文件文本已因长度限制被截断。")
-            parts.append("")
-        return "\n".join(parts).strip()
+                lines.append("    <truncated>true</truncated>")
+            lines.append("  </file>")
+            file_parts.append("\n".join(lines))
+
+        attachments_block = "<attachments>\n" + "\n".join(file_parts) + "\n</attachments>"
+        return user_message.strip() + "\n\n" + attachments_block
 
     def _get_api_config(self) -> dict[str, Any]:
         config: dict[str, Any] = {
@@ -144,10 +149,10 @@ class LLMBotAdapter(OpenClawAdapter):
         context_vars: dict[str, str] = {}
         if payload.memory_context:
             context_vars = {
-                "anchor": payload.memory_context.get("anchor", ""),
-                "decisions": payload.memory_context.get("decisions", ""),
-                "files_index": payload.memory_context.get("files_index", ""),
-                "recent": payload.memory_context.get("recent", ""),
+                "anchor": f"<anchor>{payload.memory_context.get('anchor', '')}</anchor>",
+                "decisions": f"<decisions>{payload.memory_context.get('decisions', '')}</decisions>",
+                "files_index": f"<files_index>{payload.memory_context.get('files_index', '')}</files_index>",
+                "recent": f"<recent>{payload.memory_context.get('recent', '')}</recent>",
             }
 
         # Vision 路径：模型支持且有图片时，构建多模态消息
