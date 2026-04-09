@@ -101,7 +101,8 @@ class Workspace(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    channels: Mapped[list["Channel"]] = relationship("Channel", back_populates="workspace")
+    channels: Mapped[list["Channel"]] = relationship("Channel", back_populates="workspace", cascade="all, delete-orphan")
+    memberships: Mapped[list["WorkspaceMembership"]] = relationship("WorkspaceMembership", cascade="all, delete-orphan")
 
 
 class Channel(Base):
@@ -119,11 +120,12 @@ class Channel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="channels")
-    messages: Mapped[list["Message"]] = relationship("Message", back_populates="channel")
+    messages: Mapped[list["Message"]] = relationship("Message", back_populates="channel", cascade="all, delete-orphan")
     memberships: Mapped[list["ChannelMembership"]] = relationship(
-        "ChannelMembership", back_populates="channel"
+        "ChannelMembership", back_populates="channel", cascade="all, delete-orphan"
     )
-    file_records: Mapped[list["FileRecord"]] = relationship("FileRecord", back_populates="channel")
+    file_records: Mapped[list["FileRecord"]] = relationship("FileRecord", back_populates="channel", cascade="all, delete-orphan")
+    history_pages: Mapped[list["HistoryPage"]] = relationship("HistoryPage", cascade="all, delete-orphan")
 
 
 class User(Base):
