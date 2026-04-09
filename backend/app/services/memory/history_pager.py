@@ -1,11 +1,9 @@
 """History Pager: Pagination and compacting of older messages."""
-import asyncio
 import re
-from datetime import datetime
 
-from sqlalchemy import select, func, desc, asc
+from sqlalchemy import asc, desc, func, select
 
-from app.db.models import Message, HistoryPage
+from app.db.models import HistoryPage, Message
 from app.db.session import async_session_factory
 from app.services.memory.context_store import init_context_db, set_layer
 from app.services.memory.manager import sync_channel_to_md
@@ -68,18 +66,18 @@ async def get_current_page_messages(session, channel_id: str, before_msg_id: str
     stmt = select(HistoryPage).where(HistoryPage.channel_id == channel_id).order_by(desc(HistoryPage.page_number)).limit(1)
     result = await session.execute(stmt)
     last_page = result.scalar_one_or_none()
-    
+
     last_sealed_msg_id = last_page.last_msg_id if last_page else None
-    
+
     q = select(Message).where(Message.channel_id == channel_id, Message.content != "")
-    
+
     if last_page:
         q = q.where(Message.created_at > last_page.ended_at)
-        
+
     if before_msg_id:
         sub = select(Message.created_at).where(Message.msg_id == before_msg_id).scalar_subquery()
         q = q.where(Message.created_at < sub)
-        
+
     q = q.order_by(asc(Message.created_at))
     result = await session.execute(q)
     return list(result.scalars().all()), last_sealed_msg_id
@@ -92,7 +90,7 @@ async def get_pages_summary_xml(channel_id: str, session) -> str:
     pages = result.scalars().all()
     if not pages:
         return ""
-    
+
     lines = []
     for p in pages:
         start_str = p.started_at.strftime("%Y-%m-%dT%H:%M:%SZ") if p.started_at else ""
@@ -107,7 +105,7 @@ async def get_full_text_for_msg(session, msg_id: str, channel_id: str) -> str | 
     msg = msg_result.scalar_one_or_none()
     if not msg:
         return None
-        
+
     page_result = await session.execute(
         select(HistoryPage).where(
             HistoryPage.channel_id == channel_id,
@@ -118,17 +116,17 @@ async def get_full_text_for_msg(session, msg_id: str, channel_id: str) -> str | 
     page = page_result.scalar_one_or_none()
     if not page:
         return None
-        
+
     marker = f"<!-- msg_id:{msg_id} -->"
     raw = page.raw_content
     idx = raw.find(marker)
     if idx == -1:
         return None
-        
+
     start_idx = raw.find("<history-", idx)
     if start_idx == -1:
         return None
-        
+
     # 找到对应的 </history-N> 结束标签
     # <history-N ...>
     end_tag_start = raw.find(">", start_idx)
@@ -140,11 +138,11 @@ async def get_full_text_for_msg(session, msg_id: str, channel_id: str) -> str | 
         return None
     tag_num = m.group(1)
     end_tag = f"</history-{tag_num}>"
-    
+
     end_idx = raw.find(end_tag, end_tag_start)
     if end_idx == -1:
         return None
-        
+
     return raw[start_idx:end_idx + len(end_tag)]
 
 
@@ -152,37 +150,37 @@ async def _compact_to_page(channel_id: str, session, msgs_to_compact: list[Messa
     """内部：将指定的 msgs_to_compact 列表打成一页 HistoryPage."""
     if not msgs_to_compact:
         return
-        
+
     stmt = select(func.max(HistoryPage.page_number)).where(HistoryPage.channel_id == channel_id)
     max_pn = await session.scalar(stmt)
     next_pn = (max_pn or 0) + 1
-    
+
     # 按照正序构建 raw_content
     raw_lines = []
     text_lines = []
-    
+
     from app.services.adapters.unified_builtin import _get_names_for_messages
     names = await _get_names_for_messages(session, msgs_to_compact)
-    
+
     for idx, m in enumerate(msgs_to_compact, 1):
         who = "user" if m.sender_type == "user" else "assistant"
         name = names.get(m.sender_id, "Unknown")
-        
+
         # 摘要用
         ts = m.created_at.strftime("%H:%M") if m.created_at else ""
         text_lines.append(f"[{ts}] {name}: {m.content[:200]}")
-        
+
         # raw_content
         raw_lines.append(f"<!-- msg_id:{m.msg_id} -->")
         raw_lines.append(f'<history-{idx} sender="{name}" role="{who}">{m.content}</history-{idx}>')
-        
+
     raw_content = "\n".join(raw_lines)
     raw_text_for_summary = "\n".join(text_lines)
-    
+
     summary = await _compress_with_system_llm(raw_text_for_summary)
     if not summary:
         summary = _truncate_recent(raw_text_for_summary)
-        
+
     new_page = HistoryPage(
         channel_id=channel_id,
         page_number=next_pn,
@@ -194,18 +192,18 @@ async def _compact_to_page(channel_id: str, session, msgs_to_compact: list[Messa
         raw_content=raw_content,
         message_count=len(msgs_to_compact)
     )
-    
+
     # 使用 PostgreSQL 支持的 INSERT ON CONFLICT DO NOTHING
     # SQLite 也支持 INSERT OR IGNORE
     # 为了兼容，如果 unique constraint conflict，通过捕获异常处理
     try:
         session.add(new_page)
         await session.commit()
-    except Exception as e:
+    except Exception:
         await session.rollback()
         # logging.getLogger(__name__).warning("Conflict compacting page: %s", e)
         return
-        
+
     await update_recent_pages_layer(channel_id, session)
 
 
@@ -216,12 +214,12 @@ async def maybe_compact_channel(channel_id: str) -> bool:
         if len(msgs) >= PAGE_SIZE:
             # 简单实现：将这 50 条消息打成一页（如果是冷启动积累很多，只取前 PAGE_SIZE 条）
             msgs_to_compact = msgs[:PAGE_SIZE]
-            
+
             # Root-based Threading逻辑：
             # 如果 msgs_to_compact 的最后一条有 in_reply_to_msg_id，且其回复根在这一批里，
             # 为了完整性，我们可以扩展到整个thread结束，但这可能导致单页过大。
             # 为了稳妥且满足计划要求，这里直接按 PAGE_SIZE 分页，除非有更精确定义。
-            
+
             await _compact_to_page(channel_id, session, msgs_to_compact)
             return True
     return False
@@ -234,7 +232,7 @@ async def update_recent_pages_layer(channel_id: str, session=None) -> None:
         await init_context_db()
         await set_layer(channel_id, "RECENT", xml_str)
         await sync_channel_to_md(channel_id)
-        
+
     if session:
         await do_update(session)
     else:

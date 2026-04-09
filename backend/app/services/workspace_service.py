@@ -93,7 +93,7 @@ class WorkspaceService:
         # 允许管理员操作，或者允许用户自己退出工作空间（如果不是最后一个 owner）
         if user_id != current_user.user_id:
             await self._check_workspace_permission(workspace_id, current_user)
-        
+
         membership = await self.repo.get_membership(workspace_id, user_id)
         if not membership:
             raise NotFoundError("membership not found")

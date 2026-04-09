@@ -3,6 +3,7 @@ import asyncio
 
 from app.services.memory.history_pager import maybe_compact_channel, update_recent_pages_layer
 
+
 async def update_recent_async(channel_id: str) -> None:
     """异步更新频道 RECENT 层。"""
     try:
