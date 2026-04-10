@@ -5573,7 +5573,9 @@ export default function App() {
                           .slice(0, 1)
                           .toUpperCase();
                         const msgTime = m.created_at
-                          ? new Date(m.created_at).toLocaleTimeString("zh-CN", {
+                          ? new Date(m.created_at).toLocaleString("zh-CN", {
+                              month: "2-digit",
+                              day: "2-digit",
                               hour: "2-digit",
                               minute: "2-digit",
                             })
@@ -5929,9 +5931,9 @@ export default function App() {
                                 "用户";
                           const rInitials = rLabel.slice(0, 2).toUpperCase();
                           const rTime = r.created_at
-                            ? new Date(r.created_at).toLocaleTimeString(
+                            ? new Date(r.created_at).toLocaleString(
                                 "zh-CN",
-                                { hour: "2-digit", minute: "2-digit" },
+                                { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" },
                               )
                             : "";
                           const {
