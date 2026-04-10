@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message
+from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message, User
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
@@ -153,6 +153,21 @@ async def run_orchestrator(
         user_secrets["_encrypted_msg"] = analysis_content
         logger.info("orchestrator: encrypted message content injected as _encrypted_msg for user %s", trigger_msg.sender_id)
 
+    # 查询发送者名称和频道名称（供模板变量使用）
+    sender_name = ""
+    if trigger_msg.sender_type == "user":
+        sender_user = await session.get(User, trigger_msg.sender_id)
+        sender_name = (sender_user.display_name or sender_user.username) if sender_user else ""
+    else:
+        sender_bot_result = await session.execute(
+            select(BotAccount).where(BotAccount.bot_id == trigger_msg.sender_id)
+        )
+        sender_bot = sender_bot_result.scalar_one_or_none()
+        sender_name = (sender_bot.display_name or sender_bot.username) if sender_bot else ""
+
+    channel_obj = await session.get(Channel, channel_id)
+    channel_name = channel_obj.name if channel_obj else ""
+
     # 澄清场景：若为澄清回答，提取原问题及其附件
     original_question = None
     original_file_ids: list[str] = []
@@ -163,8 +178,6 @@ async def run_orchestrator(
     target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=analysis_content)
     direct_answer_mode = False
     if not target_usernames:
-        channel_result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
-        channel_obj = channel_result.scalar_one_or_none()
         channel_auto_assist = bool(channel_obj.auto_assist) if channel_obj else False
         if (
             not mentioned
@@ -387,6 +400,8 @@ async def run_orchestrator(
                     "_make_stream_token_cb": _make_stream_token_cb,
                     "_bot_id": bot_id,
                     "_user_secrets": user_secrets,
+                    "_sender_name": sender_name,
+                    "_channel_name": channel_name,
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
@@ -427,6 +442,8 @@ async def run_orchestrator(
                         process_config={
                             "_stream_token": _make_stream_token_cb(sug_msg.msg_id),
                             "_user_secrets": user_secrets,
+                    "_sender_name": sender_name,
+                    "_channel_name": channel_name,
                         },
                     )
                     pending_sug.append((sug_username, sug_bot_id, sug_msg, sug_payload, sug_adapter))

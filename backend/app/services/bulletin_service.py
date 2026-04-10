@@ -7,6 +7,7 @@ from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.models import BulletinIssue, User
 from app.repositories.bulletin_repo import BulletinRepository
 from app.services.bulletin.schemas import IssueCreate, IssueUpdate
+from app.utils.permissions import is_admin
 
 
 class BulletinService:
@@ -42,7 +43,7 @@ class BulletinService:
 
     async def update_issue(self, issue_id: str, body: IssueUpdate, current_user: User) -> BulletinIssue:
         issue = await self.get_or_404(issue_id)
-        if issue.creator_id != current_user.user_id and current_user.role != "admin":
+        if issue.creator_id != current_user.user_id and not is_admin(current_user):
             raise ForbiddenError("无权修改此 Issue")
 
         if body.title is not None:
@@ -59,8 +60,16 @@ class BulletinService:
         await self.session.flush()
         return issue
 
+    async def resolve_issue(self, issue_id: str, current_user: User) -> BulletinIssue:
+        if current_user.role != "system_admin":
+            raise ForbiddenError("仅系统管理员可标记 Issue 为已解决")
+        issue = await self.get_or_404(issue_id)
+        issue.status = "resolved"
+        await self.session.flush()
+        return issue
+
     async def delete_issue(self, issue_id: str, current_user: User) -> None:
         issue = await self.get_or_404(issue_id)
-        if issue.creator_id != current_user.user_id and current_user.role != "admin":
+        if issue.creator_id != current_user.user_id and not is_admin(current_user):
             raise ForbiddenError("无权删除此 Issue")
         await self.repo.delete(issue)
