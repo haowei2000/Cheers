@@ -2117,7 +2117,8 @@ export default function App() {
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
   );
-  const [, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -2420,6 +2421,7 @@ export default function App() {
   useEffect(() => {
     if (!selectedId) {
       setMessages([]);
+      setHasMore(true);
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
@@ -2487,11 +2489,54 @@ export default function App() {
       .then((d) => {
         const data = d.data || [];
         setMessages(data);
-        setHasMore(data.length >= 30);
+        setHasMore(d.meta?.has_more ?? data.length >= 30);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [selectedId]);
+
+  // ── 上划加载更多历史消息 ──────────────────────────────────────────────────
+  const loadMoreMessages = useCallback(async () => {
+    if (!selectedId || !hasMore || loadingMore) return;
+    const oldest = messages[0];
+    if (!oldest) return;
+    setLoadingMore(true);
+    const container = messagesContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    try {
+      const r = await authFetch(
+        `${API}/channels/${selectedId}/messages?before_id=${oldest.msg_id}&limit=50`,
+      );
+      const d = await r.json();
+      const older = d.data || [];
+      if (older.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      setHasMore(d.meta?.has_more ?? older.length >= 50);
+      setMessages((prev) => [...older, ...prev]);
+      // 恢复滚动位置
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevScrollHeight;
+        }
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [selectedId, hasMore, loadingMore, messages, authFetch]);
+
+  const handleMessagesScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+      if (target.scrollTop < 100 && hasMore && !loadingMore) {
+        loadMoreMessages();
+      }
+    },
+    [hasMore, loadingMore, loadMoreMessages],
+  );
 
   // Scroll to a pending message after channel switch + messages load
   useEffect(() => {
@@ -5270,6 +5315,7 @@ export default function App() {
                 <div
                   ref={messagesContainerRef}
                   className="flex-1 overflow-auto"
+                  onScroll={handleMessagesScroll}
                 >
                   {loading ? (
                     <div className="flex items-center justify-center h-full text-gray-400 text-sm">
@@ -5277,6 +5323,16 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="py-2 px-2">
+                      {loadingMore && (
+                        <div className="text-center text-xs text-gray-400 py-2">
+                          加载更多消息...
+                        </div>
+                      )}
+                      {!hasMore && messages.length > 0 && (
+                        <div className="text-center text-xs text-gray-300 py-2">
+                          — 已加载全部消息 —
+                        </div>
+                      )}
                       {threadRoots.map((m) => {
                         const replies = threadRepliesOf(m.msg_id);
 
