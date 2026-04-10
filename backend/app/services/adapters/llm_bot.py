@@ -12,6 +12,7 @@ import httpx
 from app.db.models import AIModel, BotAccount, PromptTemplate
 from app.http_client import get_http_client
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.services.orchestrator.secrets import replace_secret_refs
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.adapters.llm_bot")
@@ -120,6 +121,11 @@ class LLMBotAdapter(OpenClawAdapter):
         user_text = (payload.trigger_message or {}).get("text", "")
         task_id = payload.task_id
         all_attachments = payload.attachments or []
+
+        # 替换 $secret{name} 引用为实际密钥值
+        user_secrets = (payload.process_config or {}).get("_user_secrets") or {}
+        if user_secrets:
+            user_text = replace_secret_refs(user_text, user_secrets)
 
         # 分离图片与文档附件
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
