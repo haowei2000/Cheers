@@ -156,14 +156,24 @@ class LLMBotAdapter(OpenClawAdapter):
         if isinstance(extra_headers, dict):
             headers.update({str(key): str(value) for key, value in extra_headers.items()})
 
-        context_vars: dict[str, str] = {}
+        pconfig = payload.process_config or {}
+        trigger_meta = payload.trigger_message or {}
+
+        context_vars: dict[str, str] = {
+            "sender_name": pconfig.get("_sender_name") or trigger_meta.get("user", ""),
+            "channel_name": pconfig.get("_channel_name") or "",
+            "channel_id": payload.channel_id,
+            "bot_name": self.bot.display_name or self.bot.username,
+            "timestamp": trigger_meta.get("timestamp", ""),
+        }
         if payload.memory_context:
-            context_vars = {
+            context_vars.update({
                 "anchor": f"<anchor>{payload.memory_context.get('anchor', '')}</anchor>",
                 "decisions": f"<decisions>{payload.memory_context.get('decisions', '')}</decisions>",
                 "files_index": f"<files_index>{payload.memory_context.get('files_index', '')}</files_index>",
                 "recent": f"<recent>{payload.memory_context.get('recent', '')}</recent>",
-            }
+                "todos": payload.memory_context.get("todos", ""),
+            })
 
         # Vision 路径：模型支持且有图片时，构建多模态消息
         supports_vision = (self.model.config or {}).get("supports_vision", True)
