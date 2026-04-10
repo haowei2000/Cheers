@@ -196,21 +196,47 @@ def _make_tools(ctx: dict) -> list:
             # 构建子 Bot 的完整上下文（四层记忆 + 当前会话历史）
             memory_context = ctx.get("memory") or {}
 
+            # 读取设置：子 bot 是否继承父 bot 的完整上下文
+            from app.services.admin.settings_store import get_assist_settings as _get_assist
+            inherit_ctx = _get_assist().get("child_bot_inherit_context", True)
+
+            # 继承上下文时，传递 msg_id 和 _db_session 等，让子 bot 能加载频道历史
+            parent_pconfig = ctx.get("_pconfig") or {}
+            trigger_msg = {
+                "user": ctx.get("sender_id", ""),
+                "text": message,
+                "timestamp": "",
+            }
+            if inherit_ctx:
+                trigger_msg["msg_id"] = ctx.get("_trigger_msg_id")
+
+            def _build_sub_pconfig(extra: dict | None = None) -> dict:
+                if not inherit_ctx:
+                    return extra or {}
+                inherited = {
+                    "_db_session": ctx.get("_db_session"),
+                    "channel_bot_usernames": parent_pconfig.get("channel_bot_usernames") or [],
+                    "channel_bot_details": parent_pconfig.get("channel_bot_details") or {},
+                    "bot_id_by_username": parent_pconfig.get("bot_id_by_username") or {},
+                    "_adapter_factory": parent_pconfig.get("_adapter_factory"),
+                    "_create_and_broadcast": parent_pconfig.get("_create_and_broadcast"),
+                    "_bot_id": parent_pconfig.get("_bot_id"),
+                }
+                if extra:
+                    inherited.update(extra)
+                return inherited
+
             if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
                 # 流式路径：预先创建空消息气泡，边生成边推送 delta，完成后写入最终内容
                 bot_msg = await pre_create_bot_msg(bot_id, task_id)
                 sub_payload = AgentPayload(
                     task_id=task_id,
                     channel_id=ctx["channel_id"],
-                    trigger_message={
-                        "user": ctx.get("sender_id", ""),
-                        "text": message,
-                        "timestamp": "",
-                    },
+                    trigger_message=trigger_msg,
                     memory_context=memory_context,
                     attachments=ctx.get("attachments") or [],
                     original_question_text=ctx.get("original_question_text"),
-                    process_config={"_stream_token": make_stream_token_cb(bot_msg.msg_id)},
+                    process_config=_build_sub_pconfig({"_stream_token": make_stream_token_cb(bot_msg.msg_id)}),
                 )
                 resp: AgentResponse = await adapter.execute(sub_payload)
                 result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
@@ -220,14 +246,11 @@ def _make_tools(ctx: dict) -> list:
                 sub_payload = AgentPayload(
                     task_id=task_id,
                     channel_id=ctx["channel_id"],
-                    trigger_message={
-                        "user": ctx.get("sender_id", ""),
-                        "text": message,
-                        "timestamp": "",
-                    },
+                    trigger_message=trigger_msg,
                     memory_context=memory_context,
                     attachments=ctx.get("attachments") or [],
                     original_question_text=ctx.get("original_question_text"),
+                    process_config=_build_sub_pconfig(),
                 )
                 resp = await adapter.execute(sub_payload)
                 result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
@@ -1246,6 +1269,9 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "original_question_text": payload.original_question_text,
             "_db_session": pconfig.get("_db_session"),
             "_bot_id": pconfig.get("_bot_id"),
+            # 以下字段用于 call_bot 子 bot 继承上下文
+            "_trigger_msg_id": (payload.trigger_message or {}).get("msg_id"),
+            "_pconfig": pconfig,
         }
 
         # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────

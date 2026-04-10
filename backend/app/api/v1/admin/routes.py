@@ -270,6 +270,7 @@ class ClarifySettingsBody(BaseModel):
 class AssistSettingsBody(BaseModel):
     llm_provider_id: str | None = None
     auto_takeover: bool | None = None
+    child_bot_inherit_context: bool | None = None
 
 
 @router.get("/settings/clarify", response_model=APIResponse[dict])
@@ -302,6 +303,7 @@ async def put_assist(body: AssistSettingsBody) -> APIResponse:
     updated = SettingsService.set_assist_settings(
         llm_provider_id=body.llm_provider_id,
         auto_takeover=body.auto_takeover,
+        child_bot_inherit_context=body.child_bot_inherit_context,
     )
     return APIResponse.ok(updated)
 

@@ -2119,6 +2119,7 @@ export default function App() {
   );
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const isLoadingOlderRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -2312,6 +2313,7 @@ export default function App() {
     setChannels([]);
     setWorkspaces([]);
     setMessages([]);
+    setHasMore(true);
     setLoginModalOpen(true);
   };
 
@@ -2501,6 +2503,7 @@ export default function App() {
     const oldest = messages[0];
     if (!oldest) return;
     setLoadingMore(true);
+    isLoadingOlderRef.current = true;
     const container = messagesContainerRef.current;
     const prevScrollHeight = container?.scrollHeight ?? 0;
     try {
@@ -2520,9 +2523,11 @@ export default function App() {
         if (container) {
           container.scrollTop = container.scrollHeight - prevScrollHeight;
         }
+        isLoadingOlderRef.current = false;
       });
     } catch (e) {
       console.error(e);
+      isLoadingOlderRef.current = false;
     } finally {
       setLoadingMore(false);
     }
@@ -3215,9 +3220,9 @@ export default function App() {
     }
   };
 
-  // 进入频道或收到新消息时，聊天区域滚动到最新消息
+  // 进入频道或收到新消息时，聊天区域滚动到最新消息（加载旧消息时跳过）
   useEffect(() => {
-    if (!messagesContainerRef.current) return;
+    if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
     messagesContainerRef.current.scrollTop =
       messagesContainerRef.current.scrollHeight;
   }, [selectedId, messages.length]);
