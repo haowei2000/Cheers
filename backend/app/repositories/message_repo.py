@@ -20,8 +20,11 @@ class MessageRepository:
         channel_id: str,
         limit: int = 50,
         before_id: str | None = None,
+        exclude_empty: bool = False,
     ) -> list[Message]:
         query = select(Message).where(Message.channel_id == channel_id)
+        if exclude_empty:
+            query = query.where(Message.content != "")
         if before_id:
             sub = select(Message.created_at).where(Message.msg_id == before_id).scalar_subquery()
             query = query.where(Message.created_at < sub)

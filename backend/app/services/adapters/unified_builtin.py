@@ -973,27 +973,12 @@ async def _fetch_recent_history(
     每条消息格式：[发送者名称]: <内容>
     使用 before_msg_id 精确定位，避免把当前轮次的消息重复带入。
     """
-    from sqlalchemy import select
+    from app.repositories.message_repo import MessageRepository
 
-    from app.db.models import Message as MsgModel
-
-    q = select(MsgModel).where(
-        MsgModel.channel_id == channel_id,
-        MsgModel.content != "",
+    repo = MessageRepository(session)
+    msgs = await repo.list_by_channel(
+        channel_id, limit=limit, before_id=before_msg_id, exclude_empty=True,
     )
-
-    if before_msg_id:
-        sub = (
-            select(MsgModel.created_at)
-            .where(MsgModel.msg_id == before_msg_id)
-            .scalar_subquery()
-        )
-        q = q.where(MsgModel.created_at < sub)
-
-    q = q.order_by(MsgModel.created_at.desc()).limit(limit)
-    result = await session.execute(q)
-    msgs = list(result.scalars().all())
-    msgs.reverse()  # 转为时间正序
 
     display_names = await _resolve_display_names(session, msgs)
 

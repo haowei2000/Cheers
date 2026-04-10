@@ -131,8 +131,15 @@ async def list_messages(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = MessageService(session)
-    messages, file_map = await svc.list_messages(channel_id, limit=limit, before_id=before_id)
-    return APIResponse.ok([_serialize(m, file_map) for m in messages])
+    # 多取一条用于判断是否还有更多历史消息
+    messages, file_map = await svc.list_messages(channel_id, limit=limit + 1, before_id=before_id)
+    has_more = len(messages) > limit
+    if has_more:
+        messages = messages[1:]  # 去掉最早的那条（多取的）
+    return APIResponse.ok(
+        [_serialize(m, file_map) for m in messages],
+        meta={"has_more": has_more},
+    )
 
 
 async def _handle_send_message(
