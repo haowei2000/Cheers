@@ -14,7 +14,7 @@ class IssueCreate(BaseModel):
 class IssueUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     content: str | None = None
-    status: str | None = Field(default=None, pattern="^(open|closed)$")
+    status: str | None = Field(default=None, pattern="^(open|closed|resolved)$")
     priority: str | None = Field(default=None, pattern="^(low|medium|high)$")
     tags: list[str] | None = None
 
