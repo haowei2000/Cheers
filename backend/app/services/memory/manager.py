@@ -35,6 +35,7 @@ async def sync_channel_to_md(channel_id: str) -> None:
 
 def build_system_prompt_prefix(channel_name: str, bot_role: str, memory: dict[str, str]) -> str:
     """拼接四层记忆为 System Prompt 前缀（详细设计 §4.3.1）."""
+    todos_section = f"\n== 待办事项（未完成）==\n{memory['todos']}\n" if memory.get("todos") else ""
     return f"""你是 {bot_role}，正在参与频道「{channel_name}」的协作工作。
 == 项目锚点（最高优先级，务必遵守）==
 {memory.get('anchor', '')}
@@ -43,5 +44,4 @@ def build_system_prompt_prefix(channel_name: str, bot_role: str, memory: dict[st
 == 已上传资料索引 ==
 {memory.get('files_index', '')}
 == 近期频道动态 ==
-{memory.get('recent', '')}
-"""
+{memory.get('recent', '')}{todos_section}"""

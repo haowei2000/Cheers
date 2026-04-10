@@ -7,12 +7,12 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
-from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
@@ -132,7 +132,7 @@ async def run_orchestrator(
     }
 
     trigger_content = _get_trigger_content(trigger_msg)
-    
+
     # 澄清场景：若为澄清回答，提取原问题及其附件
     original_question = None
     original_file_ids: list[str] = []
@@ -201,6 +201,17 @@ async def run_orchestrator(
         memory_load(channel_id),
         _load_attachments(),
     )
+
+    # 注入待办事项到上下文
+    from app.db.models import TodoItem
+    todo_result = await session.execute(
+        select(TodoItem)
+        .where(TodoItem.channel_id == channel_id, TodoItem.status == "pending")
+        .order_by(TodoItem.created_at)
+    )
+    pending_todos = todo_result.scalars().all()
+    if pending_todos:
+        memory_context["todos"] = "\n".join(f"- [ ] {t.content}" for t in pending_todos)
 
     # 文档附件登记到 FILES_INDEX（后台非阻塞）
     if attachments:
@@ -359,7 +370,7 @@ async def run_orchestrator(
                     sug for sug in suggested
                     if sug in channel_bot_usernames and sug != COORDINATOR_USERNAME
                 ]
-            
+
                 # 阶段 1：串行 broadcast + 预建消息（需要 DB session）
                 pending_sug: list[tuple[str, str, Message, AgentPayload, OpenClawAdapter]] = []
                 for sug_username in valid_suggested:

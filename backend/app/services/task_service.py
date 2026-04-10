@@ -38,7 +38,7 @@ class TaskService:
         """获取 Agent 任务聚合统计信息."""
         since = datetime.now(timezone.utc) - timedelta(days=limit_days)
         rows = await self.repo.get_stats(since)
-        
+
         per_bot = []
         total_count = 0
         for row in rows:
@@ -50,7 +50,7 @@ class TaskService:
                 "task_count": cnt,
                 "avg_latency_ms": round(float(avg_ms), 0) if avg_ms is not None else None,
             })
-        
+
         return {
             "total_tasks": total_count,
             "limit_days": limit_days,

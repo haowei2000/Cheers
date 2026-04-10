@@ -1,7 +1,7 @@
 """Channel 与 ChannelMembership 数据访问层."""
 from __future__ import annotations
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, Channel, ChannelMembership, User

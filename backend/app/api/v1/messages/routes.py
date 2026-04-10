@@ -11,16 +11,16 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_session, try_get_current_user
+from app.core.dependencies import get_current_user, try_get_current_user
 from app.core.responses import APIResponse
-from app.core.schemas import MessageCreate, MessageStreamCreate, MessageInResponse, MessageFileInResponse
-from app.services.ws_service import ws_manager
+from app.core.schemas import MessageCreate, MessageFileInResponse, MessageInResponse, MessageStreamCreate
 from app.db.models import FileRecord, Message, User
 from app.db.session import async_session_factory, get_session
 from app.services.guide.constants import GUIDE_BOT_ID
+from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
 from app.services.orchestrator.service import run_orchestrator
-from app.services.message_service import MessageService
+from app.services.ws_service import ws_manager
 from app.utils.crypto import decrypt_value, encrypt_value
 
 logger = logging.getLogger("app.api.v1.messages")
@@ -143,11 +143,10 @@ async def _handle_send_message(
 ) -> tuple[dict, str | None]:
     """持久化消息、广播、调度 orchestrator。返回 (payload_dict, secret_token)。"""
     from sqlalchemy import select
+
     from app.db.models import Channel, FileRecord
     from app.services.file_processor.service import FileFlowError, FilePipelineService
     from app.services.storage.base import StorageError
-    from app.config import settings
-    from app.utils.crypto import encrypt_value
 
     result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
     if not result.scalar_one_or_none():
@@ -244,10 +243,11 @@ async def send_message_stream(
     body: MessageStreamCreate,
 ) -> StreamingResponse:
     """发送消息，通过 SSE 返回 Bot 流式输出。"""
+    from sqlalchemy import select
+
+    from app.db.models import Channel
     from app.services.file_processor.service import FileFlowError, FilePipelineService
     from app.services.storage.base import StorageError
-    from sqlalchemy import select
-    from app.db.models import Channel
 
     normalized_file_ids = _normalize_file_ids(body.file_ids, body.file_id)
 
@@ -352,9 +352,11 @@ async def reveal_secret_message(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     """解密并返回加密消息原始内容（1 分钟内有效，查看后立即清除）。"""
-    from sqlalchemy import select
     import hmac as _hmac
-    from datetime import timezone, datetime as _dt, timedelta
+    from datetime import datetime as _dt
+    from datetime import timedelta, timezone
+
+    from sqlalchemy import select
 
     result = await session.execute(
         select(Message)
@@ -401,6 +403,7 @@ async def guide_reply(
 ) -> APIResponse:
     """由引导 Bot 在频道内发送一条跟帖。"""
     from sqlalchemy import select
+
     from app.db.models import Channel
     result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
     if not result.scalar_one_or_none():

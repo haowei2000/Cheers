@@ -38,6 +38,9 @@ dependencies = [
     "httpx>=0.28.1",
     "langchain>=0.3",
     "langchain-openai>=0.3",
+    # Web tools
+    "beautifulsoup4>=4.12.0",
+    "duckduckgo-search>=3.9.0",
 ]
 
 [project.optional-dependencies]
@@ -46,7 +49,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-cov",
     "httpx>=0.28.0",
-    "flake8>=7.0.0",
+    "ruff>=0.4.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -55,12 +58,17 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["../tests"]
 pythonpath = ["."]
 
-[tool.flake8]
-max-line-length = 120
-extend-ignore = ["E501"]
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
 
 # uv 镜像配置 - 使用阿里云 PyPI 镜像
 [[tool.uv.index]]

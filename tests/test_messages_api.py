@@ -92,6 +92,27 @@ class FakeStorageProvider(StorageProvider):
         body, _, _ = self.objects[file_id]
         return StorageObject(head=head, body=body)
 
+    async def put_object(
+        self,
+        file_id: str,
+        data: bytes,
+        content_type: str,
+        *,
+        scope: str = "uploads",
+    ) -> StorageObjectRef:
+        self.objects[file_id] = (data, content_type, {})
+        return self.resolve_file_id(file_id, scope=scope)
+
+    def create_presigned_get_url(
+        self,
+        file_id: str,
+        *,
+        expires_in: int | None = None,
+        scope: str = "uploads",
+    ) -> str:
+        ref = self.resolve_file_id(file_id, scope=scope)
+        return f"http://storage.test/{ref.object_key}"
+
     async def put_metadata_if_needed(
         self,
         file_id: str,
@@ -116,7 +137,7 @@ async def test_list_messages_empty(client: AsyncClient, db_session: AsyncSession
     db_session.add(ch)
     await db_session.commit()
 
-    resp = await client.get("/api/channels/e1000000-0000-0000-0000-000000000001/messages")
+    resp = await client.get("/api/v1/channels/e1000000-0000-0000-0000-000000000001/messages")
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
     assert resp.json()["data"] == []
@@ -137,7 +158,7 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
     await db_session.commit()
 
     resp = await client.post(
-        "/api/channels/e1000000-0000-0000-0000-000000000002/messages",
+        "/api/v1/channels/e1000000-0000-0000-0000-000000000002/messages",
         json={
             "content": "hello",
             "sender_id": "a0000000-0000-0000-0000-000000000001",
@@ -150,14 +171,14 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
     assert "msg_id" in data
     assert "created_at" in data
 
-    resp2 = await client.get("/api/channels/e1000000-0000-0000-0000-000000000002/messages")
+    resp2 = await client.get("/api/v1/channels/e1000000-0000-0000-0000-000000000002/messages")
     assert resp2.status_code == 200
     assert len(resp2.json()["data"]) == 1
     assert resp2.json()["data"][0]["content"] == "hello"
 
 
 @pytest.mark.asyncio
-async def test_create_message_with_file_metadata(client: AsyncClient, db_session: AsyncSession, tmp_path) -> None:
+async def test_create_message_with_file_metadata(client: AsyncClient, db_session: AsyncSession, tmp_path, monkeypatch) -> None:
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000003", name="W3")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000003",
@@ -180,8 +201,11 @@ async def test_create_message_with_file_metadata(client: AsyncClient, db_session
     db_session.add_all([ws, ch, record])
     await db_session.commit()
 
+    monkeypatch.setattr("app.services.storage.bootstrap.is_storage_enabled", lambda: False)
+    monkeypatch.setattr("app.services.file_processor.service.is_storage_enabled", lambda: False)
+
     resp = await client.post(
-        f"/api/channels/{ch.channel_id}/messages",
+        f"/api/v1/channels/{ch.channel_id}/messages",
         json={
             "content": "hello file",
             "sender_id": "a0000000-0000-0000-0000-000000000001",
@@ -212,11 +236,13 @@ async def test_create_presigned_upload_returns_file_record(
     await db_session.commit()
 
     fake_storage = FakeStorageProvider()
+    monkeypatch.setattr("app.services.storage.bootstrap.is_storage_enabled", lambda: True)
+    monkeypatch.setattr("app.services.storage.bootstrap.get_storage_service", lambda: fake_storage)
     monkeypatch.setattr("app.services.file_processor.service.is_storage_enabled", lambda: True)
     monkeypatch.setattr("app.services.file_processor.service.get_storage_service", lambda: fake_storage)
 
     resp = await client.post(
-        "/api/files/presign",
+        "/api/v1/files/presign",
         json={
             "channel_id": ch.channel_id,
             "uploader_id": "a0000000-0000-0000-0000-000000000011",
@@ -246,6 +272,7 @@ async def test_stream_message_with_local_file_returns_sse(
     client: AsyncClient,
     db_session: AsyncSession,
     tmp_path,
+    monkeypatch,
 ) -> None:
     model = _make_disabled_model("stream-model-0001")
     tpl = _make_template("stream-tpl-0001")
@@ -286,9 +313,12 @@ async def test_stream_message_with_local_file_returns_sse(
     )
     await db_session.commit()
 
+    monkeypatch.setattr("app.services.storage.bootstrap.is_storage_enabled", lambda: False)
+    monkeypatch.setattr("app.services.file_processor.service.is_storage_enabled", lambda: False)
+
     async with client.stream(
         "POST",
-        f"/api/channels/{ch.channel_id}/messages/stream",
+        f"/api/v1/channels/{ch.channel_id}/messages/stream",
         json={
             "content": "@mockbot 请结合文件回答",
             "sender_id": "a0000000-0000-0000-0000-000000000002",

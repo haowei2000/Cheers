@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import JSON
 
 
 def gen_uuid() -> str:
@@ -292,3 +292,21 @@ class BulletinIssue(Base):
     creator_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TodoItem(Base):
+    """Channel Todo List Items."""
+    __tablename__ = "todo_items"
+
+    todo_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    channel_id: Mapped[str] = mapped_column(String(36), ForeignKey("channels.channel_id"), nullable=False, index=True)
+    creator_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    creator_type: Mapped[str] = mapped_column(String(16), nullable=False) # "user" or "bot"
+    assignee_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    assignee_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True) # "user" or "bot"
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending") # pending, completed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    channel: Mapped["Channel"] = relationship("Channel")
