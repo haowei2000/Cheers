@@ -122,9 +122,13 @@ class LLMBotAdapter(OpenClawAdapter):
         task_id = payload.task_id
         all_attachments = payload.attachments or []
 
-        # 替换 $secret{name} 引用为实际密钥值
+        # 解密：将 $secret{name} 引用替换为实际密钥值，
+        # 并将加密消息占位符替换为解密后的原文
         user_secrets = (payload.process_config or {}).get("_user_secrets") or {}
         if user_secrets:
+            encrypted_msg = user_secrets.get("_encrypted_msg")
+            if encrypted_msg and "🔒" in user_text:
+                user_text = user_text.replace("🔒 [加密消息]", encrypted_msg)
             user_text = replace_secret_refs(user_text, user_secrets)
 
         # 分离图片与文档附件
