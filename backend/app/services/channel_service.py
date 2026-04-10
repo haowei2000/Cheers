@@ -6,13 +6,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import (
-    BotAccount, Channel, ChannelMembership, ChannelProfile,
-    FileRecord, Friendship, Message, User, WorkspaceMembership,
+    BotAccount,
+    Channel,
+    ChannelMembership,
+    ChannelProfile,
+    FileRecord,
+    Friendship,
+    Message,
+    User,
 )
-from app.repositories.channel_repo import ChannelRepository
-from app.repositories.workspace_repo import WorkspaceRepository
-from app.repositories.user_repo import UserRepository
 from app.repositories.bot_repo import BotRepository
+from app.repositories.channel_repo import ChannelRepository
+from app.repositories.user_repo import UserRepository
+from app.repositories.workspace_repo import WorkspaceRepository
 from app.utils.permissions import is_admin
 
 

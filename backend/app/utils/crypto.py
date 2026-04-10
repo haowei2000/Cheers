@@ -18,6 +18,7 @@ def _get_fernet():
         return _fernet
 
     from cryptography.fernet import Fernet
+
     from app.config import settings
 
     key_str = (settings.api_key_encryption_key or "").strip()

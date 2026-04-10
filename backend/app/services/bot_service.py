@@ -4,11 +4,10 @@ from __future__ import annotations
 import json
 import re
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BadRequestError, NotFoundError, ForbiddenError
-from app.db.models import AIModel, BotAccount, User
+from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
+from app.db.models import BotAccount, User
 from app.repositories.bot_repo import AIModelRepository, BotRepository, PromptTemplateRepository
 from app.utils.permissions import can_access, get_friend_ids
 
@@ -104,7 +103,6 @@ class BotService:
 
         await self._validate_model_and_template(model_id, template_id, current_user)
 
-        from app.utils.crypto import encrypt_value as _enc
         # api_key 由 model 管理，这里不再重复存储
 
         bot = BotAccount(

@@ -1,6 +1,5 @@
 """单机 WebSocket 连接管理，按频道广播."""
 import asyncio
-import json
 from collections import defaultdict
 
 from fastapi import WebSocket

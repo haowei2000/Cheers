@@ -37,6 +37,7 @@ async def resolve_user_mentions(
         return []
 
     from sqlalchemy import select
+
     from app.db.models import ChannelMembership, User
 
     result = await session.execute(

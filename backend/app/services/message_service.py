@@ -5,11 +5,12 @@ import secrets as _secrets
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError, BadRequestError
-from app.db.models import Message, User
+from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.schemas import MessageFileInResponse
+from app.db.models import Message
 from app.repositories.channel_repo import ChannelRepository
-from app.repositories.message_repo import MessageRepository
 from app.repositories.file_repo import FileRepository
+from app.repositories.message_repo import MessageRepository
 from app.utils.crypto import encrypt_value
 
 _SECRET_PLACEHOLDER = "🔒 [加密消息]"
@@ -29,14 +30,13 @@ class MessageService:
         before_id: str | None = None,
     ) -> tuple[list[Message], dict[str, MessageFileInResponse]]:
         """返回消息列表及 file_map {file_id: MessageFileInResponse}."""
-        from app.core.schemas import MessageFileInResponse
         ch = await self.channel_repo.get_by_id(channel_id)
         if not ch:
             raise NotFoundError("channel not found")
         messages = await self.msg_repo.list_by_channel(channel_id, limit=limit, before_id=before_id)
         file_ids = sorted({fid for m in messages for fid in (m.file_ids or []) if fid})
         records = await self.file_repo.get_many_by_ids(file_ids)
-        
+
         file_map = {
             fid: MessageFileInResponse(
                 file_id=rec.file_id,
@@ -62,7 +62,6 @@ class MessageService:
         is_secret: bool = False,
     ) -> tuple[Message, dict[str, MessageFileInResponse]]:
         """持久化一条消息，返回 (Message, file_map)。不触发 orchestrator（由路由层负责）."""
-        from app.core.schemas import MessageFileInResponse
         ch = await self.channel_repo.get_by_id(channel_id)
         if not ch:
             raise NotFoundError("channel not found")

@@ -3,8 +3,8 @@ import logging
 
 import httpx
 
-from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.config import settings
+from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 
 logger = logging.getLogger("app.services.adapters.http_openclaw")
 

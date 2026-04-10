@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.db.models import FileRecord, User
-from app.repositories.file_repo import FileRepository
 from app.repositories.channel_repo import ChannelRepository
+from app.repositories.file_repo import FileRepository
 
 
 class FileService:
