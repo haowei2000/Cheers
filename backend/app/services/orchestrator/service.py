@@ -75,12 +75,15 @@ async def _fetch_original_question_for_clarify(
     return None, []
 
 
-def _apply_prompt_template(template: str | None, user_message: str) -> str:
-    """应用 Bot 的 user_template。"""
+def _apply_prompt_template(template: str | None, user_message: str, extra_vars: dict[str, str] | None = None) -> str:
+    """应用 Bot 的 user_template，替换 {{message}}、{{sender_name}} 等变量。"""
     if not template:
         return user_message
     result = template.replace("{{}}", user_message)
     result = result.replace("{{message}}", user_message)
+    if extra_vars:
+        for key, value in extra_vars.items():
+            result = result.replace(f"{{{{{key}}}}}", value)
     return result
 
 
@@ -404,7 +407,7 @@ async def run_orchestrator(
                     if broadcast_processing:
                         await broadcast_processing(channel_id, sug_bot_id, sug_username)
                     sug_adapter = await adapter_factory(sug_bot_id)
-                    sug_templated_text = _apply_prompt_template(sug_template, trigger_content)
+                    sug_templated_text = _apply_prompt_template(sug_template, trigger_content, {"sender_name": sender_name})
                     sug_msg = await _pre_create_bot_msg(sug_bot_id, root_task_id)
                     sug_payload = AgentPayload(
                         task_id=root_task_id,
@@ -458,7 +461,7 @@ async def run_orchestrator(
             continue
         adapter = await adapter_factory(bot_id)
         bot_template = bot_template_by_username.get(username)
-        templated_text = _apply_prompt_template(bot_template, trigger_content)
+        templated_text = _apply_prompt_template(bot_template, trigger_content, {"sender_name": sender_name})
         other_bots = [item for item in channel_bot_usernames if item != username]
         bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
 

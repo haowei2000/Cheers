@@ -1948,6 +1948,8 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2501,6 +2503,7 @@ export default function App() {
   // ── 上划加载更多历史消息 ──────────────────────────────────────────────────
   const loadMoreMessages = useCallback(async () => {
     if (!selectedId || !hasMore || loadingMore) return;
+    const targetChannelId = selectedId;
     const oldest = messages[0];
     if (!oldest) return;
     setLoadingMore(true);
@@ -2509,7 +2512,7 @@ export default function App() {
     const prevScrollHeight = container?.scrollHeight ?? 0;
     try {
       const r = await authFetch(
-        `${API}/channels/${selectedId}/messages?before_id=${oldest.msg_id}&limit=50`,
+        `${API}/channels/${targetChannelId}/messages?before_id=${oldest.msg_id}&limit=50`,
       );
       const d = await r.json();
       const older = d.data || [];
@@ -2517,6 +2520,7 @@ export default function App() {
         setHasMore(false);
         return;
       }
+      if (selectedIdRef.current !== targetChannelId) return;
       setHasMore(d.meta?.has_more ?? older.length >= 50);
       setMessages((prev) => [...older, ...prev]);
       // 恢复滚动位置
@@ -2792,6 +2796,7 @@ export default function App() {
     inReplyToMsgId?: string,
   ): Promise<void> => {
     if (!selectedId || !content.trim()) return Promise.resolve();
+    const targetChannelId = selectedId;
     const body: Record<string, unknown> = {
       content: content.trim(),
       sender_id: currentUserId,
@@ -2799,14 +2804,14 @@ export default function App() {
       file_ids: [] as string[],
     };
     if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
-    return authFetch(`${API}/channels/${selectedId}/messages`, {
+    return authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
       .then((d) => {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
-        if (d.data) {
+        if (d.data && selectedIdRef.current === targetChannelId) {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id)
               ? prev
@@ -2818,6 +2823,7 @@ export default function App() {
 
   const send = () => {
     if (!selectedId || !input.trim()) return;
+    const targetChannelId = selectedId;
     let content = input.trim();
     if (replyingTo) {
       const refBot =
@@ -2853,14 +2859,15 @@ export default function App() {
       return [];
     });
     setReplyingTo(null);
-    authFetch(`${API}/channels/${selectedId}/messages`, {
+    authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
       .then((d) => {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
-        if (d.data) {
+        // 仅在用户仍停留在发送消息的频道时才插入，避免跨频道串消息
+        if (d.data && selectedIdRef.current === targetChannelId) {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id)
               ? prev

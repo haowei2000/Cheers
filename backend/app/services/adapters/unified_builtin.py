@@ -204,6 +204,7 @@ def _make_tools(ctx: dict) -> list:
             parent_pconfig = ctx.get("_pconfig") or {}
             trigger_msg = {
                 "user": ctx.get("sender_id", ""),
+                "sender_name": ctx.get("_sender_name", ""),
                 "text": message,
                 "timestamp": "",
             }
@@ -1271,6 +1272,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "_bot_id": pconfig.get("_bot_id"),
             # 以下字段用于 call_bot 子 bot 继承上下文
             "_trigger_msg_id": (payload.trigger_message or {}).get("msg_id"),
+            "_sender_name": (payload.trigger_message or {}).get("sender_name", ""),
             "_pconfig": pconfig,
         }
 
