@@ -30,6 +30,7 @@ type Message = {
   msg_id: string;
   sender_id: string;
   sender_type: string;
+  sender_name?: string;
   content: string;
   created_at?: string;
   _streaming?: boolean;
@@ -1351,6 +1352,153 @@ function ThinkingIndicator() {
   );
 }
 
+// ── Keychain Modal ────────────────────────────────────────────────────────────
+function KeychainModal({ userToken, onClose }: { userToken: string; onClose: () => void }) {
+  type KeychainItem = { key_id: string; name: string; description?: string; value_masked: string };
+  const [items, setItems] = useState<KeychainItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState("");
+  const [newValue, setNewValue] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [showValue, setShowValue] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]";
+
+  useEffect(() => {
+    fetch(`${API}/keychain/`, { headers: { Authorization: `Bearer ${userToken}` } })
+      .then((r) => r.json())
+      .then(setItems)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [userToken]);
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !newValue.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/keychain/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
+        body: JSON.stringify({ name: newName.trim(), value: newValue, description: newDesc.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "创建失败");
+      setItems((prev) => [...prev, data]);
+      setNewName(""); setNewValue(""); setNewDesc(""); setShowValue(false);
+      toast.success("密钥已保存");
+    } catch (e: any) { toast.error(e.message || "创建失败"); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (keyId: string) => {
+    setDeletingId(keyId);
+    try {
+      const res = await fetch(`${API}/keychain/${keyId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      if (!res.ok) throw new Error("删除失败");
+      setItems((prev) => prev.filter((k) => k.key_id !== keyId));
+      toast.success("密钥已删除");
+    } catch (e: any) { toast.error(e.message || "删除失败"); }
+    finally { setDeletingId(null); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose} aria-modal="true" role="dialog">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex justify-between items-center px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[#1264A3]">
+              <path fillRule="evenodd" d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z" clipRule="evenodd" />
+            </svg>
+            <h2 className="text-lg font-bold text-gray-900">密钥链</h2>
+          </div>
+          <button type="button" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          {/* Usage hint */}
+          <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0 mt-0.5">
+              <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clipRule="evenodd" />
+            </svg>
+            <span>在频道消息中使用 <code className="font-mono bg-blue-100 px-1 rounded">$secret&#123;密钥名称&#125;</code> 引用密钥，Bot 会自动获取真实值。</span>
+          </div>
+
+          {/* List */}
+          {loading ? (
+            <div className="text-center py-4 text-sm text-gray-400">加载中…</div>
+          ) : items.length === 0 ? (
+            <div className="text-center py-4 text-sm text-gray-400">暂无密钥，在下方添加第一个</div>
+          ) : (
+            <ul className="space-y-2">
+              {items.map((item) => (
+                <li key={item.key_id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-medium text-gray-800 truncate">{item.name}</span>
+                      <span className="font-mono text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">{item.value_masked}</span>
+                    </div>
+                    {item.description && <p className="text-xs text-gray-400 mt-0.5 truncate">{item.description}</p>}
+                  </div>
+                  <button type="button" onClick={() => handleDelete(item.key_id)} disabled={deletingId === item.key_id}
+                    className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40" title="删除密钥">
+                    {deletingId === item.key_id ? (
+                      <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Add new */}
+          <div className="border-t border-gray-100 pt-4 space-y-2">
+            <p className="text-xs font-medium text-gray-600">添加新密钥</p>
+            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="密钥名称（如 openai-key）" className={inputCls} />
+            <div className="relative">
+              <input type={showValue ? "text" : "password"} value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder="密钥值" className={`${inputCls} pr-10`} />
+              <button type="button" onClick={() => setShowValue((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" tabIndex={-1}>
+                {showValue ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clipRule="evenodd" />
+                    <path d="M10.748 13.93l2.523 2.523a9.987 9.987 0 0 1-3.27.547c-4.258 0-7.894-2.66-9.337-6.41a1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 2.839 6.02L6.07 9.252a4 4 0 0 0 4.678 4.678Z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+                    <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41Z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            <input type="text" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="描述（可选）" className={inputCls} />
+            <button type="button" onClick={handleCreate} disabled={saving || !newName.trim() || !newValue.trim()}
+              className="w-full py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50 transition-colors">
+              {saving ? "保存中…" : "保存密钥"}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex justify-end px-6 py-4 border-t border-gray-100 flex-shrink-0">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">关闭</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── User Profile Modal ────────────────────────────────────────────────────────
 function UserProfileModal({
   currentUser,
@@ -1973,6 +2121,8 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2003,6 +2153,54 @@ export default function App() {
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, [uploadMenuOpen]);
+
+  // Keychain insert popup
+  const [keychainPopupOpen, setKeychainPopupOpen] = useState(false);
+  const [keychainPopupItems, setKeychainPopupItems] = useState<{ key_id: string; name: string }[]>([]);
+  const [keychainPopupLoading, setKeychainPopupLoading] = useState(false);
+  const keychainPopupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!keychainPopupOpen) return;
+    const handle = (e: MouseEvent) => {
+      if (keychainPopupRef.current && !keychainPopupRef.current.contains(e.target as Node)) {
+        setKeychainPopupOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [keychainPopupOpen]);
+
+  const openKeychainPopup = async () => {
+    setKeychainPopupOpen((o) => !o);
+    if (keychainPopupItems.length > 0) return; // already loaded
+    setKeychainPopupLoading(true);
+    try {
+      const res = await authFetch(`${API}/keychain/`);
+      if (res.ok) setKeychainPopupItems(await res.json());
+    } catch {}
+    finally { setKeychainPopupLoading(false); }
+  };
+
+  const insertSecret = (name: string) => {
+    const snippet = `$secret{${name}}`;
+    const el = inputRef.current;
+    if (!el) {
+      setInput((v) => v + snippet);
+      setKeychainPopupOpen(false);
+      return;
+    }
+    const start = el.selectionStart ?? input.length;
+    const end = el.selectionEnd ?? input.length;
+    const newVal = input.slice(0, start) + snippet + input.slice(end);
+    setInput(newVal);
+    setKeychainPopupOpen(false);
+    // Restore cursor after snippet
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + snippet.length, start + snippet.length);
+    });
+  };
   const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>(
     {},
   );
@@ -2139,11 +2337,14 @@ export default function App() {
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
   const [userProfileOpen, setUserProfileOpen] = useState(false);
+  const [keychainModalOpen, setKeychainModalOpen] = useState(false);
   const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
   );
-  const [, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const isLoadingOlderRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -2337,6 +2538,7 @@ export default function App() {
     setChannels([]);
     setWorkspaces([]);
     setMessages([]);
+    setHasMore(true);
     setLoginModalOpen(true);
   };
 
@@ -2446,6 +2648,7 @@ export default function App() {
   useEffect(() => {
     if (!selectedId) {
       setMessages([]);
+      setHasMore(true);
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
@@ -2513,11 +2716,59 @@ export default function App() {
       .then((d) => {
         const data = d.data || [];
         setMessages(data);
-        setHasMore(data.length >= 30);
+        setHasMore(d.meta?.has_more ?? data.length >= 30);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [selectedId]);
+
+  // ── 上划加载更多历史消息 ──────────────────────────────────────────────────
+  const loadMoreMessages = useCallback(async () => {
+    if (!selectedId || !hasMore || loadingMore) return;
+    const targetChannelId = selectedId;
+    const oldest = messages[0];
+    if (!oldest) return;
+    setLoadingMore(true);
+    isLoadingOlderRef.current = true;
+    const container = messagesContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    try {
+      const r = await authFetch(
+        `${API}/channels/${targetChannelId}/messages?before_id=${oldest.msg_id}&limit=50`,
+      );
+      const d = await r.json();
+      const older = d.data || [];
+      if (older.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      if (selectedIdRef.current !== targetChannelId) return;
+      setHasMore(d.meta?.has_more ?? older.length >= 50);
+      setMessages((prev) => [...older, ...prev]);
+      // 恢复滚动位置
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevScrollHeight;
+        }
+        isLoadingOlderRef.current = false;
+      });
+    } catch (e) {
+      console.error(e);
+      isLoadingOlderRef.current = false;
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [selectedId, hasMore, loadingMore, messages, authFetch]);
+
+  const handleMessagesScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+      if (target.scrollTop < 100 && hasMore && !loadingMore) {
+        loadMoreMessages();
+      }
+    },
+    [hasMore, loadingMore, loadMoreMessages],
+  );
 
   // Scroll to a pending message after channel switch + messages load
   useEffect(() => {
@@ -2531,59 +2782,92 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedId) return;
-    const ws = new WebSocket(`${WS_BASE}/ws/channels/${selectedId}`);
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "message" && msg.data) {
-          setMessages((prev) => {
-            const id = msg.data.msg_id;
-            if (id && prev.some((m) => m.msg_id === id)) return prev;
-            const entry =
-              msg.data.sender_type === "bot"
-                ? { ...msg.data, _streaming: true }
-                : msg.data;
-            return [...prev, entry];
-          });
-          if (
-            msg.data.sender_type === "bot" &&
-            typeof msg.data.content === "string" &&
-            msg.data.content.includes("已更新记忆层")
-          ) {
-            fetch(`${API}/channels/${selectedId}/context`)
-              .then((r) => r.json())
-              .then((d) => d.data && setContextData(d.data))
-              .catch(() => {});
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    let disposed = false;
+    const MAX_RETRIES = 10;
+    const BASE_DELAY = 1000;
+    const MAX_DELAY = 30000;
+
+    function connect() {
+      if (disposed) return;
+      ws = new WebSocket(`${WS_BASE}/ws/channels/${selectedId}`);
+
+      ws.onopen = () => {
+        retryCount = 0;
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "message" && msg.data) {
+            setMessages((prev) => {
+              const id = msg.data.msg_id;
+              if (id && prev.some((m) => m.msg_id === id)) return prev;
+              const entry =
+                msg.data.sender_type === "bot"
+                  ? { ...msg.data, _streaming: true }
+                  : msg.data;
+              return [...prev, entry];
+            });
+            if (
+              msg.data.sender_type === "bot" &&
+              typeof msg.data.content === "string" &&
+              msg.data.content.includes("已更新记忆层")
+            ) {
+              fetch(`${API}/channels/${selectedId}/context`)
+                .then((r) => r.json())
+                .then((d) => d.data && setContextData(d.data))
+                .catch(() => {});
+            }
+          } else if (msg.type === "message_stream" && msg.data) {
+            const { msg_id, delta } = msg.data;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.msg_id === msg_id
+                  ? { ...m, content: m.content + delta, _streaming: true }
+                  : m,
+              ),
+            );
+          } else if (msg.type === "message_done" && msg.data) {
+            const { msg_id, content } = msg.data;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
+              ),
+            );
+            if (typeof content === "string" && content.includes("已更新记忆层")) {
+              fetch(`${API}/channels/${selectedId}/context`)
+                .then((r) => r.json())
+                .then((d) => d.data && setContextData(d.data))
+                .catch(() => {});
+            }
           }
-        } else if (msg.type === "message_stream" && msg.data) {
-          const { msg_id, delta } = msg.data;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.msg_id === msg_id
-                ? { ...m, content: m.content + delta, _streaming: true }
-                : m,
-            ),
-          );
-        } else if (msg.type === "message_done" && msg.data) {
-          const { msg_id, content } = msg.data;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
-            ),
-          );
-          if (typeof content === "string" && content.includes("已更新记忆层")) {
-            fetch(`${API}/channels/${selectedId}/context`)
-              .then((r) => r.json())
-              .then((d) => d.data && setContextData(d.data))
-              .catch(() => {});
-          }
+        } catch {}
+      };
+
+      ws.onerror = () => {
+        reportClientError("WS", `/ws/channels/${selectedId}`, 0, "websocket error");
+      };
+
+      ws.onclose = () => {
+        if (disposed) return;
+        if (retryCount < MAX_RETRIES) {
+          const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
+          retryCount++;
+          reconnectTimer = setTimeout(connect, delay);
         }
-      } catch {}
+      };
+    }
+
+    connect();
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
     };
-    ws.onerror = () => {
-      reportClientError("WS", `/ws/channels/${selectedId}`, 0, "websocket error");
-    };
-    return () => ws.close();
   }, [selectedId, reportClientError]);
 
   useEffect(() => {
@@ -2770,6 +3054,7 @@ export default function App() {
     inReplyToMsgId?: string,
   ): Promise<void> => {
     if (!selectedId || !content.trim()) return Promise.resolve();
+    const targetChannelId = selectedId;
     const body: Record<string, unknown> = {
       content: content.trim(),
       sender_id: currentUserId,
@@ -2777,14 +3062,14 @@ export default function App() {
       file_ids: [] as string[],
     };
     if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
-    return authFetch(`${API}/channels/${selectedId}/messages`, {
+    return authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
       .then((d) => {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
-        if (d.data) {
+        if (d.data && selectedIdRef.current === targetChannelId) {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id)
               ? prev
@@ -2796,6 +3081,7 @@ export default function App() {
 
   const send = () => {
     if (!selectedId || !input.trim()) return;
+    const targetChannelId = selectedId;
     let content = input.trim();
     if (replyingTo) {
       const refBot =
@@ -2831,14 +3117,15 @@ export default function App() {
       return [];
     });
     setReplyingTo(null);
-    authFetch(`${API}/channels/${selectedId}/messages`, {
+    authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
       .then((d) => {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
-        if (d.data) {
+        // 仅在用户仍停留在发送消息的频道时才插入，避免跨频道串消息
+        if (d.data && selectedIdRef.current === targetChannelId) {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id)
               ? prev
@@ -3199,9 +3486,9 @@ export default function App() {
     }
   };
 
-  // 进入频道或收到新消息时，聊天区域滚动到最新消息
+  // 进入频道或收到新消息时，聊天区域滚动到最新消息（加载旧消息时跳过）
   useEffect(() => {
-    if (!messagesContainerRef.current) return;
+    if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
     messagesContainerRef.current.scrollTop =
       messagesContainerRef.current.scrollHeight;
   }, [selectedId, messages.length]);
@@ -3614,6 +3901,16 @@ export default function App() {
             <div className="flex items-center gap-1 flex-shrink-0">
               {currentUser ? (
                 <>
+                  <button
+                    type="button"
+                    onClick={() => setKeychainModalOpen(true)}
+                    className="w-6 h-6 flex items-center justify-center rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+                    title="密钥链"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path fillRule="evenodd" d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z" clipRule="evenodd" />
+                    </svg>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setUserProfileOpen(true)}
@@ -4790,6 +5087,11 @@ export default function App() {
           />
         )}
 
+        {/* Keychain modal */}
+        {keychainModalOpen && authToken && (
+          <KeychainModal userToken={authToken} onClose={() => setKeychainModalOpen(false)} />
+        )}
+
         {/* User profile modal */}
         {userProfileOpen && currentUser && (
           <UserProfileModal
@@ -4901,7 +5203,7 @@ export default function App() {
                     (b) => b.member_id === pair.answer.sender_id,
                   );
                   const botLabel =
-                    senderBot?.display_name || senderBot?.username || "Bot";
+                    pair.answer.sender_name || senderBot?.display_name || senderBot?.username || "Bot";
                   return (
                     <label
                       key={pair.question.msg_id}
@@ -5299,6 +5601,7 @@ export default function App() {
                 <div
                   ref={messagesContainerRef}
                   className="flex-1 overflow-auto"
+                  onScroll={handleMessagesScroll}
                 >
                   {loading ? (
                     <div className="flex items-center justify-center h-full text-gray-400 text-sm">
@@ -5306,6 +5609,16 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="py-2 px-2">
+                      {loadingMore && (
+                        <div className="text-center text-xs text-gray-400 py-2">
+                          加载更多消息...
+                        </div>
+                      )}
+                      {!hasMore && messages.length > 0 && (
+                        <div className="text-center text-xs text-gray-300 py-2">
+                          — 已加载全部消息 —
+                        </div>
+                      )}
                       {threadRoots.map((m) => {
                         const replies = threadRepliesOf(m.msg_id);
 
@@ -5373,6 +5686,7 @@ export default function App() {
                               )
                             : undefined;
                         const botLabel =
+                          m.sender_name ||
                           senderBot?.display_name ||
                           senderBot?.username ||
                           "Bot";
@@ -5384,6 +5698,7 @@ export default function App() {
                               )
                             : undefined;
                         const userLabel =
+                          m.sender_name ||
                           senderUser?.display_name ||
                           senderUser?.username ||
                           "用户";
@@ -5391,7 +5706,9 @@ export default function App() {
                           .slice(0, 1)
                           .toUpperCase();
                         const msgTime = m.created_at
-                          ? new Date(m.created_at).toLocaleTimeString("zh-CN", {
+                          ? new Date(m.created_at).toLocaleString("zh-CN", {
+                              month: "2-digit",
+                              day: "2-digit",
                               hour: "2-digit",
                               minute: "2-digit",
                             })
@@ -5747,9 +6064,9 @@ export default function App() {
                                 "用户";
                           const rInitials = rLabel.slice(0, 2).toUpperCase();
                           const rTime = r.created_at
-                            ? new Date(r.created_at).toLocaleTimeString(
+                            ? new Date(r.created_at).toLocaleString(
                                 "zh-CN",
-                                { hour: "2-digit", minute: "2-digit" },
+                                { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" },
                               )
                             : "";
                           const {
@@ -6713,6 +7030,46 @@ export default function App() {
                             className="hidden"
                             onChange={uploadFile}
                           />
+                          {/* Keychain insert button */}
+                          {currentUser && (
+                            <div ref={keychainPopupRef} className="relative">
+                              <button
+                                type="button"
+                                onClick={openKeychainPopup}
+                                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${keychainPopupOpen ? "bg-blue-50 text-blue-600" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}
+                                title="插入密钥链"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path fillRule="evenodd" d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                              {keychainPopupOpen && (
+                                <div className="absolute bottom-10 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[200px] max-h-64 overflow-y-auto">
+                                  <p className="px-3 py-1.5 text-[11px] font-medium text-gray-400 uppercase tracking-wide">插入密钥</p>
+                                  {keychainPopupLoading ? (
+                                    <div className="px-3 py-3 text-xs text-gray-400 text-center">加载中…</div>
+                                  ) : keychainPopupItems.length === 0 ? (
+                                    <div className="px-3 py-3 text-xs text-gray-400 text-center">暂无密钥<br/><span className="text-gray-300">点击侧边栏钥匙图标添加</span></div>
+                                  ) : (
+                                    keychainPopupItems.map((item) => (
+                                      <button
+                                        key={item.key_id}
+                                        type="button"
+                                        onClick={() => insertSecret(item.name)}
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-gray-400 flex-shrink-0">
+                                          <path fillRule="evenodd" d="M6.5 5.5a4 4 0 1 1 2.88 3.838.75.75 0 0 0-.88.72V11h1.25a.75.75 0 0 1 0 1.5H8.5v1.25a.75.75 0 0 1-1.5 0v-3.44a5.5 5.5 0 1 1 5.5-5.31.75.75 0 0 1-1.499.05A4.001 4.001 0 0 0 6.5 5.5Zm.5 0a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1Z" clipRule="evenodd" />
+                                        </svg>
+                                        <span className="font-mono truncate">{item.name}</span>
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           <div ref={uploadMenuRef} className="relative">
                             <button
                               type="button"

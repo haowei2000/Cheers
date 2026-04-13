@@ -19,10 +19,11 @@ class APIResponse(BaseModel, Generic[T]):
     data: T | None = None
     message: str = ""
     request_id: str = ""
+    meta: dict | None = None
 
     @classmethod
-    def ok(cls, data: T, message: str = "", request_id: str = "") -> "APIResponse[T]":
-        return cls(status="success", data=data, message=message, request_id=request_id)
+    def ok(cls, data: T, message: str = "", request_id: str = "", meta: dict | None = None) -> "APIResponse[T]":
+        return cls(status="success", data=data, message=message, request_id=request_id, meta=meta)
 
     @classmethod
     def error(cls, message: str, request_id: str = "") -> "APIResponse[None]":
