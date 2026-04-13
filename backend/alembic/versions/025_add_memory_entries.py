@@ -31,7 +31,6 @@ def upgrade() -> None:
         sa.Column('creator_type', sa.String(length=16), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(['channel_id'], ['channels.channel_id']),
         sa.PrimaryKeyConstraint('entry_id'),
         sa.UniqueConstraint('channel_id', 'layer', 'sort_order', name='uq_memory_entries_channel_layer_order'),
     )

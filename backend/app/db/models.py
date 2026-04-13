@@ -339,7 +339,7 @@ class MemoryEntry(Base):
     __tablename__ = "memory_entries"
 
     entry_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    channel_id: Mapped[str] = mapped_column(String(36), ForeignKey("channels.channel_id"), nullable=False, index=True)
+    channel_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     layer: Mapped[str] = mapped_column(String(50), nullable=False)  # ANCHOR / DECISIONS / PROGRESS
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -348,8 +348,6 @@ class MemoryEntry(Base):
     creator_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # "user" / "bot"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    channel: Mapped["Channel"] = relationship("Channel")
 
     __table_args__ = (
         UniqueConstraint("channel_id", "layer", "sort_order", name="uq_memory_entries_channel_layer_order"),
