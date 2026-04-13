@@ -40,7 +40,9 @@ async def save_entry(
     if session is None:
         from app.db.session import async_session_factory
         async with async_session_factory() as session:
-            return await _do_save_entry(session, channel_id, layer, content, title, created_by, creator_type)
+            entry_id = await _do_save_entry(session, channel_id, layer, content, title, created_by, creator_type)
+            await session.commit()
+            return entry_id
     return await _do_save_entry(session, channel_id, layer, content, title, created_by, creator_type)
 
 
@@ -91,7 +93,9 @@ async def replace_layer_entries(
     if session is None:
         from app.db.session import async_session_factory
         async with async_session_factory() as session:
-            return await _do_replace(session, channel_id, layer, content, title, created_by, creator_type)
+            entry_id = await _do_replace(session, channel_id, layer, content, title, created_by, creator_type)
+            await session.commit()
+            return entry_id
     return await _do_replace(session, channel_id, layer, content, title, created_by, creator_type)
 
 
