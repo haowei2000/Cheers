@@ -1,46 +1,147 @@
-"""MemoryManager：四层记忆读写、上下文拼接（供 Orchestrator 注入）."""
-from pathlib import Path
+"""MemoryManager：频道记忆加载与 system prompt 构建（供 Orchestrator 注入）。
 
-from app.config import settings
-from app.services.memory.context_store import LAYERS, get_all_layers, get_layer, init_context_db, set_layer
+新架构：
+- ANCHOR / DECISIONS / PROGRESS → 从 memory_entries 表结构化加载
+- FILES_INDEX → 从 FileRecord 实时渲染
+- RECENT → 从 HistoryPage 实时渲染
+- TODOS → 从 TodoItem 实时渲染
+统一通过 ChannelMemory 领域对象。
+"""
+from __future__ import annotations
 
+from sqlalchemy.ext.asyncio import AsyncSession
 
-def _md_dir(channel_id: str) -> Path:
-    base = Path(settings.data_dir)
-    if not base.is_absolute():
-        base = Path(__file__).resolve().parent.parent.parent.parent / base
-    return base / "context_store" / channel_id
-
-
-async def load(channel_id: str) -> dict[str, str]:
-    """加载频道四层记忆，键为 anchor/decisions/files_index/recent."""
-    await init_context_db()
-    return await get_all_layers(channel_id)
+from app.services.memory.channel_memory import ChannelMemory
 
 
-async def save_layer(channel_id: str, layer: str, content: str) -> None:
-    """写入一层。layer 统一大写以与 get_all_layers 保持一致。"""
-    await init_context_db()
-    await set_layer(channel_id, layer.upper(), content)
+async def load(channel_id: str, session: AsyncSession) -> dict[str, str]:
+    """加载频道全部记忆，返回兼容旧格式的 dict。"""
+    mem = await ChannelMemory.load(channel_id, session)
+    return mem.to_context_dict()
 
 
-async def sync_channel_to_md(channel_id: str) -> None:
-    """将 DB 中该频道四层内容同步到 MD 文件（管理员可编辑）."""
-    md_dir = _md_dir(channel_id)
-    md_dir.mkdir(parents=True, exist_ok=True)
-    for layer in LAYERS:
-        content = await get_layer(channel_id, layer)
-        (md_dir / f"{layer}.md").write_text(content or "", encoding="utf-8")
+async def load_channel_memory(channel_id: str, session: AsyncSession) -> ChannelMemory:
+    """加载频道记忆，返回完整 ChannelMemory 对象。"""
+    return await ChannelMemory.load(channel_id, session)
+
+
+async def save_entry(
+    channel_id: str,
+    layer: str,
+    content: str,
+    title: str | None = None,
+    created_by: str | None = None,
+    creator_type: str | None = None,
+    session: AsyncSession | None = None,
+) -> str:
+    """创建一条记忆条目，返回 entry_id。供 Bot tool 和内部逻辑调用。"""
+
+
+    if session is None:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            entry_id = await _do_save_entry(session, channel_id, layer, content, title, created_by, creator_type)
+            await session.commit()
+            return entry_id
+    return await _do_save_entry(session, channel_id, layer, content, title, created_by, creator_type)
+
+
+async def _do_save_entry(
+    session: AsyncSession,
+    channel_id: str,
+    layer: str,
+    content: str,
+    title: str | None,
+    created_by: str | None,
+    creator_type: str | None,
+) -> str:
+    from sqlalchemy import func, select
+
+    from app.db.models import MemoryEntry
+
+    layer_upper = layer.upper()
+    max_order = await session.scalar(
+        select(func.max(MemoryEntry.sort_order))
+        .where(MemoryEntry.channel_id == channel_id, MemoryEntry.layer == layer_upper)
+    )
+    entry = MemoryEntry(
+        channel_id=channel_id,
+        layer=layer_upper,
+        title=title,
+        content=content,
+        sort_order=(max_order or 0) + 1,
+        created_by=created_by,
+        creator_type=creator_type,
+    )
+    session.add(entry)
+    await session.flush()
+    return entry.entry_id
+
+
+async def replace_layer_entries(
+    channel_id: str,
+    layer: str,
+    content: str,
+    title: str | None = None,
+    created_by: str | None = None,
+    creator_type: str | None = None,
+    session: AsyncSession | None = None,
+) -> str:
+    """替换某层的全部条目为单条新内容（兼容旧的覆盖写入模式）。返回 entry_id。"""
+
+
+    if session is None:
+        from app.db.session import async_session_factory
+        async with async_session_factory() as session:
+            entry_id = await _do_replace(session, channel_id, layer, content, title, created_by, creator_type)
+            await session.commit()
+            return entry_id
+    return await _do_replace(session, channel_id, layer, content, title, created_by, creator_type)
+
+
+async def _do_replace(
+    session: AsyncSession,
+    channel_id: str,
+    layer: str,
+    content: str,
+    title: str | None,
+    created_by: str | None,
+    creator_type: str | None,
+) -> str:
+    from sqlalchemy import delete
+
+    from app.db.models import MemoryEntry
+
+    layer_upper = layer.upper()
+    await session.execute(
+        delete(MemoryEntry).where(
+            MemoryEntry.channel_id == channel_id,
+            MemoryEntry.layer == layer_upper,
+        )
+    )
+    entry = MemoryEntry(
+        channel_id=channel_id,
+        layer=layer_upper,
+        title=title,
+        content=content,
+        sort_order=1,
+        created_by=created_by,
+        creator_type=creator_type,
+    )
+    session.add(entry)
+    await session.flush()
+    return entry.entry_id
 
 
 def build_system_prompt_prefix(channel_name: str, bot_role: str, memory: dict[str, str]) -> str:
-    """拼接四层记忆为 System Prompt 前缀（详细设计 §4.3.1）."""
+    """拼接记忆为 System Prompt 前缀。"""
     todos_section = f"\n== 待办事项（未完成）==\n{memory['todos']}\n" if memory.get("todos") else ""
+    progress_section = f"\n== 项目进度 ==\n{memory['progress']}\n" if memory.get("progress") else ""
     return f"""你是 {bot_role}，正在参与频道「{channel_name}」的协作工作。
 == 项目锚点（最高优先级，务必遵守）==
 {memory.get('anchor', '')}
 == 重要决策记录 ==
-{memory.get('decisions', '')}
+{memory.get('decisions', '')}{progress_section}
 == 已上传资料索引 ==
 {memory.get('files_index', '')}
 == 近期频道动态 ==

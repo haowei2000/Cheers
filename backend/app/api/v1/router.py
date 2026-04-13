@@ -12,6 +12,7 @@ from app.api.v1.friends.routes import router as friends_router
 from app.api.v1.image_gen.routes import router as image_gen_router
 from app.api.v1.keychain.routes import router as keychain_router
 from app.api.v1.mcp.routes import router as mcp_router
+from app.api.v1.memory.routes import router as memory_router
 from app.api.v1.messages.routes import router as messages_router
 from app.api.v1.notifications.routes import router as notifications_router
 from app.api.v1.tasks.routes import router as tasks_router
@@ -36,6 +37,7 @@ v1_router.include_router(bulletin_router)
 v1_router.include_router(todos_router)
 v1_router.include_router(notifications_router)
 v1_router.include_router(keychain_router)
+v1_router.include_router(memory_router)
 
 @v1_router.get("/health")
 def v1_health():
