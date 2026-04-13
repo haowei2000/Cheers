@@ -3,12 +3,12 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_core.messages import AIMessage
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, PromptTemplate, Workspace
+from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, MemoryEntry, PromptTemplate, Workspace
 from app.services.adapters.base import AgentPayload
 from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
-from app.services.memory.context_store import get_layer, init_context_db
 
 
 def _payload(channel_id: str, text: str) -> AgentPayload:
@@ -22,46 +22,68 @@ def _payload(channel_id: str, text: str) -> AgentPayload:
 
 @pytest.mark.asyncio
 async def test_update_anchor_persists_content() -> None:
-    """LLM 返回 update_anchor 工具调用时，锚点层应被写入 context store。"""
+    """LLM 返回 update_anchor 工具调用时，锚点层应被写入 memory_entries 表。"""
     channel_id = "test-ch-anchor-001"
     anchor_content = "项目目标：构建多智能体协作平台，2026 Q2 上线。"
 
+    # 创建内存数据库和 session
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "CREATE TABLE memory_entries ("
+            "  entry_id VARCHAR(36) PRIMARY KEY,"
+            "  channel_id VARCHAR(36) NOT NULL,"
+            "  layer VARCHAR(50) NOT NULL,"
+            "  title VARCHAR(255),"
+            "  content TEXT NOT NULL,"
+            "  sort_order INTEGER NOT NULL DEFAULT 0,"
+            "  created_by VARCHAR(36),"
+            "  creator_type VARCHAR(16),"
+            "  created_at TIMESTAMP,"
+            "  updated_at TIMESTAMP,"
+            "  UNIQUE(channel_id, layer, sort_order)"
+            ")"
+        ))
+    test_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
     # 模拟 LLM 返回工具调用，然后返回最终文本
     mock_llm = MagicMock()
-    
-    # 第一轮：返回 tool call
-    res1 = AIMessage(
-        content="",
-        tool_calls=[{
-            "name": "update_anchor",
-            "args": {"content": anchor_content},
-            "id": "call_1"
-        }]
-    )
-    # 第二轮：返回普通回复
-    res2 = AIMessage(content="已为你更新项目锚点。")
-    
+    res1 = MagicMock()
+    res1.content = ""
+    res1.tool_calls = [{
+        "name": "update_anchor",
+        "args": {"content": anchor_content},
+        "id": "call_1"
+    }]
+    res2 = MagicMock()
+    res2.content = "已为你更新项目锚点。"
+    res2.tool_calls = []
+
     mock_llm.ainvoke = AsyncMock(side_effect=[res1, res2])
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.config.settings.context_db_url", new="sqlite+aiosqlite:///:memory:"),
-        patch("app.services.memory.context_store._engine", new=None),
-        patch("app.services.memory.context_store._session_factory", new=None),
-        patch("app.services.memory.context_store._context_db_initialized", new=False),
         patch("app.services.adapters.unified_builtin._make_llm", return_value=mock_llm),
         patch("app.services.adapters.unified_builtin._get_llm_config", return_value={"base_url": "x", "model": "y"}),
+        patch("app.db.session.async_session_factory", new=test_session_factory),
     ):
-        await init_context_db()
         adapter = UnifiedBuiltinBotAdapter()
         resp = await adapter.execute(_payload(channel_id, "请把项目锚点更新为：" + anchor_content))
 
         assert resp.success is True
         assert "锚点" in resp.content or "已为你更新" in resp.content
 
-        # 验证锚点层已持久化到 context store
-        stored = await get_layer(channel_id, "ANCHOR")
-        assert stored == anchor_content
+        # 验证锚点层已持久化到 memory_entries 表
+        async with test_session_factory() as session:
+            result = await session.execute(
+                select(MemoryEntry).where(
+                    MemoryEntry.channel_id == channel_id,
+                    MemoryEntry.layer == "ANCHOR",
+                )
+            )
+            entry = result.scalar_one_or_none()
+            assert entry is not None
+            assert entry.content == anchor_content
 
 
 @pytest.mark.asyncio
@@ -70,27 +92,23 @@ async def test_update_anchor_empty_content_returns_error() -> None:
     channel_id = "test-ch-anchor-002"
 
     mock_llm = MagicMock()
-    res1 = AIMessage(
-        content="",
-        tool_calls=[{
-            "name": "update_anchor",
-            "args": {"content": ""},
-            "id": "call_2"
-        }]
-    )
-    res2 = AIMessage(content="操作失败。")
+    res1 = MagicMock()
+    res1.content = ""
+    res1.tool_calls = [{
+        "name": "update_anchor",
+        "args": {"content": ""},
+        "id": "call_2"
+    }]
+    res2 = MagicMock()
+    res2.content = "操作失败。"
+    res2.tool_calls = []
     mock_llm.ainvoke = AsyncMock(side_effect=[res1, res2])
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.config.settings.context_db_url", new="sqlite+aiosqlite:///:memory:"),
-        patch("app.services.memory.context_store._engine", new=None),
-        patch("app.services.memory.context_store._session_factory", new=None),
-        patch("app.services.memory.context_store._context_db_initialized", new=False),
         patch("app.services.adapters.unified_builtin._make_llm", return_value=mock_llm),
         patch("app.services.adapters.unified_builtin._get_llm_config", return_value={"base_url": "x", "model": "y"}),
     ):
-        await init_context_db()
         adapter = UnifiedBuiltinBotAdapter()
         resp = await adapter.execute(_payload(channel_id, "清空锚点"))
 
@@ -100,7 +118,7 @@ async def test_update_anchor_empty_content_returns_error() -> None:
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Background task isolation issue - patches don't propagate to _run_orchestrator_bg")
 async def test_update_anchor_via_api(client, db_session) -> None:
-    """通过 HTTP API 发送消息，触发 update_anchor，验证 context store 中锚点已更新。"""
+    """通过 HTTP API 发送消息，触发 update_anchor，验证 memory_entries 中锚点已更新。"""
     from app.services.guide.constants import GUIDE_BOT_ID
 
     ws = Workspace(workspace_id="anc0-0000-0000-0000-000000000001", name="AnchorWS")
@@ -129,29 +147,25 @@ async def test_update_anchor_via_api(client, db_session) -> None:
     await db_session.commit()
 
     anchor_text = "API 测试锚点内容 v1"
-    
+
     mock_llm = MagicMock()
-    res1 = AIMessage(
-        content="",
-        tool_calls=[{
-            "name": "update_anchor",
-            "args": {"content": anchor_text},
-            "id": "call_3"
-        }]
-    )
-    res2 = AIMessage(content="锚点已更新。")
+    res1 = MagicMock()
+    res1.content = ""
+    res1.tool_calls = [{
+        "name": "update_anchor",
+        "args": {"content": anchor_text},
+        "id": "call_3"
+    }]
+    res2 = MagicMock()
+    res2.content = "锚点已更新。"
+    res2.tool_calls = []
     mock_llm.ainvoke = AsyncMock(side_effect=[res1, res2])
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.config.settings.context_db_url", new="sqlite+aiosqlite:///:memory:"),
-        patch("app.services.memory.context_store._engine", new=None),
-        patch("app.services.memory.context_store._session_factory", new=None),
-        patch("app.services.memory.context_store._context_db_initialized", new=False),
         patch("app.services.adapters.unified_builtin._make_llm", return_value=mock_llm),
         patch("app.services.adapters.unified_builtin._get_llm_config", return_value={"base_url": "x", "model": "y"}),
     ):
-        await init_context_db()
         resp = await client.post(
             f"/api/v1/channels/{ch.channel_id}/messages",
             json={
@@ -163,8 +177,15 @@ async def test_update_anchor_via_api(client, db_session) -> None:
         assert resp.status_code == 200
         await asyncio.sleep(0.5)
 
-        stored = await get_layer(ch.channel_id, "ANCHOR")
-        assert stored == anchor_text
+        result = await db_session.execute(
+            select(MemoryEntry).where(
+                MemoryEntry.channel_id == ch.channel_id,
+                MemoryEntry.layer == "ANCHOR",
+            )
+        )
+        entry = result.scalar_one_or_none()
+        assert entry is not None
+        assert entry.content == anchor_text
 
 
 def _make_model(model_id: str) -> AIModel:
