@@ -113,6 +113,14 @@ def _tool_label(tool_name: str, args: dict) -> str:
 def _make_tools(ctx: dict) -> list:
     """创建绑定了执行上下文的工具列表。"""
 
+    def _resolve(text: str) -> str:
+        """将文本中的 $secret{name} 引用替换为实际密钥值（仅在工具调用时执行）。"""
+        secrets = ctx.get("user_secrets") or {}
+        if not secrets:
+            return text
+        from app.services.orchestrator.secrets import replace_secret_refs
+        return replace_secret_refs(text, secrets)
+
     @tool
     async def update_anchor(content: str) -> str:
         """更新项目锚点层（覆盖写入）。用于持久化项目目标、范围、核心约束等关键信息。
@@ -173,7 +181,7 @@ def _make_tools(ctx: dict) -> list:
             message: 发给该 Bot 的任务描述
         """
         username = username.strip().lstrip("@")
-        message = message.strip()
+        message = _resolve(message.strip())
         if not username or not message:
             return "错误：需要提供 username 和 message"
 
@@ -198,21 +206,51 @@ def _make_tools(ctx: dict) -> list:
             # 构建子 Bot 的完整上下文（四层记忆 + 当前会话历史）
             memory_context = ctx.get("memory") or {}
 
+            # 读取设置：子 bot 是否继承父 bot 的完整上下文
+            from app.services.admin.settings_store import get_assist_settings as _get_assist
+            inherit_ctx = _get_assist().get("child_bot_inherit_context", True)
+
+            # 继承上下文时，传递 msg_id 和 _db_session 等，让子 bot 能加载频道历史
+            parent_pconfig = ctx.get("_pconfig") or {}
+            trigger_msg = {
+                "user": ctx.get("sender_id", ""),
+                "sender_name": ctx.get("_sender_name", ""),
+                "text": message,
+                "timestamp": "",
+            }
+            if inherit_ctx:
+                trigger_msg["msg_id"] = ctx.get("_trigger_msg_id")
+
+            def _build_sub_pconfig(extra: dict | None = None) -> dict:
+                if not inherit_ctx:
+                    return extra or {}
+                inherited = {
+                    "_db_session": ctx.get("_db_session"),
+                    "channel_bot_usernames": parent_pconfig.get("channel_bot_usernames") or [],
+                    "channel_bot_details": parent_pconfig.get("channel_bot_details") or {},
+                    "bot_id_by_username": parent_pconfig.get("bot_id_by_username") or {},
+                    "_adapter_factory": parent_pconfig.get("_adapter_factory"),
+                    "_create_and_broadcast": parent_pconfig.get("_create_and_broadcast"),
+                    "_bot_id": parent_pconfig.get("_bot_id"),
+                }
+                if extra:
+                    inherited.update(extra)
+                return inherited
+
             if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
                 # 流式路径：预先创建空消息气泡，边生成边推送 delta，完成后写入最终内容
                 bot_msg = await pre_create_bot_msg(bot_id, task_id)
                 sub_payload = AgentPayload(
                     task_id=task_id,
                     channel_id=ctx["channel_id"],
-                    trigger_message={
-                        "user": ctx.get("sender_id", ""),
-                        "text": message,
-                        "timestamp": "",
-                    },
+                    trigger_message=trigger_msg,
                     memory_context=memory_context,
                     attachments=ctx.get("attachments") or [],
                     original_question_text=ctx.get("original_question_text"),
-                    process_config={"_stream_token": make_stream_token_cb(bot_msg.msg_id)},
+                    process_config=_build_sub_pconfig({
+                        "_stream_token": make_stream_token_cb(bot_msg.msg_id),
+                        "_user_secrets": ctx.get("user_secrets") or {},
+                    }),
                 )
                 resp: AgentResponse = await adapter.execute(sub_payload)
                 result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
@@ -222,14 +260,11 @@ def _make_tools(ctx: dict) -> list:
                 sub_payload = AgentPayload(
                     task_id=task_id,
                     channel_id=ctx["channel_id"],
-                    trigger_message={
-                        "user": ctx.get("sender_id", ""),
-                        "text": message,
-                        "timestamp": "",
-                    },
+                    trigger_message=trigger_msg,
                     memory_context=memory_context,
                     attachments=ctx.get("attachments") or [],
                     original_question_text=ctx.get("original_question_text"),
+                    process_config=_build_sub_pconfig({"_user_secrets": ctx.get("user_secrets") or {}}),
                 )
                 resp = await adapter.execute(sub_payload)
                 result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
@@ -781,6 +816,7 @@ def _make_tools(ctx: dict) -> list:
         """
         from app.tools.web import web_fetch as do_web_fetch
 
+        url = _resolve(url)
         result = await do_web_fetch(url)
         logger.info("unified_builtin[tool]: web_fetch url=%s len=%d", url[:80], len(result))
         return result
@@ -796,6 +832,7 @@ def _make_tools(ctx: dict) -> list:
         """
         from app.tools.web import web_search_formatted
 
+        query = _resolve(query)
         result = await web_search_formatted(query, num_results)
         logger.info("unified_builtin[tool]: web_search query='%s' num=%d", query, num_results)
         return result
@@ -922,7 +959,7 @@ async def _fetch_user_display_name(session, user_id: str) -> str:
     return (u.display_name or u.username) if u else ""
 
 
-async def _fetch_reply_context(session, replied_msg_id: str) -> str:
+async def _fetch_reply_context(session, replied_msg_id: str, channel_id: str) -> str:
     """
     获取被回复消息的摘要前缀，格式：「回复 [发送者]: <内容摘要>」
 
@@ -930,10 +967,13 @@ async def _fetch_reply_context(session, replied_msg_id: str) -> str:
     """
     if not replied_msg_id:
         return ""
+    import xml.etree.ElementTree as ET
+
     from sqlalchemy import select
 
     from app.db.models import BotAccount, User
     from app.db.models import Message as MsgModel
+    from app.services.memory.history_pager import get_full_text_for_msg
 
     r = await session.execute(select(MsgModel).where(MsgModel.msg_id == replied_msg_id))
     msg = r.scalar_one_or_none()
@@ -941,10 +981,20 @@ async def _fetch_reply_context(session, replied_msg_id: str) -> str:
         return ""
 
     quoted = _strip_ui_blocks(msg.content or "")
+
+    # 尝试从老分页加载
+    old_xml = await get_full_text_for_msg(session, replied_msg_id, channel_id)
+    if old_xml:
+        try:
+            # 提取纯文本内容
+            root = ET.fromstring(old_xml)
+            if root.text:
+                quoted = _strip_ui_blocks(root.text)
+        except Exception:
+            pass
+
     if not quoted:
         return ""
-    if len(quoted) > 300:
-        quoted = quoted[:300] + "…"
 
     # 解析发送者名称
     sender_label = ""
@@ -958,56 +1008,33 @@ async def _fetch_reply_context(session, replied_msg_id: str) -> str:
         sender_label = (b.display_name or b.username) if b else ""
 
     if sender_label:
-        return f"「回复 [{sender_label}]：{quoted}」\n\n"
-    return f"「回复：{quoted}」\n\n"
+        return f'<reply_to sender="{sender_label}">{quoted}</reply_to>\n\n'
+    return f"<reply_to>{quoted}</reply_to>\n\n"
 
 
 async def _fetch_recent_history(
     session,
     channel_id: str,
     before_msg_id: str | None,
-    limit: int = HISTORY_MSG_COUNT,
 ) -> list:
     """
-    从 DB 拉取当前触发消息之前的最近 limit 条非空消息，
+    从 DB 拉取当前触发消息之前的最近非空消息（基于分页逻辑），
     转换为带发送者标识的 LangChain HumanMessage / AIMessage 列表（时间正序）。
-
-    每条消息格式：[发送者名称]: <内容>
-    使用 before_msg_id 精确定位，避免把当前轮次的消息重复带入。
     """
-    from sqlalchemy import select
+    from app.services.memory.history_pager import get_current_page_messages
 
-    from app.db.models import Message as MsgModel
-
-    q = select(MsgModel).where(
-        MsgModel.channel_id == channel_id,
-        MsgModel.content != "",
-    )
-
-    if before_msg_id:
-        sub = (
-            select(MsgModel.created_at)
-            .where(MsgModel.msg_id == before_msg_id)
-            .scalar_subquery()
-        )
-        q = q.where(MsgModel.created_at < sub)
-
-    q = q.order_by(MsgModel.created_at.desc()).limit(limit)
-    result = await session.execute(q)
-    msgs = list(result.scalars().all())
-    msgs.reverse()  # 转为时间正序
+    msgs, _ = await get_current_page_messages(session, channel_id, before_msg_id)
 
     display_names = await _resolve_display_names(session, msgs)
 
     lc_messages: list = []
-    for m in msgs:
+    for idx, m in enumerate(msgs, 1):
         content = _strip_ui_blocks(m.content or "")
         if not content:
             continue
-        if len(content) > HISTORY_MSG_MAX_CHARS:
-            content = content[:HISTORY_MSG_MAX_CHARS] + "…"
         name = display_names.get(m.sender_id, "")
-        labeled = f"[{name}]: {content}" if name else content
+        role = "user" if m.sender_type == "user" else "assistant"
+        labeled = f'<history-{idx} role="{role}" sender="{name}">{content}</history-{idx}>' if name else f'<history-{idx}>{content}</history-{idx}>'
         if m.sender_type == "user":
             lc_messages.append(HumanMessage(content=labeled))
         else:
@@ -1185,6 +1212,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
         memory = payload.memory_context or {}
         channel_id = payload.channel_id
         pconfig = payload.process_config or {}
+
         channel_bots: list[str] = pconfig.get("channel_bot_usernames") or []
         bot_details: dict = pconfig.get("channel_bot_details") or {}
         bot_id_by_username: dict = pconfig.get("bot_id_by_username") or {}
@@ -1212,16 +1240,27 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             members_lines.append(line)
         members_section = "\n".join(members_lines) if members_lines else "（暂无其他专业 Bot）"
 
-        system_prompt = "\n\n".join([
+        _has_encrypted_msg = "_encrypted_msg" in (pconfig.get("_user_secrets") or {})
+        system_prompt = "\n\n".join(filter(None, [
             "你是 AgentNexus 内置智能协作助手，兼顾使用引导、项目助手、协作协调三个职责。",
+            (
+                "=== 加密消息说明 ===\n"
+                "用户发送了一条 🔒 加密消息，其内容已安全隔离，不会直接出现在对话中。\n"
+                "在工具调用的参数中使用 `$secret{_encrypted_msg}` 来引用该消息的实际内容，"
+                "系统会在请求发出前自动替换为真实值。\n"
+                "例如：调用 web_fetch 时，若 URL 中需要用到加密消息中的 token，"
+                "则将 URL 写为 `https://api.example.com/data?token=$secret{_encrypted_msg}`。"
+            ) if _has_encrypted_msg else "",
             "=== 系统帮助文档（回答使用类问题时参考）===\n" + get_help_context_for_llm(),
             (
-                "=== 项目记忆 ===\n"
-                f"【锚点·最高优先级】\n{memory.get('anchor') or '（暂无）'}\n\n"
-                f"【项目进度】\n{memory.get('progress') or '（暂无）'}\n\n"
-                f"【决策记录】\n{memory.get('decisions') or '（暂无）'}\n\n"
-                f"【资料索引】\n{memory.get('files_index') or '（暂无）'}\n\n"
-                f"【最近关注】\n{memory.get('recent') or '（暂无）'}"
+                "<project_memory>\n"
+                f"  <anchor priority=\"highest\">{memory.get('anchor') or '（暂无）'}</anchor>\n"
+                f"  <progress>{memory.get('progress') or '（暂无）'}</progress>\n"
+                f"  <decisions>{memory.get('decisions') or '（暂无）'}</decisions>\n"
+                f"  <files_index>{memory.get('files_index') or '（暂无）'}</files_index>\n"
+                f"  <recent>{memory.get('recent') or '（暂无）'}</recent>\n"
+                f"  <todos>{memory.get('todos') or '（暂无）'}</todos>\n"
+                "</project_memory>"
             ),
             (
                 f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.original_question_text}\n"
@@ -1231,7 +1270,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             (
                 "## 核心行为准则\n\n"
                 "- 用户消息信息不足、意图模糊或需要关键决策时，**第一步必须调用 call_user** 向相关用户收集信息，不要猜测或直接执行\n"
-                "- call_user 的 username 从对话历史中获取（历史消息格式为 [用户名]: 消息内容）；需要提问时填写 options\n"
+                "- call_user 的 username 从对话历史中获取（历史消息格式为 <history-N sender=\"用户名\" role=\"user/assistant\">消息内容</history-N>）；需要提问时填写 options\n"
                 "- 先调用所有必要工具，结果返回后再输出最终回复\n"
                 "- 最终回复使用简洁专业的 Markdown 格式\n\n"
                 "## 图片工具使用准则（严格遵守）\n\n"
@@ -1248,7 +1287,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 "- **update_decision**：若对话中产生了重要决策、技术选型、方案确认，立即记录。\n\n"
                 "**触发原则**：宁可多更新，不要遗漏。每轮对话结束前，先检查是否有需要持久化的信息，再输出最终回复。"
             ),
-        ])
+        ]))
 
         # ── 2. 澄清回答自动存入 decisions ─────────────────────────────────────
         if user_text.startswith(_CLARIFY_PREFIX):
@@ -1279,6 +1318,11 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "original_question_text": payload.original_question_text,
             "_db_session": pconfig.get("_db_session"),
             "_bot_id": pconfig.get("_bot_id"),
+            "user_secrets": pconfig.get("_user_secrets") or {},
+            # 以下字段用于 call_bot 子 bot 继承上下文
+            "_trigger_msg_id": (payload.trigger_message or {}).get("msg_id"),
+            "_sender_name": (payload.trigger_message or {}).get("sender_name", ""),
+            "_pconfig": pconfig,
         }
 
         # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────
@@ -1303,7 +1347,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 _results = await _asyncio.gather(
                     _fetch_recent_history(db_session, channel_id, trigger_msg_id) if trigger_msg_id else _noop_list(),
                     _fetch_user_display_name(db_session, sender_id),
-                    _fetch_reply_context(db_session, in_reply_to_msg_id) if in_reply_to_msg_id else _noop_str(),
+                    _fetch_reply_context(db_session, in_reply_to_msg_id, channel_id) if in_reply_to_msg_id else _noop_str(),
                     return_exceptions=True,
                 )
                 chat_history = _results[0] if not isinstance(_results[0], BaseException) else []
@@ -1327,11 +1371,15 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             user_text = user_text[len(_CLARIFY_PREFIX):].strip()
             reply_prefix = ""  # guide-clarify 消息对 LLM 无意义，不引用
 
-        # 把回复上下文和发送者标识注入到当前用户消息
-        if reply_prefix:
-            user_text = reply_prefix + user_text
+        # 把回复上下文和发送者标识注入到当前用户消息（XML 格式）
         if current_user_name:
-            user_text = f"[{current_user_name}]: {user_text}"
+            inner_parts = []
+            if reply_prefix:
+                inner_parts.append(reply_prefix.strip())
+            inner_parts.append(f"<text>{user_text}</text>")
+            user_text = f'<user_message sender="{current_user_name}">\n' + "\n".join(inner_parts) + "\n</user_message>"
+        elif reply_prefix:
+            user_text = reply_prefix + user_text
 
         # ── 5. Agent（支持 Vision 多模态）─────────────────────────────────────
         stream_cb = pconfig.get("_stream_token")

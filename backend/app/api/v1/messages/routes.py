@@ -9,29 +9,48 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, try_get_current_user
 from app.core.responses import APIResponse
 from app.core.schemas import MessageCreate, MessageFileInResponse, MessageInResponse, MessageStreamCreate
-from app.db.models import FileRecord, Message, User
+from app.db.models import BotAccount, FileRecord, Message, User
 from app.db.session import async_session_factory, get_session
 from app.services.guide.constants import GUIDE_BOT_ID
 from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
+from app.services.orchestrator.mention import resolve_user_mentions
 from app.services.orchestrator.service import run_orchestrator
 from app.services.ws_service import ws_manager
 from app.utils.crypto import decrypt_value, encrypt_value
 
 logger = logging.getLogger("app.api.v1.messages")
 
+# 保持后台任务的强引用，防止被 GC 回收导致静默失败
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _track_task(task: asyncio.Task) -> None:
+    """注册后台任务并在完成时自动清理，记录未处理的异常。"""
+    _background_tasks.add(task)
+
+    def _on_done(t: asyncio.Task) -> None:
+        _background_tasks.discard(t)
+        if not t.cancelled() and t.exception():
+            logger.error("background task %s failed: %s", t.get_name(), t.exception())
+
+    task.add_done_callback(_on_done)
+
 router = APIRouter(prefix="/channels/{channel_id}/messages", tags=["messages"])
 
 
-def _serialize(msg: Message, file_map: dict) -> dict:
+def _serialize(msg: Message, file_map: dict, sender_names: dict[str, str] | None = None) -> dict:
     payload = MessageInResponse.model_validate(msg).model_dump()
     if msg.created_at:
         payload["created_at"] = msg.created_at.isoformat()
+    if sender_names:
+        payload["sender_name"] = sender_names.get(msg.sender_id, "")
     if msg.file_ids:
         payload["files"] = [
             file_map[fid].model_dump()
@@ -41,6 +60,26 @@ def _serialize(msg: Message, file_map: dict) -> dict:
     else:
         payload["files"] = []
     return payload
+
+
+async def _resolve_sender_names(session: AsyncSession, messages: list[Message]) -> dict[str, str]:
+    """批量查出消息发送者的 display_name，返回 {sender_id: display_name}。"""
+    user_ids = {m.sender_id for m in messages if m.sender_type == "user"}
+    bot_ids = {m.sender_id for m in messages if m.sender_type == "bot"}
+    names: dict[str, str] = {}
+    if user_ids:
+        rows = await session.execute(
+            select(User.user_id, User.display_name, User.username).where(User.user_id.in_(user_ids))
+        )
+        for uid, display, uname in rows:
+            names[uid] = display or uname or ""
+    if bot_ids:
+        rows = await session.execute(
+            select(BotAccount.bot_id, BotAccount.display_name, BotAccount.username).where(BotAccount.bot_id.in_(bot_ids))
+        )
+        for bid, display, uname in rows:
+            names[bid] = display or uname or ""
+    return names
 
 
 def _format_sse(event: str, payload: dict) -> str:
@@ -102,10 +141,10 @@ async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
             if not msg:
                 return
             bot_messages, already_broadcast_ids = await _run_orchestrator_once(channel_id, msg, session)
-            for bm in bot_messages:
-                if bm.msg_id in already_broadcast_ids:
-                    continue
-                await _broadcast_message(channel_id, _serialize(bm, {}))
+            pending_broadcast = [bm for bm in bot_messages if bm.msg_id not in already_broadcast_ids]
+            bot_sender_names = await _resolve_sender_names(session, pending_broadcast) if pending_broadcast else {}
+            for bm in pending_broadcast:
+                await _broadcast_message(channel_id, _serialize(bm, {}, bot_sender_names))
             if bot_messages:
                 _schedule_recent_update(channel_id)
             await session.commit()
@@ -131,8 +170,16 @@ async def list_messages(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = MessageService(session)
-    messages, file_map = await svc.list_messages(channel_id, limit=limit, before_id=before_id)
-    return APIResponse.ok([_serialize(m, file_map) for m in messages])
+    # 多取一条用于判断是否还有更多历史消息
+    messages, file_map = await svc.list_messages(channel_id, limit=limit + 1, before_id=before_id)
+    has_more = len(messages) > limit
+    if has_more:
+        messages = messages[1:]  # 去掉最早的那条（多取的）
+    sender_names = await _resolve_sender_names(session, messages)
+    return APIResponse.ok(
+        [_serialize(m, file_map, sender_names) for m in messages],
+        meta={"has_more": has_more},
+    )
 
 
 async def _handle_send_message(
@@ -179,6 +226,7 @@ async def _handle_send_message(
         stored_content = body.content
         token = None
 
+    mention_user_ids = await resolve_user_mentions(body.content, session, channel_id)
     msg = Message(
         channel_id=channel_id,
         sender_id=body.sender_id,
@@ -186,6 +234,7 @@ async def _handle_send_message(
         content=stored_content,
         file_ids=file_ids,
         mention_bot_ids=body.mention_bot_ids or [],
+        mention_user_ids=mention_user_ids,
         in_reply_to_msg_id=body.in_reply_to_msg_id or None,
         is_secret=is_secret,
         secret_encrypted=encrypted,
@@ -209,7 +258,8 @@ async def _handle_send_message(
                 status=rec.status,
             )
 
-    payload = _serialize(msg, file_map)
+    sender_names = await _resolve_sender_names(session, [msg])
+    payload = _serialize(msg, file_map, sender_names)
     await session.commit()
     await _broadcast_message(channel_id, payload)
     _schedule_recent_update(channel_id)
@@ -217,7 +267,10 @@ async def _handle_send_message(
     if _should_run_orchestrator_inline(session):
         await _run_orchestrator_bg(channel_id, msg.msg_id)
     else:
-        asyncio.create_task(_run_orchestrator_bg(channel_id, msg.msg_id))
+        _track_task(asyncio.create_task(
+            _run_orchestrator_bg(channel_id, msg.msg_id),
+            name=f"orchestrator-{channel_id}-{msg.msg_id}",
+        ))
         await asyncio.sleep(0)
 
     return payload, token
@@ -275,6 +328,7 @@ async def send_message_stream(
                         return
 
                 _SECRET_PLACEHOLDER = "🔒 [加密消息]"
+                stream_mention_user_ids = await resolve_user_mentions(body.content, session, channel_id)
                 msg = Message(
                     channel_id=channel_id,
                     sender_id=body.sender_id,
@@ -282,6 +336,7 @@ async def send_message_stream(
                     content=body.content,
                     file_ids=normalized_file_ids,
                     mention_bot_ids=body.mention_bot_ids or [],
+                    mention_user_ids=stream_mention_user_ids,
                 )
                 session.add(msg)
                 await session.flush()
@@ -299,7 +354,8 @@ async def send_message_stream(
                             size_bytes=rec.size_bytes,
                             status=rec.status,
                         )
-                payload = _serialize(msg, file_map)
+                sender_names = await _resolve_sender_names(session, [msg])
+                payload = _serialize(msg, file_map, sender_names)
                 await session.commit()
                 await _broadcast_message(channel_id, payload)
                 _schedule_recent_update(channel_id)
@@ -417,6 +473,7 @@ async def guide_reply(
     )
     session.add(msg)
     await session.flush()
-    d = _serialize(msg, {})
+    guide_sender_names = await _resolve_sender_names(session, [msg])
+    d = _serialize(msg, {}, guide_sender_names)
     await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": d})
     return APIResponse.ok(d)

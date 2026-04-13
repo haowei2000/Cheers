@@ -12,12 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.log_context import bind_context
-from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message
+from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message, User
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
+from app.services.orchestrator.secrets import extract_secret_refs, load_user_secrets
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.orchestrator.service")
@@ -77,12 +78,15 @@ async def _fetch_original_question_for_clarify(
     return None, []
 
 
-def _apply_prompt_template(template: str | None, user_message: str) -> str:
-    """应用 Bot 的 user_template。"""
+def _apply_prompt_template(template: str | None, user_message: str, extra_vars: dict[str, str] | None = None) -> str:
+    """应用 Bot 的 user_template，替换 {{message}}、{{sender_name}} 等变量。"""
     if not template:
         return user_message
     result = template.replace("{{}}", user_message)
     result = result.replace("{{message}}", user_message)
+    if extra_vars:
+        for key, value in extra_vars.items():
+            result = result.replace(f"{{{{{key}}}}}", value)
     return result
 
 
@@ -134,20 +138,52 @@ async def run_orchestrator(
         for row in rows
     }
 
-    trigger_content = _get_trigger_content(trigger_msg)
+    # analysis_content: 真实文本（解密后），用于提取 @mentions / 密钥引用 / 澄清检测
+    # trigger_content:  发送给 LLM 的文本（加密消息保持占位符，不暴露原文）
+    analysis_content = _get_trigger_content(trigger_msg)
+    is_encrypted_msg = trigger_msg.is_secret and bool(trigger_msg.secret_encrypted)
+    trigger_content = trigger_msg.content if is_encrypted_msg else analysis_content
+
+    # 提取并加载用户密钥引用（从真实文本中提取）
+    secret_refs = extract_secret_refs(analysis_content)
+    user_secrets = {}
+    if secret_refs and trigger_msg.sender_type == "user":
+        user_secrets = await load_user_secrets(session, trigger_msg.sender_id, secret_refs)
+        logger.info(
+            "orchestrator: loaded %d/%d secrets for user %s",
+            len(user_secrets), len(secret_refs), trigger_msg.sender_id
+        )
+
+    # 加密消息：将解密后的原文作为命名密钥注入，LLM 只看到占位符
+    if is_encrypted_msg and trigger_msg.sender_type == "user":
+        user_secrets["_encrypted_msg"] = analysis_content
+        logger.info("orchestrator: encrypted message content injected as _encrypted_msg for user %s", trigger_msg.sender_id)
+
+    # 查询发送者名称和频道名称（供模板变量使用）
+    sender_name = ""
+    if trigger_msg.sender_type == "user":
+        sender_user = await session.get(User, trigger_msg.sender_id)
+        sender_name = (sender_user.display_name or sender_user.username) if sender_user else ""
+    else:
+        sender_bot_result = await session.execute(
+            select(BotAccount).where(BotAccount.bot_id == trigger_msg.sender_id)
+        )
+        sender_bot = sender_bot_result.scalar_one_or_none()
+        sender_name = (sender_bot.display_name or sender_bot.username) if sender_bot else ""
+
+    channel_obj = await session.get(Channel, channel_id)
+    channel_name = channel_obj.name if channel_obj else ""
 
     # 澄清场景：若为澄清回答，提取原问题及其附件
     original_question = None
     original_file_ids: list[str] = []
-    if _is_guide_clarify_reply(trigger_content):
+    if _is_guide_clarify_reply(analysis_content):
         original_question, original_file_ids = await _fetch_original_question_for_clarify(session, channel_id, trigger_msg)
 
-    mentioned = extract_mentions(trigger_content)
-    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=trigger_content)
+    mentioned = extract_mentions(analysis_content)
+    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=analysis_content)
     direct_answer_mode = False
     if not target_usernames:
-        channel_result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
-        channel_obj = channel_result.scalar_one_or_none()
         channel_auto_assist = bool(channel_obj.auto_assist) if channel_obj else False
         if (
             not mentioned
@@ -205,21 +241,49 @@ async def run_orchestrator(
         _load_attachments(),
     )
 
-    # 注入待办事项到上下文
+    # 注入待办事项到上下文（未完成保留完整内容，已完成仅保留索引 ID）
     from app.db.models import TodoItem
     todo_result = await session.execute(
         select(TodoItem)
-        .where(TodoItem.channel_id == channel_id, TodoItem.status == "pending")
+        .where(TodoItem.channel_id == channel_id)
         .order_by(TodoItem.created_at)
     )
-    pending_todos = todo_result.scalars().all()
+    all_todos = todo_result.scalars().all()
+    pending_todos = [t for t in all_todos if t.status == "pending"]
+    completed_todos = [t for t in all_todos if t.status == "completed"]
+    todos_parts: list[str] = []
     if pending_todos:
-        memory_context["todos"] = "\n".join(f"- [ ] {t.content}" for t in pending_todos)
+        todos_parts.append("## 未完成")
+        for t in pending_todos:
+            short_id = t.todo_id[:8]
+            todos_parts.append(f"- [ ] #{short_id}: {t.content}")
+    if completed_todos:
+        todos_parts.append("## 已完成（仅索引）")
+        todos_parts.append(" ".join(f"#{t.todo_id[:8]}" for t in completed_todos))
+    if todos_parts:
+        memory_context["todos"] = "\n".join(todos_parts)
 
     # 文档附件登记到 FILES_INDEX（后台非阻塞）
     if attachments:
         from app.services.memory.files_index import schedule_files_index_update
         schedule_files_index_update(channel_id, attachments)
+
+    # 查出发送者的昵称，注入到 trigger_message 供模板变量 {{sender_name}} 使用
+    sender_name = ""
+    if trigger_msg.sender_type == "user":
+        user_row = await session.execute(
+            select(User.display_name, User.username).where(User.user_id == trigger_msg.sender_id)
+        )
+        user_info = user_row.first()
+        if user_info:
+            sender_name = user_info[0] or user_info[1] or ""
+    elif trigger_msg.sender_type == "bot":
+        bot_row = await session.execute(
+            select(BotAccount.display_name, BotAccount.username).where(BotAccount.bot_id == trigger_msg.sender_id)
+        )
+        bot_info = bot_row.first()
+        if bot_info:
+            sender_name = bot_info[0] or bot_info[1] or ""
 
     created: list[Message] = []
     already_broadcast: set[str] = set()
@@ -250,6 +314,13 @@ async def run_orchestrator(
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()
+        # 查出 bot 的 display_name
+        bot_row = await session.execute(
+            select(BotAccount.display_name, BotAccount.username).where(BotAccount.bot_id == sender_id)
+        )
+        bot_info = bot_row.first()
+        if bot_info:
+            data["sender_name"] = bot_info[0] or bot_info[1] or ""
         await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
         if stream_event:
             await stream_event("message", data)
@@ -340,6 +411,7 @@ async def run_orchestrator(
                 channel_id=channel_id,
                 trigger_message={
                     "user": trigger_msg.sender_id,
+                    "sender_name": sender_name,
                     "text": trigger_content,
                     "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                     "msg_id": trigger_msg.msg_id,
@@ -364,6 +436,9 @@ async def run_orchestrator(
                     "_finalize_bot_msg": _finalize_bot_msg,
                     "_make_stream_token_cb": _make_stream_token_cb,
                     "_bot_id": bot_id,
+                    "_user_secrets": user_secrets,
+                    "_sender_name": sender_name,
+                    "_channel_name": channel_name,
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
@@ -388,20 +463,26 @@ async def run_orchestrator(
                     if broadcast_processing:
                         await broadcast_processing(channel_id, sug_bot_id, sug_username)
                     sug_adapter = await adapter_factory(sug_bot_id)
-                    sug_templated_text = _apply_prompt_template(sug_template, trigger_content)
+                    sug_templated_text = _apply_prompt_template(sug_template, trigger_content, {"sender_name": sender_name})
                     sug_msg = await _pre_create_bot_msg(sug_bot_id, root_task_id)
                     sug_payload = AgentPayload(
                         task_id=root_task_id,
                         channel_id=channel_id,
                         trigger_message={
                             "user": trigger_msg.sender_id,
+                            "sender_name": sender_name,
                             "text": sug_templated_text,
                             "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                         },
                         memory_context=memory_context,
                         attachments=attachments,
                         original_question_text=original_question,
-                        process_config={"_stream_token": _make_stream_token_cb(sug_msg.msg_id)},
+                        process_config={
+                            "_stream_token": _make_stream_token_cb(sug_msg.msg_id),
+                            "_user_secrets": user_secrets,
+                    "_sender_name": sender_name,
+                    "_channel_name": channel_name,
+                        },
                     )
                     pending_sug.append((sug_username, sug_bot_id, sug_msg, sug_payload, sug_adapter))
                     logger.info(
@@ -441,7 +522,7 @@ async def run_orchestrator(
             continue
         adapter = await adapter_factory(bot_id)
         bot_template = bot_template_by_username.get(username)
-        templated_text = _apply_prompt_template(bot_template, trigger_content)
+        templated_text = _apply_prompt_template(bot_template, trigger_content, {"sender_name": sender_name})
         other_bots = [item for item in channel_bot_usernames if item != username]
         bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
 
@@ -450,6 +531,7 @@ async def run_orchestrator(
             channel_id=channel_id,
             trigger_message={
                 "user": trigger_msg.sender_id,
+                "sender_name": sender_name,
                 "text": templated_text,
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                 "msg_id": trigger_msg.msg_id,
@@ -467,6 +549,7 @@ async def run_orchestrator(
                 "_stream_token": _make_stream_token_cb(bot_msg.msg_id),
                 "_db_session": session,
                 "_bot_id": bot_id,
+                "_user_secrets": user_secrets,
             },
         )
         logger.info(
