@@ -5,8 +5,6 @@ from sqlalchemy import asc, desc, func, select
 
 from app.db.models import HistoryPage, Message
 from app.db.session import async_session_factory
-from app.services.memory.context_store import init_context_db, set_layer
-from app.services.memory.manager import sync_channel_to_md
 
 PAGE_SIZE = 50
 RECENT_MAX_CHARS = 1500
@@ -204,7 +202,7 @@ async def _compact_to_page(channel_id: str, session, msgs_to_compact: list[Messa
         # logging.getLogger(__name__).warning("Conflict compacting page: %s", e)
         return
 
-    await update_recent_pages_layer(channel_id, session)
+    # RECENT 层现在由 ChannelMemory 从 HistoryPage 实时渲染，无需写入 context_store
 
 
 async def maybe_compact_channel(channel_id: str) -> bool:
@@ -212,29 +210,12 @@ async def maybe_compact_channel(channel_id: str) -> bool:
     async with async_session_factory() as session:
         msgs, _ = await get_current_page_messages(session, channel_id)
         if len(msgs) >= PAGE_SIZE:
-            # 简单实现：将这 50 条消息打成一页（如果是冷启动积累很多，只取前 PAGE_SIZE 条）
             msgs_to_compact = msgs[:PAGE_SIZE]
-
-            # Root-based Threading逻辑：
-            # 如果 msgs_to_compact 的最后一条有 in_reply_to_msg_id，且其回复根在这一批里，
-            # 为了完整性，我们可以扩展到整个thread结束，但这可能导致单页过大。
-            # 为了稳妥且满足计划要求，这里直接按 PAGE_SIZE 分页，除非有更精确定义。
-
             await _compact_to_page(channel_id, session, msgs_to_compact)
             return True
     return False
 
 
 async def update_recent_pages_layer(channel_id: str, session=None) -> None:
-    """更新 Context Store 中的 RECENT 层."""
-    async def do_update(sess):
-        xml_str = await get_pages_summary_xml(channel_id, sess)
-        await init_context_db()
-        await set_layer(channel_id, "RECENT", xml_str)
-        await sync_channel_to_md(channel_id)
-
-    if session:
-        await do_update(session)
-    else:
-        async with async_session_factory() as sess:
-            await do_update(sess)
+    """No-op：RECENT 层现在由 ChannelMemory 从 HistoryPage 实时渲染。保留接口兼容。"""
+    pass

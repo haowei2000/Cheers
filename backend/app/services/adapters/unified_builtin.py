@@ -130,8 +130,12 @@ def _make_tools(ctx: dict) -> list:
         """
         if not content.strip():
             return "错误：content 不能为空"
-        from app.services.memory.manager import save_layer
-        await save_layer(ctx["channel_id"], "anchor", content.strip())
+        from app.services.memory.manager import replace_layer_entries
+        await replace_layer_entries(
+            ctx["channel_id"], "ANCHOR", content.strip(),
+            created_by=ctx.get("_bot_id"), creator_type="bot",
+            session=ctx.get("_db_session"),
+        )
         logger.info(
             "unified_builtin[tool]: update_anchor channel=%s len=%d",
             ctx["channel_id"], len(content),
@@ -147,8 +151,12 @@ def _make_tools(ctx: dict) -> list:
         """
         if not content.strip():
             return "错误：content 不能为空"
-        from app.services.memory.manager import save_layer
-        await save_layer(ctx["channel_id"], "progress", content.strip())
+        from app.services.memory.manager import replace_layer_entries
+        await replace_layer_entries(
+            ctx["channel_id"], "PROGRESS", content.strip(),
+            created_by=ctx.get("_bot_id"), creator_type="bot",
+            session=ctx.get("_db_session"),
+        )
         logger.info(
             "unified_builtin[tool]: update_progress channel=%s len=%d",
             ctx["channel_id"], len(content),
@@ -164,8 +172,12 @@ def _make_tools(ctx: dict) -> list:
         """
         if not content.strip():
             return "错误：content 不能为空"
-        from app.services.memory.manager import save_layer
-        await save_layer(ctx["channel_id"], "decisions", content.strip())
+        from app.services.memory.manager import replace_layer_entries
+        await replace_layer_entries(
+            ctx["channel_id"], "DECISIONS", content.strip(),
+            created_by=ctx.get("_bot_id"), creator_type="bot",
+            session=ctx.get("_db_session"),
+        )
         logger.info(
             "unified_builtin[tool]: update_decision channel=%s len=%d",
             ctx["channel_id"], len(content),
@@ -656,7 +668,7 @@ def _make_tools(ctx: dict) -> list:
             return "错误：数据库会话未注入"
 
         channel_id = ctx["channel_id"]
-        creator_id = ctx.get("bot_id") or "system"
+        creator_id = ctx.get("_bot_id") or "system"
         creator_type = "bot"
 
         assignee_id = None
@@ -1295,14 +1307,19 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             if answer_body:
                 from datetime import datetime, timezone
 
-                from app.services.memory.manager import save_layer
+                from app.services.memory.manager import save_entry
                 ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                entry = f"### 用户澄清选择（{ts}）\n{answer_body}"
-                existing = (memory.get("decisions") or "").rstrip()
-                new_decisions = f"{existing}\n\n{entry}".strip() if existing else entry
-                await save_layer(channel_id, "decisions", new_decisions)
+                await save_entry(
+                    channel_id, "DECISIONS", answer_body,
+                    title=f"用户澄清选择（{ts}）",
+                    created_by=sender_id, creator_type="user",
+                    session=pconfig.get("_db_session"),
+                )
+                # 刷新本地 memory 副本
                 memory = dict(memory)
-                memory["decisions"] = new_decisions
+                existing = (memory.get("decisions") or "").rstrip()
+                new_entry = f"### 用户澄清选择（{ts}）\n{answer_body}"
+                memory["decisions"] = f"{existing}\n\n{new_entry}".strip() if existing else new_entry
                 logger.info("unified_builtin: clarify answer saved to decisions channel=%s", channel_id)
 
         # ── 3. 工具上下文 ──────────────────────────────────────────────────────

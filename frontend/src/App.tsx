@@ -5,6 +5,7 @@ import FriendsPanel from "./FriendsPanel";
 import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import { MessageMarkdown } from "./MessageMarkdown";
+import MemoryPage from "./MemoryPage";
 
 const API = "/api/v1";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -410,6 +411,7 @@ const LAYER_META: Record<
     color: string;
     icon: string;
     readonly?: boolean;
+    entryBased?: boolean;  // 结构化条目层
   }
 > = {
   ANCHOR: {
@@ -417,30 +419,35 @@ const LAYER_META: Record<
     desc: "核心目标、约束、背景",
     color: "blue",
     icon: "⚓",
+    entryBased: true,
   },
   PROGRESS: {
     label: "项目进度",
     desc: "当前进度、已完成、下一步",
     color: "teal",
     icon: "📈",
+    entryBased: true,
   },
   DECISIONS: {
     label: "决策记录",
     desc: "重要决策及原因",
     color: "purple",
     icon: "📋",
+    entryBased: true,
   },
   FILES_INDEX: {
     label: "资料索引",
     desc: "上传的文件与参考资料",
     color: "amber",
     icon: "🗂️",
+    readonly: true,
   },
   RECENT: {
     label: "近期动态",
     desc: "最新进展、待办、结论",
     color: "green",
     icon: "🕐",
+    readonly: true,
   },
   MEMBERS: {
     label: "频道成员",
@@ -477,6 +484,19 @@ type TodoItem = {
   status: string;
 };
 
+type MemoryEntryItem = {
+  entry_id: string;
+  channel_id: string;
+  layer: string;
+  title: string | null;
+  content: string;
+  sort_order: number;
+  created_by: string | null;
+  creator_type: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 function getStoredToken(): string | null {
   try {
     const stored = localStorage.getItem("currentUser");
@@ -493,20 +513,16 @@ function MemoryPanel({
   channelId,
   channelName,
   contextData,
-  onSave,
-  onDataChange,
   onClose,
+  onExpand,
 }: {
   channelId: string;
   channelName: string;
   contextData: Record<string, string>;
-  onSave: (layer: string, content: string) => void;
-  onDataChange: (layer: string, val: string) => void;
   onClose: () => void;
+  onExpand: () => void;
 }) {
   const [activeLayer, setActiveLayer] = useState<string>("ANCHOR");
-  const [mode, setMode] = useState<"preview" | "edit">("preview");
-  const [editVal, setEditVal] = useState("");
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [todos, setTodos] = useState<TodoItem[]>([]);
@@ -514,12 +530,32 @@ function MemoryPanel({
   const [todoNewContent, setTodoNewContent] = useState("");
   const [todoAssignee, setTodoAssignee] = useState("");
 
+  // Entry-based state
+  const [entries, setEntries] = useState<MemoryEntryItem[]>([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [addingNew, setAddingNew] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+
   const meta = LAYER_META[activeLayer];
   const isReadonly = !!meta.readonly;
+  const isEntryBased = !!meta.entryBased;
   const rawContent = contextData[activeLayer.toLowerCase()] ?? "";
-  const wordCount = rawContent.trim()
-    ? rawContent.trim().split(/\s+/).length
-    : 0;
+
+  const loadEntries = (layer: string) => {
+    const token = getStoredToken();
+    setEntriesLoading(true);
+    fetch(`${API}/channels/${channelId}/memory/?layer=${layer}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setEntries)
+      .catch(() => {})
+      .finally(() => setEntriesLoading(false));
+  };
 
   const loadTodos = () => {
     const token = getStoredToken();
@@ -535,8 +571,11 @@ function MemoryPanel({
 
   const switchLayer = (layer: string) => {
     setActiveLayer(layer);
-    setMode("preview");
-    setEditVal(contextData[layer.toLowerCase()] ?? "");
+    setEditingEntryId(null);
+    setAddingNew(false);
+    if (LAYER_META[layer].entryBased) {
+      loadEntries(layer);
+    }
     if (layer === "MEMBERS") {
       setMembersLoading(true);
       fetch(`${API}/channels/${channelId}/members?with_username=1`)
@@ -556,27 +595,54 @@ function MemoryPanel({
     }
   };
 
-  // Load members on mount if starting on MEMBERS tab
   useEffect(() => {
-    if (activeLayer === "MEMBERS") switchLayer("MEMBERS");
-  }, []);
+    if (LAYER_META[activeLayer].entryBased) loadEntries(activeLayer);
+  }, [channelId]);
 
-  const startEdit = () => {
-    setEditVal(rawContent);
-    setMode("edit");
+  // ── Entry CRUD ──
+  const handleCreateEntry = async () => {
+    if (!newContent.trim()) return;
+    const token = getStoredToken();
+    const res = await fetch(`${API}/channels/${channelId}/memory/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ layer: activeLayer, title: newTitle || null, content: newContent }),
+    }).catch(() => null);
+    if (res?.ok) {
+      setNewTitle(""); setNewContent(""); setAddingNew(false);
+      loadEntries(activeLayer);
+    }
   };
 
-  const handleSave = () => {
-    onDataChange(activeLayer, editVal);
-    onSave(activeLayer, editVal);
-    setMode("preview");
+  const handleUpdateEntry = async (entryId: string) => {
+    const token = getStoredToken();
+    const res = await fetch(`${API}/channels/${channelId}/memory/${entryId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ title: editTitle || null, content: editContent }),
+    }).catch(() => null);
+    if (res?.ok) {
+      setEditingEntryId(null);
+      loadEntries(activeLayer);
+    }
   };
 
-  const handleDiscard = () => {
-    setEditVal(rawContent);
-    setMode("preview");
+  const handleDeleteEntry = async (entryId: string) => {
+    const token = getStoredToken();
+    const res = await fetch(`${API}/channels/${channelId}/memory/${entryId}`, {
+      method: "DELETE",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).catch(() => null);
+    if (res?.ok) loadEntries(activeLayer);
   };
 
+  const startEditEntry = (entry: MemoryEntryItem) => {
+    setEditingEntryId(entry.entry_id);
+    setEditTitle(entry.title || "");
+    setEditContent(entry.content);
+  };
+
+  // ── Todo CRUD ──
   const handleTodoCreate = async () => {
     if (!todoNewContent.trim()) return;
     const token = getStoredToken();
@@ -617,6 +683,107 @@ function MemoryPanel({
     return m ? m.display_name || m.username || "Unknown" : null;
   };
 
+  // ── Entry-based layer content renderer ──
+  const renderEntryLayer = () => {
+    if (entriesLoading) {
+      return <div className="flex items-center justify-center h-12 text-gray-400 text-xs">加载中…</div>;
+    }
+
+    return (
+      <div className="flex-1 overflow-y-auto">
+        {/* Entry list */}
+        {entries.length === 0 && !addingNew ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
+            <span className="text-3xl opacity-30">{meta.icon}</span>
+            <p className="text-xs font-medium text-gray-500">暂无内容</p>
+            <p className="text-[11px] text-gray-400">{meta.desc}</p>
+            <button
+              type="button"
+              onClick={() => setAddingNew(true)}
+              className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+            >
+              添加条目
+            </button>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {entries.map((entry) =>
+              editingEntryId === entry.entry_id ? (
+                <li key={entry.entry_id} className="px-3 py-2 space-y-1.5 bg-blue-50/30">
+                  <input
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="标题（可选）"
+                    className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                  />
+                  <textarea
+                    rows={3}
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
+                  />
+                  <div className="flex gap-1 justify-end">
+                    <button onClick={() => setEditingEntryId(null)} className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">取消</button>
+                    <button onClick={() => handleUpdateEntry(entry.entry_id)} className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]">保存</button>
+                  </div>
+                </li>
+              ) : (
+                <li key={entry.entry_id} className="px-3 py-2 group hover:bg-gray-50/50">
+                  <div className="flex items-start justify-between gap-1.5">
+                    <div className="flex-1 min-w-0">
+                      {entry.title && (
+                        <p className="text-xs font-semibold text-gray-700 mb-0.5">{entry.title}</p>
+                      )}
+                      <div className="text-xs text-gray-600">
+                        <MessageMarkdown text={entry.content} />
+                      </div>
+                      {entry.updated_at && (
+                        <p className="text-[10px] text-gray-300 mt-1">{new Date(entry.updated_at).toLocaleString()}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => startEditEntry(entry)} className="text-gray-400 hover:text-blue-500 text-[10px] p-0.5" title="编辑">
+                        &#9998;
+                      </button>
+                      <button onClick={() => handleDeleteEntry(entry.entry_id)} className="text-gray-300 hover:text-red-400 text-[10px] p-0.5" title="删除">
+                        &#10005;
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ),
+            )}
+          </ul>
+        )}
+
+        {/* Add new entry form */}
+        {addingNew && (
+          <div className="px-3 py-2 border-t border-gray-100 space-y-1.5 bg-green-50/20">
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="标题（可选）"
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+            />
+            <textarea
+              rows={3}
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleCreateEntry(); }}
+              placeholder="内容…"
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
+              autoFocus
+            />
+            <div className="flex gap-1 justify-end">
+              <button onClick={() => { setAddingNew(false); setNewTitle(""); setNewContent(""); }} className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">取消</button>
+              <button onClick={handleCreateEntry} className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]">添加</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <aside className="w-full border-l border-gray-200 bg-white flex flex-col">
       {/* Panel header */}
@@ -627,14 +794,24 @@ function MemoryPanel({
             <span className="ml-1.5 text-xs text-gray-400">#{channelName}</span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none flex-shrink-0"
-          title="关闭"
-        >
-          ×
-        </button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onExpand}
+            className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-blue-500 text-xs leading-none"
+            title="全屏查看"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none"
+            title="关闭"
+          >
+            ×
+          </button>
+        </div>
       </div>
 
       {/* Layer tabs */}
@@ -642,7 +819,11 @@ function MemoryPanel({
         {LAYERS.map((layer) => {
           const m = LAYER_META[layer];
           const active = layer === activeLayer;
-          const filled = layer === "TODO" ? todos.length > 0 : !!contextData[layer.toLowerCase()]?.trim();
+          const filled = layer === "TODO"
+            ? todos.length > 0
+            : m.entryBased
+              ? entries.length > 0 && activeLayer === layer
+              : !!contextData[layer.toLowerCase()]?.trim();
           return (
             <button
               key={layer}
@@ -672,9 +853,9 @@ function MemoryPanel({
           <span className="text-xs font-semibold text-gray-700 truncate">
             {meta.label}
           </span>
-          {!isReadonly && rawContent.trim() && (
+          {isEntryBased && entries.length > 0 && (
             <span className="text-[10px] text-gray-400 flex-shrink-0">
-              {wordCount}w
+              {entries.length} 条
             </span>
           )}
           {isReadonly && activeLayer !== "TODO" && (
@@ -683,35 +864,14 @@ function MemoryPanel({
             </span>
           )}
         </div>
-        {!isReadonly && (
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {mode === "preview" ? (
-              <button
-                type="button"
-                onClick={startEdit}
-                className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-              >
-                编辑
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={handleDiscard}
-                  className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  className="text-[11px] px-2 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
-                >
-                  保存
-                </button>
-              </>
-            )}
-          </div>
+        {isEntryBased && !addingNew && entries.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setAddingNew(true)}
+            className="text-[11px] px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+          >
+            + 添加
+          </button>
         )}
       </div>
 
@@ -791,7 +951,9 @@ function MemoryPanel({
               )}
             </div>
           </>
-        ) : isReadonly ? (
+        ) : isEntryBased ? (
+          renderEntryLayer()
+        ) : activeLayer === "MEMBERS" ? (
           membersLoading ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-xs">
               加载中…
@@ -802,7 +964,7 @@ function MemoryPanel({
               <p className="text-xs text-gray-500">暂无成员</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-100 overflow-y-auto">
               {[...members]
                 .sort(
                   (a, b) =>
@@ -848,16 +1010,9 @@ function MemoryPanel({
                 })}
             </div>
           )
-        ) : mode === "edit" ? (
-          <textarea
-            value={editVal}
-            onChange={(e) => setEditVal(e.target.value)}
-            className="w-full h-full font-mono text-xs p-3 resize-none focus:outline-none leading-relaxed"
-            placeholder={`用 Markdown 写 ${meta.label}…`}
-            spellCheck={false}
-          />
         ) : rawContent.trim() ? (
-          <div className="px-3 py-3 text-sm">
+          /* Readonly derived layers (FILES_INDEX, RECENT) */
+          <div className="px-3 py-3 text-sm overflow-y-auto">
             <MessageMarkdown text={rawContent} />
           </div>
         ) : (
@@ -865,13 +1020,6 @@ function MemoryPanel({
             <span className="text-3xl opacity-30">{meta.icon}</span>
             <p className="text-xs font-medium text-gray-500">暂无内容</p>
             <p className="text-[11px] text-gray-400">{meta.desc}</p>
-            <button
-              type="button"
-              onClick={startEdit}
-              className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-            >
-              添加内容
-            </button>
           </div>
         )}
       </div>
@@ -2128,6 +2276,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [memoryPageOpen, setMemoryPageOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
@@ -2871,13 +3020,13 @@ export default function App() {
   }, [selectedId, reportClientError]);
 
   useEffect(() => {
-    if (memoryPanelOpen && selectedId) {
+    if ((memoryPanelOpen || memoryPageOpen) && selectedId) {
       fetch(`${API}/channels/${selectedId}/context`)
         .then((r) => r.json())
         .then((d) => d.data && setContextData(d.data))
         .catch(console.error);
     }
-  }, [memoryPanelOpen, selectedId]);
+  }, [memoryPanelOpen, memoryPageOpen, selectedId]);
 
   useEffect(() => {
     if (addBotOpen) {
@@ -3400,23 +3549,6 @@ export default function App() {
         ))}
       </div>
     );
-  };
-
-  const saveContextLayer = (layer: string, content: string) => {
-    if (!selectedId) return;
-    authFetch(`${API}/channels/${selectedId}/context`, {
-      method: "PUT",
-      body: JSON.stringify({ layer, content }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success")
-          setContextData((prev) => ({
-            ...prev,
-            [layer.toLowerCase()]: content,
-          }));
-      })
-      .catch(console.error);
   };
 
   const selectedChannel =
@@ -7850,14 +7982,8 @@ export default function App() {
                 channelId={selectedId}
                 channelName={selectedChannel?.name ?? ""}
                 contextData={contextData}
-                onSave={saveContextLayer}
-                onDataChange={(layer, val) =>
-                  setContextData((prev) => ({
-                    ...prev,
-                    [layer.toLowerCase()]: val,
-                  }))
-                }
                 onClose={() => setMemoryPanelOpen(false)}
+                onExpand={() => { setMemoryPageOpen(true); setMemoryPanelOpen(false); }}
               />
             </div>
           )}
@@ -7886,6 +8012,16 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* Memory full-page overlay */}
+      {memoryPageOpen && selectedId && (
+        <MemoryPage
+          channelId={selectedId}
+          channelName={selectedChannel?.name ?? ""}
+          contextData={contextData}
+          onClose={() => setMemoryPageOpen(false)}
+        />
+      )}
 
       {/* Lightbox 图片放大 */}
       {lightboxSrc && (
