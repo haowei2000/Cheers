@@ -12,6 +12,7 @@ import httpx
 from app.db.models import AIModel, BotAccount, PromptTemplate
 from app.http_client import get_http_client
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.services.orchestrator.secrets import replace_secret_refs
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.adapters.llm_bot")
@@ -76,21 +77,26 @@ class LLMBotAdapter(OpenClawAdapter):
         if not attachments:
             return user_message
 
-        parts = [user_message.strip(), "", "以下是用户上传文件的解析结果，请优先基于这些内容回答："]
-        for index, attachment in enumerate(attachments, start=1):
-            parts.append(f"## 文件 {index}")
-            parts.append(f"文件名: {attachment.get('filename') or attachment.get('file_id') or 'unknown'}")
+        file_parts = []
+        for attachment in attachments:
+            filename = attachment.get("filename") or attachment.get("file_id") or "unknown"
+            attrs = f'filename="{filename}"'
             if attachment.get("content_type"):
-                parts.append(f"类型: {attachment['content_type']}")
+                attrs += f' type="{attachment["content_type"]}"'
+            if attachment.get("file_id"):
+                attrs += f' file_id="{attachment["file_id"]}"'
+            lines = [f"  <file {attrs}>"]
             if attachment.get("summary"):
-                parts.append("摘要:")
-                parts.append(attachment["summary"])
-            parts.append("正文:")
-            parts.append(attachment.get("content") or "")
+                lines.append(f"    <summary>{attachment['summary']}</summary>")
+            content = attachment.get("content") or ""
+            lines.append(f"    <content>{content}</content>")
             if attachment.get("truncated") == "true":
-                parts.append("注意: 该文件文本已因长度限制被截断。")
-            parts.append("")
-        return "\n".join(parts).strip()
+                lines.append("    <truncated>true</truncated>")
+            lines.append("  </file>")
+            file_parts.append("\n".join(lines))
+
+        attachments_block = "<attachments>\n" + "\n".join(file_parts) + "\n</attachments>"
+        return user_message.strip() + "\n\n" + attachments_block
 
     def _get_api_config(self) -> dict[str, Any]:
         config: dict[str, Any] = {
@@ -115,6 +121,15 @@ class LLMBotAdapter(OpenClawAdapter):
         user_text = (payload.trigger_message or {}).get("text", "")
         task_id = payload.task_id
         all_attachments = payload.attachments or []
+
+        # 解密：将 $secret{name} 引用替换为实际密钥值，
+        # 并将加密消息占位符替换为解密后的原文
+        user_secrets = (payload.process_config or {}).get("_user_secrets") or {}
+        if user_secrets:
+            encrypted_msg = user_secrets.get("_encrypted_msg")
+            if encrypted_msg and "🔒" in user_text:
+                user_text = user_text.replace("🔒 [加密消息]", encrypted_msg)
+            user_text = replace_secret_refs(user_text, user_secrets)
 
         # 分离图片与文档附件
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
@@ -141,14 +156,24 @@ class LLMBotAdapter(OpenClawAdapter):
         if isinstance(extra_headers, dict):
             headers.update({str(key): str(value) for key, value in extra_headers.items()})
 
-        context_vars: dict[str, str] = {}
+        pconfig = payload.process_config or {}
+        trigger_meta = payload.trigger_message or {}
+
+        context_vars: dict[str, str] = {
+            "sender_name": pconfig.get("_sender_name") or trigger_meta.get("user", ""),
+            "channel_name": pconfig.get("_channel_name") or "",
+            "channel_id": payload.channel_id,
+            "bot_name": self.bot.display_name or self.bot.username,
+            "timestamp": trigger_meta.get("timestamp", ""),
+        }
         if payload.memory_context:
-            context_vars = {
-                "anchor": payload.memory_context.get("anchor", ""),
-                "decisions": payload.memory_context.get("decisions", ""),
-                "files_index": payload.memory_context.get("files_index", ""),
-                "recent": payload.memory_context.get("recent", ""),
-            }
+            context_vars.update({
+                "anchor": f"<anchor>{payload.memory_context.get('anchor', '')}</anchor>",
+                "decisions": f"<decisions>{payload.memory_context.get('decisions', '')}</decisions>",
+                "files_index": f"<files_index>{payload.memory_context.get('files_index', '')}</files_index>",
+                "recent": f"<recent>{payload.memory_context.get('recent', '')}</recent>",
+                "todos": payload.memory_context.get("todos", ""),
+            })
         trigger_meta = payload.trigger_message or {}
         context_vars["sender_name"] = trigger_meta.get("sender_name") or ""
 
@@ -309,6 +334,14 @@ class LLMBotAdapter(OpenClawAdapter):
                 task_id=task_id,
                 success=False,
                 error_message=f"无法连接到 LLM API: {api_config['base_url']}",
+            )
+        except httpx.RemoteProtocolError as exc:
+            logger.error("llm_bot: server disconnected without response %s", exc)
+            return AgentResponse(
+                content="",
+                task_id=task_id,
+                success=False,
+                error_message=f"LLM 服务断开连接（未返回响应），请检查模型服务是否正常: {api_config['base_url']}",
             )
         except Exception as exc:
             logger.exception("llm_bot: unexpected error")

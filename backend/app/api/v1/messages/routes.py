@@ -20,6 +20,7 @@ from app.db.session import async_session_factory, get_session
 from app.services.guide.constants import GUIDE_BOT_ID
 from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
+from app.services.orchestrator.mention import resolve_user_mentions
 from app.services.orchestrator.service import run_orchestrator
 from app.services.ws_service import ws_manager
 from app.utils.crypto import decrypt_value, encrypt_value
@@ -225,6 +226,7 @@ async def _handle_send_message(
         stored_content = body.content
         token = None
 
+    mention_user_ids = await resolve_user_mentions(body.content, session, channel_id)
     msg = Message(
         channel_id=channel_id,
         sender_id=body.sender_id,
@@ -232,6 +234,7 @@ async def _handle_send_message(
         content=stored_content,
         file_ids=file_ids,
         mention_bot_ids=body.mention_bot_ids or [],
+        mention_user_ids=mention_user_ids,
         in_reply_to_msg_id=body.in_reply_to_msg_id or None,
         is_secret=is_secret,
         secret_encrypted=encrypted,
@@ -325,6 +328,7 @@ async def send_message_stream(
                         return
 
                 _SECRET_PLACEHOLDER = "🔒 [加密消息]"
+                stream_mention_user_ids = await resolve_user_mentions(body.content, session, channel_id)
                 msg = Message(
                     channel_id=channel_id,
                     sender_id=body.sender_id,
@@ -332,6 +336,7 @@ async def send_message_stream(
                     content=body.content,
                     file_ids=normalized_file_ids,
                     mention_bot_ids=body.mention_bot_ids or [],
+                    mention_user_ids=stream_mention_user_ids,
                 )
                 session.add(msg)
                 await session.flush()

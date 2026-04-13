@@ -68,7 +68,7 @@ async def list_all_workspaces(
 @router.delete("/{workspace_id}", response_model=APIResponse[None])
 async def delete_workspace(
     workspace_id: str,
-    current_user: User = Depends(require_permission("space_management")),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = WorkspaceService(session)
