@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -101,7 +101,8 @@ class Workspace(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    channels: Mapped[list["Channel"]] = relationship("Channel", back_populates="workspace")
+    channels: Mapped[list["Channel"]] = relationship("Channel", back_populates="workspace", cascade="all, delete-orphan")
+    memberships: Mapped[list["WorkspaceMembership"]] = relationship("WorkspaceMembership", cascade="all, delete-orphan")
 
 
 class Channel(Base):
@@ -119,11 +120,12 @@ class Channel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="channels")
-    messages: Mapped[list["Message"]] = relationship("Message", back_populates="channel")
+    messages: Mapped[list["Message"]] = relationship("Message", back_populates="channel", cascade="all, delete-orphan")
     memberships: Mapped[list["ChannelMembership"]] = relationship(
-        "ChannelMembership", back_populates="channel"
+        "ChannelMembership", back_populates="channel", cascade="all, delete-orphan"
     )
-    file_records: Mapped[list["FileRecord"]] = relationship("FileRecord", back_populates="channel")
+    file_records: Mapped[list["FileRecord"]] = relationship("FileRecord", back_populates="channel", cascade="all, delete-orphan")
+    history_pages: Mapped[list["HistoryPage"]] = relationship("HistoryPage", cascade="all, delete-orphan")
 
 
 class User(Base):
@@ -201,6 +203,26 @@ class Message(Base):
     secret_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="messages")
+
+
+class HistoryPage(Base):
+    __tablename__ = "history_pages"
+
+    page_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    channel_id: Mapped[str] = mapped_column(String(36), ForeignKey("channels.channel_id"), nullable=False)
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_msg_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    last_msg_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_content: Mapped[str] = mapped_column(Text, nullable=False)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("channel_id", "page_number", name="uq_history_pages_channel_page"),
+    )
 
 
 class FileRecord(Base):
@@ -310,3 +332,19 @@ class TodoItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     channel: Mapped["Channel"] = relationship("Channel")
+
+
+class KeychainItem(Base):
+    """用户密钥链：存储个人敏感凭据。"""
+    __tablename__ = "keychain_items"
+
+    key_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)  # 用户定义的密钥名称
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # 加密存储的密钥值
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 可选描述
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    owner: Mapped["User"] = relationship("User", lazy="joined")

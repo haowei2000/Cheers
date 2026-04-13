@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AgentNexus (智枢协作平台) is a Slack-like multi-agent + human collaboration chat hub. Users @mention bots in channels; an orchestrator dispatches requests to LLM-backed bots and writes replies back to the channel in real time via WebSocket.
 
+## Branch Strategy
+
+- Feature branches must create PRs targeting `develop` only.
+- Only the `develop` branch can create PRs targeting `main`.
+
 ## Commands
 
 ### Backend

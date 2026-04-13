@@ -990,7 +990,22 @@ export default function AdminPage() {
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">用户消息模板 (User Template) *</label>
                           <textarea value={templateForm.user_template} onChange={(e) => setTemplateForm({ ...templateForm, user_template: e.target.value })} placeholder="{{message}}" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 text-sm" />
-                          <p className="text-xs text-gray-400 mt-1">使用 {"{{message}}"} 作为用户消息的占位符</p>
+                          <div className="mt-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                            <p className="text-xs font-medium text-gray-600 mb-1.5">可用模板变量</p>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{message}}"}</code> 用户消息</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{sender_name}}"}</code> 发送者名称</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{bot_name}}"}</code> 当前Bot名称</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{channel_name}}"}</code> 频道名称</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{channel_id}}"}</code> 频道ID</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{timestamp}}"}</code> 消息时间</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{anchor}}"}</code> 项目锚点</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{decisions}}"}</code> 决策记录</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{recent}}"}</code> 近期动态</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{todos}}"}</code> 待办事项</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{files_index}}"}</code> 文件索引</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-3">

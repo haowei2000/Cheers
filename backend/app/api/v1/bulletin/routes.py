@@ -15,7 +15,7 @@ router = APIRouter(prefix="/bulletin", tags=["bulletin"])
 
 @router.get("/issues", response_model=APIResponse[list[IssueInResponse]])
 async def list_issues(
-    status: str | None = Query(default=None, pattern="^(open|closed)$"),
+    status: str | None = Query(default=None, pattern="^(open|closed|resolved)$"),
     priority: str | None = Query(default=None, pattern="^(low|medium|high)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -56,6 +56,17 @@ async def update_issue(
 ) -> APIResponse:
     svc = BulletinService(session)
     issue = await svc.update_issue(issue_id, body, current_user)
+    return APIResponse.ok(IssueInResponse.model_validate(issue))
+
+
+@router.patch("/issues/{issue_id}/resolve", response_model=APIResponse[IssueInResponse])
+async def resolve_issue(
+    issue_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = BulletinService(session)
+    issue = await svc.resolve_issue(issue_id, current_user)
     return APIResponse.ok(IssueInResponse.model_validate(issue))
 
 
