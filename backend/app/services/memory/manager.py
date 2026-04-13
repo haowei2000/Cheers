@@ -25,6 +25,25 @@ async def load_channel_memory(channel_id: str, session: AsyncSession) -> Channel
     return await ChannelMemory.load(channel_id, session)
 
 
+async def save_layer(
+    channel_id: str,
+    layer: str,
+    content: str,
+    session: AsyncSession | None = None,
+) -> str:
+    """更新指定层的单条内容（覆盖模式），返回 entry_id。
+
+    内部委托给 replace_layer_entries（即覆盖写入）。
+    兼容 unified_builtin 工具的调用方式。
+    """
+    return await replace_layer_entries(
+        channel_id=channel_id,
+        layer=layer,
+        content=content,
+        session=session,
+    )
+
+
 async def save_entry(
     channel_id: str,
     layer: str,
