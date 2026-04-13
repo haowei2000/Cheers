@@ -175,6 +175,7 @@ class LLMBotAdapter(OpenClawAdapter):
         if payload.memory_context:
             context_vars.update({
                 "anchor": f"<anchor>{payload.memory_context.get('anchor', '')}</anchor>",
+                "progress": f"<progress>{payload.memory_context.get('progress', '')}</progress>",
                 "decisions": f"<decisions>{payload.memory_context.get('decisions', '')}</decisions>",
                 "files_index": f"<files_index>{payload.memory_context.get('files_index', '')}</files_index>",
                 "recent": f"<recent>{payload.memory_context.get('recent', '')}</recent>",

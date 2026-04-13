@@ -54,6 +54,7 @@ class OrchestratorAdapter(OpenClawAdapter):
 
         # 拼接上下文
         anchor = memory_context.get("anchor", "")
+        progress = memory_context.get("progress", "")
         decisions = memory_context.get("decisions", "")
         files_index = memory_context.get("files_index", "")
         recent = memory_context.get("recent", "")
@@ -69,6 +70,9 @@ class OrchestratorAdapter(OpenClawAdapter):
 === 项目锚点 ===
 {anchor}
 
+=== 项目进度 ===
+{progress}
+
 === 重要决策 ===
 {decisions}
 
@@ -80,6 +84,7 @@ class OrchestratorAdapter(OpenClawAdapter):
 """.format(
             bots_hint=bots_hint,
             anchor=anchor or "（无）",
+            progress=progress or "（无）",
             decisions=decisions or "（无）",
             files_index=files_index or "（无）",
             recent=recent or "（无）",
