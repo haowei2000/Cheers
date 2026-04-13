@@ -26,6 +26,21 @@ from app.utils.crypto import decrypt_value, encrypt_value
 
 logger = logging.getLogger("app.api.v1.messages")
 
+# 保持后台任务的强引用，防止被 GC 回收导致静默失败
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _track_task(task: asyncio.Task) -> None:
+    """注册后台任务并在完成时自动清理，记录未处理的异常。"""
+    _background_tasks.add(task)
+
+    def _on_done(t: asyncio.Task) -> None:
+        _background_tasks.discard(t)
+        if not t.cancelled() and t.exception():
+            logger.error("background task %s failed: %s", t.get_name(), t.exception())
+
+    task.add_done_callback(_on_done)
+
 router = APIRouter(prefix="/channels/{channel_id}/messages", tags=["messages"])
 
 
@@ -249,7 +264,10 @@ async def _handle_send_message(
     if _should_run_orchestrator_inline(session):
         await _run_orchestrator_bg(channel_id, msg.msg_id)
     else:
-        asyncio.create_task(_run_orchestrator_bg(channel_id, msg.msg_id))
+        _track_task(asyncio.create_task(
+            _run_orchestrator_bg(channel_id, msg.msg_id),
+            name=f"orchestrator-{channel_id}-{msg.msg_id}",
+        ))
         await asyncio.sleep(0)
 
     return payload, token
