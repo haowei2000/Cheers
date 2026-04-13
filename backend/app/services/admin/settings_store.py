@@ -79,7 +79,9 @@ async def _save_settings_async(data: dict[str, Any]) -> None:
     try:
         async with factory() as session:
             row = (await session.execute(
-                select(SystemSetting).where(SystemSetting.key == _SETTINGS_DB_KEY)
+                select(SystemSetting)
+                .where(SystemSetting.key == _SETTINGS_DB_KEY)
+                .with_for_update()
             )).scalar_one_or_none()
             if row:
                 row.value = data

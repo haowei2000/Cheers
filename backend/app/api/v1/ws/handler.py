@@ -57,4 +57,4 @@ async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        ws_manager.disconnect(websocket, channel_id)
+        await ws_manager.disconnect(websocket, channel_id)

@@ -2560,56 +2560,92 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedId) return;
-    const ws = new WebSocket(`${WS_BASE}/ws/channels/${selectedId}`);
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "message" && msg.data) {
-          setMessages((prev) => {
-            const id = msg.data.msg_id;
-            if (id && prev.some((m) => m.msg_id === id)) return prev;
-            const entry =
-              msg.data.sender_type === "bot"
-                ? { ...msg.data, _streaming: true }
-                : msg.data;
-            return [...prev, entry];
-          });
-          if (
-            msg.data.sender_type === "bot" &&
-            typeof msg.data.content === "string" &&
-            msg.data.content.includes("已更新记忆层")
-          ) {
-            fetch(`${API}/channels/${selectedId}/context`)
-              .then((r) => r.json())
-              .then((d) => d.data && setContextData(d.data))
-              .catch(() => {});
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    let disposed = false;
+    const MAX_RETRIES = 10;
+    const BASE_DELAY = 1000;
+    const MAX_DELAY = 30000;
+
+    function connect() {
+      if (disposed) return;
+      ws = new WebSocket(`${WS_BASE}/ws/channels/${selectedId}`);
+
+      ws.onopen = () => {
+        retryCount = 0;
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "message" && msg.data) {
+            setMessages((prev) => {
+              const id = msg.data.msg_id;
+              if (id && prev.some((m) => m.msg_id === id)) return prev;
+              const entry =
+                msg.data.sender_type === "bot"
+                  ? { ...msg.data, _streaming: true }
+                  : msg.data;
+              return [...prev, entry];
+            });
+            if (
+              msg.data.sender_type === "bot" &&
+              typeof msg.data.content === "string" &&
+              msg.data.content.includes("已更新记忆层")
+            ) {
+              fetch(`${API}/channels/${selectedId}/context`)
+                .then((r) => r.json())
+                .then((d) => d.data && setContextData(d.data))
+                .catch(() => {});
+            }
+          } else if (msg.type === "message_stream" && msg.data) {
+            const { msg_id, delta } = msg.data;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.msg_id === msg_id
+                  ? { ...m, content: m.content + delta, _streaming: true }
+                  : m,
+              ),
+            );
+          } else if (msg.type === "message_done" && msg.data) {
+            const { msg_id, content } = msg.data;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
+              ),
+            );
+            if (typeof content === "string" && content.includes("已更新记忆层")) {
+              fetch(`${API}/channels/${selectedId}/context`)
+                .then((r) => r.json())
+                .then((d) => d.data && setContextData(d.data))
+                .catch(() => {});
+            }
           }
-        } else if (msg.type === "message_stream" && msg.data) {
-          const { msg_id, delta } = msg.data;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.msg_id === msg_id
-                ? { ...m, content: m.content + delta, _streaming: true }
-                : m,
-            ),
-          );
-        } else if (msg.type === "message_done" && msg.data) {
-          const { msg_id, content } = msg.data;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
-            ),
-          );
-          if (typeof content === "string" && content.includes("已更新记忆层")) {
-            fetch(`${API}/channels/${selectedId}/context`)
-              .then((r) => r.json())
-              .then((d) => d.data && setContextData(d.data))
-              .catch(() => {});
-          }
+        } catch {}
+      };
+
+      ws.onerror = () => {
+        // onclose will fire after onerror, reconnect is handled there
+      };
+
+      ws.onclose = () => {
+        if (disposed) return;
+        if (retryCount < MAX_RETRIES) {
+          const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
+          retryCount++;
+          reconnectTimer = setTimeout(connect, delay);
         }
-      } catch {}
+      };
+    }
+
+    connect();
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
     };
-    return () => ws.close();
   }, [selectedId]);
 
   useEffect(() => {
