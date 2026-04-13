@@ -50,6 +50,16 @@ async def get_adapter_for_bot(bot_id: str, session: AsyncSession) -> OpenClawAda
         logger.warning("adapter_resolver: bot_id=%s model is disabled", bot_id)
         return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 模型已禁用")
 
+    # 检查 Bot 状态
+    if bot.status != "online":
+        logger.warning(
+            "adapter_resolver: bot_id=%s username=%s status=%s (not 'online'), returning mock",
+            bot_id, bot.username, bot.status,
+        )
+        return MockOpenClawAdapter(
+            reply=f"[{bot.display_name or bot.username}] 当前状态为「{bot.status}」，暂不接受消息"
+        )
+
     logger.info(
         "adapter_resolver: bot_id=%s username=%s -> LLMBotAdapter model=%s template=%s",
         bot_id,
