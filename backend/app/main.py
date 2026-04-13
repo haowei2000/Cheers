@@ -82,7 +82,11 @@ app.add_middleware(RequestIDMiddleware)
 
 
 @app.exception_handler(AppError)
-async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    logger.info(
+        "app_error code=%s status=%d path=%s %s: %s",
+        exc.code, exc.status_code, request.url.path, request.method, exc.message,
+    )
     return JSONResponse(
         status_code=exc.status_code,
         content={"status": "error", "message": exc.message, "detail": exc.message, "code": exc.code, "data": None},

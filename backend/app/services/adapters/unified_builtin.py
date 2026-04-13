@@ -19,12 +19,14 @@ Agent：使用 LangChain bind_tools + 手动 agent loop，
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
+from app.core.log_context import bind_context
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_provider_for_scope
 from app.services.guide.help_index import (
@@ -1046,6 +1048,7 @@ async def _run_agent(
 
     for iteration in range(MAX_LOOP_ITERATIONS):
         response: AIMessage | None = None
+        t_llm = time.perf_counter()
 
         if stream_cb:
             # Stream tokens, accumulate full response for tool call detection
@@ -1062,15 +1065,19 @@ async def _run_agent(
                     ):
                         await stream_cb(chunk.content)
             except Exception as e:
-                logger.exception("unified_builtin: LLM stream error iteration=%d: %s", iteration, e)
+                llm_ms = (time.perf_counter() - t_llm) * 1000
+                logger.exception("unified_builtin: LLM stream error iteration=%d duration_ms=%.0f: %s", iteration, llm_ms, e)
                 break
             response = accumulated
         else:
             try:
                 response = await llm_with_tools.ainvoke(messages)
             except Exception as e:
-                logger.exception("unified_builtin: LLM invoke error iteration=%d: %s", iteration, e)
+                llm_ms = (time.perf_counter() - t_llm) * 1000
+                logger.exception("unified_builtin: LLM invoke error iteration=%d duration_ms=%.0f: %s", iteration, llm_ms, e)
                 break
+
+        llm_ms = (time.perf_counter() - t_llm) * 1000
 
         if response is None:
             logger.warning("unified_builtin: LLM returned None at iteration=%d", iteration)
@@ -1092,10 +1099,11 @@ async def _run_agent(
         messages.append(response)
 
         logger.info(
-            "unified_builtin: agent loop iter=%d tools=%s channel=%s",
+            "unified_builtin: agent loop iter=%d tools=%s channel=%s llm_duration_ms=%.0f",
             iteration,
             [tc.get("name") for tc in tool_calls],
             ctx.get("channel_id", ""),
+            llm_ms,
         )
 
         # Execute each tool call
@@ -1112,10 +1120,14 @@ async def _run_agent(
             if t is None:
                 result_str = f"错误：未知工具 {tool_name}"
             else:
+                t_tool = time.perf_counter()
                 try:
                     result_str = str(await t.ainvoke(tool_args))
+                    tool_ms = (time.perf_counter() - t_tool) * 1000
+                    logger.info("unified_builtin[tool]: %s completed duration_ms=%.0f", tool_name, tool_ms)
                 except Exception as e:
-                    logger.exception("unified_builtin[tool]: %s failed: %s", tool_name, e)
+                    tool_ms = (time.perf_counter() - t_tool) * 1000
+                    logger.exception("unified_builtin[tool]: %s failed duration_ms=%.0f: %s", tool_name, tool_ms, e)
                     result_str = f"工具执行出错：{e}"
 
             if stream_cb and tool_name != "call_user":
@@ -1152,6 +1164,12 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
     """统一内置 Bot：LangChain Agent 驱动，支持 call_bot / call_user / update_anchor / update_decision 等工具。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
+        pconfig_early = payload.process_config or {}
+        bot_id = pconfig_early.get("_bot_id") or ""
+        with bind_context(bot_id=bot_id):
+            return await self._execute_inner(payload)
+
+    async def _execute_inner(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text") or ""
         all_attachments = payload.attachments or []
 

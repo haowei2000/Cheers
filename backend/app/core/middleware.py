@@ -7,6 +7,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.core.log_context import bind_context
+
 logger = logging.getLogger("app.access")
 
 
@@ -14,7 +16,8 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         request_id = str(uuid4())
         request.state.request_id = request_id
-        response = await call_next(request)
+        with bind_context(request_id=request_id):
+            response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
 
@@ -27,13 +30,11 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         start = time.perf_counter()
         response = await call_next(request)
         elapsed = (time.perf_counter() - start) * 1000
-        request_id = getattr(request.state, "request_id", "-")
-        msg = "api %s %s -> %d (%.0fms) rid=%s" % (
+        msg = "api %s %s -> %d (%.0fms)" % (
             request.method,
             path,
             response.status_code,
             elapsed,
-            request_id,
         )
         if response.status_code >= 400:
             logger.error("请求失败 %s", msg)
