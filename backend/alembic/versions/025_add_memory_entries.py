@@ -6,6 +6,7 @@ Create Date: 2026-04-13
 
 """
 import uuid
+import datetime
 from typing import Sequence, Union
 
 from alembic import op
@@ -62,6 +63,16 @@ def upgrade() -> None:
 
     for row in rows:
         channel_id, layer, content, updated_at = row
+
+        parsed_ts = None
+        if isinstance(updated_at, str):
+            try:
+                parsed_ts = datetime.datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+            except ValueError:
+                parsed_ts = datetime.datetime.now(datetime.timezone.utc)
+        else:
+            parsed_ts = updated_at
+
         conn.execute(
             sa.text(
                 "INSERT INTO memory_entries "
@@ -73,7 +84,7 @@ def upgrade() -> None:
                 "cid": channel_id,
                 "layer": layer.upper(),
                 "content": content,
-                "ts": updated_at,
+                "ts": parsed_ts,
             },
         )
 
