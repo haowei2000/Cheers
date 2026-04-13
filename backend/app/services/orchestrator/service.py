@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -10,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.log_context import bind_context
 from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
@@ -105,6 +107,7 @@ async def run_orchestrator(
     stream_to_ws: bool = True,
 ) -> tuple[list[Message], set[str]]:
     """根据消息中的 @ 提及和上传文件，串行执行频道内 Bot。"""
+    t_start = time.perf_counter()
 
     result = await session.execute(
         select(ChannelMembership, BotAccount)
@@ -221,6 +224,12 @@ async def run_orchestrator(
     created: list[Message] = []
     already_broadcast: set[str] = set()
     root_task_id = str(uuid.uuid4())
+    _ctx_token = bind_context(channel_id=channel_id, trace_id=root_task_id)
+    _ctx_token.__enter__()
+    logger.info(
+        "orchestrator.start trigger_msg_id=%s targets=%s mention_count=%d",
+        trigger_msg.msg_id, target_usernames, len(target_usernames),
+    )
 
     async def _create_msg_and_broadcast(sender_id: str, content: str) -> None:
         from app.core.schemas import MessageInResponse
@@ -468,21 +477,44 @@ async def run_orchestrator(
 
     # 阶段2：并发调用所有 Bot 的 LLM（无 DB 操作）
     if pending_bots:
-        responses = await asyncio.gather(
-            *[_adapter.execute(_payload) for _, _, _, _payload, _adapter in pending_bots],
-            return_exceptions=True,
+        async def _timed_execute(adapter, payload):
+            t0 = time.perf_counter()
+            try:
+                return await adapter.execute(payload), (time.perf_counter() - t0) * 1000
+            except Exception as exc:
+                return exc, (time.perf_counter() - t0) * 1000
+
+        timed_results = await asyncio.gather(
+            *[_timed_execute(_adapter, _payload) for _, _, _, _payload, _adapter in pending_bots],
         )
         # 阶段3：串行写库 + 广播（需要 DB session）
-        for (username, bot_id, bot_msg, _, _), resp in zip(pending_bots, responses):
+        for (username, bot_id, bot_msg, _, _), (resp, dur_ms) in zip(pending_bots, timed_results):
             if isinstance(resp, BaseException):
-                logger.warning("orchestrator: bot %s raised exception: %s", username, resp)
+                logger.warning(
+                    "orchestrator: bot %s raised exception: %s duration_ms=%.0f",
+                    username, resp, dur_ms,
+                )
                 content = f"处理出错: {resp}"
             else:
                 if not resp.success:
-                    logger.warning("orchestrator: bot %s failed: %s", username, resp.error_message or "unknown")
+                    logger.warning(
+                        "orchestrator: bot %s failed: %s duration_ms=%.0f",
+                        username, resp.error_message or "unknown", dur_ms,
+                    )
+                else:
+                    logger.info(
+                        "orchestrator: bot %s completed duration_ms=%.0f",
+                        username, dur_ms,
+                    )
                 content = resp.content if resp.success else (resp.error_message or "处理出错")
             await _finalize_bot_msg(bot_msg, content)
             await _record_agent_task(bot_id, bot_msg.msg_id)
             created.append(bot_msg)
 
+    total_ms = (time.perf_counter() - t_start) * 1000
+    logger.info(
+        "orchestrator.done trace_id=%s bot_count=%d duration_ms=%.0f",
+        root_task_id, len(created), total_ms,
+    )
+    _ctx_token.__exit__(None, None, None)
     return created, already_broadcast

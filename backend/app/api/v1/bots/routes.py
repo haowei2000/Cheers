@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime
 
@@ -24,6 +25,8 @@ from app.core.schemas import (
 from app.db.models import AIModel, BotAccount, BotRegistrationRequest, PromptTemplate, User, gen_uuid
 from app.services.bot_service import BotService
 from app.utils.crypto import encrypt_value
+
+audit = logging.getLogger("app.audit")
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -126,6 +129,7 @@ async def create_bot(
         bot_id=body.bot_id,
         current_user=current_user,
     )
+    audit.info("action=bot.create actor=%s resource_id=%s username=%s", current_user.user_id, bot.bot_id, body.username)
     return APIResponse.ok(_to_full(bot))
 
 
@@ -345,6 +349,7 @@ async def update_bot(
     svc = BotService(session)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     bot = await svc.update(bot_id, current_user, **updates)
+    audit.info("action=bot.update actor=%s resource_id=%s fields=%s", current_user.user_id, bot_id, list(updates.keys()))
     return APIResponse.ok(_to_full(bot))
 
 
@@ -358,6 +363,7 @@ async def update_bot_put(
     svc = BotService(session)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     bot = await svc.update(bot_id, current_user, **updates)
+    audit.info("action=bot.update actor=%s resource_id=%s fields=%s", current_user.user_id, bot_id, list(updates.keys()))
     return APIResponse.ok(_to_full(bot))
 
 
@@ -369,4 +375,5 @@ async def delete_bot(
 ) -> APIResponse:
     svc = BotService(session)
     await svc.delete(bot_id, current_user)
+    audit.info("action=bot.delete actor=%s resource_id=%s", current_user.user_id, bot_id)
     return APIResponse.ok(None)

@@ -1936,6 +1936,32 @@ export default function App() {
     [authToken],
   );
 
+  // 前��错误上报（best-effort, 不抛异常）
+  const reportClientError = useCallback(
+    (method: string, url: string, status: number, detail: string) => {
+      fetch(`${API}/debug/client-error`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method, url, status, detail: detail.slice(0, 2000) }),
+      }).catch(() => {});
+    },
+    [],
+  );
+
+  // 全局未捕获 Promise 错误上报
+  useEffect(() => {
+    const handler = (e: PromiseRejectionEvent) => {
+      reportClientError(
+        "UNCAUGHT",
+        window.location.href,
+        0,
+        String(e.reason),
+      );
+    };
+    window.addEventListener("unhandledrejection", handler);
+    return () => window.removeEventListener("unhandledrejection", handler);
+  }, [reportClientError]);
+
   // 初始化时检查登录状态
   useEffect(() => {
     if (!currentUser) {
@@ -2554,8 +2580,11 @@ export default function App() {
         }
       } catch {}
     };
+    ws.onerror = () => {
+      reportClientError("WS", `/ws/channels/${selectedId}`, 0, "websocket error");
+    };
     return () => ws.close();
-  }, [selectedId]);
+  }, [selectedId, reportClientError]);
 
   useEffect(() => {
     if (memoryPanelOpen && selectedId) {

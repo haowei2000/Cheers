@@ -4,11 +4,13 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
+from app.core.log_context import bind_context
 from app.db.models import AIModel, BotAccount, PromptTemplate
 from app.http_client import get_http_client
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
@@ -112,6 +114,10 @@ class LLMBotAdapter(OpenClawAdapter):
         - 可以在 PromptTemplate 的 user_template 中使用这些变量来访问项目上下文
         - 例如："请基于以下项目锚点回答：{{anchor}}\n\n用户问题：{{message}}"
         """
+        with bind_context(bot_id=self.bot.bot_id):
+            return await self._execute_inner(payload)
+
+    async def _execute_inner(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text", "")
         task_id = payload.task_id
         all_attachments = payload.attachments or []
@@ -190,6 +196,7 @@ class LLMBotAdapter(OpenClawAdapter):
 
         stream_token_cb: Callable[[str], Awaitable[None]] | None = (payload.process_config or {}).get("_stream_token")
         timeout = float(api_config.get("timeout", 600))
+        t0 = time.perf_counter()
 
         try:
             client = get_http_client()
@@ -213,13 +220,19 @@ class LLMBotAdapter(OpenClawAdapter):
                             continue
                         full_content += delta
                         await stream_token_cb(delta)
+                dur_ms = (time.perf_counter() - t0) * 1000
                 if not full_content:
+                    logger.warning("llm_bot: empty stream response bot=%s duration_ms=%.0f", self.bot.username, dur_ms)
                     return AgentResponse(
                         content="",
                         task_id=task_id,
                         success=False,
                         error_message="LLM 返回空内容",
                     )
+                logger.info(
+                    "llm_bot: stream complete bot=%s model=%s duration_ms=%.0f",
+                    self.bot.username, api_config["model_name"], dur_ms,
+                )
                 return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
 
             response = await client.post(url, json=body, headers=headers, timeout=timeout)
@@ -263,19 +276,27 @@ class LLMBotAdapter(OpenClawAdapter):
                 )
 
             content = (choices[0].get("message") or {}).get("content", "")
+            dur_ms = (time.perf_counter() - t0) * 1000
             if not content:
+                logger.warning("llm_bot: empty response bot=%s duration_ms=%.0f", self.bot.username, dur_ms)
                 return AgentResponse(
                     content="",
                     task_id=task_id,
                     success=False,
                     error_message="LLM 返回空内容",
                 )
+            token_count = (data.get("usage") or {}).get("total_tokens")
+            logger.info(
+                "llm_bot: complete bot=%s model=%s duration_ms=%.0f tokens=%s",
+                self.bot.username, api_config["model_name"], dur_ms, token_count,
+            )
             return AgentResponse(content=content.strip(), task_id=task_id, success=True)
 
         except httpx.TimeoutException as exc:
+            dur_ms = (time.perf_counter() - t0) * 1000
             logger.warning(
-                "llm_bot: timeout after %.0fs bot=%s: %s",
-                timeout, self.bot.username, type(exc).__name__,
+                "llm_bot: timeout after %.0fs bot=%s: %s duration_ms=%.0f",
+                timeout, self.bot.username, type(exc).__name__, dur_ms,
             )
             return AgentResponse(
                 content="",
@@ -284,15 +305,17 @@ class LLMBotAdapter(OpenClawAdapter):
                 error_message=f"LLM 响应超时（>{timeout:.0f}s），请检查模型服务或在模型配置中增大 timeout 值",
             )
         except httpx.HTTPStatusError as exc:
+            dur_ms = (time.perf_counter() - t0) * 1000
             error_body = ""
             try:
                 error_body = exc.response.text[:500]
             except Exception:
                 pass
             logger.error(
-                "llm_bot: HTTP error status=%s body=%s",
+                "llm_bot: HTTP error status=%s body=%s duration_ms=%.0f",
                 exc.response.status_code,
                 error_body,
+                dur_ms,
             )
             return AgentResponse(
                 content="",
@@ -301,7 +324,8 @@ class LLMBotAdapter(OpenClawAdapter):
                 error_message=f"LLM API 错误 (HTTP {exc.response.status_code}): {error_body}",
             )
         except httpx.ConnectError as exc:
-            logger.error("llm_bot: connection error %s", exc)
+            dur_ms = (time.perf_counter() - t0) * 1000
+            logger.error("llm_bot: connection error %s duration_ms=%.0f", exc, dur_ms)
             return AgentResponse(
                 content="",
                 task_id=task_id,
@@ -309,7 +333,8 @@ class LLMBotAdapter(OpenClawAdapter):
                 error_message=f"无法连接到 LLM API: {api_config['base_url']}",
             )
         except Exception as exc:
-            logger.exception("llm_bot: unexpected error")
+            dur_ms = (time.perf_counter() - t0) * 1000
+            logger.exception("llm_bot: unexpected error duration_ms=%.0f", dur_ms)
             return AgentResponse(
                 content="",
                 task_id=task_id,

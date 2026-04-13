@@ -26,12 +26,12 @@ def _format_record_for_llm(record: logging.LogRecord) -> str:
         msg = msg[:MAX_MESSAGE_LEN] + "\n... (truncated)"
 
     parts = [f"timestamp={ts}", f"level={level}", f"logger={logger_name}"]
-    if getattr(record, "request_id", None):
-        parts.append(f"request_id={record.request_id}")
-    if getattr(record, "channel_id", None):
-        parts.append(f"channel_id={record.channel_id}")
-    if getattr(record, "bot_id", None):
-        parts.append(f"bot_id={record.bot_id}")
+    for ctx_key in ("request_id", "channel_id", "bot_id", "user_id", "trace_id"):
+        val = getattr(record, ctx_key, None)
+        if val:
+            parts.append(f"{ctx_key}={val}")
+    if getattr(record, "duration_ms", None) is not None:
+        parts.append(f"duration_ms={record.duration_ms:.0f}")
     header = " | ".join(parts)
     block = f"{header}\nmessage: {msg}"
 
@@ -46,14 +46,19 @@ class LLMFriendlyBufferHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             text = _format_record_for_llm(record)
-            _buffer.append({
+            entry: dict[str, Any] = {
                 "ts": record.created,
                 "level": record.levelname,
                 "logger": record.name,
                 "message": record.getMessage(),
                 "formatted": text,
                 "exc_text": record.exc_text if record.exc_info else None,
-            })
+            }
+            for ctx_key in ("request_id", "channel_id", "bot_id", "trace_id"):
+                val = getattr(record, ctx_key, None)
+                if val:
+                    entry[ctx_key] = val
+            _buffer.append(entry)
         except Exception:
             self.handleError(record)
 
@@ -61,8 +66,11 @@ class LLMFriendlyBufferHandler(logging.Handler):
 def get_recent_logs(
     level: str | None = None,
     limit: int = 200,
+    *,
+    channel_id: str | None = None,
+    trace_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """返回最近日志，可选按级别过滤。level 如 DEBUG/INFO/WARNING/ERROR。"""
+    """返回最近日志，可选按级别/channel_id/trace_id 过滤。"""
     level_order = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40, "CRITICAL": 50}
     min_level = level_order.get((level or "").upper(), 0)
     out = []
@@ -70,14 +78,23 @@ def get_recent_logs(
         if len(out) >= limit:
             break
         entry = _buffer[i]
-        if level_order.get(entry["level"], 99) >= min_level:
-            out.append({
-                "ts": entry["ts"],
-                "level": entry["level"],
-                "logger": entry["logger"],
-                "message": entry["message"],
-                "formatted": entry["formatted"],
-            })
+        if level_order.get(entry["level"], 99) < min_level:
+            continue
+        if channel_id and entry.get("channel_id") != channel_id:
+            continue
+        if trace_id and entry.get("trace_id") != trace_id:
+            continue
+        out.append({
+            "ts": entry["ts"],
+            "level": entry["level"],
+            "logger": entry["logger"],
+            "message": entry["message"],
+            "formatted": entry["formatted"],
+            "request_id": entry.get("request_id", ""),
+            "channel_id": entry.get("channel_id", ""),
+            "bot_id": entry.get("bot_id", ""),
+            "trace_id": entry.get("trace_id", ""),
+        })
     out.reverse()
     return out
 
