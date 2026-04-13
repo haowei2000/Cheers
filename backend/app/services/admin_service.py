@@ -4,10 +4,11 @@ from __future__ import annotations
 import logging
 
 import httpx
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, BadRequestError, ConflictError, NotFoundError
-from app.db.models import AIModel, PromptTemplate
+from app.db.models import AIModel, BotAccount, PromptTemplate
 from app.repositories.bot_repo import AIModelRepository, PromptTemplateRepository
 from app.services.admin import settings_store
 from app.services.admin.log_buffer import get_formatted_log_excerpt
@@ -63,6 +64,10 @@ class AIModelService:
         model = await self.get_or_404(model_id)
         if model.is_builtin:
             raise BadRequestError("内置模型不可删除")
+        # Detach bots that reference this model before deleting
+        await self.session.execute(
+            update(BotAccount).where(BotAccount.model_id == model_id).values(model_id=None)
+        )
         await self.repo.delete(model)
 
 
@@ -276,4 +281,8 @@ class PromptTemplateService:
         tmpl = await self.get_or_404(template_id)
         if tmpl.is_builtin:
             raise BadRequestError("内置模板不可删除")
+        # Detach bots that reference this template before deleting
+        await self.session.execute(
+            update(BotAccount).where(BotAccount.template_id == template_id).values(template_id=None)
+        )
         await self.repo.delete(tmpl)
