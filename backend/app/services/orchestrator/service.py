@@ -76,12 +76,15 @@ async def _fetch_original_question_for_clarify(
     return None, []
 
 
-def _apply_prompt_template(template: str | None, user_message: str) -> str:
-    """应用 Bot 的 user_template。"""
+def _apply_prompt_template(template: str | None, user_message: str, extra_vars: dict[str, str] | None = None) -> str:
+    """应用 Bot 的 user_template，替换 {{message}}、{{sender_name}} 等变量。"""
     if not template:
         return user_message
     result = template.replace("{{}}", user_message)
     result = result.replace("{{message}}", user_message)
+    if extra_vars:
+        for key, value in extra_vars.items():
+            result = result.replace(f"{{{{{key}}}}}", value)
     return result
 
 
@@ -262,6 +265,23 @@ async def run_orchestrator(
         from app.services.memory.files_index import schedule_files_index_update
         schedule_files_index_update(channel_id, attachments)
 
+    # 查出发送者的昵称，注入到 trigger_message 供模板变量 {{sender_name}} 使用
+    sender_name = ""
+    if trigger_msg.sender_type == "user":
+        user_row = await session.execute(
+            select(User.display_name, User.username).where(User.user_id == trigger_msg.sender_id)
+        )
+        user_info = user_row.first()
+        if user_info:
+            sender_name = user_info[0] or user_info[1] or ""
+    elif trigger_msg.sender_type == "bot":
+        bot_row = await session.execute(
+            select(BotAccount.display_name, BotAccount.username).where(BotAccount.bot_id == trigger_msg.sender_id)
+        )
+        bot_info = bot_row.first()
+        if bot_info:
+            sender_name = bot_info[0] or bot_info[1] or ""
+
     created: list[Message] = []
     already_broadcast: set[str] = set()
     root_task_id = str(uuid.uuid4())
@@ -285,6 +305,13 @@ async def run_orchestrator(
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()
+        # 查出 bot 的 display_name
+        bot_row = await session.execute(
+            select(BotAccount.display_name, BotAccount.username).where(BotAccount.bot_id == sender_id)
+        )
+        bot_info = bot_row.first()
+        if bot_info:
+            data["sender_name"] = bot_info[0] or bot_info[1] or ""
         await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
         if stream_event:
             await stream_event("message", data)
@@ -375,6 +402,7 @@ async def run_orchestrator(
                 channel_id=channel_id,
                 trigger_message={
                     "user": trigger_msg.sender_id,
+                    "sender_name": sender_name,
                     "text": trigger_content,
                     "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                     "msg_id": trigger_msg.msg_id,
@@ -426,13 +454,14 @@ async def run_orchestrator(
                     if broadcast_processing:
                         await broadcast_processing(channel_id, sug_bot_id, sug_username)
                     sug_adapter = await adapter_factory(sug_bot_id)
-                    sug_templated_text = _apply_prompt_template(sug_template, trigger_content)
+                    sug_templated_text = _apply_prompt_template(sug_template, trigger_content, {"sender_name": sender_name})
                     sug_msg = await _pre_create_bot_msg(sug_bot_id, root_task_id)
                     sug_payload = AgentPayload(
                         task_id=root_task_id,
                         channel_id=channel_id,
                         trigger_message={
                             "user": trigger_msg.sender_id,
+                            "sender_name": sender_name,
                             "text": sug_templated_text,
                             "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                         },
@@ -484,7 +513,7 @@ async def run_orchestrator(
             continue
         adapter = await adapter_factory(bot_id)
         bot_template = bot_template_by_username.get(username)
-        templated_text = _apply_prompt_template(bot_template, trigger_content)
+        templated_text = _apply_prompt_template(bot_template, trigger_content, {"sender_name": sender_name})
         other_bots = [item for item in channel_bot_usernames if item != username]
         bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
 
@@ -493,6 +522,7 @@ async def run_orchestrator(
             channel_id=channel_id,
             trigger_message={
                 "user": trigger_msg.sender_id,
+                "sender_name": sender_name,
                 "text": templated_text,
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                 "msg_id": trigger_msg.msg_id,

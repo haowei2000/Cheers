@@ -30,6 +30,7 @@ type Message = {
   msg_id: string;
   sender_id: string;
   sender_type: string;
+  sender_name?: string;
   content: string;
   created_at?: string;
   _streaming?: boolean;
@@ -2094,6 +2095,8 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2313,7 +2316,9 @@ export default function App() {
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
   );
-  const [, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const isLoadingOlderRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -2507,6 +2512,7 @@ export default function App() {
     setChannels([]);
     setWorkspaces([]);
     setMessages([]);
+    setHasMore(true);
     setLoginModalOpen(true);
   };
 
@@ -2616,6 +2622,7 @@ export default function App() {
   useEffect(() => {
     if (!selectedId) {
       setMessages([]);
+      setHasMore(true);
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
@@ -2683,11 +2690,59 @@ export default function App() {
       .then((d) => {
         const data = d.data || [];
         setMessages(data);
-        setHasMore(data.length >= 30);
+        setHasMore(d.meta?.has_more ?? data.length >= 30);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [selectedId]);
+
+  // ── 上划加载更多历史消息 ──────────────────────────────────────────────────
+  const loadMoreMessages = useCallback(async () => {
+    if (!selectedId || !hasMore || loadingMore) return;
+    const targetChannelId = selectedId;
+    const oldest = messages[0];
+    if (!oldest) return;
+    setLoadingMore(true);
+    isLoadingOlderRef.current = true;
+    const container = messagesContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    try {
+      const r = await authFetch(
+        `${API}/channels/${targetChannelId}/messages?before_id=${oldest.msg_id}&limit=50`,
+      );
+      const d = await r.json();
+      const older = d.data || [];
+      if (older.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      if (selectedIdRef.current !== targetChannelId) return;
+      setHasMore(d.meta?.has_more ?? older.length >= 50);
+      setMessages((prev) => [...older, ...prev]);
+      // 恢复滚动位置
+      requestAnimationFrame(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight - prevScrollHeight;
+        }
+        isLoadingOlderRef.current = false;
+      });
+    } catch (e) {
+      console.error(e);
+      isLoadingOlderRef.current = false;
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [selectedId, hasMore, loadingMore, messages, authFetch]);
+
+  const handleMessagesScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+      if (target.scrollTop < 100 && hasMore && !loadingMore) {
+        loadMoreMessages();
+      }
+    },
+    [hasMore, loadingMore, loadMoreMessages],
+  );
 
   // Scroll to a pending message after channel switch + messages load
   useEffect(() => {
@@ -2701,56 +2756,92 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedId) return;
-    const ws = new WebSocket(`${WS_BASE}/ws/channels/${selectedId}`);
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "message" && msg.data) {
-          setMessages((prev) => {
-            const id = msg.data.msg_id;
-            if (id && prev.some((m) => m.msg_id === id)) return prev;
-            const entry =
-              msg.data.sender_type === "bot"
-                ? { ...msg.data, _streaming: true }
-                : msg.data;
-            return [...prev, entry];
-          });
-          if (
-            msg.data.sender_type === "bot" &&
-            typeof msg.data.content === "string" &&
-            msg.data.content.includes("已更新记忆层")
-          ) {
-            fetch(`${API}/channels/${selectedId}/context`)
-              .then((r) => r.json())
-              .then((d) => d.data && setContextData(d.data))
-              .catch(() => {});
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    let disposed = false;
+    const MAX_RETRIES = 10;
+    const BASE_DELAY = 1000;
+    const MAX_DELAY = 30000;
+
+    function connect() {
+      if (disposed) return;
+      ws = new WebSocket(`${WS_BASE}/ws/channels/${selectedId}`);
+
+      ws.onopen = () => {
+        retryCount = 0;
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "message" && msg.data) {
+            setMessages((prev) => {
+              const id = msg.data.msg_id;
+              if (id && prev.some((m) => m.msg_id === id)) return prev;
+              const entry =
+                msg.data.sender_type === "bot"
+                  ? { ...msg.data, _streaming: true }
+                  : msg.data;
+              return [...prev, entry];
+            });
+            if (
+              msg.data.sender_type === "bot" &&
+              typeof msg.data.content === "string" &&
+              msg.data.content.includes("已更新记忆层")
+            ) {
+              fetch(`${API}/channels/${selectedId}/context`)
+                .then((r) => r.json())
+                .then((d) => d.data && setContextData(d.data))
+                .catch(() => {});
+            }
+          } else if (msg.type === "message_stream" && msg.data) {
+            const { msg_id, delta } = msg.data;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.msg_id === msg_id
+                  ? { ...m, content: m.content + delta, _streaming: true }
+                  : m,
+              ),
+            );
+          } else if (msg.type === "message_done" && msg.data) {
+            const { msg_id, content } = msg.data;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
+              ),
+            );
+            if (typeof content === "string" && content.includes("已更新记忆层")) {
+              fetch(`${API}/channels/${selectedId}/context`)
+                .then((r) => r.json())
+                .then((d) => d.data && setContextData(d.data))
+                .catch(() => {});
+            }
           }
-        } else if (msg.type === "message_stream" && msg.data) {
-          const { msg_id, delta } = msg.data;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.msg_id === msg_id
-                ? { ...m, content: m.content + delta, _streaming: true }
-                : m,
-            ),
-          );
-        } else if (msg.type === "message_done" && msg.data) {
-          const { msg_id, content } = msg.data;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
-            ),
-          );
-          if (typeof content === "string" && content.includes("已更新记忆层")) {
-            fetch(`${API}/channels/${selectedId}/context`)
-              .then((r) => r.json())
-              .then((d) => d.data && setContextData(d.data))
-              .catch(() => {});
-          }
+        } catch {}
+      };
+
+      ws.onerror = () => {
+        // onclose will fire after onerror, reconnect is handled there
+      };
+
+      ws.onclose = () => {
+        if (disposed) return;
+        if (retryCount < MAX_RETRIES) {
+          const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
+          retryCount++;
+          reconnectTimer = setTimeout(connect, delay);
         }
-      } catch {}
+      };
+    }
+
+    connect();
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
     };
-    return () => ws.close();
   }, [selectedId]);
 
   useEffect(() => {
@@ -2937,6 +3028,7 @@ export default function App() {
     inReplyToMsgId?: string,
   ): Promise<void> => {
     if (!selectedId || !content.trim()) return Promise.resolve();
+    const targetChannelId = selectedId;
     const body: Record<string, unknown> = {
       content: content.trim(),
       sender_id: currentUserId,
@@ -2944,14 +3036,14 @@ export default function App() {
       file_ids: [] as string[],
     };
     if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
-    return authFetch(`${API}/channels/${selectedId}/messages`, {
+    return authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
       .then((d) => {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
-        if (d.data) {
+        if (d.data && selectedIdRef.current === targetChannelId) {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id)
               ? prev
@@ -2963,6 +3055,7 @@ export default function App() {
 
   const send = () => {
     if (!selectedId || !input.trim()) return;
+    const targetChannelId = selectedId;
     let content = input.trim();
     if (replyingTo) {
       const refBot =
@@ -2998,14 +3091,15 @@ export default function App() {
       return [];
     });
     setReplyingTo(null);
-    authFetch(`${API}/channels/${selectedId}/messages`, {
+    authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
     })
       .then((r) => r.json())
       .then((d) => {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
-        if (d.data) {
+        // 仅在用户仍停留在发送消息的频道时才插入，避免跨频道串消息
+        if (d.data && selectedIdRef.current === targetChannelId) {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id)
               ? prev
@@ -3366,9 +3460,9 @@ export default function App() {
     }
   };
 
-  // 进入频道或收到新消息时，聊天区域滚动到最新消息
+  // 进入频道或收到新消息时，聊天区域滚动到最新消息（加载旧消息时跳过）
   useEffect(() => {
-    if (!messagesContainerRef.current) return;
+    if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
     messagesContainerRef.current.scrollTop =
       messagesContainerRef.current.scrollHeight;
   }, [selectedId, messages.length]);
@@ -5083,7 +5177,7 @@ export default function App() {
                     (b) => b.member_id === pair.answer.sender_id,
                   );
                   const botLabel =
-                    senderBot?.display_name || senderBot?.username || "Bot";
+                    pair.answer.sender_name || senderBot?.display_name || senderBot?.username || "Bot";
                   return (
                     <label
                       key={pair.question.msg_id}
@@ -5481,6 +5575,7 @@ export default function App() {
                 <div
                   ref={messagesContainerRef}
                   className="flex-1 overflow-auto"
+                  onScroll={handleMessagesScroll}
                 >
                   {loading ? (
                     <div className="flex items-center justify-center h-full text-gray-400 text-sm">
@@ -5488,6 +5583,16 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="py-2 px-2">
+                      {loadingMore && (
+                        <div className="text-center text-xs text-gray-400 py-2">
+                          加载更多消息...
+                        </div>
+                      )}
+                      {!hasMore && messages.length > 0 && (
+                        <div className="text-center text-xs text-gray-300 py-2">
+                          — 已加载全部消息 —
+                        </div>
+                      )}
                       {threadRoots.map((m) => {
                         const replies = threadRepliesOf(m.msg_id);
 
@@ -5555,6 +5660,7 @@ export default function App() {
                               )
                             : undefined;
                         const botLabel =
+                          m.sender_name ||
                           senderBot?.display_name ||
                           senderBot?.username ||
                           "Bot";
@@ -5566,6 +5672,7 @@ export default function App() {
                               )
                             : undefined;
                         const userLabel =
+                          m.sender_name ||
                           senderUser?.display_name ||
                           senderUser?.username ||
                           "用户";

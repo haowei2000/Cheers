@@ -19,6 +19,7 @@ DEFAULT_CLARIFY_SETTINGS = {
 
 DEFAULT_ORCHESTRATOR_SETTINGS = {
     "orchestrator_auto_takeover": False,
+    "child_bot_inherit_context": True,
 }
 DEFAULT_IMAGE_GEN_SETTINGS: dict[str, Any] = {
     "base_url": "",
@@ -78,7 +79,9 @@ async def _save_settings_async(data: dict[str, Any]) -> None:
     try:
         async with factory() as session:
             row = (await session.execute(
-                select(SystemSetting).where(SystemSetting.key == _SETTINGS_DB_KEY)
+                select(SystemSetting)
+                .where(SystemSetting.key == _SETTINGS_DB_KEY)
+                .with_for_update()
             )).scalar_one_or_none()
             if row:
                 row.value = data
@@ -488,12 +491,14 @@ def get_assist_settings() -> dict[str, Any]:
     return {
         "llm_provider_id": bindings.get("channel_bot") or bindings.get("guide_bot") or "",
         "auto_takeover": bool(data.get("orchestrator_auto_takeover", False)),
+        "child_bot_inherit_context": bool(data.get("child_bot_inherit_context", True)),
     }
 
 
 def set_assist_settings(
     llm_provider_id: str | None = None,
     auto_takeover: bool | None = None,
+    child_bot_inherit_context: bool | None = None,
 ) -> dict[str, Any]:
     """更新系统助手配置并返回最新值。"""
     data = load_admin_settings()
@@ -505,6 +510,8 @@ def set_assist_settings(
         data["llm_bindings"] = bindings
     if auto_takeover is not None:
         data["orchestrator_auto_takeover"] = bool(auto_takeover)
+    if child_bot_inherit_context is not None:
+        data["child_bot_inherit_context"] = bool(child_bot_inherit_context)
     save_admin_settings(data)
     return get_assist_settings()
 
