@@ -188,7 +188,7 @@ export default function AdminPage() {
   const [_llmEditingId, _setLlmEditingId] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_llmSaveLoading, _setLlmSaveLoading] = useState(false);
-  const [assistSettings, setAssistSettings] = useState<{ llm_provider_id: string; auto_takeover: boolean }>({ llm_provider_id: "", auto_takeover: false });
+  const [assistSettings, setAssistSettings] = useState<{ llm_provider_id: string; auto_takeover: boolean; child_bot_inherit_context: boolean }>({ llm_provider_id: "", auto_takeover: false, child_bot_inherit_context: true });
   const [channelBotForm, setChannelBotForm] = useState({ display_name: "", description: "" });
   const [bindingSystemLlm, setBindingSystemLlm] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -278,6 +278,7 @@ export default function AdminPage() {
             setAssistSettings({
               llm_provider_id: d.data.llm_provider_id ?? "",
               auto_takeover: !!d.data.auto_takeover,
+              child_bot_inherit_context: d.data.child_bot_inherit_context !== false,
             });
           }
         })
@@ -1342,6 +1343,10 @@ export default function AdminPage() {
                     <label className="flex items-center gap-1.5 text-sm">
                       <input type="checkbox" id="assist_takeover" checked={assistSettings.auto_takeover} onChange={(e) => setAssistSettings({ ...assistSettings, auto_takeover: e.target.checked })} />
                       自动接管
+                    </label>
+                    <label className="flex items-center gap-1.5 text-sm">
+                      <input type="checkbox" id="child_inherit_ctx" checked={assistSettings.child_bot_inherit_context} onChange={(e) => setAssistSettings({ ...assistSettings, child_bot_inherit_context: e.target.checked })} />
+                      子Bot继承上下文
                     </label>
                     <button onClick={saveAssistAll} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
                   </div>
