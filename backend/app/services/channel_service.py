@@ -229,7 +229,7 @@ class ChannelService:
         template_id: str | None,
         current_user: User,
     ) -> dict:
-        """设置频道内某个 Bot 成员的提示词模板覆盖。"""
+        """设置频道内某个 Bot 成员的提示词模板覆盖。仅 Bot 创建者或管理员可操作。"""
         await self.get_or_404(channel_id)
         await self._require_channel_member(channel_id, current_user)
 
@@ -238,6 +238,11 @@ class ChannelService:
             raise NotFoundError("membership not found")
         if m.member_type != "bot":
             raise BadRequestError("只能为 Bot 成员设置提示词模板")
+
+        if not is_admin(current_user):
+            bot = await self.bot_repo.get_by_id(member_id)
+            if not bot or bot.created_by != current_user.user_id:
+                raise ForbiddenError("只有 Bot 的创建者才能修改其提示词模板")
 
         if template_id:
             tmpl = (await self.session.execute(

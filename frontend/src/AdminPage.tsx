@@ -465,7 +465,7 @@ export default function AdminPage() {
 
   // ==================== Template API Functions ====================
   const loadTemplates = () => {
-    authFetch(`${API}/admin/templates`)
+    authFetch(`${API}/templates`)
       .then((r) => r.json())
       .then((d) => { if (d.data) setTemplates(d.data); })
       .catch(console.error);
@@ -476,7 +476,7 @@ export default function AdminPage() {
       toast.error("请填写必填项");
       return;
     }
-    authFetch(`${API}/admin/templates`, {
+    authFetch(`${API}/templates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(templateForm),
@@ -495,8 +495,8 @@ export default function AdminPage() {
   };
 
   const updateTemplate = (id: string) => {
-    authFetch(`${API}/admin/templates/${id}`, {
-      method: "PUT",
+    authFetch(`${API}/templates/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: templateForm.name,
@@ -521,7 +521,7 @@ export default function AdminPage() {
 
   const deleteTemplate = (id: string) => {
     if (!confirm("确定删除此模板？")) return;
-    authFetch(`${API}/admin/templates/${id}`, { method: "DELETE" })
+    authFetch(`${API}/templates/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
