@@ -184,7 +184,11 @@ class LLMBotAdapter(OpenClawAdapter):
                 "todos": payload.memory_context.get("todos", ""),
             })
         trigger_meta = payload.trigger_message or {}
-        context_vars["sender_name"] = trigger_meta.get("sender_name") or ""
+        context_vars["sender_name"] = (
+            trigger_meta.get("sender_name")
+            or pconfig.get("_sender_name")
+            or ""
+        )
 
         # Vision 路径：模型支持且有图片时，构建多模态消息
         supports_vision = (self.model.config or {}).get("supports_vision", True)
