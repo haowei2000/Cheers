@@ -543,6 +543,8 @@ async def run_orchestrator(
                 "_db_session": session,
                 "_bot_id": bot_id,
                 "_user_secrets": user_secrets,
+                "_sender_name": sender_name,
+                "_channel_name": channel_name,
             },
         )
         logger.info(
