@@ -82,6 +82,7 @@ class PromptTemplateInResponse(BaseModel):
     user_template: str
     variables: list[str]
     is_builtin: bool
+    created_by: str | None = None
     created_at: datetime | None = None
 
 

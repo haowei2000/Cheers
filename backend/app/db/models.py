@@ -47,6 +47,9 @@ class PromptTemplate(Base):
     user_template: Mapped[str] = mapped_column(Text, nullable=False, default="{{message}}")  # 用户消息模板
     variables: Mapped[list] = mapped_column(JSON, nullable=True, default=list)  # 变量列表，如 ["message"]
     is_builtin: Mapped[bool] = mapped_column(default=False)  # 是否内置模板（不可删除）
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.user_id"), nullable=True, default=None
+    )  # 模板创建者，为空表示系统/管理员创建
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -167,8 +170,13 @@ class ChannelMembership(Base):
     member_type: Mapped[str] = mapped_column(String(16), nullable=False)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     added_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    # 频道级提示词模板覆盖（仅 bot 成员有效，为空时使用 BotAccount 默认模板）
+    template_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("prompt_templates.template_id"), nullable=True, default=None
+    )
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="memberships")
+    prompt_template: Mapped[Optional["PromptTemplate"]] = relationship("PromptTemplate", lazy="joined")
 
 
 class WorkspaceMembership(Base):

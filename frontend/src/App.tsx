@@ -411,7 +411,7 @@ const LAYER_META: Record<
     color: string;
     icon: string;
     readonly?: boolean;
-    entryBased?: boolean;  // 结构化条目层
+    entryBased?: boolean; // 结构化条目层
   }
 > = {
   ANCHOR: {
@@ -577,8 +577,11 @@ function MemoryPanel({
       loadEntries(layer);
     }
     if (layer === "MEMBERS") {
+      const token = getStoredToken();
       setMembersLoading(true);
-      fetch(`${API}/channels/${channelId}/members?with_username=1`)
+      fetch(`${API}/channels/${channelId}/members?with_username=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
         .then((r) => r.json())
         .then((d) => setMembers(d.data || []))
         .catch(() => {})
@@ -587,7 +590,10 @@ function MemoryPanel({
     if (layer === "TODO") {
       loadTodos();
       if (members.length === 0) {
-        fetch(`${API}/channels/${channelId}/members?with_username=1`)
+        const token = getStoredToken();
+        fetch(`${API}/channels/${channelId}/members?with_username=1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
           .then((r) => r.json())
           .then((d) => setMembers(d.data || []))
           .catch(() => {});
@@ -605,11 +611,20 @@ function MemoryPanel({
     const token = getStoredToken();
     const res = await fetch(`${API}/channels/${channelId}/memory/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ layer: activeLayer, title: newTitle || null, content: newContent }),
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        layer: activeLayer,
+        title: newTitle || null,
+        content: newContent,
+      }),
     }).catch(() => null);
     if (res?.ok) {
-      setNewTitle(""); setNewContent(""); setAddingNew(false);
+      setNewTitle("");
+      setNewContent("");
+      setAddingNew(false);
       loadEntries(activeLayer);
     }
   };
@@ -618,7 +633,10 @@ function MemoryPanel({
     const token = getStoredToken();
     const res = await fetch(`${API}/channels/${channelId}/memory/${entryId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: JSON.stringify({ title: editTitle || null, content: editContent }),
     }).catch(() => null);
     if (res?.ok) {
@@ -646,26 +664,47 @@ function MemoryPanel({
   const handleTodoCreate = async () => {
     if (!todoNewContent.trim()) return;
     const token = getStoredToken();
-    let assignee_id = null, assignee_type = null;
+    let assignee_id = null,
+      assignee_type = null;
     if (todoAssignee) {
       const [type, id] = todoAssignee.split(":");
-      assignee_id = id; assignee_type = type;
+      assignee_id = id;
+      assignee_type = type;
     }
     const res = await fetch(`${API}/channels/${channelId}/todos/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ content: todoNewContent, assignee_id, assignee_type }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        content: todoNewContent,
+        assignee_id,
+        assignee_type,
+      }),
     }).catch(() => null);
-    if (res?.ok) { setTodoNewContent(""); setTodoAssignee(""); loadTodos(); }
+    if (res?.ok) {
+      setTodoNewContent("");
+      setTodoAssignee("");
+      loadTodos();
+    }
   };
 
   const handleTodoToggle = async (todo: TodoItem) => {
     const token = getStoredToken();
-    const res = await fetch(`${API}/channels/${channelId}/todos/${todo.todo_id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ status: todo.status === "completed" ? "pending" : "completed" }),
-    }).catch(() => null);
+    const res = await fetch(
+      `${API}/channels/${channelId}/todos/${todo.todo_id}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: todo.status === "completed" ? "pending" : "completed",
+        }),
+      },
+    ).catch(() => null);
     if (res?.ok) loadTodos();
   };
 
@@ -686,7 +725,11 @@ function MemoryPanel({
   // ── Entry-based layer content renderer ──
   const renderEntryLayer = () => {
     if (entriesLoading) {
-      return <div className="flex items-center justify-center h-12 text-gray-400 text-xs">加载中…</div>;
+      return (
+        <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
+          加载中…
+        </div>
+      );
     }
 
     return (
@@ -709,7 +752,10 @@ function MemoryPanel({
           <ul className="divide-y divide-gray-100">
             {entries.map((entry) =>
               editingEntryId === entry.entry_id ? (
-                <li key={entry.entry_id} className="px-3 py-2 space-y-1.5 bg-blue-50/30">
+                <li
+                  key={entry.entry_id}
+                  className="px-3 py-2 space-y-1.5 bg-blue-50/30"
+                >
                   <input
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
@@ -723,29 +769,54 @@ function MemoryPanel({
                     className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
                   />
                   <div className="flex gap-1 justify-end">
-                    <button onClick={() => setEditingEntryId(null)} className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">取消</button>
-                    <button onClick={() => handleUpdateEntry(entry.entry_id)} className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]">保存</button>
+                    <button
+                      onClick={() => setEditingEntryId(null)}
+                      className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => handleUpdateEntry(entry.entry_id)}
+                      className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
+                    >
+                      保存
+                    </button>
                   </div>
                 </li>
               ) : (
-                <li key={entry.entry_id} className="px-3 py-2 group hover:bg-gray-50/50">
+                <li
+                  key={entry.entry_id}
+                  className="px-3 py-2 group hover:bg-gray-50/50"
+                >
                   <div className="flex items-start justify-between gap-1.5">
                     <div className="flex-1 min-w-0">
                       {entry.title && (
-                        <p className="text-xs font-semibold text-gray-700 mb-0.5">{entry.title}</p>
+                        <p className="text-xs font-semibold text-gray-700 mb-0.5">
+                          {entry.title}
+                        </p>
                       )}
                       <div className="text-xs text-gray-600">
                         <MessageMarkdown text={entry.content} />
                       </div>
                       {entry.updated_at && (
-                        <p className="text-[10px] text-gray-300 mt-1">{new Date(entry.updated_at).toLocaleString()}</p>
+                        <p className="text-[10px] text-gray-300 mt-1">
+                          {new Date(entry.updated_at).toLocaleString()}
+                        </p>
                       )}
                     </div>
                     <div className="flex gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => startEditEntry(entry)} className="text-gray-400 hover:text-blue-500 text-[10px] p-0.5" title="编辑">
+                      <button
+                        onClick={() => startEditEntry(entry)}
+                        className="text-gray-400 hover:text-blue-500 text-[10px] p-0.5"
+                        title="编辑"
+                      >
                         &#9998;
                       </button>
-                      <button onClick={() => handleDeleteEntry(entry.entry_id)} className="text-gray-300 hover:text-red-400 text-[10px] p-0.5" title="删除">
+                      <button
+                        onClick={() => handleDeleteEntry(entry.entry_id)}
+                        className="text-gray-300 hover:text-red-400 text-[10px] p-0.5"
+                        title="删除"
+                      >
                         &#10005;
                       </button>
                     </div>
@@ -769,14 +840,31 @@ function MemoryPanel({
               rows={3}
               value={newContent}
               onChange={(e) => setNewContent(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleCreateEntry(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                  handleCreateEntry();
+              }}
               placeholder="内容…"
               className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
               autoFocus
             />
             <div className="flex gap-1 justify-end">
-              <button onClick={() => { setAddingNew(false); setNewTitle(""); setNewContent(""); }} className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50">取消</button>
-              <button onClick={handleCreateEntry} className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]">添加</button>
+              <button
+                onClick={() => {
+                  setAddingNew(false);
+                  setNewTitle("");
+                  setNewContent("");
+                }}
+                className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateEntry}
+                className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
+              >
+                添加
+              </button>
             </div>
           </div>
         )}
@@ -801,7 +889,19 @@ function MemoryPanel({
             className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-blue-500 text-xs leading-none"
             title="全屏查看"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+            <svg
+              className="w-3.5 h-3.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+              />
+            </svg>
           </button>
           <button
             type="button"
@@ -819,11 +919,12 @@ function MemoryPanel({
         {LAYERS.map((layer) => {
           const m = LAYER_META[layer];
           const active = layer === activeLayer;
-          const filled = layer === "TODO"
-            ? todos.length > 0
-            : m.entryBased
-              ? entries.length > 0 && activeLayer === layer
-              : !!contextData[layer.toLowerCase()]?.trim();
+          const filled =
+            layer === "TODO"
+              ? todos.length > 0
+              : m.entryBased
+                ? entries.length > 0 && activeLayer === layer
+                : !!contextData[layer.toLowerCase()]?.trim();
           return (
             <button
               key={layer}
@@ -885,7 +986,10 @@ function MemoryPanel({
                 rows={2}
                 value={todoNewContent}
                 onChange={(e) => setTodoNewContent(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleTodoCreate(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                    handleTodoCreate();
+                }}
                 placeholder="新建任务…"
                 className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
               />
@@ -897,8 +1001,12 @@ function MemoryPanel({
                 >
                   <option value="">指派给…</option>
                   {members.map((m) => (
-                    <option key={m.member_id} value={`${m.member_type}:${m.member_id}`}>
-                      {m.member_type === "bot" ? "🤖 " : "👤 "}{m.display_name || m.username}
+                    <option
+                      key={m.member_id}
+                      value={`${m.member_type}:${m.member_id}`}
+                    >
+                      {m.member_type === "bot" ? "🤖 " : "👤 "}
+                      {m.display_name || m.username}
                     </option>
                   ))}
                 </select>
@@ -913,7 +1021,9 @@ function MemoryPanel({
             {/* Todo list */}
             <div className="flex-1 overflow-y-auto">
               {todosLoading ? (
-                <div className="flex items-center justify-center h-12 text-gray-400 text-xs">加载中…</div>
+                <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
+                  加载中…
+                </div>
               ) : todos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-20 text-gray-400 gap-1 text-center px-4">
                   <span className="text-2xl opacity-30">✅</span>
@@ -922,7 +1032,10 @@ function MemoryPanel({
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {todos.map((todo) => (
-                    <li key={todo.todo_id} className="flex items-start gap-2 px-3 py-2">
+                    <li
+                      key={todo.todo_id}
+                      className="flex items-start gap-2 px-3 py-2"
+                    >
                       <input
                         type="checkbox"
                         checked={todo.status === "completed"}
@@ -930,12 +1043,18 @@ function MemoryPanel({
                         className="mt-0.5 flex-shrink-0 cursor-pointer"
                       />
                       <div className="flex-1 min-w-0">
-                        <p className={`text-xs ${todo.status === "completed" ? "line-through text-gray-400" : "text-gray-800"}`}>
+                        <p
+                          className={`text-xs ${todo.status === "completed" ? "line-through text-gray-400" : "text-gray-800"}`}
+                        >
                           {todo.content}
                         </p>
                         {todo.assignee_id && (
                           <p className="text-[10px] text-gray-400 mt-0.5">
-                            → {getMemberName(todo.assignee_id, todo.assignee_type!) ?? todo.assignee_id}
+                            →{" "}
+                            {getMemberName(
+                              todo.assignee_id,
+                              todo.assignee_type!,
+                            ) ?? todo.assignee_id}
                           </p>
                         )}
                       </div>
@@ -1501,8 +1620,19 @@ function ThinkingIndicator() {
 }
 
 // ── Keychain Modal ────────────────────────────────────────────────────────────
-function KeychainModal({ userToken, onClose }: { userToken: string; onClose: () => void }) {
-  type KeychainItem = { key_id: string; name: string; description?: string; value_masked: string };
+function KeychainModal({
+  userToken,
+  onClose,
+}: {
+  userToken: string;
+  onClose: () => void;
+}) {
+  type KeychainItem = {
+    key_id: string;
+    name: string;
+    description?: string;
+    value_masked: string;
+  };
   const [items, setItems] = useState<KeychainItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -1512,10 +1642,13 @@ function KeychainModal({ userToken, onClose }: { userToken: string; onClose: () 
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]";
+  const inputCls =
+    "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]";
 
   useEffect(() => {
-    fetch(`${API}/keychain/`, { headers: { Authorization: `Bearer ${userToken}` } })
+    fetch(`${API}/keychain/`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    })
       .then((r) => r.json())
       .then(setItems)
       .catch(() => {})
@@ -1528,16 +1661,29 @@ function KeychainModal({ userToken, onClose }: { userToken: string; onClose: () 
     try {
       const res = await fetch(`${API}/keychain/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
-        body: JSON.stringify({ name: newName.trim(), value: newValue, description: newDesc.trim() || undefined }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({
+          name: newName.trim(),
+          value: newValue,
+          description: newDesc.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "创建失败");
       setItems((prev) => [...prev, data]);
-      setNewName(""); setNewValue(""); setNewDesc(""); setShowValue(false);
+      setNewName("");
+      setNewValue("");
+      setNewDesc("");
+      setShowValue(false);
       toast.success("密钥已保存");
-    } catch (e: any) { toast.error(e.message || "创建失败"); }
-    finally { setSaving(false); }
+    } catch (e: any) {
+      toast.error(e.message || "创建失败");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (keyId: string) => {
@@ -1550,59 +1696,145 @@ function KeychainModal({ userToken, onClose }: { userToken: string; onClose: () 
       if (!res.ok) throw new Error("删除失败");
       setItems((prev) => prev.filter((k) => k.key_id !== keyId));
       toast.success("密钥已删除");
-    } catch (e: any) { toast.error(e.message || "删除失败"); }
-    finally { setDeletingId(null); }
+    } catch (e: any) {
+      toast.error(e.message || "删除失败");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose} aria-modal="true" role="dialog">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      onClick={onClose}
+      aria-modal="true"
+      role="dialog"
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex justify-between items-center px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[#1264A3]">
-              <path fillRule="evenodd" d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z" clipRule="evenodd" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="w-5 h-5 text-[#1264A3]"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z"
+                clipRule="evenodd"
+              />
             </svg>
             <h2 className="text-lg font-bold text-gray-900">密钥链</h2>
           </div>
-          <button type="button" onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none">×</button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none"
+          >
+            ×
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {/* Usage hint */}
           <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 flex-shrink-0 mt-0.5">
-              <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clipRule="evenodd" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="w-4 h-4 flex-shrink-0 mt-0.5"
+            >
+              <path
+                fillRule="evenodd"
+                d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z"
+                clipRule="evenodd"
+              />
             </svg>
-            <span>在频道消息中使用 <code className="font-mono bg-blue-100 px-1 rounded">$secret&#123;密钥名称&#125;</code> 引用密钥，Bot 会自动获取真实值。</span>
+            <span>
+              在频道消息中使用{" "}
+              <code className="font-mono bg-blue-100 px-1 rounded">
+                $secret&#123;密钥名称&#125;
+              </code>{" "}
+              引用密钥，Bot 会自动获取真实值。
+            </span>
           </div>
 
           {/* List */}
           {loading ? (
-            <div className="text-center py-4 text-sm text-gray-400">加载中…</div>
+            <div className="text-center py-4 text-sm text-gray-400">
+              加载中…
+            </div>
           ) : items.length === 0 ? (
-            <div className="text-center py-4 text-sm text-gray-400">暂无密钥，在下方添加第一个</div>
+            <div className="text-center py-4 text-sm text-gray-400">
+              暂无密钥，在下方添加第一个
+            </div>
           ) : (
             <ul className="space-y-2">
               {items.map((item) => (
-                <li key={item.key_id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
+                <li
+                  key={item.key_id}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200"
+                >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm font-medium text-gray-800 truncate">{item.name}</span>
-                      <span className="font-mono text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">{item.value_masked}</span>
+                      <span className="font-mono text-sm font-medium text-gray-800 truncate">
+                        {item.name}
+                      </span>
+                      <span className="font-mono text-xs text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                        {item.value_masked}
+                      </span>
                     </div>
-                    {item.description && <p className="text-xs text-gray-400 mt-0.5 truncate">{item.description}</p>}
+                    {item.description && (
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">
+                        {item.description}
+                      </p>
+                    )}
                   </div>
-                  <button type="button" onClick={() => handleDelete(item.key_id)} disabled={deletingId === item.key_id}
-                    className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40" title="删除密钥">
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(item.key_id)}
+                    disabled={deletingId === item.key_id}
+                    className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                    title="删除密钥"
+                  >
                     {deletingId === item.key_id ? (
-                      <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      <svg
+                        className="animate-spin w-3.5 h-3.5"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v8z"
+                        />
                       </svg>
                     ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="w-3.5 h-3.5"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z"
+                          clipRule="evenodd"
+                        />
                       </svg>
                     )}
                   </button>
@@ -1614,33 +1846,84 @@ function KeychainModal({ userToken, onClose }: { userToken: string; onClose: () 
           {/* Add new */}
           <div className="border-t border-gray-100 pt-4 space-y-2">
             <p className="text-xs font-medium text-gray-600">添加新密钥</p>
-            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="密钥名称（如 openai-key）" className={inputCls} />
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="密钥名称（如 openai-key）"
+              className={inputCls}
+            />
             <div className="relative">
-              <input type={showValue ? "text" : "password"} value={newValue} onChange={(e) => setNewValue(e.target.value)} placeholder="密钥值" className={`${inputCls} pr-10`} />
-              <button type="button" onClick={() => setShowValue((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600" tabIndex={-1}>
+              <input
+                type={showValue ? "text" : "password"}
+                value={newValue}
+                onChange={(e) => setNewValue(e.target.value)}
+                placeholder="密钥值"
+                className={`${inputCls} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowValue((v) => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                tabIndex={-1}
+              >
                 {showValue ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path fillRule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z" clipRule="evenodd" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="w-4 h-4"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.091 1.092a4 4 0 0 0-5.557-5.557Z"
+                      clipRule="evenodd"
+                    />
                     <path d="M10.748 13.93l2.523 2.523a9.987 9.987 0 0 1-3.27.547c-4.258 0-7.894-2.66-9.337-6.41a1.651 1.651 0 0 1 0-1.186A10.007 10.007 0 0 1 2.839 6.02L6.07 9.252a4 4 0 0 0 4.678 4.678Z" />
                   </svg>
                 ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="w-4 h-4"
+                  >
                     <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
-                    <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41Z" clipRule="evenodd" />
+                    <path
+                      fillRule="evenodd"
+                      d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41Z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 )}
               </button>
             </div>
-            <input type="text" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="描述（可选）" className={inputCls} />
-            <button type="button" onClick={handleCreate} disabled={saving || !newName.trim() || !newValue.trim()}
-              className="w-full py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50 transition-colors">
+            <input
+              type="text"
+              value={newDesc}
+              onChange={(e) => setNewDesc(e.target.value)}
+              placeholder="描述（可选）"
+              className={inputCls}
+            />
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={saving || !newName.trim() || !newValue.trim()}
+              className="w-full py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50 transition-colors"
+            >
               {saving ? "保存中…" : "保存密钥"}
             </button>
           </div>
         </div>
 
         <div className="flex justify-end px-6 py-4 border-t border-gray-100 flex-shrink-0">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">关闭</button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+          >
+            关闭
+          </button>
         </div>
       </div>
     </div>
@@ -2238,7 +2521,12 @@ export default function App() {
       fetch(`${API}/debug/client-error`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method, url, status, detail: detail.slice(0, 2000) }),
+        body: JSON.stringify({
+          method,
+          url,
+          status,
+          detail: detail.slice(0, 2000),
+        }),
       }).catch(() => {});
     },
     [],
@@ -2247,12 +2535,7 @@ export default function App() {
   // 全局未捕获 Promise 错误上报
   useEffect(() => {
     const handler = (e: PromiseRejectionEvent) => {
-      reportClientError(
-        "UNCAUGHT",
-        window.location.href,
-        0,
-        String(e.reason),
-      );
+      reportClientError("UNCAUGHT", window.location.href, 0, String(e.reason));
     };
     window.addEventListener("unhandledrejection", handler);
     return () => window.removeEventListener("unhandledrejection", handler);
@@ -2270,7 +2553,9 @@ export default function App() {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
-  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -2305,14 +2590,19 @@ export default function App() {
 
   // Keychain insert popup
   const [keychainPopupOpen, setKeychainPopupOpen] = useState(false);
-  const [keychainPopupItems, setKeychainPopupItems] = useState<{ key_id: string; name: string }[]>([]);
+  const [keychainPopupItems, setKeychainPopupItems] = useState<
+    { key_id: string; name: string }[]
+  >([]);
   const [keychainPopupLoading, setKeychainPopupLoading] = useState(false);
   const keychainPopupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!keychainPopupOpen) return;
     const handle = (e: MouseEvent) => {
-      if (keychainPopupRef.current && !keychainPopupRef.current.contains(e.target as Node)) {
+      if (
+        keychainPopupRef.current &&
+        !keychainPopupRef.current.contains(e.target as Node)
+      ) {
         setKeychainPopupOpen(false);
       }
     };
@@ -2327,8 +2617,10 @@ export default function App() {
     try {
       const res = await authFetch(`${API}/keychain/`);
       if (res.ok) setKeychainPopupItems(await res.json());
-    } catch {}
-    finally { setKeychainPopupLoading(false); }
+    } catch {
+    } finally {
+      setKeychainPopupLoading(false);
+    }
   };
 
   const insertSecret = (name: string) => {
@@ -2925,7 +3217,9 @@ export default function App() {
     if (!msgId || loading || messages.length === 0) return;
     pendingScrollMsgIdRef.current = null;
     setTimeout(() => {
-      document.getElementById(`msg-${msgId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      document
+        .getElementById(`msg-${msgId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 100);
   }, [messages, loading]);
 
@@ -2986,7 +3280,10 @@ export default function App() {
                 m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
               ),
             );
-            if (typeof content === "string" && content.includes("已更新记忆层")) {
+            if (
+              typeof content === "string" &&
+              content.includes("已更新记忆层")
+            ) {
               fetch(`${API}/channels/${selectedId}/context`)
                 .then((r) => r.json())
                 .then((d) => d.data && setContextData(d.data))
@@ -2997,13 +3294,21 @@ export default function App() {
       };
 
       ws.onerror = () => {
-        reportClientError("WS", `/ws/channels/${selectedId}`, 0, "websocket error");
+        reportClientError(
+          "WS",
+          `/ws/channels/${selectedId}`,
+          0,
+          "websocket error",
+        );
       };
 
       ws.onclose = () => {
         if (disposed) return;
         if (retryCount < MAX_RETRIES) {
-          const delay = Math.min(BASE_DELAY * Math.pow(2, retryCount), MAX_DELAY);
+          const delay = Math.min(
+            BASE_DELAY * Math.pow(2, retryCount),
+            MAX_DELAY,
+          );
           retryCount++;
           reconnectTimer = setTimeout(connect, delay);
         }
@@ -3743,7 +4048,9 @@ export default function App() {
       {loginModalOpen && (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => { if (currentUser) setLoginModalOpen(false); }}
+          onClick={() => {
+            if (currentUser) setLoginModalOpen(false);
+          }}
         >
           <div
             className="bg-white rounded-xl p-8 w-full max-w-sm shadow-2xl"
@@ -4039,8 +4346,17 @@ export default function App() {
                     className="w-6 h-6 flex items-center justify-center rounded text-white/40 hover:text-white hover:bg-white/10 transition-colors"
                     title="密钥链"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                      <path fillRule="evenodd" d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z" clipRule="evenodd" />
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="w-3.5 h-3.5"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                   </button>
                   <button
@@ -4319,7 +4635,12 @@ export default function App() {
               }}
               className="relative flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-4 h-4"
+              >
                 <path d="M4.214 3.227a.75.75 0 0 0-1.156-.956 8.97 8.97 0 0 0-1.856 5.476.75.75 0 0 0 1.498.066A7.47 7.47 0 0 1 4.214 3.227ZM16.942 2.271a.75.75 0 0 0-1.157.956 7.47 7.47 0 0 1 1.514 4.586.75.75 0 0 0 1.498-.066 8.97 8.97 0 0 0-1.855-5.476ZM10 2a6 6 0 0 0-6 6v1.076a2.25 2.25 0 0 1-.659 1.59l-.537.537a1.5 1.5 0 0 0 1.06 2.563h12.272a1.5 1.5 0 0 0 1.06-2.563l-.537-.537A2.25 2.25 0 0 1 16 9.076V8a6 6 0 0 0-6-6ZM8.5 17.5a1.5 1.5 0 0 0 3 0H8.5Z" />
               </svg>
               <span>通知</span>
@@ -5221,7 +5542,10 @@ export default function App() {
 
         {/* Keychain modal */}
         {keychainModalOpen && authToken && (
-          <KeychainModal userToken={authToken} onClose={() => setKeychainModalOpen(false)} />
+          <KeychainModal
+            userToken={authToken}
+            onClose={() => setKeychainModalOpen(false)}
+          />
         )}
 
         {/* User profile modal */}
@@ -5335,7 +5659,10 @@ export default function App() {
                     (b) => b.member_id === pair.answer.sender_id,
                   );
                   const botLabel =
-                    pair.answer.sender_name || senderBot?.display_name || senderBot?.username || "Bot";
+                    pair.answer.sender_name ||
+                    senderBot?.display_name ||
+                    senderBot?.username ||
+                    "Bot";
                   return (
                     <label
                       key={pair.question.msg_id}
@@ -6196,10 +6523,12 @@ export default function App() {
                                 "用户";
                           const rInitials = rLabel.slice(0, 2).toUpperCase();
                           const rTime = r.created_at
-                            ? new Date(r.created_at).toLocaleString(
-                                "zh-CN",
-                                { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" },
-                              )
+                            ? new Date(r.created_at).toLocaleString("zh-CN", {
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
                             : "";
                           const {
                             text: rTextRaw,
@@ -7171,17 +7500,36 @@ export default function App() {
                                 className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${keychainPopupOpen ? "bg-blue-50 text-blue-600" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}
                                 title="插入密钥链"
                               >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                  <path fillRule="evenodd" d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z" clipRule="evenodd" />
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 20 20"
+                                  fill="currentColor"
+                                  className="w-4 h-4"
+                                >
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z"
+                                    clipRule="evenodd"
+                                  />
                                 </svg>
                               </button>
                               {keychainPopupOpen && (
                                 <div className="absolute bottom-10 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[200px] max-h-64 overflow-y-auto">
-                                  <p className="px-3 py-1.5 text-[11px] font-medium text-gray-400 uppercase tracking-wide">插入密钥</p>
+                                  <p className="px-3 py-1.5 text-[11px] font-medium text-gray-400 uppercase tracking-wide">
+                                    插入密钥
+                                  </p>
                                   {keychainPopupLoading ? (
-                                    <div className="px-3 py-3 text-xs text-gray-400 text-center">加载中…</div>
+                                    <div className="px-3 py-3 text-xs text-gray-400 text-center">
+                                      加载中…
+                                    </div>
                                   ) : keychainPopupItems.length === 0 ? (
-                                    <div className="px-3 py-3 text-xs text-gray-400 text-center">暂无密钥<br/><span className="text-gray-300">点击侧边栏钥匙图标添加</span></div>
+                                    <div className="px-3 py-3 text-xs text-gray-400 text-center">
+                                      暂无密钥
+                                      <br />
+                                      <span className="text-gray-300">
+                                        点击侧边栏钥匙图标添加
+                                      </span>
+                                    </div>
                                   ) : (
                                     keychainPopupItems.map((item) => (
                                       <button
@@ -7190,10 +7538,21 @@ export default function App() {
                                         onClick={() => insertSecret(item.name)}
                                         className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50"
                                       >
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-gray-400 flex-shrink-0">
-                                          <path fillRule="evenodd" d="M6.5 5.5a4 4 0 1 1 2.88 3.838.75.75 0 0 0-.88.72V11h1.25a.75.75 0 0 1 0 1.5H8.5v1.25a.75.75 0 0 1-1.5 0v-3.44a5.5 5.5 0 1 1 5.5-5.31.75.75 0 0 1-1.499.05A4.001 4.001 0 0 0 6.5 5.5Zm.5 0a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1Z" clipRule="evenodd" />
+                                        <svg
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          viewBox="0 0 16 16"
+                                          fill="currentColor"
+                                          className="w-3.5 h-3.5 text-gray-400 flex-shrink-0"
+                                        >
+                                          <path
+                                            fillRule="evenodd"
+                                            d="M6.5 5.5a4 4 0 1 1 2.88 3.838.75.75 0 0 0-.88.72V11h1.25a.75.75 0 0 1 0 1.5H8.5v1.25a.75.75 0 0 1-1.5 0v-3.44a5.5 5.5 0 1 1 5.5-5.31.75.75 0 0 1-1.499.05A4.001 4.001 0 0 0 6.5 5.5Zm.5 0a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1Z"
+                                            clipRule="evenodd"
+                                          />
                                         </svg>
-                                        <span className="font-mono truncate">{item.name}</span>
+                                        <span className="font-mono truncate">
+                                          {item.name}
+                                        </span>
                                       </button>
                                     ))
                                   )}
@@ -7983,7 +8342,10 @@ export default function App() {
                 channelName={selectedChannel?.name ?? ""}
                 contextData={contextData}
                 onClose={() => setMemoryPanelOpen(false)}
-                onExpand={() => { setMemoryPageOpen(true); setMemoryPanelOpen(false); }}
+                onExpand={() => {
+                  setMemoryPageOpen(true);
+                  setMemoryPanelOpen(false);
+                }}
               />
             </div>
           )}

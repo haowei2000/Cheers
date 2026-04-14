@@ -7,8 +7,8 @@ import httpx
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import AppError, BadRequestError, ConflictError, NotFoundError
-from app.db.models import AIModel, BotAccount, PromptTemplate
+from app.core.exceptions import AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.db.models import AIModel, BotAccount, PromptTemplate, User
 from app.repositories.bot_repo import AIModelRepository, PromptTemplateRepository
 from app.services.admin import settings_store
 from app.services.admin.log_buffer import get_formatted_log_excerpt
@@ -252,6 +252,27 @@ class PromptTemplateService:
     async def list_all(self) -> list[PromptTemplate]:
         return await self.repo.list_all()
 
+    async def list_visible(self, user: User) -> list[PromptTemplate]:
+        """返回用户可见的模板：内置 + 无主（管理员创建）+ 自己创建的。"""
+        from sqlalchemy import or_
+        from sqlalchemy import select as sa_select
+
+        from app.utils.permissions import is_admin
+        if is_admin(user):
+            return await self.repo.list_all()
+        result = await self.session.execute(
+            sa_select(PromptTemplate)
+            .where(
+                or_(
+                    PromptTemplate.is_builtin.is_(True),
+                    PromptTemplate.created_by.is_(None),
+                    PromptTemplate.created_by == user.user_id,
+                )
+            )
+            .order_by(PromptTemplate.created_at)
+        )
+        return list(result.scalars().all())
+
     async def create(
         self,
         name: str,
@@ -259,6 +280,7 @@ class PromptTemplateService:
         user_template: str = "{{message}}",
         description: str | None = None,
         variables: list | None = None,
+        created_by: str | None = None,
     ) -> PromptTemplate:
         existing = await self.repo.get_by_name(name)
         if existing:
@@ -269,18 +291,31 @@ class PromptTemplateService:
             user_template=user_template,
             description=description,
             variables=variables or [],
+            created_by=created_by,
         )
 
-    async def update(self, template_id: str, **kwargs) -> PromptTemplate:
+    def _check_owner(self, tmpl: PromptTemplate, user: User) -> None:
+        """检查用户是否有权修改该模板。"""
+        from app.utils.permissions import is_admin
+        if is_admin(user):
+            return
+        if tmpl.created_by != user.user_id:
+            raise ForbiddenError("只能修改自己创建的模板")
+
+    async def update(self, template_id: str, user: User | None = None, **kwargs) -> PromptTemplate:
         tmpl = await self.get_or_404(template_id)
         if tmpl.is_builtin:
             raise BadRequestError("内置模板不可修改")
+        if user is not None:
+            self._check_owner(tmpl, user)
         return await self.repo.update(tmpl, **kwargs)
 
-    async def delete(self, template_id: str) -> None:
+    async def delete(self, template_id: str, user: User | None = None) -> None:
         tmpl = await self.get_or_404(template_id)
         if tmpl.is_builtin:
             raise BadRequestError("内置模板不可删除")
+        if user is not None:
+            self._check_owner(tmpl, user)
         # Detach bots that reference this template before deleting
         await self.session.execute(
             update(BotAccount).where(BotAccount.template_id == template_id).values(template_id=None)

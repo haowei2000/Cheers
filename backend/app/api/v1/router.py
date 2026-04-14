@@ -16,6 +16,7 @@ from app.api.v1.memory.routes import router as memory_router
 from app.api.v1.messages.routes import router as messages_router
 from app.api.v1.notifications.routes import router as notifications_router
 from app.api.v1.tasks.routes import router as tasks_router
+from app.api.v1.templates.routes import router as templates_router
 from app.api.v1.todos.routes import router as todos_router
 from app.api.v1.workspaces.routes import router as workspaces_router
 
@@ -38,6 +39,7 @@ v1_router.include_router(todos_router)
 v1_router.include_router(notifications_router)
 v1_router.include_router(keychain_router)
 v1_router.include_router(memory_router)
+v1_router.include_router(templates_router)
 
 @v1_router.get("/health")
 def v1_health():
