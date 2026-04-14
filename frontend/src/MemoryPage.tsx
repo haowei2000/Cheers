@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageMarkdown } from "./MessageMarkdown";
+import { isMemberOrAbove, isAdmin as isAdminRole, getStoredRole } from "./permissions";
 
 const API = "/api/v1";
 
@@ -388,6 +389,12 @@ export default function MemoryPage({
   contextData: Record<string, string>;
   onClose: () => void;
 }) {
+  const memoryRole = getStoredRole();
+  const canEditMemory = isMemberOrAbove(memoryRole);
+  const isMemoryAdmin = isAdminRole(memoryRole);
+  const memoryUserId = (() => { try { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s).user?.user_id : null; } catch { return null; } })();
+  const canEditEntry = (entry: MemoryEntryItem) => isMemoryAdmin || entry.created_by === memoryUserId;
+
   const [activeLayer, setActiveLayer] = useState<string>("ANCHOR");
   const [entries, setEntries] = useState<MemoryEntryItem[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -603,9 +610,10 @@ export default function MemoryPage({
                     {relativeTime(entry.updated_at)}
                   </span>
                   <button
-                    onClick={() => setEditingId(entry.entry_id)}
-                    className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-white hover:text-blue-500 hover:shadow-sm transition-all"
-                    title="编辑"
+                    onClick={() => canEditEntry(entry) && setEditingId(entry.entry_id)}
+                    disabled={!canEditEntry(entry)}
+                    className={`w-7 h-7 flex items-center justify-center rounded-md transition-all ${canEditEntry(entry) ? "text-gray-400 hover:bg-white hover:text-blue-500 hover:shadow-sm" : "text-gray-200 cursor-not-allowed"}`}
+                    title={canEditEntry(entry) ? "编辑" : "仅创建者或管理员可编辑"}
                   >
                     <svg
                       className="w-3.5 h-3.5"
@@ -622,9 +630,10 @@ export default function MemoryPage({
                     </svg>
                   </button>
                   <button
-                    onClick={() => handleDelete(entry.entry_id)}
-                    className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-white hover:text-red-500 hover:shadow-sm transition-all"
-                    title="删除"
+                    onClick={() => canEditEntry(entry) && handleDelete(entry.entry_id)}
+                    disabled={!canEditEntry(entry)}
+                    className={`w-7 h-7 flex items-center justify-center rounded-md transition-all ${canEditEntry(entry) ? "text-gray-400 hover:bg-white hover:text-red-500 hover:shadow-sm" : "text-gray-200 cursor-not-allowed"}`}
+                    title={canEditEntry(entry) ? "删除" : "仅创建者或管理员可删除"}
                   >
                     <svg
                       className="w-3.5 h-3.5"
@@ -690,8 +699,10 @@ export default function MemoryPage({
               暂无记录，点击下方添加第一条
             </p>
             <button
-              onClick={() => setAddingNew(true)}
-              className="px-4 py-2 rounded-lg bg-[#1264A3] text-white text-sm hover:bg-[#0f5a94] transition-colors"
+              onClick={() => canEditMemory && setAddingNew(true)}
+              disabled={!canEditMemory}
+              title={canEditMemory ? "" : "无权限：访客无法添加记录"}
+              className={`px-4 py-2 rounded-lg text-sm transition-colors ${canEditMemory ? "bg-[#1264A3] text-white hover:bg-[#0f5a94]" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
             >
               + 添加{meta.label}
             </button>
@@ -872,17 +883,19 @@ export default function MemoryPage({
             value={todoNewContent}
             onChange={(e) => setTodoNewContent(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canEditMemory)
                 handleTodoCreate();
             }}
-            placeholder="新建任务…"
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-blue-400"
+            placeholder={canEditMemory ? "新建任务…" : "无权限创建任务"}
+            disabled={!canEditMemory}
+            className={`w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-blue-400 ${!canEditMemory ? "opacity-50 cursor-not-allowed bg-gray-50" : ""}`}
           />
           <div className="flex items-center gap-2">
             <select
               value={todoAssignee}
               onChange={(e) => setTodoAssignee(e.target.value)}
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400 text-gray-500"
+              disabled={!canEditMemory}
+              className={`flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400 text-gray-500 ${!canEditMemory ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               <option value="">指派给…</option>
               {members.map((m) => (
@@ -897,7 +910,9 @@ export default function MemoryPage({
             </select>
             <button
               onClick={handleTodoCreate}
-              className="px-4 py-1.5 text-sm bg-[#1264A3] text-white rounded-lg hover:bg-[#0f5a94] flex-shrink-0"
+              disabled={!canEditMemory}
+              title={canEditMemory ? "" : "无权限：访客无法添加任务"}
+              className={`px-4 py-1.5 text-sm rounded-lg flex-shrink-0 ${canEditMemory ? "bg-[#1264A3] text-white hover:bg-[#0f5a94]" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
             >
               添加
             </button>
@@ -928,8 +943,9 @@ export default function MemoryPage({
                       <input
                         type="checkbox"
                         checked={false}
-                        onChange={() => handleTodoToggle(todo)}
-                        className="mt-0.5 w-4 h-4 cursor-pointer flex-shrink-0"
+                        onChange={() => canEditMemory && handleTodoToggle(todo)}
+                        disabled={!canEditMemory}
+                        className={`mt-0.5 w-4 h-4 flex-shrink-0 ${canEditMemory ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
                       />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-gray-800">{todo.content}</p>
@@ -944,9 +960,10 @@ export default function MemoryPage({
                         )}
                       </div>
                       <button
-                        onClick={() => handleTodoDelete(todo.todo_id)}
-                        className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                        title="删除"
+                        onClick={() => canEditMemory && handleTodoDelete(todo.todo_id)}
+                        disabled={!canEditMemory}
+                        className={`flex-shrink-0 ${canEditMemory ? "text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all" : "text-gray-200 cursor-not-allowed opacity-0 group-hover:opacity-100"}`}
+                        title={canEditMemory ? "删除" : "无权限"}
                       >
                         <svg
                           className="w-4 h-4"
@@ -982,15 +999,17 @@ export default function MemoryPage({
                       <input
                         type="checkbox"
                         checked
-                        onChange={() => handleTodoToggle(todo)}
-                        className="mt-0.5 w-4 h-4 cursor-pointer flex-shrink-0"
+                        onChange={() => canEditMemory && handleTodoToggle(todo)}
+                        disabled={!canEditMemory}
+                        className={`mt-0.5 w-4 h-4 flex-shrink-0 ${canEditMemory ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
                       />
                       <p className="flex-1 text-sm text-gray-400 line-through">
                         {todo.content}
                       </p>
                       <button
-                        onClick={() => handleTodoDelete(todo.todo_id)}
-                        className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                        onClick={() => canEditMemory && handleTodoDelete(todo.todo_id)}
+                        disabled={!canEditMemory}
+                        className={`flex-shrink-0 ${canEditMemory ? "text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all" : "text-gray-200 cursor-not-allowed opacity-0 group-hover:opacity-100"}`}
                       >
                         <svg
                           className="w-4 h-4"
@@ -1111,8 +1130,10 @@ export default function MemoryPage({
             <div className="flex items-center gap-2">
               {meta.entryBased && !addingNew && (
                 <button
-                  onClick={() => setAddingNew(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-2 text-sm rounded-lg bg-[#1264A3] text-white hover:bg-[#0f5a94] transition-colors"
+                  onClick={() => canEditMemory && setAddingNew(true)}
+                  disabled={!canEditMemory}
+                  title={canEditMemory ? "" : "无权限：访客无法添加记录"}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 text-sm rounded-lg transition-colors ${canEditMemory ? "bg-[#1264A3] text-white hover:bg-[#0f5a94]" : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
                 >
                   <svg
                     className="w-4 h-4"

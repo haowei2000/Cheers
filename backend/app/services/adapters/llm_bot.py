@@ -223,6 +223,24 @@ class LLMBotAdapter(OpenClawAdapter):
             task_id,
             len(payload.attachments or []),
         )
+        if logger.isEnabledFor(logging.DEBUG):
+            for idx, msg in enumerate(messages):
+                role = msg.get("role", "?")
+                content = msg.get("content", "")
+                # 多模态消息的 content 可能是列表，只摘要显示
+                if isinstance(content, list):
+                    parts_summary = ", ".join(
+                        p.get("type", "?") for p in content if isinstance(p, dict)
+                    )
+                    logger.debug(
+                        "llm_bot: messages[%d] role=%s content=[%s] (%d parts)",
+                        idx, role, parts_summary, len(content),
+                    )
+                else:
+                    logger.debug(
+                        "llm_bot: messages[%d] role=%s content(%d chars):\n%s",
+                        idx, role, len(content), content,
+                    )
 
         stream_token_cb: Callable[[str], Awaitable[None]] | None = (payload.process_config or {}).get("_stream_token")
         timeout = float(api_config.get("timeout", 600))
