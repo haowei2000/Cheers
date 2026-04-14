@@ -210,9 +210,11 @@ async def test_execute_renders_all_context_vars() -> None:
 
     assert resp.success is True
 
-    # 检查捕获的 messages
+    # 直接调用（非子 bot）应包含 system prompt
     messages = captured_body.get("messages", [])
-    assert len(messages) == 2
+    assert len(messages) == 2, f"直接调用应有 system + user 两条消息，实际 {len(messages)}"
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == "你是助手"
 
     user_content = messages[1]["content"]
     assert isinstance(user_content, str)
@@ -281,10 +283,11 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
     assert len(captured_payload) == 1
     sub = captured_payload[0]
 
-    # process_config 应包含 _channel_name 和 _sender_name
+    # process_config 应包含 _channel_name、_sender_name 和 _skip_system_prompt
     pc = sub.process_config or {}
     assert pc.get("_channel_name") == "协作频道", f"_channel_name 缺失或不正确: {pc}"
     assert pc.get("_sender_name") == "赵六", f"_sender_name 缺失或不正确: {pc}"
+    assert pc.get("_skip_system_prompt") is True, f"_skip_system_prompt 应为 True: {pc}"
 
     # trigger_message 应包含 sender_name 和非空 timestamp
     tm = sub.trigger_message or {}
@@ -422,11 +425,12 @@ async def test_call_bot_end_to_end_renders_all_vars() -> None:
 
     assert "子bot执行成功" in result
 
-    # 验证发给 LLM 的 user message 中所有变量已渲染
+    # 子 bot 调用不应有 system prompt
     messages = captured_body.get("messages", [])
-    assert len(messages) == 2, f"预期 2 条消息，实际 {len(messages)}"
+    assert len(messages) == 1, f"子 bot 调用应只有 user 消息，实际 {len(messages)} 条: {[m['role'] for m in messages]}"
+    assert messages[0]["role"] == "user", "子 bot 调用的唯一消息应为 user role"
 
-    user_content = messages[1]["content"]
+    user_content = messages[0]["content"]
     unrendered = UNRENDERED_VAR_PATTERN.findall(user_content)
     assert unrendered == [], f"未渲染的模板变量: {unrendered}"
 
