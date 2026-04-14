@@ -495,14 +495,16 @@ export default function AdminPage() {
   };
 
   const updateTemplate = (id: string) => {
+    if (!templateForm.name.trim()) { toast.error("模板名称不能为空"); return; }
+    if (!templateForm.system_prompt.trim()) { toast.error("系统提示词不能为空"); return; }
     authFetch(`${API}/templates/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: templateForm.name,
-        description: templateForm.description,
+        description: templateForm.description || null,
         system_prompt: templateForm.system_prompt,
-        user_template: templateForm.user_template,
+        user_template: templateForm.user_template || "{{message}}",
       }),
     })
       .then((r) => r.json())
@@ -1001,11 +1003,13 @@ export default function AdminPage() {
                               <span><code className="bg-gray-200 px-1 rounded">{"{{channel_id}}"}</code> 频道ID</span>
                               <span><code className="bg-gray-200 px-1 rounded">{"{{timestamp}}"}</code> 消息时间</span>
                               <span><code className="bg-gray-200 px-1 rounded">{"{{anchor}}"}</code> 项目锚点</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{progress}}"}</code> 项目进度</span>
                               <span><code className="bg-gray-200 px-1 rounded">{"{{decisions}}"}</code> 决策记录</span>
                               <span><code className="bg-gray-200 px-1 rounded">{"{{recent}}"}</code> 近期动态</span>
                               <span><code className="bg-gray-200 px-1 rounded">{"{{todos}}"}</code> 待办事项</span>
                               <span><code className="bg-gray-200 px-1 rounded">{"{{files_index}}"}</code> 文件索引</span>
                             </div>
+                            <p className="text-xs text-gray-400 mt-2">* 通过 call_bot 调用的子 Bot 不会使用系统提示词，仅使用用户消息模板</p>
                           </div>
                         </div>
                       </div>

@@ -217,6 +217,7 @@ def _make_tools(ctx: dict) -> list:
             sub_process_config: dict = {
                 "_sender_name": ctx.get("sender_name", ""),
                 "_channel_name": ctx.get("channel_name", ""),
+                "_skip_system_prompt": True,
             }
 
             if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
