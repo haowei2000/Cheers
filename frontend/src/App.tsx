@@ -1322,7 +1322,7 @@ function GuideFormBlock({
           if (d.status === "success") {
             setSubmitted(true);
             const chName = d.data?.name ?? name;
-            return fetch(`${API}/channels/${channelId}/guide-reply`, {
+            return fetch(`${API}/channels/${channelId}/messages/guide-reply`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -2524,7 +2524,7 @@ export default function App() {
   // 前��错误上报（best-effort, 不抛异常）
   const reportClientError = useCallback(
     (method: string, url: string, status: number, detail: string) => {
-      fetch(`${API}/debug/client-error`, {
+      fetch("/api/debug/client-error", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3646,8 +3646,10 @@ export default function App() {
 
   const PRESIGN_EXTS = new Set([
     ".txt",
+    ".md",
     ".docx",
     ".pdf",
+    ".xlsx",
     ".png",
     ".jpg",
     ".jpeg",
@@ -3662,8 +3664,11 @@ export default function App() {
     ".gif": "image/gif",
     ".pdf": "application/pdf",
     ".txt": "text/plain",
+    ".md": "text/markdown",
     ".docx":
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx":
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   };
 
   const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
@@ -3723,6 +3728,10 @@ export default function App() {
           if (localPreview) URL.revokeObjectURL(localPreview);
           return;
         }
+        // 通知后端确认上传完成
+        await authFetch(`${API}/files/${file_id}/confirm`, {
+          method: "POST",
+        }).catch(() => {});
         setPendingFileIds((prev) => [...prev, file_id]);
         setPendingFileNames((prev) => [...prev, file.name]);
         setPendingFilePreviews((prev) => [...prev, localPreview]);
@@ -3732,21 +3741,8 @@ export default function App() {
         console.error(err);
       }
     } else {
-      fetch(
-        `${API}/files/upload?channel_id=${encodeURIComponent(selectedId)}&uploader_id=${encodeURIComponent(currentUserId)}&filename=${encodeURIComponent(file.name)}`,
-        { method: "POST", body: file },
-      )
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.data?.file_id) {
-            setPendingFileIds((prev) => [...prev, d.data.file_id]);
-            setPendingFileNames((prev) => [...prev, file.name]);
-            setPendingFilePreviews((prev) => [...prev, localPreview]);
-          } else if (localPreview) {
-            URL.revokeObjectURL(localPreview);
-          }
-        })
-        .catch(console.error);
+      toast.error(`不支持的文件格式：${ext}`);
+      if (localPreview) URL.revokeObjectURL(localPreview);
     }
   };
 
