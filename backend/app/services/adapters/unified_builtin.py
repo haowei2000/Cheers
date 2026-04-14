@@ -206,21 +206,31 @@ def _make_tools(ctx: dict) -> list:
             # 构建子 Bot 的完整上下文（四层记忆 + 当前会话历史）
             memory_context = ctx.get("memory") or {}
 
+            # 子 Bot 需要的上下文字段，确保模板变量能正确渲染
+            from datetime import datetime, timezone
+            sub_trigger = {
+                "user": ctx.get("sender_id", ""),
+                "sender_name": ctx.get("sender_name", ""),
+                "text": message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            sub_process_config: dict = {
+                "_sender_name": ctx.get("sender_name", ""),
+                "_channel_name": ctx.get("channel_name", ""),
+            }
+
             if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
                 # 流式路径：预先创建空消息气泡，边生成边推送 delta，完成后写入最终内容
                 bot_msg = await pre_create_bot_msg(bot_id, task_id)
+                sub_process_config["_stream_token"] = make_stream_token_cb(bot_msg.msg_id)
                 sub_payload = AgentPayload(
                     task_id=task_id,
                     channel_id=ctx["channel_id"],
-                    trigger_message={
-                        "user": ctx.get("sender_id", ""),
-                        "text": message,
-                        "timestamp": "",
-                    },
+                    trigger_message=sub_trigger,
                     memory_context=memory_context,
                     attachments=ctx.get("attachments") or [],
                     original_question_text=ctx.get("original_question_text"),
-                    process_config={"_stream_token": make_stream_token_cb(bot_msg.msg_id)},
+                    process_config=sub_process_config,
                 )
                 resp: AgentResponse = await adapter.execute(sub_payload)
                 result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
@@ -230,14 +240,11 @@ def _make_tools(ctx: dict) -> list:
                 sub_payload = AgentPayload(
                     task_id=task_id,
                     channel_id=ctx["channel_id"],
-                    trigger_message={
-                        "user": ctx.get("sender_id", ""),
-                        "text": message,
-                        "timestamp": "",
-                    },
+                    trigger_message=sub_trigger,
                     memory_context=memory_context,
                     attachments=ctx.get("attachments") or [],
                     original_question_text=ctx.get("original_question_text"),
+                    process_config=sub_process_config,
                 )
                 resp = await adapter.execute(sub_payload)
                 result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
@@ -1058,6 +1065,30 @@ async def _run_agent(
         HumanMessage(content=user_content),
     ]
 
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "unified_builtin[_run_agent]: system_prompt(%d chars):\n%s",
+            len(system_prompt), system_prompt,
+        )
+        if isinstance(user_content, list):
+            parts_summary = ", ".join(
+                p.get("type", "?") for p in user_content if isinstance(p, dict)
+            )
+            logger.debug(
+                "unified_builtin[_run_agent]: user_content=[%s] (%d parts)",
+                parts_summary, len(user_content),
+            )
+        else:
+            logger.debug(
+                "unified_builtin[_run_agent]: user_content(%d chars):\n%s",
+                len(user_content), user_content,
+            )
+        if history:
+            logger.debug(
+                "unified_builtin[_run_agent]: history=%d messages",
+                len(history),
+            )
+
     for iteration in range(MAX_LOOP_ITERATIONS):
         response: AIMessage | None = None
 
@@ -1287,6 +1318,8 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
             "memory": memory,
             "task_id": payload.task_id,
             "sender_id": sender_id,
+            "sender_name": pconfig.get("_sender_name") or (payload.trigger_message or {}).get("sender_name") or "",
+            "channel_name": pconfig.get("_channel_name") or "",
             "attachments": payload.attachments or [],
             "original_question_text": payload.original_question_text,
             "_db_session": pconfig.get("_db_session"),
