@@ -291,6 +291,19 @@ class FilePipelineService:
                 })
             else:
                 # 文档：只返回 DB 元数据，不下载正文
+                # 生成临时下载链接，供子 Bot 按需访问原始文件
+                download_url = ""
+                if self.storage is not None:
+                    try:
+                        scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
+                        download_url = self.storage.create_presigned_get_url(
+                            record.file_id, scope=scope,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "prepare_metadata_only: failed to generate presigned GET URL file_id=%s",
+                            record.file_id, exc_info=True,
+                        )
                 attachments.append({
                     "file_id": record.file_id,
                     "filename": record.original_filename or record.file_id,
@@ -299,6 +312,7 @@ class FilePipelineService:
                     "summary": record.summary_3lines or "",
                     "content": "",
                     "truncated": "false",
+                    "download_url": download_url,
                 })
         return attachments
 
