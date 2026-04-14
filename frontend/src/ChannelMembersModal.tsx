@@ -3,12 +3,20 @@ import toast from "react-hot-toast";
 
 const API = "/api/v1";
 
+interface PromptTemplateItem {
+  template_id: string;
+  name: string;
+  description?: string;
+}
+
 interface Member {
   member_id: string;
   member_type: "user" | "bot";
   username?: string;
   display_name?: string;
   avatar_url?: string;
+  template_id?: string | null;
+  template_name?: string | null;
 }
 
 interface Friend {
@@ -56,6 +64,9 @@ export default function ChannelMembersModal({
   // Bot 邀请状态
   const [allBots, setAllBots] = useState<Bot[]>([]);
   const [addingBotId, setAddingBotId] = useState<string | null>(null);
+
+  // 提示词模板
+  const [allTemplates, setAllTemplates] = useState<PromptTemplateItem[]>([]);
 
   // 加载频道成员
   const loadMembers = async () => {
@@ -224,6 +235,42 @@ export default function ChannelMembersModal({
     }
   };
 
+  // 加载所有提示词模板
+  const loadTemplates = async () => {
+    try {
+      const res = await fetch(`${API}/admin/templates`, { headers: authHeaders });
+      const data = await res.json();
+      if (data.status === "success") {
+        setAllTemplates(data.data || []);
+      }
+    } catch {
+      setAllTemplates([]);
+    }
+  };
+
+  // 更新 Bot 的频道级提示词模板
+  const updateBotTemplate = async (memberId: string, templateId: string | null) => {
+    try {
+      const res = await fetch(
+        `${API}/channels/${channelId}/members/${encodeURIComponent(memberId)}/template`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...authHeaders },
+          body: JSON.stringify({ template_id: templateId || null }),
+        }
+      );
+      const data = await res.json();
+      if (data.status === "success") {
+        toast.success("提示词模板已更新");
+        loadMembers();
+      } else {
+        toast.error(data.detail || "更新失败");
+      }
+    } catch {
+      toast.error("更新失败");
+    }
+  };
+
   // 加载所有 Bot
   const loadAllBots = async () => {
     try {
@@ -265,6 +312,7 @@ export default function ChannelMembersModal({
       loadMembers();
       loadFriendsToInvite();
       loadAllBots();
+      loadTemplates();
     }
   }, [isOpen, channelId]);
 
@@ -400,27 +448,45 @@ export default function ChannelMembersModal({
                       {botMembers.map((member) => (
                         <div
                           key={member.member_id}
-                          className="flex items-center justify-between p-2 bg-green-50 rounded-lg"
+                          className="p-2 bg-green-50 rounded-lg"
                         >
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded bg-[#2EB67D] flex items-center justify-center text-white text-sm font-bold">
-                              {(member.display_name || member.username || "B").charAt(0).toUpperCase()}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded bg-[#2EB67D] flex items-center justify-center text-white text-sm font-bold">
+                                {(member.display_name || member.username || "B").charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm text-gray-900">
+                                  {member.display_name || member.username || "未知 Bot"}
+                                </p>
+                                {member.username && (
+                                  <p className="text-xs text-gray-500">@{member.username}</p>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-medium text-sm text-gray-900">
-                                {member.display_name || member.username || "未知 Bot"}
-                              </p>
-                              {member.username && (
-                                <p className="text-xs text-gray-500">@{member.username}</p>
-                              )}
-                            </div>
+                            <button
+                              onClick={() => removeMember(member.member_id, member.member_type)}
+                              className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
+                            >
+                              移除
+                            </button>
                           </div>
-                          <button
-                            onClick={() => removeMember(member.member_id, member.member_type)}
-                            className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
-                          >
-                            移除
-                          </button>
+                          {/* 提示词模板选择 */}
+                          <div className="mt-2 ml-11 flex items-center gap-2">
+                            <label className="text-xs text-gray-500 whitespace-nowrap">提示词模板:</label>
+                            <select
+                              value={member.template_id || ""}
+                              onChange={(e) => updateBotTemplate(member.member_id, e.target.value || null)}
+                              className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded bg-white text-gray-700 focus:outline-none focus:border-[#2EB67D] focus:ring-1 focus:ring-[#2EB67D]"
+                            >
+                              <option value="">默认 (Bot 自带)</option>
+                              {allTemplates.map((t) => (
+                                <option key={t.template_id} value={t.template_id}>
+                                  {t.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                       ))}
                     </div>

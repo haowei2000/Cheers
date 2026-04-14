@@ -26,10 +26,10 @@ DEFAULT_MAX_TOKENS = 2000
 class LLMBotAdapter(OpenClawAdapter):
     """根据 Bot 的 model + template 配置调用 OpenAI-compatible LLM。"""
 
-    def __init__(self, bot: BotAccount) -> None:
+    def __init__(self, bot: BotAccount, *, template_override: PromptTemplate | None = None) -> None:
         self.bot = bot
         self.model: AIModel = bot.ai_model
-        self.template: PromptTemplate = bot.prompt_template
+        self.template: PromptTemplate = template_override or bot.prompt_template
 
     def _get_system_prompt(self) -> str:
         if self.bot.custom_system_prompt:

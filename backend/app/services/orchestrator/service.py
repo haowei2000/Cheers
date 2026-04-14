@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.log_context import bind_context
-from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message, User
+from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message, PromptTemplate, User
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
@@ -120,15 +120,35 @@ async def run_orchestrator(
             ChannelMembership.channel_id == channel_id,
             ChannelMembership.member_type == "bot",
         )
-        .options(selectinload(BotAccount.prompt_template))
+        .options(
+            selectinload(BotAccount.prompt_template),
+            selectinload(ChannelMembership.prompt_template),
+        )
     )
     rows = result.all()
     channel_bot_usernames = [row[1].username for row in rows]
     bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
-    bot_template_by_username = {
-        row[1].username: (row[1].prompt_template.user_template if row[1].prompt_template else None)
-        for row in rows
-    }
+    # 频道级模板覆盖：优先使用 ChannelMembership.template_id，否则用 BotAccount.template_id
+    bot_template_by_username: dict[str, str | None] = {}
+    # 频道级 PromptTemplate 对象覆盖（用于 adapter 的 system_prompt）
+    channel_template_override_by_bot_id: dict[str, PromptTemplate] = {}
+    for membership, bot in rows:
+        effective_template = membership.prompt_template or bot.prompt_template
+        bot_template_by_username[bot.username] = (
+            effective_template.user_template if effective_template else None
+        )
+        if membership.prompt_template:
+            channel_template_override_by_bot_id[bot.bot_id] = membership.prompt_template
+
+    # 包装 adapter_factory，注入频道级模板覆盖
+    _orig_adapter_factory = adapter_factory
+    async def adapter_factory(bot_id: str) -> OpenClawAdapter:
+        override = channel_template_override_by_bot_id.get(bot_id)
+        if override:
+            from app.services.orchestrator.adapter_resolver import get_adapter_for_bot as _get_adapter
+            return await _get_adapter(bot_id, session, template_override=override)
+        return await _orig_adapter_factory(bot_id)
+
     bot_details_by_username: dict[str, dict] = {
         row[1].username: {
             "display_name": row[1].display_name or row[1].username,

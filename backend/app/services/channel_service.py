@@ -13,6 +13,7 @@ from app.db.models import (
     FileRecord,
     Friendship,
     Message,
+    PromptTemplate,
     User,
 )
 from app.repositories.bot_repo import BotRepository
@@ -133,14 +134,24 @@ class ChannelService:
                 entity = users_by_id.get(m.member_id)
             if not entity:
                 continue
-            result.append({
+            item: dict = {
                 "channel_id": m.channel_id,
                 "member_id": m.member_id,
                 "member_type": m.member_type,
                 "username": entity.username,
                 "display_name": entity.display_name,
                 "avatar_url": entity.avatar_url,
-            })
+            }
+            if m.member_type == "bot":
+                item["template_id"] = m.template_id
+                if m.prompt_template:
+                    item["template_name"] = m.prompt_template.name
+                else:
+                    bot_entity: BotAccount = entity
+                    item["template_name"] = (
+                        bot_entity.prompt_template.name if bot_entity.prompt_template else None
+                    )
+            result.append(item)
         return result
 
     async def add_member(
@@ -210,6 +221,41 @@ class ChannelService:
                     raise ForbiddenError("只能移除自己创建的 Bot")
 
         await self.repo.remove_member(m)
+
+    async def update_member_template(
+        self,
+        channel_id: str,
+        member_id: str,
+        template_id: str | None,
+        current_user: User,
+    ) -> dict:
+        """设置频道内某个 Bot 成员的提示词模板覆盖。"""
+        await self.get_or_404(channel_id)
+        await self._require_channel_member(channel_id, current_user)
+
+        m = await self.repo.get_membership(channel_id, member_id)
+        if not m:
+            raise NotFoundError("membership not found")
+        if m.member_type != "bot":
+            raise BadRequestError("只能为 Bot 成员设置提示词模板")
+
+        if template_id:
+            tmpl = (await self.session.execute(
+                select(PromptTemplate).where(PromptTemplate.template_id == template_id)
+            )).scalar_one_or_none()
+            if not tmpl:
+                raise NotFoundError("提示词模板不存在")
+
+        m.template_id = template_id
+        await self.session.flush()
+        # reload to get the relationship
+        await self.session.refresh(m)
+        return {
+            "channel_id": m.channel_id,
+            "member_id": m.member_id,
+            "template_id": m.template_id,
+            "template_name": m.prompt_template.name if m.prompt_template else None,
+        }
 
     async def get_friends_to_invite(self, channel_id: str, current_user: User) -> list[dict]:
         """返回当前用户的好友中尚未加入频道的列表."""
