@@ -40,6 +40,10 @@ class InviteBody(BaseModel):
     identifier: str
 
 
+class UpdateMemberTemplateBody(BaseModel):
+    template_id: str | None = None
+
+
 class ChannelProfileUpdateBody(BaseModel):
     nickname: str | None = None
     bio: str | None = None
@@ -183,6 +187,19 @@ async def remove_member(
     svc = ChannelService(session)
     await svc.remove_member(channel_id, member_id, current_user)
     return APIResponse.ok(None)
+
+
+@router.patch("/{channel_id}/members/{member_id}/template", response_model=APIResponse[dict])
+async def update_member_template(
+    channel_id: str,
+    member_id: str,
+    body: UpdateMemberTemplateBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    result = await svc.update_member_template(channel_id, member_id, body.template_id, current_user)
+    return APIResponse.ok(result)
 
 
 @router.post("/{channel_id}/invite", response_model=APIResponse[dict])

@@ -9,7 +9,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import BotAccount
+from app.db.models import BotAccount, PromptTemplate
 from app.services.adapters.base import OpenClawAdapter
 from app.services.adapters.llm_bot import LLMBotAdapter
 from app.services.adapters.mock import MockOpenClawAdapter
@@ -19,11 +19,19 @@ from app.services.guide.constants import GUIDE_BOT_ID
 logger = logging.getLogger("app.services.orchestrator.adapter_resolver")
 
 
-async def get_adapter_for_bot(bot_id: str, session: AsyncSession) -> OpenClawAdapter:
+async def get_adapter_for_bot(
+    bot_id: str,
+    session: AsyncSession,
+    *,
+    template_override: PromptTemplate | None = None,
+) -> OpenClawAdapter:
     """获取 Bot 的适配器。
 
     内置统一 Bot（GUIDE_BOT_ID）直接返回 UnifiedBuiltinBotAdapter；
     其余 bot 走 LLMBotAdapter（需配置 AIModel + PromptTemplate）。
+
+    Args:
+        template_override: 频道级提示词模板覆盖，优先于 BotAccount 上的默认模板。
     """
     # 内置统一 Bot：不依赖 DB 中的 AIModel / PromptTemplate
     if bot_id == GUIDE_BOT_ID:
@@ -42,7 +50,8 @@ async def get_adapter_for_bot(bot_id: str, session: AsyncSession) -> OpenClawAda
         logger.warning("adapter_resolver: bot_id=%s has no model configured", bot_id)
         return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 未配置模型")
 
-    if not bot.prompt_template:
+    effective_template = template_override or bot.prompt_template
+    if not effective_template:
         logger.warning("adapter_resolver: bot_id=%s has no template configured", bot_id)
         return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 未配置提示词模板")
 
@@ -61,10 +70,11 @@ async def get_adapter_for_bot(bot_id: str, session: AsyncSession) -> OpenClawAda
         )
 
     logger.info(
-        "adapter_resolver: bot_id=%s username=%s -> LLMBotAdapter model=%s template=%s",
+        "adapter_resolver: bot_id=%s username=%s -> LLMBotAdapter model=%s template=%s (override=%s)",
         bot_id,
         bot.username,
         bot.ai_model.name,
-        bot.prompt_template.name,
+        effective_template.name,
+        template_override is not None,
     )
-    return LLMBotAdapter(bot)
+    return LLMBotAdapter(bot, template_override=template_override)
