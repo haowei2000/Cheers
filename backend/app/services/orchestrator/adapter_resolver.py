@@ -2,6 +2,7 @@
 
 路由规则：
 - GUIDE_BOT_ID → UnifiedBuiltinBotAdapter（内置三合一：引导/助手/记忆管理）
+- GUIDE_HELPER_BOT_ID → HelpBotAdapter（智枢协作操作指引助手：帮助文档问答）
 - 其余 bot_id → LLMBotAdapter（Bot = AIModel + PromptTemplate）
 """
 import logging
@@ -11,10 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount
 from app.services.adapters.base import OpenClawAdapter
+from app.services.adapters.help_bot_adapter import HelpBotAdapter
 from app.services.adapters.llm_bot import LLMBotAdapter
 from app.services.adapters.mock import MockOpenClawAdapter
 from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
-from app.services.guide.constants import GUIDE_BOT_ID
+from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 
 logger = logging.getLogger("app.services.orchestrator.adapter_resolver")
 
@@ -29,6 +31,11 @@ async def get_adapter_for_bot(bot_id: str, session: AsyncSession) -> OpenClawAda
     if bot_id == GUIDE_BOT_ID:
         logger.info("adapter_resolver: bot_id=%s -> UnifiedBuiltinBotAdapter", bot_id)
         return UnifiedBuiltinBotAdapter()
+
+    # 智枢协作操作指引助手 Bot：加载 docs/ 文档回答使用问题
+    if bot_id == GUIDE_HELPER_BOT_ID:
+        logger.info("adapter_resolver: bot_id=%s -> HelpBotAdapter", bot_id)
+        return HelpBotAdapter()
 
     result = await session.execute(
         select(BotAccount).where(BotAccount.bot_id == bot_id)
