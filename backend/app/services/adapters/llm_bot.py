@@ -4,14 +4,17 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 
+from app.core.log_context import bind_context
 from app.db.models import AIModel, BotAccount, PromptTemplate
 from app.http_client import get_http_client
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.services.orchestrator.secrets import replace_secret_refs
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.adapters.llm_bot")
@@ -23,10 +26,10 @@ DEFAULT_MAX_TOKENS = 2000
 class LLMBotAdapter(OpenClawAdapter):
     """根据 Bot 的 model + template 配置调用 OpenAI-compatible LLM。"""
 
-    def __init__(self, bot: BotAccount) -> None:
+    def __init__(self, bot: BotAccount, *, template_override: PromptTemplate | None = None) -> None:
         self.bot = bot
         self.model: AIModel = bot.ai_model
-        self.template: PromptTemplate = bot.prompt_template
+        self.template: PromptTemplate = template_override or bot.prompt_template
 
     def _get_system_prompt(self) -> str:
         if self.bot.custom_system_prompt:
@@ -76,21 +79,28 @@ class LLMBotAdapter(OpenClawAdapter):
         if not attachments:
             return user_message
 
-        parts = [user_message.strip(), "", "以下是用户上传文件的解析结果，请优先基于这些内容回答："]
-        for index, attachment in enumerate(attachments, start=1):
-            parts.append(f"## 文件 {index}")
-            parts.append(f"文件名: {attachment.get('filename') or attachment.get('file_id') or 'unknown'}")
+        file_parts = []
+        for attachment in attachments:
+            filename = attachment.get("filename") or attachment.get("file_id") or "unknown"
+            attrs = f'filename="{filename}"'
             if attachment.get("content_type"):
-                parts.append(f"类型: {attachment['content_type']}")
+                attrs += f' type="{attachment["content_type"]}"'
+            if attachment.get("file_id"):
+                attrs += f' file_id="{attachment["file_id"]}"'
+            lines = [f"  <file {attrs}>"]
+            if attachment.get("download_url"):
+                lines.append(f"    <download_url>{attachment['download_url']}</download_url>")
             if attachment.get("summary"):
-                parts.append("摘要:")
-                parts.append(attachment["summary"])
-            parts.append("正文:")
-            parts.append(attachment.get("content") or "")
+                lines.append(f"    <summary>{attachment['summary']}</summary>")
+            content = attachment.get("content") or ""
+            lines.append(f"    <content>{content}</content>")
             if attachment.get("truncated") == "true":
-                parts.append("注意: 该文件文本已因长度限制被截断。")
-            parts.append("")
-        return "\n".join(parts).strip()
+                lines.append("    <truncated>true</truncated>")
+            lines.append("  </file>")
+            file_parts.append("\n".join(lines))
+
+        attachments_block = "<attachments>\n" + "\n".join(file_parts) + "\n</attachments>"
+        return user_message.strip() + "\n\n" + attachments_block
 
     def _get_api_config(self) -> dict[str, Any]:
         config: dict[str, Any] = {
@@ -112,9 +122,22 @@ class LLMBotAdapter(OpenClawAdapter):
         - 可以在 PromptTemplate 的 user_template 中使用这些变量来访问项目上下文
         - 例如："请基于以下项目锚点回答：{{anchor}}\n\n用户问题：{{message}}"
         """
+        with bind_context(bot_id=self.bot.bot_id):
+            return await self._execute_inner(payload)
+
+    async def _execute_inner(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text", "")
         task_id = payload.task_id
         all_attachments = payload.attachments or []
+
+        # 解密：将 $secret{name} 引用替换为实际密钥值，
+        # 并将加密消息占位符替换为解密后的原文
+        user_secrets = (payload.process_config or {}).get("_user_secrets") or {}
+        if user_secrets:
+            encrypted_msg = user_secrets.get("_encrypted_msg")
+            if encrypted_msg and "🔒" in user_text:
+                user_text = user_text.replace("🔒 [加密消息]", encrypted_msg)
+            user_text = replace_secret_refs(user_text, user_secrets)
 
         # 分离图片与文档附件
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
@@ -141,14 +164,27 @@ class LLMBotAdapter(OpenClawAdapter):
         if isinstance(extra_headers, dict):
             headers.update({str(key): str(value) for key, value in extra_headers.items()})
 
-        context_vars: dict[str, str] = {}
+        pconfig = payload.process_config or {}
+        trigger_meta = payload.trigger_message or {}
+
+        context_vars: dict[str, str] = {
+            "sender_name": pconfig.get("_sender_name") or trigger_meta.get("user", ""),
+            "channel_name": pconfig.get("_channel_name") or "",
+            "channel_id": payload.channel_id,
+            "bot_name": self.bot.display_name or self.bot.username,
+            "timestamp": trigger_meta.get("timestamp", ""),
+        }
         if payload.memory_context:
-            context_vars = {
-                "anchor": payload.memory_context.get("anchor", ""),
-                "decisions": payload.memory_context.get("decisions", ""),
-                "files_index": payload.memory_context.get("files_index", ""),
-                "recent": payload.memory_context.get("recent", ""),
-            }
+            context_vars.update({
+                "anchor": f"<anchor>{payload.memory_context.get('anchor', '')}</anchor>",
+                "progress": f"<progress>{payload.memory_context.get('progress', '')}</progress>",
+                "decisions": f"<decisions>{payload.memory_context.get('decisions', '')}</decisions>",
+                "files_index": f"<files_index>{payload.memory_context.get('files_index', '')}</files_index>",
+                "recent": f"<recent>{payload.memory_context.get('recent', '')}</recent>",
+                "todos": payload.memory_context.get("todos", ""),
+            })
+        trigger_meta = payload.trigger_message or {}
+        context_vars["sender_name"] = trigger_meta.get("sender_name") or ""
 
         # Vision 路径：模型支持且有图片时，构建多模态消息
         supports_vision = (self.model.config or {}).get("supports_vision", True)
@@ -190,6 +226,7 @@ class LLMBotAdapter(OpenClawAdapter):
 
         stream_token_cb: Callable[[str], Awaitable[None]] | None = (payload.process_config or {}).get("_stream_token")
         timeout = float(api_config.get("timeout", 600))
+        t0 = time.perf_counter()
 
         try:
             client = get_http_client()
@@ -213,13 +250,19 @@ class LLMBotAdapter(OpenClawAdapter):
                             continue
                         full_content += delta
                         await stream_token_cb(delta)
+                dur_ms = (time.perf_counter() - t0) * 1000
                 if not full_content:
+                    logger.warning("llm_bot: empty stream response bot=%s duration_ms=%.0f", self.bot.username, dur_ms)
                     return AgentResponse(
                         content="",
                         task_id=task_id,
                         success=False,
                         error_message="LLM 返回空内容",
                     )
+                logger.info(
+                    "llm_bot: stream complete bot=%s model=%s duration_ms=%.0f",
+                    self.bot.username, api_config["model_name"], dur_ms,
+                )
                 return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
 
             response = await client.post(url, json=body, headers=headers, timeout=timeout)
@@ -263,19 +306,27 @@ class LLMBotAdapter(OpenClawAdapter):
                 )
 
             content = (choices[0].get("message") or {}).get("content", "")
+            dur_ms = (time.perf_counter() - t0) * 1000
             if not content:
+                logger.warning("llm_bot: empty response bot=%s duration_ms=%.0f", self.bot.username, dur_ms)
                 return AgentResponse(
                     content="",
                     task_id=task_id,
                     success=False,
                     error_message="LLM 返回空内容",
                 )
+            token_count = (data.get("usage") or {}).get("total_tokens")
+            logger.info(
+                "llm_bot: complete bot=%s model=%s duration_ms=%.0f tokens=%s",
+                self.bot.username, api_config["model_name"], dur_ms, token_count,
+            )
             return AgentResponse(content=content.strip(), task_id=task_id, success=True)
 
         except httpx.TimeoutException as exc:
+            dur_ms = (time.perf_counter() - t0) * 1000
             logger.warning(
-                "llm_bot: timeout after %.0fs bot=%s: %s",
-                timeout, self.bot.username, type(exc).__name__,
+                "llm_bot: timeout after %.0fs bot=%s: %s duration_ms=%.0f",
+                timeout, self.bot.username, type(exc).__name__, dur_ms,
             )
             return AgentResponse(
                 content="",
@@ -284,15 +335,17 @@ class LLMBotAdapter(OpenClawAdapter):
                 error_message=f"LLM 响应超时（>{timeout:.0f}s），请检查模型服务或在模型配置中增大 timeout 值",
             )
         except httpx.HTTPStatusError as exc:
+            dur_ms = (time.perf_counter() - t0) * 1000
             error_body = ""
             try:
                 error_body = exc.response.text[:500]
             except Exception:
                 pass
             logger.error(
-                "llm_bot: HTTP error status=%s body=%s",
+                "llm_bot: HTTP error status=%s body=%s duration_ms=%.0f",
                 exc.response.status_code,
                 error_body,
+                dur_ms,
             )
             return AgentResponse(
                 content="",
@@ -301,15 +354,25 @@ class LLMBotAdapter(OpenClawAdapter):
                 error_message=f"LLM API 错误 (HTTP {exc.response.status_code}): {error_body}",
             )
         except httpx.ConnectError as exc:
-            logger.error("llm_bot: connection error %s", exc)
+            dur_ms = (time.perf_counter() - t0) * 1000
+            logger.error("llm_bot: connection error %s duration_ms=%.0f", exc, dur_ms)
             return AgentResponse(
                 content="",
                 task_id=task_id,
                 success=False,
                 error_message=f"无法连接到 LLM API: {api_config['base_url']}",
             )
+        except httpx.RemoteProtocolError as exc:
+            logger.error("llm_bot: server disconnected without response %s", exc)
+            return AgentResponse(
+                content="",
+                task_id=task_id,
+                success=False,
+                error_message=f"LLM 服务断开连接（未返回响应），请检查模型服务是否正常: {api_config['base_url']}",
+            )
         except Exception as exc:
-            logger.exception("llm_bot: unexpected error")
+            dur_ms = (time.perf_counter() - t0) * 1000
+            logger.exception("llm_bot: unexpected error duration_ms=%.0f", dur_ms)
             return AgentResponse(
                 content="",
                 task_id=task_id,

@@ -31,6 +31,7 @@ type PromptTemplate = {
   user_template: string;
   variables: string[];
   is_builtin: boolean;
+  created_by?: string | null;
   created_at?: string;
 };
 
@@ -188,7 +189,7 @@ export default function AdminPage() {
   const [_llmEditingId, _setLlmEditingId] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_llmSaveLoading, _setLlmSaveLoading] = useState(false);
-  const [assistSettings, setAssistSettings] = useState<{ llm_provider_id: string; auto_takeover: boolean }>({ llm_provider_id: "", auto_takeover: false });
+  const [assistSettings, setAssistSettings] = useState<{ llm_provider_id: string; auto_takeover: boolean; child_bot_inherit_context: boolean }>({ llm_provider_id: "", auto_takeover: false, child_bot_inherit_context: true });
   const [channelBotForm, setChannelBotForm] = useState({ display_name: "", description: "" });
   const [bindingSystemLlm, setBindingSystemLlm] = useState("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -278,6 +279,7 @@ export default function AdminPage() {
             setAssistSettings({
               llm_provider_id: d.data.llm_provider_id ?? "",
               auto_takeover: !!d.data.auto_takeover,
+              child_bot_inherit_context: d.data.child_bot_inherit_context !== false,
             });
           }
         })
@@ -463,7 +465,7 @@ export default function AdminPage() {
 
   // ==================== Template API Functions ====================
   const loadTemplates = () => {
-    authFetch(`${API}/admin/templates`)
+    authFetch(`${API}/templates`)
       .then((r) => r.json())
       .then((d) => { if (d.data) setTemplates(d.data); })
       .catch(console.error);
@@ -474,7 +476,7 @@ export default function AdminPage() {
       toast.error("请填写必填项");
       return;
     }
-    authFetch(`${API}/admin/templates`, {
+    authFetch(`${API}/templates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(templateForm),
@@ -493,8 +495,8 @@ export default function AdminPage() {
   };
 
   const updateTemplate = (id: string) => {
-    authFetch(`${API}/admin/templates/${id}`, {
-      method: "PUT",
+    authFetch(`${API}/templates/${id}`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: templateForm.name,
@@ -519,7 +521,7 @@ export default function AdminPage() {
 
   const deleteTemplate = (id: string) => {
     if (!confirm("确定删除此模板？")) return;
-    authFetch(`${API}/admin/templates/${id}`, { method: "DELETE" })
+    authFetch(`${API}/templates/${id}`, { method: "DELETE" })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
@@ -989,7 +991,22 @@ export default function AdminPage() {
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">用户消息模板 (User Template) *</label>
                           <textarea value={templateForm.user_template} onChange={(e) => setTemplateForm({ ...templateForm, user_template: e.target.value })} placeholder="{{message}}" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 text-sm" />
-                          <p className="text-xs text-gray-400 mt-1">使用 {"{{message}}"} 作为用户消息的占位符</p>
+                          <div className="mt-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                            <p className="text-xs font-medium text-gray-600 mb-1.5">可用模板变量</p>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{message}}"}</code> 用户消息</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{sender_name}}"}</code> 发送者名称</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{bot_name}}"}</code> 当前Bot名称</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{channel_name}}"}</code> 频道名称</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{channel_id}}"}</code> 频道ID</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{timestamp}}"}</code> 消息时间</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{anchor}}"}</code> 项目锚点</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{decisions}}"}</code> 决策记录</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{recent}}"}</code> 近期动态</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{todos}}"}</code> 待办事项</span>
+                              <span><code className="bg-gray-200 px-1 rounded">{"{{files_index}}"}</code> 文件索引</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-3">
@@ -1327,6 +1344,10 @@ export default function AdminPage() {
                     <label className="flex items-center gap-1.5 text-sm">
                       <input type="checkbox" id="assist_takeover" checked={assistSettings.auto_takeover} onChange={(e) => setAssistSettings({ ...assistSettings, auto_takeover: e.target.checked })} />
                       自动接管
+                    </label>
+                    <label className="flex items-center gap-1.5 text-sm">
+                      <input type="checkbox" id="child_inherit_ctx" checked={assistSettings.child_bot_inherit_context} onChange={(e) => setAssistSettings({ ...assistSettings, child_bot_inherit_context: e.target.checked })} />
+                      子Bot继承上下文
                     </label>
                     <button onClick={saveAssistAll} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
                   </div>

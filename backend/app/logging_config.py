@@ -4,7 +4,10 @@ import sys
 from pathlib import Path
 
 from app.config import settings
+from app.core.log_context import LogContextFilter
 from app.services.admin.log_buffer import LLMFriendlyBufferHandler
+
+_CONTEXT_FIELDS = ("request_id", "channel_id", "bot_id", "user_id", "trace_id")
 
 
 def _resolve_log_dir() -> Path | None:
@@ -16,6 +19,23 @@ def _resolve_log_dir() -> Path | None:
         base = Path(__file__).resolve().parent.parent
         p = (base / p).resolve()
     return p
+
+
+class _PlainFormatter(logging.Formatter):
+    """Human-readable formatter that appends non-empty context fields."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        base = super().format(record)
+        ctx_parts = []
+        for key in _CONTEXT_FIELDS:
+            val = getattr(record, key, "")
+            if val:
+                ctx_parts.append(f"{key}={val}")
+        if hasattr(record, "duration_ms") and record.duration_ms is not None:
+            ctx_parts.append(f"duration_ms={record.duration_ms:.0f}")
+        if ctx_parts:
+            return f"{base} [{' '.join(ctx_parts)}]"
+        return base
 
 
 class _JsonFormatter(logging.Formatter):
@@ -33,10 +53,19 @@ class _JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["exc"] = _tb.format_exception(*record.exc_info)
-        # 注入 request_id（若通过 extra 传入）
-        if hasattr(record, "request_id"):
-            payload["request_id"] = record.request_id
+        for key in _CONTEXT_FIELDS:
+            val = getattr(record, key, "")
+            if val:
+                payload[key] = val
+        if hasattr(record, "duration_ms") and record.duration_ms is not None:
+            payload["duration_ms"] = record.duration_ms
         return _json.dumps(payload, ensure_ascii=False)
+
+
+def _attach_context_filter(handler: logging.Handler) -> None:
+    """Attach LogContextFilter if not already present."""
+    if not any(isinstance(f, LogContextFilter) for f in handler.filters):
+        handler.addFilter(LogContextFilter())
 
 
 def setup_logging() -> None:
@@ -49,7 +78,7 @@ def setup_logging() -> None:
     if settings.log_json:
         fmt: logging.Formatter = _JsonFormatter()
     else:
-        fmt = logging.Formatter(
+        fmt = _PlainFormatter(
             fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
@@ -72,6 +101,10 @@ def setup_logging() -> None:
         buf = LLMFriendlyBufferHandler()
         buf.setLevel(logging.DEBUG)
         root.addHandler(buf)
+
+    # Attach context filter to all handlers (including pre-existing ones)
+    for h in root.handlers:
+        _attach_context_filter(h)
 
     if not log_dir:
         return
@@ -102,6 +135,7 @@ def setup_logging() -> None:
             )
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(fmt)
+        _attach_context_filter(file_handler)
         root.addHandler(file_handler)
     except OSError:
         pass
@@ -123,6 +157,7 @@ def setup_logging() -> None:
             )
         err_handler.setLevel(logging.ERROR)
         err_handler.setFormatter(fmt)
+        _attach_context_filter(err_handler)
         root.addHandler(err_handler)
     except OSError:
         pass

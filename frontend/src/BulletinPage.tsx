@@ -7,7 +7,7 @@ type Issue = {
   issue_id: string;
   title: string;
   content: string | null;
-  status: "open" | "closed";
+  status: "open" | "closed" | "resolved";
   priority: "low" | "medium" | "high";
   tags: string[];
   creator_id: string | null;
@@ -30,17 +30,19 @@ function formatDate(iso: string) {
 function getStoredAuth() {
   try {
     const stored = localStorage.getItem("currentUser");
-    if (!stored) return { token: null, userId: null, isAdmin: false };
+    if (!stored) return { token: null, userId: null, isAdmin: false, isSystemAdmin: false };
     const data = JSON.parse(stored);
     if (data.loginTime && Date.now() - data.loginTime < 86400000) {
+      const role = data.user?.role ?? "";
       return {
         token: data.token ?? data.user?.user_id ?? null,
         userId: data.user?.user_id ?? null,
-        isAdmin: data.user?.role === "admin"
+        isAdmin: role === "system_admin" || role === "space_admin",
+        isSystemAdmin: role === "system_admin",
       };
     }
   } catch {}
-  return { token: null, userId: null, isAdmin: false };
+  return { token: null, userId: null, isAdmin: false, isSystemAdmin: false };
 }
 
 export default function BulletinPage() {
@@ -48,10 +50,11 @@ export default function BulletinPage() {
   const authToken = auth.token;
   const currentUserId = auth.userId;
   const isAdmin = auth.isAdmin;
+  const isSystemAdmin = auth.isSystemAdmin;
 
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<"" | "open" | "closed">("");
+  const [filterStatus, setFilterStatus] = useState<"" | "open" | "closed" | "resolved">("");
   const [filterPriority, setFilterPriority] = useState<"" | "low" | "medium" | "high">("");
 
   // Create modal state
@@ -138,6 +141,21 @@ export default function BulletinPage() {
     }
   };
 
+  const handleResolve = async (issue: Issue) => {
+    const res = await authFetch(`${API}/bulletin/issues/${issue.issue_id}/resolve`, {
+      method: "PATCH",
+    });
+    if (res.ok) {
+      fetchIssues();
+      if (detailIssue?.issue_id === issue.issue_id) {
+        setDetailIssue({ ...detailIssue, status: "resolved" });
+      }
+    } else {
+      const d = await res.json();
+      alert(d.detail || "操作失败");
+    }
+  };
+
   const handleDelete = async (issue: Issue) => {
     if (!confirm(`确定删除「${issue.title}」？`)) return;
     const res = await authFetch(`${API}/bulletin/issues/${issue.issue_id}`, { method: "DELETE" });
@@ -178,12 +196,13 @@ export default function BulletinPage() {
         <div className="flex gap-3 mb-5">
           <select
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as "" | "open" | "closed")}
+            onChange={(e) => setFilterStatus(e.target.value as "" | "open" | "closed" | "resolved")}
             className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white text-gray-700"
           >
             <option value="">全部状态</option>
             <option value="open">开放</option>
             <option value="closed">已关闭</option>
+            <option value="resolved">已解决</option>
           </select>
           <select
             value={filterPriority}
@@ -212,8 +231,8 @@ export default function BulletinPage() {
               >
                 {/* Status dot */}
                 <span
-                  className={`mt-1 flex-shrink-0 w-2.5 h-2.5 rounded-full ${issue.status === "open" ? "bg-green-500" : "bg-gray-400"}`}
-                  title={issue.status === "open" ? "开放" : "已关闭"}
+                  className={`mt-1 flex-shrink-0 w-2.5 h-2.5 rounded-full ${issue.status === "open" ? "bg-green-500" : issue.status === "resolved" ? "bg-purple-500" : "bg-gray-400"}`}
+                  title={issue.status === "open" ? "开放" : issue.status === "resolved" ? "已解决" : "已关闭"}
                 />
 
                 {/* Main content */}
@@ -242,23 +261,34 @@ export default function BulletinPage() {
                 </div>
 
                 {/* Actions */}
-                {canManage(issue) && (
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {isSystemAdmin && issue.status !== "resolved" && (
                     <button
-                      onClick={() => handleToggleStatus(issue)}
-                      className="text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
-                      title={issue.status === "open" ? "关闭" : "重新开放"}
+                      onClick={() => handleResolve(issue)}
+                      className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1 rounded hover:bg-purple-50"
+                      title="标记为已解决"
                     >
-                      {issue.status === "open" ? "关闭" : "开放"}
+                      已解决
                     </button>
-                    <button
-                      onClick={() => handleDelete(issue)}
-                      className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50"
-                    >
-                      删除
-                    </button>
-                  </div>
-                )}
+                  )}
+                  {canManage(issue) && (
+                    <>
+                      <button
+                        onClick={() => handleToggleStatus(issue)}
+                        className="text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+                        title={issue.status === "open" ? "关闭" : "重新开放"}
+                      >
+                        {issue.status === "open" ? "关闭" : "开放"}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(issue)}
+                        className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50"
+                      >
+                        删除
+                      </button>
+                    </>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -350,9 +380,9 @@ export default function BulletinPage() {
                 <h2 className="font-semibold text-gray-800 break-words">{detailIssue.title}</h2>
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   <span
-                    className={`text-xs px-1.5 py-0.5 rounded ${detailIssue.status === "open" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
+                    className={`text-xs px-1.5 py-0.5 rounded ${detailIssue.status === "open" ? "bg-green-100 text-green-700" : detailIssue.status === "resolved" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500"}`}
                   >
-                    {detailIssue.status === "open" ? "开放" : "已关闭"}
+                    {detailIssue.status === "open" ? "开放" : detailIssue.status === "resolved" ? "已解决" : "已关闭"}
                   </span>
                   <span className={`text-xs px-1.5 py-0.5 rounded ${PRIORITY_COLOR[detailIssue.priority]}`}>
                     {PRIORITY_LABEL[detailIssue.priority]}优先级
@@ -380,20 +410,32 @@ export default function BulletinPage() {
                 由 {detailIssue.creator_name || "匿名"} 于 {formatDate(detailIssue.created_at)} 创建
               </p>
             </div>
-            {canManage(detailIssue) && (
+            {(canManage(detailIssue) || isSystemAdmin) && (
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
-                <button
-                  onClick={() => handleToggleStatus(detailIssue)}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
-                >
-                  {detailIssue.status === "open" ? "关闭 Issue" : "重新开放"}
-                </button>
-                <button
-                  onClick={() => handleDelete(detailIssue)}
-                  className="px-3 py-1.5 text-sm bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100"
-                >
-                  删除
-                </button>
+                {isSystemAdmin && detailIssue.status !== "resolved" && (
+                  <button
+                    onClick={() => handleResolve(detailIssue)}
+                    className="px-3 py-1.5 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded hover:bg-purple-100"
+                  >
+                    标记已解决
+                  </button>
+                )}
+                {canManage(detailIssue) && (
+                  <>
+                    <button
+                      onClick={() => handleToggleStatus(detailIssue)}
+                      className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                    >
+                      {detailIssue.status === "open" ? "关闭 Issue" : "重新开放"}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(detailIssue)}
+                      className="px-3 py-1.5 text-sm bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100"
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
