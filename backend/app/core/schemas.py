@@ -82,6 +82,7 @@ class PromptTemplateInResponse(BaseModel):
     user_template: str
     variables: list[str]
     is_builtin: bool
+    created_by: str | None = None
     created_at: datetime | None = None
 
 
@@ -256,6 +257,35 @@ class MessageInResponse(BaseModel):
     in_reply_to_msg_id: str | None = None
     created_at: datetime | None = None
     is_secret: bool = False
+
+
+# ==================== Keychain Schemas ====================
+
+class KeychainItemCreate(BaseModel):
+    """创建密钥项。"""
+    name: str = Field(..., min_length=1, max_length=128, description="密钥名称，用于引用")
+    value: str = Field(..., min_length=1, description="密钥值")
+    description: str | None = Field(default=None, description="密钥描述")
+
+
+class KeychainItemUpdate(BaseModel):
+    """更新密钥项。"""
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    value: str | None = Field(default=None, min_length=1)
+    description: str | None = Field(default=None)
+
+
+class KeychainItemInResponse(BaseModel):
+    """密钥项响应（不包含实际密钥值）。"""
+    model_config = ConfigDict(from_attributes=True)
+
+    key_id: str
+    owner_id: str
+    name: str
+    description: str | None = None
+    value_masked: str | None = None  # 掩码显示，如 "****abcd"
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 # ==================== Legacy Schemas (for compatibility) ====================

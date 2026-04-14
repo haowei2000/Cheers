@@ -100,17 +100,49 @@ async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
             result = await session.execute(select(Message).where(Message.msg_id == msg_id))
             msg = result.scalar_one_or_none()
             if not msg:
+                logger.warning(
+                    "orchestrator_bg: message not found msg_id=%s channel_id=%s",
+                    msg_id, channel_id,
+                )
                 return
+            logger.info(
+                "orchestrator_bg: starting channel_id=%s msg_id=%s sender=%s",
+                channel_id, msg_id, msg.sender_id,
+            )
             bot_messages, already_broadcast_ids = await _run_orchestrator_once(channel_id, msg, session)
             for bm in bot_messages:
                 if bm.msg_id in already_broadcast_ids:
                     continue
-                await _broadcast_message(channel_id, _serialize(bm, {}))
+                data = MessageInResponse.model_validate(bm).model_dump()
+                if bm.created_at:
+                    data["created_at"] = bm.created_at.isoformat()
+                # _broadcast_message 会包装成 {"type": "message", "data": payload}
+                await _broadcast_message(channel_id, data)
             if bot_messages:
                 _schedule_recent_update(channel_id)
+                logger.info(
+                    "orchestrator_bg: completed channel_id=%s bot_messages=%d",
+                    channel_id, len(bot_messages),
+                )
             await session.commit()
     except Exception as e:
-        logger.exception("orchestrator background task failed channel_id=%s: %s", channel_id, e)
+        # 确保错误被正确记录，不静默吞掉
+        logger.exception(
+            "orchestrator_bg: FAILED channel_id=%s msg_id=%s error=%s",
+            channel_id, msg_id, str(e),
+        )
+        # 尝试发送错误通知到 WebSocket
+        try:
+            await ws_manager.broadcast_to_channel(channel_id, {
+                "type": "orchestrator_error",
+                "data": {
+                    "channel_id": channel_id,
+                    "msg_id": msg_id,
+                    "error": f"Bot 处理失败: {e}",
+                }
+            })
+        except Exception:
+            pass
 
 
 def _should_run_orchestrator_inline(session: AsyncSession) -> bool:

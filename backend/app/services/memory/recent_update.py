@@ -6,18 +6,20 @@
   - 若没有超出窗口的消息，RECENT 写入占位提示，告知 LLM 近期消息均在对话历史中。
 """
 import asyncio
+import logging
 
 from sqlalchemy import select
 
 from app.db.models import Message
 from app.db.session import async_session_factory
 from app.services.memory.context_store import init_context_db, set_layer
-from app.services.memory.manager import sync_channel_to_md
 
 # 与 unified_builtin.HISTORY_MSG_COUNT 保持一致：直接注入 LLM 的最近消息条数
 DIRECT_HISTORY_COUNT = 30
 # RECENT 层额外向前摘要的消息条数
 RECENT_WINDOW = 50
+
+logger = logging.getLogger("app.services.memory.recent_update")
 
 RECENT_MAX_CHARS = 1500
 
@@ -114,9 +116,10 @@ async def update_recent_async(channel_id: str) -> None:
 
         await init_context_db()
         await set_layer(channel_id, "RECENT", content)
-        await sync_channel_to_md(channel_id)
-    except Exception:
-        pass
+        logger.info("update_recent_async: updated RECENT for channel=%s msg_count=%d", channel_id, len(all_msgs))
+    except Exception as e:
+        # 确保错误被记录，但不阻塞主流程
+        logger.warning("update_recent_async: failed to update RECENT channel=%s: %s", channel_id, e)
 
 
 def schedule_recent_update(channel_id: str) -> None:

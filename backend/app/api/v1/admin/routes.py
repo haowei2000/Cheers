@@ -30,6 +30,7 @@ from app.services.admin_service import (
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.admin")
+audit = logging.getLogger("app.audit")
 
 router = APIRouter(
     prefix="/admin",
@@ -97,6 +98,7 @@ async def create_model(
         config=body.config,
         created_by=current_user.user_id,
     )
+    audit.info("action=model.create actor=%s resource_id=%s name=%s", current_user.user_id, model.model_id, body.name)
     return APIResponse.ok(_model_out(model))
 
 
@@ -112,6 +114,7 @@ async def update_model(
         from app.utils.crypto import encrypt_value
         updates["api_key"] = encrypt_value(updates["api_key"])
     model = await svc.update(model_id, **updates)
+    audit.info("action=model.update resource_id=%s fields=%s", model_id, list(updates.keys()))
     return APIResponse.ok(_model_out(model))
 
 
@@ -119,6 +122,7 @@ async def update_model(
 async def delete_model(model_id: str, session: AsyncSession = Depends(get_session)) -> APIResponse:
     svc = AIModelService(session)
     await svc.delete(model_id)
+    audit.info("action=model.delete resource_id=%s", model_id)
     return APIResponse.ok(None)
 
 
@@ -150,6 +154,7 @@ async def create_template(
         description=body.description,
         variables=body.variables,
     )
+    audit.info("action=template.create resource_id=%s name=%s", tmpl.template_id, body.name)
     return APIResponse.ok(_template_out(tmpl))
 
 
@@ -162,6 +167,7 @@ async def update_template(
     svc = PromptTemplateService(session)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     tmpl = await svc.update(template_id, **updates)
+    audit.info("action=template.update resource_id=%s fields=%s", template_id, list(updates.keys()))
     return APIResponse.ok(_template_out(tmpl))
 
 
@@ -172,6 +178,7 @@ async def delete_template(
 ) -> APIResponse:
     svc = PromptTemplateService(session)
     await svc.delete(template_id)
+    audit.info("action=template.delete resource_id=%s", template_id)
     return APIResponse.ok(None)
 
 
@@ -244,6 +251,7 @@ async def put_llm_bindings(body: LLMBindingsBody) -> APIResponse:
         log_analyze=body.log_analyze, qa_summarize=body.qa_summarize,
         orchestrator=body.orchestrator,
     )
+    audit.info("action=settings.llm_bindings body=%s", body.model_dump())
     return APIResponse.ok({"bindings": SettingsService.get_llm_settings()["bindings"]})
 
 
@@ -270,6 +278,7 @@ class ClarifySettingsBody(BaseModel):
 class AssistSettingsBody(BaseModel):
     llm_provider_id: str | None = None
     auto_takeover: bool | None = None
+    child_bot_inherit_context: bool | None = None
 
 
 @router.get("/settings/clarify", response_model=APIResponse[dict])
@@ -284,6 +293,7 @@ async def put_clarify(body: ClarifySettingsBody) -> APIResponse:
         clarify_force_rule=body.clarify_force_rule,
         clarify_threshold=body.clarify_threshold,
     )
+    audit.info("action=settings.clarify body=%s", body.model_dump())
     return APIResponse.ok(updated)
 
 
@@ -302,7 +312,9 @@ async def put_assist(body: AssistSettingsBody) -> APIResponse:
     updated = SettingsService.set_assist_settings(
         llm_provider_id=body.llm_provider_id,
         auto_takeover=body.auto_takeover,
+        child_bot_inherit_context=body.child_bot_inherit_context,
     )
+    audit.info("action=settings.assist body=%s", body.model_dump())
     return APIResponse.ok(updated)
 
 

@@ -77,7 +77,7 @@ async def try_get_current_user(
 
 
 _ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
-    "system_admin": {"user_management": False, "space_management": False, "channel_management": False, "bot_config": False, "system_settings": True},
+    "system_admin": {"user_management": True,  "space_management": True,  "channel_management": True,  "bot_config": True,  "system_settings": True},
     "space_admin":  {"user_management": False, "space_management": True,  "channel_management": True,  "bot_config": True,  "system_settings": False},
     "channel_admin":{"user_management": False, "space_management": False, "channel_management": True,  "bot_config": False, "system_settings": False},
     "member":       {"user_management": False, "space_management": False, "channel_management": False, "bot_config": False, "system_settings": False},

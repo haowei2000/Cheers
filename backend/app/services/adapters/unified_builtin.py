@@ -191,6 +191,12 @@ def _make_tools(ctx: dict) -> list:
         bot_id = bot_id_by_username[username]
         try:
             adapter = await adapter_factory(bot_id)
+            if adapter is None:
+                logger.error(
+                    "unified_builtin[tool]: call_bot @%s adapter_factory returned None channel=%s",
+                    username, ctx["channel_id"],
+                )
+                return f"@{username} 加载失败（adapter 为空）"
             task_id = ctx.get("task_id", "")
 
             # 构建子 Bot 的完整上下文（四层记忆 + 当前会话历史）
@@ -619,7 +625,7 @@ def _make_tools(ctx: dict) -> list:
             return "错误：数据库会话未注入"
 
         channel_id = ctx["channel_id"]
-        creator_id = ctx.get("bot_id") or "system"
+        creator_id = ctx.get("_bot_id") or "system"
         creator_type = "bot"
 
         assignee_id = None
@@ -907,6 +913,10 @@ async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
     return names
 
 
+# Alias for history_pager.py compatibility
+_get_names_for_messages = _resolve_display_names
+
+
 async def _fetch_user_display_name(session, user_id: str) -> str:
     """获取单个用户的显示名称，失败时返回空字符串。"""
     if not user_id:
@@ -1050,8 +1060,10 @@ async def _run_agent(
         if stream_cb:
             # Stream tokens, accumulate full response for tool call detection
             accumulated = None
+            streaming_success = False
             try:
                 async for chunk in llm_with_tools.astream(messages):
+                    streaming_success = True
                     # Accumulate chunks to reconstruct complete AIMessage
                     accumulated = chunk if accumulated is None else accumulated + chunk
                     # Forward pure text tokens — skip tool-call argument chunks
@@ -1062,8 +1074,22 @@ async def _run_agent(
                     ):
                         await stream_cb(chunk.content)
             except Exception as e:
-                logger.exception("unified_builtin: LLM stream error iteration=%d: %s", iteration, e)
-                break
+                logger.warning("unified_builtin: LLM stream error iteration=%d: %s, falling back to non-streaming", iteration, e)
+                # Fall back to non-streaming mode
+                try:
+                    response = await llm_with_tools.ainvoke(messages)
+                except Exception as e2:
+                    logger.exception("unified_builtin: LLM invoke fallback also failed: %s", e2)
+                    break
+                continue
+            if not streaming_success or accumulated is None:
+                # No chunks received, try non-streaming
+                try:
+                    response = await llm_with_tools.ainvoke(messages)
+                except Exception as e:
+                    logger.exception("unified_builtin: LLM invoke fallback failed: %s", e)
+                    break
+                continue
             response = accumulated
         else:
             try:
