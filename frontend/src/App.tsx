@@ -6,6 +6,7 @@ import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import { MessageMarkdown } from "./MessageMarkdown";
 import MemoryPage from "./MemoryPage";
+import { hasPermission, isMemberOrAbove } from "./permissions";
 
 const API = "/api/v1";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -2480,6 +2481,11 @@ export default function App() {
   };
 
   const [currentUser, setCurrentUser] = useState<CurrentUser>(getStoredUser);
+  const userRole = currentUser?.role ?? "";
+  const canManageSpace = hasPermission(userRole, "space_management");
+  const canManageChannel = hasPermission(userRole, "channel_management");
+  const canConfigBot = hasPermission(userRole, "bot_config");
+  const canSendMessage = isMemberOrAbove(userRole);
   const [authToken, setAuthToken] = useState<string | null>(getStoredToken);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -4418,9 +4424,10 @@ export default function App() {
                 {selectedWorkspaceId && (
                   <button
                     type="button"
-                    onClick={() => setInviteWsMemberOpen(true)}
-                    className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
-                    title="邀请成员"
+                    onClick={() => canManageSpace && setInviteWsMemberOpen(true)}
+                    className={`text-xs p-1 rounded ${canManageSpace ? "text-white/60 hover:text-white hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
+                    title={canManageSpace ? "邀请成员" : "无权限：需要空间管理权限"}
+                    disabled={!canManageSpace}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -4436,6 +4443,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      if (!canManageSpace) return;
                       if (
                         confirm(
                           "确定删除该工作空间？删除后其下的频道也将被删除。",
@@ -4464,8 +4472,9 @@ export default function App() {
                           .catch(() => toast.error("请求失败"));
                       }
                     }}
-                    className="text-white/60 hover:text-red-400 text-xs p-1 rounded hover:bg-white/10"
-                    title="删除工作空间"
+                    className={`text-xs p-1 rounded ${canManageSpace ? "text-white/60 hover:text-red-400 hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
+                    title={canManageSpace ? "删除工作空间" : "无权限：需要空间管理权限"}
+                    disabled={!canManageSpace}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -4483,9 +4492,10 @@ export default function App() {
                 )}
                 <button
                   type="button"
-                  onClick={() => setCreateWsOpen(true)}
-                  className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
-                  title="创建工作空间"
+                  onClick={() => canManageSpace && setCreateWsOpen(true)}
+                  className={`text-xs p-1 rounded ${canManageSpace ? "text-white/60 hover:text-white hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
+                  title={canManageSpace ? "创建工作空间" : "无权限：需要空间管理权限"}
+                  disabled={!canManageSpace}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -4526,14 +4536,16 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                if (!canManageChannel) return;
                 if (!selectedWorkspaceId) {
                   toast.error("请先选择工作空间");
                   return;
                 }
                 setCreateChannelOpen(true);
               }}
-              className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
-              title="创建频道"
+              className={`text-xs p-1 rounded ${canManageChannel ? "text-white/60 hover:text-white hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
+              title={canManageChannel ? "创建频道" : "无权限：需要频道管理权限"}
+              disabled={!canManageChannel}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -4587,9 +4599,11 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    title="删除频道"
+                    title={canManageChannel ? "删除频道" : "无权限：需要频道管理权限"}
+                    disabled={!canManageChannel}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (!canManageChannel) return;
                       if (
                         !confirm(`确定删除频道「${c.name}」？此操作不可恢复。`)
                       )
@@ -4606,7 +4620,7 @@ export default function App() {
                         })
                         .catch(() => toast.error("删除频道失败"));
                     }}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/20 text-[#C9BDD0] hover:text-red-300"
+                    className={`absolute right-1 top-1/2 -translate-y-1/2 transition-opacity p-1 rounded ${canManageChannel ? "opacity-0 group-hover:opacity-100 hover:bg-white/20 text-[#C9BDD0] hover:text-red-300" : "opacity-0 group-hover:opacity-100 text-white/15 cursor-not-allowed"}`}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -4666,12 +4680,15 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                if (!canConfigBot) return;
                 setQcOpen(true);
                 setQcResult(null);
                 setQcError("");
                 if (isMobile) setSidebarOpen(false);
               }}
-              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+              disabled={!canConfigBot}
+              title={canConfigBot ? "接入 OpenClaw" : "无权限：需要 Bot 配置权限"}
+              className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-sm transition-colors ${canConfigBot ? "text-[#C9BDD0] hover:bg-white/10 hover:text-white" : "text-white/25 cursor-not-allowed"}`}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -5535,6 +5552,7 @@ export default function App() {
             channelName={selectedChannel?.name || ""}
             currentUserId={currentUserId}
             userToken={authToken ?? undefined}
+            userRole={userRole}
             isOpen={manageMembersOpen}
             onClose={() => setManageMembersOpen(false)}
           />
@@ -7471,12 +7489,15 @@ export default function App() {
                               send();
                             }
                           }}
+                          disabled={!canSendMessage}
                           placeholder={
-                            secretMode
-                              ? "输入加密内容（仅 Bot 可读取原文）…"
-                              : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
+                            !canSendMessage
+                              ? "访客无法发送消息"
+                              : secretMode
+                                ? "输入加密内容（仅 Bot 可读取原文）…"
+                                : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
                           }
-                          className={`w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] placeholder-gray-400 bg-transparent ${secretMode ? "text-amber-700" : "text-gray-900"}`}
+                          className={`w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] placeholder-gray-400 bg-transparent ${!canSendMessage ? "cursor-not-allowed opacity-50" : secretMode ? "text-amber-700" : "text-gray-900"}`}
                           rows={1}
                         />
                       </div>
@@ -7564,9 +7585,10 @@ export default function App() {
                           <div ref={uploadMenuRef} className="relative">
                             <button
                               type="button"
-                              onClick={() => setUploadMenuOpen((o) => !o)}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-                              title="上传文件和图片"
+                              onClick={() => canSendMessage && setUploadMenuOpen((o) => !o)}
+                              disabled={!canSendMessage}
+                              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${canSendMessage ? "text-gray-400 hover:bg-gray-100 hover:text-gray-600" : "text-gray-200 cursor-not-allowed"}`}
+                              title={canSendMessage ? "上传文件和图片" : "访客无法上传文件"}
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -7629,15 +7651,18 @@ export default function App() {
                             type="button"
                             onClick={send}
                             className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${
-                              input.trim() || pendingFileIds.length > 0
-                                ? secretMode
-                                  ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm"
-                                  : "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
-                                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                              !canSendMessage
+                                ? "bg-gray-100 text-gray-300 cursor-not-allowed"
+                                : input.trim() || pendingFileIds.length > 0
+                                  ? secretMode
+                                    ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm"
+                                    : "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
+                                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
                             }`}
                             disabled={
-                              !input.trim() && pendingFileIds.length === 0
+                              !canSendMessage || (!input.trim() && pendingFileIds.length === 0)
                             }
+                            title={!canSendMessage ? "访客无法发送消息" : ""}
                           >
                             {secretMode ? "加密发送" : "发送"}
                           </button>

@@ -189,6 +189,10 @@ def _make_tools(ctx: dict) -> list:
             return "错误：adapter_factory 未注入（内部错误）"
 
         bot_id = bot_id_by_username[username]
+        logger.debug(
+            "unified_builtin[tool]: call_bot @%s message(%d chars):\n%s",
+            username, len(message), message,
+        )
         try:
             adapter = await adapter_factory(bot_id)
             if adapter is None:
