@@ -249,26 +249,20 @@ async def ensure_builtin_bot() -> None:
             await _sync_admin_credentials(session)
 
             # 确保 @channel bot 加入所有现有频道（补齐旧频道缺失的 membership）
+            # 使用 ON CONFLICT DO NOTHING 避免重复插入导致 IntegrityError
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
             all_channels = (await session.execute(select(Channel))).scalars().all()
-            existing = {
-                row
-                for row in (
-                    await session.execute(
-                        select(ChannelMembership.channel_id).where(
-                            ChannelMembership.member_id == GUIDE_BOT_ID
-                        )
-                    )
-                ).scalars()
-            }
-            for ch in all_channels:
-                if ch.channel_id not in existing:
-                    session.add(
-                        ChannelMembership(
-                            channel_id=ch.channel_id,
-                            member_id=GUIDE_BOT_ID,
-                            member_type="bot",
-                        )
-                    )
+            if all_channels:
+                stmt = pg_insert(ChannelMembership).values([
+                    {
+                        "channel_id": ch.channel_id,
+                        "member_id": GUIDE_BOT_ID,
+                        "member_type": "bot",
+                    }
+                    for ch in all_channels
+                ]).on_conflict_do_nothing(index_elements=["channel_id", "member_id"])
+                await session.execute(stmt)
 
             await session.commit()
         except Exception:
