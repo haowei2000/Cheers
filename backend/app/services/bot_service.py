@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import BotAccount, User
 from app.repositories.bot_repo import AIModelRepository, BotRepository, PromptTemplateRepository
+from app.services.guide.constants import GUIDE_HELPER_BOT_ID
 from app.utils.permissions import can_access, get_friend_ids
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
@@ -52,12 +53,13 @@ class BotService:
         return bot
 
     async def list_visible(self, current_user: User) -> list[BotAccount]:
-        """返回当前用户可见的 bot：自己创建 + 好友公开的."""
+        """返回当前用户可见的 bot：自己创建 + 好友公开的 + 智枢协作操作指引助手."""
         all_bots = await self.repo.list_all()
         friend_ids = await get_friend_ids(self.session, current_user.user_id)
         return [
             b for b in all_bots
-            if b.created_by == current_user.user_id
+            if b.bot_id == GUIDE_HELPER_BOT_ID
+            or b.created_by == current_user.user_id
             or (b.is_public and b.created_by in friend_ids)
         ]
 
