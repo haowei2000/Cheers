@@ -382,7 +382,7 @@ export default function AdminPage() {
     config.max_tokens = modelForm.max_tokens;
     config.stream = modelForm.stream;
     authFetch(`${API}/admin/models/${id}`, {
-      method: "PUT",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: modelForm.name,
@@ -427,7 +427,7 @@ export default function AdminPage() {
 
   const toggleModelPublic = (m: AIModel) => {
     authFetch(`${API}/admin/models/${m.model_id}`, {
-      method: "PUT",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ is_public: !m.is_public }),
     })
