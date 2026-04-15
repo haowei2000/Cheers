@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { hasPermission } from "./permissions";
 
 const API = "/api/v1";
 
@@ -39,7 +38,6 @@ interface ChannelMembersModalProps {
   channelName: string;
   currentUserId: string;
   userToken?: string;
-  userRole?: string;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -49,13 +47,10 @@ export default function ChannelMembersModal({
   channelName,
   currentUserId,
   userToken,
-  userRole,
   isOpen,
   onClose,
 }: ChannelMembersModalProps) {
   const authHeaders: Record<string, string> = userToken ? { Authorization: `Bearer ${userToken}` } : {};
-  const canManageChannel = hasPermission(userRole, "channel_management");
-  const canConfigBot = hasPermission(userRole, "bot_config");
   const [members, setMembers] = useState<Member[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(false);
@@ -362,43 +357,31 @@ export default function ChannelMembersModal({
             当前成员 ({members.length})
           </button>
           <button
-            onClick={() => canManageChannel && setActiveTab("invite")}
-            disabled={!canManageChannel}
-            title={canManageChannel ? "" : "无权限：需要频道管理权限"}
+            onClick={() => setActiveTab("invite")}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-              !canManageChannel
-                ? "text-gray-300 cursor-not-allowed"
-                : activeTab === "invite"
-                  ? "text-[#1264A3] border-b-2 border-[#1264A3]"
-                  : "text-gray-500 hover:text-gray-700"
+              activeTab === "invite"
+                ? "text-[#1264A3] border-b-2 border-[#1264A3]"
+                : "text-gray-500 hover:text-gray-700"
             }`}
           >
             邀请好友 {friends.length > 0 && `(${friends.length})`}
           </button>
           <button
-            onClick={() => canManageChannel && setActiveTab("invite_by_id")}
-            disabled={!canManageChannel}
-            title={canManageChannel ? "" : "无权限：需要频道管理权限"}
+            onClick={() => setActiveTab("invite_by_id")}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-              !canManageChannel
-                ? "text-gray-300 cursor-not-allowed"
-                : activeTab === "invite_by_id"
-                  ? "text-[#1264A3] border-b-2 border-[#1264A3]"
-                  : "text-gray-500 hover:text-gray-700"
+              activeTab === "invite_by_id"
+                ? "text-[#1264A3] border-b-2 border-[#1264A3]"
+                : "text-gray-500 hover:text-gray-700"
             }`}
           >
             通过ID邀请
           </button>
           <button
-            onClick={() => canManageChannel && setActiveTab("invite_bot")}
-            disabled={!canManageChannel}
-            title={canManageChannel ? "" : "无权限：需要频道管理权限"}
+            onClick={() => setActiveTab("invite_bot")}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-              !canManageChannel
-                ? "text-gray-300 cursor-not-allowed"
-                : activeTab === "invite_bot"
-                  ? "text-[#1264A3] border-b-2 border-[#1264A3]"
-                  : "text-gray-500 hover:text-gray-700"
+              activeTab === "invite_bot"
+                ? "text-[#1264A3] border-b-2 border-[#1264A3]"
+                : "text-gray-500 hover:text-gray-700"
             }`}
           >
             邀请 Bot
@@ -443,10 +426,8 @@ export default function ChannelMembersModal({
                           </div>
                           {member.member_id !== currentUserId && (
                             <button
-                              onClick={() => canManageChannel && removeMember(member.member_id, member.member_type)}
-                              disabled={!canManageChannel}
-                              className={`text-xs px-2 py-1 ${canManageChannel ? "text-red-500 hover:text-red-700" : "text-gray-300 cursor-not-allowed"}`}
-                              title={canManageChannel ? "移除成员" : "无权限：需要频道管理权限"}
+                              onClick={() => removeMember(member.member_id, member.member_type)}
+                              className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
                             >
                               移除
                             </button>
@@ -484,10 +465,8 @@ export default function ChannelMembersModal({
                               </div>
                             </div>
                             <button
-                              onClick={() => canManageChannel && removeMember(member.member_id, member.member_type)}
-                              disabled={!canManageChannel}
-                              className={`text-xs px-2 py-1 ${canManageChannel ? "text-red-500 hover:text-red-700" : "text-gray-300 cursor-not-allowed"}`}
-                              title={canManageChannel ? "移除 Bot" : "无权限：需要频道管理权限"}
+                              onClick={() => removeMember(member.member_id, member.member_type)}
+                              className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
                             >
                               移除
                             </button>
@@ -497,10 +476,8 @@ export default function ChannelMembersModal({
                             <label className="text-xs text-gray-500 whitespace-nowrap">提示词模板:</label>
                             <select
                               value={member.template_id || ""}
-                              onChange={(e) => canConfigBot && updateBotTemplate(member.member_id, e.target.value || null)}
-                              disabled={!canConfigBot}
-                              className={`flex-1 text-xs px-2 py-1 border border-gray-200 rounded bg-white text-gray-700 focus:outline-none ${canConfigBot ? "focus:border-[#2EB67D] focus:ring-1 focus:ring-[#2EB67D]" : "opacity-50 cursor-not-allowed"}`}
-                              title={canConfigBot ? "" : "无权限：需要 Bot 配置权限"}
+                              onChange={(e) => updateBotTemplate(member.member_id, e.target.value || null)}
+                              className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded bg-white text-gray-700 focus:outline-none focus:border-[#2EB67D] focus:ring-1 focus:ring-[#2EB67D]"
                             >
                               <option value="">默认 (Bot 自带)</option>
                               {allTemplates.map((t) => (
