@@ -10,3 +10,6 @@ SYSTEM_TEMPLATE_ID = "template-system-builtin"
 # 保留旧常量，避免其他地方 import 出错
 ORCHESTRATOR_BOT_ID = "bot-coordinator-001"
 ASSISTANT_BOT_ID = "bot-assistant-001"
+
+# 智枢协作操作指引助手 Bot（帮助文档问答）
+GUIDE_HELPER_BOT_ID = "bot-guide-helper-001"

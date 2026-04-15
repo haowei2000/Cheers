@@ -58,9 +58,10 @@ class ChannelService:
         ch = await self.repo.create(workspace_id=workspace_id, name=name, type=type, purpose=purpose)
 
         # 内置 Bot 自动加入
-        from app.services.guide.constants import GUIDE_BOT_ID
-        if not await self.repo.get_membership(ch.channel_id, GUIDE_BOT_ID):
-            await self.repo.add_member(ch.channel_id, GUIDE_BOT_ID, "bot")
+        from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
+        for bot_id in (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID):
+            if not await self.repo.get_membership(ch.channel_id, bot_id):
+                await self.repo.add_member(ch.channel_id, bot_id, "bot")
 
         # 工作空间所有成员自动加入
         ws_members = await self.ws_repo.list_members(workspace_id)
