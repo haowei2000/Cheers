@@ -78,16 +78,8 @@ async def _fetch_original_question_for_clarify(
     return None, []
 
 
-def _apply_prompt_template(template: str | None, user_message: str, extra_vars: dict[str, str] | None = None) -> str:
-    """应用 Bot 的 user_template，替换 {{message}}、{{sender_name}} 等变量。"""
-    if not template:
-        return user_message
-    result = template.replace("{{}}", user_message)
-    result = result.replace("{{message}}", user_message)
-    if extra_vars:
-        for key, value in extra_vars.items():
-            result = result.replace(f"{{{{{key}}}}}", value)
-    return result
+
+
 
 
 def _get_trigger_content(msg: Message) -> str:
@@ -128,15 +120,9 @@ async def run_orchestrator(
     rows = result.all()
     channel_bot_usernames = [row[1].username for row in rows]
     bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
-    # 频道级模板覆盖：优先使用 ChannelMembership.template_id，否则用 BotAccount.template_id
-    bot_template_by_username: dict[str, str | None] = {}
     # 频道级 PromptTemplate 对象覆盖（用于 adapter 的 system_prompt）
     channel_template_override_by_bot_id: dict[str, PromptTemplate] = {}
     for membership, bot in rows:
-        effective_template = membership.prompt_template or bot.prompt_template
-        bot_template_by_username[bot.username] = (
-            effective_template.user_template if effective_template else None
-        )
         if membership.prompt_template:
             channel_template_override_by_bot_id[bot.bot_id] = membership.prompt_template
 
@@ -452,11 +438,9 @@ async def run_orchestrator(
                 pending_sug: list[tuple[str, str, Message, AgentPayload, OpenClawAdapter]] = []
                 for sug_username in valid_suggested:
                     sug_bot_id = bot_id_by_username[sug_username]
-                    sug_template = bot_template_by_username.get(sug_username)
                     if broadcast_processing:
                         await broadcast_processing(channel_id, sug_bot_id, sug_username)
                     sug_adapter = await adapter_factory(sug_bot_id)
-                    sug_templated_text = _apply_prompt_template(sug_template, trigger_content, {"sender_name": sender_name})
                     sug_msg = await _pre_create_bot_msg(sug_bot_id, root_task_id)
                     sug_payload = AgentPayload(
                         task_id=root_task_id,
@@ -464,7 +448,7 @@ async def run_orchestrator(
                         trigger_message={
                             "user": trigger_msg.sender_id,
                             "sender_name": sender_name,
-                            "text": sug_templated_text,
+                            "text": trigger_content,
                             "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                         },
                         memory_context=memory_context,
@@ -514,8 +498,6 @@ async def run_orchestrator(
             await _finish_with_attachment_error(bot_id, root_task_id)
             continue
         adapter = await adapter_factory(bot_id)
-        bot_template = bot_template_by_username.get(username)
-        templated_text = _apply_prompt_template(bot_template, trigger_content, {"sender_name": sender_name})
         other_bots = [item for item in channel_bot_usernames if item != username]
         bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
 
@@ -525,7 +507,7 @@ async def run_orchestrator(
             trigger_message={
                 "user": trigger_msg.sender_id,
                 "sender_name": sender_name,
-                "text": templated_text,
+                "text": trigger_content,
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                 "msg_id": trigger_msg.msg_id,
                 "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,

@@ -6,7 +6,6 @@ import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import { MessageMarkdown } from "./MessageMarkdown";
 import MemoryPage from "./MemoryPage";
-import { hasPermission, isMemberOrAbove } from "./permissions";
 
 const API = "/api/v1";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -1322,7 +1321,7 @@ function GuideFormBlock({
           if (d.status === "success") {
             setSubmitted(true);
             const chName = d.data?.name ?? name;
-            return fetch(`${API}/channels/${channelId}/messages/guide-reply`, {
+            return fetch(`${API}/channels/${channelId}/guide-reply`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -2481,11 +2480,6 @@ export default function App() {
   };
 
   const [currentUser, setCurrentUser] = useState<CurrentUser>(getStoredUser);
-  const userRole = currentUser?.role ?? "";
-  const canManageSpace = hasPermission(userRole, "space_management");
-  const canManageChannel = hasPermission(userRole, "channel_management");
-  const canConfigBot = hasPermission(userRole, "bot_config");
-  const canSendMessage = isMemberOrAbove(userRole);
   const [authToken, setAuthToken] = useState<string | null>(getStoredToken);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -2524,7 +2518,7 @@ export default function App() {
   // 前��错误上报（best-effort, 不抛异常）
   const reportClientError = useCallback(
     (method: string, url: string, status: number, detail: string) => {
-      fetch("/api/debug/client-error", {
+      fetch(`${API}/debug/client-error`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3646,10 +3640,8 @@ export default function App() {
 
   const PRESIGN_EXTS = new Set([
     ".txt",
-    ".md",
     ".docx",
     ".pdf",
-    ".xlsx",
     ".png",
     ".jpg",
     ".jpeg",
@@ -3664,11 +3656,8 @@ export default function App() {
     ".gif": "image/gif",
     ".pdf": "application/pdf",
     ".txt": "text/plain",
-    ".md": "text/markdown",
     ".docx":
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".xlsx":
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   };
 
   const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
@@ -3728,10 +3717,6 @@ export default function App() {
           if (localPreview) URL.revokeObjectURL(localPreview);
           return;
         }
-        // 通知后端确认上传完成
-        await authFetch(`${API}/files/${file_id}/confirm`, {
-          method: "POST",
-        }).catch(() => {});
         setPendingFileIds((prev) => [...prev, file_id]);
         setPendingFileNames((prev) => [...prev, file.name]);
         setPendingFilePreviews((prev) => [...prev, localPreview]);
@@ -3741,8 +3726,21 @@ export default function App() {
         console.error(err);
       }
     } else {
-      toast.error(`不支持的文件格式：${ext}`);
-      if (localPreview) URL.revokeObjectURL(localPreview);
+      fetch(
+        `${API}/files/upload?channel_id=${encodeURIComponent(selectedId)}&uploader_id=${encodeURIComponent(currentUserId)}&filename=${encodeURIComponent(file.name)}`,
+        { method: "POST", body: file },
+      )
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.data?.file_id) {
+            setPendingFileIds((prev) => [...prev, d.data.file_id]);
+            setPendingFileNames((prev) => [...prev, file.name]);
+            setPendingFilePreviews((prev) => [...prev, localPreview]);
+          } else if (localPreview) {
+            URL.revokeObjectURL(localPreview);
+          }
+        })
+        .catch(console.error);
     }
   };
 
@@ -4420,10 +4418,9 @@ export default function App() {
                 {selectedWorkspaceId && (
                   <button
                     type="button"
-                    onClick={() => canManageSpace && setInviteWsMemberOpen(true)}
-                    className={`text-xs p-1 rounded ${canManageSpace ? "text-white/60 hover:text-white hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
-                    title={canManageSpace ? "邀请成员" : "无权限：需要空间管理权限"}
-                    disabled={!canManageSpace}
+                    onClick={() => setInviteWsMemberOpen(true)}
+                    className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
+                    title="邀请成员"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -4439,7 +4436,6 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (!canManageSpace) return;
                       if (
                         confirm(
                           "确定删除该工作空间？删除后其下的频道也将被删除。",
@@ -4468,9 +4464,8 @@ export default function App() {
                           .catch(() => toast.error("请求失败"));
                       }
                     }}
-                    className={`text-xs p-1 rounded ${canManageSpace ? "text-white/60 hover:text-red-400 hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
-                    title={canManageSpace ? "删除工作空间" : "无权限：需要空间管理权限"}
-                    disabled={!canManageSpace}
+                    className="text-white/60 hover:text-red-400 text-xs p-1 rounded hover:bg-white/10"
+                    title="删除工作空间"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -4488,10 +4483,9 @@ export default function App() {
                 )}
                 <button
                   type="button"
-                  onClick={() => canManageSpace && setCreateWsOpen(true)}
-                  className={`text-xs p-1 rounded ${canManageSpace ? "text-white/60 hover:text-white hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
-                  title={canManageSpace ? "创建工作空间" : "无权限：需要空间管理权限"}
-                  disabled={!canManageSpace}
+                  onClick={() => setCreateWsOpen(true)}
+                  className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
+                  title="创建工作空间"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -4532,16 +4526,14 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
-                if (!canManageChannel) return;
                 if (!selectedWorkspaceId) {
                   toast.error("请先选择工作空间");
                   return;
                 }
                 setCreateChannelOpen(true);
               }}
-              className={`text-xs p-1 rounded ${canManageChannel ? "text-white/60 hover:text-white hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
-              title={canManageChannel ? "创建频道" : "无权限：需要频道管理权限"}
-              disabled={!canManageChannel}
+              className="text-white/60 hover:text-white text-xs p-1 rounded hover:bg-white/10"
+              title="创建频道"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -4595,11 +4587,9 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    title={canManageChannel ? "删除频道" : "无权限：需要频道管理权限"}
-                    disabled={!canManageChannel}
+                    title="删除频道"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (!canManageChannel) return;
                       if (
                         !confirm(`确定删除频道「${c.name}」？此操作不可恢复。`)
                       )
@@ -4616,7 +4606,7 @@ export default function App() {
                         })
                         .catch(() => toast.error("删除频道失败"));
                     }}
-                    className={`absolute right-1 top-1/2 -translate-y-1/2 transition-opacity p-1 rounded ${canManageChannel ? "opacity-0 group-hover:opacity-100 hover:bg-white/20 text-[#C9BDD0] hover:text-red-300" : "opacity-0 group-hover:opacity-100 text-white/15 cursor-not-allowed"}`}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/20 text-[#C9BDD0] hover:text-red-300"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -4676,15 +4666,12 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
-                if (!canConfigBot) return;
                 setQcOpen(true);
                 setQcResult(null);
                 setQcError("");
                 if (isMobile) setSidebarOpen(false);
               }}
-              disabled={!canConfigBot}
-              title={canConfigBot ? "接入 OpenClaw" : "无权限：需要 Bot 配置权限"}
-              className={`flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-sm transition-colors ${canConfigBot ? "text-[#C9BDD0] hover:bg-white/10 hover:text-white" : "text-white/25 cursor-not-allowed"}`}
+              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -5548,7 +5535,6 @@ export default function App() {
             channelName={selectedChannel?.name || ""}
             currentUserId={currentUserId}
             userToken={authToken ?? undefined}
-            userRole={userRole}
             isOpen={manageMembersOpen}
             onClose={() => setManageMembersOpen(false)}
           />
@@ -7485,15 +7471,12 @@ export default function App() {
                               send();
                             }
                           }}
-                          disabled={!canSendMessage}
                           placeholder={
-                            !canSendMessage
-                              ? "访客无法发送消息"
-                              : secretMode
-                                ? "输入加密内容（仅 Bot 可读取原文）…"
-                                : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
+                            secretMode
+                              ? "输入加密内容（仅 Bot 可读取原文）…"
+                              : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
                           }
-                          className={`w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] placeholder-gray-400 bg-transparent ${!canSendMessage ? "cursor-not-allowed opacity-50" : secretMode ? "text-amber-700" : "text-gray-900"}`}
+                          className={`w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] placeholder-gray-400 bg-transparent ${secretMode ? "text-amber-700" : "text-gray-900"}`}
                           rows={1}
                         />
                       </div>
@@ -7581,10 +7564,9 @@ export default function App() {
                           <div ref={uploadMenuRef} className="relative">
                             <button
                               type="button"
-                              onClick={() => canSendMessage && setUploadMenuOpen((o) => !o)}
-                              disabled={!canSendMessage}
-                              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${canSendMessage ? "text-gray-400 hover:bg-gray-100 hover:text-gray-600" : "text-gray-200 cursor-not-allowed"}`}
-                              title={canSendMessage ? "上传文件和图片" : "访客无法上传文件"}
+                              onClick={() => setUploadMenuOpen((o) => !o)}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                              title="上传文件和图片"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -7647,18 +7629,15 @@ export default function App() {
                             type="button"
                             onClick={send}
                             className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${
-                              !canSendMessage
-                                ? "bg-gray-100 text-gray-300 cursor-not-allowed"
-                                : input.trim() || pendingFileIds.length > 0
-                                  ? secretMode
-                                    ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm"
-                                    : "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
-                                  : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                              input.trim() || pendingFileIds.length > 0
+                                ? secretMode
+                                  ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm"
+                                  : "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
+                                : "bg-gray-100 text-gray-400 cursor-not-allowed"
                             }`}
                             disabled={
-                              !canSendMessage || (!input.trim() && pendingFileIds.length === 0)
+                              !input.trim() && pendingFileIds.length === 0
                             }
-                            title={!canSendMessage ? "访客无法发送消息" : ""}
                           >
                             {secretMode ? "加密发送" : "发送"}
                           </button>
