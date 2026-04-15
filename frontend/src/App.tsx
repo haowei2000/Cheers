@@ -530,6 +530,20 @@ function MemoryPanel({
   const [todoNewContent, setTodoNewContent] = useState("");
   const [todoAssignee, setTodoAssignee] = useState("");
 
+  // Channel files state (for FILES_INDEX layer)
+  const [channelFiles, setChannelFiles] = useState<
+    {
+      file_id: string;
+      original_filename: string;
+      content_type: string;
+      size_bytes: number;
+      status: string;
+      summary_3lines: string | null;
+      created_at: string | null;
+    }[]
+  >([]);
+  const [channelFilesLoading, setChannelFilesLoading] = useState(false);
+
   // Entry-based state
   const [entries, setEntries] = useState<MemoryEntryItem[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -599,6 +613,21 @@ function MemoryPanel({
           .catch(() => {});
       }
     }
+    if (layer === "FILES_INDEX") {
+      loadChannelFiles();
+    }
+  };
+
+  const loadChannelFiles = () => {
+    const token = getStoredToken();
+    setChannelFilesLoading(true);
+    fetch(`${API}/files/by-channel/${channelId}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((d) => setChannelFiles(d.data || []))
+      .catch(() => {})
+      .finally(() => setChannelFilesLoading(false));
   };
 
   useEffect(() => {
@@ -1129,8 +1158,92 @@ function MemoryPanel({
                 })}
             </div>
           )
+        ) : activeLayer === "FILES_INDEX" ? (
+          channelFilesLoading ? (
+            <div className="flex items-center justify-center h-full text-gray-400 text-xs">
+              加载中…
+            </div>
+          ) : channelFiles.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
+              <span className="text-3xl opacity-30">{meta.icon}</span>
+              <p className="text-xs font-medium text-gray-500">暂无文件</p>
+              <p className="text-[11px] text-gray-400">{meta.desc}</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 overflow-y-auto">
+              {channelFiles.map((f) => {
+                const ct = f.content_type || "";
+                const typeLabel = ct.includes("pdf")
+                  ? "PDF"
+                  : ct.includes("wordprocessingml") || ct.includes("docx")
+                    ? "Word"
+                    : ct.includes("spreadsheetml") || ct.includes("xlsx")
+                      ? "Excel"
+                      : ct.startsWith("text/")
+                        ? "文本"
+                        : "文件";
+                const sizeStr = f.size_bytes
+                  ? f.size_bytes < 1024
+                    ? `${f.size_bytes} B`
+                    : f.size_bytes < 1024 * 1024
+                      ? `${(f.size_bytes / 1024).toFixed(1)} KB`
+                      : `${(f.size_bytes / (1024 * 1024)).toFixed(1)} MB`
+                  : "";
+                return (
+                  <div
+                    key={f.file_id}
+                    className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="w-8 h-8 rounded-md bg-amber-50 flex items-center justify-center flex-shrink-0">
+                      <span className="text-sm">
+                        {typeLabel === "PDF"
+                          ? "\uD83D\uDCC4"
+                          : typeLabel === "Word"
+                            ? "\uD83D\uDCC3"
+                            : typeLabel === "Excel"
+                              ? "\uD83D\uDCCA"
+                              : "\uD83D\uDCC1"}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-gray-800 truncate">
+                        {f.original_filename || f.file_id}
+                      </p>
+                      <p className="text-[10px] text-gray-400 truncate">
+                        {typeLabel}
+                        {sizeStr ? ` · ${sizeStr}` : ""}
+                        {f.created_at
+                          ? ` · ${f.created_at.slice(0, 10)}`
+                          : ""}
+                      </p>
+                      {f.summary_3lines && (
+                        <p className="text-[10px] text-gray-400 truncate mt-0.5">
+                          {f.summary_3lines}
+                        </p>
+                      )}
+                    </div>
+                    <a
+                      href={`${API}/files/${f.file_id}/download`}
+                      className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
+                      title="下载文件"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="w-4 h-4"
+                      >
+                        <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                        <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+                      </svg>
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : rawContent.trim() ? (
-          /* Readonly derived layers (FILES_INDEX, RECENT) */
+          /* Readonly derived layers (RECENT) */
           <div className="px-3 py-3 text-sm overflow-y-auto">
             <MessageMarkdown text={rawContent} />
           </div>
@@ -3660,8 +3773,10 @@ export default function App() {
 
   const PRESIGN_EXTS = new Set([
     ".txt",
+    ".md",
     ".docx",
     ".pdf",
+    ".xlsx",
     ".png",
     ".jpg",
     ".jpeg",
@@ -3676,8 +3791,11 @@ export default function App() {
     ".gif": "image/gif",
     ".pdf": "application/pdf",
     ".txt": "text/plain",
+    ".md": "text/markdown",
     ".docx":
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx":
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   };
 
   const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
@@ -3736,6 +3854,14 @@ export default function App() {
           toast.error("文件上传失败，请重试");
           if (localPreview) URL.revokeObjectURL(localPreview);
           return;
+        }
+        // confirm upload so backend marks status as "uploaded"
+        const confirmRes = await authFetch(
+          `${API}/files/${file_id}/confirm`,
+          { method: "POST" },
+        );
+        if (!confirmRes.ok) {
+          console.warn("confirm upload failed", await confirmRes.text());
         }
         setPendingFileIds((prev) => [...prev, file_id]);
         setPendingFileNames((prev) => [...prev, file.name]);

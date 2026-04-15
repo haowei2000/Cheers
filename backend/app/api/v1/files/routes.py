@@ -86,6 +86,36 @@ async def get_download_url(
     return APIResponse.ok({"url": url})
 
 
+@router.get("/by-channel/{channel_id}", response_model=APIResponse[list])
+async def list_channel_files(
+    channel_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """列出频道下所有非图片文件（与资料索引一致）。"""
+    from sqlalchemy import asc
+    result = await session.execute(
+        select(FileRecord)
+        .where(
+            FileRecord.channel_id == channel_id,
+            FileRecord.content_type.notlike("image/%"),
+        )
+        .order_by(asc(FileRecord.created_at))
+    )
+    records = result.scalars().all()
+    return APIResponse.ok([
+        {
+            "file_id": r.file_id,
+            "original_filename": r.original_filename,
+            "content_type": r.content_type,
+            "size_bytes": r.size_bytes,
+            "status": r.status,
+            "summary_3lines": r.summary_3lines,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in records
+    ])
+
+
 @router.get("/{file_id}/status", response_model=APIResponse[dict])
 async def file_status(
     file_id: str,

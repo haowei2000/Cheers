@@ -150,17 +150,12 @@ class TestWebSearch:
 
     @pytest.mark.asyncio
     async def test_search_with_results(self):
-        mock_results = [
-            {"title": "Result 1", "href": "https://example1.com", "body": "Snippet 1"},
-            {"title": "Result 2", "href": "https://example2.com", "body": "Snippet 2"},
+        fake_results = [
+            {"title": "Result 1", "url": "https://example1.com", "snippet": "Snippet 1"},
+            {"title": "Result 2", "url": "https://example2.com", "snippet": "Snippet 2"},
         ]
 
-        mock_ddgs = Mock()
-        mock_ddgs.text = Mock(return_value=mock_results)
-        mock_ddgs.__enter__ = Mock(return_value=mock_ddgs)
-        mock_ddgs.__exit__ = Mock(return_value=None)
-
-        with patch("duckduckgo_search.DDGS", return_value=mock_ddgs):
+        with patch("app.tools.web._SEARCH_ENGINES", {"bing_cn": AsyncMock(return_value=fake_results)}):
             results = await web_search("test query", num_results=2)
 
         assert len(results) == 2
@@ -175,23 +170,22 @@ class TestWebSearch:
 
     @pytest.mark.asyncio
     async def test_search_error_returns_empty_list(self):
-        with patch("duckduckgo_search.DDGS", side_effect=Exception("Search failed")):
+        failing_fn = AsyncMock(side_effect=Exception("fail"))
+        with (
+            patch("app.tools.web._SEARCH_ENGINES", {"bing_cn": failing_fn}),
+            patch("app.tools.web._search_bing_cn", failing_fn),
+        ):
             results = await web_search("test query")
-
         assert results == []
 
     @pytest.mark.asyncio
     async def test_search_clamps_num_results(self):
-        mock_ddgs = Mock()
-        mock_ddgs.text = Mock(return_value=[])
-        mock_ddgs.__enter__ = Mock(return_value=mock_ddgs)
-        mock_ddgs.__exit__ = Mock(return_value=None)
-
-        with patch("duckduckgo_search.DDGS", return_value=mock_ddgs):
-            # Test with too high num_results
+        mock_fn = AsyncMock(return_value=[])
+        with patch("app.tools.web._SEARCH_ENGINES", {"bing_cn": mock_fn}):
             await web_search("query", num_results=100)
-            mock_ddgs.text.assert_called_once()
-            # The clamped value should be used (max 10)
+            mock_fn.assert_called_once()
+            # num_results should be clamped to 10
+            assert mock_fn.call_args[0][1] == 10
 
 
 class TestWebSearchFormatted:
@@ -199,16 +193,11 @@ class TestWebSearchFormatted:
 
     @pytest.mark.asyncio
     async def test_formatted_search_returns_string(self):
-        mock_results = [
-            {"title": "Python Documentation", "href": "https://python.org", "body": "Official Python docs"},
+        fake_results = [
+            {"title": "Python Documentation", "url": "https://python.org", "snippet": "Official Python docs"},
         ]
 
-        mock_ddgs = Mock()
-        mock_ddgs.text = Mock(return_value=mock_results)
-        mock_ddgs.__enter__ = Mock(return_value=mock_ddgs)
-        mock_ddgs.__exit__ = Mock(return_value=None)
-
-        with patch("duckduckgo_search.DDGS", return_value=mock_ddgs):
+        with patch("app.tools.web._SEARCH_ENGINES", {"bing_cn": AsyncMock(return_value=fake_results)}):
             result = await web_search_formatted("python", num_results=1)
 
         assert isinstance(result, str)
@@ -218,12 +207,7 @@ class TestWebSearchFormatted:
 
     @pytest.mark.asyncio
     async def test_formatted_search_no_results(self):
-        mock_ddgs = Mock()
-        mock_ddgs.text = Mock(return_value=[])
-        mock_ddgs.__enter__ = Mock(return_value=mock_ddgs)
-        mock_ddgs.__exit__ = Mock(return_value=None)
-
-        with patch("duckduckgo_search.DDGS", return_value=mock_ddgs):
+        with patch("app.tools.web._SEARCH_ENGINES", {"bing_cn": AsyncMock(return_value=[])}):
             result = await web_search_formatted("xyznotfound12345")
 
         assert "未返回结果" in result or "no results" in result.lower()
