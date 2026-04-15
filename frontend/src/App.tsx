@@ -3407,10 +3407,18 @@ export default function App() {
               ),
             );
           } else if (msg.type === "message_done" && msg.data) {
-            const { msg_id, content } = msg.data;
+            const { msg_id, content, files, file_ids } = msg.data;
             setMessages((prev) =>
               prev.map((m) =>
-                m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
+                m.msg_id === msg_id
+                  ? {
+                      ...m,
+                      content,
+                      _streaming: false,
+                      ...(files ? { files } : {}),
+                      ...(file_ids ? { file_ids } : {}),
+                    }
+                  : m,
               ),
             );
             if (

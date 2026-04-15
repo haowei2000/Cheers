@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.log_context import bind_context
-from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Message, PromptTemplate, User
+from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, FileRecord, Message, PromptTemplate, User
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
@@ -343,18 +343,42 @@ async def run_orchestrator(
 
         return _cb
 
-    async def _finalize_bot_msg(msg: Message, content: str) -> None:
+    async def _finalize_bot_msg(
+        msg: Message, content: str, *, file_ids: list[str] | None = None,
+    ) -> None:
         from app.services.ws_service import ws_manager
 
         msg.content = content
         msg.mention_user_ids = await resolve_user_mentions(content, session, channel_id)
+        if file_ids:
+            msg.file_ids = list({*(msg.file_ids or []), *file_ids})
         await session.flush()
+
+        done_data: dict = {"msg_id": msg.msg_id, "content": content}
+        if msg.file_ids:
+            from app.core.schemas import MessageFileInResponse
+            result = await session.execute(
+                select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
+            )
+            file_map = {r.file_id: r for r in result.scalars().all()}
+            done_data["file_ids"] = msg.file_ids
+            done_data["files"] = [
+                MessageFileInResponse(
+                    file_id=r.file_id,
+                    original_filename=r.original_filename,
+                    content_type=r.content_type,
+                    size_bytes=r.size_bytes,
+                    status=r.status or "ready",
+                ).model_dump()
+                for fid in msg.file_ids
+                if (r := file_map.get(fid))
+            ]
         await ws_manager.broadcast_to_channel(
             channel_id,
-            {"type": "message_done", "data": {"msg_id": msg.msg_id, "content": content}},
+            {"type": "message_done", "data": done_data},
         )
         if stream_event:
-            await stream_event("done", {"msg_id": msg.msg_id, "content": content})
+            await stream_event("done", done_data)
 
     async def _record_agent_task(bot_id: str, response_msg_id: str) -> None:
         session.add(
@@ -422,7 +446,7 @@ async def run_orchestrator(
             )
             resp: AgentResponse = await adapter.execute(payload)
             content = resp.content if resp.success else (resp.error_message or "处理出错")
-            await _finalize_bot_msg(orch_msg, content)
+            await _finalize_bot_msg(orch_msg, content, file_ids=resp.file_ids)
             await _record_agent_task(bot_id, orch_msg.msg_id)
             created.append(orch_msg)
 
@@ -567,7 +591,8 @@ async def run_orchestrator(
                         username, dur_ms,
                     )
                 content = resp.content if resp.success else (resp.error_message or "处理出错")
-            await _finalize_bot_msg(bot_msg, content)
+            resp_file_ids = resp.file_ids if not isinstance(resp, BaseException) else []
+            await _finalize_bot_msg(bot_msg, content, file_ids=resp_file_ids)
             await _record_agent_task(bot_id, bot_msg.msg_id)
             created.append(bot_msg)
 
