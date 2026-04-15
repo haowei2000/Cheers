@@ -2108,6 +2108,26 @@ function UserProfileModal({
           </div>
         </div>
 
+        {/* UUID */}
+        <div className="px-6 pb-3 flex-shrink-0">
+          <label className="block text-xs font-medium text-gray-500 mb-1">UUID（可分享给好友添加）</label>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700 select-all break-all">
+              {currentUser.user_id}
+            </code>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(currentUser.user_id);
+                toast.success("UUID 已复制");
+              }}
+              className="px-3 py-2 text-xs bg-gray-100 border border-gray-200 rounded-lg hover:bg-gray-200 text-gray-600 whitespace-nowrap"
+            >
+              复制
+            </button>
+          </div>
+        </div>
+
         {/* Tabs */}
         <div className="flex border-b border-gray-100 px-6 flex-shrink-0">
           {(["profile", "password"] as const).map((t) => (

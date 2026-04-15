@@ -32,6 +32,8 @@ export default function FriendsPanel({ currentUserId, userToken, isOpen, onClose
   const [searchResults, setSearchResults] = useState<UserSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [activeTab, setActiveTab] = useState<"list" | "add">("list");
+  const [directId, setDirectId] = useState("");
+  const [addingDirect, setAddingDirect] = useState(false);
 
   // 加载好友列表
   const loadFriends = async () => {
@@ -67,6 +69,36 @@ export default function FriendsPanel({ currentUserId, userToken, isOpen, onClose
       console.error("搜索用户失败:", err);
     } finally {
       setSearching(false);
+    }
+  };
+
+  // 通过UUID/用户名直接添加好友
+  const addFriendDirect = async () => {
+    const id = directId.trim();
+    if (!id || !currentUserId) return;
+    setAddingDirect(true);
+    try {
+      const res = await fetch(`${API}/friends`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          user_id: currentUserId,
+          friend_identifier: id,
+        }),
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        toast.success(data.message || "添加好友成功");
+        loadFriends();
+        setDirectId("");
+        setActiveTab("list");
+      } else {
+        toast.error(data.detail || "添加好友失败");
+      }
+    } catch (err) {
+      toast.error("添加好友失败");
+    } finally {
+      setAddingDirect(false);
     }
   };
 
@@ -233,9 +265,34 @@ export default function FriendsPanel({ currentUserId, userToken, isOpen, onClose
           ) : (
             // 添加好友
             <div>
-              <div className="mb-4">
+              {/* 直接通过UUID添加 */}
+              <div className="mb-5">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  通过用户ID或用户名搜索
+                  通过UUID直接添加
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={directId}
+                    onChange={(e) => setDirectId(e.target.value)}
+                    placeholder="粘贴好友的UUID"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] font-mono"
+                    onKeyDown={(e) => e.key === "Enter" && addFriendDirect()}
+                  />
+                  <button
+                    onClick={addFriendDirect}
+                    disabled={addingDirect || !directId.trim()}
+                    className="px-4 py-2 bg-[#007a5a] text-white rounded-lg text-sm font-medium hover:bg-[#006a4d] disabled:opacity-50"
+                  >
+                    {addingDirect ? "添加中..." : "添加"}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">UUID 可在对方的个人资料页复制</p>
+              </div>
+
+              <div className="border-t border-gray-200 pt-4 mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  或通过用户名搜索
                 </label>
                 <div className="flex gap-2">
                   <input
