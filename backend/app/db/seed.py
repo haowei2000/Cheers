@@ -16,7 +16,7 @@ from app.db.models import (
 )
 from app.db.session import async_session_factory
 from app.services.auth.password_utils import hash_password, verify_password
-from app.services.guide.constants import GUIDE_BOT_ID
+from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 
 # 固定 ID，便于文档与脚本引用
 WORKSPACE_ID = "ws-default-001"
@@ -58,6 +58,47 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
             ),
         )
     )
+    return True
+
+
+async def _seed_guide_helper_bot(session: AsyncSession) -> bool:
+    """创建智枢协作操作指引助手 Bot（@guide-helper）：加载 docs/ 下所有文档，回答 AgentNexus 使用问题."""
+    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == GUIDE_HELPER_BOT_ID))
+    existing = r.scalar_one_or_none()
+    if existing is not None:
+        return False
+
+    session.add(
+        BotAccount(
+            bot_id=GUIDE_HELPER_BOT_ID,
+            username="guide-helper",
+            display_name="智枢协作操作指引助手",
+            description="智枢协作操作指引助手，加载所有帮助文档，回答平台使用问题。",
+            model_id=None,
+            template_id=None,
+            status="online",
+            is_public=True,
+            intro='{"capabilities":["使用说明","功能问答","操作指南"],"description":"输入 @guide-helper 即可获得操作指引"}',
+        )
+    )
+    await session.flush()
+
+    # 将该 Bot 加入默认频道
+    r2 = await session.execute(
+        select(ChannelMembership).where(
+            ChannelMembership.channel_id == CHANNEL_ID,
+            ChannelMembership.member_id == GUIDE_HELPER_BOT_ID,
+        )
+    )
+    if r2.scalar_one_or_none() is None:
+        session.add(
+            ChannelMembership(
+                channel_id=CHANNEL_ID,
+                member_id=GUIDE_HELPER_BOT_ID,
+                member_type="bot",
+            )
+        )
+
     return True
 
 
@@ -180,10 +221,10 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
 
 
 async def _seed_memberships(session: AsyncSession) -> bool:
-    """创建频道成员关系（统一内置 Bot + 管理员）."""
+    """创建频道成员关系（内置 Bot + 管理员）."""
     did_write = False
 
-    for member_id, member_type in ((GUIDE_BOT_ID, "bot"), (ADMIN_USER_ID, "user")):
+    for member_id, member_type in ((GUIDE_BOT_ID, "bot"), (GUIDE_HELPER_BOT_ID, "bot"), (ADMIN_USER_ID, "user")):
         r = await session.execute(
             select(ChannelMembership).where(
                 ChannelMembership.channel_id == CHANNEL_ID,
@@ -209,6 +250,7 @@ async def seed(session: AsyncSession) -> bool:
 
     did_write |= await _seed_templates(session)
     did_write |= await _seed_unified_bot(session)
+    did_write |= await _seed_guide_helper_bot(session)
     did_write |= await _seed_workspace_and_users(session)
     did_write |= await _seed_memberships(session)
 
@@ -239,30 +281,39 @@ async def _sync_admin_credentials(session: AsyncSession) -> None:
 
 
 async def ensure_builtin_bot() -> None:
-    """每次启动时无条件确保内置统一 Bot 存在，并加入所有现有频道。
+    """每次启动时无条件确保内置 Bot 存在，并加入所有现有频道。
 
     不依赖 SEED_DATA 环境变量，保证升级后旧库也能自动补齐内置 Bot。
     """
     async with async_session_factory() as session:
         try:
             await _seed_unified_bot(session)
+            await _seed_guide_helper_bot(session)
             await _sync_admin_credentials(session)
 
-            # 确保 @channel bot 加入所有现有频道（补齐旧频道缺失的 membership）
-            # 使用 ON CONFLICT DO NOTHING 避免重复插入导致 IntegrityError
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
-
+            # 确保内置 Bot 加入所有现有频道（补齐旧频道缺失的 membership）
             all_channels = (await session.execute(select(Channel))).scalars().all()
-            if all_channels:
-                stmt = pg_insert(ChannelMembership).values([
-                    {
-                        "channel_id": ch.channel_id,
-                        "member_id": GUIDE_BOT_ID,
-                        "member_type": "bot",
-                    }
-                    for ch in all_channels
-                ]).on_conflict_do_nothing(index_elements=["channel_id", "member_id"])
-                await session.execute(stmt)
+            builtin_bot_ids = (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID)
+            for bot_id in builtin_bot_ids:
+                existing = {
+                    row
+                    for row in (
+                        await session.execute(
+                            select(ChannelMembership.channel_id).where(
+                                ChannelMembership.member_id == bot_id
+                            )
+                        )
+                    ).scalars()
+                }
+                for ch in all_channels:
+                    if ch.channel_id not in existing:
+                        session.add(
+                            ChannelMembership(
+                                channel_id=ch.channel_id,
+                                member_id=bot_id,
+                                member_type="bot",
+                            )
+                        )
 
             await session.commit()
         except Exception:
@@ -277,5 +328,5 @@ if __name__ == "__main__":
         f"  Workspace: {WORKSPACE_ID}\n"
         f"  Channel: {CHANNEL_ID}\n"
         f"  Templates: 通用助手, 代码审查, 创意写作\n"
-        f"  Bots: @channel bot（内置统一Bot）"
+        f"  Bots: @channel bot（内置统一Bot）, @guide-helper（智枢协作操作指引助手）"
     )
