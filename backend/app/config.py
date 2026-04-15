@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     smtp_ssl: bool = False       # True 时用 SSL 直连（465端口）
 
 
+    # Web 搜索引擎：bing_cn（必应国内版）/ baidu（百度）/ duckduckgo
+    web_search_engine: str = "bing_cn"
+    # Web 搜索 / web_fetch 代理（留空则直连）
+    web_search_proxy: str = ""
+
     # CORS 允许的前端 origin 列表（逗号分隔或直接配置为列表）
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 

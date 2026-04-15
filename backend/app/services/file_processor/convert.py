@@ -12,6 +12,9 @@ SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     },
     ".pdf": {"application/pdf"},
+    ".xlsx": {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
 }
 
 SUPPORTED_IMAGE_TYPES: dict[str, set[str]] = {
