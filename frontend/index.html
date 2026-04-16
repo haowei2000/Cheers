@@ -19,6 +19,14 @@
     </style>
   </head>
   <body>
+    <script>
+      // Apply dark mode immediately to prevent flash of light theme
+      (function() {
+        var stored = localStorage.getItem('agentnexus-theme');
+        var isDark = stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (isDark) document.documentElement.classList.add('dark');
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
