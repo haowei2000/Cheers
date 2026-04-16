@@ -6,6 +6,7 @@ import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import { MessageMarkdown } from "./MessageMarkdown";
 import MemoryPage from "./MemoryPage";
+import { useTheme } from "./useTheme";
 
 const API = "/api/v1";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -2612,6 +2613,8 @@ export default function App() {
     return null;
   };
 
+  const { toggleTheme, isDark } = useTheme();
+
   const [currentUser, setCurrentUser] = useState<CurrentUser>(getStoredUser);
   const [authToken, setAuthToken] = useState<string | null>(getStoredToken);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -4896,6 +4899,23 @@ export default function App() {
             </Link>
             <button
               type="button"
+              onClick={toggleTheme}
+              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+              title={isDark ? "切换到浅色模式" : "切换到深色模式"}
+            >
+              {isDark ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M10 2a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 10 2ZM10 15a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 10 15ZM10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM15.657 5.404a.75.75 0 1 0-1.06-1.06l-1.061 1.06a.75.75 0 0 0 1.06 1.06l1.06-1.06ZM6.464 14.596a.75.75 0 1 0-1.06-1.06l-1.06 1.06a.75.75 0 0 0 1.06 1.06l1.06-1.06ZM18 10a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 18 10ZM5 10a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 5 10ZM14.596 13.536a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 0 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06ZM5.404 5.404a.75.75 0 0 1 0-1.06l1.06-1.06a.75.75 0 1 1 1.06 1.06l-1.06 1.06a.75.75 0 0 1-1.06 0Z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M7.455 2.004a.75.75 0 0 1 .26.77 7 7 0 0 0 9.958 7.967.75.75 0 0 1 1.067.853A8.5 8.5 0 1 1 6.647 1.921a.75.75 0 0 1 .808.083Z" clipRule="evenodd" />
+                </svg>
+              )}
+              <span>{isDark ? "浅色模式" : "深色模式"}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setHelpOpen(true);
                 if (isMobile) setSidebarOpen(false);
@@ -5965,7 +5985,7 @@ export default function App() {
                   className="absolute inset-0 z-50 flex flex-col items-center justify-center select-none pointer-events-none"
                   style={{
                     backdropFilter: "blur(8px)",
-                    backgroundColor: "rgba(255,255,255,0.65)",
+                    backgroundColor: isDark ? "rgba(26,29,33,0.75)" : "rgba(255,255,255,0.65)",
                   }}
                 >
                   <div
