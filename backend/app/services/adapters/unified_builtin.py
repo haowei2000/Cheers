@@ -50,11 +50,22 @@ _DEFAULT_REPLY = (
 # ─── LLM 配置 ─────────────────────────────────────────────────────────────────
 
 def _get_llm_config() -> dict | None:
-    """优先 channel_bot，依次回退 orchestrator / system_llm。"""
+    """优先 channel_bot，依次回退 orchestrator / system_llm，最后回退 guide_llm_* 环境变量。"""
     for scope in ("channel_bot", "orchestrator", "system_llm"):
         cfg = get_provider_for_scope(scope)
         if cfg and cfg.get("base_url") and cfg.get("model"):
             return cfg
+
+    # 回退到 guide_llm_* 环境变量（无需管理界面配置即可使用）
+    from app.config import settings
+    if settings.guide_llm_base_url and settings.guide_llm_model:
+        return {
+            "base_url": settings.guide_llm_base_url.rstrip("/"),
+            "model": settings.guide_llm_model,
+            "api_key": settings.guide_llm_api_key or "none",
+            "temperature": float(settings.guide_llm_temperature),
+            "max_tokens": int(settings.guide_llm_max_tokens),
+        }
     return None
 
 
