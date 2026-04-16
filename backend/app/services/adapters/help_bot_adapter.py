@@ -15,9 +15,10 @@ logger = logging.getLogger("app.services.adapters.help_bot_adapter")
 HISTORY_MSG_COUNT = 20
 HISTORY_MSG_MAX_CHARS = 500
 
-# 项目根目录（backend/app/services/adapters/ -> backend/app/services/ -> backend/app/ -> backend/）
-_BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-_DOCS_DIR = _BACKEND_ROOT.parent / "docs"
+# 项目根目录（backend/app/services/adapters/ -> backend/app/services/ -> backend/app/ -> backend/ -> AgentNexus/）
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+# docs/ 在项目根目录下（backend/ -> AgentNexus/ -> docs/）
+_DOCS_DIR = _BACKEND_ROOT / "docs"
 
 # 缓存加载的文档内容
 _cached_docs: str | None = None
@@ -43,6 +44,8 @@ def _load_docs_from_folder() -> str:
             parts.append(f"=== {path.name} ===\n{content.strip()}\n")
             logger.debug("help_bot_adapter: loaded %s (%d chars)", path.name, len(content))
 
+    if not parts:
+        logger.warning("help_bot_adapter: no .md files found in %s", _DOCS_DIR)
     result = "\n\n".join(parts)
     logger.info("help_bot_adapter: loaded %d doc files, total %d chars", len(parts), len(result))
     return result
@@ -57,11 +60,22 @@ def get_help_docs() -> str:
 
 
 def _get_llm_config() -> dict | None:
-    """优先 channel_bot，依次回退 orchestrator / system_llm。"""
+    """优先 channel_bot，依次回退 orchestrator / system_llm，最后回退 guide_llm_* 环境变量。"""
+    from app.config import settings
+
     for scope in ("channel_bot", "orchestrator", "system_llm"):
         cfg = get_provider_for_scope(scope)
         if cfg and cfg.get("base_url") and cfg.get("model"):
             return cfg
+    # 回退到 guide_llm_* 环境变量（无需管理界面配置即可使用）
+    if settings.guide_llm_base_url and settings.guide_llm_model:
+        return {
+            "base_url": settings.guide_llm_base_url.rstrip("/"),
+            "model": settings.guide_llm_model,
+            "api_key": settings.guide_llm_api_key or "none",
+            "temperature": float(settings.guide_llm_temperature),
+            "max_tokens": int(settings.guide_llm_max_tokens),
+        }
     return None
 
 
@@ -115,7 +129,7 @@ async def _fetch_recent_history(session, channel_id: str, before_msg_id: str | N
 
     from app.db.models import Message as MsgModel
 
-    q = select(MsgModel).where(MsgModel.channel_id == channel_id, MsgModel.content != "")
+    q = select(MsgModel).where(MsgModel.channel_id == channel_id, MsgModel.content.isnot(None), MsgModel.content != "")
     if before_msg_id:
         sub = select(MsgModel.created_at).where(MsgModel.msg_id == before_msg_id).scalar_subquery()
         q = q.where(MsgModel.created_at < sub)
@@ -171,6 +185,7 @@ async def _run_llm(
         accumulated = None
         try:
             async for chunk in llm.astream(messages):
+                # chunk.content 在 LangChain 中可能是 str 或 list（多模态），仅处理 str 类型
                 accumulated = chunk if accumulated is None else accumulated + chunk
                 if chunk.content and isinstance(chunk.content, str):
                     await stream_cb(chunk.content)
@@ -224,25 +239,55 @@ class HelpBotAdapter(OpenClawAdapter):
 
         # ── 构建 System Prompt ────────────────────────────────────────────────
         system_prompt = "\n\n".join([
-            "你是 AgentNexus 的专属帮助助手，专注于回答用户关于 AgentNexus 平台的使用问题。"
-            "你有权限访问 AgentNexus 的完整帮助文档（见下方「=== 帮助文档 ===」），请基于这些文档准确回答。"
-            "如果用户问题不在文档范围内，请诚实说明，并建议用户提供更多细节。",
-            "=== 帮助文档 ===\n" + (docs_content if docs_content else "（文档加载失败，请检查 docs/ 文件夹是否存在）"),
             (
-                "=== 当前频道记忆 ===\n"
+                "你是 AgentNexus 的专属操作指引助手。当用户询问「如何做某事」或「怎么操作」时，"
+                "你必须给出**清晰、可操作的分步骤指引**，包含具体的按钮名称、图标、菜单位置。\n\n"
+                "## 界面关键元素速查\n"
+                "• **左侧侧边栏**：Logo、🔍搜索、🔔通知、用户头像/菜单\n"
+                "• **工作空间列表**：点击「+」创建工作空间\n"
+                "• **频道列表**：点击「+」创建频道；频道右侧「⋮」菜单管理频道\n"
+                "• **功能面板**：记忆中心（五层记忆）、好友列表、管理面板（管理员）、密钥链\n"
+                "• **顶部导航**：频道标题、在线成员数量、⚙️设置、⚡快速连接、📝摘要\n"
+                "• **底部输入区**：多行文本框、🔑密钥链按钮、➕上传文件、🔒加密发送、绿色「发送」按钮\n"
+                "• **@提及**：输入 @ 自动弹出 Bot/用户列表，用方向键选择\n"
+                "• **快捷键**：Ctrl+Enter 发送、Ctrl+K 快速搜索\n\n"
+                "## 回答格式规范（必须严格遵守）\n"
+                "当用户询问操作问题时，必须包含以下结构：\n\n"
+                "**1. 问题确认**（一句话）\n"
+                "确认用户的需求是什么\n\n"
+                "**2. 操作步骤**（核心部分）\n"
+                "用编号列表给出分步操作，每步格式：\n"
+                "  `步骤 N`：点击/进入 **[界面元素名称]**，选择/输入 **[具体内容]**\n"
+                "例如：\n"
+                "  `步骤 1`：点击左侧侧边栏的「**+**」按钮（位于频道列表下方）\n"
+                "  `步骤 2`：在弹出的输入框中输入**频道名称**\n"
+                "  `步骤 3`：选择频道类型（**公共**或**私有**）\n"
+                "  `步骤 4`：点击「**保存**」完成创建\n\n"
+                "**3. 预期结果**\n"
+                "说明操作完成后会看到什么\n\n"
+                "**4. 附加提示**（可选）\n"
+                "提醒用户注意事项或相关功能\n\n"
+                "## 其他问题回答规范\n"
+                "• **概念解释类**：用简洁的语言解释，附上相关文档链接\n"
+                "• **故障排除类**：先确认症状，再给出排查步骤\n"
+                "• **功能咨询类**：介绍功能用途，并说明在哪里找到该功能\n\n"
+                "## 禁止事项\n"
+                "• 不要说「在设置里」这种模糊描述，必须说「点击左侧的**⚙️设置图标**」\n"
+                "• 不要编造界面元素，只基于文档描述\n"
+                "• 不要给出不存在的操作路径\n"
+                "• 如文档没有明确说明，诚实告知并建议用户提供更多细节"
+            ),
+            (
+                "=== 帮助文档（完整参考）===\n"
+                + (docs_content if docs_content else "（文档加载失败，请检查 docs/ 文件夹是否存在）")
+            ),
+            (
+                "=== 当前频道上下文 ===\n"
                 f"【锚点】\n{memory.get('anchor') or '（暂无）'}\n\n"
                 f"【进度】\n{memory.get('progress') or '（暂无）'}\n\n"
                 f"【决策】\n{memory.get('decisions') or '（暂无）'}\n\n"
+                f"【资料索引】\n{memory.get('files_index') or '（暂无）'}\n\n"
                 f"【最近关注】\n{memory.get('recent') or '（暂无）'}"
-            ),
-            (
-                "## 回答准则\n\n"
-                "- 回答时优先引用具体文档与章节，例如「详见《系统管理说明书》§二」\n"
-                "- 使用 Markdown 格式，结构清晰\n"
-                "- 如需给用户提供可操作的步骤，请分点说明\n"
-                "- 如用户问题不明确，可以反问以澄清需求\n"
-                "- 不要胡乱猜测，只基于文档内容和对话上下文回答\n"
-                "- 如果文档中有链接，请以 Markdown 链接形式给出"
             ),
         ])
 
@@ -253,6 +298,7 @@ class HelpBotAdapter(OpenClawAdapter):
         if db_session:
             try:
                 import asyncio
+                # _fetch_user_display_name 定义在文件底部，Python 运行时查找不影响调用
                 results = await asyncio.gather(
                     _fetch_recent_history(db_session, channel_id, trigger_msg_id),
                     _fetch_user_display_name(db_session, sender_id),
@@ -275,7 +321,7 @@ class HelpBotAdapter(OpenClawAdapter):
         if not content:
             content = (
                 "抱歉，帮助助手暂时无法回答您的问题，可能是 LLM 服务不可用。"
-                "您可以查看 /manual/使用说明书 获取帮助，"
+                "您可以查看 docs/使用说明书.md 获取帮助，"
                 "或联系管理员检查 LLM 配置。"
             )
 

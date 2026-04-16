@@ -294,6 +294,8 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
     按功能范围返回当前绑定的 LLM 配置（base_url, model, api_key, temperature, max_tokens）。
     channel_bot 为频道内置助手的统一 scope，兼容旧版 guide_bot / assistant_bot / builtin_llm。
     """
+    from app.config import settings
+
     data = load_admin_settings()
     _ensure_llm_structures(data)
 
@@ -310,6 +312,15 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
             p = _get_provider_by_id(pid)
             if p:
                 return _normalize_provider_config(p)
+        # 3. 回退到 guide_llm_* 环境变量（无需管理界面配置即可使用）
+        if settings.guide_llm_base_url and settings.guide_llm_model:
+            return {
+                "base_url": settings.guide_llm_base_url.rstrip("/"),
+                "model": settings.guide_llm_model,
+                "api_key": settings.guide_llm_api_key or None,
+                "temperature": float(settings.guide_llm_temperature),
+                "max_tokens": int(settings.guide_llm_max_tokens),
+            }
         return None
 
     bindings = data.get("llm_bindings") or {}
