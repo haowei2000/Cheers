@@ -168,7 +168,7 @@ class LLMBotAdapter(OpenClawAdapter):
         trigger_meta = payload.trigger_message or {}
 
         context_vars: dict[str, str] = {
-            "sender_name": pconfig.get("_sender_name") or trigger_meta.get("user", ""),
+            "sender_name": trigger_meta.get("sender_name") or pconfig.get("_sender_name") or "",
             "channel_name": pconfig.get("_channel_name") or "",
             "channel_id": payload.channel_id,
             "bot_name": self.bot.display_name or self.bot.username,
@@ -183,12 +183,6 @@ class LLMBotAdapter(OpenClawAdapter):
                 "recent": f"<recent>{payload.memory_context.get('recent', '')}</recent>",
                 "todos": payload.memory_context.get("todos", ""),
             })
-        trigger_meta = payload.trigger_message or {}
-        context_vars["sender_name"] = (
-            trigger_meta.get("sender_name")
-            or pconfig.get("_sender_name")
-            or ""
-        )
 
         # 子 bot 调用（call_bot）时跳过 system prompt，父 bot 的 message 已包含任务描述
         skip_system_prompt = bool(pconfig.get("_skip_system_prompt"))
