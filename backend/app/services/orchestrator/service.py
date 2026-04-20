@@ -242,7 +242,7 @@ async def run_orchestrator(
             logger.exception("failed to prepare attachments channel_id=%s", channel_id)
             attachment_error = f"读取上传文件失败：{exc}"
 
-    from app.services.orchestrator.thread_context import MSG_TYPE_REPLY, MSG_TYPE_THREAD, gather_thread_context, promote_to_thread
+    from app.services.orchestrator.thread_context import MSG_TYPE_REPLY, gather_thread_context, promote_to_thread
 
     memory_context, _, thread_result = await asyncio.gather(
         memory_load(channel_id, session),
