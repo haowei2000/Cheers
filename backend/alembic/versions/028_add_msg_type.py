@@ -1,7 +1,7 @@
 """add msg_type and thread_title to messages
 
 Revision ID: 028
-Revises: 99ad4af22af0
+Revises: 027
 Create Date: 2026-04-20 00:00:00.000000
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "028"
-down_revision: Union[str, Sequence[str], None] = "99ad4af22af0"
+down_revision: Union[str, Sequence[str], None] = "027"
 branch_labels = None
 depends_on = None
 
