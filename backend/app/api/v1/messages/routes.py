@@ -211,7 +211,7 @@ async def _handle_send_message(
         stored_content = body.content
         token = None
 
-    from app.services.orchestrator.thread_context import MSG_TYPE_NORMAL, MSG_TYPE_REPLY, MSG_TYPE_THREAD, promote_to_thread
+    from app.services.orchestrator.thread_context import MSG_TYPE_NORMAL, MSG_TYPE_REPLY, promote_to_thread
 
     in_reply_to = getattr(body, "in_reply_to_msg_id", None) or None
     msg_type = getattr(body, "msg_type", None) or (MSG_TYPE_REPLY if in_reply_to else MSG_TYPE_NORMAL)
