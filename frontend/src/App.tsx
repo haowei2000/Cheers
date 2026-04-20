@@ -37,6 +37,8 @@ type Message = {
   created_at?: string;
   _streaming?: boolean;
   in_reply_to_msg_id?: string | null;
+  msg_type?: "normal" | "thread" | "reply";
+  content_data?: Record<string, unknown> | null;
   file_ids?: string[];
   files?: FileInfo[];
   is_secret?: boolean;
@@ -57,6 +59,11 @@ const LAYERS = [
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
 const GUIDE_CLARIFY_BLOCK = /```guide-clarify\n([\s\S]*?)```/;
+
+function isMsgReply(m: Message | undefined, msgIdSet: Set<string>): boolean {
+  if (!m) return false;
+  return m.msg_type === "reply" || (!m.msg_type && !!m.in_reply_to_msg_id && msgIdSet.has(m.in_reply_to_msg_id));
+}
 
 type GuideFormField = {
   name: string;
@@ -3658,6 +3665,7 @@ export default function App() {
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: [] as string[],
+      msg_type: inReplyToMsgId ? "reply" : "normal",
     };
     if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
     return authFetch(`${API}/channels/${targetChannelId}/messages`, {
@@ -3702,6 +3710,7 @@ export default function App() {
       sender_type: "user",
       file_ids: pendingFileIds,
       is_secret: isSecretSend,
+      msg_type: replyingTo ? "reply" : "normal",
     };
     if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
     setInput("");
@@ -4147,7 +4156,7 @@ export default function App() {
     function getRootId(msgId: string): string {
       if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
       const m = messages.find((x) => x.msg_id === msgId);
-      if (!m || !m.in_reply_to_msg_id || !msgIdSet.has(m.in_reply_to_msg_id)) {
+      if (!m || !isMsgReply(m, msgIdSet) || !m.in_reply_to_msg_id) {
         rootIdCache.set(msgId, msgId);
         return msgId;
       }
@@ -4156,7 +4165,7 @@ export default function App() {
       return rid;
     }
     const toExpand = messages
-      .filter((m) => m._streaming && m.in_reply_to_msg_id)
+      .filter((m) => isMsgReply(m, msgIdSet) && m._streaming)
       .map((m) => getRootId(m.msg_id));
     if (toExpand.length > 0)
       setExpandedThreads((prev) => new Set([...prev, ...toExpand]));
@@ -4169,7 +4178,7 @@ export default function App() {
     function getRootId(msgId: string): string {
       if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
       const m = messages.find((x) => x.msg_id === msgId);
-      if (!m || !m.in_reply_to_msg_id || !msgIdSet.has(m.in_reply_to_msg_id)) {
+      if (!m || !isMsgReply(m, msgIdSet) || !m.in_reply_to_msg_id) {
         rootIdCache.set(msgId, msgId);
         return msgId;
       }
@@ -6393,9 +6402,21 @@ export default function App() {
                                 {replyIcon}
                               </button>
                               <div className="flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
-                                <span className="text-[11px] text-gray-400 mb-1 mr-0.5">
-                                  {msgTime}
-                                </span>
+                                <div className="flex items-baseline gap-1.5 mb-1 justify-end">
+                                  {m.msg_type === "thread" && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
+                                      消息串
+                                    </span>
+                                  )}
+                                  <span className="text-[11px] text-gray-400 mr-0.5">
+                                    {msgTime}
+                                  </span>
+                                </div>
+                                {m.content_data?.title ? (
+                                  <div className="text-[13px] font-semibold text-white/90 mb-1 mr-0.5 leading-snug text-right">
+                                    {m.content_data.title as string}
+                                  </div>
+                                ) : null}
                                 {renderFileAttachments(m, true)}
                                 <div
                                   className={`${isSecretUnrevealed ? "bg-amber-500" : isSecretExpired ? "bg-gray-400" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}
@@ -6523,10 +6544,20 @@ export default function App() {
                                     Bot
                                   </span>
                                 )}
+                                {m.msg_type === "thread" && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
+                                    消息串
+                                  </span>
+                                )}
                                 <span className="text-[11px] text-gray-400 leading-none">
                                   {msgTime}
                                 </span>
                               </div>
+                              {m.content_data?.title ? (
+                                <div className="text-[13px] font-semibold text-gray-700 mb-1 leading-snug">
+                                  {m.content_data.title as string}
+                                </div>
+                              ) : null}
                               {renderFileAttachments(m)}
                               <div
                                 className={`${isSecretExpired ? "bg-gray-100" : isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}

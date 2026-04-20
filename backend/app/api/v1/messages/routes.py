@@ -211,6 +211,14 @@ async def _handle_send_message(
         stored_content = body.content
         token = None
 
+    from app.services.orchestrator.thread_context import MSG_TYPE_NORMAL, MSG_TYPE_REPLY, MSG_TYPE_THREAD, promote_to_thread
+
+    in_reply_to = getattr(body, "in_reply_to_msg_id", None) or None
+    msg_type = getattr(body, "msg_type", None) or (MSG_TYPE_REPLY if in_reply_to else MSG_TYPE_NORMAL)
+    raw_content_data = getattr(body, "content_data", None)
+    if hasattr(raw_content_data, "model_dump"):
+        raw_content_data = raw_content_data.model_dump(exclude_none=True) or None
+
     msg = Message(
         channel_id=channel_id,
         sender_id=body.sender_id,
@@ -218,13 +226,23 @@ async def _handle_send_message(
         content=stored_content,
         file_ids=file_ids,
         mention_bot_ids=body.mention_bot_ids or [],
-        in_reply_to_msg_id=body.in_reply_to_msg_id or None,
+        in_reply_to_msg_id=in_reply_to,
+        msg_type=msg_type,
+        content_data=raw_content_data,
         is_secret=is_secret,
         secret_encrypted=encrypted,
         secret_token=token,
     )
     session.add(msg)
     await session.flush()
+
+    if in_reply_to:
+        from sqlalchemy import select as _sel2
+        parent_r = await session.execute(_sel2(Message).where(Message.msg_id == in_reply_to))
+        parent = parent_r.scalar_one_or_none()
+        if parent:
+            promote_to_thread(parent)
+            await session.flush()
 
     # Build file_map for response
     fids = sorted({fid for fid in (msg.file_ids or []) if fid})

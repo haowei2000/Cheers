@@ -242,10 +242,14 @@ async def run_orchestrator(
             logger.exception("failed to prepare attachments channel_id=%s", channel_id)
             attachment_error = f"读取上传文件失败：{exc}"
 
-    memory_context, _ = await asyncio.gather(
+    from app.services.orchestrator.thread_context import MSG_TYPE_REPLY, MSG_TYPE_THREAD, gather_thread_context, promote_to_thread
+
+    memory_context, _, thread_result = await asyncio.gather(
         memory_load(channel_id, session),
         _load_attachments(),
+        gather_thread_context(trigger_msg, session),
     )
+    thread_chain, child_replies = thread_result
 
     # 查出发送者的昵称，注入到 trigger_message 供模板变量 {{sender_name}} 使用
     sender_name = ""
@@ -279,6 +283,7 @@ async def run_orchestrator(
         from app.services.ws_service import ws_manager
 
         mention_user_ids = await resolve_user_mentions(content, session, channel_id)
+        promote_to_thread(trigger_msg)
         msg = Message(
             channel_id=channel_id,
             sender_id=sender_id,
@@ -287,6 +292,7 @@ async def run_orchestrator(
             task_id=root_task_id,
             in_reply_to_msg_id=trigger_msg.msg_id,
             mention_user_ids=mention_user_ids,
+            msg_type=MSG_TYPE_REPLY,
         )
         session.add(msg)
         await session.flush()
@@ -310,6 +316,7 @@ async def run_orchestrator(
         from app.core.schemas import MessageInResponse
         from app.services.ws_service import ws_manager
 
+        promote_to_thread(trigger_msg)
         msg = Message(
             channel_id=channel_id,
             sender_id=bot_id,
@@ -317,6 +324,7 @@ async def run_orchestrator(
             content="",
             task_id=task_id,
             in_reply_to_msg_id=trigger_msg.msg_id,
+            msg_type=MSG_TYPE_REPLY,
         )
         session.add(msg)
         await session.flush()
@@ -419,6 +427,9 @@ async def run_orchestrator(
                     "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                     "msg_id": trigger_msg.msg_id,
                     "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
+                    "msg_type": trigger_msg.msg_type,
+                    "thread_history": thread_chain,
+                    "child_replies": child_replies,
                 },
                 memory_context=memory_context,
                 attachments=attachments,
@@ -474,6 +485,9 @@ async def run_orchestrator(
                             "sender_name": sender_name,
                             "text": trigger_content,
                             "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
+                            "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
+                            "thread_history": thread_chain,
+                            "child_replies": child_replies,
                         },
                         memory_context=memory_context,
                         attachments=attachments,
@@ -535,6 +549,8 @@ async def run_orchestrator(
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                 "msg_id": trigger_msg.msg_id,
                 "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
+                "thread_history": thread_chain,
+                "child_replies": child_replies,
             },
             memory_context=memory_context,
             attachments=attachments,

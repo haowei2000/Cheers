@@ -1,8 +1,8 @@
 """ChatCore 请求/响应模型."""
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ==================== AI Model Schemas ====================
 
@@ -211,15 +211,79 @@ class MemberWithUsernameInResponse(BaseModel):
     username: str | None = None
 
 
+class MessageFileInResponse(BaseModel):
+    """消息引用的文件元信息。"""
+    file_id: str
+    original_filename: str | None = None
+    content_type: str | None = None
+    size_bytes: int | None = None
+    status: str
+
+
+# ==================== content_data schemas (per msg_type) ====================
+
+class ThreadContentData(BaseModel):
+    """消息串的结构化数据。"""
+    title: str | None = None
+
+
+
+# ==================== Message Create Schemas (discriminated union) ====================
+
+class _MessageCreateBase(BaseModel):
+    """消息创建公共字段。"""
+    content: str
+    sender_id: str
+    sender_type: str = "user"
+    file_ids: list[str] = Field(default_factory=list)
+    mention_bot_ids: list[str] = Field(default_factory=list)
+    is_secret: bool = False
+
+
+class NormalMessageCreate(_MessageCreateBase):
+    """普通消息：频道内的独立消息。"""
+    msg_type: Literal["normal"] = "normal"
+    content_data: dict[str, Any] | None = None
+
+
+class ReplyMessageCreate(_MessageCreateBase):
+    """回复消息：回复某条具体消息。"""
+    msg_type: Literal["reply"] = "reply"
+    in_reply_to_msg_id: str
+    content_data: dict[str, Any] | None = None
+
+
+class ThreadMessageCreate(_MessageCreateBase):
+    """消息串：显式创建一个话题串。"""
+    msg_type: Literal["thread"] = "thread"
+    content_data: ThreadContentData | None = None
+
+
+# 统一入口：兼容旧客户端（不含 msg_type 时按 in_reply_to_msg_id 自动推断）
 class MessageCreate(BaseModel):
-    """发送消息."""
+    """发送消息（兼容入口，自动推断 msg_type）。"""
     content: str
     sender_id: str
     sender_type: str = "user"
     file_ids: list[str] = Field(default_factory=list)
     mention_bot_ids: list[str] = Field(default_factory=list)
     in_reply_to_msg_id: str | None = None
+    content_data: dict[str, Any] | None = None
+    msg_type: str | None = None
     is_secret: bool = False
+
+    @model_validator(mode="after")
+    def _infer_msg_type(self) -> "MessageCreate":
+        if self.msg_type is None:
+            self.msg_type = "reply" if self.in_reply_to_msg_id else "normal"
+        return self
+
+
+# Discriminated union（供新客户端使用）
+AnyMessageCreate = Annotated[
+    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate,
+    Field(discriminator="msg_type"),
+]
 
 
 class MessageStreamCreate(BaseModel):
@@ -232,23 +296,17 @@ class MessageStreamCreate(BaseModel):
     mention_bot_ids: list[str] = Field(default_factory=list)
 
 
-class MessageFileInResponse(BaseModel):
-    """消息引用的文件元信息。"""
-    file_id: str
-    original_filename: str | None = None
-    content_type: str | None = None
-    size_bytes: int | None = None
-    status: str
+# ==================== Message Response Schemas ====================
 
-
-class MessageInResponse(BaseModel):
-    """消息响应."""
+class _MessageResponseBase(BaseModel):
+    """消息响应公共字段。"""
     model_config = ConfigDict(from_attributes=True)
     msg_id: str
     channel_id: str
     sender_id: str
     sender_type: str
     content: str
+    content_data: dict[str, Any] | None = None
     file_ids: list[str] | None = None
     files: list[MessageFileInResponse] | None = None
     mention_bot_ids: list[str] | None = None
@@ -257,6 +315,34 @@ class MessageInResponse(BaseModel):
     in_reply_to_msg_id: str | None = None
     created_at: datetime | None = None
     is_secret: bool = False
+
+
+class NormalMessageInResponse(_MessageResponseBase):
+    """普通消息响应。"""
+    msg_type: Literal["normal"] = "normal"
+
+
+class ReplyMessageInResponse(_MessageResponseBase):
+    """回复消息响应。"""
+    msg_type: Literal["reply"] = "reply"
+    in_reply_to_msg_id: str
+
+
+class ThreadMessageInResponse(_MessageResponseBase):
+    """消息串响应。content_data 包含 { title?: string } 等线程专有字段。"""
+    msg_type: Literal["thread"] = "thread"
+
+
+AnyMessageInResponse = Annotated[
+    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse,
+    Field(discriminator="msg_type"),
+]
+
+
+# 保持向后兼容：统一响应类（含全部字段）
+class MessageInResponse(_MessageResponseBase):
+    """消息响应（统一格式，兼容旧接口）。"""
+    msg_type: str = "normal"
 
 
 # ==================== Keychain Schemas ====================
