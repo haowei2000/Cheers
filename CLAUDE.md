@@ -199,3 +199,54 @@ All tests are async (`asyncio_mode = "auto"`).
 cd backend && pytest ../tests/test_web_tools.py -v  # web tools tests
 cd backend && pytest ../tests/test_adapters.py -v   # adapter tests
 ```
+
+## Skills 配置
+
+### Skills 目录
+
+本项目集成了 **SkillHub** 作为 Skills 管理平台：
+
+| 路径 | 说明 |
+|------|------|
+| `skills-repo/skills/` | Git 仓库中的 Skills（源码） |
+| `skillhub-standalone/backend/data/skills-local/` | SkillHub 本地缓存（已同步到本地） |
+
+**推荐使用路径**：`skillhub-standalone/backend/data/skills-local/`
+
+### SkillHub 服务
+
+- **前端**：`http://localhost:5173`（或 5174）
+- **后端 API**：`http://localhost:8002`
+- **API 文档**：`http://localhost:8002/docs`
+
+### 使用 Skills
+
+当需要使用某个 Skill 时：
+
+1. **通过 SkillHub Web UI**：访问 http://localhost:5173 浏览和下载 Skills
+2. **通过 API**：SkillHub 提供了 OpenClaw 兼容接口
+   - `GET /api/v1/skillhub/openclaw/skills` - 列出所有 Skills
+   - `GET /api/v1/skillhub/openclaw/paths/{skill_id}` - 获取 Skill 路径
+
+### 同步 Skills
+
+在 SkillHub 前端点击"更新"按钮，从 GitFox 仓库同步最新 Skills 到本地。
+
+### 可用 Skills
+
+当前已同步的 Skills：
+
+| Skill | 用途 |
+|-------|------|
+| `ai-dev` | AI 自主编程工作流 |
+| `zentao-task` | 禅道任务整理 |
+| `zentao-live` | 禅道实时 API 操作 |
+| `gitfox-live` | GitFox 操作 |
+| `docx` | Word 文档处理 |
+| `pdf` | PDF 处理 |
+| `pptx` | PPT 处理 |
+| `xlsx` | Excel 处理 |
+| `self-improving` | 自我改进 Agent |
+| `obsidian-kb` | 知识库操作 |
+| `mcp-builder` | MCP 服务器构建 |
+| `skill-creator` | Skill 创建工具 |
