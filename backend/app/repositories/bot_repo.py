@@ -3,8 +3,11 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.models import AIModel, BotAccount, PromptTemplate
+
+_BOT_OPTIONS = (selectinload(BotAccount.ai_model), selectinload(BotAccount.prompt_template))
 
 
 class BotRepository:
@@ -13,23 +16,28 @@ class BotRepository:
 
     async def get_by_id(self, bot_id: str) -> BotAccount | None:
         result = await self.session.execute(
-            select(BotAccount).where(BotAccount.bot_id == bot_id)
+            select(BotAccount).where(BotAccount.bot_id == bot_id).options(*_BOT_OPTIONS)
         )
         return result.scalar_one_or_none()
 
     async def get_by_username(self, username: str) -> BotAccount | None:
         result = await self.session.execute(
-            select(BotAccount).where(BotAccount.username == username)
+            select(BotAccount).where(BotAccount.username == username).options(*_BOT_OPTIONS)
         )
         return result.scalar_one_or_none()
 
     async def list_all(self) -> list[BotAccount]:
-        result = await self.session.execute(select(BotAccount).order_by(BotAccount.created_at))
+        result = await self.session.execute(
+            select(BotAccount).order_by(BotAccount.created_at).options(*_BOT_OPTIONS)
+        )
         return list(result.scalars().all())
 
     async def list_public(self) -> list[BotAccount]:
         result = await self.session.execute(
-            select(BotAccount).where(BotAccount.is_public.is_(True)).order_by(BotAccount.created_at)
+            select(BotAccount)
+            .where(BotAccount.is_public.is_(True))
+            .order_by(BotAccount.created_at)
+            .options(*_BOT_OPTIONS)
         )
         return list(result.scalars().all())
 

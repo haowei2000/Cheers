@@ -130,6 +130,7 @@ async def create_bot(
         current_user=current_user,
     )
     audit.info("action=bot.create actor=%s resource_id=%s username=%s", current_user.user_id, bot.bot_id, body.username)
+    bot = await svc.get_or_404(bot.bot_id)
     return APIResponse.ok(_to_full(bot))
 
 
