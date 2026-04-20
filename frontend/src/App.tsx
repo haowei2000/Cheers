@@ -6,6 +6,7 @@ import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import { MessageMarkdown } from "./MessageMarkdown";
 import MemoryPage from "./MemoryPage";
+import { useTheme } from "./useTheme";
 
 const API = "/api/v1";
 const WS_BASE = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -36,6 +37,8 @@ type Message = {
   created_at?: string;
   _streaming?: boolean;
   in_reply_to_msg_id?: string | null;
+  msg_type?: "normal" | "thread" | "reply";
+  content_data?: Record<string, unknown> | null;
   file_ids?: string[];
   files?: FileInfo[];
   is_secret?: boolean;
@@ -56,6 +59,11 @@ const LAYERS = [
 
 const GUIDE_FORM_BLOCK = /```guide-form\n([\s\S]*?)```/;
 const GUIDE_CLARIFY_BLOCK = /```guide-clarify\n([\s\S]*?)```/;
+
+function isMsgReply(m: Message | undefined, msgIdSet: Set<string>): boolean {
+  if (!m) return false;
+  return m.msg_type === "reply" || (!m.msg_type && !!m.in_reply_to_msg_id && msgIdSet.has(m.in_reply_to_msg_id));
+}
 
 type GuideFormField = {
   name: string;
@@ -2612,6 +2620,8 @@ export default function App() {
     return null;
   };
 
+  const { toggleTheme, isDark } = useTheme();
+
   const [currentUser, setCurrentUser] = useState<CurrentUser>(getStoredUser);
   const [authToken, setAuthToken] = useState<string | null>(getStoredToken);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -3407,10 +3417,18 @@ export default function App() {
               ),
             );
           } else if (msg.type === "message_done" && msg.data) {
-            const { msg_id, content } = msg.data;
+            const { msg_id, content, files, file_ids } = msg.data;
             setMessages((prev) =>
               prev.map((m) =>
-                m.msg_id === msg_id ? { ...m, content, _streaming: false } : m,
+                m.msg_id === msg_id
+                  ? {
+                      ...m,
+                      content,
+                      _streaming: false,
+                      ...(files ? { files } : {}),
+                      ...(file_ids ? { file_ids } : {}),
+                    }
+                  : m,
               ),
             );
             if (
@@ -3647,6 +3665,7 @@ export default function App() {
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: [] as string[],
+      msg_type: inReplyToMsgId ? "reply" : "normal",
     };
     if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
     return authFetch(`${API}/channels/${targetChannelId}/messages`, {
@@ -3691,6 +3710,7 @@ export default function App() {
       sender_type: "user",
       file_ids: pendingFileIds,
       is_secret: isSecretSend,
+      msg_type: replyingTo ? "reply" : "normal",
     };
     if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
     setInput("");
@@ -4136,7 +4156,7 @@ export default function App() {
     function getRootId(msgId: string): string {
       if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
       const m = messages.find((x) => x.msg_id === msgId);
-      if (!m || !m.in_reply_to_msg_id || !msgIdSet.has(m.in_reply_to_msg_id)) {
+      if (!m || !isMsgReply(m, msgIdSet) || !m.in_reply_to_msg_id) {
         rootIdCache.set(msgId, msgId);
         return msgId;
       }
@@ -4145,7 +4165,7 @@ export default function App() {
       return rid;
     }
     const toExpand = messages
-      .filter((m) => m._streaming && m.in_reply_to_msg_id)
+      .filter((m) => isMsgReply(m, msgIdSet) && m._streaming)
       .map((m) => getRootId(m.msg_id));
     if (toExpand.length > 0)
       setExpandedThreads((prev) => new Set([...prev, ...toExpand]));
@@ -4158,7 +4178,7 @@ export default function App() {
     function getRootId(msgId: string): string {
       if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
       const m = messages.find((x) => x.msg_id === msgId);
-      if (!m || !m.in_reply_to_msg_id || !msgIdSet.has(m.in_reply_to_msg_id)) {
+      if (!m || !isMsgReply(m, msgIdSet) || !m.in_reply_to_msg_id) {
         rootIdCache.set(msgId, msgId);
         return msgId;
       }
@@ -4886,6 +4906,23 @@ export default function App() {
               </svg>
               <span>留言板</span>
             </Link>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[#C9BDD0] hover:bg-white/10 hover:text-white text-sm transition-colors"
+              title={isDark ? "切换到浅色模式" : "切换到深色模式"}
+            >
+              {isDark ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M10 2a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 10 2ZM10 15a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 10 15ZM10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM15.657 5.404a.75.75 0 1 0-1.06-1.06l-1.061 1.06a.75.75 0 0 0 1.06 1.06l1.06-1.06ZM6.464 14.596a.75.75 0 1 0-1.06-1.06l-1.06 1.06a.75.75 0 0 0 1.06 1.06l1.06-1.06ZM18 10a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 18 10ZM5 10a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 5 10ZM14.596 13.536a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 0 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06ZM5.404 5.404a.75.75 0 0 1 0-1.06l1.06-1.06a.75.75 0 1 1 1.06 1.06l-1.06 1.06a.75.75 0 0 1-1.06 0Z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M7.455 2.004a.75.75 0 0 1 .26.77 7 7 0 0 0 9.958 7.967.75.75 0 0 1 1.067.853A8.5 8.5 0 1 1 6.647 1.921a.75.75 0 0 1 .808.083Z" clipRule="evenodd" />
+                </svg>
+              )}
+              <span>{isDark ? "浅色模式" : "深色模式"}</span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -5957,7 +5994,7 @@ export default function App() {
                   className="absolute inset-0 z-50 flex flex-col items-center justify-center select-none pointer-events-none"
                   style={{
                     backdropFilter: "blur(8px)",
-                    backgroundColor: "rgba(255,255,255,0.65)",
+                    backgroundColor: isDark ? "rgba(26,29,33,0.75)" : "rgba(255,255,255,0.65)",
                   }}
                 >
                   <div
@@ -6365,9 +6402,21 @@ export default function App() {
                                 {replyIcon}
                               </button>
                               <div className="flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
-                                <span className="text-[11px] text-gray-400 mb-1 mr-0.5">
-                                  {msgTime}
-                                </span>
+                                <div className="flex items-baseline gap-1.5 mb-1 justify-end">
+                                  {m.msg_type === "thread" && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
+                                      消息串
+                                    </span>
+                                  )}
+                                  <span className="text-[11px] text-gray-400 mr-0.5">
+                                    {msgTime}
+                                  </span>
+                                </div>
+                                {m.content_data?.title ? (
+                                  <div className="text-[13px] font-semibold text-white/90 mb-1 mr-0.5 leading-snug text-right">
+                                    {m.content_data.title as string}
+                                  </div>
+                                ) : null}
                                 {renderFileAttachments(m, true)}
                                 <div
                                   className={`${isSecretUnrevealed ? "bg-amber-500" : isSecretExpired ? "bg-gray-400" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}
@@ -6495,10 +6544,20 @@ export default function App() {
                                     Bot
                                   </span>
                                 )}
+                                {m.msg_type === "thread" && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
+                                    消息串
+                                  </span>
+                                )}
                                 <span className="text-[11px] text-gray-400 leading-none">
                                   {msgTime}
                                 </span>
                               </div>
+                              {m.content_data?.title ? (
+                                <div className="text-[13px] font-semibold text-gray-700 mb-1 leading-snug">
+                                  {m.content_data.title as string}
+                                </div>
+                              ) : null}
                               {renderFileAttachments(m)}
                               <div
                                 className={`${isSecretExpired ? "bg-gray-100" : isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}

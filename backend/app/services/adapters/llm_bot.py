@@ -32,9 +32,9 @@ class LLMBotAdapter(OpenClawAdapter):
         self.template: PromptTemplate = template_override or bot.prompt_template
 
     def _get_system_prompt(self) -> str:
-        if self.bot.custom_system_prompt:
-            return self.bot.custom_system_prompt
-        return self.template.system_prompt
+        base = self.bot.custom_system_prompt or self.template.system_prompt
+        bot_name = self.bot.display_name or self.bot.username
+        return f"你在当前频道中的名称是「{bot_name}」。\n\n{base}"
 
     def _apply_user_template(self, user_message: str, context: dict[str, Any] | None = None) -> str:
         template = self.template.user_template
@@ -102,6 +102,42 @@ class LLMBotAdapter(OpenClawAdapter):
         attachments_block = "<attachments>\n" + "\n".join(file_parts) + "\n</attachments>"
         return user_message.strip() + "\n\n" + attachments_block
 
+    def _format_thread_messages(self, messages: list[dict]) -> str:
+        lines = []
+        for m in messages:
+            ts = (m.get("timestamp") or "")[:19].replace("T", " ")
+            name = m.get("sender_name") or "unknown"
+            text = (m.get("text") or "").strip()
+            lines.append(f"[{ts}] {name}: {text}")
+        return "\n".join(lines)
+
+    def _apply_thread_context(self, trigger_meta: dict, user_text: str) -> str:
+        """根据消息类型（msg_type）注入线程上下文。"""
+        thread_history: list[dict] = trigger_meta.get("thread_history") or []
+        child_replies: list[dict] = trigger_meta.get("child_replies") or []
+        msg_type = trigger_meta.get("msg_type") or (
+            "reply" if trigger_meta.get("in_reply_to_msg_id") else "normal"
+        )
+
+        if msg_type == "reply" and thread_history:
+            # 规则2/3：回复消息，携带祖先链
+            return (
+                "--- 消息线程上下文（从旧到新）---\n"
+                + self._format_thread_messages(thread_history)
+                + "\n--- 当前用户消息 ---\n"
+                + user_text
+            )
+        if msg_type == "thread" and child_replies:
+            # 规则4：消息串根，携带已有子回复
+            return (
+                "--- 此消息串的已有回复 ---\n"
+                + self._format_thread_messages(child_replies)
+                + "\n--- 当前用户消息 ---\n"
+                + user_text
+            )
+        # 规则1：普通消息，直接传原始内容
+        return user_text
+
     def _get_api_config(self) -> dict[str, Any]:
         config: dict[str, Any] = {
             "provider": self.model.provider,
@@ -146,6 +182,10 @@ class LLMBotAdapter(OpenClawAdapter):
         # 文档附件合并到文本
         user_text = self._merge_attachments_into_message(user_text, doc_attachments)
 
+        # 注入线程上下文（4条规则）
+        trigger_meta = payload.trigger_message or {}
+        user_text = self._apply_thread_context(trigger_meta, user_text)
+
         if not self.model or not self.template:
             return AgentResponse(
                 content="",
@@ -168,7 +208,7 @@ class LLMBotAdapter(OpenClawAdapter):
         trigger_meta = payload.trigger_message or {}
 
         context_vars: dict[str, str] = {
-            "sender_name": pconfig.get("_sender_name") or trigger_meta.get("user", ""),
+            "sender_name": trigger_meta.get("sender_name") or pconfig.get("_sender_name") or "",
             "channel_name": pconfig.get("_channel_name") or "",
             "channel_id": payload.channel_id,
             "bot_name": self.bot.display_name or self.bot.username,
@@ -183,12 +223,6 @@ class LLMBotAdapter(OpenClawAdapter):
                 "recent": f"<recent>{payload.memory_context.get('recent', '')}</recent>",
                 "todos": payload.memory_context.get("todos", ""),
             })
-        trigger_meta = payload.trigger_message or {}
-        context_vars["sender_name"] = (
-            trigger_meta.get("sender_name")
-            or pconfig.get("_sender_name")
-            or ""
-        )
 
         # 子 bot 调用（call_bot）时跳过 system prompt，父 bot 的 message 已包含任务描述
         skip_system_prompt = bool(pconfig.get("_skip_system_prompt"))

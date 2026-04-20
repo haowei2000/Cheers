@@ -158,7 +158,7 @@ async def test_llm_bot_receives_memory_as_template_vars():
     
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
-    assert messages[0]["content"] == "你是一个专业的助手"
+    assert messages[0]["content"].endswith("你是一个专业的助手")
     
     user_content = messages[1]["content"]
     assert "项目锚点：锚点内容" in user_content

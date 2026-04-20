@@ -50,11 +50,22 @@ _DEFAULT_REPLY = (
 # ─── LLM 配置 ─────────────────────────────────────────────────────────────────
 
 def _get_llm_config() -> dict | None:
-    """优先 channel_bot，依次回退 orchestrator / system_llm。"""
+    """优先 channel_bot，依次回退 orchestrator / system_llm，最后回退 guide_llm_* 环境变量。"""
     for scope in ("channel_bot", "orchestrator", "system_llm"):
         cfg = get_provider_for_scope(scope)
         if cfg and cfg.get("base_url") and cfg.get("model"):
             return cfg
+
+    # 回退到 guide_llm_* 环境变量（无需管理界面配置即可使用）
+    from app.config import settings
+    if settings.guide_llm_base_url and settings.guide_llm_model:
+        return {
+            "base_url": settings.guide_llm_base_url.rstrip("/"),
+            "model": settings.guide_llm_model,
+            "api_key": settings.guide_llm_api_key or "none",
+            "temperature": float(settings.guide_llm_temperature),
+            "max_tokens": int(settings.guide_llm_max_tokens),
+        }
     return None
 
 
@@ -393,17 +404,8 @@ def _make_tools(ctx: dict) -> list:
             original_filename, channel_id,
         )
 
-        # 将生成的文件注册到 FILES_INDEX
-        from app.services.memory.files_index import update_files_index
-        # 取前 300 字作为摘要
-        summary = body[:300] + ("…" if len(body) > 300 else "")
-        await update_files_index(channel_id, [{
-            "file_id": file_id,
-            "filename": original_filename,
-            "content_type": "text/markdown",
-            "is_image": "false",
-            "summary": summary,
-        }])
+        # 收集 file_id，最终会关联到 bot 回复消息上
+        ctx.setdefault("_created_file_ids", []).append(file_id)
 
         return f"文件已创建：[{original_filename}]({download_url})\n\n下载链接：`{download_url}`"
 
@@ -1422,7 +1424,8 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
         if form:
             content += "\n\n```guide-form\n" + json.dumps(form, ensure_ascii=False) + "\n```"
 
-        return AgentResponse(content=content, task_id=payload.task_id, success=True)
+        created_file_ids = tool_ctx.get("_created_file_ids") or []
+        return AgentResponse(content=content, task_id=payload.task_id, success=True, file_ids=created_file_ids)
 
     async def health_check(self) -> bool:
         return _get_llm_config() is not None

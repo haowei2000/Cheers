@@ -292,28 +292,22 @@ async def ensure_builtin_bot() -> None:
             await _sync_admin_credentials(session)
 
             # 确保内置 Bot 加入所有现有频道（补齐旧频道缺失的 membership）
-            all_channels = (await session.execute(select(Channel))).scalars().all()
-            builtin_bot_ids = (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID)
-            for bot_id in builtin_bot_ids:
-                existing = {
-                    row
-                    for row in (
-                        await session.execute(
-                            select(ChannelMembership.channel_id).where(
-                                ChannelMembership.member_id == bot_id
-                            )
-                        )
-                    ).scalars()
-                }
-                for ch in all_channels:
-                    if ch.channel_id not in existing:
-                        session.add(
-                            ChannelMembership(
-                                channel_id=ch.channel_id,
-                                member_id=bot_id,
-                                member_type="bot",
-                            )
-                        )
+            await session.flush()
+            all_channel_ids = (
+                await session.execute(select(Channel.channel_id))
+            ).scalars().all()
+
+            if all_channel_ids:
+                from sqlalchemy.dialects.postgresql import insert as pg_insert
+                stmt = pg_insert(ChannelMembership).on_conflict_do_nothing(
+                    index_elements=["channel_id", "member_id"],
+                )
+                rows = [
+                    {"channel_id": ch_id, "member_id": bot_id, "member_type": "bot"}
+                    for bot_id in (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID)
+                    for ch_id in all_channel_ids
+                ]
+                await session.execute(stmt, rows)
 
             await session.commit()
         except Exception:

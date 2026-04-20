@@ -205,6 +205,8 @@ class Message(Base):
     mention_bot_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     mention_user_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     in_reply_to_msg_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    msg_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="normal", default="normal")
+    content_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     is_secret: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
     secret_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -24,6 +24,7 @@ class AgentResponse:
     task_id: str
     success: bool = True
     error_message: str | None = None
+    file_ids: list[str] = field(default_factory=list)
 
 
 class OpenClawAdapter(ABC):

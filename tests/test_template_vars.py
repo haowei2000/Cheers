@@ -214,7 +214,7 @@ async def test_execute_renders_all_context_vars() -> None:
     messages = captured_body.get("messages", [])
     assert len(messages) == 2, f"直接调用应有 system + user 两条消息，实际 {len(messages)}"
     assert messages[0]["role"] == "system"
-    assert messages[0]["content"] == "你是助手"
+    assert messages[0]["content"].endswith("你是助手")
 
     user_content = messages[1]["content"]
     assert isinstance(user_content, str)
