@@ -147,7 +147,7 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "• @ Bot 没反应怎么办\n"
         "• 怎么安装部署\n"
         "• 报错 / 连不上怎么排查\n\n"
-        "完整文档见 docs/使用说明书.md（总索引）。",
+        "完整文档见 docs/help/使用说明书.md（总索引）。",
     ),
 )
 

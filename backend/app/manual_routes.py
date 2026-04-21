@@ -15,7 +15,12 @@ DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
 # ── JSON API for docs dashboard ───────────────────────────────────────────────
 
 def _safe_doc_path(name: str) -> Path | None:
-    """Resolve and validate that the path stays inside DOCS_DIR."""
+    """Resolve and validate that the path stays inside DOCS_DIR.
+
+    If the input is a bare filename (no subfolder) and does not exist at the
+    docs root, fall back to looking in help/ then develop/ so that legacy
+    flat-structure links keep working after the help/develop split.
+    """
     base = name.strip("/")
     if not base or ".." in base or base.startswith("/"):
         return None
@@ -24,18 +29,34 @@ def _safe_doc_path(name: str) -> Path | None:
     path = (DOCS_DIR / base).resolve()
     if not path.is_relative_to(DOCS_DIR.resolve()):
         return None
+    if not path.is_file() and "/" not in base:
+        for sub in ("help", "develop"):
+            candidate = (DOCS_DIR / sub / base).resolve()
+            if candidate.is_relative_to(DOCS_DIR.resolve()) and candidate.is_file():
+                return candidate
     return path
 
 
 @router.get("/api/docs")
 async def list_docs() -> dict:
-    """List all .md files in the docs directory."""
+    """List all .md files recursively under the docs directory.
+
+    The `stem` field carries the path relative to docs/ (without .md), so the
+    frontend can round-trip it back through `/api/docs/raw/{stem}` regardless
+    of whether the doc sits at the root or inside help/ / develop/.
+    """
     if not DOCS_DIR.is_dir():
         return {"files": []}
-    files = sorted(DOCS_DIR.glob("*.md"), key=lambda p: p.name)
+    base = DOCS_DIR.resolve()
+    files = sorted(DOCS_DIR.rglob("*.md"), key=lambda p: p.relative_to(base).as_posix())
     return {
         "files": [
-            {"name": f.name, "stem": f.stem, "size": f.stat().st_size}
+            {
+                "name": f.name,
+                "stem": f.relative_to(base).with_suffix("").as_posix(),
+                "size": f.stat().st_size,
+                "category": f.relative_to(base).parts[0] if len(f.relative_to(base).parts) > 1 else "",
+            }
             for f in files
         ]
     }
@@ -122,13 +143,12 @@ def _escape_html(text: str) -> str:
 async def manual_index() -> HTMLResponse:
     """说明书首页：只展示面向用户/管理员的帮助文档入口，不暴露设计说明书。"""
     help_items: list[tuple[str, str, str]] = [
-        ("使用说明书", "/manual/使用说明书", "总索引，按角色分流到其它说明书。"),
-        ("普通用户使用说明", "/manual/普通用户使用说明", "日常在项目里聊天、@ Bot、上传文件的使用指南。"),
-        ("系统管理说明书", "/manual/系统管理说明书", "系统管理员：工作空间与项目、成员管理、OpenClaw 接入与审核、Orchestrator 配置。"),
-        ("OpenClaw接入指南", "/manual/OpenClaw接入指南", "OpenClaw 开发者：发现 AgentNexus、提交注册申请、常见错误排查。"),
-        ("OpenClaw接入AgentNexus指南", "/manual/OpenClaw接入AgentNexus指南", "结合 AgentNexus 视角的 OpenClaw 接入流程与 hook 配置说明。"),
-        ("安装部署说明", "/manual/安装部署说明", "部署与运维：环境要求、Docker / 本地安装、数据库迁移、种子数据。"),
-        ("技术排查Q&A", "/manual/技术排查Q&A", "故障现象 → 原因 → 处理步骤，包含日志说明与接口排查。"),
+        ("使用说明书", "/manual/help/使用说明书", "总索引，按角色分流到其它说明书。"),
+        ("普通用户使用说明", "/manual/help/普通用户使用说明", "日常在项目里聊天、@ Bot、上传文件的使用指南。"),
+        ("系统管理说明书", "/manual/help/系统管理说明书", "系统管理员：工作空间与项目、成员管理、OpenClaw 接入与审核、Orchestrator 配置。"),
+        ("OpenClaw接入指南", "/manual/help/OpenClaw接入指南", "OpenClaw 开发者：发现 AgentNexus、提交注册申请、常见错误排查。"),
+        ("安装部署说明", "/manual/help/安装部署说明", "部署与运维：环境要求、Docker / 本地安装、数据库迁移、种子数据。"),
+        ("技术排查Q&A", "/manual/help/技术排查Q&A", "故障现象 → 原因 → 处理步骤，包含日志说明与接口排查。"),
     ]
     body_parts = [
         "<h1>AgentNexus 使用与管理说明</h1>",
@@ -164,7 +184,16 @@ async def get_manual(name: str) -> HTMLResponse:
         base = base + ".md"
     path = DOCS_DIR / base
     resolved = path.resolve()
-    if not path.is_file() or not resolved.is_relative_to(DOCS_DIR.resolve()):
+    if not resolved.is_relative_to(DOCS_DIR.resolve()):
+        raise HTTPException(status_code=404, detail="not found")
+    # 兼容旧的不带子目录前缀的链接：若直接路径不存在，在 help/ 与 develop/ 下查找同名文件
+    if not path.is_file() and "/" not in base:
+        for sub in ("help", "develop"):
+            candidate = DOCS_DIR / sub / base
+            if candidate.is_file() and candidate.resolve().is_relative_to(DOCS_DIR.resolve()):
+                path = candidate
+                break
+    if not path.is_file():
         raise HTTPException(status_code=404, detail="not found")
     try:
         raw = path.read_text(encoding="utf-8")

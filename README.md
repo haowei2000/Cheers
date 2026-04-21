@@ -4,16 +4,21 @@
 
 ## 文档
 
-- [使用说明书](docs/使用说明书.md)（总索引）  
-  - [普通用户使用说明](docs/普通用户使用说明.md) · [系统管理说明书](docs/系统管理说明书.md) · [安装部署说明](docs/安装部署说明.md) · [技术排查Q&A](docs/技术排查Q&A.md) · [功能测试清单](docs/功能测试清单.md)（M1 验收）
-- [易用性设计](docs/易用性设计.md)（交互、用语与扩展点）
-- [需求汇总](docs/需求汇总.md)
-- [总体架构设计](docs/总体架构设计.md)
-- [详细设计](docs/详细设计.md)
-- [关键技术文档](docs/关键技术文档.md)
-- [开发计划与里程碑](docs/开发计划与里程碑.md)
-- [TodoList](docs/TodoList.md)
-- [RustFS 对象存储部署说明](docs/RustFS对象存储部署说明.md)
+文档按受众分为两类：`docs/help/` 面向最终用户与运维管理员，`docs/develop/` 面向开发与设计。
+
+**用户 / 运维（`docs/help/`）**
+
+- [使用说明书](docs/help/使用说明书.md)（总索引）
+  - [普通用户使用说明](docs/help/普通用户使用说明.md) · [系统管理说明书](docs/help/系统管理说明书.md) · [安装部署说明](docs/help/安装部署说明.md) · [技术排查Q&A](docs/help/技术排查Q&A.md)
+- [RustFS 对象存储部署说明](docs/help/RustFS对象存储部署说明.md)
+- [OpenClaw 接入指南](docs/help/OpenClaw接入指南.md) · [外部 Bot 接入指南](docs/help/外部Bot接入指南.md)
+
+**开发 / 设计（`docs/develop/`）**
+
+- [总体架构设计](docs/develop/总体架构设计.md) · [详细设计](docs/develop/详细设计.md) · [关键技术文档](docs/develop/关键技术文档.md)
+- [易用性设计](docs/develop/易用性设计.md)（交互、用语与扩展点）
+- [需求汇总](docs/develop/需求汇总.md)
+- [开发计划与里程碑](docs/develop/开发计划与里程碑.md) · [TodoList](docs/develop/TodoList.md) · [功能测试清单](docs/develop/功能测试清单.md)
 
 ## 技术栈
 
@@ -53,10 +58,12 @@ npm run dev
 
 ```bash
 cp docker-compose.yml.template docker-compose.yml
+cp .env.example .env
 docker compose up -d
+
 # 前端: http://localhost:80   API: http://localhost:8000
 # 默认会写入种子数据：默认工作空间、测试项目、引导 Bot（@引导）、Orchestrator（@coordinator）。打开前端进入「测试项目」，输入 @引导 怎么用 即可获取使用引导。
-# 若需手动初始化，可设环境变量 SEED_DATA=0 并见 docs/安装部署说明.md。
+# 若需手动初始化，可设环境变量 SEED_DATA=0 并见 docs/help/安装部署说明.md。
 ```
 
 ## 验收（里程碑 1）

@@ -19,7 +19,7 @@ logger = logging.getLogger("app.services.guide.adapter")
 DEFAULT_REPLY = (
     "您可以说：怎么创建项目、怎么加入项目、怎么接入 OpenClaw、怎么发消息、"
     "左边没有项目、@ 没反应、怎么安装、报错排查 等，我会根据说明书为您引导。"
-    "完整文档见 docs/使用说明书.md。"
+    "完整文档见 docs/help/使用说明书.md。"
 )
 
 SYSTEM_PROMPT_TEMPLATE = """你是 AgentNexus 系统的引导助手。请仅根据以下帮助文档回答用户问题，语气简洁友好。

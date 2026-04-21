@@ -62,7 +62,7 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
 
 
 async def _seed_guide_helper_bot(session: AsyncSession) -> bool:
-    """创建智枢协作操作指引助手 Bot（@guide-helper）：加载 docs/ 下所有文档，回答 AgentNexus 使用问题."""
+    """创建智枢协作操作指引助手 Bot（@guide-helper）：加载 docs/help/ 下所有帮助文档，回答 AgentNexus 使用问题."""
     r = await session.execute(select(BotAccount).where(BotAccount.bot_id == GUIDE_HELPER_BOT_ID))
     existing = r.scalar_one_or_none()
     if existing is not None:

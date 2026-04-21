@@ -1,6 +1,6 @@
 # AgentNexus Roadmap
 
-本文档描述 AgentNexus 的里程碑规划与当前进度。详细任务拆解见 [docs/TodoList.md](docs/TodoList.md)，完整设计依据见 [docs/开发计划与里程碑.md](docs/开发计划与里程碑.md)。
+本文档描述 AgentNexus 的里程碑规划与当前进度。详细任务拆解见 [docs/develop/TodoList.md](docs/develop/TodoList.md)，完整设计依据见 [docs/develop/开发计划与里程碑.md](docs/develop/开发计划与里程碑.md)。
 
 ---
 
@@ -72,7 +72,7 @@
 - [ ] 访问申请 API（待审批与审核流程）
 - [ ] 引导 Bot 知识扩展（能回答公共平台相关问题）
 
-详见 [docs/公共平台访问申请API规范.md](docs/公共平台访问申请API规范.md)。
+详见 [docs/develop/公共平台访问申请API规范.md](docs/develop/公共平台访问申请API规范.md)。
 
 ---
 
@@ -84,7 +84,7 @@
 - [ ] Agent 自主加入协议（A2A 握手、Agent Card、Receptionist Agent）
 - [ ] 资源监控增强（Task DAG 可视化、风险分级）
 
-详见 [docs/附件四_Agent自主加入协议摘要.md](docs/附件四_Agent自主加入协议摘要.md)。
+详见 [docs/develop/附件四_Agent自主加入协议摘要.md](docs/develop/附件四_Agent自主加入协议摘要.md)。
 
 ---
 
@@ -92,6 +92,6 @@
 
 - [ ] **Human-in-the-loop**：Task 生命周期确认节点、Critique Loop、自主错误恢复
 - [ ] **多租户 / 权限体系**：工作空间隔离、成员角色细化、Auth 完整集成
-- [ ] **主库迁移**：SQLite → PostgreSQL（规模超出阈值时，迁移路径见 [docs/关键技术文档.md](docs/关键技术文档.md)）
+- [ ] **主库迁移**：SQLite → PostgreSQL（规模超出阈值时，迁移路径见 [docs/develop/关键技术文档.md](docs/develop/关键技术文档.md)）
 - [ ] **知识库**: 知识库语义搜索、Grep等搜索方式内置支持
 - [ ] **Threads API**: 线程级对话，频道内频繁记录合为threads，保证记忆隔离
