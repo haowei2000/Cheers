@@ -3,16 +3,12 @@
   "version": "0.1.0",
   "description": "OpenClaw channel plugin for AgentNexus — connects an OpenClaw agent to AgentNexus via the per-bot control + data WebSocket bridge.",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/lib.js",
+  "types": "./dist/lib.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./setup-entry": {
-      "types": "./dist/setup-entry.d.ts",
-      "import": "./dist/setup-entry.js"
+      "types": "./dist/lib.d.ts",
+      "import": "./dist/lib.js"
     }
   },
   "scripts": {
@@ -36,11 +32,16 @@
   },
   "openclaw": {
     "extensions": ["./dist/index.js"],
-    "setupEntry": "./dist/setup-entry.js",
+    "setupEntry": "./dist/setup.js",
     "channel": {
       "id": "agentnexus",
       "label": "AgentNexus",
-      "blurb": "Slack-like multi-channel chat with bots (via bridge WS)"
+      "selectionLabel": "AgentNexus (per-bot WebSocket bridge)",
+      "detailLabel": "AgentNexus Bot",
+      "docsPath": "/channels/agentnexus",
+      "docsLabel": "agentnexus",
+      "blurb": "Slack-like multi-channel chat with bots (via per-bot WS bridge).",
+      "markdownCapable": true
     }
   }
 }

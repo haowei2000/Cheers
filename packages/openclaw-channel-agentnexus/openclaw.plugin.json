@@ -1,0 +1,47 @@
+{
+  "id": "agentnexus",
+  "channels": [
+    "agentnexus"
+  ],
+  "channelEnvVars": {
+    "agentnexus": [
+      "AGENTNEXUS_BOT_TOKEN",
+      "AGENTNEXUS_CONTROL_URL",
+      "AGENTNEXUS_DATA_URL"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "agentnexus": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "accounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["botToken", "controlUrl", "dataUrl"],
+              "properties": {
+                "enabled": { "type": "boolean", "default": true },
+                "botToken": { "type": "string" },
+                "controlUrl": { "type": "string" },
+                "dataUrl": { "type": "string" },
+                "advanced": {
+                  "type": "object",
+                  "properties": {
+                    "reconnectBaseMs": { "type": "integer", "default": 1000 },
+                    "reconnectMaxMs": { "type": "integer", "default": 30000 },
+                    "heartbeatIntervalMs": { "type": "integer", "default": 30000 },
+                    "sendAckTimeoutMs": { "type": "integer", "default": 10000 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

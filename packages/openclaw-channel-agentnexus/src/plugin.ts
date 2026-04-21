@@ -1,48 +1,47 @@
 /**
  * agentnexus channel plugin —— 把 AgentNexus WebSocket Bot 桥接成 OpenClaw channel。
  *
- * 生命周期：
- *   OpenClaw SDK 调用 gateway.start(account, deps) 启动一个 BotSession
- *     → session 连 control + data WS
- *     → control hello / channel_joined 维护 membership
- *     → data message → 归一化 → deps.emitMessage（OpenClaw agent 收到）
- *     → OpenClaw agent 回 outbound.sendText → 映射成 reply/send 帧回 AgentNexus
+ * 形状对齐 OpenClaw Plugin SDK（2026.4.15）的 ChannelPlugin 契约：
+ *   - config.listAccountIds / resolveAccount（必填）
+ *   - gateway.startAccount(ctx) / stopAccount(ctx)：ctx.account 即 resolveAccount
+ *     的返回；ctx.setStatus 用来上报运行状态；ctx.abortSignal 用来驱动停止
+ *   - outbound.sendText(ctx): Promise<OutboundDeliveryResult>
+ *   - capabilities: 扁平 ChannelCapabilities 形状
  *
- * 退出：gateway.start 返回 { stop } —— SDK 调它断开所有 WS、清理 inflight。
+ * 生命周期：
+ *   OpenClaw 读取 cfg.channels.agentnexus.accounts.<id> → resolveAccount →
+ *   gateway.startAccount → new BotSession(...) 连 control + data WS →
+ *   hello → setStatus("connected")。
+ *
+ * 出站：OpenClaw agent 调 outbound.sendText(ctx, text) →
+ *   session.reply() 或 session.send()，映射回 AgentNexus 的 reply/send 帧。
+ *
+ * 入站（agent 接收用户消息）：
+ *   当前版本先仅缓存 lastInboundByTaskId，供 outbound.sendText 的 replyTo 匹配；
+ *   把消息真正推入 OpenClaw agent 需要 ctx.runtime 的专用 helper，
+ *   那部分 SDK 未公开稳定类型，留待后续 SDK 升级后补齐。
  */
 import { BotSession, type InboundMessage } from "./session.js";
-import {
-  type ChannelPlugin,
-  type GatewayDeps,
-  type NormalizedInboundMessage,
-  type OutboundContext,
-  type ResolvedAccount,
-  type SendResult,
-  type StatusSnapshot,
-  createChatChannelPlugin,
-} from "./sdk-shim.js";
+import type { ChannelPlugin, ResolvedAccount, StatusSnapshot } from "./sdk-shim.js";
+import { createChatChannelPlugin } from "./sdk-shim.js";
 
 const PLUGIN_ID = "agentnexus";
-/** outbound.sendText 按 task_id 找源消息的缓存上限。防止 agent 永不回复造成泄漏。 */
 const INBOUND_CACHE_MAX = 1000;
 
-/**
- * 以 accountId 为 key 的 session 注册表。
- *
- * outbound.sendText 在 SDK 里常被当成独立的路径调用（与 start 不一定同一个 closure），
- * 所以把活跃 session 缓存起来，便于从 accountId 查到 BotSession 做 reply/send。
- */
-const sessionRegistry = new Map<string, {
-  session: BotSession;
-  // 最近一次从 data 流收到的 message（按 task_id 索引），方便 outbound 时快速 finalize。
-  // Map 按插入顺序迭代，超过上限时删最老的（近似 LRU，够用）。
-  lastInboundByTaskId: Map<string, InboundMessage>;
-}>();
+// ============================================================================
+// Account registry —— accountId → live BotSession + inbound cache
+// ============================================================================
 
-function rememberInbound(
-  cache: Map<string, InboundMessage>, taskId: string, m: InboundMessage,
-): void {
-  // 重复的 taskId：先删再插，移到末尾
+interface AccountRuntime {
+  session: BotSession;
+  lastInboundByTaskId: Map<string, InboundMessage>;
+  /** ctx.setStatus 的最后一次快照，便于 getStatus 查询 */
+  lastStatus: StatusSnapshot;
+}
+
+const sessionRegistry = new Map<string, AccountRuntime>();
+
+function rememberInbound(cache: Map<string, InboundMessage>, taskId: string, m: InboundMessage): void {
   if (cache.has(taskId)) cache.delete(taskId);
   cache.set(taskId, m);
   while (cache.size > INBOUND_CACHE_MAX) {
@@ -52,21 +51,29 @@ function rememberInbound(
   }
 }
 
-interface PluginConfig {
-  agentnexus?: {
-    accounts?: Record<string, {
-      enabled?: boolean;
-      botToken: string;
-      controlUrl: string;
-      dataUrl: string;
-      advanced?: ResolvedAccount["advanced"];
-    }>;
-  };
+// ============================================================================
+// Config parsing
+// ============================================================================
+
+interface AccountShape {
+  enabled?: boolean;
+  botToken: string;
+  controlUrl: string;
+  dataUrl: string;
+  advanced?: ResolvedAccount["advanced"];
 }
 
-function resolveAccount(cfg: unknown, accountId?: string): ResolvedAccount | undefined {
-  const c = cfg as PluginConfig | undefined;
-  const accounts = c?.agentnexus?.accounts ?? {};
+interface OpenClawChannelConfig {
+  channels?: { agentnexus?: { enabled?: boolean; accounts?: Record<string, AccountShape> } };
+}
+
+function getAccountsFromConfig(cfg: unknown): Record<string, AccountShape> {
+  const c = cfg as OpenClawChannelConfig | undefined;
+  return c?.channels?.agentnexus?.accounts ?? {};
+}
+
+function resolveAccount(cfg: unknown, accountId?: string | null): ResolvedAccount | undefined {
+  const accounts = getAccountsFromConfig(cfg);
   const id = accountId ?? Object.keys(accounts)[0];
   if (!id) return undefined;
   const raw = accounts[id];
@@ -87,186 +94,185 @@ function resolveAccount(cfg: unknown, accountId?: string): ResolvedAccount | und
   };
 }
 
-function normalizeForOpenClaw(
-  account: ResolvedAccount, m: InboundMessage,
-): NormalizedInboundMessage {
-  return {
-    id: m.event.placeholder_msg_id || m.event.task_id,
-    channel: PLUGIN_ID,
-    accountId: account.accountId,
-    senderId: m.senderId,
-    senderName: m.senderName,
-    text: m.text,
-    timestamp: m.timestamp ?? new Date(),
-    isGroup: true, // AgentNexus 基本都是频道语义；未来区分 DM 时再细化
-    groupId: m.channelId,
-    groupName: m.channelId, // control hello 有 channel_name，可从 session.membership 查
-    threadId: m.threadId,
-    attachments: m.attachments.map((a) => ({
-      fileId: a.file_id,
-      filename: a.filename ?? null,
-      contentType: a.content_type ?? null,
-      summary: a.summary ?? null,
-    })),
-    metadata: {
-      taskId: m.event.task_id,
-      placeholderMsgId: m.event.placeholder_msg_id,
-      bindingConfig: m.event.binding_config ?? {},
-      memoryContext: m.event.memory_context,
-    },
-  };
+// ============================================================================
+// Gateway adapter —— SDK 调用 startAccount 启动会话、stopAccount 停止
+// ============================================================================
+
+interface GatewayCtx {
+  account: ResolvedAccount;
+  accountId: string;
+  abortSignal?: AbortSignal;
+  log?: { info?: (...a: unknown[]) => void; warn?: (...a: unknown[]) => void; error?: (...a: unknown[]) => void };
+  setStatus?: (next: unknown) => void;
 }
+
+async function startAccount(ctx: GatewayCtx): Promise<void> {
+  const { account, accountId } = ctx;
+  const log = ctx.log ?? console;
+  const setStatus = (next: StatusSnapshot) => ctx.setStatus?.(next as unknown);
+
+  // 若已经有旧 session，先停掉（幂等）
+  const existing = sessionRegistry.get(accountId);
+  if (existing) {
+    log.warn?.(`agentnexus: startAccount called twice for ${accountId}; stopping old session first`);
+    await existing.session.stop();
+  }
+
+  const lastInboundByTaskId = new Map<string, InboundMessage>();
+  let lastStatus: StatusSnapshot = { state: "stopped" };
+
+  const session = new BotSession(
+    {
+      botToken: account.botToken,
+      controlUrl: account.controlUrl,
+      dataUrl: account.dataUrl,
+      advanced: account.advanced,
+    },
+    {
+      onReady: () => {
+        log.info?.(`agentnexus: ${accountId} ready bot_id=${session.botId} memberships=${session.membership.channelIds.size}`);
+        lastStatus = { state: "running", detail: { botId: session.botId ?? undefined, memberships: session.membership.channelIds.size } };
+        setStatus({ state: "connected" } as unknown as StatusSnapshot);
+      },
+      onChannelJoined: (ch, invitedBy) => {
+        log.info?.(`agentnexus: ${accountId} joined ${ch.channel_id} invited_by=${invitedBy ?? "?"}`);
+      },
+      onChannelLeft: (cid, reason) => {
+        log.info?.(`agentnexus: ${accountId} left ${cid} reason=${reason}`);
+      },
+      onMessage: async (m) => {
+        rememberInbound(lastInboundByTaskId, m.event.task_id, m);
+        log.info?.(
+          `agentnexus: ${accountId} inbound channel=${m.channelId} task=${m.event.task_id} text=${JSON.stringify(m.text).slice(0, 80)}`,
+        );
+        // TODO: 将 m 推入 OpenClaw agent。本版本暂只缓存到 lastInboundByTaskId，
+        //       供 outbound.sendText 的 replyTo 匹配。SDK 公开稳定的 "runtime"
+        //       helpers 后在这里接 runtime.reply.dispatch / session.startAgentTurn.
+      },
+      onConnectionChange: (stream, state) => {
+        log.info?.(`agentnexus: ${accountId} ${stream} ${state}`);
+      },
+      onFatal: (reason) => {
+        log.error?.(`agentnexus: ${accountId} fatal: ${reason}`);
+        lastStatus = { state: "stopped", detail: { fatal: reason } };
+        setStatus({ state: "error", error: reason } as unknown as StatusSnapshot);
+      },
+    },
+  );
+
+  const runtime: AccountRuntime = { session, lastInboundByTaskId, lastStatus };
+  sessionRegistry.set(accountId, runtime);
+
+  ctx.abortSignal?.addEventListener("abort", () => {
+    log.info?.(`agentnexus: ${accountId} abortSignal fired; stopping session`);
+    void session.stop();
+    sessionRegistry.delete(accountId);
+  });
+
+  session.start();
+}
+
+async function stopAccount(ctx: GatewayCtx): Promise<void> {
+  const entry = sessionRegistry.get(ctx.accountId);
+  if (!entry) return;
+  sessionRegistry.delete(ctx.accountId);
+  await entry.session.stop();
+}
+
+// ============================================================================
+// Outbound: OpenClaw agent → send text back to AgentNexus channel
+// ============================================================================
+
+interface OutboundCtx {
+  to: string;              // 目标 channel id（或 task id）
+  text: string;
+  replyToId?: string | null;
+  threadId?: string | number | null;
+  accountId?: string | null;
+}
+
+interface OutboundResult {
+  channel: string;
+  messageId: string;
+  channelId?: string;
+}
+
+async function sendText(ctx: OutboundCtx): Promise<OutboundResult> {
+  const accountId = ctx.accountId ?? Array.from(sessionRegistry.keys())[0];
+  if (!accountId) throw new Error("agentnexus: no active account");
+  const entry = sessionRegistry.get(accountId);
+  if (!entry) throw new Error(`agentnexus: no running session for account ${accountId}`);
+  const { session, lastInboundByTaskId } = entry;
+
+  // 优先把 reply 匹配到最近一次派发的消息（taskId 即 ctx.replyToId / ctx.to 时）
+  const taskHint = ctx.replyToId ?? ctx.to;
+  const source = taskHint ? lastInboundByTaskId.get(taskHint) : undefined;
+  if (source) {
+    lastInboundByTaskId.delete(source.event.task_id);
+    const r = await session.reply({ source, text: ctx.text });
+    if (r.ok && r.messageId) {
+      return { channel: PLUGIN_ID, messageId: r.messageId, channelId: source.channelId };
+    }
+    throw new Error(`agentnexus: reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
+  }
+
+  // 否则作为主动 send 到 channel（ctx.to 被视为 channelId）
+  const channelId = ctx.to;
+  if (!channelId) throw new Error("agentnexus: sendText missing channel id");
+  if (!session.membership.channelIds.has(channelId)) {
+    throw new Error(`agentnexus: bot not in channel ${channelId}`);
+  }
+  const r = await session.send({ channelId, text: ctx.text });
+  if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, channelId };
+  throw new Error(`agentnexus: send failed (${r.code ?? "?"} ${r.error ?? ""})`);
+}
+
+// ============================================================================
+// Plugin object
+// ============================================================================
 
 export const agentnexusPlugin: ChannelPlugin<ResolvedAccount> = createChatChannelPlugin({
   id: PLUGIN_ID,
   meta: {
     id: PLUGIN_ID,
     label: "AgentNexus",
-    selectionLabel: "AgentNexus Chat (multi-channel, WebSocket Bot)",
+    selectionLabel: "AgentNexus (per-bot WebSocket bridge)",
     blurb: "Slack-like multi-channel chat with bots, via per-bot control+data WS bridge.",
     docsPath: "/channels/agentnexus",
   },
   capabilities: {
     chatTypes: ["group"],
-    supports: { threads: true, mentions: true, formatting: true },
+    threads: true,
+    reply: true,
+    media: true,
   },
-
   config: {
-    listAccountIds: (cfg) => {
-      const c = cfg as PluginConfig | undefined;
-      return Object.keys(c?.agentnexus?.accounts ?? {});
-    },
+    listAccountIds: (cfg) => Object.keys(getAccountsFromConfig(cfg)),
     resolveAccount,
   },
-
   gateway: {
-    start: async (account, deps) => {
-      const existing = sessionRegistry.get(account.accountId);
-      if (existing) {
-        deps.logger.warn("agentnexus: start called twice for", account.accountId);
-        await existing.session.stop();
-        sessionRegistry.delete(account.accountId);
-      }
-
-      const lastInboundByTaskId = new Map<string, InboundMessage>();
-
-      const session = new BotSession(
-        {
-          botToken: account.botToken,
-          controlUrl: account.controlUrl,
-          dataUrl: account.dataUrl,
-          advanced: account.advanced,
-        },
-        {
-          onReady: () => {
-            deps.logger.info(
-              "agentnexus: ready account=%s memberships=%d",
-              account.accountId,
-              session.membership.channelIds.size,
-            );
-            deps.onReady?.();
-          },
-          onMessage: async (m) => {
-            rememberInbound(lastInboundByTaskId, m.event.task_id, m);
-            const normalized = normalizeForOpenClaw(account, m);
-            // enrich groupName from membership cache if possible
-            const ch = session.membership.byId.get(m.channelId);
-            if (ch?.channel_name) normalized.groupName = ch.channel_name;
-            await deps.emitMessage(normalized);
-          },
-          onChannelJoined: (ch, invitedBy) => {
-            deps.logger.info(
-              "agentnexus: channel_joined account=%s channel_id=%s invited_by=%s",
-              account.accountId, ch.channel_id, invitedBy,
-            );
-          },
-          onChannelLeft: (channelId, reason) => {
-            deps.logger.info(
-              "agentnexus: channel_left account=%s channel_id=%s reason=%s",
-              account.accountId, channelId, reason,
-            );
-          },
-          onError: (err) => deps.logger.warn("agentnexus: error", err),
-          onFatal: (reason) => deps.logger.error("agentnexus: fatal", reason),
-          onConnectionChange: (stream, state) => {
-            deps.logger.info(
-              "agentnexus: %s %s account=%s",
-              stream, state, account.accountId,
-            );
-          },
-        },
-      );
-
-      sessionRegistry.set(account.accountId, { session, lastInboundByTaskId });
-      session.start();
-
-      return {
-        stop: async () => {
-          sessionRegistry.delete(account.accountId);
-          await session.stop();
-        },
-      };
-    },
-  },
-
+    // 字段名对齐 OpenClaw SDK 的 ChannelGatewayAdapter：startAccount / stopAccount
+    startAccount,
+    stopAccount,
+    // legacy start 字段保留（shim 里有），真实 SDK 不读但不影响
+    start: async () => ({ stop: async () => {} }),
+  } as unknown as ChannelPlugin<ResolvedAccount>["gateway"],
   outbound: {
     deliveryMode: "direct",
-    sendText: async (ctx: OutboundContext): Promise<SendResult> => {
-      const entry = sessionRegistry.get(ctx.account.accountId);
-      if (!entry) return { ok: false, error: "session not running for account" };
-      const { session, lastInboundByTaskId } = entry;
-
-      // 优先按 replyTo.messageId 匹配最近一次派发的 message（task_id 就是 messageId 的 fallback）
-      const taskId = ctx.replyTo?.messageId;
-      const source = taskId ? lastInboundByTaskId.get(taskId) : undefined;
-      if (source) {
-        lastInboundByTaskId.delete(source.event.task_id);
-        const r = await session.reply({ source, text: ctx.text });
-        return r.ok
-          ? { ok: true, messageId: r.messageId }
-          : { ok: false, error: `${r.code}: ${r.error}` };
-      }
-
-      // 没匹配到 → 走主动 send（例如 agent 定时任务或跨会话回复）
-      if (!ctx.target.groupId) {
-        return { ok: false, error: "no target.groupId for agentnexus send" };
-      }
-      if (!session.membership.channelIds.has(ctx.target.groupId)) {
-        return { ok: false, error: `bot not in channel ${ctx.target.groupId}` };
-      }
-      const r = await session.send({
-        channelId: ctx.target.groupId,
-        text: ctx.text,
-        inReplyToMsgId: ctx.replyTo?.messageId ?? null,
-      });
-      return r.ok
-        ? { ok: true, messageId: r.messageId }
-        : { ok: false, error: `${r.code}: ${r.error}` };
-    },
+    sendText: sendText as unknown as ChannelPlugin<ResolvedAccount>["outbound"]["sendText"],
   },
-
   status: {
     getStatus: (account): StatusSnapshot => {
       const entry = sessionRegistry.get(account.accountId);
       if (!entry) return { state: "stopped" };
-      const { session } = entry;
-      return {
-        state: "running",
-        detail: {
-          botId: session.botId,
-          sessionId: session.sessionId,
-          membershipCount: session.membership.channelIds.size,
-          lastProcessedSeq: session.lastProcessedSeq,
-        },
-      };
+      return entry.lastStatus;
     },
   },
-
   security: {
     getDmPolicy: () => "open",
-    checkGroupAccess: (_account, _groupId) => true,
+    checkGroupAccess: () => true,
   },
 });
 
-// 内部导出，方便测试从这里拿到 registry
+// 内部暴露，便于测试
 export const __testonly = { sessionRegistry };

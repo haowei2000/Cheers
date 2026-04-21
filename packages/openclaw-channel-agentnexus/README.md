@@ -17,32 +17,51 @@ OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNe
 └────────────────────────────┘        └───────────────────────────┘
 ```
 
-## Quick start
+## Quick start —— 在本机 OpenClaw 跑起来
 
-### 1. 在 AgentNexus 创建 WebSocket Bot
+以下流程在 OpenClaw CLI `2026.4.15` 上实测通过。
 
-打开 AdminPage → Bot 管理 → 创建 Bot，选 **WebSocket Bot**。创建后会弹出一个一次性的 `ocw_...` token —— 复制下来。
+### 1. AgentNexus 侧准备一个 WebSocket Bot
 
-### 2. 配置 OpenClaw（channel plugin 侧）
+打开 AdminPage → Bot 管理 → 创建 Bot，选 **WebSocket Bot**。弹出的一次性 `ocw_...` token **立刻复制**，关闭后只能 rotate。
 
-把 token 填到 OpenClaw 的 channel 配置里：
+### 2. 构建 plugin
+
+```bash
+cd packages/openclaw-channel-agentnexus
+npm install
+npm run build
+```
+
+### 3. 以链接模式安装到 OpenClaw
+
+```bash
+openclaw plugins install -l /absolute/path/to/packages/openclaw-channel-agentnexus
+```
+
+`openclaw plugins list` 里应出现：
+
+```
+openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.1.0
+```
+
+如果看到 `failed to load`，检查 `dist/` 是不是真的 build 出来了（`openclaw.plugin.json` 与 `dist/index.js` 必须齐）。
+
+### 4. 把 bot token 写进 OpenClaw 配置
+
+编辑 `~/.openclaw/openclaw.json` 的 `channels.agentnexus.accounts`：
 
 ```jsonc
 {
   "channels": {
     "agentnexus": {
+      "enabled": true,
       "accounts": {
         "my-bot": {
           "enabled": true,
           "botToken": "ocw_xxxxxxxxxxxxxxxx",
-          "controlUrl": "ws://agentnexus.example.com/ws/openclaw/control",
-          "dataUrl": "ws://agentnexus.example.com/ws/openclaw/data",
-          "advanced": {
-            "reconnectBaseMs": 1000,
-            "reconnectMaxMs": 30000,
-            "heartbeatIntervalMs": 30000,
-            "sendAckTimeoutMs": 10000
-          }
+          "controlUrl": "ws://localhost:8002/ws/openclaw/control",
+          "dataUrl": "ws://localhost:8002/ws/openclaw/data"
         }
       }
     }
@@ -50,14 +69,41 @@ OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNe
 }
 ```
 
-一个 OpenClaw 实例里可以放多个 account —— 每个 account 对应 AgentNexus 里一个独立的 WebSocket Bot。
+（同一 plugin 可以配多个 account —— 每个对应 AgentNexus 里一个独立的 WS Bot。）
 
-### 3. 把 plugin 扔给 OpenClaw
+### 5. 重启 gateway 让配置生效
 
-```ts
-import plugin from "openclaw-channel-agentnexus";
-// 真实 SDK 接入方式参考 OpenClaw plugin docs
+```bash
+openclaw daemon restart
+openclaw channels status --probe
+# 应该看到: - AgentNexus my-bot: enabled
 ```
+
+验证 AgentNexus 后端是否收到 plugin 连接：
+
+```bash
+curl -H "X-OpenClaw-Token: <BRIDGE_TOKEN>" http://localhost:8002/api/v1/openclaw/bridge/status
+# data.bot_sessions 应从 0 变成 1
+```
+
+### 6. 发消息联调
+
+把 Bot 加入 AgentNexus 某频道，然后在频道里 @ 它。`openclaw channels logs` 里能看到：
+
+```
+agentnexus: my-bot ready bot_id=... memberships=1
+agentnexus: my-bot inbound channel=ch-... task=... text="@my-bot ..."
+```
+
+### 已知 TODO：真正把消息推进 OpenClaw agent
+
+截至当前版本，plugin 做到了「连上 bridge、接收 membership、收到用户入站消息」。把
+`onMessage` 中拿到的消息**转交给某个 OpenClaw agent 跑一轮**并回 `sendText` —— 需要
+SDK 的 `ChannelGatewayContext.runtime` helpers，这些在 2026.4.15 SDK 里还不是稳定
+公开 API。请参考 plugin.ts 里 `onMessage` 内的 TODO 注释。
+
+在那之前，如果你只是想让它在 AgentNexus 里跑一个 echo/自定义逻辑的 Bot，推荐走
+**独立模式**（下面）—— 绕过 OpenClaw SDK，直接用 `BotSession` 当 WS 客户端。
 
 ## 独立使用（不走 OpenClaw SDK）
 
