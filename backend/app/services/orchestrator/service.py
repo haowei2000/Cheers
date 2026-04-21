@@ -186,8 +186,8 @@ async def run_orchestrator(
     if _is_guide_clarify_reply(analysis_content):
         original_question, original_file_ids = await _fetch_original_question_for_clarify(session, channel_id, trigger_msg)
 
-    mentioned = extract_mentions(analysis_content)
-    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames, text=analysis_content)
+    mentioned = extract_mentions(analysis_content, channel_bot_usernames)
+    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames)
     direct_answer_mode = False
     if not target_usernames:
         channel_auto_assist = bool(channel_obj.auto_assist) if channel_obj else False
@@ -281,8 +281,8 @@ async def run_orchestrator(
 
     def _extract_bot_mentions_from_content(content: str) -> list[str]:
         """从消息内容中提取频道内 Bot 的 @ 提及。"""
-        mentioned = extract_mentions(content or "")
-        return filter_mentioned_bots(mentioned, channel_bot_usernames, text=content or "")
+        mentioned = extract_mentions(content or "", channel_bot_usernames)
+        return filter_mentioned_bots(mentioned, channel_bot_usernames)
 
     async def _trigger_sub_bots_from_mentions(
         parent_msg: Message,
