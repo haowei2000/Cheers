@@ -97,13 +97,23 @@ class BotService:
         binding_type: str = "http",
         binding_config: dict | None = None,
         current_user: User,
-    ) -> BotAccount:
+    ) -> tuple[BotAccount, str | None]:
+        """创建 Bot。
+
+        Returns:
+            (bot, plaintext_token)
+            - HTTP Bot：token 为 None
+            - WebSocket Bot：生成一次性明文 token，返回给调用者转发给用户；
+              此后只保留哈希
+        """
         username = _validate_username(username)
         intro = _validate_intro(intro)
 
         existing = await self.repo.get_by_username(username)
         if existing:
             raise BadRequestError(f"用户名 '{username}' 已被占用")
+
+        plaintext_token: str | None = None
 
         if binding_type == "http":
             if not model_id or not template_id:
@@ -131,9 +141,36 @@ class BotService:
         )
         if bot_id and bot_id.strip():
             bot.bot_id = bot_id.strip()
+
+        if binding_type == "websocket":
+            from app.services.openclaw_bridge.tokens import apply_token_to_bot
+            plaintext_token = apply_token_to_bot(bot)
+
         self.session.add(bot)
         await self.session.flush()
-        return bot
+        return bot, plaintext_token
+
+    async def rotate_websocket_token(
+        self,
+        bot_id: str,
+        current_user: User,
+    ) -> tuple[BotAccount, str]:
+        """为 WebSocket Bot 轮换 token。旧 token 立即失效（哈希被覆盖）。
+
+        返回 (bot, plaintext_token)。权限：仅创建者或管理员。
+        """
+        from app.services.openclaw_bridge.tokens import apply_token_to_bot
+        from app.utils.permissions import is_admin
+
+        bot = await self.get_or_404(bot_id)
+        if bot.created_by != current_user.user_id and not is_admin(current_user):
+            raise ForbiddenError("无权轮换该 Bot 的 token")
+        if (bot.binding_type or "http") != "websocket":
+            raise BadRequestError("只有 WebSocket Bot 才有 token 可轮换")
+
+        plaintext_token = apply_token_to_bot(bot)
+        await self.session.flush()
+        return bot, plaintext_token
 
     async def update(
         self,

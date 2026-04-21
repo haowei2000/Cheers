@@ -145,6 +145,11 @@ class BotInResponse(BaseModel):
     created_at: datetime | None = None
     binding_type: str = "http"
     binding_config: dict | None = None
+    # WebSocket Bot token 元信息：常规响应只回前缀与轮换时间，明文 bot_token
+    # 只在 create / rotate 接口一次性返回
+    bot_token_prefix: str | None = None
+    bot_token_rotated_at: datetime | None = None
+    bot_token: str | None = None  # 仅 create / rotate 响应里有值；其它接口永远为 None
 
     # 关联信息（WebSocket Bot 可能没有）
     model_id: str | None = None

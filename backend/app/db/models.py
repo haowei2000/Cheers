@@ -77,6 +77,10 @@ class BotAccount(Base):
     #           'websocket'=经 OpenClaw bridge 异步回推（新接入形式，对应 OpenClaw channel plugin）
     binding_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default="http", default="http")
     binding_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # e.g. {"agent_id": "...", "gateway": "..."}
+    # WebSocket Bot 凭证：明文 token 仅在创建/轮换时返回一次，此后只存哈希
+    bot_token_hash: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    bot_token_prefix: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    bot_token_rotated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # 创建者 user_id
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
