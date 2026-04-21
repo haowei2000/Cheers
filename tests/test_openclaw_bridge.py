@@ -101,66 +101,97 @@ async def test_dispatcher_unsubscribe_stops_delivery() -> None:
 
 # --------------------------- WebsocketBotAdapter ---------------------------
 
+class _FakeWS:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_json(self, data: dict) -> None:
+        self.sent.append(data)
+
+
 @pytest.mark.asyncio
-async def test_ws_bot_adapter_dispatches_to_matching_subscriber_only() -> None:
-    sub_target = await bridge_dispatcher.subscribe(bot_ids=["bot-ws-001"])
-    sub_other = await bridge_dispatcher.subscribe(bot_ids=["bot-other"])
+async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound() -> None:
+    from app.services.openclaw_bridge.pending import pending_replies
+    from app.services.openclaw_bridge.registry import bot_session_registry
+
+    ws = _FakeWS()
+    await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
     try:
         adapter = WebsocketBotAdapter(_fake_bot())
-        resp = await adapter.execute(_payload("t-ws-001"))
+        payload = _payload("t-ws-001")
+        # 模拟 orchestrator：把占位 msg_id 放到 process_config
+        payload.process_config["_placeholder_msg_id"] = "placeholder-123"
 
+        resp = await adapter.execute(payload)
         assert resp.success is True
         assert resp.dispatched_async is True
         assert resp.content == ""
+        assert len(ws.sent) == 1
 
-        event = sub_target.queue.get_nowait()
-        assert event["type"] == "dispatch"
+        event = ws.sent[0]
+        assert event["type"] == "message"
         assert event["bot_id"] == "bot-ws-001"
         assert event["channel_id"] == "c-001"
         assert event["task_id"] == "t-ws-001"
+        assert event["placeholder_msg_id"] == "placeholder-123"
         assert event["binding_config"] == {"agent_id": "agent-x"}
 
-        # 非目标订阅者不应收到事件
-        assert sub_other.queue.empty()
+        # adapter 预登记了 pending（便于 plugin 秒回时定位）
+        pending = await pending_replies.peek_by_msg("placeholder-123")
+        assert pending is not None
+        assert pending.bot_id == "bot-ws-001"
+        assert pending.channel_id == "c-001"
     finally:
-        await bridge_dispatcher.unsubscribe(sub_target)
-        await bridge_dispatcher.unsubscribe(sub_other)
+        await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+        # 清理：pop 掉预登记的 pending
+        await pending_replies.pop_by_msg("placeholder-123")
 
 
 @pytest.mark.asyncio
-async def test_ws_bot_adapter_no_matching_subscriber_returns_failure() -> None:
-    """订阅者不关心本 Bot 时，视为无 plugin 在线。"""
-    sub_unrelated = await bridge_dispatcher.subscribe(bot_ids=["different-bot"])
-    try:
-        adapter = WebsocketBotAdapter(_fake_bot(display_name="Alpha"))
-        resp = await adapter.execute(_payload())
-        assert resp.success is False
-        assert resp.dispatched_async is False
-        assert resp.error_message == "no_plugin_subscribers"
-        assert "Alpha" in resp.content
-        assert sub_unrelated.queue.empty()
-    finally:
-        await bridge_dispatcher.unsubscribe(sub_unrelated)
+async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
+    from app.services.openclaw_bridge.pending import pending_replies
 
-
-@pytest.mark.asyncio
-async def test_ws_bot_adapter_no_subscribers_returns_failure() -> None:
     adapter = WebsocketBotAdapter(_fake_bot(display_name="Alpha"))
-    resp = await adapter.execute(_payload())
+    payload = _payload()
+    payload.process_config["_placeholder_msg_id"] = "placeholder-fail-001"
+    resp = await adapter.execute(payload)
     assert resp.success is False
     assert resp.dispatched_async is False
     assert resp.error_message == "no_plugin_subscribers"
+    assert "Alpha" in resp.content
+    # 失败路径应回滚预登记
+    assert await pending_replies.peek_by_msg("placeholder-fail-001") is None
 
 
 @pytest.mark.asyncio
-async def test_ws_bot_adapter_health_check_reflects_subscribers() -> None:
+async def test_ws_bot_adapter_ignores_irrelevant_bot_session() -> None:
+    """别的 bot 连上不会让本 bot 的 adapter 误认为在线。"""
+    from app.services.openclaw_bridge.registry import bot_session_registry
+
+    other = _FakeWS()
+    await bot_session_registry.bind_data("some-other-bot", other)  # type: ignore[arg-type]
+    try:
+        adapter = WebsocketBotAdapter(_fake_bot())
+        resp = await adapter.execute(_payload())
+        assert resp.success is False
+        assert other.sent == []
+    finally:
+        await bot_session_registry.unbind_data("some-other-bot", other)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_ws_bot_adapter_health_check_reflects_data_ws() -> None:
+    from app.services.openclaw_bridge.registry import bot_session_registry
+
     adapter = WebsocketBotAdapter(_fake_bot())
     assert await adapter.health_check() is False
-    sub = await bridge_dispatcher.subscribe(bot_ids=["bot-ws-001"])
+
+    ws = _FakeWS()
+    await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
     try:
         assert await adapter.health_check() is True
     finally:
-        await bridge_dispatcher.unsubscribe(sub)
+        await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
 
 
 # --------------------------- PendingReplyRegistry --------------------------
@@ -188,6 +219,22 @@ async def test_pending_registry_resolve_by_task_bot() -> None:
     await reg.register(p)
 
     got = await reg.resolve(task_id="t1", bot_id="b1", msg_id=None)
+    assert got is p
+    assert reg.count() == 0
+
+
+@pytest.mark.asyncio
+async def test_pending_registry_rejects_cross_bot_resolve_by_msg() -> None:
+    """plugin 用 bot-A 的连接不能 finalize bot-B 的占位消息（msg_id 相同也不行）。"""
+    reg = PendingReplyRegistry()
+    p = PendingReply(task_id="t1", bot_id="bot-A", channel_id="c1", msg_id="m1")
+    await reg.register(p)
+    # bot-B 试图用 m1 resolve → 应返回 None 且不删除
+    got = await reg.resolve(task_id=None, bot_id="bot-B", msg_id="m1")
+    assert got is None
+    assert reg.count() == 1
+    # bot-A 自己来 resolve 仍正常
+    got = await reg.resolve(task_id=None, bot_id="bot-A", msg_id="m1")
     assert got is p
     assert reg.count() == 0
 

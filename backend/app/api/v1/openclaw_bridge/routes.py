@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.dependencies import get_session
 from app.core.responses import APIResponse
-from app.db.models import BotAccount, ChannelMembership, FileRecord, Message
+from app.db.models import BotAccount, ChannelMembership, Message
 from app.services.openclaw_bridge.dispatcher import bridge_dispatcher
 from app.services.openclaw_bridge.membership import load_memberships
 from app.services.openclaw_bridge.pending import pending_replies
@@ -88,56 +88,38 @@ async def bridge_status(_: None = Depends(verify_bridge_token)) -> APIResponse:
     })
 
 
+def _validator_http_status(code: str) -> int:
+    # 把 validators 的错误码映射成 HTTP 状态
+    if code in ("file_not_found", "reply_target_not_found"):
+        return 404
+    return 403
+
+
 async def _assert_bot_in_channel(
     session: AsyncSession, *, bot_id: str, channel_id: str,
 ) -> None:
-    row = (await session.execute(
-        select(ChannelMembership).where(
-            ChannelMembership.channel_id == channel_id,
-            ChannelMembership.member_id == bot_id,
-            ChannelMembership.member_type == "bot",
-        )
-    )).scalar_one_or_none()
-    if row is None:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Bot {bot_id} 不在频道 {channel_id} 的成员中",
-        )
+    from app.services.openclaw_bridge.validators import check_bot_in_channel
+    err = await check_bot_in_channel(session, bot_id=bot_id, channel_id=channel_id)
+    if err:
+        raise HTTPException(status_code=_validator_http_status(err[0]), detail=err[1])
 
 
 async def _assert_files_in_channel(
     session: AsyncSession, *, file_ids: list[str], channel_id: str,
 ) -> None:
-    if not file_ids:
-        return
-    rows = (await session.execute(
-        select(FileRecord.file_id, FileRecord.channel_id).where(FileRecord.file_id.in_(file_ids))
-    )).all()
-    found = {fid: cid for fid, cid in rows}
-    missing = [f for f in file_ids if f not in found]
-    if missing:
-        raise HTTPException(status_code=404, detail=f"file_ids 不存在: {missing}")
-    cross = [f for f in file_ids if found[f] != channel_id]
-    if cross:
-        raise HTTPException(
-            status_code=403,
-            detail=f"file_ids 不属于目标频道 {channel_id}: {cross}",
-        )
+    from app.services.openclaw_bridge.validators import check_files_in_channel
+    err = await check_files_in_channel(session, file_ids=file_ids, channel_id=channel_id)
+    if err:
+        raise HTTPException(status_code=_validator_http_status(err[0]), detail=err[1])
 
 
 async def _assert_in_reply_same_channel(
     session: AsyncSession, *, msg_id: str, channel_id: str,
 ) -> None:
-    parent = (await session.execute(
-        select(Message.channel_id).where(Message.msg_id == msg_id)
-    )).scalar_one_or_none()
-    if parent is None:
-        raise HTTPException(status_code=404, detail=f"in_reply_to_msg_id 不存在: {msg_id}")
-    if parent != channel_id:
-        raise HTTPException(
-            status_code=403,
-            detail="in_reply_to_msg_id 指向的消息不在目标频道内",
-        )
+    from app.services.openclaw_bridge.validators import check_in_reply_same_channel
+    err = await check_in_reply_same_channel(session, msg_id=msg_id, channel_id=channel_id)
+    if err:
+        raise HTTPException(status_code=_validator_http_status(err[0]), detail=err[1])
 
 
 @router.post("/messages", response_model=APIResponse[dict])
@@ -452,3 +434,229 @@ async def control_websocket(websocket: WebSocket) -> None:
         logger.warning("control_ws: error bot_id=%s: %s", bot.bot_id, exc)
     finally:
         await bot_session_registry.unbind_control(bot.bot_id, websocket)
+
+
+# ============================================================================
+# data WS（Phase C）：消息流 + reply/send 回推 + send_ack
+# ============================================================================
+
+async def _send_send_ack_err(websocket: WebSocket, client_msg_id: str | None, code: str, detail: str) -> None:
+    await websocket.send_json({
+        "type": "send_ack",
+        "client_msg_id": client_msg_id,
+        "ok": False,
+        "error": detail,
+        "code": code,
+    })
+
+
+async def _handle_data_reply(
+    websocket: WebSocket, bot: BotAccount, frame: dict,
+) -> None:
+    """plugin 回推 Bot 回复：finalize 占位消息或新建消息。"""
+    from app.db.session import async_session_factory
+    from app.services.openclaw_bridge.validators import (
+        check_bot_in_channel,
+        check_files_in_channel,
+    )
+
+    client_msg_id = frame.get("client_msg_id")
+    text = frame.get("text")
+    if not isinstance(text, str) or not text:
+        await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 必填")
+        return
+
+    task_id = frame.get("task_id")
+    reply_to_msg_id = frame.get("reply_to_msg_id")
+    file_ids = frame.get("file_ids") or []
+    if not isinstance(file_ids, list) or not all(isinstance(f, str) for f in file_ids):
+        await _send_send_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids 必须是 string[]")
+        return
+
+    # 定位目标频道：
+    #   1) plugin 显式传 channel_id（最推荐，从 message 事件里直接带回来）
+    #   2) 按 reply_to_msg_id / task_id 从 pending 内存里 peek（适用于 orchestrator
+    #      会话尚未 commit、DB 里还看不到占位消息的竞态窗口）
+    #   3) 最后回落到 DB 查占位消息（适用于进程重启后的兜底路径）
+    channel_id = frame.get("channel_id")
+    if not channel_id and reply_to_msg_id:
+        pending = await pending_replies.peek_by_msg(reply_to_msg_id)
+        if pending and pending.bot_id == bot.bot_id:
+            channel_id = pending.channel_id
+    if not channel_id and task_id:
+        pending = await pending_replies.peek_by_task(task_id, bot.bot_id)
+        if pending:
+            channel_id = pending.channel_id
+
+    async with async_session_factory() as s:
+        if not channel_id and reply_to_msg_id:
+            placeholder = (await s.execute(
+                select(Message).where(Message.msg_id == reply_to_msg_id)
+            )).scalar_one_or_none()
+            if placeholder is not None:
+                channel_id = placeholder.channel_id
+        if not channel_id:
+            await _send_send_ack_err(websocket, client_msg_id, "missing_channel", "无法确定 channel_id")
+            return
+
+        err = await check_bot_in_channel(s, bot_id=bot.bot_id, channel_id=channel_id)
+        if err:
+            await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
+            return
+        err = await check_files_in_channel(s, file_ids=file_ids, channel_id=channel_id)
+        if err:
+            await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
+            return
+
+        msg, finalized = await finalize_bot_reply(
+            s,
+            bot_id=bot.bot_id,
+            channel_id=channel_id,
+            content=text,
+            task_id=task_id,
+            reply_to_msg_id=reply_to_msg_id,
+            file_ids=file_ids or None,
+        )
+        await s.commit()
+
+    await websocket.send_json({
+        "type": "send_ack",
+        "client_msg_id": client_msg_id,
+        "ok": True,
+        "message_id": msg.msg_id,
+        "finalized_placeholder": finalized,
+    })
+
+
+async def _handle_data_send(
+    websocket: WebSocket, bot: BotAccount, frame: dict,
+) -> None:
+    """plugin 主动在某频道发一条 Bot 消息（非响应式）。"""
+    from app.db.session import async_session_factory
+    from app.services.openclaw_bridge.validators import (
+        check_bot_in_channel,
+        check_files_in_channel,
+        check_in_reply_same_channel,
+    )
+
+    client_msg_id = frame.get("client_msg_id")
+    channel_id = frame.get("channel_id")
+    text = frame.get("text")
+    if not isinstance(channel_id, str) or not channel_id:
+        await _send_send_ack_err(websocket, client_msg_id, "missing_channel", "channel_id 必填")
+        return
+    if not isinstance(text, str) or not text:
+        await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 必填")
+        return
+
+    in_reply_to_msg_id = frame.get("in_reply_to_msg_id")
+    file_ids = frame.get("file_ids") or []
+    if not isinstance(file_ids, list) or not all(isinstance(f, str) for f in file_ids):
+        await _send_send_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids 必须是 string[]")
+        return
+
+    async with async_session_factory() as s:
+        err = await check_bot_in_channel(s, bot_id=bot.bot_id, channel_id=channel_id)
+        if err:
+            await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
+            return
+        err = await check_files_in_channel(s, file_ids=file_ids, channel_id=channel_id)
+        if err:
+            await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
+            return
+        if in_reply_to_msg_id:
+            err = await check_in_reply_same_channel(s, msg_id=in_reply_to_msg_id, channel_id=channel_id)
+            if err:
+                await _send_send_ack_err(websocket, client_msg_id, err[0], err[1])
+                return
+
+        msg, _ = await finalize_bot_reply(
+            s,
+            bot_id=bot.bot_id,
+            channel_id=channel_id,
+            content=text,
+            task_id=None,
+            reply_to_msg_id=None,
+            in_reply_to_msg_id=in_reply_to_msg_id,
+            file_ids=file_ids or None,
+        )
+        await s.commit()
+
+    await websocket.send_json({
+        "type": "send_ack",
+        "client_msg_id": client_msg_id,
+        "ok": True,
+        "message_id": msg.msg_id,
+    })
+
+
+@ws_router.websocket("/ws/openclaw/data")
+async def data_websocket(websocket: WebSocket) -> None:
+    """OpenClaw channel plugin 的 data 流 —— 消息入站 + reply/send 回推 + 心跳。
+
+    认证、接管、错误码与 control WS 一致（4401/4402/4403）。
+    """
+    from app.db.session import async_session_factory
+
+    token = _extract_bearer_token(websocket)
+    if not token:
+        await websocket.close(code=_WS_CLOSE_AUTH_FAIL, reason="missing bearer token")
+        return
+
+    async with async_session_factory() as s:
+        bot = await resolve_bot_by_token(s, token)
+        if bot is None:
+            await websocket.close(code=_WS_CLOSE_AUTH_FAIL, reason="invalid or revoked token")
+            return
+        if bot.status != "online":
+            await websocket.close(
+                code=_WS_CLOSE_BOT_UNAVAILABLE, reason=f"bot status is {bot.status}",
+            )
+            return
+
+    await websocket.accept()
+    sess, old_ws = await bot_session_registry.bind_data(bot.bot_id, websocket)
+    if old_ws is not None:
+        try:
+            await old_ws.close(code=_WS_CLOSE_SUPERSEDED, reason="superseded by a new connection")
+        except Exception:  # noqa: BLE001
+            pass
+
+    await websocket.send_json({
+        "type": "hello",
+        "stream": "data",
+        "bot_id": bot.bot_id,
+        "session_id": sess.session_id,
+    })
+    logger.info("data_ws: connected bot_id=%s session=%s", bot.bot_id, sess.session_id)
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                frame = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "detail": "invalid JSON"})
+                continue
+            if not isinstance(frame, dict):
+                continue
+            ftype = frame.get("type")
+            if ftype == "reply":
+                await _handle_data_reply(websocket, bot, frame)
+            elif ftype == "send":
+                await _handle_data_send(websocket, bot, frame)
+            elif ftype == "ping":
+                await websocket.send_json({"type": "pong"})
+            elif ftype == "typing":
+                # 可选：未来广播 typing 状态；现在忽略
+                pass
+            elif ftype == "resume":
+                # TODO Phase D：按 last_event_seq 重放历史事件
+                await websocket.send_json({"type": "resume_ack", "replayed": 0})
+            # 其他类型忽略
+    except WebSocketDisconnect:
+        logger.info("data_ws: disconnected bot_id=%s", bot.bot_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("data_ws: error bot_id=%s: %s", bot.bot_id, exc)
+    finally:
+        await bot_session_registry.unbind_data(bot.bot_id, websocket)

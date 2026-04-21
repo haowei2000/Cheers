@@ -346,6 +346,7 @@ async def run_orchestrator(
                     "_stream_token": _make_stream_token_cb(sub_msg.msg_id),
                     "_db_session": session,
                     "_bot_id": sub_bot_id,
+                    "_placeholder_msg_id": sub_msg.msg_id,
                     "_user_secrets": user_secrets,
                     "_sender_name": sender_name,
                     "_channel_name": channel_name,
@@ -504,11 +505,13 @@ async def run_orchestrator(
         await session.flush()
 
     async def _register_async_pending(bot_msg: Message, task_id: str, bot_id: str) -> None:
-        """WebSocket Bot 异步派发：占位消息不立即 finalize，登记到 pending registry
-        并调度超时兜底；远端 plugin 通过 /api/v1/openclaw/bridge/messages 回推后 finalize。"""
+        """WebSocket Bot 异步派发：占位消息不立即 finalize，为超时兜底武装 timer。
+
+        PendingReply 已由 WebsocketBotAdapter.execute() 在 dispatch 之前预登记
+        （避免 plugin 秒回时 pending 未登记的竞态）；这里只 arm timer。"""
         from app.config import settings as _settings
         from app.db.session import async_session_factory
-        from app.services.openclaw_bridge.pending import PendingReply, pending_replies
+        from app.services.openclaw_bridge.pending import pending_replies
         from app.services.openclaw_bridge.service import finalize_bot_reply
 
         timeout_s = max(5, int(_settings.openclaw_bridge_timeout_seconds or 60))
@@ -536,22 +539,20 @@ async def run_orchestrator(
                     await s2.rollback()
                     raise
 
-        def _schedule() -> None:
-            loop = asyncio.get_event_loop()
+        pending = await pending_replies.peek_by_msg(bot_msg.msg_id)
+        if pending is None:
+            logger.warning(
+                "register_async_pending: pending not pre-registered for msg_id=%s; "
+                "reply may race",
+                bot_msg.msg_id,
+            )
+            return
+        loop = asyncio.get_event_loop()
 
-            def _fire() -> None:
-                asyncio.create_task(_on_timeout())
+        def _fire() -> None:
+            asyncio.create_task(_on_timeout())
 
-            pending.timeout_handle = loop.call_later(timeout_s, _fire)
-
-        pending = PendingReply(
-            task_id=task_id,
-            bot_id=bot_id,
-            channel_id=channel_id,
-            msg_id=bot_msg.msg_id,
-        )
-        _schedule()
-        await pending_replies.register(pending)
+        pending.timeout_handle = loop.call_later(timeout_s, _fire)
 
     async def _finish_with_attachment_error(bot_id: str, task_id: str) -> Message:
         bot_msg = await _pre_create_bot_msg(bot_id, task_id)
@@ -603,6 +604,7 @@ async def run_orchestrator(
                     "_finalize_bot_msg": _finalize_bot_msg,
                     "_make_stream_token_cb": _make_stream_token_cb,
                     "_bot_id": bot_id,
+                    "_placeholder_msg_id": orch_msg.msg_id,
                     "_user_secrets": user_secrets,
                     "_sender_name": sender_name,
                     "_channel_name": channel_name,
@@ -660,9 +662,11 @@ async def run_orchestrator(
                         original_question_text=original_question,
                         process_config={
                             "_stream_token": _make_stream_token_cb(sug_msg.msg_id),
+                            "_bot_id": sug_bot_id,
+                            "_placeholder_msg_id": sug_msg.msg_id,
                             "_user_secrets": user_secrets,
-                    "_sender_name": sender_name,
-                    "_channel_name": channel_name,
+                            "_sender_name": sender_name,
+                            "_channel_name": channel_name,
                         },
                     )
                     pending_sug.append((sug_username, sug_bot_id, sug_msg, sug_payload, sug_adapter))
@@ -736,6 +740,7 @@ async def run_orchestrator(
                 "_stream_token": _make_stream_token_cb(bot_msg.msg_id),
                 "_db_session": session,
                 "_bot_id": bot_id,
+                "_placeholder_msg_id": bot_msg.msg_id,
                 "_user_secrets": user_secrets,
                 "_sender_name": sender_name,
                 "_channel_name": channel_name,
