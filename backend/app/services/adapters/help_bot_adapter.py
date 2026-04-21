@@ -1,4 +1,4 @@
-"""帮助助手 Bot 适配器：加载 docs/ 下所有帮助文档作为上下文，回答 AgentNexus 使用问题。"""
+"""帮助助手 Bot 适配器：加载 docs/help/ 下的帮助文档作为上下文，回答 AgentNexus 使用问题。"""
 import logging
 import re
 from pathlib import Path
@@ -17,15 +17,15 @@ HISTORY_MSG_MAX_CHARS = 500
 
 # 项目根目录（backend/app/services/adapters/ -> backend/app/services/ -> backend/app/ -> backend/ -> AgentNexus/）
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
-# docs/ 在项目根目录下（backend/ -> AgentNexus/ -> docs/）
-_DOCS_DIR = _BACKEND_ROOT / "docs"
+# docs/help/ 在项目根目录下（backend/ -> AgentNexus/ -> docs/help/）
+_DOCS_DIR = _BACKEND_ROOT / "docs" / "help"
 
 # 缓存加载的文档内容
 _cached_docs: str | None = None
 
 
 def _load_docs_from_folder() -> str:
-    """从 docs/ 文件夹加载所有 .md 文件内容，按文件名排序拼接为字符串。
+    """从 docs/help/ 文件夹加载所有 .md 文件内容，按文件名排序拼接为字符串。
 
     文件名排序保证加载顺序稳定。跳过目录本身。
     """
@@ -34,7 +34,7 @@ def _load_docs_from_folder() -> str:
         return ""
 
     parts: list[str] = []
-    for path in sorted(_DOCS_DIR.glob("*.md")):
+    for path in sorted(_DOCS_DIR.rglob("*.md")):
         if path.is_file():
             try:
                 content = path.read_text(encoding="utf-8")
@@ -221,7 +221,7 @@ def _extract_text(content: Any) -> str:
 
 
 class HelpBotAdapter(OpenClawAdapter):
-    """帮助助手 Bot：加载 docs/ 下所有文档，回答 AgentNexus 使用问题。"""
+    """帮助助手 Bot：加载 docs/help/ 下所有帮助文档，回答 AgentNexus 使用问题。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text", "") or ""
@@ -279,7 +279,7 @@ class HelpBotAdapter(OpenClawAdapter):
             ),
             (
                 "=== 帮助文档（完整参考）===\n"
-                + (docs_content if docs_content else "（文档加载失败，请检查 docs/ 文件夹是否存在）")
+                + (docs_content if docs_content else "（文档加载失败，请检查 docs/help/ 文件夹是否存在）")
             ),
             (
                 "=== 当前频道上下文 ===\n"
@@ -321,7 +321,7 @@ class HelpBotAdapter(OpenClawAdapter):
         if not content:
             content = (
                 "抱歉，帮助助手暂时无法回答您的问题，可能是 LLM 服务不可用。"
-                "您可以查看 docs/使用说明书.md 获取帮助，"
+                "您可以查看 docs/help/使用说明书.md 获取帮助，"
                 "或联系管理员检查 LLM 配置。"
             )
 

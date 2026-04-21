@@ -40,7 +40,7 @@ async def get_adapter_for_bot(
         logger.info("adapter_resolver: bot_id=%s -> UnifiedBuiltinBotAdapter", bot_id)
         return UnifiedBuiltinBotAdapter()
 
-    # 智枢协作操作指引助手 Bot：加载 docs/ 文档回答使用问题
+    # 智枢协作操作指引助手 Bot：加载 docs/help/ 文档回答使用问题
     if bot_id == GUIDE_HELPER_BOT_ID:
         logger.info("adapter_resolver: bot_id=%s -> HelpBotAdapter", bot_id)
         return HelpBotAdapter()

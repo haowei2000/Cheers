@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 
 const API = "/api";  // docs 端点由 manual_routes 提供，路径不含 /v1
 
-type DocFile = { name: string; stem: string; size: number };
+type DocFile = { name: string; stem: string; size: number; category?: string };
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -236,9 +236,10 @@ export default function DocsPage() {
     setMode("preview");
   };
 
-  const filtered = files.filter((f) =>
-    f.stem.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = files.filter((f) => {
+    const q = search.toLowerCase();
+    return f.stem.toLowerCase().includes(q) || f.name.toLowerCase().includes(q);
+  });
 
   const toc = content ? extractToc(content) : [];
   const htmlContent = content ? renderMarkdown(content) : "";
@@ -282,20 +283,31 @@ export default function DocsPage() {
             {filtered.length === 0 && (
               <p className="text-xs text-gray-400 px-4 py-3">未找到文件。</p>
             )}
-            {filtered.map((f) => (
-              <button
-                key={f.name}
-                onClick={() => { setSelected(f); setMode("preview"); if (isMobile) setSidebarOpen(false); }}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex flex-col gap-0.5 ${
-                  selected?.name === f.name
-                    ? "bg-blue-50 text-blue-700 border-r-2 border-blue-500"
-                    : "text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                <span className="truncate font-medium">{f.stem}</span>
-                <span className="text-xs text-gray-400">{formatSize(f.size)}</span>
-              </button>
-            ))}
+            {filtered.map((f) => {
+              const basename = f.stem.includes("/") ? f.stem.split("/").pop()! : f.stem;
+              const categoryLabel = f.category === "help" ? "用户" : f.category === "develop" ? "开发" : "";
+              return (
+                <button
+                  key={f.stem}
+                  onClick={() => { setSelected(f); setMode("preview"); if (isMobile) setSidebarOpen(false); }}
+                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex flex-col gap-0.5 ${
+                    selected?.stem === f.stem
+                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-500"
+                      : "text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <span className="truncate font-medium">{basename}</span>
+                  <span className="text-xs text-gray-400 flex items-center gap-1.5">
+                    {categoryLabel && (
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                        f.category === "help" ? "bg-green-100 text-green-700" : "bg-purple-100 text-purple-700"
+                      }`}>{categoryLabel}</span>
+                    )}
+                    <span>{formatSize(f.size)}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {/* Footer */}
@@ -330,7 +342,7 @@ export default function DocsPage() {
                     </button>
                   )}
                   <h1 className="text-base font-semibold text-gray-900 truncate">
-                    {selected.stem}
+                    {selected.stem.includes("/") ? selected.stem.split("/").pop() : selected.stem}
                   </h1>
                   {!isMobile && content && (
                     <span className="text-xs text-gray-400 flex-shrink-0">
