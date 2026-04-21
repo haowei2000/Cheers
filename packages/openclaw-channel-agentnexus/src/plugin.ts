@@ -24,6 +24,7 @@
 import { BotSession, type InboundMessage } from "./session.js";
 import type { ChannelPlugin, ResolvedAccount, StatusSnapshot } from "./sdk-shim.js";
 import { createChatChannelPlugin } from "./sdk-shim.js";
+import { tryGetAgentNexusRuntime } from "./runtime-store.js";
 
 const PLUGIN_ID = "agentnexus";
 const INBOUND_CACHE_MAX = 1000;
@@ -34,21 +35,30 @@ const INBOUND_CACHE_MAX = 1000;
 
 interface AccountRuntime {
   session: BotSession;
+  /** 入站消息缓存：key = task_id（用于老的按 task 匹配） */
   lastInboundByTaskId: Map<string, InboundMessage>;
+  /** 入站消息缓存：key = sessionKey（${accountId}:${channelId}），
+   *  agent 通过 subagent.run 的 deliver 回推时，sendText ctx.to 会匹配 sessionKey，
+   *  这里能快速拿回源消息做 session.reply。 */
+  lastInboundBySessionKey: Map<string, InboundMessage>;
   /** ctx.setStatus 的最后一次快照，便于 getStatus 查询 */
   lastStatus: StatusSnapshot;
 }
 
 const sessionRegistry = new Map<string, AccountRuntime>();
 
-function rememberInbound(cache: Map<string, InboundMessage>, taskId: string, m: InboundMessage): void {
-  if (cache.has(taskId)) cache.delete(taskId);
-  cache.set(taskId, m);
+function rememberInbound(cache: Map<string, InboundMessage>, key: string, m: InboundMessage): void {
+  if (cache.has(key)) cache.delete(key);
+  cache.set(key, m);
   while (cache.size > INBOUND_CACHE_MAX) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
     cache.delete(oldest);
   }
+}
+
+function sessionKeyFor(accountId: string, channelId: string): string {
+  return `agentnexus:${accountId}:${channelId}`;
 }
 
 // ============================================================================
@@ -119,6 +129,7 @@ async function startAccount(ctx: GatewayCtx): Promise<void> {
   }
 
   const lastInboundByTaskId = new Map<string, InboundMessage>();
+  const lastInboundBySessionKey = new Map<string, InboundMessage>();
   let lastStatus: StatusSnapshot = { state: "stopped" };
 
   const session = new BotSession(
@@ -141,13 +152,54 @@ async function startAccount(ctx: GatewayCtx): Promise<void> {
         log.info?.(`agentnexus: ${accountId} left ${cid} reason=${reason}`);
       },
       onMessage: async (m) => {
+        const sk = sessionKeyFor(accountId, m.channelId);
         rememberInbound(lastInboundByTaskId, m.event.task_id, m);
+        rememberInbound(lastInboundBySessionKey, sk, m);
         log.info?.(
           `agentnexus: ${accountId} inbound channel=${m.channelId} task=${m.event.task_id} text=${JSON.stringify(m.text).slice(0, 80)}`,
         );
-        // TODO: 将 m 推入 OpenClaw agent。本版本暂只缓存到 lastInboundByTaskId，
-        //       供 outbound.sendText 的 replyTo 匹配。SDK 公开稳定的 "runtime"
-        //       helpers 后在这里接 runtime.reply.dispatch / session.startAgentTurn.
+
+        // 尝试通过 SDK 的 subagent.run 启动一次 agent turn（deliver:true 时 agent
+        // 产出会走 outbound.sendText 回推到 AgentNexus 频道）。
+        //
+        // ⚠️ 已知限制：subagent 方法是 "gateway request scope" 的 —— 只能在
+        // OpenClaw 处理 HTTP/WS 入站请求时调用。我们这里是自管 WS 的 receive
+        // 回调，不在 request scope 内，会收到 RequestScopedSubagentRuntimeError。
+        //
+        // 真正要让 OpenClaw agent 自动响应，需要走 registerFull(api) 注册一条
+        // HTTP 路由，然后在 WS 收到消息时 fetch 那条路由 —— 那个 handler 才
+        // 在 request scope 里，能合法调 subagent.run。详见接入指南 §8.1。
+        //
+        // 本版本的行为：
+        //   - 有 runtime：试一下 subagent.run，失败转成简短提示回 session.reply
+        //   - 无 runtime（例如独立模式）：直接 session.reply 回显式提示
+        const runtime = tryGetAgentNexusRuntime();
+        if (!runtime) {
+          log.warn?.(`agentnexus: ${accountId} runtime not injected; bot will reply with placeholder notice`);
+          await session.reply({
+            source: m,
+            text: "[agentnexus plugin] runtime 未注入，无法启动 agent turn。请在 OpenClaw 中加载 plugin，或在独立模式下自定义 onMessage。",
+          }).catch(() => { /* ignore */ });
+          return;
+        }
+        try {
+          const { runId } = await runtime.subagent.run({
+            sessionKey: sk,
+            message: m.text,
+            deliver: true,
+            idempotencyKey: m.event.task_id,
+          });
+          log.info?.(`agentnexus: ${accountId} subagent.run started runId=${runId} sk=${sk}`);
+        } catch (err) {
+          const errStr = String(err);
+          const isScope = errStr.includes("OPENCLAW_SUBAGENT_RUNTIME_REQUEST_SCOPE")
+            || errStr.includes("only available during a gateway request");
+          log.warn?.(`agentnexus: ${accountId} subagent.run failed (scoped=${isScope}): ${errStr}`);
+          const fallback = isScope
+            ? "[agentnexus plugin] 当前收到消息，但未配置 registerFull 的 HTTP 路由回调 —— OpenClaw subagent.run 只能在 gateway request scope 里调。请参考接入指南 §8.1 完成真实 agent 回复接线。"
+            : `[agentnexus plugin] agent 启动失败：${errStr}`;
+          await session.reply({ source: m, text: fallback }).catch(() => { /* ignore */ });
+        }
       },
       onConnectionChange: (stream, state) => {
         log.info?.(`agentnexus: ${accountId} ${stream} ${state}`);
@@ -160,7 +212,12 @@ async function startAccount(ctx: GatewayCtx): Promise<void> {
     },
   );
 
-  const runtime: AccountRuntime = { session, lastInboundByTaskId, lastStatus };
+  const runtime: AccountRuntime = {
+    session,
+    lastInboundByTaskId,
+    lastInboundBySessionKey,
+    lastStatus,
+  };
   sessionRegistry.set(accountId, runtime);
 
   ctx.abortSignal?.addEventListener("abort", () => {
@@ -202,12 +259,19 @@ async function sendText(ctx: OutboundCtx): Promise<OutboundResult> {
   if (!accountId) throw new Error("agentnexus: no active account");
   const entry = sessionRegistry.get(accountId);
   if (!entry) throw new Error(`agentnexus: no running session for account ${accountId}`);
-  const { session, lastInboundByTaskId } = entry;
+  const { session, lastInboundByTaskId, lastInboundBySessionKey } = entry;
 
-  // 优先把 reply 匹配到最近一次派发的消息（taskId 即 ctx.replyToId / ctx.to 时）
+  // 匹配优先级：
+  //   1) ctx.to 等于 subagent.run 时传入的 sessionKey（推荐路径，deliver:true 时走这里）
+  //   2) ctx.replyToId / ctx.to 等于 task_id（兼容老的匹配）
+  //   3) 都没匹配到，视 ctx.to 为 channelId，走主动 send
+  const skSource = ctx.to ? lastInboundBySessionKey.get(ctx.to) : undefined;
   const taskHint = ctx.replyToId ?? ctx.to;
-  const source = taskHint ? lastInboundByTaskId.get(taskHint) : undefined;
+  const taskSource = taskHint ? lastInboundByTaskId.get(taskHint) : undefined;
+  const source = skSource ?? taskSource;
+
   if (source) {
+    lastInboundBySessionKey.delete(sessionKeyFor(accountId, source.channelId));
     lastInboundByTaskId.delete(source.event.task_id);
     const r = await session.reply({ source, text: ctx.text });
     if (r.ok && r.messageId) {
@@ -216,7 +280,6 @@ async function sendText(ctx: OutboundCtx): Promise<OutboundResult> {
     throw new Error(`agentnexus: reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
   }
 
-  // 否则作为主动 send 到 channel（ctx.to 被视为 channelId）
   const channelId = ctx.to;
   if (!channelId) throw new Error("agentnexus: sendText missing channel id");
   if (!session.membership.channelIds.has(channelId)) {

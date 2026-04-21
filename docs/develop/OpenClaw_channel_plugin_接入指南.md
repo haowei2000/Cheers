@@ -442,26 +442,48 @@ POST /api/v1/bots/{bot_id}/rotate-token
 
 ## 8. 已知限制与 TODO
 
-### 8.1 OpenClaw agent 自动响应（未接通）
+### 8.1 OpenClaw agent 自动响应（方案已清晰，未完全实装）
 
-当前在 Plugin 模式下（§4），plugin `onMessage` 只记录 inbound 消息（日志可见），**没有把它真正推进 OpenClaw agent turn**。
+当前 plugin 模式下，插件能正确收到 user inbound message。但把它真正推进 **OpenClaw agent turn** 还差一步。
 
-原因：`ctx.runtime` 的 reply dispatch helper 在 OpenClaw 2026.4.15 SDK 里是弱类型（`[key:string]:unknown`），没有稳定公开契约。
+**已查明的障碍**（2026.4.15 实测）：
 
-**解法**（等 SDK 或自己反射）：在 `src/plugin.ts` 的 `onMessage` 里：
+SDK 提供了 `runtime.subagent.run({sessionKey, message, deliver})` 用来触发 agent turn。但它是**"gateway request scope"** 级别的 API —— 只能在 OpenClaw 正在处理一个 HTTP 请求或 gateway WS 请求时被调用。从 plugin 自己的 WS receive 回调里直接调，会抛：
 
-```ts
-await ctx.runtime?.reply?.dispatch?.({
-  target: { channel: "agentnexus", accountId, groupId: m.channelId },
-  text: m.text,
-  senderId: m.senderId,
-  // ...
-});
+```
+RequestScopedSubagentRuntimeError: Plugin runtime subagent methods are only
+available during a gateway request.
+(code: OPENCLAW_SUBAGENT_RUNTIME_REQUEST_SCOPE)
 ```
 
-具体 key 名和 payload 需要对照 OpenClaw 源码确认。
+**真正的接线方案**（Slack / Telegram 等官方 channel plugin 就是这么做的）：
 
-**临时方案**：如果你只是要一个自动回复的 Bot，独立模式（§3）是完整闭环的；或者在 `onMessage` 里直接调 `session.reply(...)`，自己实现 agent 逻辑。
+1. 在 bundled entry 里声明 `registerFull: { specifier: "./http-routes.js", exportName: "registerAgentNexusHttpRoutes" }`
+2. 实现一个 HTTP 路由处理器，比如 `POST /__openclaw__/channels/agentnexus/inbound`
+3. plugin 的 WS receive 回调把 message 序列化后 `fetch("http://127.0.0.1:<gateway_port>/__openclaw__/channels/agentnexus/inbound", {method:"POST", body: ...})`
+4. 处理器内部**此时处于 gateway request scope** → 合法调 `runtime.subagent.run({..., deliver: true})`
+5. agent 产出由 SDK 走 outbound.sendText 回推 → plugin 的 sendText 调 `session.reply` → AgentNexus 频道里占位消息被原地 finalize
+
+本版本暂没实装 step 2/3（自loopback HTTP 这一层）。`plugin.ts` 的 `onMessage` 当前行为：
+- 尝试直接 `subagent.run`，如预期会 `RequestScoped` 失败
+- fallback：直接用 `session.reply(source=m, text="…未配 HTTP 路由的诊断消息…")`
+- **所以你能在频道里看到 Bot 回复一条说明文字** —— 这证明 plugin ↔ bridge ↔ AgentNexus 端到端打通，只是产文的地方没拿到真 agent
+
+**两条临时能用的路径**：
+
+A. **独立模式**（§3）：真能回消息，只是内容由你的 TS 代码产出，而不是 OpenClaw agent。
+
+B. **在 plugin.ts `onMessage` 里直接业务化 `session.reply`**：
+   ```ts
+   onMessage: async (m) => {
+     rememberInbound(...);
+     const reply = await yourCustomLLMCall(m.text);  // 自己管 agent 逻辑
+     await session.reply({ source: m, text: reply });
+   }
+   ```
+   等同于独立模式，只是借 OpenClaw CLI 做进程托管。
+
+C. **完整接通（需再做一次迭代）**：按上面 step 1-5 加 HTTP route 自 loopback。留着给下一个 PR。
 
 ### 8.2 事件日志无保留策略
 
