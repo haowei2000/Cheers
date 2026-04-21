@@ -9,7 +9,15 @@
 - 安全模型
 - 已知限制与 TODO
 
-**验证环境**：AgentNexus develop 分支；`openclaw` CLI 2026.4.15；macOS（Linux 类似）。
+**验证环境**：AgentNexus `feat/openclaw-channel-plugin` 分支；`openclaw` CLI 2026.4.15；macOS（Linux 类似）。
+
+> ⚠️ **分支要求**：TS plugin 包在 `packages/openclaw-channel-agentnexus/`。在 feature branch 合进 `develop` 之前，操作前请先：
+> ```bash
+> cd /path/to/AgentNexus                       # 项目根
+> git checkout feat/openclaw-channel-plugin
+> git pull
+> ```
+> 合并到 `develop` 之后这一步可以省略。
 
 ---
 
@@ -112,6 +120,8 @@ node -v                    # v20+ ideal
 ### 3.2 构建 plugin
 
 ```bash
+# 先从项目根开始，避免 shell 残留在其它目录
+cd /path/to/AgentNexus
 cd packages/openclaw-channel-agentnexus
 npm install
 npm run build
@@ -149,12 +159,20 @@ AGENTNEXUS_DATA_URL=ws://localhost:8002/ws/openclaw/data \
 ### 4.1 构建 + 安装
 
 ```bash
+# 从项目根开始
+cd /path/to/AgentNexus
 cd packages/openclaw-channel-agentnexus
 npm install
 npm run build
 
-openclaw plugins install -l $(pwd)
+# $(pwd) 必须解析为 packages/openclaw-channel-agentnexus 绝对路径
+openclaw plugins install -l "$(pwd)"
 ```
+
+**常见错误**：
+- `HOOK.md missing in ...` —— 你在错误的目录（比如 `docs/develop/`）。OpenClaw 把该目录当作 hook pack 识别失败。解法：`cd` 到 `packages/openclaw-channel-agentnexus/` 再执行。
+- `plugin manifest not found: .../openclaw.plugin.json` —— `dist/` 没构建出来，或包根目录没有 `openclaw.plugin.json`。先跑 `npm run build`。
+- `cd: no such file or directory: packages/...` —— 当前分支没有 `packages/`。按本文档顶部提示先 `git checkout feat/openclaw-channel-plugin`。
 
 `-l` 表示 link 模式（不拷贝 dist/，改 dist/ 后重启 gateway 即生效）。
 
