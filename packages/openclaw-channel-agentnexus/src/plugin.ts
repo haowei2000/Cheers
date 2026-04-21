@@ -23,6 +23,8 @@ import {
 } from "./sdk-shim.js";
 
 const PLUGIN_ID = "agentnexus";
+/** outbound.sendText 按 task_id 找源消息的缓存上限。防止 agent 永不回复造成泄漏。 */
+const INBOUND_CACHE_MAX = 1000;
 
 /**
  * 以 accountId 为 key 的 session 注册表。
@@ -33,8 +35,22 @@ const PLUGIN_ID = "agentnexus";
 const sessionRegistry = new Map<string, {
   session: BotSession;
   // 最近一次从 data 流收到的 message（按 task_id 索引），方便 outbound 时快速 finalize。
+  // Map 按插入顺序迭代，超过上限时删最老的（近似 LRU，够用）。
   lastInboundByTaskId: Map<string, InboundMessage>;
 }>();
+
+function rememberInbound(
+  cache: Map<string, InboundMessage>, taskId: string, m: InboundMessage,
+): void {
+  // 重复的 taskId：先删再插，移到末尾
+  if (cache.has(taskId)) cache.delete(taskId);
+  cache.set(taskId, m);
+  while (cache.size > INBOUND_CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    cache.delete(oldest);
+  }
+}
 
 interface PluginConfig {
   agentnexus?: {
@@ -151,7 +167,7 @@ export const agentnexusPlugin: ChannelPlugin<ResolvedAccount> = createChatChanne
             deps.onReady?.();
           },
           onMessage: async (m) => {
-            lastInboundByTaskId.set(m.event.task_id, m);
+            rememberInbound(lastInboundByTaskId, m.event.task_id, m);
             const normalized = normalizeForOpenClaw(account, m);
             // enrich groupName from membership cache if possible
             const ch = session.membership.byId.get(m.channelId);

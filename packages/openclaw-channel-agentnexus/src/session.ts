@@ -84,6 +84,8 @@ export interface SendResult {
   code?: string;
 }
 
+const MAX_INFLIGHT = 500; // 软上限，超过则拒绝新 send
+
 export class BotSession {
   public readonly membership: MembershipSnapshot = {
     channelIds: new Set(),
@@ -99,6 +101,13 @@ export class BotSession {
   private data: ReconnectingClient;
   private heartbeatTimers: Array<NodeJS.Timeout | null> = [null, null];
   private inflight = new Map<string, { resolve: InflightResolver; timer: NodeJS.Timeout }>();
+  private stopped = false;
+  private readyPromise: Promise<void>;
+  private resolveReady!: () => void;
+  /** control hello 已到 */
+  private controlReady = false;
+  /** data hello 已到 */
+  private dataReady = false;
 
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
@@ -115,6 +124,10 @@ export class BotSession {
     this.heartbeatIntervalMs = adv.heartbeatIntervalMs ?? 30000;
     this.sendAckTimeoutMs = adv.sendAckTimeoutMs ?? 10000;
 
+    this.readyPromise = new Promise<void>((resolve) => {
+      this.resolveReady = resolve;
+    });
+
     const headers = { Authorization: `Bearer ${config.botToken}` };
     const reconnectOpts = {
       baseMs: this.reconnectBaseMs,
@@ -126,26 +139,63 @@ export class BotSession {
       onOpen: () => this.onControlOpen(),
       onFrame: (f) => this.onControlFrame(f),
       onClose: (code, reason) => this.onStreamClose("control", code, reason),
-      onFatal: (reason) => this.events.onFatal?.(reason),
+      onFatal: (reason) => this.onFatalEscalate("control", reason),
     });
     this.data = new ReconnectingClient(config.dataUrl, headers, reconnectOpts, {
       onOpen: () => this.onDataOpen(),
       onFrame: (f) => this.onDataFrame(f),
       onClose: (code, reason) => this.onStreamClose("data", code, reason),
-      onFatal: (reason) => this.events.onFatal?.(reason),
+      onFatal: (reason) => this.onFatalEscalate("data", reason),
     });
   }
 
   start(): void {
+    if (this.stopped) throw new Error("session has been stopped; construct a new one");
     this.control.start();
     this.data.start();
   }
 
   async stop(): Promise<void> {
+    if (this.stopped) return;
+    this.stopped = true;
     this.stopHeartbeat("control");
     this.stopHeartbeat("data");
     this.rejectAllInflight("session stopped");
     await Promise.all([this.control.stop(), this.data.stop()]);
+  }
+
+  /** 等待 control hello 到达（ready 即 membership 快照已就位）。超时则 reject。 */
+  waitReady(timeoutMs = 10000): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("waitReady timeout")), timeoutMs);
+      this.readyPromise.then(
+        () => {
+          clearTimeout(t);
+          resolve();
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e);
+        },
+      );
+    });
+  }
+
+  /** control 或 data 的致命 close code：整个 session 自动 stop，并 emit onFatal。 */
+  private onFatalEscalate(stream: "control" | "data", reason: string): void {
+    this.events.onFatal?.(`${stream}: ${reason}`);
+    void this.stop();
+  }
+
+  /** 两条流都 hello 后才算 ready；onReady 只触发一次。 */
+  private firedReady = false;
+  private maybeResolveReady(): void {
+    if (!this.controlReady || !this.dataReady) return;
+    this.resolveReady();
+    if (!this.firedReady) {
+      this.firedReady = true;
+      this.events.onReady?.();
+    }
   }
 
   // =================== control stream ===================
@@ -170,7 +220,8 @@ export class BotSession {
             this.membership.channelIds.add(ch.channel_id);
             this.membership.byId.set(ch.channel_id, ch);
           }
-          this.events.onReady?.();
+          this.controlReady = true;
+          this.maybeResolveReady();
           break;
         }
         case "channel_joined": {
@@ -216,6 +267,8 @@ export class BotSession {
         case "hello":
           // data hello 给 last_event_seq，首次连接时 lastProcessedSeq=0，
           // 不主动 resume；等 agent 自己说它处理到哪了。
+          this.dataReady = true;
+          this.maybeResolveReady();
           break;
         case "message": {
           const ev = frame as MessageEvent;
@@ -310,6 +363,9 @@ export class BotSession {
   private sendFrame<F extends ReplyFrame | SendFrame>(frame: F): Promise<SendResult> {
     if (!this.data.isOpen) {
       return Promise.resolve({ ok: false, error: "data WS not connected", code: "ws_not_open" });
+    }
+    if (this.inflight.size >= MAX_INFLIGHT) {
+      return Promise.resolve({ ok: false, error: "too many inflight messages", code: "backpressure" });
     }
     return new Promise<SendResult>((resolve) => {
       const timer = setTimeout(() => {

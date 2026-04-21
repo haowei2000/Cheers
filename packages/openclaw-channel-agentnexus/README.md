@@ -147,9 +147,12 @@ session.start();
 | code | 语义 | plugin 处理 |
 |------|------|-------------|
 | 1000 | normal | 正常 |
-| 4401 | token 缺失 / 已撤销 | **不重连**，提示运维 |
-| 4402 | 同 token 的新连接接管了旧连接 | 旧连接退出即可 |
-| 4403 | bot.status != online | **不重连**，等 admin 恢复 |
+| 1011 / 1006 / ... | 瞬时网络错 | 自动重连（指数退避 + 50-100% jitter） |
+| 4401 | token 缺失 / 无效 / 已撤销 | **fatal**：session 自动 stop，触发 onFatal |
+| 4402 | 被同 token 的新连接接管 | **fatal**：不自动重连（否则与对方 ping-pong）。需人工干预或确认旧实例应退出 |
+| 4403 | bot.status != online | **fatal**：等 admin 改回 online |
+
+收到 fatal 码时 `onFatal(reason)` 触发，session 自动 stop；需要新实例重启才能再次连接（构造新的 `BotSession`）。
 
 ## 与 OpenClaw SDK 的关系
 
@@ -166,8 +169,33 @@ import {...} from "openclaw/plugin-sdk/channel-core";
 ```bash
 npm install
 npm run build        # tsc → dist/
-npm test             # 单元测试（reconnect / backoff / close codes）
+npm test             # 全部测试：reconnect 数学 + mock bridge 驱动 session 行为 + 集成
 npm run demo         # 需 env：AGENTNEXUS_BOT_TOKEN / CONTROL_URL / DATA_URL
 ```
 
-集成测试 (`test/session.integration.test.ts`) 在缺少 env 时自动 skip；给了 env 会真连 AgentNexus bridge 做 hello handshake。
+### 测试分层
+
+- **`test/reconnect.test.ts`** —— 纯数学：backoff 计算、致命码判定
+- **`test/session.test.ts`** —— 启动本地 mock bridge（`test/mock-bridge.ts`）驱动 session 跑完整交互路径：
+  - hello + membership 加载
+  - channel_joined / channel_left 同步
+  - message → reply → send_ack 完整来回
+  - send() 主动发话
+  - reply timeout（mock 吃掉不回 ack）
+  - 4402 supersede → fatal → session.stop
+  - 非致命断连后自动重连 + 自动 `resume{last_event_seq}`
+  - 错 token upgrade 拒绝
+- **`test/session.integration.test.ts`** —— 对真实 AgentNexus bridge 做 hello 握手（`AGENTNEXUS_BOT_TOKEN / CONTROL_URL / DATA_URL` 缺一即 skip）
+
+## 容量与背压
+
+- BotSession 的 inflight send 软上限 500 条；超过返回 `code=backpressure`。
+- plugin.ts 的 `lastInboundByTaskId` 按近似 LRU 截到 1000 条，防止 agent 永不回复造成内存泄漏。
+- 重连指数退避上限 30s（可通过 `advanced.reconnectMaxMs` 覆盖），发生 fatal 码时立即停止。
+
+## 生产建议
+
+1. `botToken` 存 secrets / 密钥管理系统，不要硬编码
+2. 为每个 bot 部署单实例（4402 fatal 后需外部编排把它重新起来）
+3. 给 `BotSession` 传 `advanced.heartbeatIntervalMs` ≤ 反向代理的 idle 超时
+4. 监控 `status.getStatus` 的 `state`：`running` / `stopped` 都是确定状态

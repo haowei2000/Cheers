@@ -8,7 +8,11 @@
  */
 import WebSocket from "ws";
 
-import { WS_CLOSE_AUTH_FAIL, WS_CLOSE_BOT_UNAVAILABLE } from "./types.js";
+import {
+  WS_CLOSE_AUTH_FAIL,
+  WS_CLOSE_BOT_UNAVAILABLE,
+  WS_CLOSE_SUPERSEDED,
+} from "./types.js";
 
 export interface ReconnectOptions {
   baseMs: number;
@@ -28,9 +32,19 @@ export interface ReconnectingClientCallbacks {
   onFatal: (reason: string) => void;
 }
 
-/** 判断 close code 是否致命：不应再重连。 */
+/** 判断 close code 是否致命：不应再重连。
+ *
+ *  - 4401 (auth fail)：token 无效 / 已轮换 —— 立刻重连只会继续被拒
+ *  - 4402 (superseded)：另一个连接用同 token 接管了我们；自动重连会把对方也踢
+ *    下线，造成 ping-pong 死循环
+ *  - 4403 (bot unavailable)：bot.status != online，需要人为介入
+ */
 export function isFatalCloseCode(code: number): boolean {
-  return code === WS_CLOSE_AUTH_FAIL || code === WS_CLOSE_BOT_UNAVAILABLE;
+  return (
+    code === WS_CLOSE_AUTH_FAIL ||
+    code === WS_CLOSE_BOT_UNAVAILABLE ||
+    code === WS_CLOSE_SUPERSEDED
+  );
 }
 
 export function computeBackoff(attempt: number, opts: ReconnectOptions): number {

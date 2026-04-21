@@ -17,4 +17,24 @@ export default defineChannelPluginEntry({
 // 同时导出内部实现，方便在 openclaw SDK 外单独使用（例如作为普通 Node 客户端）。
 export { BotSession, type InboundMessage, type SessionConfig, type SessionEvents, type SendResult } from "./session.js";
 export { agentnexusPlugin } from "./plugin.js";
-export * from "./types.js";
+export { isFatalCloseCode, computeBackoff } from "./reconnect.js";
+export type {
+  ChannelInfo,
+  ControlInbound,
+  DataInbound,
+  MessageEvent,
+  ReplyFrame,
+  SendFrame,
+  SendAck,
+  SendAckOk,
+  SendAckErr,
+  TriggerMessage,
+  AttachmentInfo,
+  ResumeFrame,
+  ResumeAck,
+} from "./types.js";
+export {
+  WS_CLOSE_AUTH_FAIL,
+  WS_CLOSE_SUPERSEDED,
+  WS_CLOSE_BOT_UNAVAILABLE,
+} from "./types.js";

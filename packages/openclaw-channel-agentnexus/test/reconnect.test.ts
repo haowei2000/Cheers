@@ -37,14 +37,16 @@ describe("computeBackoff", () => {
 });
 
 describe("isFatalCloseCode", () => {
-  it("flags auth and bot-unavailable as fatal", () => {
+  it("flags auth fail, bot-unavailable, and supersede as fatal", () => {
+    // 4402 supersede 也视为致命：我们是被踢下线的旧连接，自动重连会 ping-pong
     expect(isFatalCloseCode(WS_CLOSE_AUTH_FAIL)).toBe(true);
     expect(isFatalCloseCode(WS_CLOSE_BOT_UNAVAILABLE)).toBe(true);
+    expect(isFatalCloseCode(WS_CLOSE_SUPERSEDED)).toBe(true);
   });
 
-  it("does NOT flag supersede or standard close codes as fatal", () => {
-    expect(isFatalCloseCode(WS_CLOSE_SUPERSEDED)).toBe(false);
+  it("does NOT flag standard close codes as fatal", () => {
     expect(isFatalCloseCode(1000)).toBe(false);
     expect(isFatalCloseCode(1011)).toBe(false);
+    expect(isFatalCloseCode(1006)).toBe(false);
   });
 });
