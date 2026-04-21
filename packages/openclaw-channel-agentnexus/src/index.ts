@@ -19,4 +19,8 @@ export default defineBundledChannelEntry({
     specifier: "./plugin.js",
     exportName: "agentnexusPlugin",
   },
+  runtime: {
+    specifier: "./runtime-store.js",
+    exportName: "setAgentNexusRuntime",
+  },
 });

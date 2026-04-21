@@ -43,3 +43,18 @@ declare module "openclaw/plugin-sdk/channel-entry-contract" {
   export function defineBundledChannelSetupEntry(opts: BundledChannelSetupEntryOptions): unknown;
   export function loadBundledEntryExportSync<T>(importMetaUrl: string, ref: BundledEntryModuleRef): T;
 }
+
+declare module "openclaw/plugin-sdk/runtime-store" {
+  export interface PluginRuntimeStoreOptions {
+    pluginId: string;
+    errorMessage?: string;
+  }
+  export interface PluginRuntimeStore<T> {
+    setRuntime: (next: T) => void;
+    clearRuntime: () => void;
+    tryGetRuntime: () => T | null;
+    getRuntime: () => T;
+  }
+  export function createPluginRuntimeStore<T>(opts: PluginRuntimeStoreOptions): PluginRuntimeStore<T>;
+}
+
