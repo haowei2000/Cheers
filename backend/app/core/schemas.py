@@ -89,18 +89,28 @@ class PromptTemplateInResponse(BaseModel):
 # ==================== Bot Schemas ====================
 
 class BotCreate(BaseModel):
-    """创建 Bot：选择模型 + 选择模板."""
+    """创建 Bot：选择模型 + 选择模板（HTTP Bot），或绑定到 OpenClaw channel plugin（WebSocket Bot）."""
     bot_id: str | None = None
     username: str = Field(..., min_length=1, max_length=64, description="@ 用的名字")
     display_name: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, description="Bot 描述")
-    model_id: str = Field(..., description="关联的 AI 模型 ID")
-    template_id: str = Field(..., description="关联的提示词模板 ID")
+    # HTTP Bot 必填；WebSocket Bot 可省略
+    model_id: str | None = Field(default=None, description="关联的 AI 模型 ID（HTTP Bot 必填）")
+    template_id: str | None = Field(default=None, description="关联的提示词模板 ID（HTTP Bot 必填）")
     custom_system_prompt: str | None = Field(default=None, description="可选：覆盖模板的系统提示词")
     status: str = Field(default="online", pattern="^(online|offline|busy)$")
     is_public: bool = Field(default=True, description="是否公开（False 则仅创建者和管理员可见）")
     intro: str | None = Field(default=None, description='JSON: {"capabilities": [...], "description": "..."}')
     avatar_url: str | None = Field(default=None)
+    binding_type: str = Field(
+        default="http",
+        pattern="^(http|websocket)$",
+        description="绑定类型：'http'=OpenAI 兼容 HTTP（默认）；'websocket'=OpenClaw channel plugin 异步回推",
+    )
+    binding_config: dict | None = Field(
+        default=None,
+        description="绑定相关配置，例如 WebSocket Bot 的 {agent_id, gateway}",
+    )
 
 
 class BotUpdate(BaseModel):
@@ -115,6 +125,8 @@ class BotUpdate(BaseModel):
     is_public: bool | None = Field(default=None, description="是否公开")
     intro: str | None = Field(default=None)
     avatar_url: str | None = Field(default=None)
+    binding_type: str | None = Field(default=None, pattern="^(http|websocket)$")
+    binding_config: dict | None = Field(default=None)
 
 
 class BotInResponse(BaseModel):
@@ -131,10 +143,12 @@ class BotInResponse(BaseModel):
     intro: str | None = None
     custom_system_prompt: str | None = None
     created_at: datetime | None = None
+    binding_type: str = "http"
+    binding_config: dict | None = None
 
-    # 关联信息
-    model_id: str
-    template_id: str
+    # 关联信息（WebSocket Bot 可能没有）
+    model_id: str | None = None
+    template_id: str | None = None
     model_name: str | None = None  # AIModel.name
     template_name: str | None = None  # PromptTemplate.name
     created_by: str | None = None  # 创建者 user_id

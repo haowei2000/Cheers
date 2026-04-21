@@ -73,6 +73,10 @@ class BotAccount(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online")  # online | offline | busy
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1", default=True)  # 公开/私有
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
+    # 绑定类型：'http'=OpenAI 兼容 HTTP（默认，沿用 LLMBotAdapter）；
+    #           'websocket'=经 OpenClaw bridge 异步回推（新接入形式，对应 OpenClaw channel plugin）
+    binding_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default="http", default="http")
+    binding_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # e.g. {"agent_id": "...", "gateway": "..."}
     created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # 创建者 user_id
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

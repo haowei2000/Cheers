@@ -87,13 +87,15 @@ class BotService:
         username: str,
         display_name: str | None,
         description: str | None,
-        model_id: str,
-        template_id: str,
+        model_id: str | None,
+        template_id: str | None,
         *,
         custom_system_prompt: str | None = None,
         intro: str | None = None,
         is_public: bool = True,
         bot_id: str | None = None,
+        binding_type: str = "http",
+        binding_config: dict | None = None,
         current_user: User,
     ) -> BotAccount:
         username = _validate_username(username)
@@ -103,9 +105,16 @@ class BotService:
         if existing:
             raise BadRequestError(f"用户名 '{username}' 已被占用")
 
-        await self._validate_model_and_template(model_id, template_id, current_user)
-
-        # api_key 由 model 管理，这里不再重复存储
+        if binding_type == "http":
+            if not model_id or not template_id:
+                raise BadRequestError("HTTP Bot 必须指定 model_id 与 template_id")
+            await self._validate_model_and_template(model_id, template_id, current_user)
+        elif binding_type == "websocket":
+            # WebSocket Bot 由 OpenClaw channel plugin 提供能力，不依赖内置 AIModel/PromptTemplate
+            model_id = None
+            template_id = None
+        else:
+            raise BadRequestError(f"未知的 binding_type: {binding_type}")
 
         bot = BotAccount(
             username=username,
@@ -116,6 +125,8 @@ class BotService:
             custom_system_prompt=custom_system_prompt,
             intro=intro,
             is_public=is_public,
+            binding_type=binding_type,
+            binding_config=binding_config,
             created_by=current_user.user_id,
         )
         if bot_id and bot_id.strip():
