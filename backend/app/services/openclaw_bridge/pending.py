@@ -50,12 +50,30 @@ class PendingReplyRegistry:
                     p.timeout_handle.cancel()
             return p
 
+    async def peek_by_msg(self, msg_id: str) -> PendingReply | None:
+        """不消费地查询 pending，用于在 finalize 之前读取 channel_id 等元信息。"""
+        async with self._lock:
+            return self._by_msg.get(msg_id)
+
+    async def peek_by_task(self, task_id: str, bot_id: str) -> PendingReply | None:
+        async with self._lock:
+            return self._by_task.get((task_id, bot_id))
+
     async def resolve(self, *, task_id: str | None, bot_id: str, msg_id: str | None) -> PendingReply | None:
-        """按 msg_id（优先）或 (task_id, bot_id) 定位一个 pending。找到即从 registry 移除。"""
+        """按 msg_id（优先）或 (task_id, bot_id) 定位一个 pending。找到即从 registry 移除。
+
+        所有查找都强制 bot_id 匹配：plugin A 不能用自己的连接去 finalize
+        plugin B 的占位消息（反向 cross-bot 冒充）。
+        """
         if msg_id:
-            p = await self.pop_by_msg(msg_id)
-            if p:
-                return p
+            async with self._lock:
+                p = self._by_msg.get(msg_id)
+                if p is not None and p.bot_id == bot_id:
+                    self._by_msg.pop(msg_id, None)
+                    self._by_task.pop((p.task_id, p.bot_id), None)
+                    if p.timeout_handle:
+                        p.timeout_handle.cancel()
+                    return p
         if task_id:
             return await self.pop_by_task(task_id, bot_id)
         return None

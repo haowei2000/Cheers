@@ -38,6 +38,16 @@ class BotSession:
             logger.warning("send_control bot_id=%s error: %s", self.bot_id, exc)
             return False
 
+    async def send_data(self, event: dict[str, Any]) -> bool:
+        if self.data_ws is None:
+            return False
+        try:
+            await self.data_ws.send_json(event)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("send_data bot_id=%s error: %s", self.bot_id, exc)
+            return False
+
 
 class BotSessionRegistry:
     def __init__(self) -> None:
@@ -72,6 +82,30 @@ class BotSessionRegistry:
                 self._sessions.pop(bot_id, None)
         logger.info("registry.unbind_control bot_id=%s", bot_id)
 
+    async def bind_data(self, bot_id: str, ws: WebSocket) -> tuple[BotSession, WebSocket | None]:
+        """把 data WS 绑定到 bot_id；若已有旧连接，返回旧的让调用方以 4402 关闭。"""
+        async with self._lock:
+            sess = self._sessions.get(bot_id)
+            old = sess.data_ws if sess else None
+            if sess is None:
+                sess = BotSession(bot_id=bot_id)
+                self._sessions[bot_id] = sess
+            sess.data_ws = ws
+        logger.info(
+            "registry.bind_data bot_id=%s session_id=%s replaced_old=%s",
+            bot_id, sess.session_id, old is not None,
+        )
+        return sess, old
+
+    async def unbind_data(self, bot_id: str, ws: WebSocket) -> None:
+        async with self._lock:
+            sess = self._sessions.get(bot_id)
+            if sess and sess.data_ws is ws:
+                sess.data_ws = None
+            if sess and sess.control_ws is None and sess.data_ws is None:
+                self._sessions.pop(bot_id, None)
+        logger.info("registry.unbind_data bot_id=%s", bot_id)
+
     def get(self, bot_id: str) -> BotSession | None:
         return self._sessions.get(bot_id)
 
@@ -86,6 +120,13 @@ class BotSessionRegistry:
         if sess is None or sess.control_ws is None:
             return False
         return await sess.send_control(event)
+
+    async def dispatch_data(self, bot_id: str, event: dict[str, Any]) -> bool:
+        """向目标 bot 的 data WS 推送事件；未连返回 False。"""
+        sess = self._sessions.get(bot_id)
+        if sess is None or sess.data_ws is None:
+            return False
+        return await sess.send_data(event)
 
     def session_count(self) -> int:
         return len(self._sessions)
