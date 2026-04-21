@@ -1,40 +1,22 @@
 /**
- * 主入口：真实 OpenClaw SDK 会从这里加载 plugin 定义。
+ * OpenClaw bundled channel entry —— 被 `openclaw plugins install` 识别并加载。
  *
- * 等价于 docs 里示例的：
- *   defineChannelPluginEntry({ id, name, description, plugin })
+ * 和 SDK 示例（如 @openclaw/slack）一样走 `defineBundledChannelEntry`：
+ * OpenClaw 运行时通过 `plugin.specifier` 按模块 ref 懒加载真正的插件对象。
+ *
+ * 运行时：`openclaw/plugin-sdk/channel-entry-contract` 由 OpenClaw CLI 的
+ * node_modules 提供，不需要把 openclaw 列为 dependency。TS 编译期通过
+ * `openclaw-sdk.d.ts` 的 ambient 声明放行。
  */
-import { agentnexusPlugin } from "./plugin.js";
-import { defineChannelPluginEntry } from "./sdk-shim.js";
+import { defineBundledChannelEntry } from "openclaw/plugin-sdk/channel-entry-contract";
 
-export default defineChannelPluginEntry({
+export default defineBundledChannelEntry({
   id: "agentnexus",
   name: "AgentNexus",
   description: "Slack-like multi-channel chat with bots (per-bot WS bridge).",
-  plugin: agentnexusPlugin,
+  importMetaUrl: import.meta.url,
+  plugin: {
+    specifier: "./plugin.js",
+    exportName: "agentnexusPlugin",
+  },
 });
-
-// 同时导出内部实现，方便在 openclaw SDK 外单独使用（例如作为普通 Node 客户端）。
-export { BotSession, type InboundMessage, type SessionConfig, type SessionEvents, type SendResult } from "./session.js";
-export { agentnexusPlugin } from "./plugin.js";
-export { isFatalCloseCode, computeBackoff } from "./reconnect.js";
-export type {
-  ChannelInfo,
-  ControlInbound,
-  DataInbound,
-  MessageEvent,
-  ReplyFrame,
-  SendFrame,
-  SendAck,
-  SendAckOk,
-  SendAckErr,
-  TriggerMessage,
-  AttachmentInfo,
-  ResumeFrame,
-  ResumeAck,
-} from "./types.js";
-export {
-  WS_CLOSE_AUTH_FAIL,
-  WS_CLOSE_SUPERSEDED,
-  WS_CLOSE_BOT_UNAVAILABLE,
-} from "./types.js";

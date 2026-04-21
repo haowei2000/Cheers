@@ -111,27 +111,38 @@ export interface ChannelPlugin<TAccount = ResolvedAccount> {
     blurb?: string;
     docsPath?: string;
   };
+  /** 对齐 OpenClaw SDK 的 ChannelCapabilities（扁平结构）。 */
   capabilities?: {
-    chatTypes?: Array<"group" | "direct">;
-    supports?: {
-      threads?: boolean;
-      reactions?: boolean;
-      mentions?: boolean;
-      formatting?: boolean;
-    };
+    chatTypes: Array<"group" | "direct" | "thread">;
+    polls?: boolean;
+    reactions?: boolean;
+    edit?: boolean;
+    unsend?: boolean;
+    reply?: boolean;
+    effects?: boolean;
+    groupManagement?: boolean;
+    threads?: boolean;
+    media?: boolean;
+    nativeCommands?: boolean;
+    blockStreaming?: boolean;
   };
   config: {
     listAccountIds: (cfg: unknown) => string[];
     resolveAccount: (cfg: unknown, accountId?: string) => TAccount | undefined;
   };
   gateway: {
-    start: (account: TAccount, deps: GatewayDeps) => Promise<{
-      stop: () => Promise<void>;
-    }>;
+    /** Legacy shape（shim 自己的契约），真实 SDK 不读 —— 仅保留不破坏类型。 */
+    start?: (account: TAccount, deps: GatewayDeps) => Promise<{ stop: () => Promise<void> }>;
+    /** 真实 SDK 的契约：按 accountId 启动会话。 */
+    startAccount?: (ctx: unknown) => Promise<void | unknown>;
+    /** 真实 SDK 的契约：停止某账号的会话。 */
+    stopAccount?: (ctx: unknown) => Promise<void>;
   };
   outbound: {
-    deliveryMode: "direct";
-    sendText: (ctx: OutboundContext) => Promise<SendResult>;
+    deliveryMode: "direct" | "gateway" | "hybrid";
+    /** 真实 SDK 契约：(ChannelOutboundContext) => Promise<OutboundDeliveryResult>；
+     *  这里用 unknown 保留类型灵活性。 */
+    sendText?: (ctx: unknown) => Promise<unknown>;
   };
   status?: {
     getStatus?: (account: TAccount) => StatusSnapshot;
