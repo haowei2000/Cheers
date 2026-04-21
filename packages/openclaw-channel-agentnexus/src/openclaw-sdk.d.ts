@@ -35,7 +35,22 @@ declare module "openclaw/plugin-sdk/channel-core" {
       }>;
       deleteSession(p: { sessionKey: string; deleteTranscript?: boolean }): Promise<void>;
     };
-    channel?: unknown;
+    channel?: {
+      session?: {
+        resolveStorePath(store?: string, opts?: { workspaceDir?: string }): string;
+        updateLastRoute(p: {
+          storePath: string;
+          sessionKey: string;
+          channel?: string;
+          to?: string;
+          accountId?: string;
+          threadId?: string | number;
+        }): Promise<unknown>;
+        recordInboundSession?(p: unknown): Promise<void>;
+        [k: string]: unknown;
+      };
+      [k: string]: unknown;
+    };
     [k: string]: unknown;
   }
 
@@ -142,6 +157,69 @@ declare module "openclaw/plugin-sdk/channel-core" {
   }): unknown;
 
   export function defineSetupPluginEntry<TPlugin>(plugin: TPlugin): { plugin: TPlugin };
+}
+
+declare module "openclaw/plugin-sdk/conversation-runtime" {
+  export type BindingTargetKind = "subagent" | "session";
+  export type BindingStatus = "active" | "ending" | "ended";
+  export type SessionBindingPlacement = "current" | "child";
+  export interface ConversationRef {
+    channel: string;
+    accountId: string;
+    conversationId: string;
+    parentConversationId?: string;
+  }
+  export interface SessionBindingRecord {
+    bindingId: string;
+    targetSessionKey: string;
+    targetKind: BindingTargetKind;
+    conversation: ConversationRef;
+    status: BindingStatus;
+    boundAt: number;
+    expiresAt?: number;
+    metadata?: Record<string, unknown>;
+  }
+  export interface SessionBindingBindInput {
+    targetSessionKey: string;
+    targetKind: BindingTargetKind;
+    conversation: ConversationRef;
+    placement?: SessionBindingPlacement;
+    metadata?: Record<string, unknown>;
+    ttlMs?: number;
+  }
+  export interface SessionBindingUnbindInput {
+    bindingId?: string;
+    targetSessionKey?: string;
+    reason: string;
+  }
+  export interface SessionBindingAdapterCapabilities {
+    placements?: SessionBindingPlacement[];
+    bindSupported?: boolean;
+    unbindSupported?: boolean;
+  }
+  export interface SessionBindingAdapter {
+    channel: string;
+    accountId: string;
+    capabilities?: SessionBindingAdapterCapabilities;
+    bind?: (input: SessionBindingBindInput) => Promise<SessionBindingRecord | null>;
+    listBySession: (targetSessionKey: string) => SessionBindingRecord[];
+    resolveByConversation: (ref: ConversationRef) => SessionBindingRecord | null;
+    touch?: (bindingId: string, at?: number) => void;
+    unbind?: (input: SessionBindingUnbindInput) => Promise<SessionBindingRecord[]>;
+  }
+  export interface SessionBindingService {
+    bind(input: SessionBindingBindInput): Promise<SessionBindingRecord>;
+    listBySession(targetSessionKey: string): SessionBindingRecord[];
+    resolveByConversation(ref: ConversationRef): SessionBindingRecord | null;
+    unbind(input: SessionBindingUnbindInput): Promise<SessionBindingRecord[]>;
+  }
+  export function registerSessionBindingAdapter(adapter: SessionBindingAdapter): void;
+  export function unregisterSessionBindingAdapter(params: {
+    channel: string;
+    accountId: string;
+    adapter?: SessionBindingAdapter;
+  }): void;
+  export function getSessionBindingService(): SessionBindingService;
 }
 
 declare module "openclaw/plugin-sdk/runtime-store" {
