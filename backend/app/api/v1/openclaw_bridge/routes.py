@@ -622,13 +622,20 @@ async def data_websocket(websocket: WebSocket) -> None:
         except Exception:  # noqa: BLE001
             pass
 
+    from app.services.openclaw_bridge.event_log import current_seq
+
+    last_seq = await current_seq(bot.bot_id, "data")
     await websocket.send_json({
         "type": "hello",
         "stream": "data",
         "bot_id": bot.bot_id,
         "session_id": sess.session_id,
+        "last_event_seq": last_seq,
     })
-    logger.info("data_ws: connected bot_id=%s session=%s", bot.bot_id, sess.session_id)
+    logger.info(
+        "data_ws: connected bot_id=%s session=%s last_event_seq=%d",
+        bot.bot_id, sess.session_id, last_seq,
+    )
 
     try:
         while True:
@@ -651,8 +658,29 @@ async def data_websocket(websocket: WebSocket) -> None:
                 # 可选：未来广播 typing 状态；现在忽略
                 pass
             elif ftype == "resume":
-                # TODO Phase D：按 last_event_seq 重放历史事件
-                await websocket.send_json({"type": "resume_ack", "replayed": 0})
+                from app.services.openclaw_bridge.event_log import (
+                    current_seq as _cur_seq,
+                )
+                from app.services.openclaw_bridge.event_log import (
+                    events_since,
+                )
+                try:
+                    last_seen = int(frame.get("last_event_seq") or 0)
+                except (TypeError, ValueError):
+                    last_seen = 0
+                events = await events_since(bot.bot_id, "data", last_seen)
+                for ev in events:
+                    await websocket.send_json(ev)
+                up_to = await _cur_seq(bot.bot_id, "data")
+                await websocket.send_json({
+                    "type": "resume_ack",
+                    "replayed": len(events),
+                    "up_to_seq": up_to,
+                })
+                logger.info(
+                    "data_ws: resume bot_id=%s from_seq=%d replayed=%d up_to=%d",
+                    bot.bot_id, last_seen, len(events), up_to,
+                )
             # 其他类型忽略
     except WebSocketDisconnect:
         logger.info("data_ws: disconnected bot_id=%s", bot.bot_id)

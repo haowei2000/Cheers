@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -386,3 +386,19 @@ class KeychainItem(Base):
 
     # Relationships
     owner: Mapped["User"] = relationship("User", lazy="joined")
+
+
+class OpenClawPluginEvent(Base):
+    """per-bot WS 派发事件日志，用于 plugin 重连时按 last_event_seq 回放。"""
+    __tablename__ = "openclaw_plugin_events"
+
+    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    bot_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    stream: Mapped[str] = mapped_column(String(16), nullable=False)  # 'data'
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("bot_id", "stream", "seq", name="uq_openclaw_event_bot_stream_seq"),
+    )

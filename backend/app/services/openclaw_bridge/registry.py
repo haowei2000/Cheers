@@ -122,11 +122,21 @@ class BotSessionRegistry:
         return await sess.send_control(event)
 
     async def dispatch_data(self, bot_id: str, event: dict[str, Any]) -> bool:
-        """向目标 bot 的 data WS 推送事件；未连返回 False。"""
+        """向目标 bot 的 data WS 推送事件；未连返回 False。
+
+        事件会先写入事件日志拿到 seq，再以 seq 附加的形式 send 到 WS；
+        plugin 可据此在重连时 resume。未连时不写日志（事件最终由 orchestrator
+        走占位超时/同步失败路径兜底，没有需要 resume 的内容）。
+        """
         sess = self._sessions.get(bot_id)
         if sess is None or sess.data_ws is None:
             return False
-        return await sess.send_data(event)
+        # 先分配 seq 并持久化，保证 send 到 WS 的 payload 总是带 seq
+        from app.services.openclaw_bridge.event_log import record_event
+
+        seq = await record_event(bot_id, "data", event)
+        event_with_seq = {**event, "seq": seq}
+        return await sess.send_data(event_with_seq)
 
     def session_count(self) -> int:
         return len(self._sessions)
