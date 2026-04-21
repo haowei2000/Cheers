@@ -1,14 +1,19 @@
 """WebsocketBotAdapter：异步 WS Bot 适配器（接入 OpenClaw channel plugin）.
 
-设计要点（异步 / Slack 风格）：
-  - 用户 @ 本 Bot 时，Orchestrator 调用 execute()，本 adapter **不等待** Bot 回复完成；
-  - execute() 立即返回一个 "已派发，等待异步回推" 的占位 AgentResponse（不落盘成最终消息），
-    真正的 Bot 回复由外部 OpenClaw channel plugin 通过 bridge 路由
-    (POST /api/openclaw/bridge/messages) 反向推入频道，作为一条新消息单独到达；
-  - 这样避免 Orchestrator 同步等待远端 agent，兼容 Slack/Discord 式的 UX。
+Slack / Discord 风格的异步流程：
+  1. 用户 @mention 本 Bot 时，Orchestrator 调用 execute()；
+  2. execute() 把 payload 发布给 bridge_dispatcher，所有在线 plugin 收到事件；
+     返回 AgentResponse(content="", success=True, dispatched_async=True)。
+  3. Orchestrator 看到 dispatched_async=True 后，**不 finalize 占位消息**，
+     只把 (task_id, bot_id, msg_id) 记到 pending_replies，并调度超时兜底任务。
+  4. 远端 OpenClaw agent 产出回复后，plugin 回调
+     POST /api/v1/openclaw/bridge/messages（body 里带 task_id / reply_to_msg_id 任一），
+     bridge 路由 finalize 占位消息 → 广播到频道。
+  5. 若超时仍没收到回推，由 orchestrator 调度的 timeout handler 把占位消息
+     finalize 为超时提示。
 
-此提交是 adapter 骨架：仅定义类型 + 返回占位 response。
-具体「向 plugin 投递 payload」的实现（WS broadcast / queue）在后续提交中接入。
+如果当前没有任何 plugin 订阅 bridge，execute() 直接返回 success=False，
+orchestrator 仍走原有路径把错误信息写成占位消息的最终内容。
 """
 from __future__ import annotations
 
@@ -20,13 +25,6 @@ from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdap
 logger = logging.getLogger("app.services.adapters.websocket_bot")
 
 
-# 占位文本：当下 Orchestrator 会把 execute() 的返回当成一条 Bot 消息写入频道。
-# 在 bridge 接入之前，先让 WS Bot 发出一条可见的占位，便于端到端 smoke test；
-# bridge 接入后，execute() 会改为不写占位消息、只把 payload 派发给 plugin，
-# 最终 Bot 回复以单独新消息形式由 plugin 异步回推。
-_PLACEHOLDER_REPLY = "[WebSocket Bot] 请求已派发，等待 OpenClaw channel plugin 异步回推回复。"
-
-
 class WebsocketBotAdapter(OpenClawAdapter):
     """WebSocket Bot：通过 OpenClaw channel plugin 桥接，异步回推回复."""
 
@@ -35,18 +33,43 @@ class WebsocketBotAdapter(OpenClawAdapter):
         self.binding_config: dict = dict(bot.binding_config or {})
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
+        # 延迟导入以避免在 import adapter 时就拉起 bridge 依赖
+        from app.services.openclaw_bridge.dispatcher import bridge_dispatcher
+
+        event = {
+            "type": "dispatch",
+            "bot_id": self.bot.bot_id,
+            "bot_username": self.bot.username,
+            "bot_display_name": self.bot.display_name,
+            "channel_id": payload.channel_id,
+            "task_id": payload.task_id,
+            "trigger_message": payload.trigger_message,
+            "memory_context": payload.memory_context,
+            "attachments": payload.attachments,
+            "binding_config": self.binding_config,
+        }
+        delivered = await bridge_dispatcher.publish(event)
         logger.info(
-            "websocket_bot: dispatch bot_id=%s username=%s task_id=%s (async via bridge, not yet wired)",
-            self.bot.bot_id, self.bot.username, payload.task_id,
+            "websocket_bot: dispatch bot_id=%s task_id=%s delivered_to=%d plugin(s)",
+            self.bot.bot_id, payload.task_id, delivered,
         )
-        # TODO(openclaw-bridge): 在 bridge 接入后，这里要把 payload 投递给订阅的 plugin，
-        # 并把 execute() 改为不写占位消息（或写一个短暂的 "thinking..." 状态消息，
-        # 由 plugin 推回后替换），然后返回一个 "已派发，无同步内容" 的 AgentResponse。
+
+        if delivered == 0:
+            return AgentResponse(
+                content=f"[{self.bot.display_name or self.bot.username}] 没有在线的 OpenClaw channel plugin",
+                task_id=payload.task_id,
+                success=False,
+                error_message="no_plugin_subscribers",
+            )
+
         return AgentResponse(
-            content=_PLACEHOLDER_REPLY,
+            content="",
             task_id=payload.task_id,
             success=True,
+            dispatched_async=True,
         )
 
     async def health_check(self) -> bool:
-        return True
+        from app.services.openclaw_bridge.dispatcher import bridge_dispatcher
+
+        return bridge_dispatcher.subscriber_count() > 0

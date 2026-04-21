@@ -354,6 +354,12 @@ async def run_orchestrator(
 
             try:
                 sub_resp = await sub_adapter.execute(sub_payload)
+                if sub_resp.dispatched_async:
+                    await _register_async_pending(sub_msg, root_task_id, sub_bot_id)
+                    await _record_agent_task(sub_bot_id, sub_msg.msg_id)
+                    created.append(sub_msg)
+                    bot_msg_by_id[sub_bot_id] = sub_msg
+                    continue
                 sub_content = sub_resp.content if sub_resp.success else (sub_resp.error_message or "处理出错")
                 sub_file_ids = sub_resp.file_ids or []
             except Exception as exc:
@@ -497,6 +503,56 @@ async def run_orchestrator(
         )
         await session.flush()
 
+    async def _register_async_pending(bot_msg: Message, task_id: str, bot_id: str) -> None:
+        """WebSocket Bot 异步派发：占位消息不立即 finalize，登记到 pending registry
+        并调度超时兜底；远端 plugin 通过 /api/v1/openclaw/bridge/messages 回推后 finalize。"""
+        from app.config import settings as _settings
+        from app.db.session import async_session_factory
+        from app.services.openclaw_bridge.pending import PendingReply, pending_replies
+        from app.services.openclaw_bridge.service import finalize_bot_reply
+
+        timeout_s = max(5, int(_settings.openclaw_bridge_timeout_seconds or 60))
+
+        async def _on_timeout() -> None:
+            popped = await pending_replies.pop_by_msg(bot_msg.msg_id)
+            if popped is None:
+                return  # 已被回推 finalize
+            logger.warning(
+                "websocket_bot_timeout: bot_id=%s task_id=%s msg_id=%s after %ds",
+                bot_id, task_id, bot_msg.msg_id, timeout_s,
+            )
+            async with async_session_factory() as s2:
+                try:
+                    await finalize_bot_reply(
+                        s2,
+                        bot_id=bot_id,
+                        channel_id=channel_id,
+                        content=f"[WebSocket Bot] 等待 OpenClaw channel plugin 回推超时（>{timeout_s}s）",
+                        task_id=task_id,
+                        reply_to_msg_id=bot_msg.msg_id,
+                    )
+                    await s2.commit()
+                except Exception:
+                    await s2.rollback()
+                    raise
+
+        def _schedule() -> None:
+            loop = asyncio.get_event_loop()
+
+            def _fire() -> None:
+                asyncio.create_task(_on_timeout())
+
+            pending.timeout_handle = loop.call_later(timeout_s, _fire)
+
+        pending = PendingReply(
+            task_id=task_id,
+            bot_id=bot_id,
+            channel_id=channel_id,
+            msg_id=bot_msg.msg_id,
+        )
+        _schedule()
+        await pending_replies.register(pending)
+
     async def _finish_with_attachment_error(bot_id: str, task_id: str) -> Message:
         bot_msg = await _pre_create_bot_msg(bot_id, task_id)
         await _finalize_bot_msg(bot_msg, attachment_error or "读取上传文件失败")
@@ -553,17 +609,26 @@ async def run_orchestrator(
                 },
             )
             resp: AgentResponse = await adapter.execute(payload)
-            content = resp.content if resp.success else (resp.error_message or "处理出错")
-            await _finalize_bot_msg(orch_msg, content, file_ids=resp.file_ids)
-            await _record_agent_task(bot_id, orch_msg.msg_id)
-            created.append(orch_msg)
-            triggered_bot_ids.add(bot_id)
-            bot_msg_by_id[bot_id] = orch_msg
-            # Bot @ Bot 自动触发：递归处理 @ 提及
-            await _trigger_sub_bots_from_mentions(orch_msg, bot_id, trigger_content, depth=0)
+            content: str | None = None
+            if resp.dispatched_async:
+                await _register_async_pending(orch_msg, task_id, bot_id)
+                await _record_agent_task(bot_id, orch_msg.msg_id)
+                created.append(orch_msg)
+                triggered_bot_ids.add(bot_id)
+                bot_msg_by_id[bot_id] = orch_msg
+                # 异步派发场景下跳过 auto_takeover 与 Bot@Bot 递归：真正的 Bot 回复还没产出
+            else:
+                content = resp.content if resp.success else (resp.error_message or "处理出错")
+                await _finalize_bot_msg(orch_msg, content, file_ids=resp.file_ids)
+                await _record_agent_task(bot_id, orch_msg.msg_id)
+                created.append(orch_msg)
+                triggered_bot_ids.add(bot_id)
+                bot_msg_by_id[bot_id] = orch_msg
+                # Bot @ Bot 自动触发：递归处理 @ 提及
+                await _trigger_sub_bots_from_mentions(orch_msg, bot_id, trigger_content, depth=0)
 
             orch_settings = get_assist_settings()
-            if orch_settings.get("auto_takeover"):
+            if content is not None and orch_settings.get("auto_takeover"):
                 suggested = extract_suggested_bots(content)
                 valid_suggested = [
                     sug for sug in suggested
@@ -617,6 +682,12 @@ async def run_orchestrator(
                         if isinstance(sug_resp, BaseException):
                             logger.warning("orchestrator_auto_takeover: bot %s raised: %s", sug_username, sug_resp)
                             sug_content = f"处理出错: {sug_resp}"
+                        elif sug_resp.dispatched_async:
+                            await _register_async_pending(sug_msg, root_task_id, sug_bot_id)
+                            await _record_agent_task(sug_bot_id, sug_msg.msg_id)
+                            created.append(sug_msg)
+                            logger.info("orchestrator_auto_takeover: async-dispatched @%s", sug_username)
+                            continue
                         else:
                             sug_content = sug_resp.content if sug_resp.success else (sug_resp.error_message or "处理出错")
                         await _finalize_bot_msg(sug_msg, sug_content)
@@ -696,6 +767,19 @@ async def run_orchestrator(
                     username, resp, dur_ms,
                 )
                 content = f"处理出错: {resp}"
+                resp_file_ids: list[str] = []
+            elif resp.dispatched_async:
+                logger.info(
+                    "orchestrator: bot %s async-dispatched via bridge duration_ms=%.0f",
+                    username, dur_ms,
+                )
+                await _register_async_pending(bot_msg, root_task_id, bot_id)
+                await _record_agent_task(bot_id, bot_msg.msg_id)
+                created.append(bot_msg)
+                triggered_bot_ids.add(bot_id)
+                bot_msg_by_id[bot_id] = bot_msg
+                # 异步派发：跳过本同步路径的 finalize 与 Bot@Bot 递归
+                continue
             else:
                 if not resp.success:
                     logger.warning(
@@ -708,7 +792,7 @@ async def run_orchestrator(
                         username, dur_ms,
                     )
                 content = resp.content if resp.success else (resp.error_message or "处理出错")
-            resp_file_ids = resp.file_ids if not isinstance(resp, BaseException) else []
+                resp_file_ids = resp.file_ids or []
             await _finalize_bot_msg(bot_msg, content, file_ids=resp_file_ids)
             await _record_agent_task(bot_id, bot_msg.msg_id)
             created.append(bot_msg)
