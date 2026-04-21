@@ -94,6 +94,8 @@ def _to_full(bot: BotAccount, model_name: str | None = None, template_name: str 
         model_name=mn,
         template_name=tn,
         created_by=bot.created_by,
+        binding_type=getattr(bot, "binding_type", None) or "http",
+        binding_config=getattr(bot, "binding_config", None),
     ).model_dump()
     if bot.created_at:
         d["created_at"] = bot.created_at.isoformat()
@@ -127,6 +129,8 @@ async def create_bot(
         intro=body.intro,
         is_public=body.is_public,
         bot_id=body.bot_id,
+        binding_type=body.binding_type,
+        binding_config=body.binding_config,
         current_user=current_user,
     )
     audit.info("action=bot.create actor=%s resource_id=%s username=%s", current_user.user_id, bot.bot_id, body.username)

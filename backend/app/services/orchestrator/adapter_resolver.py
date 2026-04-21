@@ -3,7 +3,9 @@
 路由规则：
 - GUIDE_BOT_ID → UnifiedBuiltinBotAdapter（内置三合一：引导/助手/记忆管理）
 - GUIDE_HELPER_BOT_ID → HelpBotAdapter（智枢协作操作指引助手：帮助文档问答）
-- 其余 bot_id → LLMBotAdapter（Bot = AIModel + PromptTemplate）
+- 其余 bot：按 BotAccount.binding_type 分流
+    · 'http'      → LLMBotAdapter（OpenAI 兼容 HTTP，Bot = AIModel + PromptTemplate）
+    · 'websocket' → WebsocketBotAdapter（经 OpenClaw channel plugin 异步回推）
 """
 import logging
 
@@ -16,6 +18,7 @@ from app.services.adapters.help_bot_adapter import HelpBotAdapter
 from app.services.adapters.llm_bot import LLMBotAdapter
 from app.services.adapters.mock import MockOpenClawAdapter
 from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
+from app.services.adapters.websocket_bot import WebsocketBotAdapter
 from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 
 logger = logging.getLogger("app.services.orchestrator.adapter_resolver")
@@ -52,6 +55,23 @@ async def get_adapter_for_bot(
 
     if not bot:
         return MockOpenClawAdapter(reply="[未知 Bot] 已收到消息。")
+
+    # WebSocket Bot：经 OpenClaw channel plugin 异步回推，无需 AIModel/PromptTemplate
+    binding_type = (getattr(bot, "binding_type", None) or "http").lower()
+    if binding_type == "websocket":
+        if bot.status != "online":
+            logger.warning(
+                "adapter_resolver: bot_id=%s username=%s status=%s (not 'online'), returning mock",
+                bot_id, bot.username, bot.status,
+            )
+            return MockOpenClawAdapter(
+                reply=f"[{bot.display_name or bot.username}] 当前状态为「{bot.status}」，暂不接受消息"
+            )
+        logger.info(
+            "adapter_resolver: bot_id=%s username=%s -> WebsocketBotAdapter",
+            bot_id, bot.username,
+        )
+        return WebsocketBotAdapter(bot)
 
     if not bot.ai_model:
         logger.warning("adapter_resolver: bot_id=%s has no model configured", bot_id)
