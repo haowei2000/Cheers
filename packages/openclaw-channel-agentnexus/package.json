@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "description": "OpenClaw channel plugin for AgentNexus — connects an OpenClaw agent to AgentNexus via the per-bot control + data WebSocket bridge.",
   "type": "module",
-  "main": "./dist/lib.js",
-  "types": "./dist/lib.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/lib.d.ts",
-      "import": "./dist/lib.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     }
   },
   "scripts": {

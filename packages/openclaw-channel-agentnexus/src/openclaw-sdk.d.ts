@@ -1,47 +1,147 @@
 /**
- * 本地 ambient declaration for openclaw/plugin-sdk/channel-entry-contract.
+ * 本地 ambient declarations for OpenClaw plugin SDK —— tsc 编译不需要真装 openclaw。
+ * 运行时由 OpenClaw CLI 的 node_modules 提供真实实现。
  *
- * 这是为了在不把 openclaw 作为 devDependency 安装的情况下，让 tsc 能通过编译。
- * 运行时由 OpenClaw CLI 自己的 node_modules 提供真实实现。
- *
- * 形状对齐 /opt/homebrew/lib/node_modules/openclaw/dist/plugin-sdk/src/plugin-sdk/
- * channel-entry-contract.d.ts（OpenClaw 2026.4.15）。
+ * 对齐 OpenClaw 2026.4.15 的公开 API（doc + /opt/homebrew/lib/node_modules/openclaw/
+ * dist/plugin-sdk/）。
  */
-declare module "openclaw/plugin-sdk/channel-entry-contract" {
-  export interface BundledEntryModuleRef {
-    specifier: string;
-    exportName?: string;
+
+declare module "openclaw/plugin-sdk/channel-core" {
+  export type OpenClawConfig = {
+    channels?: Record<string, unknown>;
+    gateway?: { port?: number; bind?: string; [k: string]: unknown };
+    [k: string]: unknown;
+  };
+
+  /** PluginRuntime：权限按 gateway request scope 分级。 */
+  export interface PluginRuntime {
+    subagent: {
+      run(p: {
+        sessionKey: string;
+        message: string;
+        deliver?: boolean;
+        idempotencyKey?: string;
+        provider?: string;
+        model?: string;
+        extraSystemPrompt?: string;
+        lane?: string;
+      }): Promise<{ runId: string }>;
+      waitForRun(p: { runId: string; timeoutMs?: number }): Promise<{
+        status: "ok" | "error" | "timeout";
+        error?: string;
+      }>;
+      getSessionMessages(p: { sessionKey: string; limit?: number }): Promise<{
+        messages: unknown[];
+      }>;
+      deleteSession(p: { sessionKey: string; deleteTranscript?: boolean }): Promise<void>;
+    };
+    channel?: unknown;
+    [k: string]: unknown;
   }
 
-  export interface BundledChannelEntryOptions {
+  /** HTTP route handler 运行在 gateway request scope 里，合法使用 subagent.run。 */
+  export interface OpenClawPluginHttpRouteParams {
+    path: string;
+    handler: (req: unknown, res: unknown) => Promise<boolean | void> | boolean | void;
+    auth: "gateway" | "plugin";
+    match?: "exact" | "prefix";
+    gatewayRuntimeScopeSurface?: "write-default" | "trusted-operator";
+    replaceExisting?: boolean;
+  }
+
+  export interface OpenClawPluginApi {
+    id: string;
+    name: string;
+    config: OpenClawConfig;
+    runtime: PluginRuntime;
+    logger: {
+      info: (...args: unknown[]) => void;
+      warn: (...args: unknown[]) => void;
+      error: (...args: unknown[]) => void;
+      debug?: (...args: unknown[]) => void;
+    };
+    registerHttpRoute(params: OpenClawPluginHttpRouteParams): void;
+    registerCli?(
+      registrar: (ctx: { program: unknown }) => void,
+      opts?: { descriptors?: Array<{ name: string; description: string; hasSubcommands: boolean }> },
+    ): void;
+    [k: string]: unknown;
+  }
+
+  export type ChannelPlugin<TAccount = unknown, _P = unknown, _A = unknown> = {
+    id: string;
+    meta?: {
+      id: string;
+      label?: string;
+      selectionLabel?: string;
+      blurb?: string;
+      docsPath?: string;
+      [k: string]: unknown;
+    };
+    capabilities?: {
+      chatTypes: Array<"group" | "direct" | "thread">;
+      threads?: boolean;
+      reply?: boolean;
+      media?: boolean;
+      reactions?: boolean;
+      edit?: boolean;
+      [k: string]: unknown;
+    };
+    setup: {
+      resolveAccount: (cfg: OpenClawConfig, accountId?: string | null) => TAccount;
+      inspectAccount?: (cfg: OpenClawConfig, accountId?: string | null) => unknown;
+      defaultAccountId?: (cfg: OpenClawConfig) => string | null | undefined;
+      [k: string]: unknown;
+    };
+    config?: {
+      listAccountIds: (cfg: OpenClawConfig) => string[];
+      resolveAccount: (cfg: OpenClawConfig, accountId?: string | null) => TAccount;
+      inspectAccount?: (cfg: OpenClawConfig, accountId?: string | null) => unknown;
+      [k: string]: unknown;
+    };
+    gateway?: {
+      startAccount?: (ctx: unknown) => Promise<void | unknown>;
+      stopAccount?: (ctx: unknown) => Promise<void>;
+      [k: string]: unknown;
+    };
+    security?: unknown;
+    pairing?: unknown;
+    threading?: unknown;
+    outbound?: unknown;
+    status?: unknown;
+    [k: string]: unknown;
+  };
+
+  export function createChannelPluginBase<TAccount>(opts: {
+    id: string;
+    setup: ChannelPlugin<TAccount>["setup"];
+    capabilities?: ChannelPlugin<TAccount>["capabilities"];
+    meta?: ChannelPlugin<TAccount>["meta"];
+    config?: ChannelPlugin<TAccount>["config"];
+    configSchema?: unknown;
+    [k: string]: unknown;
+  }): ChannelPlugin<TAccount>;
+
+  export function createChatChannelPlugin<TAccount extends { accountId?: string | null }>(params: {
+    base: ChannelPlugin<TAccount>;
+    security?: unknown;
+    pairing?: unknown;
+    threading?: unknown;
+    outbound?: unknown;
+  }): ChannelPlugin<TAccount>;
+
+  export function defineChannelPluginEntry<TPlugin>(opts: {
     id: string;
     name: string;
     description: string;
-    importMetaUrl: string;
-    plugin: BundledEntryModuleRef;
-    secrets?: BundledEntryModuleRef;
-    configSchema?: unknown | (() => unknown);
-    runtime?: BundledEntryModuleRef;
-    accountInspect?: BundledEntryModuleRef;
-    features?: { accountInspect?: boolean };
-    registerCliMetadata?: (api: unknown) => void;
-    registerFull?: (api: unknown) => void;
-  }
+    plugin: TPlugin;
+    configSchema?: unknown;
+    setRuntime?: (runtime: PluginRuntime) => void;
+    registerCliMetadata?: (api: OpenClawPluginApi) => void;
+    registerFull?: (api: OpenClawPluginApi) => void;
+  }): unknown;
 
-  export interface BundledChannelSetupEntryOptions {
-    importMetaUrl: string;
-    plugin: BundledEntryModuleRef;
-    secrets?: BundledEntryModuleRef;
-    runtime?: BundledEntryModuleRef;
-    features?: {
-      legacyStateMigrations?: boolean;
-      legacySessionSurfaces?: boolean;
-    };
-  }
-
-  export function defineBundledChannelEntry(opts: BundledChannelEntryOptions): unknown;
-  export function defineBundledChannelSetupEntry(opts: BundledChannelSetupEntryOptions): unknown;
-  export function loadBundledEntryExportSync<T>(importMetaUrl: string, ref: BundledEntryModuleRef): T;
+  export function defineSetupPluginEntry<TPlugin>(plugin: TPlugin): { plugin: TPlugin };
 }
 
 declare module "openclaw/plugin-sdk/runtime-store" {
@@ -57,4 +157,3 @@ declare module "openclaw/plugin-sdk/runtime-store" {
   }
   export function createPluginRuntimeStore<T>(opts: PluginRuntimeStoreOptions): PluginRuntimeStore<T>;
 }
-

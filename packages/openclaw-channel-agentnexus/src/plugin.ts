@@ -1,48 +1,118 @@
 /**
- * agentnexus channel plugin —— 把 AgentNexus WebSocket Bot 桥接成 OpenClaw channel。
+ * agentnexus channel plugin —— OpenClaw 官方 SDK 契约版（channel-core）
  *
- * 形状对齐 OpenClaw Plugin SDK（2026.4.15）的 ChannelPlugin 契约：
- *   - config.listAccountIds / resolveAccount（必填）
- *   - gateway.startAccount(ctx) / stopAccount(ctx)：ctx.account 即 resolveAccount
- *     的返回；ctx.setStatus 用来上报运行状态；ctx.abortSignal 用来驱动停止
- *   - outbound.sendText(ctx): Promise<OutboundDeliveryResult>
- *   - capabilities: 扁平 ChannelCapabilities 形状
- *
- * 生命周期：
- *   OpenClaw 读取 cfg.channels.agentnexus.accounts.<id> → resolveAccount →
- *   gateway.startAccount → new BotSession(...) 连 control + data WS →
- *   hello → setStatus("connected")。
- *
- * 出站：OpenClaw agent 调 outbound.sendText(ctx, text) →
- *   session.reply() 或 session.send()，映射回 AgentNexus 的 reply/send 帧。
- *
- * 入站（agent 接收用户消息）：
- *   当前版本先仅缓存 lastInboundByTaskId，供 outbound.sendText 的 replyTo 匹配；
- *   把消息真正推入 OpenClaw agent 需要 ctx.runtime 的专用 helper，
- *   那部分 SDK 未公开稳定类型，留待后续 SDK 升级后补齐。
+ * 按 docs.openclaw.ai/plugins/sdk-channel-plugins 的 createChatChannelPlugin
+ * + createChannelPluginBase 模式构建；entry 文件里 registerFull 注册 HTTP 路由，
+ * WS 入站时自 loopback 到该路由进入 gateway-request-scope，合法调用
+ * api.runtime.subagent.run。agent 产出经 outbound.sendText 回推 → session.reply
+ * 原地 finalize AgentNexus 侧占位消息。
  */
+import {
+  createChannelPluginBase,
+  createChatChannelPlugin,
+  type ChannelPlugin,
+  type OpenClawConfig,
+  type OpenClawPluginApi,
+} from "openclaw/plugin-sdk/channel-core";
+
 import { BotSession, type InboundMessage } from "./session.js";
-import type { ChannelPlugin, ResolvedAccount, StatusSnapshot } from "./sdk-shim.js";
-import { createChatChannelPlugin } from "./sdk-shim.js";
-import { tryGetAgentNexusRuntime } from "./runtime-store.js";
 
 const PLUGIN_ID = "agentnexus";
 const INBOUND_CACHE_MAX = 1000;
 
 // ============================================================================
-// Account registry —— accountId → live BotSession + inbound cache
+// ResolvedAccount —— 由 config 解析得出，供 gateway / outbound 等 adapter 使用
+// ============================================================================
+
+export interface ResolvedAccount {
+  accountId: string | null;
+  enabled: boolean;
+  botToken: string;
+  controlUrl: string;
+  dataUrl: string;
+  advanced: {
+    reconnectBaseMs: number;
+    reconnectMaxMs: number;
+    heartbeatIntervalMs: number;
+    sendAckTimeoutMs: number;
+  };
+  dmPolicy?: string;
+  allowFrom: string[];
+}
+
+interface RawAccount {
+  enabled?: boolean;
+  botToken: string;
+  controlUrl: string;
+  dataUrl: string;
+  advanced?: Partial<ResolvedAccount["advanced"]>;
+  allowFrom?: string[];
+  dmSecurity?: string;
+}
+
+function getAccountsFromCfg(cfg: OpenClawConfig): Record<string, RawAccount> {
+  const section = (cfg.channels as Record<string, unknown> | undefined)?.[PLUGIN_ID] as
+    | { accounts?: Record<string, RawAccount> }
+    | undefined;
+  return section?.accounts ?? {};
+}
+
+function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): ResolvedAccount {
+  const accounts = getAccountsFromCfg(cfg);
+  const id = accountId ?? Object.keys(accounts)[0] ?? null;
+  const raw = (id && accounts[id]) || undefined;
+  if (!raw) {
+    // 找不到账号时返回一个"占位"账号；SDK 会按 inspectAccount 去校验是否 configured
+    return {
+      accountId: id,
+      enabled: false,
+      botToken: "",
+      controlUrl: "",
+      dataUrl: "",
+      advanced: {
+        reconnectBaseMs: 1000,
+        reconnectMaxMs: 30000,
+        heartbeatIntervalMs: 30000,
+        sendAckTimeoutMs: 10000,
+      },
+      allowFrom: [],
+    };
+  }
+  return {
+    accountId: id,
+    enabled: raw.enabled ?? true,
+    botToken: raw.botToken,
+    controlUrl: raw.controlUrl,
+    dataUrl: raw.dataUrl,
+    advanced: {
+      reconnectBaseMs: raw.advanced?.reconnectBaseMs ?? 1000,
+      reconnectMaxMs: raw.advanced?.reconnectMaxMs ?? 30000,
+      heartbeatIntervalMs: raw.advanced?.heartbeatIntervalMs ?? 30000,
+      sendAckTimeoutMs: raw.advanced?.sendAckTimeoutMs ?? 10000,
+    },
+    dmPolicy: raw.dmSecurity,
+    allowFrom: raw.allowFrom ?? [],
+  };
+}
+
+function inspectAccount(cfg: OpenClawConfig, accountId?: string | null): unknown {
+  const account = resolveAccount(cfg, accountId);
+  return {
+    enabled: account.enabled && Boolean(account.botToken),
+    configured: Boolean(account.botToken && account.controlUrl && account.dataUrl),
+    tokenStatus: account.botToken ? "available" : "missing",
+  };
+}
+
+// ============================================================================
+// SessionRegistry —— 每个 live account 的 BotSession + inbound 消息缓存
 // ============================================================================
 
 interface AccountRuntime {
   session: BotSession;
-  /** 入站消息缓存：key = task_id（用于老的按 task 匹配） */
-  lastInboundByTaskId: Map<string, InboundMessage>;
-  /** 入站消息缓存：key = sessionKey（${accountId}:${channelId}），
-   *  agent 通过 subagent.run 的 deliver 回推时，sendText ctx.to 会匹配 sessionKey，
-   *  这里能快速拿回源消息做 session.reply。 */
+  account: ResolvedAccount;
+  /** sessionKey → 最近一次 inbound，供 outbound.sendText 查源消息做 session.reply */
   lastInboundBySessionKey: Map<string, InboundMessage>;
-  /** ctx.setStatus 的最后一次快照，便于 getStatus 查询 */
-  lastStatus: StatusSnapshot;
 }
 
 const sessionRegistry = new Map<string, AccountRuntime>();
@@ -57,80 +127,67 @@ function rememberInbound(cache: Map<string, InboundMessage>, key: string, m: Inb
   }
 }
 
-function sessionKeyFor(accountId: string, channelId: string): string {
+export function sessionKeyFor(accountId: string, channelId: string): string {
   return `agentnexus:${accountId}:${channelId}`;
 }
 
 // ============================================================================
-// Config parsing
+// Plugin API 共享 —— registerFull 里把 api 存到这里，onMessage 里通过 fetch
+// 把消息 bounce 到 api.registerHttpRoute 注册的路由，从而进入 request scope
 // ============================================================================
 
-interface AccountShape {
-  enabled?: boolean;
-  botToken: string;
-  controlUrl: string;
-  dataUrl: string;
-  advanced?: ResolvedAccount["advanced"];
+interface SharedApiRef {
+  api: OpenClawPluginApi | null;
+  gatewayPort: number | null;
+  internalToken: string | null;  // 自 loopback 的防护 token
+  gatewayToken: string | null;   // OpenClaw gateway 外层 token-auth
 }
 
-interface OpenClawChannelConfig {
-  channels?: { agentnexus?: { enabled?: boolean; accounts?: Record<string, AccountShape> } };
+const sharedApi: SharedApiRef = {
+  api: null, gatewayPort: null, internalToken: null, gatewayToken: null,
+};
+
+export function setSharedApi(
+  api: OpenClawPluginApi, gatewayPort: number, token: string, gatewayToken: string | null,
+): void {
+  sharedApi.api = api;
+  sharedApi.gatewayPort = gatewayPort;
+  sharedApi.internalToken = token;
+  sharedApi.gatewayToken = gatewayToken;
 }
 
-function getAccountsFromConfig(cfg: unknown): Record<string, AccountShape> {
-  const c = cfg as OpenClawChannelConfig | undefined;
-  return c?.channels?.agentnexus?.accounts ?? {};
-}
-
-function resolveAccount(cfg: unknown, accountId?: string | null): ResolvedAccount | undefined {
-  const accounts = getAccountsFromConfig(cfg);
-  const id = accountId ?? Object.keys(accounts)[0];
-  if (!id) return undefined;
-  const raw = accounts[id];
-  if (!raw) return undefined;
-  return {
-    accountId: id,
-    enabled: raw.enabled ?? true,
-    botToken: raw.botToken,
-    controlUrl: raw.controlUrl,
-    dataUrl: raw.dataUrl,
-    advanced: {
-      reconnectBaseMs: raw.advanced?.reconnectBaseMs ?? 1000,
-      reconnectMaxMs: raw.advanced?.reconnectMaxMs ?? 30000,
-      heartbeatIntervalMs: raw.advanced?.heartbeatIntervalMs ?? 30000,
-      sendAckTimeoutMs: raw.advanced?.sendAckTimeoutMs ?? 10000,
-    },
-    raw: raw as unknown as Record<string, unknown>,
-  };
+export function getSharedApi(): SharedApiRef {
+  return sharedApi;
 }
 
 // ============================================================================
-// Gateway adapter —— SDK 调用 startAccount 启动会话、stopAccount 停止
+// Gateway adapter: startAccount/stopAccount
 // ============================================================================
 
 interface GatewayCtx {
   account: ResolvedAccount;
   accountId: string;
   abortSignal?: AbortSignal;
-  log?: { info?: (...a: unknown[]) => void; warn?: (...a: unknown[]) => void; error?: (...a: unknown[]) => void };
+  log?: {
+    info?: (...a: unknown[]) => void;
+    warn?: (...a: unknown[]) => void;
+    error?: (...a: unknown[]) => void;
+  };
   setStatus?: (next: unknown) => void;
 }
 
-async function startAccount(ctx: GatewayCtx): Promise<void> {
+async function startAccount(rawCtx: unknown): Promise<void> {
+  const ctx = rawCtx as GatewayCtx;
   const { account, accountId } = ctx;
   const log = ctx.log ?? console;
-  const setStatus = (next: StatusSnapshot) => ctx.setStatus?.(next as unknown);
 
-  // 若已经有旧 session，先停掉（幂等）
   const existing = sessionRegistry.get(accountId);
   if (existing) {
     log.warn?.(`agentnexus: startAccount called twice for ${accountId}; stopping old session first`);
     await existing.session.stop();
   }
 
-  const lastInboundByTaskId = new Map<string, InboundMessage>();
   const lastInboundBySessionKey = new Map<string, InboundMessage>();
-  let lastStatus: StatusSnapshot = { state: "stopped" };
 
   const session = new BotSession(
     {
@@ -142,8 +199,15 @@ async function startAccount(ctx: GatewayCtx): Promise<void> {
     {
       onReady: () => {
         log.info?.(`agentnexus: ${accountId} ready bot_id=${session.botId} memberships=${session.membership.channelIds.size}`);
-        lastStatus = { state: "running", detail: { botId: session.botId ?? undefined, memberships: session.membership.channelIds.size } };
-        setStatus({ state: "connected" } as unknown as StatusSnapshot);
+        // ChannelAccountSnapshot 形状 —— gateway health monitor 依据这些字段判断是否需要重启
+        ctx.setStatus?.({
+          accountId,
+          enabled: true,
+          configured: true,
+          running: true,
+          connected: true,
+          lastConnectedAt: Date.now(),
+        });
       },
       onChannelJoined: (ch, invitedBy) => {
         log.info?.(`agentnexus: ${accountId} joined ${ch.channel_id} invited_by=${invitedBy ?? "?"}`);
@@ -153,52 +217,60 @@ async function startAccount(ctx: GatewayCtx): Promise<void> {
       },
       onMessage: async (m) => {
         const sk = sessionKeyFor(accountId, m.channelId);
-        rememberInbound(lastInboundByTaskId, m.event.task_id, m);
         rememberInbound(lastInboundBySessionKey, sk, m);
         log.info?.(
           `agentnexus: ${accountId} inbound channel=${m.channelId} task=${m.event.task_id} text=${JSON.stringify(m.text).slice(0, 80)}`,
         );
 
-        // 尝试通过 SDK 的 subagent.run 启动一次 agent turn（deliver:true 时 agent
-        // 产出会走 outbound.sendText 回推到 AgentNexus 频道）。
-        //
-        // ⚠️ 已知限制：subagent 方法是 "gateway request scope" 的 —— 只能在
-        // OpenClaw 处理 HTTP/WS 入站请求时调用。我们这里是自管 WS 的 receive
-        // 回调，不在 request scope 内，会收到 RequestScopedSubagentRuntimeError。
-        //
-        // 真正要让 OpenClaw agent 自动响应，需要走 registerFull(api) 注册一条
-        // HTTP 路由，然后在 WS 收到消息时 fetch 那条路由 —— 那个 handler 才
-        // 在 request scope 里，能合法调 subagent.run。详见接入指南 §8.1。
-        //
-        // 本版本的行为：
-        //   - 有 runtime：试一下 subagent.run，失败转成简短提示回 session.reply
-        //   - 无 runtime（例如独立模式）：直接 session.reply 回显式提示
-        const runtime = tryGetAgentNexusRuntime();
-        if (!runtime) {
-          log.warn?.(`agentnexus: ${accountId} runtime not injected; bot will reply with placeholder notice`);
+        // 自 loopback 到 api.registerHttpRoute 的路由：那个 handler 运行在
+        // gateway-request-scope，可以合法调 api.runtime.subagent.run
+        const ref = getSharedApi();
+        if (!ref.api || !ref.gatewayPort || !ref.internalToken) {
+          log.warn?.(
+            `agentnexus: ${accountId} plugin api not registered yet; falling back to diagnostic reply`,
+          );
           await session.reply({
             source: m,
-            text: "[agentnexus plugin] runtime 未注入，无法启动 agent turn。请在 OpenClaw 中加载 plugin，或在独立模式下自定义 onMessage。",
+            text: "[agentnexus plugin] 尚未注册 HTTP 路由，无法启动 agent turn。",
           }).catch(() => { /* ignore */ });
           return;
         }
+
+        const url = `http://127.0.0.1:${ref.gatewayPort}/plugins/agentnexus/inbound`;
         try {
-          const { runId } = await runtime.subagent.run({
-            sessionKey: sk,
-            message: m.text,
-            deliver: true,
-            idempotencyKey: m.event.task_id,
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+            "X-Agentnexus-Internal-Token": ref.internalToken,
+          };
+          if (ref.gatewayToken) {
+            headers["Authorization"] = `Bearer ${ref.gatewayToken}`;
+          }
+          const resp = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              accountId,
+              sessionKey: sk,
+              channelId: m.channelId,
+              taskId: m.event.task_id,
+              placeholderMsgId: m.event.placeholder_msg_id,
+              text: m.text,
+            }),
           });
-          log.info?.(`agentnexus: ${accountId} subagent.run started runId=${runId} sk=${sk}`);
+          if (!resp.ok) {
+            const body = await resp.text().catch(() => "<unreadable>");
+            log.warn?.(`agentnexus: ${accountId} inbound loopback failed HTTP ${resp.status}: ${body.slice(0, 200)}`);
+            await session.reply({
+              source: m,
+              text: `[agentnexus plugin] 内部路由 HTTP ${resp.status}: ${body.slice(0, 120)}`,
+            }).catch(() => { /* ignore */ });
+          }
         } catch (err) {
-          const errStr = String(err);
-          const isScope = errStr.includes("OPENCLAW_SUBAGENT_RUNTIME_REQUEST_SCOPE")
-            || errStr.includes("only available during a gateway request");
-          log.warn?.(`agentnexus: ${accountId} subagent.run failed (scoped=${isScope}): ${errStr}`);
-          const fallback = isScope
-            ? "[agentnexus plugin] 当前收到消息，但未配置 registerFull 的 HTTP 路由回调 —— OpenClaw subagent.run 只能在 gateway request scope 里调。请参考接入指南 §8.1 完成真实 agent 回复接线。"
-            : `[agentnexus plugin] agent 启动失败：${errStr}`;
-          await session.reply({ source: m, text: fallback }).catch(() => { /* ignore */ });
+          log.error?.(`agentnexus: ${accountId} inbound loopback error: ${String(err)}`);
+          await session.reply({
+            source: m,
+            text: `[agentnexus plugin] 内部路由错误: ${String(err)}`,
+          }).catch(() => { /* ignore */ });
         }
       },
       onConnectionChange: (stream, state) => {
@@ -206,30 +278,41 @@ async function startAccount(ctx: GatewayCtx): Promise<void> {
       },
       onFatal: (reason) => {
         log.error?.(`agentnexus: ${accountId} fatal: ${reason}`);
-        lastStatus = { state: "stopped", detail: { fatal: reason } };
-        setStatus({ state: "error", error: reason } as unknown as StatusSnapshot);
+        ctx.setStatus?.({
+          accountId,
+          enabled: true,
+          configured: true,
+          running: false,
+          connected: false,
+          lastError: reason,
+        });
       },
     },
   );
 
-  const runtime: AccountRuntime = {
-    session,
-    lastInboundByTaskId,
-    lastInboundBySessionKey,
-    lastStatus,
-  };
-  sessionRegistry.set(accountId, runtime);
+  sessionRegistry.set(accountId, { session, account, lastInboundBySessionKey });
 
-  ctx.abortSignal?.addEventListener("abort", () => {
-    log.info?.(`agentnexus: ${accountId} abortSignal fired; stopping session`);
-    void session.stop();
-    sessionRegistry.delete(accountId);
+  // gateway 把 startAccount 的 Promise 视作"账号生命周期"，只要它 resolve/reject
+  // 就认为账号停了，立刻按指数退避 auto-restart。所以这里必须一直 await 直到
+  // ctx.abortSignal 触发（= stopAccount 被调用 / gateway 关闭）。
+  await new Promise<void>((resolve) => {
+    const onAbort = () => {
+      log.info?.(`agentnexus: ${accountId} abortSignal; stopping`);
+      void session.stop();
+      sessionRegistry.delete(accountId);
+      resolve();
+    };
+    if (ctx.abortSignal?.aborted) {
+      onAbort();
+    } else {
+      ctx.abortSignal?.addEventListener("abort", onAbort, { once: true });
+    }
+    session.start();
   });
-
-  session.start();
 }
 
-async function stopAccount(ctx: GatewayCtx): Promise<void> {
+async function stopAccount(rawCtx: unknown): Promise<void> {
+  const ctx = rawCtx as GatewayCtx;
   const entry = sessionRegistry.get(ctx.accountId);
   if (!entry) return;
   sessionRegistry.delete(ctx.accountId);
@@ -237,70 +320,53 @@ async function stopAccount(ctx: GatewayCtx): Promise<void> {
 }
 
 // ============================================================================
-// Outbound: OpenClaw agent → send text back to AgentNexus channel
+// Outbound: OpenClaw agent → sendText → session.reply
 // ============================================================================
 
-interface OutboundCtx {
-  to: string;              // 目标 channel id（或 task id）
+interface SendTextParams {
+  to: string;
   text: string;
-  replyToId?: string | null;
-  threadId?: string | number | null;
   accountId?: string | null;
+  replyToId?: string | null;
 }
 
-interface OutboundResult {
-  channel: string;
-  messageId: string;
-  channelId?: string;
-}
-
-async function sendText(ctx: OutboundCtx): Promise<OutboundResult> {
-  const accountId = ctx.accountId ?? Array.from(sessionRegistry.keys())[0];
-  if (!accountId) throw new Error("agentnexus: no active account");
+async function sendText(params: SendTextParams): Promise<{ messageId: string }> {
+  const accountId = params.accountId ?? Array.from(sessionRegistry.keys())[0];
+  if (!accountId) throw new Error("agentnexus: no active account for sendText");
   const entry = sessionRegistry.get(accountId);
   if (!entry) throw new Error(`agentnexus: no running session for account ${accountId}`);
-  const { session, lastInboundByTaskId, lastInboundBySessionKey } = entry;
+  const { session, lastInboundBySessionKey } = entry;
 
-  // 匹配优先级：
-  //   1) ctx.to 等于 subagent.run 时传入的 sessionKey（推荐路径，deliver:true 时走这里）
-  //   2) ctx.replyToId / ctx.to 等于 task_id（兼容老的匹配）
-  //   3) 都没匹配到，视 ctx.to 为 channelId，走主动 send
-  const skSource = ctx.to ? lastInboundBySessionKey.get(ctx.to) : undefined;
-  const taskHint = ctx.replyToId ?? ctx.to;
-  const taskSource = taskHint ? lastInboundByTaskId.get(taskHint) : undefined;
-  const source = skSource ?? taskSource;
-
+  // deliver 路径下 `to` 通常等于 sessionKey
+  const source = lastInboundBySessionKey.get(params.to);
   if (source) {
-    lastInboundBySessionKey.delete(sessionKeyFor(accountId, source.channelId));
-    lastInboundByTaskId.delete(source.event.task_id);
-    const r = await session.reply({ source, text: ctx.text });
-    if (r.ok && r.messageId) {
-      return { channel: PLUGIN_ID, messageId: r.messageId, channelId: source.channelId };
-    }
-    throw new Error(`agentnexus: reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
+    lastInboundBySessionKey.delete(params.to);
+    const r = await session.reply({ source, text: params.text });
+    if (r.ok && r.messageId) return { messageId: r.messageId };
+    throw new Error(`agentnexus: session.reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
   }
 
-  const channelId = ctx.to;
-  if (!channelId) throw new Error("agentnexus: sendText missing channel id");
+  // 兜底：把 to 当 channelId，走主动 send
+  const channelId = params.to;
   if (!session.membership.channelIds.has(channelId)) {
     throw new Error(`agentnexus: bot not in channel ${channelId}`);
   }
-  const r = await session.send({ channelId, text: ctx.text });
-  if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, channelId };
-  throw new Error(`agentnexus: send failed (${r.code ?? "?"} ${r.error ?? ""})`);
+  const r = await session.send({ channelId, text: params.text });
+  if (r.ok && r.messageId) return { messageId: r.messageId };
+  throw new Error(`agentnexus: session.send failed (${r.code ?? "?"} ${r.error ?? ""})`);
 }
 
 // ============================================================================
-// Plugin object
+// Plugin 对象
 // ============================================================================
 
-export const agentnexusPlugin: ChannelPlugin<ResolvedAccount> = createChatChannelPlugin({
+const base = createChannelPluginBase<ResolvedAccount>({
   id: PLUGIN_ID,
   meta: {
     id: PLUGIN_ID,
     label: "AgentNexus",
     selectionLabel: "AgentNexus (per-bot WebSocket bridge)",
-    blurb: "Slack-like multi-channel chat with bots, via per-bot control+data WS bridge.",
+    blurb: "Slack-like multi-channel chat with bots.",
     docsPath: "/channels/agentnexus",
   },
   capabilities: {
@@ -309,33 +375,61 @@ export const agentnexusPlugin: ChannelPlugin<ResolvedAccount> = createChatChanne
     reply: true,
     media: true,
   },
-  config: {
-    listAccountIds: (cfg) => Object.keys(getAccountsFromConfig(cfg)),
+  setup: {
     resolveAccount,
+    inspectAccount,
   },
-  gateway: {
-    // 字段名对齐 OpenClaw SDK 的 ChannelGatewayAdapter：startAccount / stopAccount
-    startAccount,
-    stopAccount,
-    // legacy start 字段保留（shim 里有），真实 SDK 不读但不影响
-    start: async () => ({ stop: async () => {} }),
-  } as unknown as ChannelPlugin<ResolvedAccount>["gateway"],
-  outbound: {
-    deliveryMode: "direct",
-    sendText: sendText as unknown as ChannelPlugin<ResolvedAccount>["outbound"]["sendText"],
-  },
-  status: {
-    getStatus: (account): StatusSnapshot => {
-      const entry = sessionRegistry.get(account.accountId);
-      if (!entry) return { state: "stopped" };
-      return entry.lastStatus;
-    },
-  },
-  security: {
-    getDmPolicy: () => "open",
-    checkGroupAccess: () => true,
+  config: {
+    listAccountIds: (cfg) => Object.keys(getAccountsFromCfg(cfg)),
+    resolveAccount,
+    inspectAccount,
   },
 });
 
-// 内部暴露，便于测试
+// base 不直接接 gateway，我们用 spread 把它合回来
+const baseWithGateway: ChannelPlugin<ResolvedAccount> = {
+  ...base,
+  gateway: {
+    startAccount,
+    stopAccount,
+    // 注意：resolveGatewayAuthBypassPaths 只对 bundled 插件生效。外部 linked
+    // 插件的自 loopback 用 api.config.gateway.auth.token 过 gateway 层 auth，
+    // 然后由 handler 里自己的 internalToken 做防伪（见 index.ts）。
+  },
+};
+
+const chatPlugin = createChatChannelPlugin<ResolvedAccount>({
+  base: baseWithGateway,
+  security: {
+    dm: {
+      channelKey: PLUGIN_ID,
+      resolvePolicy: (account: ResolvedAccount) => account.dmPolicy,
+      resolveAllowFrom: (account: ResolvedAccount) => account.allowFrom,
+      defaultPolicy: "open",
+    },
+  },
+  threading: { topLevelReplyToMode: "reply" },
+  outbound: {
+    attachedResults: {
+      sendText,
+    },
+  },
+});
+
+// 追加 status 适配器：gateway 的 health monitor 会用这个判断是否应该 auto-restart。
+// 默认实现会把自管 WS 的长连接当成 "stale socket" 误判为故障 —— 直接 opt out。
+(chatPlugin as { status?: unknown }).status = {
+  skipStaleSocketHealthCheck: true,
+  defaultRuntime: {
+    accountId: "",
+    enabled: true,
+    configured: true,
+    running: true,
+    connected: true,
+  },
+};
+
+export const agentnexusPlugin: ChannelPlugin<ResolvedAccount> = chatPlugin;
+
+// test hooks
 export const __testonly = { sessionRegistry };

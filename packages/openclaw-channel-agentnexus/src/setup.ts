@@ -1,12 +1,8 @@
 /**
- * OpenClaw bundled channel setup entry —— 用于 `openclaw configure` / 首次接入流程。
+ * OpenClaw channel setup entry —— lightweight 加载路径，用于 onboarding / setup wizard。
  */
-import { defineBundledChannelSetupEntry } from "openclaw/plugin-sdk/channel-entry-contract";
+import { defineSetupPluginEntry } from "openclaw/plugin-sdk/channel-core";
 
-export default defineBundledChannelSetupEntry({
-  importMetaUrl: import.meta.url,
-  plugin: {
-    specifier: "./plugin.js",
-    exportName: "agentnexusPlugin",
-  },
-});
+import { agentnexusPlugin } from "./plugin.js";
+
+export default defineSetupPluginEntry(agentnexusPlugin);
