@@ -29,6 +29,9 @@ services:
       - IMAGE_GEN_BASE_URL=${IMAGE_GEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       - IMAGE_GEN_API_KEY=${IMAGE_GEN_API_KEY:-}
       - IMAGE_GEN_DEFAULT_MODEL=${IMAGE_GEN_DEFAULT_MODEL:-qwen-image-2.0-pro}
+      - OPENCLAW_BRIDGE_ENABLED=${OPENCLAW_BRIDGE_ENABLED:-true}
+      - OPENCLAW_BRIDGE_TOKEN=${OPENCLAW_BRIDGE_TOKEN:-}
+      - OPENCLAW_BRIDGE_TIMEOUT_SECONDS=${OPENCLAW_BRIDGE_TIMEOUT_SECONDS:-60}
       - SEED_DATA=${SEED_DATA:-1}
     volumes:
       - ./data/backend:/app/data
