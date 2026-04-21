@@ -224,6 +224,11 @@ async def _seed_memberships(session: AsyncSession) -> bool:
     """创建频道成员关系（内置 Bot + 管理员）."""
     did_write = False
 
+    # session 配置为 autoflush=False，先手动 flush 一次，
+    # 让前面 _seed_guide_helper_bot 已 session.add 的 membership 对下面的 SELECT 可见，
+    # 否则会造成同一事务内重复插入 → UniqueViolation → 整个 seed 回滚
+    await session.flush()
+
     for member_id, member_type in ((GUIDE_BOT_ID, "bot"), (GUIDE_HELPER_BOT_ID, "bot"), (ADMIN_USER_ID, "user")):
         r = await session.execute(
             select(ChannelMembership).where(
