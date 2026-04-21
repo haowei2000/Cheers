@@ -31,8 +31,11 @@ from app.core.dependencies import get_session
 from app.core.responses import APIResponse
 from app.db.models import BotAccount, ChannelMembership, FileRecord, Message
 from app.services.openclaw_bridge.dispatcher import bridge_dispatcher
+from app.services.openclaw_bridge.membership import load_memberships
 from app.services.openclaw_bridge.pending import pending_replies
+from app.services.openclaw_bridge.registry import bot_session_registry
 from app.services.openclaw_bridge.service import finalize_bot_reply
+from app.services.openclaw_bridge.tokens import resolve_bot_by_token
 
 logger = logging.getLogger("app.api.v1.openclaw_bridge")
 
@@ -80,6 +83,7 @@ async def bridge_status(_: None = Depends(verify_bridge_token)) -> APIResponse:
     return APIResponse.ok({
         "enabled": settings.openclaw_bridge_enabled,
         "subscribers": bridge_dispatcher.subscriber_count(),
+        "bot_sessions": bot_session_registry.session_count(),
         "pending": pending_replies.count(),
     })
 
@@ -352,3 +356,99 @@ async def bridge_websocket(websocket: WebSocket) -> None:
         if consumer_task and not consumer_task.done():
             consumer_task.cancel()
         await bridge_dispatcher.unsubscribe(sub)
+
+
+# ============================================================================
+# 新 control WS（Phase B）：per-bot token 鉴权 + membership hello 快照 + 定向事件
+# ============================================================================
+
+# Close codes per design doc:
+_WS_CLOSE_AUTH_FAIL = 4401        # token 缺失 / 不匹配 / 已撤销
+_WS_CLOSE_SUPERSEDED = 4402       # 同一 bot 的新连接接管了旧连接
+_WS_CLOSE_BOT_UNAVAILABLE = 4403  # binding_type 不对或 status != online
+
+
+def _extract_bearer_token(websocket: WebSocket) -> str | None:
+    """优先从 Authorization 头取 Bearer；缺失时退化到 ?token= 查询参数（便于 CLI 调试）。"""
+    auth = websocket.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip() or None
+    return websocket.query_params.get("token")
+
+
+@ws_router.websocket("/ws/openclaw/control")
+async def control_websocket(websocket: WebSocket) -> None:
+    """OpenClaw channel plugin 的 control 流 —— membership 事件 + 心跳。
+
+    认证：`Authorization: Bearer ocw_...`（推荐）或 `?token=ocw_...`（兼容 CLI）。
+    同一 bot_id 的新连接会把旧连接以 4402 踢下线。
+    """
+    from app.db.session import async_session_factory
+
+    token = _extract_bearer_token(websocket)
+    if not token:
+        await websocket.close(code=_WS_CLOSE_AUTH_FAIL, reason="missing bearer token")
+        return
+
+    # 解析 token → bot
+    async with async_session_factory() as s:
+        bot = await resolve_bot_by_token(s, token)
+        if bot is None:
+            await websocket.close(code=_WS_CLOSE_AUTH_FAIL, reason="invalid or revoked token")
+            return
+        if bot.status != "online":
+            await websocket.close(
+                code=_WS_CLOSE_BOT_UNAVAILABLE, reason=f"bot status is {bot.status}",
+            )
+            return
+        memberships = await load_memberships(s, bot.bot_id)
+
+    await websocket.accept()
+    sess, old_ws = await bot_session_registry.bind_control(bot.bot_id, websocket)
+
+    # 踢掉旧连接（如果有）
+    if old_ws is not None:
+        try:
+            await old_ws.close(code=_WS_CLOSE_SUPERSEDED, reason="superseded by a new connection")
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 首帧 hello：下发完整 membership 快照
+    await websocket.send_json({
+        "type": "hello",
+        "bot_id": bot.bot_id,
+        "bot_username": bot.username,
+        "bot_display_name": bot.display_name,
+        "session_id": sess.session_id,
+        "memberships": memberships,
+    })
+    logger.info(
+        "control_ws: connected bot_id=%s session=%s memberships=%d",
+        bot.bot_id, sess.session_id, len(memberships),
+    )
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                frame = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "detail": "invalid JSON"})
+                continue
+            if not isinstance(frame, dict):
+                continue
+            ftype = frame.get("type")
+            if ftype == "ping":
+                await websocket.send_json({"type": "pong"})
+            elif ftype == "ready":
+                logger.info(
+                    "control_ws: ready bot_id=%s plugin_version=%s",
+                    bot.bot_id, frame.get("plugin_version"),
+                )
+            # 其他类型忽略
+    except WebSocketDisconnect:
+        logger.info("control_ws: disconnected bot_id=%s", bot.bot_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("control_ws: error bot_id=%s: %s", bot.bot_id, exc)
+    finally:
+        await bot_session_registry.unbind_control(bot.bot_id, websocket)
