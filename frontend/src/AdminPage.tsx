@@ -47,12 +47,17 @@ type BotItem = {
   is_public: boolean;
   intro?: string;
   custom_system_prompt?: string;
-  model_id: string;
-  template_id: string;
+  model_id?: string | null;
+  template_id?: string | null;
   model_name?: string;
   template_name?: string;
   created_by?: string;
   created_at?: string;
+  binding_type?: string;            // 'http' | 'websocket'
+  binding_config?: Record<string, unknown> | null;
+  bot_token_prefix?: string | null;
+  bot_token_rotated_at?: string | null;
+  bot_token?: string | null;        // 仅在 create / rotate 响应里出现
 };
 
 // ==================== Other Types ====================
@@ -177,9 +182,13 @@ export default function AdminPage() {
     intro: "",
     status: "online",
     is_public: true,
+    binding_type: "http" as "http" | "websocket",
+    binding_agent_id: "",   // WS Bot 可选：绑定的 OpenClaw agent id
   });
   const [botEditingId, setBotEditingId] = useState<string | null>(null);
   const [lastCreatedBotId, setLastCreatedBotId] = useState("");
+  // WS Bot 创建/轮换 token 时一次性展示；关闭后 token 无法再取回
+  const [oneTimeBotToken, setOneTimeBotToken] = useState<{ bot_id: string; username: string; token: string } | null>(null);
 
   // ==================== Legacy States ====================
   const [taskList, setTaskList] = useState<TaskItem[]>([]);
@@ -558,33 +567,72 @@ export default function AdminPage() {
       .catch(console.error);
   };
 
+  const _botFormInitial = {
+    username: "",
+    display_name: "",
+    description: "",
+    model_id: "",
+    template_id: "",
+    custom_system_prompt: "",
+    intro: "",
+    status: "online",
+    is_public: true,
+    binding_type: "http" as "http" | "websocket",
+    binding_agent_id: "",
+  };
+
+  const _buildBotPayload = () => {
+    const base: Record<string, unknown> = {
+      username: botForm.username,
+      display_name: botForm.display_name,
+      description: botForm.description,
+      custom_system_prompt: botForm.custom_system_prompt,
+      intro: botForm.intro,
+      status: botForm.status,
+      is_public: botForm.is_public,
+      binding_type: botForm.binding_type,
+    };
+    if (botForm.binding_type === "http") {
+      base.model_id = botForm.model_id;
+      base.template_id = botForm.template_id;
+    } else {
+      // WebSocket Bot：组装 binding_config
+      const cfg: Record<string, string> = {};
+      if (botForm.binding_agent_id.trim()) cfg.agent_id = botForm.binding_agent_id.trim();
+      base.binding_config = Object.keys(cfg).length > 0 ? cfg : null;
+    }
+    return base;
+  };
+
   const createBot = () => {
-    if (!botForm.username.trim() || !botForm.model_id || !botForm.template_id) {
-      toast.error("请填写必填项：用户名、模型、模板");
+    if (!botForm.username.trim()) {
+      toast.error("请填写用户名");
+      return;
+    }
+    if (botForm.binding_type === "http" && (!botForm.model_id || !botForm.template_id)) {
+      toast.error("HTTP Bot 必须选择模型和模板");
       return;
     }
     authFetch(`${API}/bots`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(botForm),
+      body: JSON.stringify(_buildBotPayload()),
     })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
           toast.success("Bot 创建成功");
-          setLastCreatedBotId(d.data?.bot_id ?? "");
+          const createdBot = d.data;
+          setLastCreatedBotId(createdBot?.bot_id ?? "");
+          if (createdBot?.bot_token) {
+            setOneTimeBotToken({
+              bot_id: createdBot.bot_id,
+              username: createdBot.username,
+              token: createdBot.bot_token,
+            });
+          }
           loadBots();
-          setBotForm({
-            username: "",
-            display_name: "",
-            description: "",
-            model_id: "",
-            template_id: "",
-            custom_system_prompt: "",
-            intro: "",
-            status: "online",
-            is_public: true,
-          });
+          setBotForm(_botFormInitial);
         } else {
           toast.error(d.message || d.detail || "创建失败");
         }
@@ -592,11 +640,42 @@ export default function AdminPage() {
       .catch((e) => toast.error("请求失败: " + String(e)));
   };
 
+  const rotateBotToken = (b: BotItem) => {
+    if (!window.confirm(`确认为 @${b.username} 轮换 token？旧 token 将立即失效，所有使用旧 token 的 plugin 连接会被断开。`)) return;
+    authFetch(`${API}/bots/${b.bot_id}/rotate-token`, {
+      method: "POST",
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.status === "success" && d.data?.bot_token) {
+          toast.success("Token 已轮换");
+          setOneTimeBotToken({
+            bot_id: d.data.bot_id,
+            username: d.data.username,
+            token: d.data.bot_token,
+          });
+          loadBots();
+        } else {
+          toast.error(d.message || d.detail || "轮换失败");
+        }
+      })
+      .catch((e) => toast.error("请求失败: " + String(e)));
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("已复制到剪贴板");
+    } catch {
+      toast.error("复制失败，请手动选择文本");
+    }
+  };
+
   const updateBot = (id: string) => {
     authFetch(`${API}/bots/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(botForm),
+      body: JSON.stringify(_buildBotPayload()),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -604,17 +683,7 @@ export default function AdminPage() {
           toast.success("已更新");
           loadBots();
           setBotEditingId(null);
-          setBotForm({
-            username: "",
-            display_name: "",
-            description: "",
-            model_id: "",
-            template_id: "",
-            custom_system_prompt: "",
-            intro: "",
-            status: "online",
-            is_public: true,
-          });
+          setBotForm(_botFormInitial);
         } else {
           toast.error(d.message || d.detail || "更新失败");
         }
@@ -657,16 +726,19 @@ export default function AdminPage() {
 
   const startEditBot = (b: BotItem) => {
     setBotEditingId(b.bot_id);
+    const cfg = (b.binding_config as Record<string, unknown> | null) || {};
     setBotForm({
       username: b.username,
       display_name: b.display_name || "",
       description: b.description || "",
-      model_id: b.model_id,
-      template_id: b.template_id,
+      model_id: b.model_id || "",
+      template_id: b.template_id || "",
       custom_system_prompt: b.custom_system_prompt || "",
       intro: b.intro || "",
       status: b.status,
       is_public: b.is_public ?? true,
+      binding_type: ((b.binding_type as "http" | "websocket") || "http"),
+      binding_agent_id: typeof cfg.agent_id === "string" ? cfg.agent_id : "",
     });
   };
 
@@ -1057,32 +1129,49 @@ export default function AdminPage() {
                 <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">Bot 列表</h3>
                   <div className="space-y-2">
-                    {botList.filter(b => b.bot_id !== GUIDE_BOT_ID).map((b) => (
-                      <div key={b.bot_id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">@{b.username}</span>
-                            {b.display_name && <span className="text-xs text-gray-500">({b.display_name})</span>}
-                            <span className={`text-xs px-2 py-0.5 rounded ${b.status === "online" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"}`}>{b.status}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded ${b.is_public ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{b.is_public ? "公开" : "私有"}</span>
-                            {b.created_by === currentUser?.user_id && (
-                              <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-600">我的</span>
-                            )}
+                    {botList.filter(b => b.bot_id !== GUIDE_BOT_ID).map((b) => {
+                      const isWs = (b.binding_type || "http") === "websocket";
+                      const canManage = b.created_by === currentUser?.user_id || userRole === "system_admin" || userRole === "space_admin";
+                      return (
+                        <div key={b.bot_id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm">@{b.username}</span>
+                              {b.display_name && <span className="text-xs text-gray-500">({b.display_name})</span>}
+                              <span className={`text-xs px-2 py-0.5 rounded ${isWs ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-700"}`}>{isWs ? "WS Bot" : "HTTP Bot"}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${b.status === "online" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"}`}>{b.status}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${b.is_public ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{b.is_public ? "公开" : "私有"}</span>
+                              {b.created_by === currentUser?.user_id && (
+                                <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-600">我的</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {isWs ? (
+                                <>
+                                  Token: <code className="bg-white px-1 rounded border border-gray-200">{b.bot_token_prefix || "(未设置)"}…</code>
+                                  {b.bot_token_rotated_at && (
+                                    <span className="ml-2 text-gray-400">（{new Date(b.bot_token_rotated_at).toLocaleString("zh-CN")} 轮换）</span>
+                                  )}
+                                </>
+                              ) : (
+                                <>模型: {b.model_name || "未知"} | 模板: {b.template_name || "未知"}</>
+                              )}
+                            </div>
+                            {b.description && <div className="text-xs text-gray-400 mt-1">{b.description}</div>}
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            模型: {b.model_name || "未知"} | 模板: {b.template_name || "未知"}
-                          </div>
-                          {b.description && <div className="text-xs text-gray-400 mt-1">{b.description}</div>}
+                          {canManage && (
+                            <div className="flex gap-2 flex-wrap">
+                              {isWs && (
+                                <button onClick={() => rotateBotToken(b)} className="px-3 py-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 rounded hover:bg-indigo-100">轮换 token</button>
+                              )}
+                              <button onClick={() => toggleBotPublic(b)} className={`px-3 py-1 text-xs border rounded ${b.is_public ? "bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100" : "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"}`}>{b.is_public ? "设为私有" : "设为公开"}</button>
+                              <button onClick={() => startEditBot(b)} className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50">编辑</button>
+                              <button onClick={() => deleteBot(b.bot_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
+                            </div>
+                          )}
                         </div>
-                        {(b.created_by === currentUser?.user_id || userRole === "system_admin" || userRole === "space_admin") && (
-                          <div className="flex gap-2">
-                            <button onClick={() => toggleBotPublic(b)} className={`px-3 py-1 text-xs border rounded ${b.is_public ? "bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100" : "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"}`}>{b.is_public ? "设为私有" : "设为公开"}</button>
-                            <button onClick={() => startEditBot(b)} className="px-3 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-50">编辑</button>
-                            <button onClick={() => deleteBot(b.bot_id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100">删除</button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                     {botList.filter(b => b.bot_id !== GUIDE_BOT_ID).length === 0 && <div className="text-sm text-gray-400 py-4 text-center">暂无 Bot</div>}
                   </div>
                 </section>
@@ -1091,6 +1180,25 @@ export default function AdminPage() {
                 <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
                   <h3 className="text-sm font-semibold text-gray-800 mb-4">{botEditingId ? "编辑 Bot" : "创建 Bot"}</h3>
                   <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">绑定类型 *</label>
+                      <div className="flex gap-3">
+                        <label className={`flex-1 border rounded-lg px-3 py-2 cursor-pointer text-sm ${botForm.binding_type === "http" ? "border-[#4A154B] bg-purple-50" : "border-gray-300"}`}>
+                          <input type="radio" name="binding_type" value="http" checked={botForm.binding_type === "http"} onChange={() => setBotForm({ ...botForm, binding_type: "http" })} className="mr-2" disabled={!!botEditingId} />
+                          <span className="font-medium">HTTP Bot</span>
+                          <span className="block text-xs text-gray-500 mt-0.5">使用内置 AI 模型 + 提示词模板，走 OpenAI 兼容 HTTP</span>
+                        </label>
+                        <label className={`flex-1 border rounded-lg px-3 py-2 cursor-pointer text-sm ${botForm.binding_type === "websocket" ? "border-[#4A154B] bg-purple-50" : "border-gray-300"}`}>
+                          <input type="radio" name="binding_type" value="websocket" checked={botForm.binding_type === "websocket"} onChange={() => setBotForm({ ...botForm, binding_type: "websocket" })} className="mr-2" disabled={!!botEditingId} />
+                          <span className="font-medium">WebSocket Bot</span>
+                          <span className="block text-xs text-gray-500 mt-0.5">由 OpenClaw channel plugin 提供能力，经 control + data 双 WS 接入</span>
+                        </label>
+                      </div>
+                      {botEditingId && (
+                        <p className="text-xs text-gray-500 mt-1">绑定类型创建后不可修改</p>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">用户名 (@名字) *</label>
@@ -1107,37 +1215,54 @@ export default function AdminPage() {
                       <input type="text" value={botForm.description} onChange={(e) => setBotForm({ ...botForm, description: e.target.value })} placeholder="Bot 的功能描述" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">选择 AI 模型 *</label>
-                        <select value={botForm.model_id} onChange={(e) => setBotForm({ ...botForm, model_id: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
-                          <option value="">选择模型...</option>
-                          {models.filter(m => m.is_enabled).map((m) => (
-                            <option key={m.model_id} value={m.model_id}>{m.name}</option>
-                          ))}
-                        </select>
-                        {models.filter(m => m.is_enabled).length === 0 && (
-                          <p className="text-xs text-red-500 mt-1">请先创建一个 AI 模型</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">选择提示词模板 *</label>
-                        <select value={botForm.template_id} onChange={(e) => setBotForm({ ...botForm, template_id: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
-                          <option value="">选择模板...</option>
-                          {templates.map((t) => (
-                            <option key={t.template_id} value={t.template_id}>{t.name}</option>
-                          ))}
-                        </select>
-                        {templates.length === 0 && (
-                          <p className="text-xs text-red-500 mt-1">请先创建一个提示词模板</p>
-                        )}
-                      </div>
-                    </div>
+                    {botForm.binding_type === "http" && (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">选择 AI 模型 *</label>
+                            <select value={botForm.model_id} onChange={(e) => setBotForm({ ...botForm, model_id: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                              <option value="">选择模型...</option>
+                              {models.filter(m => m.is_enabled).map((m) => (
+                                <option key={m.model_id} value={m.model_id}>{m.name}</option>
+                              ))}
+                            </select>
+                            {models.filter(m => m.is_enabled).length === 0 && (
+                              <p className="text-xs text-red-500 mt-1">请先创建一个 AI 模型</p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">选择提示词模板 *</label>
+                            <select value={botForm.template_id} onChange={(e) => setBotForm({ ...botForm, template_id: e.target.value })} className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm">
+                              <option value="">选择模板...</option>
+                              {templates.map((t) => (
+                                <option key={t.template_id} value={t.template_id}>{t.name}</option>
+                              ))}
+                            </select>
+                            {templates.length === 0 && (
+                              <p className="text-xs text-red-500 mt-1">请先创建一个提示词模板</p>
+                            )}
+                          </div>
+                        </div>
 
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">自定义系统提示词（可选，会覆盖模板的 system_prompt）</label>
-                      <textarea value={botForm.custom_system_prompt} onChange={(e) => setBotForm({ ...botForm, custom_system_prompt: e.target.value })} placeholder="留空则使用模板默认的系统提示词" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 text-sm" />
-                    </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">自定义系统提示词（可选，会覆盖模板的 system_prompt）</label>
+                          <textarea value={botForm.custom_system_prompt} onChange={(e) => setBotForm({ ...botForm, custom_system_prompt: e.target.value })} placeholder="留空则使用模板默认的系统提示词" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 text-sm" />
+                        </div>
+                      </>
+                    )}
+
+                    {botForm.binding_type === "websocket" && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                        <p className="text-xs text-blue-700">
+                          WebSocket Bot 的能力由 OpenClaw channel plugin 提供。创建后会得到一个一次性的 bot token，把它填到 plugin 配置里，plugin 连 <code className="bg-blue-100 px-1 rounded">/ws/openclaw/control</code> 和 <code className="bg-blue-100 px-1 rounded">/ws/openclaw/data</code> 即可接管该 Bot。
+                        </p>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">OpenClaw agent id（可选）</label>
+                          <input type="text" value={botForm.binding_agent_id} onChange={(e) => setBotForm({ ...botForm, binding_agent_id: e.target.value })} placeholder="例：agent-codereview" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
+                          <p className="text-xs text-gray-500 mt-1">作为 binding_config.agent_id 传给 plugin，供其路由到具体 OpenClaw agent。</p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
@@ -1163,7 +1288,7 @@ export default function AdminPage() {
                       {botEditingId ? (
                         <>
                           <button onClick={() => updateBot(botEditingId)} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">保存</button>
-                          <button onClick={() => { setBotEditingId(null); setBotForm({ username: "", display_name: "", description: "", model_id: "", template_id: "", custom_system_prompt: "", intro: "", status: "online", is_public: true }); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
+                          <button onClick={() => { setBotEditingId(null); setBotForm(_botFormInitial); }} className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm">取消</button>
                         </>
                       ) : (
                         <button onClick={createBot} className="px-4 py-1.5 bg-[#4A154B] text-white rounded-lg text-sm">创建 Bot</button>
@@ -1536,6 +1661,54 @@ export default function AdminPage() {
           </div>
         </div>
       </main>
+
+      {/* One-time WS Bot token modal */}
+      {oneTimeBotToken && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full p-6 space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">WebSocket Bot token</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                @{oneTimeBotToken.username} 的新 token —— <span className="text-red-600 font-medium">仅展示一次</span>，关闭后无法再取回，只能轮换。
+              </p>
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <code className="flex-1 break-all text-xs font-mono text-gray-800">
+                  {oneTimeBotToken.token}
+                </code>
+                <button
+                  onClick={() => copyToClipboard(oneTimeBotToken.token)}
+                  className="shrink-0 px-3 py-1 text-xs bg-[#4A154B] text-white rounded hover:bg-[#5b1f5e]"
+                >
+                  复制
+                </button>
+              </div>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 space-y-1">
+              <p className="font-medium">接入步骤：</p>
+              <ol className="list-decimal pl-5 space-y-0.5">
+                <li>把 token 填到 OpenClaw 的 channel plugin 配置里</li>
+                <li>plugin 以 <code className="bg-amber-100 px-1 rounded">Authorization: Bearer &lt;token&gt;</code> 连接：
+                  <div className="mt-1 font-mono text-[11px] text-amber-900">
+                    ws://&lt;host&gt;/ws/openclaw/control<br/>
+                    ws://&lt;host&gt;/ws/openclaw/data
+                  </div>
+                </li>
+                <li>control 流首帧 hello 会下发完整 membership 快照</li>
+              </ol>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setOneTimeBotToken(null)}
+                className="px-4 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-300"
+              >
+                我已复制，关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
