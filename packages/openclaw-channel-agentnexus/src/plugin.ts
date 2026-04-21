@@ -7,6 +7,8 @@
  * api.runtime.subagent.run。agent 产出经 outbound.sendText 回推 → session.reply
  * 原地 finalize AgentNexus 侧占位消息。
  */
+import { randomUUID } from "node:crypto";
+
 import {
   createChannelPluginBase,
   createChatChannelPlugin,
@@ -14,6 +16,13 @@ import {
   type OpenClawConfig,
   type OpenClawPluginApi,
 } from "openclaw/plugin-sdk/channel-core";
+import {
+  registerSessionBindingAdapter,
+  unregisterSessionBindingAdapter,
+  type ConversationRef,
+  type SessionBindingAdapter,
+  type SessionBindingRecord,
+} from "openclaw/plugin-sdk/conversation-runtime";
 
 import { BotSession, type InboundMessage } from "./session.js";
 
@@ -111,8 +120,15 @@ function inspectAccount(cfg: OpenClawConfig, accountId?: string | null): unknown
 interface AccountRuntime {
   session: BotSession;
   account: ResolvedAccount;
-  /** sessionKey → 最近一次 inbound，供 outbound.sendText 查源消息做 session.reply */
+  /** sessionKey → 最近一次 inbound（独立模式 / 调试时仍可用） */
   lastInboundBySessionKey: Map<string, InboundMessage>;
+  /** taskId → inbound。session-binding 把 conversationId=taskId 绑到 sessionKey，
+   *  deliver 回来时 ctx.to === taskId，据此找回源消息做 session.reply。 */
+  lastInboundByTaskId: Map<string, InboundMessage>;
+  /** SessionBindingAdapter 的内存 store（sessionKey → records） */
+  bindingStore: Map<string, SessionBindingRecord[]>;
+  /** 给 stopAccount 解除注册用 */
+  bindingAdapter: SessionBindingAdapter;
 }
 
 const sessionRegistry = new Map<string, AccountRuntime>();
@@ -188,6 +204,74 @@ async function startAccount(rawCtx: unknown): Promise<void> {
   }
 
   const lastInboundBySessionKey = new Map<string, InboundMessage>();
+  const lastInboundByTaskId = new Map<string, InboundMessage>();
+  const bindingStore = new Map<string, SessionBindingRecord[]>();
+
+  // 注册 SessionBindingAdapter：deliver:true 靠这个把 sessionKey 路由到
+  // {channel, accountId, conversationId}。conversationId 我们用 taskId，
+  // 这样每条入站消息独占一个 conversation；outbound.sendText 拿到的 ctx.to 就是 taskId。
+  const bindingAdapter: SessionBindingAdapter = {
+    channel: PLUGIN_ID,
+    accountId,
+    capabilities: {
+      placements: ["current"],
+      bindSupported: true,
+      unbindSupported: true,
+    },
+    bind: async (input) => {
+      const rec: SessionBindingRecord = {
+        bindingId: randomUUID(),
+        targetSessionKey: input.targetSessionKey,
+        targetKind: input.targetKind,
+        conversation: input.conversation,
+        status: "active",
+        boundAt: Date.now(),
+        expiresAt: input.ttlMs ? Date.now() + input.ttlMs : undefined,
+        metadata: input.metadata,
+      };
+      const arr = bindingStore.get(input.targetSessionKey) ?? [];
+      arr.push(rec);
+      bindingStore.set(input.targetSessionKey, arr);
+      return rec;
+    },
+    listBySession: (key) => bindingStore.get(key) ?? [],
+    resolveByConversation: (ref: ConversationRef) => {
+      for (const arr of bindingStore.values()) {
+        for (const r of arr) {
+          if (
+            r.conversation.channel === ref.channel
+            && r.conversation.accountId === ref.accountId
+            && r.conversation.conversationId === ref.conversationId
+          ) return r;
+        }
+      }
+      return null;
+    },
+    unbind: async (input) => {
+      const removed: SessionBindingRecord[] = [];
+      if (input.targetSessionKey) {
+        const arr = bindingStore.get(input.targetSessionKey) ?? [];
+        const rest: SessionBindingRecord[] = [];
+        for (const r of arr) {
+          if (!input.bindingId || r.bindingId === input.bindingId) removed.push(r);
+          else rest.push(r);
+        }
+        if (rest.length === 0) bindingStore.delete(input.targetSessionKey);
+        else bindingStore.set(input.targetSessionKey, rest);
+      } else if (input.bindingId) {
+        for (const [key, arr] of bindingStore) {
+          const rest = arr.filter((r) => {
+            if (r.bindingId === input.bindingId) { removed.push(r); return false; }
+            return true;
+          });
+          if (rest.length === 0) bindingStore.delete(key);
+          else bindingStore.set(key, rest);
+        }
+      }
+      return removed;
+    },
+  };
+  registerSessionBindingAdapter(bindingAdapter);
 
   const session = new BotSession(
     {
@@ -218,6 +302,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
       onMessage: async (m) => {
         const sk = sessionKeyFor(accountId, m.channelId);
         rememberInbound(lastInboundBySessionKey, sk, m);
+        rememberInbound(lastInboundByTaskId, m.event.task_id, m);
         log.info?.(
           `agentnexus: ${accountId} inbound channel=${m.channelId} task=${m.event.task_id} text=${JSON.stringify(m.text).slice(0, 80)}`,
         );
@@ -290,7 +375,14 @@ async function startAccount(rawCtx: unknown): Promise<void> {
     },
   );
 
-  sessionRegistry.set(accountId, { session, account, lastInboundBySessionKey });
+  sessionRegistry.set(accountId, {
+    session,
+    account,
+    lastInboundBySessionKey,
+    lastInboundByTaskId,
+    bindingStore,
+    bindingAdapter,
+  });
 
   // gateway 把 startAccount 的 Promise 视作"账号生命周期"，只要它 resolve/reject
   // 就认为账号停了，立刻按指数退避 auto-restart。所以这里必须一直 await 直到
@@ -316,6 +408,13 @@ async function stopAccount(rawCtx: unknown): Promise<void> {
   const entry = sessionRegistry.get(ctx.accountId);
   if (!entry) return;
   sessionRegistry.delete(ctx.accountId);
+  try {
+    unregisterSessionBindingAdapter({
+      channel: PLUGIN_ID,
+      accountId: ctx.accountId,
+      adapter: entry.bindingAdapter,
+    });
+  } catch { /* ignore */ }
   await entry.session.stop();
 }
 
@@ -323,36 +422,46 @@ async function stopAccount(rawCtx: unknown): Promise<void> {
 // Outbound: OpenClaw agent → sendText → session.reply
 // ============================================================================
 
-interface SendTextParams {
+interface SendTextCtx {
   to: string;
   text: string;
   accountId?: string | null;
-  replyToId?: string | null;
+  cfg?: OpenClawConfig;
+  [k: string]: unknown;
 }
 
-async function sendText(params: SendTextParams): Promise<{ messageId: string }> {
-  const accountId = params.accountId ?? Array.from(sessionRegistry.keys())[0];
+interface SendTextResult {
+  channel: string;
+  messageId: string;
+  chatId?: string;
+}
+
+async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
+  const accountId = ctx.accountId ?? Array.from(sessionRegistry.keys())[0];
   if (!accountId) throw new Error("agentnexus: no active account for sendText");
   const entry = sessionRegistry.get(accountId);
   if (!entry) throw new Error(`agentnexus: no running session for account ${accountId}`);
-  const { session, lastInboundBySessionKey } = entry;
+  const { session, lastInboundBySessionKey, lastInboundByTaskId } = entry;
 
-  // deliver 路径下 `to` 通常等于 sessionKey
-  const source = lastInboundBySessionKey.get(params.to);
+  // deliver:true 路径：ctx.to === conversationId === taskId（见 bindingAdapter 注册）
+  const byTask = lastInboundByTaskId.get(ctx.to);
+  const bySk = lastInboundBySessionKey.get(ctx.to);
+  const source = byTask ?? bySk;
   if (source) {
-    lastInboundBySessionKey.delete(params.to);
-    const r = await session.reply({ source, text: params.text });
-    if (r.ok && r.messageId) return { messageId: r.messageId };
+    lastInboundByTaskId.delete(source.event.task_id);
+    lastInboundBySessionKey.delete(`agentnexus:${accountId}:${source.channelId}`);
+    const r = await session.reply({ source, text: ctx.text });
+    if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: source.channelId };
     throw new Error(`agentnexus: session.reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
   }
 
-  // 兜底：把 to 当 channelId，走主动 send
-  const channelId = params.to;
+  // 最终兜底：把 to 当 channelId，走主动 send（非响应场景）
+  const channelId = ctx.to;
   if (!session.membership.channelIds.has(channelId)) {
-    throw new Error(`agentnexus: bot not in channel ${channelId}`);
+    throw new Error(`agentnexus: bot not in channel ${channelId} (to=${ctx.to})`);
   }
-  const r = await session.send({ channelId, text: params.text });
-  if (r.ok && r.messageId) return { messageId: r.messageId };
+  const r = await session.send({ channelId, text: ctx.text });
+  if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: channelId };
   throw new Error(`agentnexus: session.send failed (${r.code ?? "?"} ${r.error ?? ""})`);
 }
 
@@ -410,9 +519,11 @@ const chatPlugin = createChatChannelPlugin<ResolvedAccount>({
   },
   threading: { topLevelReplyToMode: "reply" },
   outbound: {
-    attachedResults: {
-      sendText,
-    },
+    // 参照 @openclaw/synology-chat 等官方 channel plugin：直接把 sendText 放在
+    // outbound 顶层，deliveryMode 用 "gateway"。官方 docs 里的 attachedResults
+    // 是另一个高阶 API（返回 messageId 给 attachment binding），不是 deliver 路径。
+    deliveryMode: "gateway",
+    sendText,
   },
 });
 

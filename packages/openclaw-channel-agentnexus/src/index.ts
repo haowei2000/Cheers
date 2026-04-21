@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { defineChannelPluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/channel-core";
+import { getSessionBindingService } from "openclaw/plugin-sdk/conversation-runtime";
 
 import { agentnexusPlugin, setSharedApi, getSharedApi, type ResolvedAccount } from "./plugin.js";
 
@@ -99,8 +100,40 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
           return true;
         }
 
-        // 此 handler 运行在 gateway-request-scope —— subagent.run 合法
+        // 此 handler 运行在 gateway-request-scope —— subagent.run + session-binding 合法
         try {
+          // Step 1: session binding（承诺 sessionKey → conversation）
+          await getSessionBindingService().bind({
+            targetSessionKey: body.sessionKey,
+            targetKind: "subagent",
+            conversation: {
+              channel: "agentnexus",
+              accountId: body.accountId,
+              conversationId: body.taskId,
+            },
+            placement: "current",
+          });
+
+          // Step 2: 更新 session entry 的 last route —— deliver:true 从这里读
+          //   {channel, to, accountId, threadId} 来决定把 agent 回复发到哪个 plugin
+          const sessRT = api.runtime.channel?.session;
+          if (sessRT?.resolveStorePath && sessRT?.updateLastRoute) {
+            try {
+              const storePath = sessRT.resolveStorePath();
+              await sessRT.updateLastRoute({
+                storePath,
+                sessionKey: body.sessionKey,
+                channel: "agentnexus",
+                to: body.taskId,
+                accountId: body.accountId,
+              });
+            } catch (e) {
+              api.logger.warn(`agentnexus: updateLastRoute failed: ${String(e)}`);
+            }
+          } else {
+            api.logger.warn("agentnexus: api.runtime.channel.session not available; deliver may not route back");
+          }
+
           const { runId } = await api.runtime.subagent.run({
             sessionKey: body.sessionKey,
             message: body.text,
