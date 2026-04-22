@@ -29,7 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.dependencies import get_session
 from app.core.responses import APIResponse
-from app.db.models import BotAccount, ChannelMembership, Message
+from app.db.models import BotAccount, ChannelMembership, FileRecord, Message
+from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.openclaw_bridge.dispatcher import bridge_dispatcher
 from app.services.openclaw_bridge.membership import load_memberships
 from app.services.openclaw_bridge.pending import pending_replies
@@ -205,6 +206,202 @@ async def bridge_list_channel_ws_bots(
         }
         for b in rows
     ])
+
+
+# ============================================================================
+# per-bot-token 文件读取（agent 侧 read_file 支持）
+# ============================================================================
+
+# agent 读取文件正文时的内联大小上限；超过则截断并标记 truncated=true。
+# 做上限的目的是防一个 200MB 的 PDF 直接塞进 agent 的 system prompt。
+_FILE_CONTENT_MAX_CHARS = 200_000
+
+
+def _extract_bot_token_from_header(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    parts = authorization.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None
+
+
+async def _resolve_bot_by_bearer(
+    session: AsyncSession, authorization: str | None,
+) -> BotAccount:
+    """Bearer ocw_xxx → BotAccount。失败统一抛 401。"""
+    if not settings.openclaw_bridge_enabled:
+        raise HTTPException(status_code=503, detail="OpenClaw bridge 已禁用")
+    token = _extract_bot_token_from_header(authorization)
+    if not token:
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    bot = await resolve_bot_by_token(session, token)
+    if bot is None:
+        raise HTTPException(status_code=401, detail="invalid or revoked token")
+    return bot
+
+
+async def _assert_bot_membership(
+    session: AsyncSession, *, bot_id: str, channel_id: str,
+) -> None:
+    row = (await session.execute(
+        select(ChannelMembership).where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.member_id == bot_id,
+            ChannelMembership.member_type == "bot",
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=403,
+            detail=f"bot {bot_id} 不在文件所在频道 {channel_id} 的成员中",
+        )
+
+
+@router.get("/files/{file_id}/content", response_model=APIResponse[dict])
+async def bridge_read_file_content(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Bot 读取一个频道内文件的已转换 markdown 正文。
+
+    鉴权：per-bot token `Authorization: Bearer ocw_...`（即 plugin 的 botToken）。
+    授权：bot 必须是文件所在频道的成员。
+    返回：{file_id, filename, content_type, size_bytes, content, truncated, summary}。
+    图片类文件不通过此接口取 base64；此接口仅为文档内容。
+    """
+    bot = await _resolve_bot_by_bearer(session, authorization)
+
+    record = (await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id)
+    )).scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"file {file_id} 不存在")
+
+    await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=record.channel_id)
+
+    from app.services.file_processor.convert import is_image_type
+    if is_image_type(record.content_type or ""):
+        raise HTTPException(
+            status_code=415,
+            detail="该文件是图片，文本接口不支持；请使用 Vision 能力处理图片附件",
+        )
+
+    # 触发一次转换（若 md cache 已就绪会直接命中缓存），然后裁剪到上限
+    try:
+        attachments = await FilePipelineService().prepare_attachments(
+            session,
+            channel_id=record.channel_id,
+            file_ids=[file_id],
+        )
+        await session.commit()
+    except FileFlowError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    if not attachments:
+        raise HTTPException(status_code=404, detail="file content 不可用")
+    att = attachments[0]
+    text: str = att.get("content") or ""
+    truncated_conv = att.get("truncated") == "true"
+
+    truncated_size = False
+    if len(text) > _FILE_CONTENT_MAX_CHARS:
+        text = text[:_FILE_CONTENT_MAX_CHARS]
+        truncated_size = True
+
+    return APIResponse.ok({
+        "file_id": record.file_id,
+        "filename": record.original_filename or record.file_id,
+        "content_type": record.content_type or "",
+        "size_bytes": record.size_bytes,
+        "summary": record.summary_3lines or "",
+        "content": text,
+        "truncated": truncated_conv or truncated_size,
+    })
+
+
+# ============================================================================
+# per-bot-token 文件上传（agent 侧 attach-file 支持）
+# ============================================================================
+
+# 单次上传 markdown 正文的大小上限，防一条失控的长回复灌爆对象存储。
+_FILE_UPLOAD_MAX_BYTES = 2 * 1024 * 1024  # 2 MiB
+
+
+class BridgeFileUploadIn(BaseModel):
+    channel_id: str = Field(..., description="目标频道 id")
+    filename: str = Field(..., description="文件名，未带扩展名时自动补 .md")
+    content: str = Field(..., description="markdown 文本正文")
+
+
+@router.post("/files/upload", response_model=APIResponse[dict])
+async def bridge_upload_markdown_file(
+    body: BridgeFileUploadIn,
+    authorization: str | None = Header(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Bot 上传一段 markdown 文本为频道附件，返回 file_id。
+
+    鉴权：per-bot token `Authorization: Bearer ocw_...`。
+    授权：bot 必须是目标频道的成员。
+    用途：agent 产出超长内容时，plugin 可把正文转存为 .md 文件作为消息附件。
+    """
+    import re
+    import uuid
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    bot = await _resolve_bot_by_bearer(session, authorization)
+    await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=body.channel_id)
+
+    text = body.content
+    byte_size = len(text.encode("utf-8"))
+    if byte_size == 0:
+        raise HTTPException(status_code=400, detail="content 不能为空")
+    if byte_size > _FILE_UPLOAD_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"content 超过上限 {_FILE_UPLOAD_MAX_BYTES} bytes",
+        )
+
+    safe_name = re.sub(r"[^\w\-. ]", "_", body.filename.strip()) or "reply"
+    if not safe_name.lower().endswith(".md"):
+        safe_name = f"{safe_name}.md"
+
+    file_id = str(uuid.uuid4())
+    base = Path(settings.data_dir)
+    if not base.is_absolute():
+        base = Path(__file__).resolve().parent.parent.parent.parent / settings.data_dir
+    gen_dir = base / "generated" / body.channel_id
+    gen_dir.mkdir(parents=True, exist_ok=True)
+    md_path = gen_dir / f"{file_id}.md"
+    md_path.write_text(text, encoding="utf-8")
+
+    now = datetime.now(timezone.utc)
+    record = FileRecord(
+        file_id=file_id,
+        channel_id=body.channel_id,
+        uploader_id=bot.bot_id,
+        original_path=str(md_path),
+        original_filename=safe_name,
+        content_type="text/markdown",
+        size_bytes=byte_size,
+        md_path=str(md_path),
+        status="ready",
+        uploaded_at=now,
+        converted_at=now,
+    )
+    session.add(record)
+    await session.commit()
+
+    return APIResponse.ok({
+        "file_id": file_id,
+        "filename": safe_name,
+        "size_bytes": byte_size,
+    })
 
 
 # ============================================================================
