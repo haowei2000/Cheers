@@ -30,6 +30,105 @@ const PLUGIN_ID = "agentnexus";
 const INBOUND_CACHE_MAX = 1000;
 
 // ============================================================================
+// 附件正文 hydration —— 用 bot token 向 AgentNexus 的 bridge 读出 markdown，
+// 注入到 subagent.run 的 message 前置，解决 "agent 只能看 3 行摘要" 的问题
+// ============================================================================
+
+function deriveHttpBase(wsUrl: string): string {
+  try {
+    const u = new URL(wsUrl);
+    const proto = u.protocol === "wss:" ? "https:" : "http:";
+    return `${proto}//${u.host}`;
+  } catch {
+    return "";
+  }
+}
+
+interface FileContentFetchResult {
+  filename: string;
+  content: string;
+  truncated: boolean;
+}
+
+async function fetchFileContentForBot(
+  httpBase: string, botToken: string, fileId: string,
+): Promise<FileContentFetchResult | null> {
+  if (!httpBase) return null;
+  const url = `${httpBase}/api/v1/openclaw/bridge/files/${encodeURIComponent(fileId)}/content`;
+  try {
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
+    if (!resp.ok) return null;
+    const body = await resp.json() as {
+      data?: { filename?: string; content?: string; truncated?: boolean };
+    };
+    const data = body.data;
+    if (!data || typeof data.content !== "string") return null;
+    return {
+      filename: data.filename || fileId,
+      content: data.content,
+      truncated: Boolean(data.truncated),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** agent 回复超过此字符阈值时，自动把正文上传为 .md 附件挂到 reply 上。 */
+const AUTO_ATTACH_THRESHOLD_CHARS = 4000;
+
+async function uploadBotMarkdownFile(
+  httpBase: string,
+  botToken: string,
+  channelId: string,
+  filename: string,
+  content: string,
+): Promise<string | null> {
+  if (!httpBase) return null;
+  const url = `${httpBase}/api/v1/openclaw/bridge/files/upload`;
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ channel_id: channelId, filename, content }),
+    });
+    if (!resp.ok) return null;
+    const body = await resp.json() as { data?: { file_id?: string } };
+    return body.data?.file_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildMessageWithAttachments(
+  base: string, botToken: string, m: InboundMessage,
+): Promise<string> {
+  if (!m.attachments || m.attachments.length === 0) return m.text;
+  const parts: string[] = [m.text];
+  for (const att of m.attachments) {
+    if (!att.file_id) continue;
+    // 图片附件留给上层 Vision 入参走（OpenClaw agent 需图片时需另行支持）
+    if (att.content_type && att.content_type.startsWith("image/")) continue;
+    const filename = att.filename || att.file_id;
+    const fetched = await fetchFileContentForBot(base, botToken, att.file_id);
+    if (fetched && fetched.content) {
+      parts.push(
+        `\n\n--- 附件: ${fetched.filename} ---\n${fetched.content}${fetched.truncated ? "\n...(内容已截断)" : ""}\n--- 附件结束 ---`,
+      );
+    } else if (att.summary) {
+      parts.push(
+        `\n\n--- 附件: ${filename} (读取失败，仅存摘要) ---\n${att.summary}\n--- 附件结束 ---`,
+      );
+    }
+  }
+  return parts.join("");
+}
+
+// ============================================================================
 // ResolvedAccount —— 由 config 解析得出，供 gateway / outbound 等 adapter 使用
 // ============================================================================
 
@@ -304,7 +403,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
         rememberInbound(lastInboundBySessionKey, sk, m);
         rememberInbound(lastInboundByTaskId, m.event.task_id, m);
         log.info?.(
-          `agentnexus: ${accountId} inbound channel=${m.channelId} task=${m.event.task_id} text=${JSON.stringify(m.text).slice(0, 80)}`,
+          `agentnexus: ${accountId} inbound channel=${m.channelId} task=${m.event.task_id} attachments=${m.attachments.length} text=${JSON.stringify(m.text).slice(0, 80)}`,
         );
 
         // 自 loopback 到 api.registerHttpRoute 的路由：那个 handler 运行在
@@ -320,6 +419,10 @@ async function startAccount(rawCtx: unknown): Promise<void> {
           }).catch(() => { /* ignore */ });
           return;
         }
+
+        // 附件正文 hydration：在进入 subagent.run 前把每个文档正文拼进 message
+        const httpBase = deriveHttpBase(account.dataUrl);
+        const hydratedText = await buildMessageWithAttachments(httpBase, account.botToken, m);
 
         const url = `http://127.0.0.1:${ref.gatewayPort}/plugins/agentnexus/inbound`;
         try {
@@ -339,7 +442,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
               channelId: m.channelId,
               taskId: m.event.task_id,
               placeholderMsgId: m.event.placeholder_msg_id,
-              text: m.text,
+              text: hydratedText,
             }),
           });
           if (!resp.ok) {
@@ -436,6 +539,18 @@ interface SendTextResult {
   chatId?: string;
 }
 
+async function maybeAutoAttachReplyAsFile(
+  entry: AccountRuntime, channelId: string, text: string,
+): Promise<string[] | undefined> {
+  if (text.length < AUTO_ATTACH_THRESHOLD_CHARS) return undefined;
+  const httpBase = deriveHttpBase(entry.account.dataUrl);
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const fileId = await uploadBotMarkdownFile(
+    httpBase, entry.account.botToken, channelId, `reply-${ts}.md`, text,
+  );
+  return fileId ? [fileId] : undefined;
+}
+
 async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
   const accountId = ctx.accountId ?? Array.from(sessionRegistry.keys())[0];
   if (!accountId) throw new Error("agentnexus: no active account for sendText");
@@ -450,7 +565,8 @@ async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
   if (source) {
     lastInboundByTaskId.delete(source.event.task_id);
     lastInboundBySessionKey.delete(`agentnexus:${accountId}:${source.channelId}`);
-    const r = await session.reply({ source, text: ctx.text });
+    const fileIds = await maybeAutoAttachReplyAsFile(entry, source.channelId, ctx.text);
+    const r = await session.reply({ source, text: ctx.text, fileIds });
     if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: source.channelId };
     throw new Error(`agentnexus: session.reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
   }
@@ -460,7 +576,8 @@ async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
   if (!session.membership.channelIds.has(channelId)) {
     throw new Error(`agentnexus: bot not in channel ${channelId} (to=${ctx.to})`);
   }
-  const r = await session.send({ channelId, text: ctx.text });
+  const fileIds = await maybeAutoAttachReplyAsFile(entry, channelId, ctx.text);
+  const r = await session.send({ channelId, text: ctx.text, fileIds });
   if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: channelId };
   throw new Error(`agentnexus: session.send failed (${r.code ?? "?"} ${r.error ?? ""})`);
 }
