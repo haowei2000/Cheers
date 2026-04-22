@@ -52,25 +52,38 @@ interface FileContentFetchResult {
 
 async function fetchFileContentForBot(
   httpBase: string, botToken: string, fileId: string,
+  log?: { warn?: (...a: unknown[]) => void; debug?: (...a: unknown[]) => void },
 ): Promise<FileContentFetchResult | null> {
-  if (!httpBase) return null;
+  if (!httpBase) {
+    log?.warn?.(`agentnexus: fetchFileContent no httpBase fileId=${fileId}`);
+    return null;
+  }
   const url = `${httpBase}/api/v1/openclaw/bridge/files/${encodeURIComponent(fileId)}/content`;
   try {
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${botToken}` },
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => "<unreadable>");
+      log?.warn?.(`agentnexus: fetchFileContent HTTP ${resp.status} fileId=${fileId} body=${detail.slice(0, 200)}`);
+      return null;
+    }
     const body = await resp.json() as {
       data?: { filename?: string; content?: string; truncated?: boolean };
     };
     const data = body.data;
-    if (!data || typeof data.content !== "string") return null;
+    if (!data || typeof data.content !== "string") {
+      log?.warn?.(`agentnexus: fetchFileContent malformed response fileId=${fileId}`);
+      return null;
+    }
+    log?.debug?.(`agentnexus: fetchFileContent ok fileId=${fileId} len=${data.content.length} truncated=${Boolean(data.truncated)}`);
     return {
       filename: data.filename || fileId,
       content: data.content,
       truncated: Boolean(data.truncated),
     };
-  } catch {
+  } catch (err) {
+    log?.warn?.(`agentnexus: fetchFileContent threw fileId=${fileId} err=${String(err)}`);
     return null;
   }
 }
@@ -106,23 +119,31 @@ async function uploadBotMarkdownFile(
 
 async function buildMessageWithAttachments(
   base: string, botToken: string, m: InboundMessage,
+  log?: { info?: (...a: unknown[]) => void; warn?: (...a: unknown[]) => void; debug?: (...a: unknown[]) => void },
 ): Promise<string> {
   if (!m.attachments || m.attachments.length === 0) return m.text;
+  log?.info?.(`agentnexus: hydrating ${m.attachments.length} attachment(s) base=${base} task=${m.event.task_id}`);
   const parts: string[] = [m.text];
   for (const att of m.attachments) {
     if (!att.file_id) continue;
     // 图片附件留给上层 Vision 入参走（OpenClaw agent 需图片时需另行支持）
-    if (att.content_type && att.content_type.startsWith("image/")) continue;
+    if (att.content_type && att.content_type.startsWith("image/")) {
+      log?.debug?.(`agentnexus: skipping image attachment fileId=${att.file_id} ct=${att.content_type}`);
+      continue;
+    }
     const filename = att.filename || att.file_id;
-    const fetched = await fetchFileContentForBot(base, botToken, att.file_id);
+    const fetched = await fetchFileContentForBot(base, botToken, att.file_id, log);
     if (fetched && fetched.content) {
       parts.push(
         `\n\n--- 附件: ${fetched.filename} ---\n${fetched.content}${fetched.truncated ? "\n...(内容已截断)" : ""}\n--- 附件结束 ---`,
       );
     } else if (att.summary) {
+      log?.warn?.(`agentnexus: attachment fallback to summary fileId=${att.file_id} filename=${filename}`);
       parts.push(
         `\n\n--- 附件: ${filename} (读取失败，仅存摘要) ---\n${att.summary}\n--- 附件结束 ---`,
       );
+    } else {
+      log?.warn?.(`agentnexus: attachment no content and no summary fileId=${att.file_id} filename=${filename}`);
     }
   }
   return parts.join("");
@@ -422,7 +443,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
 
         // 附件正文 hydration：在进入 subagent.run 前把每个文档正文拼进 message
         const httpBase = deriveHttpBase(account.dataUrl);
-        const hydratedText = await buildMessageWithAttachments(httpBase, account.botToken, m);
+        const hydratedText = await buildMessageWithAttachments(httpBase, account.botToken, m, log);
 
         const url = `http://127.0.0.1:${ref.gatewayPort}/plugins/agentnexus/inbound`;
         try {
