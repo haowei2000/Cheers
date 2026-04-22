@@ -1,0 +1,52 @@
+{
+  "id": "agentnexus",
+  "kind": "channel",
+  "channels": ["agentnexus"],
+  "name": "AgentNexus",
+  "description": "Slack-like multi-channel chat with bots. One OpenClaw account = one AgentNexus WebSocket Bot.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "agentnexus": {
+        "type": "object",
+        "properties": {
+          "accounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["botToken", "controlUrl", "dataUrl"],
+              "properties": {
+                "enabled": { "type": "boolean", "default": true },
+                "botToken": {
+                  "type": "string",
+                  "description": "AgentNexus 创建 WebSocket Bot 时返回的一次性 token（形如 ocw_...）",
+                  "x-sensitive": true
+                },
+                "controlUrl": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "AgentNexus control WS 地址，例如 ws://localhost:8000/ws/openclaw/control"
+                },
+                "dataUrl": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "AgentNexus data WS 地址，例如 ws://localhost:8000/ws/openclaw/data"
+                },
+                "advanced": {
+                  "type": "object",
+                  "properties": {
+                    "reconnectBaseMs": { "type": "integer", "default": 1000 },
+                    "reconnectMaxMs": { "type": "integer", "default": 30000 },
+                    "heartbeatIntervalMs": { "type": "integer", "default": 30000 },
+                    "sendAckTimeoutMs": { "type": "integer", "default": 10000 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

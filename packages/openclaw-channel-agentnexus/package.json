@@ -1,0 +1,75 @@
+{
+  "name": "openclaw-channel-agentnexus",
+  "version": "0.1.0",
+  "description": "OpenClaw channel plugin for AgentNexus — connects an OpenClaw agent to AgentNexus via the per-bot control + data WebSocket bridge.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "demo": "tsx src/demo.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["openclaw", "channel", "plugin", "agentnexus", "websocket", "bot"],
+  "license": "MIT",
+  "author": "haowei <wanghw00@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Grant-Huang/AgentNexus.git",
+    "directory": "packages/openclaw-channel-agentnexus"
+  },
+  "bugs": {
+    "url": "https://github.com/Grant-Huang/AgentNexus/issues"
+  },
+  "homepage": "https://github.com/Grant-Huang/AgentNexus/tree/main/packages/openclaw-channel-agentnexus#readme",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.4.15"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "~5.6.2",
+    "vitest": "^2.1.4"
+  },
+  "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "setupEntry": "./dist/setup.js",
+    "channel": {
+      "id": "agentnexus",
+      "label": "AgentNexus",
+      "selectionLabel": "AgentNexus (per-bot WebSocket bridge)",
+      "detailLabel": "AgentNexus Bot",
+      "docsPath": "/channels/agentnexus",
+      "docsLabel": "agentnexus",
+      "blurb": "Slack-like multi-channel chat with bots (via per-bot WS bridge).",
+      "markdownCapable": true
+    }
+  }
+}
