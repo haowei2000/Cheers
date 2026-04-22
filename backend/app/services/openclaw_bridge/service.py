@@ -153,6 +153,8 @@ async def _broadcast_done(session: AsyncSession, msg: Message, *, file_ids: list
                 file_id=r.file_id,
                 original_filename=r.original_filename,
                 content_type=r.content_type,
+                size_bytes=r.size_bytes,
+                status=r.status or "ready",
             ).model_dump()
             for fid in file_ids
             if (r := file_map.get(fid)) is not None
