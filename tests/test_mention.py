@@ -56,6 +56,38 @@ def test_extract_mentions_space_name_at_start() -> None:
     assert extract_mentions("@channel bot 你好") == ["channel"]
 
 
+def test_extract_mentions_skips_leading_quote_block() -> None:
+    """线程回复前端会在消息前置 `> [RefLabel]: ...\\n\\n` 引用块，
+    mention 解析需跳过该块再识别正文开头的 @mention。"""
+    # 单行引用 + 空行 + @mention
+    text = "> [OldBot]: 原消息文本\n\n@newbot 请看看"
+    assert extract_mentions(text, ["newbot"]) == ["newbot"]
+
+    # 引用块后直接跟多个 @mention
+    text = "> [用户]: quoted text\n\n@a @b 继续"
+    assert extract_mentions(text, ["a", "b"]) == ["a", "b"]
+
+    # 引用块中 @something 不应被识别
+    text = "> [Bot]: @codebot 原本的提及\n\n普通内容"
+    assert extract_mentions(text, ["codebot"]) == []
+
+    # 含空格 Bot 名
+    text = "> [Old]: quote\n\n@channel bot 你好"
+    assert extract_mentions(text, ["channel bot"]) == ["channel bot"]
+
+    # 多行引用块
+    text = "> line1\n> line2\n\n@bot hi"
+    assert extract_mentions(text, ["bot"]) == ["bot"]
+
+    # 仅有引用块、无后续正文
+    text = "> [Old]: quote only"
+    assert extract_mentions(text, ["bot"]) == []
+
+    # 无 @mention 的线程回复
+    text = "> [Old]: quote\n\n没有提及"
+    assert extract_mentions(text, ["bot"]) == []
+
+
 def test_filter_mentioned_bots() -> None:
     channel_bots = ["codebot", "docbot"]
     assert filter_mentioned_bots(["codebot"], channel_bots) == ["codebot"]
