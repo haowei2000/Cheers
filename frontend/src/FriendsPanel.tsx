@@ -1,21 +1,8 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import type { Friend, UserSearchResult } from "./types";
 
 const API = "/api/v1";
-
-interface Friend {
-  user_id: string;
-  username: string;
-  display_name?: string;
-  avatar_url?: string;
-}
-
-interface UserSearchResult {
-  user_id: string;
-  username: string;
-  display_name?: string;
-  avatar_url?: string;
-}
 
 interface FriendsPanelProps {
   currentUserId: string;

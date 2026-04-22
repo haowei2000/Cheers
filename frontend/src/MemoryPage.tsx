@@ -11,56 +11,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageMarkdown } from "./MessageMarkdown";
+import type { MemoryEntryItem, MemberItem, TodoItem } from "./types";
+import { getAuthToken as getStoredToken } from "./api";
 
 const API = "/api/v1";
-
-/* ── Types ─────────────────────────────────────────────────────────────────── */
-
-type MemoryEntryItem = {
-  entry_id: string;
-  channel_id: string;
-  layer: string;
-  title: string | null;
-  content: string;
-  sort_order: number;
-  created_by: string | null;
-  creator_type: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-};
-
-type MemberItem = {
-  member_id: string;
-  member_type: string;
-  username?: string;
-  display_name?: string;
-  avatar_url?: string;
-};
-
-type TodoItem = {
-  todo_id: string;
-  channel_id: string;
-  creator_id: string;
-  creator_type: string;
-  assignee_id: string | null;
-  assignee_type: string | null;
-  content: string;
-  status: string;
-};
-
-/* ── Helpers ───────────────────────────────────────────────────────────────── */
-
-function getStoredToken(): string | null {
-  try {
-    const stored = localStorage.getItem("currentUser");
-    if (!stored) return null;
-    const data = JSON.parse(stored);
-    if (data.loginTime && Date.now() - data.loginTime < 86400000) {
-      return data.token ?? data.user?.user_id ?? null;
-    }
-  } catch {}
-  return null;
-}
 
 function authHeaders(): Record<string, string> {
   const token = getStoredToken();

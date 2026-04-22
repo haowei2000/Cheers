@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useTheme } from "./useTheme";
+import type { Workspace, Channel } from "./types";
+import { getAuthToken, makeAuthFetch } from "./api";
 
 const API = "/api/v1";
 
@@ -61,8 +63,6 @@ type BotItem = {
 };
 
 // ==================== Other Types ====================
-type Workspace = { workspace_id: string; name: string };
-type Channel = { channel_id: string; name: string; type: string };
 type TaskItem = { task_id: string; channel_id: string; bot_id?: string; bot_username?: string; latency_ms?: number; created_at?: string };
 type LogEntry = { ts: number; level: string; logger: string; message: string; formatted: string };
 type LLMProvider = {
@@ -100,25 +100,8 @@ export default function AdminPage() {
   const currentUser = getCurrentUser();
   const userRole = currentUser?.role || "";
 
-  // 带认证头的 fetch 工具（使用 JWT token）
-  const getAuthToken = (): string | null => {
-    try {
-      const stored = localStorage.getItem("currentUser");
-      if (!stored) return null;
-      const data = JSON.parse(stored);
-      return data.token ?? data.user?.user_id ?? null;
-    } catch { return null; }
-  };
   const token = getAuthToken();
-  const authFetch = (url: string, options: RequestInit = {}) =>
-    fetch(url, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.headers as Record<string, string> | undefined),
-      },
-    });
+  const authFetch = makeAuthFetch(token);
 
   const [activeTab, setActiveTab] = useState<TabId>("models");
 
