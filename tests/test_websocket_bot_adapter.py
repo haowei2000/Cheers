@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.services.adapters.mock import MockOpenClawAdapter
+from app.services.adapters.mock_bot import MockBotAdapter
 from app.services.adapters.websocket_bot import WebsocketBotAdapter
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
 
@@ -53,7 +53,7 @@ async def test_resolver_ws_bot_offline_returns_mock() -> None:
     session = _mock_session_returning_bot(bot)
 
     adapter = await get_adapter_for_bot(bot.bot_id, session)
-    assert isinstance(adapter, MockOpenClawAdapter)
+    assert isinstance(adapter, MockBotAdapter)
 
 
 @pytest.mark.asyncio
@@ -63,4 +63,4 @@ async def test_resolver_http_binding_without_model_returns_mock() -> None:
     session = _mock_session_returning_bot(bot)
 
     adapter = await get_adapter_for_bot(bot.bot_id, session)
-    assert isinstance(adapter, MockOpenClawAdapter)
+    assert isinstance(adapter, MockBotAdapter)

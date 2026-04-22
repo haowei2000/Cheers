@@ -14,7 +14,7 @@ Project-specific instructions for AI coding agents working on AgentNexus.
   - **后端**: Python 3.13+ / FastAPI / SQLAlchemy / WebSocket
   - **前端**: React 18 / TypeScript / Tailwind CSS / Vite
   - **数据库**: SQLite（主库 + Context Store）/ Redis（可选）
-  - **Agent 框架**: 内置 LLMBotAdapter（直接调用 LLM）
+  - **Agent 框架**: 内置 HttpBotAdapter（直接调用 LLM）
   - **部署**: Docker Compose
 
 ## Architecture
@@ -27,7 +27,7 @@ Project-specific instructions for AI coding agents working on AgentNexus.
 | ② 实时通信层 | FastAPI WebSocket + REST API | 消息广播、连接管理、消息持久化、文件上传接口 |
 | ③ Agent 编排层 | AgentOrchestrator | @提及路由、任务分配、多 Bot 协调、进程控制 |
 | ④ 记忆管理层 | MemoryManager | 四层记忆读写、上下文拼接注入、记忆摘要压缩 |
-| ⑤ Agent 执行层 | LLMBotAdapter | 根据 Bot 的模型+模板配置直接调用 LLM |
+| ⑤ Agent 执行层 | HttpBotAdapter | 根据 Bot 的模型+模板配置直接调用 LLM |
 | ⑥ 数据持久层 | SQLite + 文件存储 | 主库存消息历史；Context Store 独立 SQLite；文件存储 |
 
 ### 核心模块（backend/app/）
@@ -55,11 +55,15 @@ app/
 ├── orchestrator/           # Agent 编排
 │   ├── service.py          # 编排核心服务
 │   ├── mention.py          # @提及解析
-│   └── adapter_resolver.py # Bot 适配器解析（统一使用 LLMBotAdapter）
+│   └── adapter_resolver.py # Bot 适配器解析（统一使用 HttpBotAdapter）
 ├── adapters/               # Bot 适配器
 │   ├── base.py             # 抽象接口（AgentPayload/AgentResponse）
-│   ├── mock.py             # Mock 适配器（测试用）
-│   └── llm_bot.py          # LLM Bot 适配器（模型+提示词模板）
+│   ├── mock_bot.py         # Mock 适配器（测试用）
+│   ├── http_bot.py         # HTTP Bot 适配器（模型+提示词模板）
+│   ├── channel_bot.py      # @channel bot 内置适配器（LangChain Agent + 工具集）
+│   ├── help_bot.py         # @guide-helper 内置适配器（加载帮助文档）
+│   ├── websocket_bot.py    # WebSocket Bot 适配器（OpenClaw channel plugin）
+│   └── builtin_registry.py # 内置 Bot 路由表（bot_id → adapter 工厂）
 ├── memory/                 # 四层记忆管理
 │   ├── manager.py          # 记忆读写接口
 │   ├── context_store.py    # SQLite Context Store
@@ -216,7 +220,7 @@ alembic downgrade -1
 | 类型 | 规范 | 示例 |
 |------|------|------|
 | 模块/包 | 小写 + 下划线 | `chat_core`, `file_processor` |
-| 类 | PascalCase | `AgentPayload`, `LLMBotAdapter` |
+| 类 | PascalCase | `AgentPayload`, `HttpBotAdapter` |
 | 函数/变量 | 小写 + 下划线 | `get_logger`, `channel_id` |
 | 常量 | 大写 + 下划线 | `TEST_DATABASE_URL` |
 | 私有 | 下划线前缀 | `_resolve_log_dir` |
@@ -392,8 +396,8 @@ POST /api/bots
 
 #### 适配器实现
 
-- `app/adapters/llm_bot.py` - `LLMBotAdapter`
-- `app/orchestrator/adapter_resolver.py` - 统一使用 LLMBotAdapter
+- `app/adapters/http_bot.py` - `HttpBotAdapter`
+- `app/orchestrator/adapter_resolver.py` - 统一使用 HttpBotAdapter
 
 ### 新增 API 路由
 

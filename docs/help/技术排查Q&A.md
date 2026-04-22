@@ -67,7 +67,7 @@
 | **文件上传 400** | 非支持格式或缺少参数 | 确认请求含 channel_id、uploader_id、filename 及 body；格式为 .txt/.md/.docx | 按 [系统管理说明书](系统管理说明书.md) 或 API 文档修正 |
 | **文件状态为 failed** | 转换失败（格式异常、mammoth 等报错） | 查看 agentnexus.log / error.log 中与 file、convert、mammoth 相关的错误 | 确认文件未损坏、扩展名与内容一致；必要时查依赖版本 |
 | **@ Bot 无回复** | Bot 未加入该频道、username 不匹配、或真实服务不可达 | 1）GET `/api/channels/{项目ID}/members?with_username=1` 看是否有该 Bot；2）确认 @ 的名字与 bot 的 username 完全一致；3）若 endpoint 为 http(s)，确认该服务已实现 POST /execute 且可访问 | 在「管理」中将 Bot 加入该项目；或修正 @ 的名字；或检查 OpenClaw 服务与 [系统管理说明书 §4.4](/manual/系统管理说明书#44-真实调用的请求响应约定openclawendpoint-为-https-时) 约定 |
-| **@ Bot 一直 thinking 无回复** | Bot 未加入频道、或 HTTP 请求超时/不可达 | 1）查 agentnexus.log：若有 `no mentioned bots in channel` 且 mentioned 含该 Bot，说明 Bot 未加入当前频道；2）若有 `http_openclaw: POST` 但无 `response status`，说明请求超时或网络不通（后端→OpenClaw 机器）；3）确认 OpenClaw 服务在 endpoint 地址可访问 | 将 Bot 加入频道（聊天内 @ 邀请或管理端添加）；确认后端能访问 OpenClaw 的 IP:端口；检查防火墙 |
+| **@ Bot 一直 thinking 无回复** | Bot 未加入频道、或 LLM/OpenClaw 请求超时/不可达 | 1）查 agentnexus.log：若有 `no mentioned bots in channel` 且 mentioned 含该 Bot，说明 Bot 未加入当前频道；2）若 HttpBotAdapter / WebsocketBotAdapter 日志显示请求发出但无响应，说明超时或网络不通；3）确认 Bot 绑定的 endpoint 可访问 | 将 Bot 加入频道（聊天内 @ 邀请或管理端添加）；确认后端能访问对应服务的 IP:端口；检查防火墙 |
 | **@channel bot 无回复** | 内置 Bot 未加入当前项目、或未创建 | 1）确认是否执行过种子数据或手动创建内置 Bot；2）GET 当前项目 members 是否含 bot-guide-001；3）查日志是否有 orchestrator/guide 相关错误 | 执行种子数据或手动添加成员（member_id=bot-guide-001, member_type=bot）；详见 [系统管理说明书](系统管理说明书.md) |
 | **未 @ 任何人无回复 / 直接回答不生效** | 内置 channel bot 未加入频道、或 auto_assist/直接回答配置未生效 | 1）确认频道配置 `auto_assist` 或全局编排配置；2）GET 当前项目 members 是否含 bot-guide-001；3）检查日志中的 orchestrator 决策 | 将 channel bot 加入项目；开启相关配置；校验 LLM 绑定 |
 | **接口报错 `no such column: channels.auto_assist`** | 数据库未执行 `012_add_channel_auto_assist` 或历史迁移不一致 | 1）执行 `alembic upgrade head`；2）检查 `channels` 表是否含 `auto_assist` | 补齐列后重启后端，再访问 `/api/channels` |
@@ -94,7 +94,7 @@ A：修改 .env 中 **DATABASE_URL**、**SQLITE_CONTEXT_PATH**（可为相对或
 A：使用命名卷 **agentnexus_data**，默认挂载到 backend 容器内（如 /app/data）；具体见 docker-compose.yml 的 volumes。
 
 **Q：当前系统到底是走 OpenClaw 还是走 LLM Bot？**  
-A：默认执行链路是 `LLMBotAdapter`（模型 + 模板）；HTTP/WS OpenClaw 适配器为可选路径。若要确认链路，请看启动和请求日志中对应 adapter 的关键字。
+A：默认执行链路是 `HttpBotAdapter`（模型 + 模板）；HTTP/WS OpenClaw 适配器为可选路径。若要确认链路，请看启动和请求日志中对应 adapter 的关键字。
 
 **Q：支持多少用户/频道？**  
 A：当前按 SQLite 单机设计，适合小团队与原型；规模扩大可考虑将主库迁移至 PostgreSQL（见 [关键技术文档](关键技术文档.md) 等）。

@@ -14,7 +14,7 @@ from app.db.models import Message
 from app.db.session import async_session_factory
 from app.services.memory.context_store import init_context_db, set_layer
 
-# 与 unified_builtin.HISTORY_MSG_COUNT 保持一致：直接注入 LLM 的最近消息条数
+# 与 channel_bot.HISTORY_MSG_COUNT 保持一致：直接注入 LLM 的最近消息条数
 DIRECT_HISTORY_COUNT = 30
 # RECENT 层额外向前摘要的消息条数
 RECENT_WINDOW = 50

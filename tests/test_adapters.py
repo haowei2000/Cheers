@@ -1,15 +1,16 @@
 """OpenClawAdapter 契约测试."""
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
-from app.services.adapters.mock import MockOpenClawAdapter
-from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
+import pytest
+
+from app.services.adapters.base import AgentPayload, AgentResponse
+from app.services.adapters.channel_bot import ChannelBotAdapter
+from app.services.adapters.mock_bot import MockBotAdapter
 
 
 @pytest.mark.asyncio
 async def test_mock_adapter_execute() -> None:
-    adapter = MockOpenClawAdapter(reply="你好，我是 Mock。")
+    adapter = MockBotAdapter(reply="你好，我是 Mock。")
     payload = AgentPayload(
         task_id="t1",
         channel_id="c1",
@@ -25,15 +26,15 @@ async def test_mock_adapter_execute() -> None:
 
 @pytest.mark.asyncio
 async def test_mock_adapter_health_check() -> None:
-    adapter = MockOpenClawAdapter(healthy=True)
+    adapter = MockBotAdapter(healthy=True)
     assert await adapter.health_check() is True
-    adapter2 = MockOpenClawAdapter(healthy=False)
+    adapter2 = MockBotAdapter(healthy=False)
     assert await adapter2.health_check() is False
 
 
 @pytest.mark.asyncio
-async def test_unified_builtin_attachment_fallback_uses_file_content() -> None:
-    adapter = UnifiedBuiltinBotAdapter()
+async def test_channel_bot_attachment_fallback_uses_file_content() -> None:
+    adapter = ChannelBotAdapter()
     payload = AgentPayload(
         task_id="t-file-fallback",
         channel_id="c-file-fallback",
@@ -50,7 +51,7 @@ async def test_unified_builtin_attachment_fallback_uses_file_content() -> None:
         ],
     )
 
-    with patch("app.services.adapters.unified_builtin._run_agent", new=AsyncMock(return_value="")):
+    with patch("app.services.adapters.channel_bot._run_agent", new=AsyncMock(return_value="")):
         resp = await adapter.execute(payload)
 
     assert resp.success is True

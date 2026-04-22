@@ -8,10 +8,10 @@
 
 当前系统同时支持两类路径：
 
-1. **推荐路径（默认）**：把 OpenClaw Gateway 当作 OpenAI 兼容模型接入，使用 `LLMBotAdapter` 执行（稳定、配置简单）。  
+1. **推荐路径（默认）**：把 OpenClaw Gateway 当作 OpenAI 兼容模型接入，使用 `HttpBotAdapter` 执行（稳定、配置简单）。  
 2. **适配器路径（高级）**：使用 HTTP/WS OpenClaw 适配器协议接入（代码已实现，适合已有 OpenClaw 服务协议链路）。
 
-> 说明：当前 `adapter_resolver` 默认走 `LLMBotAdapter` 与 `UnifiedBuiltinBotAdapter`，因此大多数场景建议使用“推荐路径”。
+> 说明：当前 `adapter_resolver` 默认走 `HttpBotAdapter` 与 `ChannelBotAdapter`，因此大多数场景建议使用“推荐路径”。
 
 ---
 
@@ -49,29 +49,7 @@
 
 ---
 
-## 三、适配器路径：HTTP / WS OpenClaw（高级）
-
-### 3.1 HTTP Hook 方式
-
-- 适配器实现：`backend/app/adapters/http_openclaw.py`
-- 约定路径：`/hooks/agent`
-- 认证头：`Authorization: Bearer <openclaw_hook_token>`
-- 关键配置来源：`backend/app/config.py`
-  - `openclaw_hook_token`
-  - `openclaw_agent_id`
-  - `openclaw_session_prefix`
-
-### 3.2 WebSocket 方式
-
-- 适配器实现：`backend/app/adapters/ws_openclaw.py`
-- 协议：JSON-RPC（`connect`、`chat.send`）
-- token 放置：`connect.params.auth.token`
-
-> 若你是外部 OpenClaw 服务提供方，建议先用推荐路径完成接入，再按需切换适配器路径。
-
----
-
-## 四、验证与排查
+## 三、验证与排查
 
 | 现象 | 常见原因 | 处理建议 |
 |------|----------|----------|
@@ -83,7 +61,7 @@
 
 ---
 
-## 五、相关文档
+## 四、相关文档
 
 - [外部Bot接入指南](外部Bot接入指南.md)
 - [系统管理说明书](系统管理说明书.md)

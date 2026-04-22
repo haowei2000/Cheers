@@ -157,7 +157,7 @@ async def _compact_to_page(channel_id: str, session, msgs_to_compact: list[Messa
     raw_lines = []
     text_lines = []
 
-    from app.services.adapters.unified_builtin import _get_names_for_messages
+    from app.services.adapters.channel_bot import _get_names_for_messages
     names = await _get_names_for_messages(session, msgs_to_compact)
 
     for idx, m in enumerate(msgs_to_compact, 1):
