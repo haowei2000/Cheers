@@ -14,6 +14,35 @@ _NAME_CHAR = re.compile(r"[a-zA-Z0-9_\-'一-鿿]")
 _WS_CHARS = " \t"
 
 
+def _skip_leading_quote_block(text: str) -> int:
+    """跳过开头的 markdown blockquote 块（> 行及其后空行），返回正文起始位置。
+
+    线程回复在前端会被拼成 `> [RefLabel]: ...\\n\\n<用户输入>`，
+    若不跳过引用块，@mention 将永远落在正文内部而不被识别。
+    """
+    n = len(text)
+    probe = 0
+    while probe < n and text[probe] in _WS_CHARS:
+        probe += 1
+    if probe >= n or text[probe] != ">":
+        return 0
+
+    pos = 0
+    saw_quote = False
+    while pos < n:
+        eol = text.find("\n", pos)
+        end = eol if eol != -1 else n
+        line = text[pos:end].lstrip(_WS_CHARS)
+        if line.startswith(">"):
+            saw_quote = True
+        elif line == "" and saw_quote:
+            pass
+        else:
+            break
+        pos = end + 1 if eol != -1 else n
+    return pos if saw_quote else 0
+
+
 def extract_mentions(text: str, known_space_names: list[str] | None = None) -> list[str]:
     """从消息文本【开头】提取连续的 @mention（去重，保持顺序）。
 
@@ -40,7 +69,7 @@ def extract_mentions(text: str, known_space_names: list[str] | None = None) -> l
     seen: set[str] = set()
     result: list[str] = []
     n = len(text)
-    pos = 0
+    pos = _skip_leading_quote_block(text)
     # 跳过前导空白
     while pos < n and text[pos] in _WS_CHARS:
         pos += 1
