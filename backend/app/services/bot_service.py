@@ -87,15 +87,25 @@ class BotService:
         username: str,
         display_name: str | None,
         description: str | None,
-        model_id: str,
-        template_id: str,
+        model_id: str | None,
+        template_id: str | None,
         *,
         custom_system_prompt: str | None = None,
         intro: str | None = None,
         is_public: bool = True,
         bot_id: str | None = None,
+        binding_type: str = "http",
+        binding_config: dict | None = None,
         current_user: User,
-    ) -> BotAccount:
+    ) -> tuple[BotAccount, str | None]:
+        """创建 Bot。
+
+        Returns:
+            (bot, plaintext_token)
+            - HTTP Bot：token 为 None
+            - WebSocket Bot：生成一次性明文 token，返回给调用者转发给用户；
+              此后只保留哈希
+        """
         username = _validate_username(username)
         intro = _validate_intro(intro)
 
@@ -103,9 +113,18 @@ class BotService:
         if existing:
             raise BadRequestError(f"用户名 '{username}' 已被占用")
 
-        await self._validate_model_and_template(model_id, template_id, current_user)
+        plaintext_token: str | None = None
 
-        # api_key 由 model 管理，这里不再重复存储
+        if binding_type == "http":
+            if not model_id or not template_id:
+                raise BadRequestError("HTTP Bot 必须指定 model_id 与 template_id")
+            await self._validate_model_and_template(model_id, template_id, current_user)
+        elif binding_type == "websocket":
+            # WebSocket Bot 由 OpenClaw channel plugin 提供能力，不依赖内置 AIModel/PromptTemplate
+            model_id = None
+            template_id = None
+        else:
+            raise BadRequestError(f"未知的 binding_type: {binding_type}")
 
         bot = BotAccount(
             username=username,
@@ -116,13 +135,42 @@ class BotService:
             custom_system_prompt=custom_system_prompt,
             intro=intro,
             is_public=is_public,
+            binding_type=binding_type,
+            binding_config=binding_config,
             created_by=current_user.user_id,
         )
         if bot_id and bot_id.strip():
             bot.bot_id = bot_id.strip()
+
+        if binding_type == "websocket":
+            from app.services.openclaw_bridge.tokens import apply_token_to_bot
+            plaintext_token = apply_token_to_bot(bot)
+
         self.session.add(bot)
         await self.session.flush()
-        return bot
+        return bot, plaintext_token
+
+    async def rotate_websocket_token(
+        self,
+        bot_id: str,
+        current_user: User,
+    ) -> tuple[BotAccount, str]:
+        """为 WebSocket Bot 轮换 token。旧 token 立即失效（哈希被覆盖）。
+
+        返回 (bot, plaintext_token)。权限：仅创建者或管理员。
+        """
+        from app.services.openclaw_bridge.tokens import apply_token_to_bot
+        from app.utils.permissions import is_admin
+
+        bot = await self.get_or_404(bot_id)
+        if bot.created_by != current_user.user_id and not is_admin(current_user):
+            raise ForbiddenError("无权轮换该 Bot 的 token")
+        if (bot.binding_type or "http") != "websocket":
+            raise BadRequestError("只有 WebSocket Bot 才有 token 可轮换")
+
+        plaintext_token = apply_token_to_bot(bot)
+        await self.session.flush()
+        return bot, plaintext_token
 
     async def update(
         self,

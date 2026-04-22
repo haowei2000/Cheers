@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.v1.openclaw_bridge.routes import ws_router as openclaw_bridge_ws_router
 from app.api.v1.router import v1_router
 from app.api.v1.ws.handler import router as ws_router
 from app.config import settings
@@ -116,6 +117,7 @@ app.include_router(v1_router)
 
 # WebSocket 路由（/ws/channels/{id}，nginx location /ws 需要 upgrade 头）
 app.include_router(ws_router)
+app.include_router(openclaw_bridge_ws_router)
 
 # 静态功能路由（不含业务逻辑，保持不变）
 app.include_router(manual_router)

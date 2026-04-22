@@ -176,7 +176,14 @@ class ChannelService:
         existing = await self.repo.get_membership(channel_id, member_id)
         if existing:
             return existing
-        return await self.repo.add_member(channel_id, member_id, member_type, added_by=current_user.user_id)
+        m = await self.repo.add_member(channel_id, member_id, member_type, added_by=current_user.user_id)
+        if member_type == "bot":
+            from app.services.openclaw_bridge.membership import emit_channel_joined
+            await emit_channel_joined(
+                self.session, bot_id=member_id, channel_id=channel_id,
+                invited_by=current_user.user_id,
+            )
+        return m
 
     async def invite_by_identifier(
         self,
@@ -222,6 +229,12 @@ class ChannelService:
                     raise ForbiddenError("只能移除自己创建的 Bot")
 
         await self.repo.remove_member(m)
+        if m.member_type == "bot":
+            from app.services.openclaw_bridge.membership import emit_channel_left
+            reason = "kicked" if current_user.user_id != member_id else "left"
+            await emit_channel_left(
+                self.session, bot_id=member_id, channel_id=channel_id, reason=reason,
+            )
 
     async def update_member_template(
         self,

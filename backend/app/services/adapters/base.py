@@ -25,6 +25,9 @@ class AgentResponse:
     success: bool = True
     error_message: str | None = None
     file_ids: list[str] = field(default_factory=list)
+    # True 表示 Bot 执行为异步派发（如 WebSocket Bot 交给 OpenClaw channel plugin），
+    # content 不会被 orchestrator 写入占位消息，回复通过 bridge 回推后再落盘。
+    dispatched_async: bool = False
 
 
 class OpenClawAdapter(ABC):

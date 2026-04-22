@@ -75,7 +75,18 @@ def _to_simple(bot: BotAccount) -> dict:
     return d
 
 
-def _to_full(bot: BotAccount, model_name: str | None = None, template_name: str | None = None) -> dict:
+def _to_full(
+    bot: BotAccount,
+    model_name: str | None = None,
+    template_name: str | None = None,
+    *,
+    bot_token: str | None = None,
+) -> dict:
+    """转换 Bot 为响应体。
+
+    bot_token 仅在 create / rotate 路径里传入，一次性返回给用户；
+    其它路径永远不回显明文 token。
+    """
     mn = model_name if model_name is not None else (bot.ai_model.name if bot.ai_model else None)
     tn = template_name if template_name is not None else (bot.prompt_template.name if bot.prompt_template else None)
     d = BotInResponse(
@@ -94,9 +105,17 @@ def _to_full(bot: BotAccount, model_name: str | None = None, template_name: str 
         model_name=mn,
         template_name=tn,
         created_by=bot.created_by,
+        binding_type=getattr(bot, "binding_type", None) or "http",
+        binding_config=getattr(bot, "binding_config", None),
+        bot_token_prefix=getattr(bot, "bot_token_prefix", None),
+        bot_token_rotated_at=getattr(bot, "bot_token_rotated_at", None),
+        bot_token=bot_token,
     ).model_dump()
     if bot.created_at:
         d["created_at"] = bot.created_at.isoformat()
+    rotated = getattr(bot, "bot_token_rotated_at", None)
+    if rotated:
+        d["bot_token_rotated_at"] = rotated.isoformat()
     return d
 
 
@@ -117,7 +136,7 @@ async def create_bot(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = BotService(session)
-    bot = await svc.create(
+    bot, plaintext_token = await svc.create(
         username=body.username,
         display_name=body.display_name,
         description=body.description,
@@ -127,11 +146,33 @@ async def create_bot(
         intro=body.intro,
         is_public=body.is_public,
         bot_id=body.bot_id,
+        binding_type=body.binding_type,
+        binding_config=body.binding_config,
         current_user=current_user,
     )
     audit.info("action=bot.create actor=%s resource_id=%s username=%s", current_user.user_id, bot.bot_id, body.username)
+    if plaintext_token:
+        audit.info("action=bot.token.issue actor=%s resource_id=%s", current_user.user_id, bot.bot_id)
     bot = await svc.get_or_404(bot.bot_id)
-    return APIResponse.ok(_to_full(bot))
+    return APIResponse.ok(_to_full(bot, bot_token=plaintext_token))
+
+
+@router.post("/{bot_id}/rotate-token", response_model=APIResponse[dict])
+async def rotate_bot_token(
+    bot_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """为 WebSocket Bot 轮换 token。旧 token 立即失效。
+
+    响应里一次性返回明文 bot_token，请求方必须立刻保存；后续接口只回前缀。
+    权限：Bot 创建者 或 system_admin。
+    """
+    svc = BotService(session)
+    bot, plaintext_token = await svc.rotate_websocket_token(bot_id, current_user)
+    audit.info("action=bot.token.rotate actor=%s resource_id=%s", current_user.user_id, bot.bot_id)
+    bot = await svc.get_or_404(bot.bot_id)
+    return APIResponse.ok(_to_full(bot, bot_token=plaintext_token))
 
 
 @router.get("/registration-requests", response_model=APIResponse[list[dict]])
