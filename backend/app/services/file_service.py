@@ -60,11 +60,31 @@ class FileService:
         }
 
     async def confirm_upload(self, file_id: str, uploader: User) -> FileRecord:
-        """确认上传完成，更新状态为 uploaded。"""
+        """确认上传完成，更新状态为 uploaded。
+
+        必须先 head_object 校验 S3 里真的有对象，否则 DB 会出现 status=uploaded
+        但对象不存在的"幽灵记录"，下载时报 NoSuchKey。
+        """
         from datetime import datetime
+
+        from app.services.storage.base import StorageObjectNotFoundError
+        from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
+
         rec = await self.get_or_404(file_id)
         if rec.uploader_id != uploader.user_id:
             raise BadRequestError("无权操作该文件")
+
+        if is_storage_enabled() and rec.object_key:
+            storage = get_storage_service()
+            scope = "generated" if rec.object_key.startswith("generated/") else "uploads"
+            try:
+                await storage.head_object(rec.file_id, scope=scope)
+            except StorageObjectNotFoundError as exc:
+                rec.status = "failed"
+                rec.last_error = f"confirm: object not found ({exc})"
+                await self.session.flush()
+                raise BadRequestError("上传未完成：对象存储中找不到该文件") from exc
+
         rec.status = "uploaded"
         rec.uploaded_at = datetime.utcnow()
         await self.session.flush()
