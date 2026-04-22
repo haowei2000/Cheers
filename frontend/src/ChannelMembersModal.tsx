@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import type { ChannelMember as Member, Friend, BotItem as Bot } from "./types";
 
 const API = "/api/v1";
 
@@ -7,30 +8,6 @@ interface PromptTemplateItem {
   template_id: string;
   name: string;
   description?: string;
-}
-
-interface Member {
-  member_id: string;
-  member_type: "user" | "bot";
-  username?: string;
-  display_name?: string;
-  avatar_url?: string;
-  template_id?: string | null;
-  template_name?: string | null;
-}
-
-interface Friend {
-  user_id: string;
-  username: string;
-  display_name?: string;
-  avatar_url?: string;
-}
-
-interface Bot {
-  bot_id: string;
-  username: string;
-  display_name?: string;
-  intro?: string;
 }
 
 interface ChannelMembersModalProps {

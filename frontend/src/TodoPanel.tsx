@@ -1,37 +1,9 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import type { TodoItem, MemberItem } from './types';
+import { getAuthToken as getToken } from './api';
 
-function getToken(): string | null {
-  try {
-    const stored = localStorage.getItem('currentUser');
-    if (!stored) return null;
-    const data = JSON.parse(stored);
-    if (data.loginTime && Date.now() - data.loginTime < 86400000) {
-      return data.token ?? data.user?.user_id ?? null;
-    }
-  } catch {}
-  return null;
-}
-
-export type TodoItem = {
-  todo_id: string;
-  channel_id: string;
-  creator_id: string;
-  creator_type: string;
-  assignee_id: string | null;
-  assignee_type: string | null;
-  content: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-};
-
-type MemberItem = {
-  member_id: string;
-  member_type: string;
-  username?: string;
-  display_name?: string;
-};
+export type { TodoItem };
 
 type TodoPanelProps = {
   channelId: string;
