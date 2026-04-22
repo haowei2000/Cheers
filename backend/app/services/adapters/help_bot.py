@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_provider_for_scope
 
-logger = logging.getLogger("app.services.adapters.help_bot_adapter")
+logger = logging.getLogger("app.services.adapters.help_bot")
 
 HISTORY_MSG_COUNT = 20
 HISTORY_MSG_MAX_CHARS = 500
@@ -30,7 +30,7 @@ def _load_docs_from_folder() -> str:
     文件名排序保证加载顺序稳定。跳过目录本身。
     """
     if not _DOCS_DIR.is_dir():
-        logger.warning("help_bot_adapter: docs folder not found at %s", _DOCS_DIR)
+        logger.warning("help_bot: docs folder not found at %s", _DOCS_DIR)
         return ""
 
     parts: list[str] = []
@@ -39,15 +39,15 @@ def _load_docs_from_folder() -> str:
             try:
                 content = path.read_text(encoding="utf-8")
             except Exception as e:
-                logger.warning("help_bot_adapter: failed to read %s: %s", path.name, e)
+                logger.warning("help_bot: failed to read %s: %s", path.name, e)
                 continue
             parts.append(f"=== {path.name} ===\n{content.strip()}\n")
-            logger.debug("help_bot_adapter: loaded %s (%d chars)", path.name, len(content))
+            logger.debug("help_bot: loaded %s (%d chars)", path.name, len(content))
 
     if not parts:
-        logger.warning("help_bot_adapter: no .md files found in %s", _DOCS_DIR)
+        logger.warning("help_bot: no .md files found in %s", _DOCS_DIR)
     result = "\n\n".join(parts)
-    logger.info("help_bot_adapter: loaded %d doc files, total %d chars", len(parts), len(result))
+    logger.info("help_bot: loaded %d doc files, total %d chars", len(parts), len(result))
     return result
 
 
@@ -172,7 +172,7 @@ async def _run_llm(
     try:
         llm = _make_llm(cfg)
     except Exception as e:
-        logger.exception("help_bot_adapter: failed to create LLM: %s", e)
+        logger.exception("help_bot: failed to create LLM: %s", e)
         return f"LLM 初始化失败：{e}"
 
     messages: list = [
@@ -190,12 +190,12 @@ async def _run_llm(
                 if chunk.content and isinstance(chunk.content, str):
                     await stream_cb(chunk.content)
         except Exception as e:
-            logger.warning("help_bot_adapter: stream error, falling back: %s", e)
+            logger.warning("help_bot: stream error, falling back: %s", e)
             try:
                 response = await llm.ainvoke(messages)
                 return _extract_text(response.content)
             except Exception as e2:
-                logger.exception("help_bot_adapter: invoke fallback failed: %s", e2)
+                logger.exception("help_bot: invoke fallback failed: %s", e2)
                 return ""
         if accumulated is None:
             return ""
@@ -205,7 +205,7 @@ async def _run_llm(
             response = await llm.ainvoke(messages)
             return _extract_text(response.content)
         except Exception as e:
-            logger.exception("help_bot_adapter: invoke error: %s", e)
+            logger.exception("help_bot: invoke error: %s", e)
             return f"LLM 调用出错：{e}"
 
 
@@ -307,7 +307,7 @@ class HelpBotAdapter(OpenClawAdapter):
                 chat_history = results[0] if not isinstance(results[0], BaseException) else []
                 current_user_name = results[1] if not isinstance(results[1], BaseException) else ""
             except Exception:
-                logger.warning("help_bot_adapter: context fetch failed channel=%s", channel_id)
+                logger.warning("help_bot: context fetch failed channel=%s", channel_id)
 
         # ── 构建用户消息 ───────────────────────────────────────────────────────
         if current_user_name:

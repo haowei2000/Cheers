@@ -9,7 +9,7 @@ from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, Promp
 
 
 def _make_disabled_model(model_id: str) -> AIModel:
-    """创建一个已禁用的占位 AIModel，使 adapter_resolver 返回 MockOpenClawAdapter。"""
+    """创建一个已禁用的占位 AIModel，使 adapter_resolver 返回 MockBotAdapter。"""
     return AIModel(
         model_id=model_id,
         name=f"test-model-{model_id[-4:]}",
@@ -84,7 +84,7 @@ async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: As
     bot_msg = next((m for m in messages if m["sender_type"] == "bot"), None)
     assert user_msg is not None and "你好" in user_msg["content"]
     assert bot_msg is not None
-    # adapter_resolver 对 is_enabled=False 的模型返回 MockOpenClawAdapter
+    # adapter_resolver 对 is_enabled=False 的模型返回 MockBotAdapter
     assert "MockBot" in bot_msg["content"] or "模型已禁用" in bot_msg["content"]
 
 

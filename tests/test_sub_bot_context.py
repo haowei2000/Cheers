@@ -3,13 +3,13 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.services.adapters.base import AgentPayload, AgentResponse
-from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
+from app.services.adapters.channel_bot import ChannelBotAdapter
 
 
 @pytest.mark.asyncio
 async def test_call_bot_passes_memory_context():
     """验证 call_bot 工具正确传递四层记忆给子 Bot。"""
-    adapter = UnifiedBuiltinBotAdapter()
+    adapter = ChannelBotAdapter()
     
     # 模拟完整的四层记忆上下文
     memory_context = {
@@ -57,7 +57,7 @@ async def test_call_bot_passes_memory_context():
         return cb
     
     # 执行测试
-    with patch("app.services.adapters.unified_builtin._get_llm_config", return_value=None):
+    with patch("app.services.adapters.channel_bot._get_llm_config", return_value=None):
         # 模拟 tool_ctx，包含 call_bot 需要的上下文
         tool_ctx = {
             "channel_id": "test-channel-001",
@@ -75,7 +75,7 @@ async def test_call_bot_passes_memory_context():
         
         # 直接调用 call_bot 工具
         from langchain_core.tools import tool as _tool_decorator
-        from app.services.adapters.unified_builtin import _make_tools
+        from app.services.adapters.channel_bot import _make_tools
         
         tools = _make_tools(tool_ctx)
         call_bot_tool = next(t for t in tools if t.name == "call_bot")
@@ -100,9 +100,9 @@ async def test_call_bot_passes_memory_context():
 
 
 @pytest.mark.asyncio
-async def test_llm_bot_receives_memory_as_template_vars():
-    """验证 LLM Bot 将记忆上下文注入为模板变量。"""
-    from app.services.adapters.llm_bot import LLMBotAdapter
+async def test_http_bot_receives_memory_as_template_vars():
+    """验证 HTTP Bot 将记忆上下文注入为模板变量。"""
+    from app.services.adapters.http_bot import HttpBotAdapter
     from app.db.models import BotAccount, AIModel, PromptTemplate
     
     # 创建测试 Bot（使用记忆变量的模板）
@@ -130,7 +130,7 @@ async def test_llm_bot_receives_memory_as_template_vars():
         prompt_template=template,
     )
     
-    adapter = LLMBotAdapter(bot)
+    adapter = HttpBotAdapter(bot)
     
     # 准备带四层记忆的 payload
     memory_context = {

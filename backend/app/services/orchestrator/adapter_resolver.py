@@ -1,10 +1,9 @@
 """解析 bot_id -> OpenClawAdapter.
 
 路由规则：
-- GUIDE_BOT_ID → UnifiedBuiltinBotAdapter（内置三合一：引导/助手/记忆管理）
-- GUIDE_HELPER_BOT_ID → HelpBotAdapter（智枢协作操作指引助手：帮助文档问答）
+- 内置 Bot（见 ``builtin_registry.BUILTIN_BOT_ADAPTERS``）→ 专用 adapter
 - 其余 bot：按 BotAccount.binding_type 分流
-    · 'http'      → LLMBotAdapter（OpenAI 兼容 HTTP，Bot = AIModel + PromptTemplate）
+    · 'http'      → HttpBotAdapter（OpenAI 兼容 HTTP，Bot = AIModel + PromptTemplate）
     · 'websocket' → WebsocketBotAdapter（经 OpenClaw channel plugin 异步回推）
 """
 import logging
@@ -14,12 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, PromptTemplate
 from app.services.adapters.base import OpenClawAdapter
-from app.services.adapters.help_bot_adapter import HelpBotAdapter
-from app.services.adapters.llm_bot import LLMBotAdapter
-from app.services.adapters.mock import MockOpenClawAdapter
-from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
+from app.services.adapters.builtin_registry import get_builtin_adapter
+from app.services.adapters.http_bot import HttpBotAdapter
+from app.services.adapters.mock_bot import MockBotAdapter
 from app.services.adapters.websocket_bot import WebsocketBotAdapter
-from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 
 logger = logging.getLogger("app.services.orchestrator.adapter_resolver")
 
@@ -32,21 +29,17 @@ async def get_adapter_for_bot(
 ) -> OpenClawAdapter:
     """获取 Bot 的适配器。
 
-    内置统一 Bot（GUIDE_BOT_ID）直接返回 UnifiedBuiltinBotAdapter；
-    其余 bot 走 LLMBotAdapter（需配置 AIModel + PromptTemplate）。
+    内置 Bot 命中 ``builtin_registry`` 直接返回专用 adapter；
+    其余 bot 按 ``BotAccount.binding_type`` 分流到 HttpBot / WebsocketBot。
 
     Args:
         template_override: 频道级提示词模板覆盖，优先于 BotAccount 上的默认模板。
     """
-    # 内置统一 Bot：不依赖 DB 中的 AIModel / PromptTemplate
-    if bot_id == GUIDE_BOT_ID:
-        logger.info("adapter_resolver: bot_id=%s -> UnifiedBuiltinBotAdapter", bot_id)
-        return UnifiedBuiltinBotAdapter()
-
-    # 智枢协作操作指引助手 Bot：加载 docs/help/ 文档回答使用问题
-    if bot_id == GUIDE_HELPER_BOT_ID:
-        logger.info("adapter_resolver: bot_id=%s -> HelpBotAdapter", bot_id)
-        return HelpBotAdapter()
+    # 内置 Bot：不依赖 DB 中的 AIModel / PromptTemplate
+    builtin = get_builtin_adapter(bot_id)
+    if builtin is not None:
+        logger.info("adapter_resolver: bot_id=%s -> %s (builtin)", bot_id, type(builtin).__name__)
+        return builtin
 
     result = await session.execute(
         select(BotAccount).where(BotAccount.bot_id == bot_id)
@@ -54,7 +47,7 @@ async def get_adapter_for_bot(
     bot = result.scalar_one_or_none()
 
     if not bot:
-        return MockOpenClawAdapter(reply="[未知 Bot] 已收到消息。")
+        return MockBotAdapter(reply="[未知 Bot] 已收到消息。")
 
     # WebSocket Bot：经 OpenClaw channel plugin 异步回推，无需 AIModel/PromptTemplate
     binding_type = (getattr(bot, "binding_type", None) or "http").lower()
@@ -64,7 +57,7 @@ async def get_adapter_for_bot(
                 "adapter_resolver: bot_id=%s username=%s status=%s (not 'online'), returning mock",
                 bot_id, bot.username, bot.status,
             )
-            return MockOpenClawAdapter(
+            return MockBotAdapter(
                 reply=f"[{bot.display_name or bot.username}] 当前状态为「{bot.status}」，暂不接受消息"
             )
         logger.info(
@@ -75,16 +68,16 @@ async def get_adapter_for_bot(
 
     if not bot.ai_model:
         logger.warning("adapter_resolver: bot_id=%s has no model configured", bot_id)
-        return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 未配置模型")
+        return MockBotAdapter(reply=f"[{bot.display_name or bot.username}] 未配置模型")
 
     effective_template = template_override or bot.prompt_template
     if not effective_template:
         logger.warning("adapter_resolver: bot_id=%s has no template configured", bot_id)
-        return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 未配置提示词模板")
+        return MockBotAdapter(reply=f"[{bot.display_name or bot.username}] 未配置提示词模板")
 
     if bot.ai_model.is_enabled is False:
         logger.warning("adapter_resolver: bot_id=%s model is disabled", bot_id)
-        return MockOpenClawAdapter(reply=f"[{bot.display_name or bot.username}] 模型已禁用")
+        return MockBotAdapter(reply=f"[{bot.display_name or bot.username}] 模型已禁用")
 
     # 检查 Bot 状态
     if bot.status != "online":
@@ -92,16 +85,16 @@ async def get_adapter_for_bot(
             "adapter_resolver: bot_id=%s username=%s status=%s (not 'online'), returning mock",
             bot_id, bot.username, bot.status,
         )
-        return MockOpenClawAdapter(
+        return MockBotAdapter(
             reply=f"[{bot.display_name or bot.username}] 当前状态为「{bot.status}」，暂不接受消息"
         )
 
     logger.info(
-        "adapter_resolver: bot_id=%s username=%s -> LLMBotAdapter model=%s template=%s (override=%s)",
+        "adapter_resolver: bot_id=%s username=%s -> HttpBotAdapter model=%s template=%s (override=%s)",
         bot_id,
         bot.username,
         bot.ai_model.name,
         effective_template.name,
         template_override is not None,
     )
-    return LLMBotAdapter(bot, template_override=template_override)
+    return HttpBotAdapter(bot, template_override=template_override)

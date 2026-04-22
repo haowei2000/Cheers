@@ -34,7 +34,7 @@ async def save_layer(
     """更新指定层的单条内容（覆盖模式），返回 entry_id。
 
     内部委托给 replace_layer_entries（即覆盖写入）。
-    兼容 unified_builtin 工具的调用方式。
+    兼容 channel_bot 工具的调用方式。
     """
     return await replace_layer_entries(
         channel_id=channel_id,

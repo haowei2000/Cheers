@@ -1,4 +1,8 @@
-"""OpenClawAdapter 抽象接口（ADR D-05）：Orchestrator 只依赖此接口."""
+"""Bot 适配器抽象接口（ADR D-05）：Orchestrator 只依赖此接口，所有 adapter 实现它。
+
+类名 ``OpenClawAdapter`` 保留历史命名；语义已泛化为所有 Bot 执行路径
+（HTTP LLM、内置 @channel bot、WebSocket Bot 等）共用的协议。
+"""
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -6,7 +10,7 @@ from typing import Any
 
 @dataclass
 class AgentPayload:
-    """发给 OpenClaw 的标准 Payload（详细设计 §7.2）."""
+    """Orchestrator 派发给任一 adapter 的标准输入（详细设计 §7.2）。"""
     task_id: str
     channel_id: str
     trigger_message: dict[str, Any]
@@ -19,7 +23,7 @@ class AgentPayload:
 
 @dataclass
 class AgentResponse:
-    """OpenClaw 返回的标准响应."""
+    """adapter 回给 orchestrator 的标准输出。"""
     content: str
     task_id: str
     success: bool = True
@@ -31,14 +35,14 @@ class AgentResponse:
 
 
 class OpenClawAdapter(ABC):
-    """OpenClaw 隔离层：版本升级只改 Adapter 实现，不动 Orchestrator."""
+    """所有 Bot 执行路径的共同协议。Orchestrator 只调这里的方法，adapter 可随意换实现。"""
 
     @abstractmethod
     async def execute(self, payload: AgentPayload) -> AgentResponse:
-        """唯一对外接口：输入标准 Payload，输出标准 Response."""
+        """唯一执行入口：输入标准 Payload，输出标准 Response."""
         raise NotImplementedError
 
     @abstractmethod
     async def health_check(self) -> bool:
-        """检查 OpenClaw 实例是否在线."""
+        """检查该 adapter 的依赖（远端 LLM / WS 链路 / …）是否可用."""
         raise NotImplementedError

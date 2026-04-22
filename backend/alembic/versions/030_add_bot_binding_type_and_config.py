@@ -5,7 +5,7 @@ Revises: 029
 Create Date: 2026-04-21 12:00:00.000000
 
 为 BotAccount 增加两列：
-  - binding_type: 'http'（默认，OpenAI 兼容 HTTP，沿用 LLMBotAdapter）
+  - binding_type: 'http'（默认，OpenAI 兼容 HTTP，HttpBotAdapter）
                  / 'websocket'（新的 WebSocket Bot，经 OpenClaw bridge 异步回推回复）
   - binding_config: JSONB，绑定相关配置（例如 WebSocket Bot 的 agent_id / gateway 端点等）
 

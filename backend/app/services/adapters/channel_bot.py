@@ -1,4 +1,4 @@
-"""统一内置 Bot 适配器：LangChain Agent + 工具集。
+"""@channel bot 适配器：内置统一 Bot（LangChain Agent + 工具集）。LangChain Agent + 工具集。
 
 工具：
   call_bot        — @某Bot，将子任务委托给频道内专业 Bot
@@ -33,7 +33,7 @@ from app.services.guide.help_index import (
     get_help_context_for_llm,
 )
 
-logger = logging.getLogger("app.services.adapters.unified_builtin")
+logger = logging.getLogger("app.services.adapters.channel_bot")
 
 MAX_LOOP_ITERATIONS = 8
 HISTORY_MSG_COUNT = 30       # 注入 LLM 的历史消息条数上限
@@ -134,7 +134,7 @@ def _make_tools(ctx: dict) -> list:
         from app.services.memory.manager import save_layer
         await save_layer(ctx["channel_id"], "anchor", content.strip())
         logger.info(
-            "unified_builtin[tool]: update_anchor channel=%s len=%d",
+            "channel_bot[tool]: update_anchor channel=%s len=%d",
             ctx["channel_id"], len(content),
         )
         return "已更新项目锚点"
@@ -151,7 +151,7 @@ def _make_tools(ctx: dict) -> list:
         from app.services.memory.manager import save_layer
         await save_layer(ctx["channel_id"], "progress", content.strip())
         logger.info(
-            "unified_builtin[tool]: update_progress channel=%s len=%d",
+            "channel_bot[tool]: update_progress channel=%s len=%d",
             ctx["channel_id"], len(content),
         )
         return "已更新项目进度"
@@ -168,7 +168,7 @@ def _make_tools(ctx: dict) -> list:
         from app.services.memory.manager import save_layer
         await save_layer(ctx["channel_id"], "decisions", content.strip())
         logger.info(
-            "unified_builtin[tool]: update_decision channel=%s len=%d",
+            "channel_bot[tool]: update_decision channel=%s len=%d",
             ctx["channel_id"], len(content),
         )
         return "已更新决策记录"
@@ -201,14 +201,14 @@ def _make_tools(ctx: dict) -> list:
 
         bot_id = bot_id_by_username[username]
         logger.debug(
-            "unified_builtin[tool]: call_bot @%s message(%d chars):\n%s",
+            "channel_bot[tool]: call_bot @%s message(%d chars):\n%s",
             username, len(message), message,
         )
         try:
             adapter = await adapter_factory(bot_id)
             if adapter is None:
                 logger.error(
-                    "unified_builtin[tool]: call_bot @%s adapter_factory returned None channel=%s",
+                    "channel_bot[tool]: call_bot @%s adapter_factory returned None channel=%s",
                     username, ctx["channel_id"],
                 )
                 return f"@{username} 加载失败（adapter 为空）"
@@ -264,12 +264,12 @@ def _make_tools(ctx: dict) -> list:
                     await create_and_broadcast(bot_id, result)
 
             logger.info(
-                "unified_builtin[tool]: call_bot @%s completed channel=%s memory_keys=%s",
+                "channel_bot[tool]: call_bot @%s completed channel=%s memory_keys=%s",
                 username, ctx["channel_id"], list(memory_context.keys()),
             )
             return f"@{username} 回复：\n{result}"
         except Exception as e:
-            logger.exception("unified_builtin[tool]: call_bot @%s failed: %s", username, e)
+            logger.exception("channel_bot[tool]: call_bot @%s failed: %s", username, e)
             return f"@{username} 调用出错：{e}"
 
     @tool(return_direct=True)
@@ -400,7 +400,7 @@ def _make_tools(ctx: dict) -> list:
 
         download_url = f"/api/files/{file_id}/download"
         logger.info(
-            "unified_builtin[tool]: create_file %s channel=%s",
+            "channel_bot[tool]: create_file %s channel=%s",
             original_filename, channel_id,
         )
 
@@ -455,7 +455,7 @@ def _make_tools(ctx: dict) -> list:
                     return f"图片生成失败（已重试 3 次）：{last_err}"
             except Exception as exc:
                 last_err = str(exc)
-                logger.exception("unified_builtin[tool]: generate_image attempt %d unexpected error", attempt)
+                logger.exception("channel_bot[tool]: generate_image attempt %d unexpected error", attempt)
                 if attempt == 3:
                     return f"图片生成失败（已重试 3 次）：{last_err}"
         else:
@@ -486,7 +486,7 @@ def _make_tools(ctx: dict) -> list:
             await stream_event("message", data)
         await db_session.commit()
 
-        logger.info("unified_builtin[tool]: generate_image ok file_id=%s", result.file_id)
+        logger.info("channel_bot[tool]: generate_image ok file_id=%s", result.file_id)
         return f"图片已生成并发送到频道（file_id: {result.file_id}）"
 
     @tool
@@ -548,7 +548,7 @@ def _make_tools(ctx: dict) -> list:
                     return f"图片编辑失败（已重试 3 次）：{last_err}"
             except Exception as exc:
                 last_err = str(exc)
-                logger.exception("unified_builtin[tool]: edit_image attempt %d unexpected error", attempt)
+                logger.exception("channel_bot[tool]: edit_image attempt %d unexpected error", attempt)
                 if attempt == 3:
                     return f"图片编辑失败（已重试 3 次）：{last_err}"
         else:
@@ -576,7 +576,7 @@ def _make_tools(ctx: dict) -> list:
             await stream_event("message", data)
         await db_session.commit()
 
-        logger.info("unified_builtin[tool]: edit_image ok file_id=%s", result.file_id)
+        logger.info("channel_bot[tool]: edit_image ok file_id=%s", result.file_id)
         return f"图片已编辑并发送到频道（file_id: {result.file_id}）"
 
     @tool
@@ -603,7 +603,7 @@ def _make_tools(ctx: dict) -> list:
         except FileFlowError as exc:
             return f"读取文件失败：{exc.detail}"
         except Exception as exc:
-            logger.exception("unified_builtin[tool]: read_file error file_id=%s", file_id)
+            logger.exception("channel_bot[tool]: read_file error file_id=%s", file_id)
             return f"读取文件出错：{exc}"
 
         if not results:
@@ -800,7 +800,7 @@ def _make_tools(ctx: dict) -> list:
         from app.tools.web import web_fetch as do_web_fetch
 
         result = await do_web_fetch(url)
-        logger.info("unified_builtin[tool]: web_fetch url=%s len=%d", url[:80], len(result))
+        logger.info("channel_bot[tool]: web_fetch url=%s len=%d", url[:80], len(result))
         return result
 
     @tool
@@ -815,7 +815,7 @@ def _make_tools(ctx: dict) -> list:
         from app.tools.web import web_search_formatted
 
         result = await web_search_formatted(query, num_results)
-        logger.info("unified_builtin[tool]: web_search query='%s' num=%d", query, num_results)
+        logger.info("channel_bot[tool]: web_search query='%s' num=%d", query, num_results)
         return result
 
     return [update_anchor, update_progress, update_decision, call_bot, call_user, create_file, generate_image, edit_image, read_file, create_todo, list_todos, update_todo, delete_todo, web_fetch, web_search]
@@ -1055,7 +1055,7 @@ async def _run_agent(
     try:
         llm = _make_llm(cfg)
     except Exception as e:
-        logger.exception("unified_builtin: failed to create LLM: %s", e)
+        logger.exception("channel_bot: failed to create LLM: %s", e)
         return ""
 
     tools = _make_tools(ctx)
@@ -1070,7 +1070,7 @@ async def _run_agent(
 
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(
-            "unified_builtin[_run_agent]: system_prompt(%d chars):\n%s",
+            "channel_bot[_run_agent]: system_prompt(%d chars):\n%s",
             len(system_prompt), system_prompt,
         )
         if isinstance(user_content, list):
@@ -1078,17 +1078,17 @@ async def _run_agent(
                 p.get("type", "?") for p in user_content if isinstance(p, dict)
             )
             logger.debug(
-                "unified_builtin[_run_agent]: user_content=[%s] (%d parts)",
+                "channel_bot[_run_agent]: user_content=[%s] (%d parts)",
                 parts_summary, len(user_content),
             )
         else:
             logger.debug(
-                "unified_builtin[_run_agent]: user_content(%d chars):\n%s",
+                "channel_bot[_run_agent]: user_content(%d chars):\n%s",
                 len(user_content), user_content,
             )
         if history:
             logger.debug(
-                "unified_builtin[_run_agent]: history=%d messages",
+                "channel_bot[_run_agent]: history=%d messages",
                 len(history),
             )
 
@@ -1112,12 +1112,12 @@ async def _run_agent(
                     ):
                         await stream_cb(chunk.content)
             except Exception as e:
-                logger.warning("unified_builtin: LLM stream error iteration=%d: %s, falling back to non-streaming", iteration, e)
+                logger.warning("channel_bot: LLM stream error iteration=%d: %s, falling back to non-streaming", iteration, e)
                 # Fall back to non-streaming mode
                 try:
                     response = await llm_with_tools.ainvoke(messages)
                 except Exception as e2:
-                    logger.exception("unified_builtin: LLM invoke fallback also failed: %s", e2)
+                    logger.exception("channel_bot: LLM invoke fallback also failed: %s", e2)
                     break
                 continue
             if not streaming_success or accumulated is None:
@@ -1125,7 +1125,7 @@ async def _run_agent(
                 try:
                     response = await llm_with_tools.ainvoke(messages)
                 except Exception as e:
-                    logger.exception("unified_builtin: LLM invoke fallback failed: %s", e)
+                    logger.exception("channel_bot: LLM invoke fallback failed: %s", e)
                     break
                 continue
             response = accumulated
@@ -1133,11 +1133,11 @@ async def _run_agent(
             try:
                 response = await llm_with_tools.ainvoke(messages)
             except Exception as e:
-                logger.exception("unified_builtin: LLM invoke error iteration=%d: %s", iteration, e)
+                logger.exception("channel_bot: LLM invoke error iteration=%d: %s", iteration, e)
                 break
 
         if response is None:
-            logger.warning("unified_builtin: LLM returned None at iteration=%d", iteration)
+            logger.warning("channel_bot: LLM returned None at iteration=%d", iteration)
             break
 
         tool_calls = getattr(response, "tool_calls", None) or []
@@ -1156,7 +1156,7 @@ async def _run_agent(
         messages.append(response)
 
         logger.info(
-            "unified_builtin: agent loop iter=%d tools=%s channel=%s",
+            "channel_bot: agent loop iter=%d tools=%s channel=%s",
             iteration,
             [tc.get("name") for tc in tool_calls],
             ctx.get("channel_id", ""),
@@ -1179,7 +1179,7 @@ async def _run_agent(
                 try:
                     result_str = str(await t.ainvoke(tool_args))
                 except Exception as e:
-                    logger.exception("unified_builtin[tool]: %s failed: %s", tool_name, e)
+                    logger.exception("channel_bot[tool]: %s failed: %s", tool_name, e)
                     result_str = f"工具执行出错：{e}"
 
             if stream_cb and tool_name != "call_user":
@@ -1193,7 +1193,7 @@ async def _run_agent(
 
     # Max iterations reached — return last assistant content
     logger.warning(
-        "unified_builtin: agent loop reached max iterations (%d) channel=%s",
+        "channel_bot: agent loop reached max iterations (%d) channel=%s",
         MAX_LOOP_ITERATIONS,
         ctx.get("channel_id", ""),
     )
@@ -1212,8 +1212,8 @@ async def _run_agent(
 
 # ─── Adapter ──────────────────────────────────────────────────────────────────
 
-class UnifiedBuiltinBotAdapter(OpenClawAdapter):
-    """统一内置 Bot：LangChain Agent 驱动，支持 call_bot / call_user / update_anchor / update_decision 等工具。"""
+class ChannelBotAdapter(OpenClawAdapter):
+    """@channel bot 内置适配器：LangChain Agent 驱动，支持 call_bot / call_user / update_anchor / update_decision 等工具。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         user_text = (payload.trigger_message or {}).get("text") or ""
@@ -1310,7 +1310,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 await save_layer(channel_id, "decisions", new_decisions)
                 memory = dict(memory)
                 memory["decisions"] = new_decisions
-                logger.info("unified_builtin: clarify answer saved to decisions channel=%s", channel_id)
+                logger.info("channel_bot: clarify answer saved to decisions channel=%s", channel_id)
 
         # ── 3. 工具上下文 ──────────────────────────────────────────────────────
         tool_ctx: dict = {
@@ -1359,12 +1359,12 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 reply_prefix = _results[2] if not isinstance(_results[2], BaseException) else ""
 
                 logger.debug(
-                    "unified_builtin: history=%d user=%r reply=%s channel=%s",
+                    "channel_bot: history=%d user=%r reply=%s channel=%s",
                     len(chat_history), current_user_name, bool(reply_prefix), channel_id,
                 )
             except Exception:
                 logger.warning(
-                    "unified_builtin: context fetch failed channel=%s, proceeding without",
+                    "channel_bot: context fetch failed channel=%s, proceeding without",
                     channel_id,
                 )
 
@@ -1414,7 +1414,7 @@ class UnifiedBuiltinBotAdapter(OpenClawAdapter):
                 or _DEFAULT_REPLY
             )
             logger.info(
-                "unified_builtin: LLM unavailable, keyword fallback channel=%s msg=%s",
+                "channel_bot: LLM unavailable, keyword fallback channel=%s msg=%s",
                 channel_id,
                 (user_text[:60] + "…") if len(user_text) > 60 else user_text,
             )

@@ -27,11 +27,6 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger.info("AgentNexus startup")
 
-    if not (settings.openclaw_hook_token or "").strip():
-        logger.warning(
-            "OPENCLAW_HOOK_TOKEN 未配置，webhook 端点（/hooks/agent）将拒绝所有请求或不校验 token。"
-            "请在 .env 中设置 OPENCLAW_HOOK_TOKEN。"
-        )
     if not (settings.jwt_secret_key or "").strip():
         logger.warning(
             "JWT_SECRET_KEY 未配置，将使用进程内随机密钥（重启后旧 token 全部失效）。"

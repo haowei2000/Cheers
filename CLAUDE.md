@@ -82,8 +82,8 @@ docker compose up -d
 1. User POSTs message to `POST /api/channels/{channel_id}/messages`
 2. `chat_core/messages.py` saves the message and calls `run_orchestrator()`
 3. `orchestrator/service.py` extracts `@mentions`, resolves target bots, loads four-layer memory, and serially calls each bot's adapter
-4. `orchestrator/adapter_resolver.py` maps `bot_id` -> `LLMBotAdapter` (or `MockOpenClawAdapter` if bot is misconfigured)
-5. `adapters/llm_bot.py` (`LLMBotAdapter`) builds system prompt + user message and calls the bot's configured LLM via OpenAI-compatible API
+4. `orchestrator/adapter_resolver.py` maps `bot_id` -> `HttpBotAdapter` (or `MockBotAdapter` if bot is misconfigured)
+5. `adapters/http_bot.py` (`HttpBotAdapter`) builds system prompt + user message and calls the bot's configured LLM via OpenAI-compatible API
 6. Bot reply is written to DB as a `Message` and broadcast via `chat_core/ws_manager.py` WebSocket to `ws/channels/{channel_id}`
 
 ### Bot Architecture
@@ -93,7 +93,7 @@ Each `BotAccount` is composed of:
 - **`PromptTemplate`** — system_prompt + user_template with `{{message}}` placeholder
 - Optional `custom_system_prompt` overrides the template's system_prompt
 
-The `OpenClawAdapter` ABC (`adapters/base.py`) is the isolation boundary. Orchestrator only depends on this interface. Current implementations: `LLMBotAdapter`, `MockOpenClawAdapter`, `HttpOpenClawAdapter`, `WsOpenClawAdapter`, `UnifiedBuiltinBotAdapter`.
+The `OpenClawAdapter` ABC (`services/adapters/base.py`) is the isolation boundary. Only `services/orchestrator/adapter_resolver.py` constructs concrete adapters — routes and domain services must go through the resolver, not import adapter classes directly. Current implementations: `HttpBotAdapter`, `ChannelBotAdapter`, `HelpBotAdapter`, `WebsocketBotAdapter`, `MockBotAdapter`.
 
 ### Special Bot: coordinator
 
@@ -109,11 +109,11 @@ Each channel has four memory layers stored in the PostgreSQL DB (`context_store`
 - `files_index` — uploaded files index
 - `recent` — recent channel activity
 
-Loaded by `memory/manager.py` and injected into every `AgentPayload.memory_context`. Written to `AgentPayload` and available as template variables in `LLMBotAdapter`.
+Loaded by `memory/manager.py` and injected into every `AgentPayload.memory_context`. Written to `AgentPayload` and available as template variables in `HttpBotAdapter`.
 
-### Bot Tools (UnifiedBuiltinBotAdapter)
+### Bot Tools (ChannelBotAdapter)
 
-Bots using `UnifiedBuiltinBotAdapter` have access to built-in tools via LangChain function calling:
+Bots using `ChannelBotAdapter` have access to built-in tools via LangChain function calling:
 
 | Tool | Purpose |
 |------|---------|
@@ -129,7 +129,7 @@ Bots using `UnifiedBuiltinBotAdapter` have access to built-in tools via LangChai
 | `web_fetch` | **Fetch webpage content from URL** |
 | `web_search` | **Search the web via DuckDuckGo** |
 
-Tools are defined in `backend/app/services/adapters/unified_builtin.py` (`_make_tools()`). Web tools implementation is in `backend/app/tools/web.py`.
+Tools are defined in `backend/app/services/adapters/channel_bot.py` (`_make_tools()`). Web tools implementation is in `backend/app/tools/web.py`.
 
 ### Key Files
 
@@ -139,12 +139,13 @@ Tools are defined in `backend/app/services/adapters/unified_builtin.py` (`_make_
 | `backend/app/config.py` | All settings via `pydantic-settings` + `.env` |
 | `backend/app/db/models.py` | SQLAlchemy ORM models (UUID PKs as String(36)) |
 | `backend/app/db/session.py` | Async engine (PostgreSQL via asyncpg) |
-| `backend/app/orchestrator/service.py` | Core dispatch logic |
-| `backend/app/adapters/base.py` | `OpenClawAdapter` ABC, `AgentPayload`, `AgentResponse` |
-| `backend/app/adapters/llm_bot.py` | `LLMBotAdapter` — main bot implementation |
-| `backend/app/memory/manager.py` | Four-layer memory read/write |
-| `backend/app/admin/settings_store.py` | JSON-file-backed admin settings (LLM providers, orchestrator flags) |
-| `backend/app/services/adapters/unified_builtin.py` | `UnifiedBuiltinBotAdapter` with tool system |
+| `backend/app/services/orchestrator/service.py` | Core dispatch logic |
+| `backend/app/services/orchestrator/adapter_resolver.py` | Sole entry point for building adapters from a `bot_id` |
+| `backend/app/services/adapters/base.py` | `OpenClawAdapter` ABC, `AgentPayload`, `AgentResponse` |
+| `backend/app/services/adapters/http_bot.py` | `HttpBotAdapter` — main bot implementation |
+| `backend/app/services/adapters/channel_bot.py` | `ChannelBotAdapter` with tool system |
+| `backend/app/services/memory/manager.py` | Four-layer memory read/write |
+| `backend/app/services/admin/settings_store.py` | JSON-file-backed admin settings (LLM providers, orchestrator flags) |
 | `backend/app/tools/web.py` | Web tools: `web_fetch` and `web_search` |
 | `frontend/src/App.tsx` | Entire frontend SPA (single file, React + Tailwind) |
 | `frontend/src/AdminPage.tsx` | Admin panel SPA |

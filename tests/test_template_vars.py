@@ -1,4 +1,4 @@
-"""验证 LLMBotAdapter 模板变量在直接调用和 call_bot 子调用场景下均能正确渲染。"""
+"""验证 HttpBotAdapter 模板变量在直接调用和 call_bot 子调用场景下均能正确渲染。"""
 from __future__ import annotations
 
 import ast
@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.adapters.base import AgentPayload, AgentResponse
-from app.services.adapters.llm_bot import LLMBotAdapter
+from app.services.adapters.http_bot import HttpBotAdapter
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ def _make_bot(
     model_name: str = "test-model",
     base_url: str = "http://fake:1234/v1",
 ) -> SimpleNamespace:
-    """构建一个供 LLMBotAdapter 使用的最小 bot 桩对象。"""
+    """构建一个供 HttpBotAdapter 使用的最小 bot 桩对象。"""
     template = SimpleNamespace(
         system_prompt=system_prompt,
         user_template=user_template,
@@ -52,9 +52,9 @@ def _make_bot(
 class TestApplyUserTemplate:
     """直接测试 _apply_user_template 渲染逻辑。"""
 
-    def _adapter(self, user_template: str = "{{message}}") -> LLMBotAdapter:
+    def _adapter(self, user_template: str = "{{message}}") -> HttpBotAdapter:
         bot = _make_bot(user_template=user_template)
-        return LLMBotAdapter(bot)  # type: ignore[arg-type]
+        return HttpBotAdapter(bot)  # type: ignore[arg-type]
 
     def test_basic_message(self) -> None:
         adapter = self._adapter("用户说：{{message}}")
@@ -146,7 +146,7 @@ class TestApplyUserTemplate:
         assert "hi" in result
 
 
-# ── LLMBotAdapter.execute 集成测试（模拟 HTTP） ──────────────────────────────
+# ── HttpBotAdapter.execute 集成测试（模拟 HTTP） ──────────────────────────────
 
 UNRENDERED_VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
@@ -162,7 +162,7 @@ async def test_execute_renders_all_context_vars() -> None:
         "消息={{message}}"
     )
     bot = _make_bot(user_template=user_template)
-    adapter = LLMBotAdapter(bot)  # type: ignore[arg-type]
+    adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
 
     payload = AgentPayload(
         task_id="task-tmpl",
@@ -205,7 +205,7 @@ async def test_execute_renders_all_context_vars() -> None:
     mock_client = MagicMock()
     mock_client.post = _fake_post
 
-    with patch("app.services.adapters.llm_bot.get_http_client", return_value=mock_client):
+    with patch("app.services.adapters.http_bot.get_http_client", return_value=mock_client):
         resp = await adapter.execute(payload)
 
     assert resp.success is True
@@ -242,7 +242,7 @@ async def test_execute_renders_all_context_vars() -> None:
 async def test_call_bot_passes_context_to_sub_bot() -> None:
     """验证 call_bot 构建的 sub_payload 包含 channel_name 和 sender_name，
     使子 bot 的模板变量能正确渲染。"""
-    from app.services.adapters.unified_builtin import _make_tools
+    from app.services.adapters.channel_bot import _make_tools
 
     captured_payload: list[AgentPayload] = []
 
@@ -351,12 +351,12 @@ def test_orchestrator_process_config_has_template_keys() -> None:
             )
 
 
-# ── call_bot → LLMBotAdapter 端到端模板渲染 ──────────────────────────────────
+# ── call_bot → HttpBotAdapter 端到端模板渲染 ──────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_call_bot_end_to_end_renders_all_vars() -> None:
-    """call_bot 调用 LLMBotAdapter 子 bot 时，模板中所有变量均被正确渲染。"""
-    from app.services.adapters.unified_builtin import _make_tools
+    """call_bot 调用 HttpBotAdapter 子 bot 时，模板中所有变量均被正确渲染。"""
+    from app.services.adapters.channel_bot import _make_tools
 
     all_vars_template = (
         "频道={{channel_name}} 发送者={{sender_name}} Bot={{bot_name}} "
@@ -388,7 +388,7 @@ async def test_call_bot_end_to_end_renders_all_vars() -> None:
     mock_client.post = _fake_post
 
     async def _fake_adapter_factory(bot_id: str):
-        adapter = LLMBotAdapter(child_bot)  # type: ignore[arg-type]
+        adapter = HttpBotAdapter(child_bot)  # type: ignore[arg-type]
         return adapter
 
     async def _fake_broadcast(bot_id: str, content: str) -> None:
@@ -420,7 +420,7 @@ async def test_call_bot_end_to_end_renders_all_vars() -> None:
     tools = _make_tools(ctx)
     call_bot_tool = next(t for t in tools if t.name == "call_bot")
 
-    with patch("app.services.adapters.llm_bot.get_http_client", return_value=mock_client):
+    with patch("app.services.adapters.http_bot.get_http_client", return_value=mock_client):
         result = await call_bot_tool.ainvoke({"username": "child_bot", "message": "端到端测试"})
 
     assert "子bot执行成功" in result

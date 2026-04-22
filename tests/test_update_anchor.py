@@ -1,4 +1,4 @@
-"""测试 UnifiedBuiltinBotAdapter 能否通过 update_anchor 工具正确更新锚点层。"""
+"""测试 ChannelBotAdapter 能否通过 update_anchor 工具正确更新锚点层。"""
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, MemoryEntry, PromptTemplate, Workspace
 from app.services.adapters.base import AgentPayload
-from app.services.adapters.unified_builtin import UnifiedBuiltinBotAdapter
+from app.services.adapters.channel_bot import ChannelBotAdapter
 
 
 def _payload(channel_id: str, text: str) -> AgentPayload:
@@ -63,11 +63,11 @@ async def test_update_anchor_persists_content() -> None:
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.services.adapters.unified_builtin._make_llm", return_value=mock_llm),
-        patch("app.services.adapters.unified_builtin._get_llm_config", return_value={"base_url": "x", "model": "y"}),
+        patch("app.services.adapters.channel_bot._make_llm", return_value=mock_llm),
+        patch("app.services.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
         patch("app.db.session.async_session_factory", new=test_session_factory),
     ):
-        adapter = UnifiedBuiltinBotAdapter()
+        adapter = ChannelBotAdapter()
         resp = await adapter.execute(_payload(channel_id, "请把项目锚点更新为：" + anchor_content))
 
         assert resp.success is True
@@ -106,10 +106,10 @@ async def test_update_anchor_empty_content_returns_error() -> None:
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.services.adapters.unified_builtin._make_llm", return_value=mock_llm),
-        patch("app.services.adapters.unified_builtin._get_llm_config", return_value={"base_url": "x", "model": "y"}),
+        patch("app.services.adapters.channel_bot._make_llm", return_value=mock_llm),
+        patch("app.services.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
     ):
-        adapter = UnifiedBuiltinBotAdapter()
+        adapter = ChannelBotAdapter()
         resp = await adapter.execute(_payload(channel_id, "清空锚点"))
 
         assert resp.success is True
@@ -163,8 +163,8 @@ async def test_update_anchor_via_api(client, db_session) -> None:
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.services.adapters.unified_builtin._make_llm", return_value=mock_llm),
-        patch("app.services.adapters.unified_builtin._get_llm_config", return_value={"base_url": "x", "model": "y"}),
+        patch("app.services.adapters.channel_bot._make_llm", return_value=mock_llm),
+        patch("app.services.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
     ):
         resp = await client.post(
             f"/api/v1/channels/{ch.channel_id}/messages",

@@ -19,11 +19,6 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # OpenClaw Hook 集成（/hooks/agent）
-    openclaw_hook_token: str = ""  # Authorization: Bearer <token>，留空则 hook 端点不校验（需在 .env 中配置）
-    openclaw_agent_id: str = "main"
-    openclaw_session_prefix: str = "nexus:"
-
     # 数据目录（相对项目根或绝对路径）
     data_dir: str = "data"
 
