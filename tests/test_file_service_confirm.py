@@ -47,7 +47,7 @@ async def _seed_fixture(
     ch = Channel(channel_id=ch_id, workspace_id=ws_id, name="chfix", type="public")
     user = User(
         user_id=uploader_id,
-        username=f"u-{uploader_id[:8]}",
+        username=f"u-{uploader_id[-12:]}",
         password_hash="x",
         display_name="U",
         role="member",
