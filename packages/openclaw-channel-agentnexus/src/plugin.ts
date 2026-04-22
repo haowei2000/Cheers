@@ -50,6 +50,9 @@ interface FileContentFetchResult {
   truncated: boolean;
 }
 
+/** backend 卡住不应把 WS 消息环节顶住，设一个上限超时。 */
+const BRIDGE_FETCH_TIMEOUT_MS = 10_000;
+
 async function fetchFileContentForBot(
   httpBase: string, botToken: string, fileId: string,
   log?: { warn?: (...a: unknown[]) => void; debug?: (...a: unknown[]) => void },
@@ -62,6 +65,7 @@ async function fetchFileContentForBot(
   try {
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${botToken}` },
+      signal: AbortSignal.timeout(BRIDGE_FETCH_TIMEOUT_MS),
     });
     if (!resp.ok) {
       const detail = await resp.text().catch(() => "<unreadable>");
@@ -76,11 +80,11 @@ async function fetchFileContentForBot(
       log?.warn?.(`agentnexus: fetchFileContent malformed response fileId=${fileId}`);
       return null;
     }
-    log?.debug?.(`agentnexus: fetchFileContent ok fileId=${fileId} len=${data.content.length} truncated=${Boolean(data.truncated)}`);
+    log?.debug?.(`agentnexus: fetchFileContent ok fileId=${fileId} len=${data.content.length} truncated=${data.truncated ?? false}`);
     return {
       filename: data.filename || fileId,
       content: data.content,
-      truncated: Boolean(data.truncated),
+      truncated: data.truncated ?? false,
     };
   } catch (err) {
     log?.warn?.(`agentnexus: fetchFileContent threw fileId=${fileId} err=${String(err)}`);
@@ -108,6 +112,7 @@ async function uploadBotMarkdownFile(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ channel_id: channelId, filename, content }),
+      signal: AbortSignal.timeout(BRIDGE_FETCH_TIMEOUT_MS),
     });
     if (!resp.ok) return null;
     const body = await resp.json() as { data?: { file_id?: string } };
@@ -117,36 +122,40 @@ async function uploadBotMarkdownFile(
   }
 }
 
+type PluginLogger = {
+  info?: (...a: unknown[]) => void;
+  warn?: (...a: unknown[]) => void;
+  debug?: (...a: unknown[]) => void;
+};
+
 async function buildMessageWithAttachments(
-  base: string, botToken: string, m: InboundMessage,
-  log?: { info?: (...a: unknown[]) => void; warn?: (...a: unknown[]) => void; debug?: (...a: unknown[]) => void },
+  base: string, botToken: string, m: InboundMessage, log?: PluginLogger,
 ): Promise<string> {
   if (!m.attachments || m.attachments.length === 0) return m.text;
   log?.info?.(`agentnexus: hydrating ${m.attachments.length} attachment(s) base=${base} task=${m.event.task_id}`);
-  const parts: string[] = [m.text];
-  for (const att of m.attachments) {
-    if (!att.file_id) continue;
-    // 图片附件留给上层 Vision 入参走（OpenClaw agent 需图片时需另行支持）
-    if (att.content_type && att.content_type.startsWith("image/")) {
-      log?.debug?.(`agentnexus: skipping image attachment fileId=${att.file_id} ct=${att.content_type}`);
-      continue;
-    }
-    const filename = att.filename || att.file_id;
-    const fetched = await fetchFileContentForBot(base, botToken, att.file_id, log);
-    if (fetched && fetched.content) {
-      parts.push(
-        `\n\n--- 附件: ${fetched.filename} ---\n${fetched.content}${fetched.truncated ? "\n...(内容已截断)" : ""}\n--- 附件结束 ---`,
-      );
-    } else if (att.summary) {
-      log?.warn?.(`agentnexus: attachment fallback to summary fileId=${att.file_id} filename=${filename}`);
-      parts.push(
-        `\n\n--- 附件: ${filename} (读取失败，仅存摘要) ---\n${att.summary}\n--- 附件结束 ---`,
-      );
-    } else {
+
+  const hydrations = await Promise.all(
+    m.attachments.map(async (att): Promise<string | null> => {
+      if (!att.file_id) return null;
+      if (att.content_type && att.content_type.startsWith("image/")) {
+        log?.debug?.(`agentnexus: skipping image attachment fileId=${att.file_id} ct=${att.content_type}`);
+        return null;
+      }
+      const fetched = await fetchFileContentForBot(base, botToken, att.file_id, log);
+      if (fetched && fetched.content) {
+        return `\n\n--- 附件: ${fetched.filename} ---\n${fetched.content}${fetched.truncated ? "\n...(内容已截断)" : ""}\n--- 附件结束 ---`;
+      }
+      const filename = att.filename || att.file_id;
+      if (att.summary) {
+        log?.warn?.(`agentnexus: attachment fallback to summary fileId=${att.file_id} filename=${filename}`);
+        return `\n\n--- 附件: ${filename} (读取失败，仅存摘要) ---\n${att.summary}\n--- 附件结束 ---`;
+      }
       log?.warn?.(`agentnexus: attachment no content and no summary fileId=${att.file_id} filename=${filename}`);
-    }
-  }
-  return parts.join("");
+      return null;
+    }),
+  );
+
+  return [m.text, ...hydrations.filter((s): s is string => s !== null)].join("");
 }
 
 // ============================================================================

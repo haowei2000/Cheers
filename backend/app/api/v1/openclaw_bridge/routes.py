@@ -20,16 +20,20 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import resolve_data_dir, settings
 from app.core.dependencies import get_session
 from app.core.responses import APIResponse
 from app.db.models import BotAccount, ChannelMembership, FileRecord, Message
+from app.services.file_processor.convert import is_image_type
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.openclaw_bridge.dispatcher import bridge_dispatcher
 from app.services.openclaw_bridge.membership import load_memberships
@@ -217,7 +221,8 @@ async def bridge_list_channel_ws_bots(
 _FILE_CONTENT_MAX_CHARS = 200_000
 
 
-def _extract_bot_token_from_header(authorization: str | None) -> str | None:
+def _parse_bearer_header(authorization: str | None) -> str | None:
+    """Extract `Bearer xxx` → `xxx` from an Authorization header value."""
     if not authorization:
         return None
     parts = authorization.split(None, 1)
@@ -233,7 +238,7 @@ async def _resolve_bot_by_bearer(
     """Bearer ocw_xxx → BotAccount。失败统一抛 401。"""
     if not settings.openclaw_bridge_enabled:
         raise HTTPException(status_code=503, detail="OpenClaw bridge 已禁用")
-    token = _extract_bot_token_from_header(authorization)
+    token = _parse_bearer_header(authorization)
     if not token:
         raise HTTPException(status_code=401, detail="missing bearer token")
     bot = await resolve_bot_by_token(session, token)
@@ -282,7 +287,6 @@ async def bridge_read_file_content(
 
     await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=record.channel_id)
 
-    from app.services.file_processor.convert import is_image_type
     if is_image_type(record.content_type or ""):
         raise HTTPException(
             status_code=415,
@@ -304,13 +308,9 @@ async def bridge_read_file_content(
     if not attachments:
         raise HTTPException(status_code=404, detail="file content 不可用")
     att = attachments[0]
-    text: str = att.get("content") or ""
-    truncated_conv = att.get("truncated") == "true"
-
-    truncated_size = False
-    if len(text) > _FILE_CONTENT_MAX_CHARS:
-        text = text[:_FILE_CONTENT_MAX_CHARS]
-        truncated_size = True
+    full_text: str = att.get("content") or ""
+    text = full_text[:_FILE_CONTENT_MAX_CHARS]
+    truncated = att.get("truncated") == "true" or len(full_text) > _FILE_CONTENT_MAX_CHARS
 
     return APIResponse.ok({
         "file_id": record.file_id,
@@ -319,7 +319,7 @@ async def bridge_read_file_content(
         "size_bytes": record.size_bytes,
         "summary": record.summary_3lines or "",
         "content": text,
-        "truncated": truncated_conv or truncated_size,
+        "truncated": truncated,
     })
 
 
@@ -349,11 +349,6 @@ async def bridge_upload_markdown_file(
     授权：bot 必须是目标频道的成员。
     用途：agent 产出超长内容时，plugin 可把正文转存为 .md 文件作为消息附件。
     """
-    import re
-    import uuid
-    from datetime import datetime, timezone
-    from pathlib import Path
-
     bot = await _resolve_bot_by_bearer(session, authorization)
     await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=body.channel_id)
 
@@ -372,12 +367,12 @@ async def bridge_upload_markdown_file(
         safe_name = f"{safe_name}.md"
 
     file_id = str(uuid.uuid4())
-    base = Path(settings.data_dir)
-    if not base.is_absolute():
-        base = Path(__file__).resolve().parent.parent.parent.parent / settings.data_dir
-    gen_dir = base / "generated" / body.channel_id
+    gen_dir = resolve_data_dir() / "generated" / body.channel_id
     gen_dir.mkdir(parents=True, exist_ok=True)
     md_path = gen_dir / f"{file_id}.md"
+    # path traversal guard：body.channel_id 不是受信任输入，确保写入不越出 gen_dir
+    if not md_path.resolve().is_relative_to(gen_dir.resolve()):
+        raise HTTPException(status_code=400, detail="invalid channel_id path")
     md_path.write_text(text, encoding="utf-8")
 
     now = datetime.now(timezone.utc)

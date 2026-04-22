@@ -129,4 +129,12 @@ def get_data_dir(base: Path) -> Path:
     return p
 
 
+def resolve_data_dir() -> Path:
+    """零参数版：以 backend/app/ 为基准解析 data_dir（与历史 adapters 写入位置一致）。"""
+    p = Path(settings.data_dir)
+    if p.is_absolute():
+        return p
+    return _BACKEND_ROOT / "app" / p
+
+
 settings = Settings()
