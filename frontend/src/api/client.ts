@@ -36,8 +36,12 @@ export interface RequestOptions extends Omit<RequestInit, "body" | "headers"> {
 
 function resolveUrl(path: string): string {
   if (/^(https?:)?\/\//.test(path)) return path;
-  if (path.startsWith("/")) return path;
-  return `${API_BASE}/${path}`;
+  // 已显式带 /api 前缀的保持不变；其他 path（包括 "/channels"、"channels" 都看作
+  // API 子路径）统一拼到 API_BASE 上，避免 fetch 落到 SPA 的 try_files 兜底返
+  // index.html 把 JSON.parse 撑崩。
+  if (path.startsWith("/api")) return path;
+  const suffix = path.startsWith("/") ? path.slice(1) : path;
+  return `${API_BASE}/${suffix}`;
 }
 
 export async function apiFetch(path: string, options: RequestOptions = {}): Promise<Response> {
