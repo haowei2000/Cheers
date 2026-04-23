@@ -31,7 +31,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
     setQcLoading(true);
     setQcError("");
     try {
-      const res = await apiFetch("/bots/quick-connect", {
+      const res = await apiFetch("bots/quick-connect", {
         method: "POST",
         body: {
           url: qcUrl.trim(),
