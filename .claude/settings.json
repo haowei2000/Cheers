@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(grep:*)",
+      "Bash(docker exec agentnexus-postgres-1:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker ps:*)",
+      "Bash(lsof:*)",
+      "Bash(pkill:*)",
+      "Bash(jq:*)",
+      "Bash(cat:*)",
+      "Bash(env)"
+    ]
+  }
+}
