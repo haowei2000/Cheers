@@ -109,6 +109,23 @@ class Settings(BaseSettings):
     openclaw_bridge_token: str = ""  # 空 = 未配置，bridge 路由返回 503
     openclaw_bridge_timeout_seconds: int = 60  # 异步 Bot 回复超时（超时后占位消息被标记超时）
 
+    # ===== MEDIA: 行抽取（Bot 回复内联附件协议，对齐 OpenClaw gateway 行为）=====
+    # Bot 回复里一行 `MEDIA:<本地路径或 URL>`（行首，不可有前导空格）会被抽出：
+    #   - 本地路径：按 workspaceOnly 白名单校验，复制到 channel 的 generated 目录，建 FileRecord
+    #   - http(s) URL：带 size/timeout cap 下载后建 FileRecord
+    # 失败的 ref 会被记录日志并跳过，不影响文本消息落盘。
+    media_extract_enabled: bool = True
+    # True = 只接受落在 data_dir 内、或 media_allowed_dirs 额外白名单内的本地路径
+    media_workspace_only: bool = True
+    # 逗号分隔的额外允许目录（支持 ~ 展开）；例如：`~/.openclaw/workspace,/var/openclaw/out`
+    media_allowed_dirs: str = ""
+    # 下载 / 本地文件大小上限（与 file_upload_max_bytes 独立，可单独收紧）
+    media_max_file_bytes: int = 25 * 1024 * 1024
+    # URL 下载超时
+    media_download_timeout_seconds: int = 30
+    # 每条回复最多抽取多少行 MEDIA（防爆）
+    media_max_refs_per_message: int = 10
+
     model_config = {
         "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],
         "env_file_encoding": "utf-8",

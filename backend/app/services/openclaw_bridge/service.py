@@ -17,7 +17,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models import BotAccount, FileRecord, Message
+from app.services.openclaw_bridge.media_extract import (
+    extract_media_refs,
+    materialize_media_refs,
+)
 from app.services.openclaw_bridge.pending import PendingReply, pending_replies
 from app.services.orchestrator.mention import resolve_user_mentions
 from app.services.ws_service import ws_manager
@@ -51,6 +56,26 @@ async def finalize_bot_reply(
         task_id=task_id, bot_id=bot_id, msg_id=reply_to_msg_id,
     )
     file_ids = list(dict.fromkeys(file_ids or []))
+
+    # 从 content 里抽 MEDIA: 行，把路径/URL 物化成 FileRecord 后合并到 file_ids。
+    # 单个 ref 失败只记日志不抛，保证文本消息仍能正常落盘。
+    if settings.media_extract_enabled:
+        extract = extract_media_refs(content)
+        if extract.refs:
+            media_file_ids = await materialize_media_refs(
+                session,
+                channel_id=channel_id,
+                uploader_id=bot_id,
+                refs=extract.refs,
+            )
+            if media_file_ids:
+                # 抽到的附件放在显式 file_ids 之后，保留显式先于隐式的直觉顺序
+                file_ids = list(dict.fromkeys([*file_ids, *media_file_ids]))
+                logger.info(
+                    "bridge.finalize: extracted %d MEDIA refs (%d materialized) for bot_id=%s",
+                    len(extract.refs), len(media_file_ids), bot_id,
+                )
+            content = extract.cleaned_content
 
     if pending:
         msg = await session.get(Message, pending.msg_id)
@@ -128,6 +153,8 @@ async def _broadcast_done(session: AsyncSession, msg: Message, *, file_ids: list
                 file_id=r.file_id,
                 original_filename=r.original_filename,
                 content_type=r.content_type,
+                size_bytes=r.size_bytes,
+                status=r.status or "ready",
             ).model_dump()
             for fid in file_ids
             if (r := file_map.get(fid)) is not None
