@@ -552,8 +552,25 @@ async function stopAccount(rawCtx: unknown): Promise<void> {
 }
 
 // ============================================================================
-// Outbound: OpenClaw agent → sendText → session.reply
+// Outbound: OpenClaw agent → sendText / sendMedia → session.reply / send
 // ============================================================================
+//
+// OpenClaw gateway (deliver-BNvlWd4P.js) 对 MEDIA: 协议的处理是在 gateway
+// 侧先抽出 MEDIA 行，然后按 handler.sendMedia(caption, mediaUrl, overrides)
+// 串行调用 —— caption 只在 index=0 的首次调用里非空，其余调用 caption=""。
+// 纯文本 payload 走 handler.sendText(text) 分片发送，不走 sendMedia。
+//
+// 关键合约（gateway 读 delivery.messageId）：
+//   sendMedia / sendText 必须返回 { channel, messageId, chatId? }，
+//   返回 undefined 会导致 gateway "Cannot read properties of undefined".
+//
+// 我们的策略：
+//   - sendMedia 上传到 AgentNexus bridge 拿 file_id，按 `to`（= taskId）
+//     累积到 pendingMediaByTo，记录首次调用的 caption；
+//   - 每次 sendMedia 重新 arm 一个短 debounce（500ms）；最后一次 sendMedia
+//     之后 debounce 触发，一次性 session.reply/send(text=caption, fileIds=all)；
+//   - gateway 的 await 链不等我们 debounce 触发即可返回，因此每次立即返回
+//     合成的 messageId（真实 msg_id 由 bridge broadcast 时生成）。
 
 interface SendTextCtx {
   to: string;
@@ -563,10 +580,114 @@ interface SendTextCtx {
   [k: string]: unknown;
 }
 
+interface SendMediaCtx {
+  to: string;
+  /** gateway 运行时传 mediaUrl；旧 docs 写作 filePath，兼容二者。 */
+  mediaUrl?: string;
+  filePath?: string;
+  /** sendMediaWithLeadingCaption 在 i=0 传 caption；i>0 传 undefined/"". */
+  text?: string;
+  caption?: string;
+  contentType?: string;
+  filename?: string;
+  accountId?: string | null;
+  cfg?: OpenClawConfig;
+  [k: string]: unknown;
+}
+
 interface SendTextResult {
   channel: string;
   messageId: string;
   chatId?: string;
+}
+
+/** sendMedia 的 debounce：最后一个 mediaUrl 之后等这么久再统一 flush 成一条 reply. */
+const PENDING_MEDIA_DEBOUNCE_MS = 500;
+
+/** 每条逻辑回复最多挂多少媒体附件，防 agent 一次刷屏。 */
+const PENDING_MEDIA_CAP = 20;
+
+interface PendingMediaSlot {
+  fileIds: string[];
+  /** 首次 sendMedia 调用里 caption 非空时抓到的 payload 文本 */
+  caption: string;
+  /** 上传时解析出的 channelId，flush 时复用，无需再次 resolve */
+  channelId: string;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+/** key = ctx.to（deliver 路径下等于 taskId）。AccountRuntime 没这个字段，
+ *  所以放模块级；不同 account 的 `to` (= taskId) 全局唯一，碰不上。 */
+const pendingMediaByTo = new Map<string, PendingMediaSlot>();
+
+async function uploadBotBinaryFile(
+  httpBase: string,
+  botToken: string,
+  channelId: string,
+  filename: string,
+  data: Uint8Array,
+  contentType?: string,
+): Promise<string | null> {
+  if (!httpBase) return null;
+  const url = `${httpBase}/api/v1/openclaw/bridge/files/upload-binary`;
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+        "Content-Type": contentType || "application/octet-stream",
+        "X-Channel-Id": channelId,
+        "X-Filename": filename,
+      },
+      body: data,
+      signal: AbortSignal.timeout(BRIDGE_FETCH_TIMEOUT_MS),
+    });
+    if (!resp.ok) return null;
+    const body = await resp.json() as { data?: { file_id?: string } };
+    return body.data?.file_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** filePath 可以是本地路径或 http(s) URL。返回 (bytes, filename, contentType)；失败返 null。 */
+async function readMediaSource(
+  filePath: string, explicitFilename?: string, explicitContentType?: string,
+): Promise<{ bytes: Uint8Array; filename: string; contentType: string } | null> {
+  const isUrl = /^https?:\/\//i.test(filePath);
+  if (isUrl) {
+    try {
+      const resp = await fetch(filePath, {
+        signal: AbortSignal.timeout(BRIDGE_FETCH_TIMEOUT_MS),
+      });
+      if (!resp.ok) return null;
+      const buf = new Uint8Array(await resp.arrayBuffer());
+      const urlObj = new URL(filePath);
+      const urlName = urlObj.pathname.split("/").filter(Boolean).pop() || "download";
+      return {
+        bytes: buf,
+        filename: explicitFilename || urlName,
+        contentType: explicitContentType
+          || (resp.headers.get("content-type") || "").split(";")[0].trim()
+          || "application/octet-stream",
+      };
+    } catch {
+      return null;
+    }
+  }
+  // 本地路径
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  try {
+    const bytes = await fs.readFile(filePath);
+    return {
+      bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+      filename: explicitFilename || path.basename(filePath) || "media",
+      contentType: explicitContentType || "application/octet-stream",
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function maybeAutoAttachReplyAsFile(
@@ -581,11 +702,94 @@ async function maybeAutoAttachReplyAsFile(
   return fileId ? [fileId] : undefined;
 }
 
+function resolveActiveEntry(accountId?: string | null): { accountId: string; entry: AccountRuntime } {
+  const resolvedId = accountId ?? Array.from(sessionRegistry.keys())[0];
+  if (!resolvedId) throw new Error("agentnexus: no active account");
+  const entry = sessionRegistry.get(resolvedId);
+  if (!entry) throw new Error(`agentnexus: no running session for account ${resolvedId}`);
+  return { accountId: resolvedId, entry };
+}
+
+/** Debounce flush：把 `to` 上累积的 fileIds + caption 一次性发成 reply/send。 */
+async function flushPendingMedia(to: string, entry: AccountRuntime): Promise<void> {
+  const slot = pendingMediaByTo.get(to);
+  if (!slot) return;
+  if (slot.timer) clearTimeout(slot.timer);
+  pendingMediaByTo.delete(to);
+  if (slot.fileIds.length === 0) return;
+
+  const { session, lastInboundByTaskId } = entry;
+  const source = lastInboundByTaskId.get(to);
+  if (source) {
+    lastInboundByTaskId.delete(source.event.task_id);
+    await session.reply({ source, text: slot.caption, fileIds: slot.fileIds });
+    return;
+  }
+  // source 已被别的流程消费；尝试主动 send 到解析好的 channel（需是 bot 成员）
+  if (session.membership.channelIds.has(slot.channelId)) {
+    await session.send({ channelId: slot.channelId, text: slot.caption, fileIds: slot.fileIds });
+  }
+}
+
+async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
+  const { entry } = resolveActiveEntry(ctx.accountId);
+  const { lastInboundByTaskId } = entry;
+
+  // gateway 运行时传 mediaUrl；旧 docs 示例用 filePath，兼容二者
+  const mediaUrl = ctx.mediaUrl || ctx.filePath || "";
+  // sendMediaWithLeadingCaption: index=0 传 caption（= payload text）,
+  // index>0 传 undefined/""。我们抓第一个非空的作为最终 reply text。
+  const caption = ((ctx.text ?? ctx.caption) ?? "").toString();
+
+  const source = lastInboundByTaskId.get(ctx.to);
+  const channelId = source?.channelId
+    ?? (entry.session.membership.channelIds.has(ctx.to) ? ctx.to : null);
+  if (!channelId || !mediaUrl) {
+    // 没法解析 channel / 没给 url —— gateway 的 lastMessageId 仍然需要一个非 undefined
+    return { channel: PLUGIN_ID, messageId: "", chatId: channelId ?? "" };
+  }
+
+  const media = await readMediaSource(mediaUrl, ctx.filename, ctx.contentType);
+  if (!media) {
+    return { channel: PLUGIN_ID, messageId: "", chatId: channelId };
+  }
+
+  const fileId = await uploadBotBinaryFile(
+    deriveHttpBase(entry.account.dataUrl),
+    entry.account.botToken,
+    channelId,
+    media.filename,
+    media.bytes,
+    media.contentType,
+  );
+  if (!fileId) {
+    return { channel: PLUGIN_ID, messageId: "", chatId: channelId };
+  }
+
+  let slot = pendingMediaByTo.get(ctx.to);
+  if (!slot) {
+    slot = { fileIds: [], caption: "", channelId, timer: null };
+    pendingMediaByTo.set(ctx.to, slot);
+  }
+  if (slot.fileIds.length < PENDING_MEDIA_CAP) slot.fileIds.push(fileId);
+  if (caption && !slot.caption) slot.caption = caption;
+
+  // 每次 sendMedia 都重置 debounce；gateway 循环结束后 timer 触发 → 一次性 flush
+  if (slot.timer) clearTimeout(slot.timer);
+  slot.timer = setTimeout(() => {
+    flushPendingMedia(ctx.to, entry).catch(() => { /* swallow, gateway 无需感知 */ });
+  }, PENDING_MEDIA_DEBOUNCE_MS);
+
+  // 合成 messageId —— 真实 msg_id 要等 flush 后 bridge broadcast 才知道
+  return {
+    channel: PLUGIN_ID,
+    messageId: `pending-media-${ctx.to}-${fileId.slice(0, 8)}`,
+    chatId: channelId,
+  };
+}
+
 async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
-  const accountId = ctx.accountId ?? Array.from(sessionRegistry.keys())[0];
-  if (!accountId) throw new Error("agentnexus: no active account for sendText");
-  const entry = sessionRegistry.get(accountId);
-  if (!entry) throw new Error(`agentnexus: no running session for account ${accountId}`);
+  const { accountId, entry } = resolveActiveEntry(ctx.accountId);
   const { session, lastInboundBySessionKey, lastInboundByTaskId } = entry;
 
   // deliver:true 路径：ctx.to === conversationId === taskId（见 bindingAdapter 注册）
@@ -671,6 +875,10 @@ const chatPlugin = createChatChannelPlugin<ResolvedAccount>({
     // 是另一个高阶 API（返回 messageId 给 attachment binding），不是 deliver 路径。
     deliveryMode: "gateway",
     sendText,
+    sendMedia,
+    // sdk-channel-plugins.md 官例把 sendMedia 放在 outbound.base；为了兼容
+    // 不同版本的 gateway 查找路径，同时在顶层和 base 里各声明一遍。
+    base: { sendMedia },
   },
 });
 
@@ -690,4 +898,10 @@ const chatPlugin = createChatChannelPlugin<ResolvedAccount>({
 export const agentnexusPlugin: ChannelPlugin<ResolvedAccount> = chatPlugin;
 
 // test hooks
-export const __testonly = { sessionRegistry };
+export const __testonly = {
+  sessionRegistry,
+  sendText,
+  sendMedia,
+  pendingMediaByTo,
+  flushPendingMedia,
+};

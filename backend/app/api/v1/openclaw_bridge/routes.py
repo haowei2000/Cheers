@@ -23,8 +23,17 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -400,6 +409,112 @@ async def bridge_upload_markdown_file(
 
 
 # ============================================================================
+# per-bot-token 二进制文件上传（agent 侧 sendMedia 支持）
+# ============================================================================
+
+# 单次二进制上传的大小上限；对齐 settings.file_upload_max_bytes。
+# MEDIA: 协议里 gateway 会把本地媒体文件直接交给 plugin；plugin 再把它传上来
+# 落成 FileRecord，作为消息附件。
+def _sanitize_filename(raw: str) -> str:
+    safe = re.sub(r"[^\w\-. ]", "_", raw.strip())
+    return safe or "media"
+
+
+@router.post("/files/upload-binary", response_model=APIResponse[dict])
+async def bridge_upload_binary_file(
+    request: Request,
+    x_channel_id: str = Header(...),
+    x_filename: str = Header(...),
+    authorization: str | None = Header(default=None),
+    content_type: str | None = Header(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Bot 上传一个二进制文件为频道附件，返回 file_id。
+
+    鉴权：per-bot token `Authorization: Bearer ocw_...`。
+    授权：bot 必须是目标频道的成员。
+    用途：OpenClaw gateway 抽出 agent 输出的 MEDIA: 行后，channel plugin 通过
+    `sendMedia({ to, filePath })` 拿到本地媒体文件，调本接口上传并得到 file_id，
+    再在后续 reply/send 帧里带上 file_ids。
+
+    协议（走 raw body 而非 multipart，避免引入 python-multipart 依赖）：
+      - Body：二进制文件原始字节；Content-Type: 文件 MIME（或 application/octet-stream）
+      - Header X-Channel-Id：目标频道 id（必填）
+      - Header X-Filename：原始文件名（必填，用于扩展名 + 展示）
+    """
+    bot = await _resolve_bot_by_bearer(session, authorization)
+    await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=x_channel_id)
+
+    max_bytes = int(settings.file_upload_max_bytes)
+
+    raw_name = _sanitize_filename(x_filename)
+    suffix = Path(raw_name).suffix.lower()
+
+    file_id = str(uuid.uuid4())
+    gen_dir = resolve_data_dir() / "generated" / x_channel_id
+    gen_dir.mkdir(parents=True, exist_ok=True)
+    dst = gen_dir / f"{file_id}{suffix}"
+    # path traversal guard：x_channel_id 不是受信任输入
+    if not dst.resolve().is_relative_to(gen_dir.resolve()):
+        raise HTTPException(status_code=400, detail="invalid channel_id path")
+
+    # 流式落盘，超限立即截断；避免把 25MB body 全部装进内存
+    total = 0
+    try:
+        with open(dst, "wb") as fh:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    fh.close()
+                    dst.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"文件超过上限 {max_bytes} bytes",
+                    )
+                fh.write(chunk)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        dst.unlink(missing_ok=True)
+        logger.warning("upload-binary write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="write failed") from exc
+
+    if total == 0:
+        dst.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="文件不能为空")
+
+    import mimetypes as _mimetypes
+    # Content-Type 没传或是 application/octet-stream 时，从扩展名猜
+    header_ctype = (content_type or "").split(";")[0].strip()
+    if not header_ctype or header_ctype == "application/octet-stream":
+        header_ctype = _mimetypes.guess_type(raw_name)[0] or "application/octet-stream"
+
+    now = datetime.now(timezone.utc)
+    record = FileRecord(
+        file_id=file_id,
+        channel_id=x_channel_id,
+        uploader_id=bot.bot_id,
+        original_path=str(dst),
+        original_filename=raw_name,
+        content_type=header_ctype,
+        size_bytes=total,
+        status="ready",
+        uploaded_at=now,
+    )
+    session.add(record)
+    await session.commit()
+
+    return APIResponse.ok({
+        "file_id": file_id,
+        "filename": raw_name,
+        "content_type": header_ctype,
+        "size_bytes": total,
+    })
+
+
+# ============================================================================
 # WebSocket 路由
 # ============================================================================
 
@@ -654,8 +769,8 @@ async def _handle_data_reply(
 
     client_msg_id = frame.get("client_msg_id")
     text = frame.get("text")
-    if not isinstance(text, str) or not text:
-        await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 必填")
+    if not isinstance(text, str):
+        await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 必须是字符串")
         return
 
     task_id = frame.get("task_id")
@@ -663,6 +778,11 @@ async def _handle_data_reply(
     file_ids = frame.get("file_ids") or []
     if not isinstance(file_ids, list) or not all(isinstance(f, str) for f in file_ids):
         await _send_send_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids 必须是 string[]")
+        return
+
+    # 允许 text 为空，但必须至少有 file_ids——这样 sendMedia（纯媒体）也能兜底发一条消息
+    if not text and not file_ids:
+        await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 和 file_ids 不能同时为空")
         return
 
     # 定位目标频道：
@@ -737,14 +857,19 @@ async def _handle_data_send(
     if not isinstance(channel_id, str) or not channel_id:
         await _send_send_ack_err(websocket, client_msg_id, "missing_channel", "channel_id 必填")
         return
-    if not isinstance(text, str) or not text:
-        await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 必填")
+    if not isinstance(text, str):
+        await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 必须是字符串")
         return
 
     in_reply_to_msg_id = frame.get("in_reply_to_msg_id")
     file_ids = frame.get("file_ids") or []
     if not isinstance(file_ids, list) or not all(isinstance(f, str) for f in file_ids):
         await _send_send_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids 必须是 string[]")
+        return
+
+    # 允许 text 为空，但必须至少有 file_ids
+    if not text and not file_ids:
+        await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 和 file_ids 不能同时为空")
         return
 
     async with async_session_factory() as s:
