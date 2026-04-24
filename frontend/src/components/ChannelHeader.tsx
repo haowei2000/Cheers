@@ -215,9 +215,11 @@ export function ChannelHeader({
         )}
       </div>
 
-      {/* Auto-assist toggle */}
+      {/* Auto-assist toggle — h-7 reserves the same 28px row height as the
+          threads pill / memory cluster / icon buttons so the header sits on
+          one visual baseline. */}
       <label
-        className="flex items-center gap-1.5 cursor-pointer select-none flex-shrink-0"
+        className="flex items-center gap-1.5 cursor-pointer select-none flex-shrink-0 h-7"
         title={
           autoAssist ? "自动调用内置助手（开启中）" : "自动调用内置助手（关闭）"
         }
@@ -356,7 +358,7 @@ export function ChannelHeader({
           onClick={onOpenAnnouncementComposer}
           title="发布公告"
           aria-label="发布公告"
-          className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
           style={{ color: "var(--fg-3)" }}
         >
           <svg
@@ -379,7 +381,7 @@ export function ChannelHeader({
           type="button"
           onClick={onOpenQaSummary}
           title="生成问答总结"
-          className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
           style={{ color: "var(--fg-3)" }}
         >
           <svg
@@ -400,7 +402,7 @@ export function ChannelHeader({
         type="button"
         onClick={onOpenManageMembers}
         title="成员管理"
-        className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+        className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
         style={{ color: "var(--fg-3)" }}
       >
         <svg
@@ -422,7 +424,7 @@ export function ChannelHeader({
           type="button"
           onClick={onOpenChannelProfile}
           title="我的频道资料"
-          className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
           style={{ color: "var(--fg-3)" }}
         >
           <svg

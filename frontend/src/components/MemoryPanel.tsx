@@ -1001,7 +1001,13 @@ function QuickAddFooter({
         placeholder="教一下 agents…"
         disabled={busy}
         className="an-input"
-        style={{ flex: 1, fontSize: 12, padding: "6px 10px" }}
+        style={{
+          flex: 1,
+          fontSize: 12,
+          padding: "0 10px",
+          height: 28,
+          lineHeight: "28px",
+        }}
       />
       <button
         type="button"
@@ -1009,6 +1015,7 @@ function QuickAddFooter({
         disabled={!v.trim() || busy}
         className="an-btn an-btn-sm"
         title="保存为一条新条目（Enter 亦可）"
+        style={{ height: 28, padding: "0 12px", flexShrink: 0 }}
       >
         {busy ? "…" : "保存"}
       </button>
