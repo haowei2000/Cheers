@@ -1,8 +1,9 @@
 /* ThreadPage — full-page thread view (displayed in place of the chat stream
  * when App's pageThreadId is set, synced to URL hash #thread=<msg_id>). */
-import { useState } from "react";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
+import { MessageMarkdown } from "../MessageMarkdown";
+import { ThreadComposer } from "./ThreadComposer";
 
 export interface ThreadPageProps {
   rootMsg: Message;
@@ -53,26 +54,11 @@ export function ThreadPage({
   onGoToChannel,
   onSendReply,
 }: ThreadPageProps) {
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-
   const title =
     stripThinkTags(rootMsg.content || "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 80) || "对话串";
-
-  const submit = async () => {
-    const text = draft.trim();
-    if (!text || sending) return;
-    setSending(true);
-    try {
-      await onSendReply(text);
-      setDraft("");
-    } finally {
-      setSending(false);
-    }
-  };
 
   return (
     <div className="an-thread-page">
@@ -121,7 +107,7 @@ export function ThreadPage({
             )}
           </div>
           <div className="an-pm-c">
-            {stripThinkTags(rootMsg.content || "")}
+            <MessageMarkdown text={stripThinkTags(rootMsg.content || "")} />
           </div>
         </div>
 
@@ -167,73 +153,27 @@ export function ThreadPage({
                   <span className="an-r-t">{formatDateTime(r.created_at)}</span>
                 )}
               </div>
-              <div className="an-r-c">{stripThinkTags(r.content || "")}</div>
+              <div className="an-r-c">
+                <MessageMarkdown text={stripThinkTags(r.content || "")} />
+              </div>
             </div>
           ))
         )}
       </div>
       <div className="an-tpp-foot">
         <div className="an-wrap">
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              alignItems: "center",
-              background: "var(--bg-0)",
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-              padding: "8px 12px",
-            }}
-          >
-            <input
-              placeholder={`回复 "${title}"…`}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              style={{
-                flex: 1,
-                background: "transparent",
-                border: 0,
-                outline: 0,
-                color: "var(--fg-1)",
-                fontFamily: "inherit",
-                fontSize: 13,
-              }}
-            />
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!draft.trim() || sending}
-              style={{
-                fontFamily: "inherit",
-                fontSize: 12,
-                background: draft.trim()
-                  ? "var(--accent)"
-                  : "var(--surface-soft)",
-                color: draft.trim() ? "#fff" : "var(--fg-3)",
-                border: 0,
-                padding: "6px 14px",
-                borderRadius: 6,
-                cursor: draft.trim() && !sending ? "pointer" : "default",
-              }}
-            >
-              {sending ? "发送中…" : "回复"}
-            </button>
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--fg-3)",
-              marginTop: 6,
-            }}
-          >
-            在这里的回复只留在本对话串里。
-          </div>
+          <ThreadComposer
+            placeholder={`回复 "${title}"…`}
+            channelBots={channelBots}
+            channelUsers={channelUsers}
+            onSend={onSendReply}
+            hint={
+              <>
+                <kbd>@</kbd> 提及 · <kbd>↵</kbd> 发送 · <kbd>⇧↵</kbd> 换行 ·
+                在这里的回复只留在本对话串里
+              </>
+            }
+          />
         </div>
       </div>
     </div>

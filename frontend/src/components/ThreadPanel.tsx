@@ -3,9 +3,10 @@
  * Wraps a root message + its reply chain (derived from in_reply_to) as its
  * own focused view. "Open as page ↗" promotes it to the full-page view
  * owned by App.tsx. */
-import { useState } from "react";
 import type { ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
+import { MessageMarkdown } from "../MessageMarkdown";
+import { ThreadComposer } from "./ThreadComposer";
 
 export interface ThreadPanelProps {
   rootMsg: Message;
@@ -56,21 +57,6 @@ export function ThreadPanel({
   onJumpToParent,
   onSendReply,
 }: ThreadPanelProps) {
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
-
-  const submit = async () => {
-    const text = draft.trim();
-    if (!text || sending) return;
-    setSending(true);
-    try {
-      await onSendReply(text);
-      setDraft("");
-    } finally {
-      setSending(false);
-    }
-  };
-
   const titleSource = rootMsg.content || "(空消息)";
   const title = stripThinkTags(titleSource)
     .replace(/\s+/g, " ")
@@ -130,12 +116,10 @@ export function ThreadPanel({
             fontSize: 12.5,
             color: "var(--fg-2)",
             marginTop: 4,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
+            lineHeight: 1.5,
           }}
         >
-          {stripThinkTags(rootMsg.content || "").slice(0, 240)}
-          {(rootMsg.content || "").length > 240 ? "…" : ""}
+          <MessageMarkdown text={stripThinkTags(rootMsg.content || "")} />
         </div>
         {onJumpToParent && (
           <button
@@ -199,7 +183,7 @@ export function ThreadPanel({
                   <span className="an-t">{shortTime(r.created_at)}</span>
                 </div>
                 <div className="an-c">
-                  {stripThinkTags(r.content || "")}
+                  <MessageMarkdown text={stripThinkTags(r.content || "")} />
                 </div>
               </div>
             </div>
@@ -207,57 +191,12 @@ export function ThreadPanel({
         )}
       </div>
       <div className="an-tp-foot">
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            background: "var(--bg-0)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: "6px 10px",
-          }}
-        >
-          <input
-            placeholder={`回复 "${title}"…`}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            style={{
-              flex: 1,
-              background: "transparent",
-              border: 0,
-              outline: 0,
-              color: "var(--fg-1)",
-              fontFamily: "inherit",
-              fontSize: 13,
-            }}
-          />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!draft.trim() || sending}
-            style={{
-              fontFamily: "inherit",
-              fontSize: 12,
-              background: draft.trim()
-                ? "var(--accent)"
-                : "var(--surface-soft)",
-              color: draft.trim() ? "#fff" : "var(--fg-3)",
-              border: 0,
-              padding: "5px 12px",
-              borderRadius: 6,
-              cursor: draft.trim() && !sending ? "pointer" : "default",
-            }}
-          >
-            {sending ? "发送中…" : "回复"}
-          </button>
-        </div>
+        <ThreadComposer
+          placeholder={`回复 "${title}"…`}
+          channelBots={channelBots}
+          channelUsers={channelUsers}
+          onSend={onSendReply}
+        />
       </div>
     </aside>
   );
