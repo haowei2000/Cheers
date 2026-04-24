@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, try_get_current_user
 from app.core.responses import APIResponse
-from app.core.schemas import MessageCreate, MessageFileInResponse, MessageInResponse, MessageStreamCreate
+from app.core.schemas import (
+    MessageCreate,
+    MessageFileInResponse,
+    MessageInResponse,
+    MessageStreamCreate,
+    PermissionResolveRequest,
+)
 from app.db.models import FileRecord, Message, User
 from app.db.session import async_session_factory, get_session
 from app.services.guide.constants import GUIDE_BOT_ID
@@ -391,6 +397,57 @@ async def send_message_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/{msg_id}/resolve", response_model=APIResponse[dict])
+async def resolve_permission(
+    channel_id: str,
+    msg_id: str,
+    body: PermissionResolveRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """对 permission 类型消息（工具调用审批卡）记录 allow/deny。
+
+    - 仅 msg_type == "permission" 的消息可被 resolve；
+    - 已 resolved 的消息不可再次 resolve（返回原值）；
+    - 成功后在同频道广播更新后的消息。
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.core.exceptions import AppError, NotFoundError
+
+    result = await session.execute(
+        select(Message)
+        .where(Message.channel_id == channel_id, Message.msg_id == msg_id)
+        .with_for_update()
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise NotFoundError("message not found")
+    if msg.msg_type != "permission":
+        raise AppError("message is not a permission card")
+
+    cd = dict(msg.content_data or {})
+    if cd.get("resolved"):
+        # 已处理过的请求直接回传当前状态。
+        payload = _serialize(msg, {})
+        return APIResponse.ok(payload)
+
+    cd["resolved"] = True
+    cd["resolution"] = body.resolution
+    cd["resolved_by"] = current_user.user_id
+    cd["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    msg.content_data = cd
+
+    await session.commit()
+    await session.refresh(msg)
+
+    payload = _serialize(msg, {})
+    await _broadcast_message(channel_id, payload)
+    return APIResponse.ok(payload)
 
 
 @router.get("/{msg_id}/secret", response_model=APIResponse[dict])

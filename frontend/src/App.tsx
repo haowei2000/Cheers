@@ -34,7 +34,7 @@ import {
 import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
-import { buildWsUrl } from "./api";
+import { apiFetch, buildWsUrl } from "./api";
 import {
   parseGuidePayload,
   isClarifyReplyUserMessage,
@@ -621,7 +621,22 @@ export default function App() {
           if (msg.type === "message" && msg.data) {
             setMessages((prev) => {
               const id = msg.data.msg_id;
-              if (id && prev.some((m) => m.msg_id === id)) return prev;
+              if (id && prev.some((m) => m.msg_id === id)) {
+                // Already present — merge post-hoc updates (e.g. permission
+                // card resolution flipping content_data.resolved). Keep any
+                // client-local transient fields like _streaming.
+                return prev.map((m) =>
+                  m.msg_id === id
+                    ? {
+                        ...m,
+                        content: msg.data.content ?? m.content,
+                        content_data:
+                          msg.data.content_data ?? m.content_data,
+                        msg_type: msg.data.msg_type ?? m.msg_type,
+                      }
+                    : m,
+                );
+              }
               const entry =
                 msg.data.sender_type === "bot"
                   ? { ...msg.data, _streaming: true }
@@ -2045,6 +2060,159 @@ export default function App() {
                                   <div className="an-plan">
                                     <b>计划:</b> {plan}
                                   </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // ── permission card: Allow/Deny for tool writes ──────
+                        if (m.msg_type === "permission") {
+                          const cd = (m.content_data ?? {}) as Record<
+                            string,
+                            unknown
+                          >;
+                          const tool =
+                            typeof cd.tool === "string" ? cd.tool : null;
+                          const body =
+                            typeof cd.body === "string"
+                              ? cd.body
+                              : m.content || "";
+                          const resolved = cd.resolved === true;
+                          const resolution =
+                            cd.resolution === "allow" ||
+                            cd.resolution === "deny"
+                              ? cd.resolution
+                              : null;
+                          const senderBot =
+                            m.sender_type === "bot"
+                              ? channelBots.find(
+                                  (b) => b.member_id === m.sender_id,
+                                )
+                              : null;
+                          const senderLabel =
+                            senderBot?.display_name ||
+                            senderBot?.username ||
+                            "Bot";
+                          const pTime = m.created_at
+                            ? formatTs(m.created_at)
+                            : "";
+                          const submitResolution = async (
+                            res: "allow" | "deny",
+                          ) => {
+                            try {
+                              const r = await apiFetch(
+                                `/channels/${selectedId}/messages/${m.msg_id}/resolve`,
+                                {
+                                  method: "POST",
+                                  body: { resolution: res },
+                                  token: authToken,
+                                },
+                              );
+                              if (!r.ok) return;
+                              const data = await r.json();
+                              // Optimistic local update — the WS broadcast also
+                              // merges it back in, so this mainly covers the case
+                              // where the user clicks while offline-ish.
+                              if (data?.data?.content_data) {
+                                setMessages((prev) =>
+                                  prev.map((x) =>
+                                    x.msg_id === m.msg_id
+                                      ? {
+                                          ...x,
+                                          content_data:
+                                            data.data.content_data,
+                                        }
+                                      : x,
+                                  ),
+                                );
+                              }
+                            } catch {
+                              /* ignore — UI stays un-resolved so user can retry */
+                            }
+                          };
+                          return (
+                            <div
+                              key={m.msg_id}
+                              id={`msg-${m.msg_id}`}
+                              className="px-4 pt-2"
+                            >
+                              <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+                                <span className="text-[13px] font-semibold text-gray-900">
+                                  {senderLabel}
+                                </span>
+                                <span
+                                  className="an-tag bot"
+                                  style={{
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    letterSpacing: "0.6px",
+                                    padding: "1px 5px",
+                                    borderRadius: 3,
+                                    background: "var(--surface-soft)",
+                                    color: "var(--fg-3)",
+                                    border: "1px solid var(--border)",
+                                  }}
+                                >
+                                  BOT
+                                </span>
+                                {pTime && (
+                                  <span className="text-[11px] text-gray-400">
+                                    {pTime}
+                                  </span>
+                                )}
+                              </div>
+                              <div
+                                className={
+                                  "an-approval" +
+                                  (resolved ? " resolved" : "")
+                                }
+                              >
+                                <div className="an-body">
+                                  <b>Approval needed.</b> {body}
+                                  {tool && (
+                                    <span
+                                      style={{
+                                        fontFamily: "var(--font-mono)",
+                                        fontSize: 11,
+                                        marginLeft: 6,
+                                        color: "var(--fg-3)",
+                                      }}
+                                    >
+                                      ({tool})
+                                    </span>
+                                  )}
+                                  {resolved && resolution && (
+                                    <span
+                                      style={{
+                                        marginLeft: 8,
+                                        color: "var(--fg-3)",
+                                      }}
+                                    >
+                                      ·{" "}
+                                      {resolution === "allow"
+                                        ? "已通过"
+                                        : "已拒绝"}
+                                    </span>
+                                  )}
+                                </div>
+                                {!resolved && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="deny"
+                                      onClick={() => submitResolution("deny")}
+                                    >
+                                      拒绝
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="allow"
+                                      onClick={() => submitResolution("allow")}
+                                    >
+                                      通过
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </div>
