@@ -3045,7 +3045,11 @@ export default function App() {
                               {rootBubble}
                               <div
                                 id={`msg-${r.msg_id}`}
-                                className="group flex items-start gap-2.5 px-4 py-1 transition-all"
+                                className={`group flex gap-2.5 px-4 py-1 transition-all ${
+                                  rIsOwn
+                                    ? "flex-row-reverse items-end"
+                                    : "items-start"
+                                }`}
                               >
                                 <div className="flex-shrink-0 mt-0.5">
                                   {r.sender_type === "bot" ? (
@@ -3068,10 +3072,18 @@ export default function App() {
                                     </div>
                                   )}
                                 </div>
-                                <div className="flex flex-col max-w-[85%] sm:max-w-[72%]">
-                                  <div className="flex items-baseline gap-1.5 mb-1">
+                                <div
+                                  className={`flex flex-col max-w-[85%] sm:max-w-[72%] ${
+                                    rIsOwn ? "items-end" : ""
+                                  }`}
+                                >
+                                  <div
+                                    className={`flex items-baseline gap-1.5 mb-1 ${
+                                      rIsOwn ? "justify-end" : ""
+                                    }`}
+                                  >
                                     <span className="font-semibold text-[13px] text-gray-900 leading-none">
-                                      {rLabel}
+                                      {rIsOwn ? "我" : rLabel}
                                     </span>
                                     {r.sender_type === "bot" && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">
@@ -3083,7 +3095,13 @@ export default function App() {
                                     </span>
                                   </div>
                                   {renderFileAttachments(r)}
-                                  <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
+                                  <div
+                                    className={`rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
+                                      rIsOwn
+                                        ? "bg-[#1264A3] text-white rounded-tr-sm"
+                                        : "bg-gray-100 text-gray-800 rounded-tl-sm"
+                                    }`}
+                                  >
                                     {r._streaming && !rTextRaw ? (
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                     ) : (
