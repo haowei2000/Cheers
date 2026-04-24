@@ -232,6 +232,39 @@
 }
 .an-threads-btn.on .an-tb-n { color: var(--accent); background: #fff2; }
 
+/* Day divider — a thin centered label strip that breaks the message
+ * stream on calendar boundaries ("今天", "昨天", or "YYYY-MM-DD"). */
+.an-day-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 28px 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--fg-3);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.an-day-divider::before,
+.an-day-divider::after {
+  content: "";
+  height: 1px;
+  background: var(--border);
+  flex: 1;
+}
+.an-day-divider span {
+  white-space: nowrap;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-1);
+  color: var(--fg-2);
+  letter-spacing: 0.4px;
+  text-transform: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Dark-mode safety net for Tailwind gray utilities.
  *
