@@ -348,6 +348,17 @@
   line-height: 16px;
 }
 
+/* Right-aligned tag cluster at the end of a rail row. Groups the ws-abbrev
+ * and unread badge so they read as a single right-side unit, with tighter
+ * internal spacing than the row's main 8px gap. */
+.an-rail-row .an-rail-tags {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .an-rail-foot {
   padding: 10px 12px;
   border-top: 1px solid var(--border);
