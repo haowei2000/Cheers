@@ -233,6 +233,36 @@
 .an-threads-btn.on .an-tb-n { color: var(--accent); background: #fff2; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Dark-mode safety net for Tailwind gray utilities.
+ *
+ * The channel-chat render paths still use text-gray-900/800/700/500/400
+ * and bg-gray-100/50 directly — fine in light theme but unreadable in
+ * dark theme (near-black text on near-black background). Remap those
+ * Tailwind classes to design-token colors when [data-theme="dark"] is
+ * active. Light theme falls through to Tailwind's own values, unchanged.
+ * Scope is limited to dark theme by the attribute selector.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] .text-gray-900 { color: var(--fg-1); }
+[data-theme="dark"] .text-gray-800 { color: var(--fg-1); }
+[data-theme="dark"] .text-gray-700 { color: var(--fg-2); }
+[data-theme="dark"] .text-gray-600 { color: var(--fg-2); }
+[data-theme="dark"] .text-gray-500 { color: var(--fg-3); }
+[data-theme="dark"] .text-gray-400 { color: var(--fg-3); }
+[data-theme="dark"] .text-gray-300 { color: var(--fg-3); }
+[data-theme="dark"] .bg-gray-50 { background: var(--bg-1); }
+[data-theme="dark"] .bg-gray-100 { background: var(--surface-soft); }
+[data-theme="dark"] .bg-gray-200 { background: var(--surface-hover); }
+[data-theme="dark"] .bg-gray-300 { background: var(--surface-strong); }
+[data-theme="dark"] .border-gray-100 { border-color: var(--border); }
+[data-theme="dark"] .border-gray-200 { border-color: var(--border); }
+[data-theme="dark"] .border-gray-300 { border-color: var(--border-strong); }
+[data-theme="dark"] .divide-gray-100 > * + * { border-color: var(--border); }
+[data-theme="dark"] .hover\:bg-gray-50:hover { background: var(--surface-soft); }
+[data-theme="dark"] .hover\:bg-gray-100:hover { background: var(--surface-hover); }
+[data-theme="dark"] .hover\:bg-gray-200:hover { background: var(--surface-hover); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Workspace rail — vertical strip of workspace tiles, sits to the left of
  * the main Sidebar. One tile per workspace + a + tile. Personal workspace
  * pins at the top with a round tile; teams use rounded-square tiles.

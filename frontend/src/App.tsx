@@ -1724,7 +1724,7 @@ export default function App() {
         }}
       />
 
-      <div className="flex h-dvh bg-white">
+      <div className="flex h-dvh" style={{ background: "var(--bg-0)" }}>
         {isMobile && sidebarOpen && (
           <div
             className="fixed inset-0 bg-black/50 z-[55]"
@@ -2069,7 +2069,8 @@ export default function App() {
 
         <div className="flex-1 flex min-w-0">
           <main
-            className="flex-1 flex flex-col min-w-0 bg-white relative"
+            className="flex-1 flex flex-col min-w-0 relative"
+            style={{ background: "var(--bg-0)" }}
             onDragEnter={(e) => {
               if (!selectedId || !e.dataTransfer.types.includes("Files"))
                 return;
@@ -2916,7 +2917,14 @@ export default function App() {
                               ) : null}
                               {renderFileAttachments(m)}
                               <div
-                                className={`${isSecretExpired ? "bg-gray-100" : isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}
+                                className="rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed"
+                                style={{
+                                  background: isSecretUnrevealed
+                                    ? "var(--orange-muted)"
+                                    : "var(--surface-soft)",
+                                  color: "var(--fg-1)",
+                                  border: "1px solid var(--border)",
+                                }}
                               >
                                 {isSecretExpired ? (
                                   <span className="text-gray-400">
@@ -3199,9 +3207,19 @@ export default function App() {
                                   <div
                                     className={`rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
                                       rIsOwn
-                                        ? "bg-[#1264A3] text-white rounded-tr-sm"
-                                        : "bg-gray-100 text-gray-800 rounded-tl-sm"
+                                        ? "text-white rounded-tr-sm"
+                                        : "rounded-tl-sm"
                                     }`}
+                                    style={
+                                      rIsOwn
+                                        ? { background: "var(--accent)" }
+                                        : {
+                                            background: "var(--surface-soft)",
+                                            color: "var(--fg-1)",
+                                            border:
+                                              "1px solid var(--border)",
+                                          }
+                                    }
                                   >
                                     {r._streaming && !rTextRaw ? (
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
@@ -3752,7 +3770,22 @@ export default function App() {
                                         <>
                                           {renderFileAttachments(r)}
                                           <div
-                                            className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}
+                                            className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "whitespace-pre-wrap break-words" : ""}`}
+                                            style={
+                                              rIsOwn
+                                                ? {
+                                                    background:
+                                                      "var(--accent-muted)",
+                                                    color: "var(--fg-1)",
+                                                  }
+                                                : {
+                                                    background:
+                                                      "var(--surface-soft)",
+                                                    color: "var(--fg-1)",
+                                                    border:
+                                                      "1px solid var(--border)",
+                                                  }
+                                            }
                                           >
                                             {r._streaming && !rTextRaw ? (
                                               <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
