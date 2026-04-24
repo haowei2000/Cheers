@@ -2179,10 +2179,16 @@ export default function App() {
                   threads={threadRoots
                     .map((r) => {
                       const replies = threadRepliesOf(r.msg_id);
-                      // Only surface as a 消息串 once the display threshold is
-                      // met. Casual @-mention → one bot reply must not show
-                      // up as a thread in the header's 对话串 popover.
-                      if (replies.length < THREAD_DISPLAY_THRESHOLD) return null;
+                      // Surface if the user explicitly sent this as a 对话串
+                      // (msg_type="thread") OR if a plain message has
+                      // accumulated enough replies to promote implicitly.
+                      const isExplicit = r.msg_type === "thread";
+                      if (
+                        !isExplicit &&
+                        replies.length < THREAD_DISPLAY_THRESHOLD
+                      ) {
+                        return null;
+                      }
                       const title =
                         (r.content || "").replace(/\s+/g, " ").trim().slice(0, 60) ||
                         "(无标题)";
@@ -3032,18 +3038,32 @@ export default function App() {
                         );
 
                         // ── thread card ───────────────────────────────────────
-                        const isExpanded = expandedThreads.has(m.msg_id);
+                        // An explicit 对话串 (msg_type="thread") should render
+                        // as a thread card regardless of reply count, so the
+                        // user sees the intent reflected immediately. The
+                        // 4-reply threshold only gates implicit promotion of
+                        // a normal message that's accumulated replies.
+                        const isExplicitThread = m.msg_type === "thread";
+                        // Force expansion when there's nothing to collapse
+                        // (0-reply explicit thread) — otherwise the collapsed
+                        // preview path would blow up on replies[length-1].
+                        const isExpanded =
+                          expandedThreads.has(m.msg_id) ||
+                          (isExplicitThread && replies.length === 0);
 
-                        // No replies — render as a normal standalone bubble
-                        if (replies.length === 0) {
+                        // No replies and not an explicit thread — render as a
+                        // plain standalone bubble.
+                        if (!isExplicitThread && replies.length === 0) {
                           return <div key={m.msg_id}>{rootBubble}</div>;
                         }
 
-                        // 1–3 replies — render root bubble + each reply inline
-                        // below it. No thread chrome: the conversation only
-                        // becomes a 消息串 (dock/card) once replies hit the
-                        // THREAD_DISPLAY_THRESHOLD (4).
-                        if (replies.length < THREAD_DISPLAY_THRESHOLD) {
+                        // 1–3 replies on a plain message — inline render, no
+                        // thread chrome. Explicit 对话串 messages fall through
+                        // to the thread-card branch below regardless of count.
+                        if (
+                          !isExplicitThread &&
+                          replies.length < THREAD_DISPLAY_THRESHOLD
+                        ) {
                           const renderReplyRow = (r: Message) => {
                           const rIsOwn =
                             r.sender_type === "user" &&
