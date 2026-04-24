@@ -3041,7 +3041,10 @@ export default function App() {
                                   : "form"
                               : null;
                           return (
-                            <div key={m.msg_id}>
+                            <div key={m.msg_id} className="an-thread-dock">
+                              <div className="an-thread-dock-label">
+                                对话串 · 2 条消息
+                              </div>
                               {rootBubble}
                               <div
                                 id={`msg-${r.msg_id}`}
