@@ -595,10 +595,19 @@ export function Sidebar({
                 >
                   <span className="an-sigil">#</span>
                   <span className="an-name">{c.name}</span>
-                  {abbrev && <span className="an-ws-abbrev">{abbrev}</span>}
-                  {!isActive && (c.unread_count ?? 0) > 0 && (
-                    <span className="an-unread">
-                      {(c.unread_count ?? 0) > 99 ? "99+" : c.unread_count}
+                  {(abbrev ||
+                    (!isActive && (c.unread_count ?? 0) > 0)) && (
+                    <span className="an-rail-tags">
+                      {abbrev && (
+                        <span className="an-ws-abbrev">{abbrev}</span>
+                      )}
+                      {!isActive && (c.unread_count ?? 0) > 0 && (
+                        <span className="an-unread">
+                          {(c.unread_count ?? 0) > 99
+                            ? "99+"
+                            : c.unread_count}
+                        </span>
+                      )}
                     </span>
                   )}
                 </button>
@@ -697,10 +706,12 @@ export function Sidebar({
                       </span>
                       <span className="an-name">{label}</span>
                       {!isActive && (d.unread_count ?? 0) > 0 && (
-                        <span className="an-unread">
-                          {(d.unread_count ?? 0) > 99
-                            ? "99+"
-                            : d.unread_count}
+                        <span className="an-rail-tags">
+                          <span className="an-unread">
+                            {(d.unread_count ?? 0) > 99
+                              ? "99+"
+                              : d.unread_count}
+                          </span>
                         </span>
                       )}
                     </button>
