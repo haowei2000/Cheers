@@ -663,7 +663,7 @@ export function Sidebar({
                     <button
                       type="button"
                       onClick={() => setSelectedId(d.channel_id)}
-                      className={`an-rail-row w-full ${isActive ? "active" : ""}`}
+                      className={`an-rail-row w-full ${isActive ? "active" : ""} pr-7`}
                       title={
                         cp.username
                           ? `${label} · @${cp.username}`
@@ -681,6 +681,48 @@ export function Sidebar({
                             : d.unread_count}
                         </span>
                       )}
+                    </button>
+                    <button
+                      type="button"
+                      title="退出此私信"
+                      aria-label="退出此私信"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!currentUser) return;
+                        if (
+                          !confirm(
+                            `从列表中移除与「${label}」的私信？对方再次消息时会重新出现。`,
+                          )
+                        )
+                          return;
+                        apiFetch(
+                          `/channels/${d.channel_id}/members/${currentUser.user_id}`,
+                          { method: "DELETE", token: authToken },
+                        )
+                          .then((r) => {
+                            if (!r.ok) throw new Error("leave failed");
+                            setDMs?.((prev) =>
+                              prev.filter(
+                                (x) => x.channel_id !== d.channel_id,
+                              ),
+                            );
+                            if (selectedId === d.channel_id) {
+                              setSelectedId(null);
+                            }
+                          })
+                          .catch(() => toast.error("退出私信失败"));
+                      }}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                      style={{ color: "var(--fg-3)" }}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 16 16"
+                        fill="currentColor"
+                        className="w-3 h-3"
+                      >
+                        <path d="M3.5 8a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 3.5 8Z" />
+                      </svg>
                     </button>
                   </li>
                 );
