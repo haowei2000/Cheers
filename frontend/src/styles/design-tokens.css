@@ -305,6 +305,10 @@
   color: var(--fg-2);
   cursor: pointer;
   user-select: none;
+  /* The button UA default is text-align: center, which centres the
+   * channel name text inside its flex-1 span. Force left so names hug
+   * the left edge. */
+  text-align: left;
 }
 .an-rail-row:hover { background: var(--surface-soft); color: var(--fg-1); }
 .an-rail-row.active { background: var(--accent-muted); color: var(--fg-1); }
