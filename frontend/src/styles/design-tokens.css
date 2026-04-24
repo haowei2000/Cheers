@@ -232,6 +232,53 @@
 }
 .an-threads-btn.on .an-tb-n { color: var(--accent); background: #fff2; }
 
+/* Bot message outline — a subtle iridescent gradient border wrapped
+ * around a bot's content column in the flat channel render. Signals
+ * "this is an agent reply" without resorting to a bubble background.
+ *
+ * Rendered as a 1px ::before ring using mask-composite: exclude (the
+ * modern "gradient border" trick). Padding is kept tight so the outline
+ * hugs the content. */
+.an-bot-outline {
+  position: relative;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background-clip: padding-box;
+}
+.an-bot-outline::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: 10px;
+  background: linear-gradient(
+    135deg,
+    #7c6cf5 0%,
+    #56a7ff 28%,
+    #3ecf8e 58%,
+    #f5a623 82%,
+    #f05478 100%
+  );
+  background-size: 220% 220%;
+  animation: an-bot-glow 9s ease-in-out infinite;
+  /* mask-composite: exclude keeps the gradient only on the 1px border */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.75;
+}
+@keyframes an-bot-glow {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
 /* Day divider — a thin centered label strip that breaks the message
  * stream on calendar boundaries ("今天", "昨天", or "YYYY-MM-DD"). */
 .an-day-divider {
