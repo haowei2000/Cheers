@@ -140,6 +140,20 @@
   --fs-xl: 20px;
   --fs-2xl: 26px;
 
+  /* Chat-specific type scale — keep message streams on a single ladder
+   * so names/meta/body read as one visual system. Body is slightly
+   * larger than the generic --fs-base because CJK glyphs need more
+   * vertical room to stay legible.
+   *   name  ↔ sender header
+   *   body  ↔ message content
+   *   meta  ↔ timestamp, BOT tag, day-divider text
+   *   lh    ↔ body line-height (matches the "breathing" look of
+   *           Discord/Slack). */
+  --fs-chat-name: 14px;
+  --fs-chat-body: 15px;
+  --fs-chat-meta: 11px;
+  --lh-chat-body: 1.6;
+
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 12px;

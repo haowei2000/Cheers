@@ -2832,8 +2832,12 @@ export default function App() {
                                 {!isStacked && (
                                   <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
                                     <span
-                                      className="font-semibold text-[13.5px] leading-tight"
-                                      style={{ color: "var(--fg-1)" }}
+                                      className="font-semibold"
+                                      style={{
+                                        fontSize: "var(--fs-chat-name)",
+                                        lineHeight: 1.2,
+                                        color: "var(--fg-1)",
+                                      }}
                                     >
                                       {isOwn
                                         ? "我"
@@ -2873,12 +2877,13 @@ export default function App() {
                                 {renderFileAttachments(m)}
                                 <div
                                   className={
-                                    "text-[14px] leading-relaxed" +
-                                    (m.sender_type === "bot"
-                                      ? " an-bot-outline inline-block"
-                                      : "")
+                                    m.sender_type === "bot"
+                                      ? "an-bot-outline inline-block"
+                                      : ""
                                   }
                                   style={{
+                                    fontSize: "var(--fs-chat-body)",
+                                    lineHeight: "var(--lh-chat-body)",
                                     color: "var(--fg-1)",
                                     wordWrap: "break-word",
                                   }}
@@ -3518,10 +3523,9 @@ export default function App() {
                                   <div
                                     className={
                                       rFlat
-                                        ? "text-[14px] leading-relaxed" +
-                                          (r.sender_type === "bot"
-                                            ? " an-bot-outline inline-block"
-                                            : "")
+                                        ? r.sender_type === "bot"
+                                          ? "an-bot-outline inline-block"
+                                          : ""
                                         : `rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
                                             rIsOwn
                                               ? "text-white rounded-tr-sm"
@@ -3531,6 +3535,9 @@ export default function App() {
                                     style={
                                       rFlat
                                         ? {
+                                            fontSize: "var(--fs-chat-body)",
+                                            lineHeight:
+                                              "var(--lh-chat-body)",
                                             color: "var(--fg-1)",
                                             wordWrap: "break-word",
                                           }
