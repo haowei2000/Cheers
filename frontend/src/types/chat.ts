@@ -9,6 +9,9 @@ export type Channel = {
   type: string;
   workspace_id?: string;
   auto_assist?: boolean;
+  /** Count of messages in this channel that the caller has not yet read.
+   *  Populated by the channel list endpoints; updated locally on select. */
+  unread_count?: number;
 };
 
 export type FileInfo = {

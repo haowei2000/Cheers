@@ -182,6 +182,11 @@ class ChannelMembership(Base):
     template_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("prompt_templates.template_id"), nullable=True, default=None
     )
+    # 用户阅读游标：最近一次点开频道并标记已读的时间戳；NULL 表示从未标记。
+    # 用于在 /channels 列表接口里派生 unread_count。
+    last_read_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="memberships")
     prompt_template: Mapped[Optional["PromptTemplate"]] = relationship("PromptTemplate", lazy="joined")

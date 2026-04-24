@@ -206,6 +206,9 @@ class ChannelInResponse(BaseModel):
     type: str
     purpose: str | None = None
     auto_assist: bool = False
+    # 用户在该频道未读的消息数（由 channel_memberships.last_read_at 派生）。
+    # 未登录或非成员时保持 None。
+    unread_count: int | None = None
 
 
 class MemberAdd(BaseModel):

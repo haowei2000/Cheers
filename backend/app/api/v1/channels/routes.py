@@ -49,6 +49,17 @@ class ChannelProfileUpdateBody(BaseModel):
     bio: str | None = None
 
 
+def _with_unread(
+    channels: list, unread: dict[str, int]
+) -> list[ChannelInResponse]:
+    out: list[ChannelInResponse] = []
+    for c in channels:
+        item = ChannelInResponse.model_validate(c)
+        item.unread_count = int(unread.get(c.channel_id, 0))
+        out.append(item)
+    return out
+
+
 @router.get("", response_model=APIResponse[list[ChannelInResponse]])
 async def list_channels(
     current_user: User = Depends(get_current_user),
@@ -56,7 +67,10 @@ async def list_channels(
 ) -> APIResponse:
     svc = ChannelService(session)
     channels = await svc.list_for_user(current_user)
-    return APIResponse.ok([ChannelInResponse.model_validate(c) for c in channels])
+    unread = await svc.unread_counts_for(
+        current_user.user_id, [c.channel_id for c in channels]
+    )
+    return APIResponse.ok(_with_unread(channels, unread))
 
 
 @router.get("/by-workspace/{workspace_id}", response_model=APIResponse[list[ChannelInResponse]])
@@ -67,7 +81,34 @@ async def list_channels_by_workspace(
 ) -> APIResponse:
     svc = ChannelService(session)
     channels = await svc.list_for_user_in_workspace(workspace_id, current_user)
-    return APIResponse.ok([ChannelInResponse.model_validate(c) for c in channels])
+    unread = await svc.unread_counts_for(
+        current_user.user_id, [c.channel_id for c in channels]
+    )
+    return APIResponse.ok(_with_unread(channels, unread))
+
+
+class MarkReadResponse(BaseModel):
+    channel_id: str
+    last_read_at: str | None = None
+
+
+@router.post("/{channel_id}/read", response_model=APIResponse[MarkReadResponse])
+async def mark_channel_read(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Advance the caller's read cursor on this channel to "now".
+    Idempotent — calling repeatedly just re-stamps the cursor."""
+    svc = ChannelService(session)
+    ts = await svc.mark_read(channel_id, current_user.user_id)
+    await session.commit()
+    return APIResponse.ok(
+        MarkReadResponse(
+            channel_id=channel_id,
+            last_read_at=ts.isoformat() if ts else None,
+        )
+    )
 
 
 @router.post("", response_model=APIResponse[ChannelInResponse])
