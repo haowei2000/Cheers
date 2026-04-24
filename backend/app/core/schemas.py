@@ -235,6 +235,37 @@ class DMCreateRequest(BaseModel):
     member_type: str  # "user" | "bot"
 
 
+# ==================== Global search ====================
+
+
+class SearchChannelHit(BaseModel):
+    channel_id: str
+    name: str
+    workspace_id: str
+    type: str  # 实际值排除了 "dm"（dm 单独通过 people/bot 搜索进入）
+
+
+class SearchUserHit(BaseModel):
+    user_id: str
+    username: str
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
+class SearchBotHit(BaseModel):
+    bot_id: str
+    username: str
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
+class SearchResults(BaseModel):
+    q: str
+    channels: list[SearchChannelHit] = Field(default_factory=list)
+    users: list[SearchUserHit] = Field(default_factory=list)
+    bots: list[SearchBotHit] = Field(default_factory=list)
+
+
 class MemberAdd(BaseModel):
     """添加成员."""
     member_id: str

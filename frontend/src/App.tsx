@@ -1609,6 +1609,7 @@ export default function App() {
           channels={channels}
           setChannels={setChannels}
           dms={dms}
+          setDMs={setDMs}
           selectedId={selectedId}
           setSelectedId={setSelectedId}
           setSidebarOpen={setSidebarOpen}

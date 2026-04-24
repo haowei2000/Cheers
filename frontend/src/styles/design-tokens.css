@@ -1017,6 +1017,111 @@ kbd {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Rail search — ⌘K global search input + grouped results popover.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.an-search {
+  margin: 4px 12px 8px;
+  position: relative;
+}
+.an-search input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--fg-1);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 7px 10px 7px 28px;
+  border-radius: 6px;
+  outline: none;
+}
+.an-search input:focus { border-color: var(--border-focus); }
+.an-search .an-search-ico {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--fg-3);
+  font-size: 12px;
+  pointer-events: none;
+}
+.an-search kbd.an-search-kbd {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+}
+
+.an-search-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px var(--shadow);
+  padding: 4px;
+  z-index: 30;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.an-search-pop .an-search-group {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--fg-3);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 8px 10px 4px;
+}
+.an-search-pop .an-search-hit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg-1);
+  background: transparent;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  transition: background var(--motion-fast);
+}
+.an-search-pop .an-search-hit:hover,
+.an-search-pop .an-search-hit.active {
+  background: var(--surface-hover);
+}
+.an-search-pop .an-search-hit .an-search-sigil {
+  width: 16px;
+  color: var(--fg-3);
+  text-align: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.an-search-pop .an-search-hit .an-search-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-search-pop .an-search-hit .an-search-sub {
+  font-size: 10.5px;
+  color: var(--fg-3);
+  flex-shrink: 0;
+}
+.an-search-pop .an-search-empty {
+  font-size: 11.5px;
+  color: var(--fg-3);
+  text-align: center;
+  padding: 18px 10px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Empty channel state — big channel name, subtitle, suggestion chips.
  * Rendered when a freshly-opened channel has zero messages.
  * ═══════════════════════════════════════════════════════════════════════════ */

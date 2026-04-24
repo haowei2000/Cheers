@@ -1,8 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
-import { refreshChannels, refreshWorkspaces } from "../lib/refresh";
+import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
+
+type SearchResultsPayload = {
+  q: string;
+  channels: {
+    channel_id: string;
+    name: string;
+    workspace_id: string;
+    type: string;
+  }[];
+  users: {
+    user_id: string;
+    username: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  }[];
+  bots: {
+    bot_id: string;
+    username: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  }[];
+};
 
 interface SidebarProps {
   isMobile: boolean;
@@ -22,6 +44,7 @@ interface SidebarProps {
   channels: Channel[];
   setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
   dms?: DM[];
+  setDMs?: React.Dispatch<React.SetStateAction<DM[]>>;
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
 
@@ -55,6 +78,7 @@ export function Sidebar({
   channels,
   setChannels,
   dms = [],
+  setDMs,
   selectedId,
   setSelectedId,
   setSidebarOpen,
@@ -85,6 +109,130 @@ export function Sidebar({
   const userColor = currentUser
     ? wsColor(currentUser.user_id || currentUser.display_name || "u")
     : "var(--accent)";
+
+  // ── ⌘K global search ────────────────────────────────────────────────────
+  const [searchQ, setSearchQ] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResultsPayload | null>(
+    null,
+  );
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const searchWrapRef = useRef<HTMLDivElement | null>(null);
+
+  // ⌘K / Ctrl-K focus; Esc closes
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (e.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+        searchInputRef.current?.blur();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [searchOpen]);
+
+  // Click-outside closes popover
+  useEffect(() => {
+    if (!searchOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        searchWrapRef.current &&
+        !searchWrapRef.current.contains(e.target as Node)
+      ) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [searchOpen]);
+
+  // Debounced query
+  useEffect(() => {
+    const q = searchQ.trim();
+    if (!q) {
+      setSearchResults(null);
+      setSearchBusy(false);
+      return;
+    }
+    setSearchBusy(true);
+    const timer = setTimeout(() => {
+      apiFetch(`search?q=${encodeURIComponent(q)}&limit=5`, {
+        token: authToken ?? undefined,
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d?.data) setSearchResults(d.data as SearchResultsPayload);
+        })
+        .catch(() => {})
+        .finally(() => setSearchBusy(false));
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [searchQ, authToken]);
+
+  const dmWorkspaceId = useMemo(
+    () => selectedWorkspaceId || workspaces[0]?.workspace_id || "",
+    [selectedWorkspaceId, workspaces],
+  );
+
+  const resetSearch = () => {
+    setSearchQ("");
+    setSearchResults(null);
+    setSearchOpen(false);
+  };
+
+  const openChannelHit = (channelId: string) => {
+    setSelectedId(channelId);
+    resetSearch();
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  const openDmWith = async (
+    memberId: string,
+    memberType: "user" | "bot",
+  ) => {
+    if (!dmWorkspaceId) {
+      toast.error("请先选择工作空间");
+      return;
+    }
+    try {
+      const r = await apiFetch("dms", {
+        method: "POST",
+        body: {
+          workspace_id: dmWorkspaceId,
+          member_id: memberId,
+          member_type: memberType,
+        },
+        token: authToken ?? undefined,
+      });
+      if (!r.ok) throw new Error("dm create failed");
+      const d = await r.json();
+      const dm = d?.data as DM | undefined;
+      if (!dm) throw new Error("empty dm response");
+      setDMs?.((prev) =>
+        prev.some((x) => x.channel_id === dm.channel_id)
+          ? prev.map((x) => (x.channel_id === dm.channel_id ? dm : x))
+          : [...prev, dm],
+      );
+      setSelectedId(dm.channel_id);
+      resetSearch();
+      if (isMobile) setSidebarOpen(false);
+    } catch {
+      toast.error("发起私信失败");
+      // Still refresh so any partial state reconciles.
+      if (setDMs) refreshDMs(setDMs, authToken ?? undefined);
+    }
+  };
+
+  const hasHits =
+    !!searchResults &&
+    (searchResults.channels.length > 0 ||
+      searchResults.users.length > 0 ||
+      searchResults.bots.length > 0);
 
   return (
     <aside
@@ -229,6 +377,91 @@ export function Sidebar({
             </div>
           )}
         </div>
+      </div>
+
+      {/* ⌘K global search */}
+      <div className="an-search" ref={searchWrapRef}>
+        <span className="an-search-ico">⌕</span>
+        <input
+          ref={searchInputRef}
+          value={searchQ}
+          onChange={(e) => {
+            setSearchQ(e.target.value);
+            setSearchOpen(true);
+          }}
+          onFocus={() => setSearchOpen(true)}
+          placeholder="搜索频道 / 成员 / Bot"
+          aria-label="全局搜索"
+        />
+        <kbd className="an-search-kbd">⌘K</kbd>
+        {searchOpen && searchQ.trim() && (
+          <div className="an-search-pop" role="listbox">
+            {!searchResults && searchBusy && (
+              <div className="an-search-empty">搜索中…</div>
+            )}
+            {searchResults && !hasHits && !searchBusy && (
+              <div className="an-search-empty">没有匹配项</div>
+            )}
+            {searchResults && searchResults.channels.length > 0 && (
+              <>
+                <div className="an-search-group">频道</div>
+                {searchResults.channels.map((c) => (
+                  <button
+                    key={c.channel_id}
+                    type="button"
+                    className="an-search-hit"
+                    onClick={() => openChannelHit(c.channel_id)}
+                  >
+                    <span className="an-search-sigil">#</span>
+                    <span className="an-search-name">{c.name}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            {searchResults && searchResults.users.length > 0 && (
+              <>
+                <div className="an-search-group">成员</div>
+                {searchResults.users.map((u) => (
+                  <button
+                    key={u.user_id}
+                    type="button"
+                    className="an-search-hit"
+                    onClick={() => openDmWith(u.user_id, "user")}
+                  >
+                    <span className="an-search-sigil">@</span>
+                    <span className="an-search-name">
+                      {u.display_name || u.username}
+                    </span>
+                    {u.display_name && u.display_name !== u.username && (
+                      <span className="an-search-sub">@{u.username}</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
+            {searchResults && searchResults.bots.length > 0 && (
+              <>
+                <div className="an-search-group">Bot</div>
+                {searchResults.bots.map((b) => (
+                  <button
+                    key={b.bot_id}
+                    type="button"
+                    className="an-search-hit"
+                    onClick={() => openDmWith(b.bot_id, "bot")}
+                  >
+                    <span className="an-search-sigil">⦿</span>
+                    <span className="an-search-name">
+                      {b.display_name || b.username}
+                    </span>
+                    {b.display_name && b.display_name !== b.username && (
+                      <span className="an-search-sub">@{b.username}</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Channels + Direct sections share a single scroller */}
