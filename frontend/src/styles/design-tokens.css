@@ -824,6 +824,49 @@
   border: 1.5px solid var(--bg-1);
 }
 
+/* Thread dock — wraps a thread's messages (root + its reply/replies) in
+ * one visible container so they read as a single grouped unit in the
+ * stream. Used by the 1-reply inline render. The 2+-reply render has
+ * its own richer card wrapper. */
+.an-thread-dock {
+  margin: 6px 12px;
+  padding: 4px 0;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.an-thread-dock::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 0 1px 1px 0;
+  opacity: 0.55;
+}
+.an-thread-dock-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  padding: 6px 14px 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.an-thread-dock-label::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 /* Thread peek — collapsed first-few-replies rendered inline under parent */
 .an-thread-peek {
   margin: 8px 0 2px;
