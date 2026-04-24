@@ -1896,6 +1896,41 @@ export default function App() {
                           — 已加载全部消息 —
                         </div>
                       )}
+                      {!loading &&
+                        !loadingMore &&
+                        messages.length === 0 &&
+                        selectedChannel && (
+                          <div className="an-empty">
+                            <div className="an-empty-big">
+                              # {selectedChannel.name}
+                            </div>
+                            <div className="an-empty-sm">
+                              这里还没有消息。@ 调用一个 Bot 或直接开始对话。
+                            </div>
+                            <div className="an-empty-chips">
+                              {[
+                                "@coordinator 总结这个频道最近的进展",
+                                "这个频道的目标是什么？",
+                                "@coordinator 帮我接下来要做什么",
+                              ].map((s) => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  className="an-empty-chip"
+                                  onClick={() => {
+                                    setInput(s);
+                                    setTimeout(
+                                      () => inputRef.current?.focus(),
+                                      0,
+                                    );
+                                  }}
+                                >
+                                  {s}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       {threadRoots.map((m) => {
                         const replies = threadRepliesOf(m.msg_id);
 
