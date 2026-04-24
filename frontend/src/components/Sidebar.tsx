@@ -270,6 +270,11 @@ export function Sidebar({
                   <span className="an-sigil">#</span>
                   <span className="an-name">{c.name}</span>
                   {abbrev && <span className="an-ws-abbrev">{abbrev}</span>}
+                  {!isActive && (c.unread_count ?? 0) > 0 && (
+                    <span className="an-unread">
+                      {(c.unread_count ?? 0) > 99 ? "99+" : c.unread_count}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"

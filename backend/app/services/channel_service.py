@@ -1,7 +1,9 @@
 """Channel 业务逻辑层."""
 from __future__ import annotations
 
-from sqlalchemy import and_, or_, select
+from datetime import datetime, timezone
+
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
@@ -42,6 +44,45 @@ class ChannelService:
 
     async def list_for_user_in_workspace(self, workspace_id: str, user: User) -> list[Channel]:
         return await self.repo.list_for_user_in_workspace(workspace_id, user.user_id)
+
+    async def unread_counts_for(
+        self, user_id: str, channel_ids: list[str]
+    ) -> dict[str, int]:
+        """Per-channel unread count for a user, derived from
+        channel_memberships.last_read_at. Channels the user isn't a member of
+        return 0. Messages the user sent themselves don't count as unread.
+        """
+        if not channel_ids:
+            return {}
+        membership_rows = (await self.session.execute(
+            select(ChannelMembership).where(
+                ChannelMembership.channel_id.in_(channel_ids),
+                ChannelMembership.member_id == user_id,
+                ChannelMembership.member_type == "user",
+            )
+        )).scalars().all()
+        result: dict[str, int] = {cid: 0 for cid in channel_ids}
+        for m in membership_rows:
+            q = select(func.count()).select_from(Message).where(
+                Message.channel_id == m.channel_id,
+                Message.sender_id != user_id,
+            )
+            if m.last_read_at is not None:
+                q = q.where(Message.created_at > m.last_read_at)
+            cnt = (await self.session.execute(q)).scalar() or 0
+            result[m.channel_id] = int(cnt)
+        return result
+
+    async def mark_read(self, channel_id: str, user_id: str) -> datetime | None:
+        """Move the user's read cursor to "now" for this channel. Returns the
+        new timestamp, or None if the user isn't a member of the channel."""
+        m = await self.repo.get_membership(channel_id, user_id)
+        if not m or m.member_type != "user":
+            return None
+        now = datetime.now(timezone.utc)
+        m.last_read_at = now
+        await self.session.flush()
+        return now
 
     async def create(
         self,

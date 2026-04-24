@@ -1342,6 +1342,27 @@ export default function App() {
       messagesContainerRef.current.scrollHeight;
   }, [selectedId, messages.length]);
 
+  // 打开频道时把未读标记为已读：先在本地把徽标清零（立即反馈），再向后端
+  // 同步阅读游标。失败不回滚徽标——下次加载频道列表时会重新计算。
+  useEffect(() => {
+    if (!selectedId || !authToken) return;
+    setChannels((prev) =>
+      prev.some(
+        (c) => c.channel_id === selectedId && (c.unread_count ?? 0) > 0,
+      )
+        ? prev.map((c) =>
+            c.channel_id === selectedId ? { ...c, unread_count: 0 } : c,
+          )
+        : prev,
+    );
+    apiFetch(`/channels/${selectedId}/read`, {
+      method: "POST",
+      token: authToken,
+    }).catch(() => {
+      /* ignore — rail badge stays cleared locally; next list refresh re-syncs */
+    });
+  }, [selectedId, authToken]);
+
   const generateQaSummary = async (pairsToSummarize: QaPair[]) => {
     if (pairsToSummarize.length === 0) {
       toast.error("请勾选至少一组问答");
