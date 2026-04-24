@@ -1,14 +1,28 @@
 import type { Message } from "../types";
 
+/**
+ * Decide whether a message should be grouped as a reply (i.e. rendered
+ * inside its parent's thread instead of as its own root).
+ *
+ * Kinds that are explicitly NOT replies: routing cards, permission
+ * cards, and announcements — those are channel-level roots even when a
+ * backend adapter set in_reply_to_msg_id on them. Everything else that
+ * points at a known parent message is a reply, regardless of whether
+ * msg_type is "reply", "thread", "normal" or missing. This is more
+ * permissive than an exact msg_type === "reply" check so that
+ * round-tripped data (where msg_type defaults to "normal" on the wire)
+ * still groups correctly after a page refresh.
+ */
+const ROOT_ONLY_KINDS = new Set(["routing", "permission", "announcement"]);
+
 export function isMsgReply(
   m: Message | undefined,
   msgIdSet: Set<string>,
 ): boolean {
   if (!m) return false;
-  return (
-    m.msg_type === "reply" ||
-    (!m.msg_type && !!m.in_reply_to_msg_id && msgIdSet.has(m.in_reply_to_msg_id))
-  );
+  if (m.msg_type === "reply") return true;
+  if (m.msg_type && ROOT_ONLY_KINDS.has(m.msg_type)) return false;
+  return !!m.in_reply_to_msg_id && msgIdSet.has(m.in_reply_to_msg_id);
 }
 
 const QUOTE_PREFIX_RE = /^> \[([^\]]+)\]: ([\s\S]+?)\n\n([\s\S]*)$/;
