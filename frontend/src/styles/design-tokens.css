@@ -1318,6 +1318,72 @@
     0 10px 26px var(--shadow);
 }
 
+/* Kind-tinted composer shells — announcement picks up the accent color,
+ * thread picks up the green semantic color. The cues are subtle (1px
+ * border + a light gradient on the kind header) so the chrome doesn't
+ * scream. */
+.an-composer.is-announcement {
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+  background: linear-gradient(180deg, var(--accent-muted), var(--bg-1) 46px);
+}
+.an-composer.is-announcement:focus-within {
+  border-color: var(--accent);
+}
+.an-composer.is-thread {
+  border-color: color-mix(in oklab, var(--green) 50%, var(--border));
+  background: linear-gradient(180deg, var(--green-muted), var(--bg-1) 46px);
+}
+.an-composer.is-thread:focus-within {
+  border-color: var(--green);
+}
+
+/* Kind header — sits above the textarea when announcement/thread is
+ * active, carries the kind tag + the title input. */
+.an-composer-kindhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.an-composer-kindhead-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--fg-2);
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+}
+.an-composer.is-announcement .an-composer-kindhead-tag {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+}
+.an-composer.is-thread .an-composer-kindhead-tag {
+  color: var(--green);
+  border-color: color-mix(in oklab, var(--green) 40%, var(--border));
+}
+.an-composer-title {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--fg-1);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 2px 0;
+}
+.an-composer-title::placeholder {
+  color: var(--fg-3);
+  font-weight: 500;
+}
+
 /* Kind switcher — the "‹ 消息 ›" bar that sits above the composer. */
 .an-msgkind-switcher {
   display: flex;

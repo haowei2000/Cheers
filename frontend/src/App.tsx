@@ -143,11 +143,16 @@ export default function App() {
     thread: "对话串",
   };
   const [msgKind, setMsgKind] = useState<MsgKind>("normal");
+  // Optional title carried by announcement + thread kinds. Normal messages
+  // ignore it; we clear it whenever kind cycles or a send completes.
+  const [composerTitle, setComposerTitle] = useState<string>("");
+  const composerTitleRef = useRef<HTMLInputElement | null>(null);
   const cycleMsgKind = (direction: 1 | -1) => {
     setMsgKind((prev) => {
       const idx = MSG_KINDS_ORDER.indexOf(prev);
       const next =
         (idx + direction + MSG_KINDS_ORDER.length) % MSG_KINDS_ORDER.length;
+      setComposerTitle("");
       return MSG_KINDS_ORDER[next];
     });
   };
@@ -1123,12 +1128,19 @@ export default function App() {
       msg_type: effectiveKind,
     };
     if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
+    const titleTrim = composerTitle.trim() || null;
     if (effectiveKind === "announcement") {
-      body.content_data = { pinned_by: currentUserId };
+      body.content_data = {
+        pinned_by: currentUserId,
+        ...(titleTrim ? { title: titleTrim } : {}),
+      };
+    } else if (effectiveKind === "thread") {
+      body.content_data = titleTrim ? { title: titleTrim } : {};
     }
     setInput("");
     setSecretMode(false);
     setMsgKind("normal");
+    setComposerTitle("");
     setPendingFileIds([]);
     setPendingFileNames([]);
     setPendingFilePreviews((prev) => {
@@ -4100,7 +4112,47 @@ export default function App() {
                     </div>
                   )}
                   <div className="relative">
-                    <div className="an-composer overflow-hidden">
+                    <div
+                      className={
+                        "an-composer overflow-hidden" +
+                        (!replyingTo && msgKind === "announcement"
+                          ? " is-announcement"
+                          : !replyingTo && msgKind === "thread"
+                            ? " is-thread"
+                            : "")
+                      }
+                    >
+                      {!replyingTo &&
+                        (msgKind === "announcement" ||
+                          msgKind === "thread") && (
+                          <div className="an-composer-kindhead">
+                            <span className="an-composer-kindhead-tag">
+                              {msgKind === "announcement"
+                                ? "📣 公告"
+                                : "🧵 对话串"}
+                            </span>
+                            <input
+                              ref={composerTitleRef}
+                              className="an-composer-title"
+                              placeholder={
+                                msgKind === "announcement"
+                                  ? "标题（可选，例如「周五发布窗口」）…"
+                                  : "对话串标题（可选，例如「升级计划讨论」）…"
+                              }
+                              value={composerTitle}
+                              onChange={(e) =>
+                                setComposerTitle(e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  inputRef.current?.focus();
+                                }
+                              }}
+                              maxLength={120}
+                            />
+                          </div>
+                        )}
                       <textarea
                         ref={inputRef}
                         value={input}
