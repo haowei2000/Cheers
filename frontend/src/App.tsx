@@ -131,6 +131,26 @@ export default function App() {
   //   openThreadId  — root msg_id for the side-dock panel
   //   pageThreadId  — root msg_id for the full-page view (mirrored to URL hash)
   const [announcementOpen, setAnnouncementOpen] = useState(false);
+  // Composer send-kind: switchable between 普通消息 / 公告 / 对话串 via
+  // Shift-Tab or the ‹ › buttons flanking the composer. Always resets to
+  // "normal" after each send. "reply" is orthogonal — replyingTo overrides
+  // this.
+  type MsgKind = "normal" | "announcement" | "thread";
+  const MSG_KINDS_ORDER: MsgKind[] = ["normal", "announcement", "thread"];
+  const MSG_KIND_LABEL: Record<MsgKind, string> = {
+    normal: "消息",
+    announcement: "公告",
+    thread: "对话串",
+  };
+  const [msgKind, setMsgKind] = useState<MsgKind>("normal");
+  const cycleMsgKind = (direction: 1 | -1) => {
+    setMsgKind((prev) => {
+      const idx = MSG_KINDS_ORDER.indexOf(prev);
+      const next =
+        (idx + direction + MSG_KINDS_ORDER.length) % MSG_KINDS_ORDER.length;
+      return MSG_KINDS_ORDER[next];
+    });
+  };
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const [pageThreadId, setPageThreadId] = useState<string | null>(() => {
     if (typeof location === "undefined") return null;
@@ -1089,17 +1109,26 @@ export default function App() {
       content = `> [${refLabel}]: ${quotedText}\n\n${content}`;
     }
     const isSecretSend = secretMode;
+    // Resolve msg_type: a pending reply-to always wins; otherwise use the
+    // user's current msgKind pick from the composer switcher.
+    const effectiveKind: MsgKind | "reply" = replyingTo
+      ? "reply"
+      : msgKind;
     const body: Record<string, unknown> = {
       content,
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: pendingFileIds,
       is_secret: isSecretSend,
-      msg_type: replyingTo ? "reply" : "normal",
+      msg_type: effectiveKind,
     };
     if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
+    if (effectiveKind === "announcement") {
+      body.content_data = { pinned_by: currentUserId };
+    }
     setInput("");
     setSecretMode(false);
+    setMsgKind("normal");
     setPendingFileIds([]);
     setPendingFileNames([]);
     setPendingFilePreviews((prev) => {
@@ -3867,13 +3896,56 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Input area */}
+                {/* Input area — visually floating: rounded, drop shadow, a
+                    little margin so the stream slides past the edges. */}
                 <div
                   className="flex-shrink-0 px-3 sm:px-4 pb-4 pt-2"
                   style={{
                     paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
                   }}
                 >
+                  {/* Kind switcher — hidden in DMs and when replying to a
+                      specific message (that flow forces msg_type="reply"). */}
+                  {!replyingTo && selectedChannel?.type !== "dm" && (
+                    <div className="an-msgkind-switcher">
+                      <button
+                        type="button"
+                        onClick={() => cycleMsgKind(-1)}
+                        className="an-msgkind-arrow"
+                        title="上一种消息类型 (Shift+Tab)"
+                        aria-label="上一种消息类型"
+                      >
+                        ‹
+                      </button>
+                      <span
+                        className={
+                          "an-msgkind-label" +
+                          (msgKind === "announcement"
+                            ? " is-announcement"
+                            : msgKind === "thread"
+                              ? " is-thread"
+                              : "")
+                        }
+                        title="Tab 切换 · Shift+Tab 反向"
+                      >
+                        {msgKind === "announcement"
+                          ? "📣"
+                          : msgKind === "thread"
+                            ? "🧵"
+                            : "💬"}{" "}
+                        {MSG_KIND_LABEL[msgKind]}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => cycleMsgKind(1)}
+                        className="an-msgkind-arrow"
+                        title="下一种消息类型 (Tab)"
+                        aria-label="下一种消息类型"
+                      >
+                        ›
+                      </button>
+                    </div>
+                  )}
                   {/* Reply bar */}
                   {replyingTo &&
                     (() => {
@@ -4049,6 +4121,19 @@ export default function App() {
                             setShowMentionDropdown(false);
                             return;
                           }
+                          // Tab / Shift-Tab cycles msgKind (normal → 公告 →
+                          // 对话串 → normal …). Skip in DMs where only
+                          // "normal" makes sense.
+                          if (
+                            e.key === "Tab" &&
+                            !showMentionDropdown &&
+                            !replyingTo &&
+                            selectedChannel?.type !== "dm"
+                          ) {
+                            e.preventDefault();
+                            cycleMsgKind(e.shiftKey ? -1 : 1);
+                            return;
+                          }
                           // Enter sends · Shift+Enter inserts newline
                           if (
                             e.key === "Enter" &&
@@ -4065,7 +4150,11 @@ export default function App() {
                         placeholder={
                           secretMode
                             ? "输入加密内容（仅 Bot 可读取原文）…"
-                            : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
+                            : msgKind === "announcement"
+                              ? `发布公告到 #${selectedChannel?.name || "频道"}…`
+                              : msgKind === "thread"
+                                ? `开启对话串 · 标题将取首行…`
+                                : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
                         }
                         className="an-composer-textarea"
                         style={
