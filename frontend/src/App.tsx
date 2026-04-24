@@ -2120,7 +2120,10 @@ export default function App() {
                   threads={threadRoots
                     .map((r) => {
                       const replies = threadRepliesOf(r.msg_id);
-                      if (replies.length === 0) return null;
+                      // Only surface as a 消息串 once the display threshold is
+                      // met. Casual @-mention → one bot reply must not show
+                      // up as a thread in the header's 对话串 popover.
+                      if (replies.length < THREAD_DISPLAY_THRESHOLD) return null;
                       const title =
                         (r.content || "").replace(/\s+/g, " ").trim().slice(0, 60) ||
                         "(无标题)";
