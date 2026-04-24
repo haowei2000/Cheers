@@ -92,6 +92,71 @@ def _get_trigger_content(msg: Message) -> str:
     return msg.content
 
 
+async def _emit_routing_card(
+    *,
+    channel_id: str,
+    coordinator_bot_id: str,
+    trigger_content: str,
+    coordinator_content: str,
+    picked_usernames: list[str],
+    session: AsyncSession,
+    already_broadcast: set[str],
+    created: list[Message],
+    stream_event: Callable[[str, dict], Awaitable[None]] | None = None,
+) -> None:
+    """Write a msg_type="routing" Message carrying the coordinator's decision
+    (who was picked + a terse plan snippet) and broadcast it over the
+    channel WS. Non-fatal: any exception is logged and swallowed so the
+    takeover flow continues.
+    """
+    from app.core.schemas import MessageInResponse
+    from app.services.ws_service import ws_manager
+
+    try:
+        picks = [{"agent": u, "picked": True} for u in picked_usernames]
+        q = (trigger_content or "").strip().replace("\n", " ")
+        if len(q) > 160:
+            q = q[:160] + "…"
+        plan = (coordinator_content or "").strip().replace("\n", " ")
+        if len(plan) > 200:
+            plan = plan[:200] + "…"
+
+        routing_msg = Message(
+            channel_id=channel_id,
+            sender_id=coordinator_bot_id,
+            sender_type="bot",
+            content="",
+            msg_type="routing",
+            content_data={"q": q or None, "picks": picks, "plan": plan or None},
+        )
+        session.add(routing_msg)
+        await session.flush()
+
+        data = MessageInResponse.model_validate(routing_msg).model_dump()
+        if routing_msg.created_at:
+            data["created_at"] = routing_msg.created_at.isoformat()
+        coord_row = await session.execute(
+            select(BotAccount.display_name, BotAccount.username).where(
+                BotAccount.bot_id == coordinator_bot_id
+            )
+        )
+        coord_info = coord_row.first()
+        if coord_info:
+            data["sender_name"] = coord_info[0] or coord_info[1] or ""
+
+        await ws_manager.broadcast_to_channel(
+            channel_id, {"type": "message", "data": data}
+        )
+        if stream_event:
+            await stream_event("message", data)
+        already_broadcast.add(routing_msg.msg_id)
+        created.append(routing_msg)
+    except Exception:
+        logger.exception(
+            "orchestrator: failed to emit routing card channel_id=%s", channel_id,
+        )
+
+
 async def run_orchestrator(
     channel_id: str,
     trigger_msg: Message,
@@ -636,6 +701,23 @@ async def run_orchestrator(
                     sug for sug in suggested
                     if sug in channel_bot_usernames and sug != COORDINATOR_USERNAME
                 ]
+
+                if valid_suggested:
+                    # Emit a routing card right before firing the sub-bots, so
+                    # the UI can render the design's .an-routing card (agent
+                    # picks + plan) instead of only seeing the coordinator's
+                    # prose.
+                    await _emit_routing_card(
+                        channel_id=channel_id,
+                        coordinator_bot_id=bot_id,
+                        trigger_content=trigger_content,
+                        coordinator_content=content,
+                        picked_usernames=valid_suggested,
+                        session=session,
+                        already_broadcast=already_broadcast,
+                        created=created,
+                        stream_event=stream_event,
+                    )
 
                 # 阶段 1：串行 broadcast + 预建消息（需要 DB session）
                 pending_sug: list[tuple[str, str, Message, AgentPayload, OpenClawAdapter]] = []
