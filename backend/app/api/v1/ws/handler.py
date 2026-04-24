@@ -61,3 +61,23 @@ async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
             logger.info("ws.disconnect channel_id=%s", channel_id)
         finally:
             await ws_manager.disconnect(websocket, channel_id)
+
+
+@router.websocket("/ws/users/{user_id}")
+async def websocket_user(websocket: WebSocket, user_id: str) -> None:
+    """用户级轻量通知通道。当前只用于跨频道未读增量。
+
+    与 /ws/channels/{channel_id} 一样暂未做鉴权——user_id 由前端在登录后
+    自行提供；内容都是 "告诉用户刷新未读" 级别的信号，不含敏感负载。
+    """
+    with bind_context(user_id=user_id):
+        await ws_manager.connect_user(websocket, user_id)
+        logger.info("ws.connect user_id=%s", user_id)
+        try:
+            while True:
+                # 客户端一般不会主动给用户通道发消息，保持接收仅用于心跳/空转。
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            logger.info("ws.disconnect user_id=%s", user_id)
+        finally:
+            await ws_manager.disconnect_user(websocket, user_id)

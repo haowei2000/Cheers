@@ -66,6 +66,55 @@ def _normalize_file_ids(file_ids: list[str] | None, file_id: str | None = None) 
 
 async def _broadcast_message(channel_id: str, payload: dict) -> None:
     await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": payload})
+    # Fan out a lightweight notification on each human member's user-scoped WS
+    # so rail unread badges can live-increment for channels that aren't the
+    # user's currently-open one. Errors here must never break the channel
+    # broadcast — swallow everything and log.
+    try:
+        await _fanout_unread(channel_id, payload)
+    except Exception:
+        logger.exception(
+            "fanout_unread: failed to dispatch channel_new_message channel_id=%s",
+            channel_id,
+        )
+
+
+async def _fanout_unread(channel_id: str, payload: dict) -> None:
+    """Notify every human channel member (except the sender) that a new
+    message has landed in this channel. Used to live-update rail unread
+    badges on channels the user isn't currently viewing."""
+    from sqlalchemy import select
+
+    from app.db.models import ChannelMembership
+
+    sender_id = payload.get("sender_id")
+    sender_type = payload.get("sender_type")
+
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(ChannelMembership.member_id).where(
+                    ChannelMembership.channel_id == channel_id,
+                    ChannelMembership.member_type == "user",
+                )
+            )
+        ).all()
+
+    event = {
+        "type": "channel_new_message",
+        "data": {
+            "channel_id": channel_id,
+            "sender_id": sender_id,
+            "sender_type": sender_type,
+            "msg_id": payload.get("msg_id"),
+        },
+    }
+    for row in rows:
+        member_id = row[0]
+        # Don't re-notify the sender about their own message.
+        if sender_type == "user" and member_id == sender_id:
+            continue
+        await ws_manager.broadcast_to_user(member_id, event)
 
 
 def _schedule_recent_update(channel_id: str) -> None:
