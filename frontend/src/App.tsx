@@ -2292,7 +2292,37 @@ export default function App() {
                           </div>
                         )}
                       {(() => {
-                      const renderedRows = threadRoots.map((m) => {
+                      const renderedRows = threadRoots.map((m, idx) => {
+                        // isDM gates the "intimate" bubble + self-right
+                        // treatment; channel rendering is Discord-style
+                        // flat, all-left, with sender grouping.
+                        const isDMRender =
+                          selectedChannel?.type === "dm";
+                        // Stack against the previous root if same sender
+                        // within 2 minutes — hide avatar/header row.
+                        const prevRoot =
+                          idx > 0 ? threadRoots[idx - 1] : null;
+                        const prevTs = prevRoot?.created_at
+                          ? new Date(prevRoot.created_at).getTime()
+                          : 0;
+                        const curTs = m.created_at
+                          ? new Date(m.created_at).getTime()
+                          : 0;
+                        const isStacked =
+                          !isDMRender &&
+                          !!prevRoot &&
+                          prevRoot.sender_id === m.sender_id &&
+                          prevRoot.sender_type === m.sender_type &&
+                          prevRoot.msg_type !== "announcement" &&
+                          prevRoot.msg_type !== "routing" &&
+                          prevRoot.msg_type !== "permission" &&
+                          m.msg_type !== "announcement" &&
+                          m.msg_type !== "routing" &&
+                          m.msg_type !== "permission" &&
+                          m.msg_type !== "thread" &&
+                          prevTs > 0 &&
+                          curTs > 0 &&
+                          curTs - prevTs < 2 * 60 * 1000;
                         // ── routing card: coordinator picks + plan ──────────
                         if (m.msg_type === "routing") {
                           const cd = (m.content_data ?? {}) as Record<
@@ -2731,7 +2761,232 @@ export default function App() {
                           secretSecsLeft !== null && secretSecsLeft <= 0;
                         const isSecretUnrevealed =
                           m.is_secret && !revealedContent && !isSecretExpired;
-                        const rootBubble = isOwn ? (
+                        const rootBubble = !isDMRender ? (
+                          // ── Channel flat render — Discord style ────────
+                          // All-left alignment, no bubble, sender grouping
+                          // (stacked messages hide their avatar + header).
+                          <div
+                            id={`msg-${m.msg_id}`}
+                            className="group relative px-4 transition-colors"
+                            style={{
+                              paddingTop: isStacked ? 2 : 8,
+                              paddingBottom: 2,
+                            }}
+                          >
+                            {/* subtle hover tint covering the full row width */}
+                            <div
+                              className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                              style={{ background: "var(--surface-soft)" }}
+                            />
+                            <div className="relative flex gap-3">
+                              <div className="w-9 flex-shrink-0">
+                                {!isStacked ? (
+                                  m.sender_type === "bot" ? (
+                                    senderBot?.avatar_url ? (
+                                      <img
+                                        src={senderBot.avatar_url}
+                                        alt={botLabel}
+                                        className="w-9 h-9 rounded-xl object-cover mt-0.5"
+                                      />
+                                    ) : (
+                                      <div
+                                        className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
+                                        style={{
+                                          background: "var(--green)",
+                                        }}
+                                      >
+                                        {botInitials}
+                                      </div>
+                                    )
+                                  ) : (
+                                    <div
+                                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
+                                      style={{
+                                        background: isOwn
+                                          ? "var(--accent)"
+                                          : "var(--fg-3)",
+                                      }}
+                                    >
+                                      {isOwn ? "我" : userInitials}
+                                    </div>
+                                  )
+                                ) : (
+                                  // stacked: show the timestamp in the
+                                  // gutter on hover so time is still
+                                  // discoverable without the header row
+                                  <div
+                                    className="text-right pr-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1"
+                                    style={{
+                                      fontSize: 10,
+                                      color: "var(--fg-3)",
+                                      fontVariantNumeric: "tabular-nums",
+                                    }}
+                                  >
+                                    {msgTime
+                                      ? msgTime.split(",").pop()?.trim()
+                                      : ""}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                {!isStacked && (
+                                  <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
+                                    <span
+                                      className="font-semibold text-[13.5px] leading-tight"
+                                      style={{ color: "var(--fg-1)" }}
+                                    >
+                                      {isOwn
+                                        ? "我"
+                                        : m.sender_type === "bot"
+                                          ? botLabel
+                                          : userLabel}
+                                    </span>
+                                    {m.sender_type === "bot" && (
+                                      <span
+                                        className="text-[9px] px-1.5 py-px rounded"
+                                        style={{
+                                          background: "var(--green-muted)",
+                                          color: "var(--green)",
+                                          fontWeight: 700,
+                                          letterSpacing: "0.4px",
+                                        }}
+                                      >
+                                        BOT
+                                      </span>
+                                    )}
+                                    <span
+                                      className="text-[11px]"
+                                      style={{ color: "var(--fg-3)" }}
+                                    >
+                                      {msgTime}
+                                    </span>
+                                  </div>
+                                )}
+                                {m.content_data?.title ? (
+                                  <div
+                                    className="text-[14px] font-semibold mb-1 leading-snug"
+                                    style={{ color: "var(--fg-1)" }}
+                                  >
+                                    {m.content_data.title as string}
+                                  </div>
+                                ) : null}
+                                {renderFileAttachments(m)}
+                                <div
+                                  className={
+                                    "text-[14px] leading-relaxed" +
+                                    (m.sender_type === "bot"
+                                      ? " an-bot-outline inline-block"
+                                      : "")
+                                  }
+                                  style={{
+                                    color: "var(--fg-1)",
+                                    wordWrap: "break-word",
+                                  }}
+                                >
+                                  {isSecretExpired ? (
+                                    <span style={{ color: "var(--fg-3)" }}>
+                                      🔒 加密消息（已过期）
+                                    </span>
+                                  ) : isSecretUnrevealed ? (
+                                    <span style={{ color: "var(--orange)" }}>
+                                      🔒 加密消息
+                                    </span>
+                                  ) : (
+                                    renderWithThinkFolding(
+                                      displayContent,
+                                      `${m.msg_id}-`,
+                                      !!m._streaming,
+                                      (src) => {
+                                        setLightboxSrc(src);
+                                        const m2 = src.match(
+                                          /\/files\/([^/]+)\/preview/,
+                                        );
+                                        setLightboxFileId(
+                                          m2 ? m2[1] : null,
+                                        );
+                                      },
+                                      (url, name) =>
+                                        setFilePreviewPanel({ url, filename: name }),
+                                    )
+                                  )}
+                                  {m._streaming &&
+                                    !!(parseGuidePayload(displayContent).text ||
+                                      displayContent) && (
+                                      <span
+                                        className="inline-block w-1.5 h-4 rounded-sm animate-pulse align-middle ml-0.5"
+                                        style={{
+                                          background: "var(--fg-3)",
+                                        }}
+                                      />
+                                    )}
+                                </div>
+                                {form && selectedId && m.sender_type === "bot" && (
+                                  <GuideFormBlock
+                                    msgId={m.msg_id}
+                                    form={form}
+                                    channelId={selectedId}
+                                    onReply={(newMsg) =>
+                                      setMessages((prev) => [
+                                        ...prev,
+                                        newMsg,
+                                      ])
+                                    }
+                                    onChannelsRefresh={() =>
+                                      refreshChannels(
+                                        setChannels,
+                                        authToken ?? undefined,
+                                      )
+                                    }
+                                    userToken={authToken ?? undefined}
+                                  />
+                                )}
+                                {clarifyStatus !== null && selectedId && (
+                                  <ClarifyInlineBlock
+                                    msgId={m.msg_id}
+                                    schema={clarify!}
+                                    status={clarifyStatus}
+                                    replyContent={undefined}
+                                    onContinue={(answers) =>
+                                      handleClarifyContinue(
+                                        m.msg_id,
+                                        clarify!,
+                                        answers,
+                                      )
+                                    }
+                                    onSkip={() =>
+                                      handleClarifySkip(m.msg_id)
+                                    }
+                                  />
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                title="回复"
+                                onClick={() => {
+                                  setReplyingTo(m);
+                                  const mention =
+                                    m.sender_type === "bot" &&
+                                    senderBot?.username
+                                      ? `@${senderBot.username} `
+                                      : "";
+                                  if (mention) setInput(mention);
+                                  (secretMode
+                                    ? secretInputRef.current
+                                    : inputRef.current
+                                  )?.focus();
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity self-start w-7 h-7 flex items-center justify-center rounded-md flex-shrink-0"
+                                style={{
+                                  color: "var(--fg-3)",
+                                  background: "var(--bg-1)",
+                                  border: "1px solid var(--border)",
+                                }}
+                              >
+                                {replyIcon}
+                              </button>
+                            </div>
+                          </div>
+                        ) : isOwn ? (
                           <div
                             id={`msg-${m.msg_id}`}
                             className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
@@ -3152,15 +3407,23 @@ export default function App() {
                                   ? "answered"
                                   : "form"
                               : null;
+                          // Channel flat-reply render: no bubble, all-left,
+                          // iridescent outline on bot replies. DMs keep the
+                          // bubble treatment below.
+                          const rFlat = !isDMRender;
                           return (
                             <div
                               key={r.msg_id}
                               id={`msg-${r.msg_id}`}
-                              className={`group flex gap-2.5 px-4 py-1 transition-all ${
-                                rIsOwn
-                                  ? "flex-row-reverse items-end"
-                                  : "items-start"
-                              }`}
+                              className={
+                                rFlat
+                                  ? "group flex gap-3 px-4 py-1 items-start transition-colors"
+                                  : `group flex gap-2.5 px-4 py-1 transition-all ${
+                                      rIsOwn
+                                        ? "flex-row-reverse items-end"
+                                        : "items-start"
+                                    }`
+                              }
                             >
                                 <div className="flex-shrink-0 mt-0.5">
                                   {r.sender_type === "bot" ? (
@@ -3168,59 +3431,118 @@ export default function App() {
                                       <img
                                         src={rBot.avatar_url}
                                         alt={rLabel}
-                                        className="w-8 h-8 rounded-xl object-cover"
+                                        className={
+                                          rFlat
+                                            ? "w-9 h-9 rounded-xl object-cover"
+                                            : "w-8 h-8 rounded-xl object-cover"
+                                        }
                                       />
                                     ) : (
-                                      <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">
+                                      <div
+                                        className={
+                                          rFlat
+                                            ? "w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none"
+                                            : "w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none"
+                                        }
+                                        style={
+                                          rFlat
+                                            ? { background: "var(--green)" }
+                                            : undefined
+                                        }
+                                      >
                                         {rInitials}
                                       </div>
                                     )
                                   ) : (
                                     <div
-                                      className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}
+                                      className={
+                                        rFlat
+                                          ? "w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none"
+                                          : `w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`
+                                      }
+                                      style={
+                                        rFlat
+                                          ? {
+                                              background: rIsOwn
+                                                ? "var(--accent)"
+                                                : "var(--fg-3)",
+                                            }
+                                          : undefined
+                                      }
                                     >
                                       {rIsOwn ? "我" : rInitials}
                                     </div>
                                   )}
                                 </div>
                                 <div
-                                  className={`flex flex-col max-w-[85%] sm:max-w-[72%] ${
-                                    rIsOwn ? "items-end" : ""
-                                  }`}
+                                  className={
+                                    rFlat
+                                      ? "flex-1 min-w-0 flex flex-col"
+                                      : `flex flex-col max-w-[85%] sm:max-w-[72%] ${rIsOwn ? "items-end" : ""}`
+                                  }
                                 >
                                   <div
-                                    className={`flex items-baseline gap-1.5 mb-1 ${
-                                      rIsOwn ? "justify-end" : ""
-                                    }`}
+                                    className={
+                                      rFlat
+                                        ? "flex items-baseline gap-2 mb-0.5 flex-wrap"
+                                        : `flex items-baseline gap-1.5 mb-1 ${rIsOwn ? "justify-end" : ""}`
+                                    }
                                   >
-                                    <span className="font-semibold text-[13px] text-gray-900 leading-none">
+                                    <span
+                                      className="font-semibold text-[13.5px] leading-none"
+                                      style={{ color: "var(--fg-1)" }}
+                                    >
                                       {rIsOwn ? "我" : rLabel}
                                     </span>
                                     {r.sender_type === "bot" && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">
-                                        Bot
+                                      <span
+                                        className="text-[9px] px-1.5 py-px rounded leading-none"
+                                        style={{
+                                          background: "var(--green-muted)",
+                                          color: "var(--green)",
+                                          fontWeight: 700,
+                                          letterSpacing: "0.4px",
+                                        }}
+                                      >
+                                        BOT
                                       </span>
                                     )}
-                                    <span className="text-[11px] text-gray-400 leading-none">
+                                    <span
+                                      className="text-[11px] leading-none"
+                                      style={{ color: "var(--fg-3)" }}
+                                    >
                                       {rTime}
                                     </span>
                                   </div>
                                   {renderFileAttachments(r)}
                                   <div
-                                    className={`rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
-                                      rIsOwn
-                                        ? "text-white rounded-tr-sm"
-                                        : "rounded-tl-sm"
-                                    }`}
+                                    className={
+                                      rFlat
+                                        ? "text-[14px] leading-relaxed" +
+                                          (r.sender_type === "bot"
+                                            ? " an-bot-outline inline-block"
+                                            : "")
+                                        : `rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
+                                            rIsOwn
+                                              ? "text-white rounded-tr-sm"
+                                              : "rounded-tl-sm"
+                                          }`
+                                    }
                                     style={
-                                      rIsOwn
-                                        ? { background: "var(--accent)" }
-                                        : {
-                                            background: "var(--surface-soft)",
+                                      rFlat
+                                        ? {
                                             color: "var(--fg-1)",
-                                            border:
-                                              "1px solid var(--border)",
+                                            wordWrap: "break-word",
                                           }
+                                        : rIsOwn
+                                          ? { background: "var(--accent)" }
+                                          : {
+                                              background:
+                                                "var(--surface-soft)",
+                                              color: "var(--fg-1)",
+                                              border:
+                                                "1px solid var(--border)",
+                                            }
                                     }
                                   >
                                     {r._streaming && !rTextRaw ? (
