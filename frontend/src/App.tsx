@@ -36,6 +36,7 @@ import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
 import { ThreadPanel } from "./components/ThreadPanel";
 import { ThreadPage } from "./components/ThreadPage";
+import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
 import { apiFetch, buildWsUrl } from "./api";
 import {
   parseGuidePayload,
@@ -123,6 +124,7 @@ export default function App() {
   // Thread viewers:
   //   openThreadId  — root msg_id for the side-dock panel
   //   pageThreadId  — root msg_id for the full-page view (mirrored to URL hash)
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const [pageThreadId, setPageThreadId] = useState<string | null>(() => {
     if (typeof location === "undefined") return null;
@@ -1693,6 +1695,16 @@ export default function App() {
           apiDocsUrl={API_DOCS_URL}
         />
 
+        <AnnouncementComposerModal
+          open={announcementOpen}
+          channelId={selectedId}
+          channelName={selectedChannel?.name}
+          currentUserId={currentUserId}
+          authToken={authToken}
+          onClose={() => setAnnouncementOpen(false)}
+          onPublished={() => toast.success("公告已发布")}
+        />
+
         <SettingsModal
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -2093,6 +2105,13 @@ export default function App() {
                   onOpenManageMembers={() => setManageMembersOpen(true)}
                   currentUser={currentUser}
                   onOpenChannelProfile={() => setChannelProfileOpen(true)}
+                  onOpenAnnouncementComposer={
+                    // DMs don't get announcements — the megaphone would make
+                    // no sense in a 1:1 conversation.
+                    selectedChannel?.type === "dm"
+                      ? undefined
+                      : () => setAnnouncementOpen(true)
+                  }
                   threads={threadRoots
                     .map((r) => {
                       const replies = threadRepliesOf(r.msg_id);

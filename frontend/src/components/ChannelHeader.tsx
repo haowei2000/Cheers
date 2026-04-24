@@ -113,6 +113,10 @@ interface ChannelHeaderProps {
   currentUser: CurrentUser;
   onOpenChannelProfile: () => void;
 
+  /** Open the announcement-composer modal. Omitted → the megaphone button
+   *  doesn't render (e.g. on DM headers where announcements don't apply). */
+  onOpenAnnouncementComposer?: () => void;
+
   threads?: ThreadSummary[];
   /** Scroll the main stream to the given message id (used by existing
    *  threads-popover behaviour when no panel handler is provided). */
@@ -139,6 +143,7 @@ export function ChannelHeader({
   onOpenManageMembers,
   currentUser,
   onOpenChannelProfile,
+  onOpenAnnouncementComposer,
   threads = [],
   onJumpToMessage,
   onOpenThread,
@@ -344,7 +349,31 @@ export function ChannelHeader({
         })}
       </div>
 
-      {/* Auxiliary icon buttons — QA / Manage members / Channel profile */}
+      {/* Auxiliary icon buttons — Announce / QA / Manage members / Channel profile */}
+      {onOpenAnnouncementComposer && (
+        <button
+          type="button"
+          onClick={onOpenAnnouncementComposer}
+          title="发布公告"
+          aria-label="发布公告"
+          className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+          style={{ color: "var(--fg-3)" }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="w-4 h-4"
+          >
+            <path d="M3 11v2a1 1 0 0 0 1 1h1l6 5V5L5 10H4a1 1 0 0 0-1 1Z" />
+            <path d="M15 8.5a4 4 0 0 1 0 7" />
+            <path d="M18 6a7 7 0 0 1 0 12" />
+          </svg>
+        </button>
+      )}
       {blockPairsForExport.length > 0 && (
         <button
           type="button"
