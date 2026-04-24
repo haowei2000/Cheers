@@ -327,9 +327,15 @@
   font-weight: 600;
   background: var(--accent);
   color: #fff;
-  padding: 1px 5px;
+  padding: 0 5px;
   border-radius: 8px;
   min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   text-align: center;
 }
 .an-rail-row .an-ws-abbrev {
@@ -361,8 +367,17 @@
   font-weight: 600;
   font-size: 12px;
 }
-.an-rail-foot .an-n { font-size: 13px; font-weight: 500; color: var(--fg-1); }
-.an-rail-foot .an-s { font-size: 11px; color: var(--fg-3); margin-top: -1px; }
+.an-rail-foot .an-n {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-1);
+  line-height: 1.2;
+}
+.an-rail-foot .an-s {
+  font-size: 11px;
+  color: var(--fg-3);
+  line-height: 1.3;
+}
 .an-rail-foot .an-cog {
   color: var(--fg-3);
   cursor: pointer;
@@ -1248,8 +1263,13 @@ kbd {
   font-weight: 600;
   color: var(--fg-1);
   letter-spacing: -0.01em;
+  line-height: 1.2;
 }
-.an-memory-head .an-sub { font-size: 11px; color: var(--fg-3); }
+.an-memory-head .an-sub {
+  font-size: 11px;
+  color: var(--fg-3);
+  line-height: 1.3;
+}
 .an-memory-tabs {
   display: flex;
   gap: 2px;

@@ -506,27 +506,45 @@ export function Sidebar({
                     }
                     style={{ alignItems: "flex-start" }}
                   >
-                    <span className="an-search-sigil">#</span>
+                    <span
+                      className="an-search-sigil"
+                      style={{
+                        alignSelf: "flex-start",
+                        marginTop: 2,
+                        lineHeight: 1,
+                      }}
+                    >
+                      #
+                    </span>
                     <span
                       className="an-search-name"
-                      style={{ whiteSpace: "normal" }}
+                      style={{
+                        whiteSpace: "normal",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 2,
+                        lineHeight: 1.35,
+                      }}
                     >
-                      <span style={{ color: "var(--fg-2)", fontWeight: 500 }}>
-                        {m.channel_name || "频道"} ·{" "}
+                      <span style={{ fontSize: 12 }}>
+                        <span
+                          style={{ color: "var(--fg-2)", fontWeight: 500 }}
+                        >
+                          {m.channel_name || "频道"}
+                        </span>
+                        <span style={{ color: "var(--fg-3)" }}> · </span>
+                        <span style={{ color: "var(--fg-3)", fontSize: 11 }}>
+                          {m.sender_label}
+                        </span>
                       </span>
-                      <span style={{ color: "var(--fg-3)", fontSize: 11 }}>
-                        {m.sender_label}
-                      </span>
-                      <div
+                      <span
                         style={{
                           color: "var(--fg-2)",
                           fontSize: 11.5,
-                          marginTop: 2,
-                          lineHeight: 1.4,
                         }}
                       >
                         {m.snippet}
-                      </div>
+                      </span>
                     </span>
                   </button>
                 ))}
