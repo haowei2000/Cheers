@@ -3708,136 +3708,148 @@ export default function App() {
 
                         // ≥ THREAD_DISPLAY_THRESHOLD replies — Collapsed thread
                         // card (overview) ───────────────────────────────────────
+                        // Compact form: stacked participant avatars + summary.
+                        // No full question/last-reply preview — click to expand.
                         if (!isExpanded) {
-                          const qPreview = displayContent
-                            .replace(/\s+/g, " ")
-                            .slice(0, 60);
-                          const qOverflow =
-                            displayContent.replace(/\s+/g, " ").length > 60;
-                          const lastReply = replies[replies.length - 1];
-                          const { text: lastRText } = parseGuidePayload(
-                            lastReply.content,
+                          const titleSummary =
+                            (m.content_data?.title as string | undefined) ||
+                            displayContent
+                              .replace(/\s+/g, " ")
+                              .trim()
+                              .slice(0, 80) ||
+                            "(无标题)";
+                          // Participants = root sender ∪ all unique reply
+                          // senders. Keep insertion order so the root comes
+                          // first and reads as the "owner" of the thread.
+                          type Participant = {
+                            key: string;
+                            kind: "user" | "bot";
+                            label: string;
+                            color: string;
+                            avatarUrl?: string;
+                            initial: string;
+                            isSelf?: boolean;
+                          };
+                          const addParticipant = (
+                            acc: Participant[],
+                            sid: string,
+                            stype: string,
+                          ) => {
+                            const key = `${stype}:${sid}`;
+                            if (acc.some((p) => p.key === key)) return;
+                            if (stype === "bot") {
+                              const b = channelBots.find(
+                                (x) => x.member_id === sid,
+                              );
+                              const label =
+                                b?.display_name || b?.username || "Bot";
+                              acc.push({
+                                key,
+                                kind: "bot",
+                                label,
+                                color: "var(--green)",
+                                avatarUrl: b?.avatar_url,
+                                initial: label.slice(0, 1).toUpperCase(),
+                              });
+                            } else {
+                              const isSelf = sid === currentUserId;
+                              const u = isSelf
+                                ? null
+                                : channelUsers.find(
+                                    (x) => x.member_id === sid,
+                                  );
+                              const label = isSelf
+                                ? "我"
+                                : u?.display_name ||
+                                  u?.username ||
+                                  "用户";
+                              acc.push({
+                                key,
+                                kind: "user",
+                                label,
+                                color: isSelf
+                                  ? "var(--accent)"
+                                  : "var(--fg-3)",
+                                avatarUrl: u?.avatar_url,
+                                initial: isSelf
+                                  ? "我"
+                                  : label.slice(0, 1).toUpperCase(),
+                                isSelf,
+                              });
+                            }
+                          };
+                          const participants: Participant[] = [];
+                          addParticipant(
+                            participants,
+                            m.sender_id,
+                            m.sender_type,
                           );
-                          const lastRDisplay = (
-                            isClarifyReplyUserMessage(lastReply.content)
-                              ? lastReply.content
-                                  .replace(
-                                    /^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i,
-                                    "",
-                                  )
-                                  .trim()
-                              : lastRText || lastReply.content
-                          ).replace(/\s+/g, " ");
-                          const replyBotIds = [
-                            ...new Set(
-                              replies
-                                .filter((r) => r.sender_type === "bot")
-                                .map((r) => r.sender_id),
-                            ),
-                          ];
+                          for (const r of replies) {
+                            addParticipant(
+                              participants,
+                              r.sender_id,
+                              r.sender_type,
+                            );
+                          }
+                          const visibleAvatars = participants.slice(0, 5);
+                          const extraCount =
+                            participants.length - visibleAvatars.length;
+
                           return (
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="mx-auto my-1.5 w-[70%] max-w-[70%]"
+                              className="an-chat-msg my-1.5"
                             >
                               <button
                                 type="button"
                                 onClick={() => toggleThread(m.msg_id)}
-                                className="w-full text-left rounded-xl border border-gray-300 bg-gray-100 hover:border-[#1264A3]/50 hover:shadow transition-all overflow-hidden"
+                                className="an-thread-chip"
+                                title={titleSummary}
                               >
-                                {/* Question row */}
-                                <div className="flex items-center gap-2.5 px-3 pt-2.5 pb-2">
-                                  {isOwn ? (
-                                    <div className="w-7 h-7 rounded-lg bg-[#1264A3] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">
-                                      我
-                                    </div>
-                                  ) : m.sender_type === "bot" ? (
-                                    senderBot?.avatar_url ? (
+                                <span className="an-thread-chip-faces">
+                                  {visibleAvatars.map((p) =>
+                                    p.avatarUrl ? (
                                       <img
-                                        src={senderBot.avatar_url}
-                                        alt={botLabel}
-                                        className="w-7 h-7 rounded-lg object-cover flex-shrink-0"
+                                        key={p.key}
+                                        src={p.avatarUrl}
+                                        alt={p.label}
+                                        className="an-thread-chip-face"
                                       />
                                     ) : (
-                                      <div className="w-7 h-7 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">
-                                        {botInitials}
-                                      </div>
-                                    )
-                                  ) : (
-                                    <div className="w-7 h-7 rounded-lg bg-gray-400 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">
-                                      {userInitials}
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5 mb-0.5">
-                                      <span className="text-[12px] font-semibold text-gray-600">
-                                        {isOwn
-                                          ? "我"
-                                          : m.sender_type === "bot"
-                                            ? botLabel
-                                            : userLabel}
+                                      <span
+                                        key={p.key}
+                                        className="an-thread-chip-face"
+                                        style={{ background: p.color }}
+                                      >
+                                        {p.initial}
                                       </span>
-                                      <span className="text-[11px] text-gray-400">
-                                        {msgTime}
-                                      </span>
-                                    </div>
-                                    <p className="text-[13px] text-gray-800 truncate leading-snug font-medium">
-                                      {qPreview}
-                                      {qOverflow ? "…" : ""}
-                                    </p>
-                                  </div>
-                                </div>
-                                {/* Bot reply preview row */}
-                                <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-300/50 bg-gray-200/40">
-                                  {replyBotIds.length > 0 && (
-                                    <div className="flex -space-x-1.5 flex-shrink-0">
-                                      {replyBotIds.slice(0, 4).map((bid) => {
-                                        const rb = channelBots.find(
-                                          (b) => b.member_id === bid,
-                                        );
-                                        const rl =
-                                          rb?.display_name ||
-                                          rb?.username ||
-                                          "Bot";
-                                        return rb?.avatar_url ? (
-                                          <img
-                                            key={bid}
-                                            src={rb.avatar_url}
-                                            alt={rl}
-                                            className="w-5 h-5 rounded-md object-cover border-2 border-white"
-                                          />
-                                        ) : (
-                                          <div
-                                            key={bid}
-                                            className="w-5 h-5 rounded-md bg-[#2EB67D] flex items-center justify-center text-white text-[9px] font-bold border-2 border-white select-none"
-                                          >
-                                            {rl.slice(0, 1).toUpperCase()}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
+                                    ),
                                   )}
-                                  <span className="flex-1 min-w-0 text-[12px] text-gray-500 truncate">
-                                    {lastRDisplay.slice(0, 80)}
-                                    {lastRDisplay.length > 80 ? "…" : ""}
+                                  {extraCount > 0 && (
+                                    <span
+                                      className="an-thread-chip-face"
+                                      style={{
+                                        background: "var(--bg-2)",
+                                        color: "var(--fg-2)",
+                                      }}
+                                    >
+                                      +{extraCount}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="an-thread-chip-body">
+                                  <span className="an-thread-chip-title">
+                                    {titleSummary}
                                   </span>
-                                  <span className="text-[11px] font-medium text-[#1264A3] whitespace-nowrap flex-shrink-0">
-                                    {replies.length} 条回复
+                                  <span className="an-thread-chip-meta">
+                                    对话串 · {replies.length + 1} 条消息 ·{" "}
+                                    {participants.length} 人参与
                                   </span>
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 16 16"
-                                    fill="currentColor"
-                                    className="w-3.5 h-3.5 text-gray-400 flex-shrink-0"
-                                  >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                </div>
+                                </span>
+                                <span className="an-thread-chip-open">
+                                  展开 ›
+                                </span>
                               </button>
                             </div>
                           );
