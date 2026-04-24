@@ -9,6 +9,85 @@ export type ThreadSummary = {
   lastTime?: string;
 };
 
+export type MemoryTab = "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO";
+
+export const MEMORY_TABS: {
+  id: MemoryTab;
+  label: string;
+  icon: JSX.Element;
+}[] = [
+  {
+    id: "PROJECT",
+    label: "Project",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3 7h18M5 7v12a1 1 0 001 1h12a1 1 0 001-1V7M9 4h6a1 1 0 011 1v2H8V5a1 1 0 011-1z" />
+      </svg>
+    ),
+  },
+  {
+    id: "FILES_INDEX",
+    label: "Files",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z" />
+        <path d="M14 3v5h5M9 13h6M9 17h4" />
+      </svg>
+    ),
+  },
+  {
+    id: "MEMBERS",
+    label: "Members",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="9" cy="9" r="3.2" />
+        <path d="M3 19c.8-3.2 3.2-5 6-5s5.2 1.8 6 5" />
+        <circle cx="17" cy="8" r="2.2" />
+        <path d="M15 14.5c1.8-.5 3.6 0 5 2" />
+      </svg>
+    ),
+  },
+  {
+    id: "TODO",
+    label: "Todos",
+    icon: (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 7l2 2 4-4" />
+        <path d="M4 15l2 2 4-4" />
+        <path d="M13 7h7M13 15h7" />
+      </svg>
+    ),
+  },
+];
+
 interface ChannelHeaderProps {
   channel: Channel | undefined | null;
   selectedId: string | null;
@@ -23,8 +102,8 @@ interface ChannelHeaderProps {
   blockPairsForExport: QaPair[];
   onOpenQaSummary: () => void;
 
-  memoryPanelOpen: boolean;
-  onToggleMemoryPanel: () => void;
+  memoryTab: MemoryTab | null;
+  onSetMemoryTab: (tab: MemoryTab | null) => void;
 
   onOpenManageMembers: () => void;
 
@@ -46,8 +125,8 @@ export function ChannelHeader({
   setChannels,
   blockPairsForExport,
   onOpenQaSummary,
-  memoryPanelOpen,
-  onToggleMemoryPanel,
+  memoryTab,
+  onSetMemoryTab,
   onOpenManageMembers,
   currentUser,
   onOpenChannelProfile,
@@ -78,8 +157,19 @@ export function ChannelHeader({
           className="w-8 h-8 flex items-center justify-center rounded-md flex-shrink-0 hover:bg-[var(--surface-soft)] transition-colors"
           style={{ color: "var(--fg-2)" }}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+            className="w-6 h-6"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+            />
           </svg>
         </button>
       )}
@@ -90,15 +180,22 @@ export function ChannelHeader({
           <span className="an-hash">#</span>
           <span>{channel?.name || ""}</span>
         </h1>
-        {subtitle && <span className="an-sub truncate hidden sm:inline">{subtitle}</span>}
+        {subtitle && (
+          <span className="an-sub truncate hidden sm:inline">{subtitle}</span>
+        )}
       </div>
 
-      {/* Auto-assist toggle — the one power feature that stays visible */}
+      {/* Auto-assist toggle */}
       <label
         className="flex items-center gap-1.5 cursor-pointer select-none flex-shrink-0"
-        title={autoAssist ? "自动调用内置助手（开启中）" : "自动调用内置助手（关闭）"}
+        title={
+          autoAssist ? "自动调用内置助手（开启中）" : "自动调用内置助手（关闭）"
+        }
       >
-        <span className="text-[11px] whitespace-nowrap hidden sm:inline" style={{ color: "var(--fg-3)" }}>
+        <span
+          className="text-[11px] whitespace-nowrap hidden sm:inline"
+          style={{ color: "var(--fg-3)" }}
+        >
           自动接管
         </span>
         <button
@@ -129,17 +226,21 @@ export function ChannelHeader({
           }}
           className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none"
           style={{
-            background: autoAssist ? "var(--accent)" : "var(--surface-strong)",
+            background: autoAssist
+              ? "var(--accent)"
+              : "var(--surface-strong)",
           }}
         >
           <span
             className="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
-            style={{ transform: autoAssist ? "translateX(18px)" : "translateX(3px)" }}
+            style={{
+              transform: autoAssist ? "translateX(18px)" : "translateX(3px)",
+            }}
           />
         </button>
       </label>
 
-      {/* Threads pill — list of thread roots in this channel */}
+      {/* Threads pill */}
       {threads.length > 0 && (
         <div className="relative" ref={popRef}>
           <button
@@ -148,7 +249,12 @@ export function ChannelHeader({
             onClick={() => setThreadsOpen((v) => !v)}
             title="频道对话串"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
               <path d="M2 3h12M2 7h9M2 11h6" strokeLinecap="round" />
               <circle cx="13" cy="11" r="2.3" />
             </svg>
@@ -156,7 +262,14 @@ export function ChannelHeader({
             <span className="an-tb-n">{threads.length}</span>
           </button>
           {threadsOpen && (
-            <div className="an-threads-pop" style={{ right: 0, top: "calc(100% + 6px)", position: "absolute" }}>
+            <div
+              className="an-threads-pop"
+              style={{
+                right: 0,
+                top: "calc(100% + 6px)",
+                position: "absolute",
+              }}
+            >
               <div className="an-hd">频道内的对话串</div>
               {threads.map((t) => (
                 <button
@@ -185,62 +298,92 @@ export function ChannelHeader({
         </div>
       )}
 
-      {/* Memory icon cluster — design pattern from AgentNexus.html */}
+      {/* Memory cluster — 4 memory tabs: Project / Files / Members / Todos */}
       <div className="an-mem-cluster" role="group" aria-label="频道记忆">
-        <button
-          type="button"
-          className={`an-mc-btn ${memoryPanelOpen ? "on" : ""}`}
-          onClick={onToggleMemoryPanel}
-          title="频道记忆 · Project"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 7h18M5 7v12a1 1 0 001 1h12a1 1 0 001-1V7M9 4h6a1 1 0 011 1v2H8V5a1 1 0 011-1z" />
-          </svg>
-          <span className="an-mc-label hidden sm:inline">记忆</span>
-        </button>
-        <button
-          type="button"
-          className="an-mc-btn"
-          onClick={onOpenManageMembers}
-          title="成员管理"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="9" cy="9" r="3.2" />
-            <path d="M3 19c.8-3.2 3.2-5 6-5s5.2 1.8 6 5" />
-            <circle cx="17" cy="8" r="2.2" />
-            <path d="M15 14.5c1.8-.5 3.6 0 5 2" />
-          </svg>
-          <span className="an-mc-label hidden sm:inline">成员</span>
-        </button>
-        {blockPairsForExport.length > 0 && (
-          <button
-            type="button"
-            className="an-mc-btn"
-            onClick={onOpenQaSummary}
-            title="生成问答总结"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z" />
-              <path d="M14 3v5h5M9 13h6M9 17h4" />
-            </svg>
-            <span className="an-mc-label hidden sm:inline">问答</span>
-          </button>
-        )}
-        {currentUser && (
-          <button
-            type="button"
-            className="an-mc-btn"
-            onClick={onOpenChannelProfile}
-            title="我的频道资料"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="8" r="3.2" />
-              <path d="M5 19c1-3.6 3.8-6 7-6s6 2.4 7 6" />
-            </svg>
-            <span className="an-mc-label hidden sm:inline">资料</span>
-          </button>
-        )}
+        {MEMORY_TABS.map((t) => {
+          const on = memoryTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              className={`an-mc-btn ${on ? "on" : ""}`}
+              onClick={() => onSetMemoryTab(on ? null : t.id)}
+              title={`频道记忆 · ${t.label}`}
+              aria-pressed={on}
+            >
+              {t.icon}
+              <span className="an-mc-label hidden sm:inline">{t.label}</span>
+            </button>
+          );
+        })}
       </div>
+
+      {/* Auxiliary icon buttons — QA / Manage members / Channel profile */}
+      {blockPairsForExport.length > 0 && (
+        <button
+          type="button"
+          onClick={onOpenQaSummary}
+          title="生成问答总结"
+          className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+          style={{ color: "var(--fg-3)" }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="w-4 h-4"
+          >
+            <path d="M8 10h8M8 14h5" />
+            <path d="M21 12a9 9 0 11-3.7-7.25L21 3v5h-5" />
+          </svg>
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onOpenManageMembers}
+        title="成员管理"
+        className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+        style={{ color: "var(--fg-3)" }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-4 h-4"
+        >
+          <circle cx="9" cy="8" r="3.2" />
+          <path d="M3 19c.8-3.2 3.2-5 6-5s5.2 1.8 6 5" />
+          <path d="M17 11v4M15 13h4" />
+        </svg>
+      </button>
+      {currentUser && (
+        <button
+          type="button"
+          onClick={onOpenChannelProfile}
+          title="我的频道资料"
+          className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+          style={{ color: "var(--fg-3)" }}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="w-4 h-4"
+          >
+            <circle cx="12" cy="8" r="3.2" />
+            <path d="M5 19c1-3.6 3.8-6 7-6s6 2.4 7 6" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

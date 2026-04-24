@@ -8,26 +8,52 @@ import { getAuthToken as getStoredToken } from "../api";
 const API = "/api/v1";
 
 // ── Memory Panel (right sidebar) ─────────────────────────────────────────────
+//
+// The panel can be driven in two modes:
+//   a) self-contained — no `activeLayer` prop; shows the full layer tab strip.
+//   b) controlled     — `activeLayer` + `onLayerChange` supplied; the tab strip
+//      is hidden and the parent (channel header cluster) drives which layer is
+//      shown. Used for the 4-tab Project/Files/Members/Todos cluster.
+//
+// Virtual layer "PROJECT" renders the design's Project view: anchor cards at
+// the top, an overall progress bar, then a PROGRESS + DECISIONS timeline.
 export function MemoryPanel({
   channelId,
   channelName,
   contextData,
   onClose,
   onExpand,
+  activeLayer: externalLayer,
+  onLayerChange,
 }: {
   channelId: string;
   channelName: string;
   contextData: Record<string, string>;
   onClose: () => void;
   onExpand: () => void;
+  activeLayer?: string;
+  onLayerChange?: (layer: string) => void;
 }) {
-  const [activeLayer, setActiveLayer] = useState<string>("ANCHOR");
+  const isControlled = externalLayer !== undefined;
+  const [internalLayer, setInternalLayer] = useState<string>("ANCHOR");
+  const activeLayer = isControlled ? (externalLayer as string) : internalLayer;
+  const setActiveLayer = (l: string) => {
+    if (isControlled) onLayerChange?.(l);
+    else setInternalLayer(l);
+  };
+
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [todosLoading, setTodosLoading] = useState(false);
   const [todoNewContent, setTodoNewContent] = useState("");
   const [todoAssignee, setTodoAssignee] = useState("");
+
+  // Secondary entry lists for the PROJECT virtual layer (anchors + decisions)
+  const [projectAnchors, setProjectAnchors] = useState<MemoryEntryItem[]>([]);
+  const [projectDecisions, setProjectDecisions] = useState<MemoryEntryItem[]>(
+    [],
+  );
 
   // Channel files state (for FILES_INDEX layer)
   const [channelFiles, setChannelFiles] = useState<
@@ -54,10 +80,21 @@ export function MemoryPanel({
   const [newContent, setNewContent] = useState("");
   const [timelineMode, setTimelineMode] = useState(false);
 
-  const meta = LAYER_META[activeLayer];
+  const isProject = activeLayer === "PROJECT";
+  const PROJECT_META = {
+    label: "项目 · Project",
+    desc: "核心目标与进度（Anchor + Progress）",
+    color: "blue",
+    icon: "◆",
+    readonly: false,
+    entryBased: false,
+  };
+  const meta = isProject ? PROJECT_META : LAYER_META[activeLayer];
   const isReadonly = !!meta.readonly;
   const isEntryBased = !!meta.entryBased;
-  const rawContent = contextData[activeLayer.toLowerCase()] ?? "";
+  const rawContent = isProject
+    ? ""
+    : contextData[activeLayer.toLowerCase()] ?? "";
 
   const loadEntries = (layer: string) => {
     const token = getStoredToken();
@@ -67,6 +104,34 @@ export function MemoryPanel({
     })
       .then((r) => (r.ok ? r.json() : []))
       .then(setEntries)
+      .catch(() => {})
+      .finally(() => setEntriesLoading(false));
+  };
+
+  // Project view needs ANCHOR (for goal cards), PROGRESS (for timeline +
+  // progress bar), and DECISIONS (also on the timeline).
+  const loadProject = () => {
+    const token = getStoredToken();
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
+    setEntriesLoading(true);
+    Promise.all([
+      fetch(`${API}/channels/${channelId}/memory/?layer=ANCHOR`, {
+        headers,
+      }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${API}/channels/${channelId}/memory/?layer=PROGRESS`, {
+        headers,
+      }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${API}/channels/${channelId}/memory/?layer=DECISIONS`, {
+        headers,
+      }).then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([anchors, progress, decisions]: MemoryEntryItem[][]) => {
+        setProjectAnchors(anchors || []);
+        setEntries(progress || []);
+        setProjectDecisions(decisions || []);
+      })
       .catch(() => {})
       .finally(() => setEntriesLoading(false));
   };
@@ -87,7 +152,11 @@ export function MemoryPanel({
     setActiveLayer(layer);
     setEditingEntryId(null);
     setAddingNew(false);
-    if (LAYER_META[layer].entryBased) {
+    if (layer === "PROJECT") {
+      loadProject();
+      return;
+    }
+    if (LAYER_META[layer]?.entryBased) {
       loadEntries(layer);
     }
     if (layer === "MEMBERS") {
@@ -131,8 +200,17 @@ export function MemoryPanel({
   };
 
   useEffect(() => {
-    if (LAYER_META[activeLayer].entryBased) loadEntries(activeLayer);
+    if (activeLayer === "PROJECT") loadProject();
+    else if (LAYER_META[activeLayer]?.entryBased) loadEntries(activeLayer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
+
+  // When the parent-controlled layer changes, refetch data for it.
+  useEffect(() => {
+    if (!isControlled) return;
+    switchLayer(activeLayer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalLayer]);
 
   // ── Entry CRUD ──
   const handleCreateEntry = async () => {
@@ -528,38 +606,41 @@ export function MemoryPanel({
         </div>
       </div>
 
-      {/* Layer tabs */}
-      <div className="an-memory-tabs flex-shrink-0">
-        {LAYERS.map((layer) => {
-          const m = LAYER_META[layer];
-          const active = layer === activeLayer;
-          const filled =
-            layer === "TODO"
-              ? todos.length > 0
-              : m.entryBased
-                ? entries.length > 0 && activeLayer === layer
-                : !!contextData[layer.toLowerCase()]?.trim();
-          return (
-            <button
-              key={layer}
-              onClick={() => switchLayer(layer)}
-              title={m.label}
-              className={`an-tab ${active ? "on" : ""}`}
-            >
-              {m.label.split(" ")[0]}
-              {filled && (
-                <span
-                  className="inline-block w-1 h-1 rounded-full ml-1"
-                  style={{
-                    background: active ? "var(--accent)" : "var(--fg-3)",
-                    verticalAlign: "middle",
-                  }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {/* Layer tabs (self-contained mode only; cluster lives in the channel
+         header when controlled by the parent). */}
+      {!isControlled && (
+        <div className="an-memory-tabs flex-shrink-0">
+          {LAYERS.map((layer) => {
+            const m = LAYER_META[layer];
+            const active = layer === activeLayer;
+            const filled =
+              layer === "TODO"
+                ? todos.length > 0
+                : m.entryBased
+                  ? entries.length > 0 && activeLayer === layer
+                  : !!contextData[layer.toLowerCase()]?.trim();
+            return (
+              <button
+                key={layer}
+                onClick={() => switchLayer(layer)}
+                title={m.label}
+                className={`an-tab ${active ? "on" : ""}`}
+              >
+                {m.label.split(" ")[0]}
+                {filled && (
+                  <span
+                    className="inline-block w-1 h-1 rounded-full ml-1"
+                    style={{
+                      background: active ? "var(--accent)" : "var(--fg-3)",
+                      verticalAlign: "middle",
+                    }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Content toolbar */}
       <div
@@ -729,6 +810,13 @@ export function MemoryPanel({
               )}
             </div>
           </>
+        ) : isProject ? (
+          <ProjectView
+            anchors={projectAnchors}
+            progress={entries}
+            decisions={projectDecisions}
+            loading={entriesLoading}
+          />
         ) : isEntryBased ? (
           renderEntryLayer()
         ) : activeLayer === "MEMBERS" ? (
@@ -742,51 +830,7 @@ export function MemoryPanel({
               <p className="text-xs text-gray-500">暂无成员</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 overflow-y-auto">
-              {[...members]
-                .sort(
-                  (a, b) =>
-                    (a.member_type === "bot" ? -1 : 1) -
-                    (b.member_type === "bot" ? -1 : 1),
-                )
-                .map((m) => {
-                  const isBot = m.member_type === "bot";
-                  const label =
-                    m.display_name || m.username || (isBot ? "Bot" : "用户");
-                  const sub =
-                    m.username && m.username !== m.display_name
-                      ? `@${m.username}`
-                      : null;
-                  const initial = label.slice(0, 1).toUpperCase();
-                  return (
-                    <div
-                      key={m.member_id}
-                      className="flex items-center gap-2.5 px-3 py-2"
-                    >
-                      <div
-                        className={`w-7 h-7 rounded${isBot ? "" : "-full"} flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${isBot ? "bg-[#2EB67D]" : "bg-[#1264A3]"}`}
-                      >
-                        {initial}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium text-gray-800 truncate">
-                          {label}
-                        </p>
-                        {sub && (
-                          <p className="text-[10px] text-gray-400 truncate">
-                            {sub}
-                          </p>
-                        )}
-                      </div>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${isBot ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"}`}
-                      >
-                        {isBot ? "Bot" : "用户"}
-                      </span>
-                    </div>
-                  );
-                })}
-            </div>
+            <MembersView members={members} />
           )
         ) : activeLayer === "FILES_INDEX" ? (
           channelFilesLoading ? (
@@ -886,5 +930,466 @@ export function MemoryPanel({
         )}
       </div>
     </aside>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Members view — a list of bots + people. Clicking a row opens a profile card
+// with back navigation, status, and quick actions.
+// ═════════════════════════════════════════════════════════════════════════════
+
+const MEM_COLORS = [
+  "#7c6cf5",
+  "#3ecf8e",
+  "#56a7ff",
+  "#f5a623",
+  "#f05454",
+  "#9586ff",
+  "#5b8dff",
+];
+
+function colorForMember(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return MEM_COLORS[Math.abs(h) % MEM_COLORS.length];
+}
+
+function initialsFor(label: string): string {
+  const parts = label.trim().split(/\s+/);
+  const first = parts[0]?.[0] || "";
+  const second = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + second).toUpperCase() || label.slice(0, 1).toUpperCase();
+}
+
+function MembersView({ members }: { members: MemberItem[] }) {
+  const [selected, setSelected] = useState<MemberItem | null>(null);
+
+  const bots = members.filter((m) => m.member_type === "bot");
+  const users = members.filter((m) => m.member_type !== "bot");
+
+  if (selected) {
+    const isBot = selected.member_type === "bot";
+    const label =
+      selected.display_name ||
+      selected.username ||
+      (isBot ? "Bot" : "用户");
+    const color = colorForMember(selected.member_id);
+    return (
+      <div className="overflow-y-auto px-3 py-2">
+        <div className="an-mem-detail">
+          <button
+            type="button"
+            className="an-md-back"
+            onClick={() => setSelected(null)}
+          >
+            ← 返回成员列表
+          </button>
+          <div className="an-md-head">
+            <div
+              className="an-av"
+              style={{ background: color, borderRadius: isBot ? 9 : 999 }}
+            >
+              {initialsFor(label)}
+            </div>
+            <div className="an-info">
+              <div className="an-n">
+                {label}
+                <span
+                  className={
+                    "an-tag-pill" + (isBot ? "" : "")
+                  }
+                  style={{
+                    fontSize: 8.5,
+                    fontWeight: 700,
+                    letterSpacing: "0.7px",
+                    padding: "1px 5px",
+                    borderRadius: 4,
+                    border: "1px solid var(--border)",
+                    textTransform: "uppercase",
+                    color: isBot ? "var(--fg-3)" : "var(--accent)",
+                    background: isBot
+                      ? "var(--surface-soft)"
+                      : "var(--accent-muted)",
+                  }}
+                >
+                  {isBot ? "BOT" : "USER"}
+                </span>
+              </div>
+              <div className="an-h">
+                {selected.username && (
+                  <span className="an-d">@{selected.username}</span>
+                )}
+                {selected.username && (
+                  <span className="an-dot-sep">·</span>
+                )}
+                <span>{isBot ? "channel agent" : "channel member"}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="an-md-section">
+            <div className="an-lbl">简介 · About</div>
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--fg-2)",
+                lineHeight: 1.5,
+              }}
+            >
+              {isBot
+                ? "本频道的智能体，协同其他成员完成任务。"
+                : "本频道的用户成员。"}
+            </div>
+          </div>
+
+          <div className="an-md-section">
+            <div className="an-lbl">资料 · Profile</div>
+            <div className="an-md-kv">
+              <div className="an-k">ID</div>
+              <div className="an-v" style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                {selected.member_id}
+              </div>
+              <div className="an-k">类型</div>
+              <div className="an-v">{isBot ? "Bot 智能体" : "人类成员"}</div>
+              {selected.username && (
+                <>
+                  <div className="an-k">用户名</div>
+                  <div className="an-v">@{selected.username}</div>
+                </>
+              )}
+              {selected.display_name && (
+                <>
+                  <div className="an-k">显示名</div>
+                  <div className="an-v">{selected.display_name}</div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="an-md-actions">
+            <button type="button">私聊</button>
+            <button type="button">{isBot ? "查看日志" : "资料卡"}</button>
+            <button type="button" className="primary">
+              @ 提及
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="an-members-list overflow-y-auto">
+      {bots.length > 0 && (
+        <>
+          <div className="an-mem-group">
+            <span>Agents · 智能体</span>
+            <span className="an-ct">{bots.length}</span>
+          </div>
+          {bots.map((m) => {
+            const label = m.display_name || m.username || "Bot";
+            const color = colorForMember(m.member_id);
+            return (
+              <button
+                key={m.member_id}
+                type="button"
+                className="an-mem-row"
+                onClick={() => setSelected(m)}
+              >
+                <div className="an-av-wrap">
+                  <div
+                    className="an-av bot"
+                    style={{ background: color }}
+                  >
+                    {initialsFor(label)}
+                  </div>
+                </div>
+                <div className="an-r-main">
+                  <div className="an-r-name">
+                    {label}
+                    <span className="an-tag-pill">Bot</span>
+                  </div>
+                  {m.username && m.username !== label && (
+                    <div className="an-r-sub">@{m.username}</div>
+                  )}
+                </div>
+                <span className="an-chev" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+            );
+          })}
+        </>
+      )}
+      {users.length > 0 && (
+        <>
+          <div className="an-mem-group">
+            <span>People · 成员</span>
+            <span className="an-ct">{users.length}</span>
+          </div>
+          {users.map((m) => {
+            const label = m.display_name || m.username || "用户";
+            const color = colorForMember(m.member_id);
+            return (
+              <button
+                key={m.member_id}
+                type="button"
+                className="an-mem-row"
+                onClick={() => setSelected(m)}
+              >
+                <div className="an-av-wrap">
+                  <div
+                    className="an-av"
+                    style={{ background: color, borderRadius: 999 }}
+                  >
+                    {initialsFor(label)}
+                  </div>
+                </div>
+                <div className="an-r-main">
+                  <div className="an-r-name">{label}</div>
+                  {m.username && m.username !== label && (
+                    <div className="an-r-sub">@{m.username}</div>
+                  )}
+                </div>
+                <span className="an-chev" aria-hidden="true">
+                  ›
+                </span>
+              </button>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Project view — design's PROJECT tab rendered as a journey diagram.
+// Anchor node with progress ring, legend, a vertical river of decision /
+// progress nodes (chronological), and a dashed end-node with the goal state.
+// ═════════════════════════════════════════════════════════════════════════════
+
+function ProjectView({
+  anchors,
+  progress,
+  decisions,
+  loading,
+}: {
+  anchors: MemoryEntryItem[];
+  progress: MemoryEntryItem[];
+  decisions: MemoryEntryItem[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div
+        className="flex items-center justify-center h-20 text-xs"
+        style={{ color: "var(--fg-3)" }}
+      >
+        加载中…
+      </div>
+    );
+  }
+
+  const doneRe = /done|完成|已做|shipped|merged|resolved|批准|approved/i;
+  const isDone = (e: MemoryEntryItem) =>
+    doneRe.test(e.content + " " + (e.title || ""));
+  const progressDone = progress.filter(isDone).length;
+  const progressPending = progress.length - progressDone;
+  const totalSteps = progress.length + decisions.length;
+  const completed = progressDone + decisions.length;
+  const pct = totalSteps === 0 ? 0 : Math.round((completed / totalSteps) * 100);
+
+  // Chronological river combining progress + decisions (oldest first).
+  const tsOf = (e: MemoryEntryItem) => e.updated_at || e.created_at || "";
+  const river = [
+    ...progress.map((e) => ({
+      item: e,
+      kind: isDone(e) ? "progress" : "progress-pending",
+      ts: tsOf(e),
+    })),
+    ...decisions.map((e) => ({
+      item: e,
+      kind: "decision",
+      ts: tsOf(e),
+    })),
+  ].sort((a, b) => (a.ts < b.ts ? -1 : 1));
+
+  const [primaryAnchor, ...restAnchors] = anchors;
+  const empty =
+    anchors.length === 0 && progress.length === 0 && decisions.length === 0;
+
+  // Progress ring geometry
+  const R = 22;
+  const C = 2 * Math.PI * R;
+  const off = C * (1 - pct / 100);
+
+  if (empty) {
+    return (
+      <div className="px-3 py-3">
+        <div
+          className="text-center py-10 text-xs"
+          style={{ color: "var(--fg-3)" }}
+        >
+          暂无项目锚点与进度。
+          <br />
+          在独立页面添加 Anchor / Progress 后会显示在这里。
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-3 py-3">
+      <div className="an-journey">
+        {primaryAnchor && (
+          <div className="an-anchor-node">
+            <div className="an-ring">
+              <svg viewBox="0 0 52 52">
+                <circle className="an-ring-track" cx="26" cy="26" r={R} />
+                <circle
+                  className="an-ring-fill"
+                  cx="26"
+                  cy="26"
+                  r={R}
+                  strokeDasharray={C}
+                  strokeDashoffset={off}
+                />
+              </svg>
+              <div className="an-ring-pct">{pct}%</div>
+            </div>
+            <div className="an-info">
+              <div className="an-tg">Anchor</div>
+              {primaryAnchor.title && (
+                <div
+                  className="an-tx"
+                  style={{ fontWeight: 600, marginBottom: 2 }}
+                >
+                  {primaryAnchor.title}
+                </div>
+              )}
+              <div className="an-tx">
+                <MessageMarkdown text={primaryAnchor.content} />
+              </div>
+              <div className="an-mt">
+                {completed} / {totalSteps} 步
+                {primaryAnchor.updated_at && (
+                  <> · {new Date(primaryAnchor.updated_at).toLocaleString()}</>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {restAnchors.length > 0 && (
+          <div style={{ marginTop: 8, paddingLeft: 2 }}>
+            {restAnchors.map((a) => (
+              <div
+                key={a.entry_id}
+                style={{
+                  fontSize: 11.5,
+                  color: "var(--fg-2)",
+                  padding: "4px 0",
+                  display: "flex",
+                  gap: 6,
+                  alignItems: "baseline",
+                }}
+              >
+                <span
+                  style={{
+                    width: 4,
+                    height: 4,
+                    borderRadius: "50%",
+                    background: "var(--accent)",
+                    display: "inline-block",
+                    marginRight: 4,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ flex: 1 }}>{a.title || a.content}</span>
+                {a.updated_at && (
+                  <span style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
+                    {new Date(a.updated_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="an-legend">
+          <span className="an-lg decision">
+            <span className="an-sq" />
+            Decision
+          </span>
+          <span className="an-lg progress">
+            <span className="an-sq" />
+            Progress
+          </span>
+          <span className="an-lg todo">
+            <span className="an-sq" />
+            Pending
+          </span>
+        </div>
+
+        {river.length > 0 && (
+          <>
+            <div className="an-sh first">Path so far</div>
+            <div className="an-river">
+              {river.map(({ item, kind }) => {
+                const isPending = kind === "progress-pending";
+                const rowCls = isPending
+                  ? "an-riv todo"
+                  : kind === "decision"
+                    ? "an-riv decision"
+                    : "an-riv progress";
+                const kindLabel =
+                  kind === "decision"
+                    ? "Decision"
+                    : isPending
+                      ? "In progress"
+                      : "Progress";
+                return (
+                  <div key={item.entry_id} className={rowCls}>
+                    <span className="an-marker" />
+                    <div className="an-card">
+                      <div className="an-kind">{kindLabel}</div>
+                      {item.title && (
+                        <div
+                          className="an-tx"
+                          style={{ fontWeight: 600, marginBottom: 2 }}
+                        >
+                          {item.title}
+                        </div>
+                      )}
+                      <div className="an-tx">
+                        <MessageMarkdown text={item.content} />
+                      </div>
+                      {item.updated_at && (
+                        <div className="an-mt">
+                          {new Date(item.updated_at).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        <div className="an-end-node">
+          <div className="an-cir" />
+          <div className="an-tx">
+            <b>Goal state.</b>{" "}
+            {progressPending === 0 && totalSteps > 0
+              ? "All known steps complete."
+              : progressPending > 0
+                ? `${progressPending} step${progressPending === 1 ? "" : "s"} in progress toward anchor.`
+                : "Waiting on first progress entry."}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

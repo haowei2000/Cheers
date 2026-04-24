@@ -127,7 +127,16 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  // memoryTab drives the 4-tab cluster in the channel header + the drawer.
+  //   null          — drawer closed
+  //   "PROJECT"     — anchors + progress + decisions (design's Project view)
+  //   "FILES_INDEX" — channel files
+  //   "MEMBERS"     — members list
+  //   "TODO"        — todos
+  const [memoryTab, setMemoryTab] = useState<
+    "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO" | null
+  >(null);
+  const memoryPanelOpen = memoryTab !== null;
   const [memoryPageOpen, setMemoryPageOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
@@ -1828,8 +1837,8 @@ export default function App() {
                     setSummaryPreview("");
                     setSummaryModalOpen(true);
                   }}
-                  memoryPanelOpen={memoryPanelOpen}
-                  onToggleMemoryPanel={() => setMemoryPanelOpen((o) => !o)}
+                  memoryTab={memoryTab}
+                  onSetMemoryTab={setMemoryTab}
                   onOpenManageMembers={() => setManageMembersOpen(true)}
                   currentUser={currentUser}
                   onOpenChannelProfile={() => setChannelProfileOpen(true)}
@@ -2879,14 +2888,6 @@ export default function App() {
                                         <span className="text-[11px] text-gray-400">
                                           {rTime}
                                         </span>
-                                        {rParentLabel && (
-                                          <span className="text-[11px] text-gray-400">
-                                            ↩{" "}
-                                            <span className="font-medium text-gray-500">
-                                              {rParentLabel}
-                                            </span>
-                                          </span>
-                                        )}
                                         {rCollapsed && (
                                           <span className="text-[11px] text-gray-400 truncate max-w-[120px]">
                                             {rPreview}
@@ -2922,6 +2923,48 @@ export default function App() {
                                           </svg>
                                         </button>
                                       </div>
+                                      {!rCollapsed && rDirectParent && rParentLabel && (
+                                        <button
+                                          type="button"
+                                          className="an-reply-quote"
+                                          onClick={() => {
+                                            const el = document.getElementById(
+                                              `msg-${rDirectParent.msg_id}`,
+                                            );
+                                            if (!el) return;
+                                            el.scrollIntoView({
+                                              block: "center",
+                                              behavior: "smooth",
+                                            });
+                                            const origT = el.style.transition;
+                                            const prevBg = el.style.background;
+                                            el.style.transition =
+                                              "background 200ms";
+                                            el.style.background =
+                                              "var(--accent-muted)";
+                                            setTimeout(() => {
+                                              el.style.background = prevBg;
+                                              el.style.transition = origT;
+                                            }, 1200);
+                                          }}
+                                          title="跳转到被回复的消息"
+                                        >
+                                          <span className="an-rq-arrow">↪</span>
+                                          <span className="an-rq-name">
+                                            {rParentLabel}
+                                          </span>
+                                          <span className="an-rq-snip">
+                                            {(
+                                              rDirectParent.content || ""
+                                            )
+                                              .replace(/<think>[\s\S]*?<\/think>/g, "")
+                                              .replace(/\s+/g, " ")
+                                              .trim()
+                                              .slice(0, 80) ||
+                                              "(无内容)"}
+                                          </span>
+                                        </button>
+                                      )}
                                       {!rCollapsed && (
                                         <>
                                           {renderFileAttachments(r)}
@@ -3243,64 +3286,73 @@ export default function App() {
                     </div>
                   )}
                   <div className="relative">
-                    <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm focus-within:border-gray-400 focus-within:shadow-md transition-all">
-                      <div>
-                        <textarea
-                          ref={inputRef}
-                          value={input}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            const pos = e.target.selectionStart ?? v.length;
-                            setInput(v);
-                            if (!secretMode) {
-                              const lastAt = v.lastIndexOf("@", pos - 1);
-                              if (lastAt !== -1) {
-                                const after = v.slice(lastAt + 1, pos);
+                    <div className="an-composer overflow-hidden">
+                      <textarea
+                        ref={inputRef}
+                        value={input}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          const pos = e.target.selectionStart ?? v.length;
+                          setInput(v);
+                          if (!secretMode) {
+                            const lastAt = v.lastIndexOf("@", pos - 1);
+                            if (lastAt !== -1) {
+                              const after = v.slice(lastAt + 1, pos);
+                              if (
+                                !after.includes(" ") &&
+                                !after.includes("\n")
+                              ) {
+                                const rect = e.target.getBoundingClientRect();
+                                const spaceBelow =
+                                  window.innerHeight - rect.bottom;
+                                const spaceAbove = rect.top;
                                 if (
-                                  !after.includes(" ") &&
-                                  !after.includes("\n")
+                                  spaceBelow < 180 &&
+                                  spaceAbove > spaceBelow
                                 ) {
-                                  const rect = e.target.getBoundingClientRect();
-                                  const spaceBelow =
-                                    window.innerHeight - rect.bottom;
-                                  const spaceAbove = rect.top;
-                                  if (
-                                    spaceBelow < 180 &&
-                                    spaceAbove > spaceBelow
-                                  ) {
-                                    setMentionDropdownPlacement("top");
-                                  } else {
-                                    setMentionDropdownPlacement("bottom");
-                                  }
-                                  setShowMentionDropdown(true);
-                                  setMentionFilter(after);
-                                  return;
+                                  setMentionDropdownPlacement("top");
+                                } else {
+                                  setMentionDropdownPlacement("bottom");
                                 }
+                                setShowMentionDropdown(true);
+                                setMentionFilter(after);
+                                return;
                               }
                             }
+                          }
+                          setShowMentionDropdown(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (showMentionDropdown && e.key === "Escape") {
                             setShowMentionDropdown(false);
-                          }}
-                          onKeyDown={(e) => {
-                            if (showMentionDropdown && e.key === "Escape") {
-                              setShowMentionDropdown(false);
-                              return;
-                            }
-                            if (e.key === "Enter" && e.ctrlKey) {
-                              e.preventDefault();
+                            return;
+                          }
+                          // Enter sends · Shift+Enter inserts newline
+                          if (
+                            e.key === "Enter" &&
+                            !e.shiftKey &&
+                            !e.nativeEvent.isComposing &&
+                            !showMentionDropdown
+                          ) {
+                            e.preventDefault();
+                            if (input.trim() || pendingFileIds.length > 0) {
                               send();
                             }
-                          }}
-                          placeholder={
-                            secretMode
-                              ? "输入加密内容（仅 Bot 可读取原文）…"
-                              : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
                           }
-                          className={`w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] placeholder-gray-400 bg-transparent ${secretMode ? "text-amber-700" : "text-gray-900"}`}
-                          rows={1}
-                        />
-                      </div>
+                        }}
+                        placeholder={
+                          secretMode
+                            ? "输入加密内容（仅 Bot 可读取原文）…"
+                            : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
+                        }
+                        className="an-composer-textarea"
+                        style={
+                          secretMode ? { color: "var(--orange)" } : undefined
+                        }
+                        rows={1}
+                      />
                       {/* Input toolbar */}
-                      <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
+                      <div className="an-composer-bar">
                         <div className="flex items-center gap-0.5">
                           {/* 上传文件和图片菜单 */}
                           <input
@@ -3424,43 +3476,44 @@ export default function App() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSecretMode((v) => !v)}
-                            title={
-                              secretMode
-                                ? "取消加密模式"
-                                : "开启加密模式（仅 Bot 可读原文）"
-                            }
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg text-base transition-colors ${
-                              secretMode
-                                ? "bg-amber-100 text-amber-600 hover:bg-amber-200"
-                                : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                            }`}
-                          >
-                            🔒
-                          </button>
-                          <span className="text-[12px] text-gray-400 hidden sm:inline select-none">
-                            Ctrl+Enter
-                          </span>
-                          <button
-                            type="button"
-                            onClick={send}
-                            className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${
-                              input.trim() || pendingFileIds.length > 0
-                                ? secretMode
-                                  ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm"
-                                  : "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
-                                : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                            }`}
-                            disabled={
-                              !input.trim() && pendingFileIds.length === 0
-                            }
-                          >
-                            {secretMode ? "加密发送" : "发送"}
-                          </button>
-                        </div>
+                        <span className="an-composer-hint hidden sm:inline-flex">
+                          <kbd>@</kbd> 提及
+                          <span style={{ opacity: 0.5 }}>·</span>
+                          <kbd>↵</kbd> 发送
+                          <span style={{ opacity: 0.5 }}>·</span>
+                          <kbd>⇧↵</kbd> 换行
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSecretMode((v) => !v)}
+                          title={
+                            secretMode
+                              ? "取消加密模式"
+                              : "开启加密模式（仅 Bot 可读原文）"
+                          }
+                          style={
+                            secretMode
+                              ? { color: "var(--orange)", background: "var(--orange-muted)" }
+                              : undefined
+                          }
+                        >
+                          🔒
+                        </button>
+                        <button
+                          type="button"
+                          onClick={send}
+                          className="an-composer-send"
+                          disabled={
+                            !input.trim() && pendingFileIds.length === 0
+                          }
+                          style={
+                            secretMode && (input.trim() || pendingFileIds.length > 0)
+                              ? { background: "var(--orange)" }
+                              : undefined
+                          }
+                        >
+                          {secretMode ? "加密发送" : "发送"}
+                        </button>
                       </div>
                     </div>
                     {showMentionDropdown &&
@@ -3674,10 +3727,16 @@ export default function App() {
                 channelId={selectedId}
                 channelName={selectedChannel?.name ?? ""}
                 contextData={contextData}
-                onClose={() => setMemoryPanelOpen(false)}
+                activeLayer={memoryTab ?? undefined}
+                onLayerChange={(l) =>
+                  setMemoryTab(
+                    l as "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO",
+                  )
+                }
+                onClose={() => setMemoryTab(null)}
                 onExpand={() => {
                   setMemoryPageOpen(true);
-                  setMemoryPanelOpen(false);
+                  setMemoryTab(null);
                 }}
               />
             </div>
