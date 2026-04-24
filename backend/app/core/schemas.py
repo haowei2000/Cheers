@@ -252,6 +252,22 @@ class AnnouncementContentData(BaseModel):
     pinned_by: str | None = None  # user_id of whoever pinned it (display-only)
 
 
+class RoutingPick(BaseModel):
+    """Coordinator 给出的一个候选 agent 以及评分/理由。"""
+    agent: str                    # bot username
+    score: str | None = None      # freeform: "0.92" / "high" / 等
+    why: str | None = None
+    picked: bool | None = None    # True 表示最终选中
+    secondary: bool | None = None  # True 表示作为次要候选
+
+
+class RoutingContentData(BaseModel):
+    """路由卡片的结构化数据。由 coordinator 在派发任务时产出。"""
+    q: str | None = None          # 被路由的请求（通常是用户的原始消息摘要）
+    picks: list[RoutingPick] = Field(default_factory=list)
+    plan: str | None = None       # 一句话的执行计划
+
+
 # ==================== Message Create Schemas (discriminated union) ====================
 
 class _MessageCreateBase(BaseModel):
@@ -289,7 +305,13 @@ class AnnouncementMessageCreate(_MessageCreateBase):
     content_data: AnnouncementContentData | None = None
 
 
-# 统一入口：兼容旧客户端（不含 msg_type 时按 in_reply_to_msg_id 自动推断）
+class RoutingMessageCreate(_MessageCreateBase):
+    """路由卡片：coordinator 将请求派发给其他 agents 时的结构化说明。"""
+    msg_type: Literal["routing"] = "routing"
+    content_data: RoutingContentData | None = None
+
+
+# 统一入口：兼容旧客户端（不含 msg_type 时含 in_reply_to_msg_id 自动推断）
 class MessageCreate(BaseModel):
     """发送消息（兼容入口，自动推断 msg_type）。"""
     content: str
@@ -311,7 +333,7 @@ class MessageCreate(BaseModel):
 
 # Discriminated union（供新客户端使用）
 AnyMessageCreate = Annotated[
-    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate | AnnouncementMessageCreate,
+    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate | AnnouncementMessageCreate | RoutingMessageCreate,
     Field(discriminator="msg_type"),
 ]
 
@@ -368,8 +390,13 @@ class AnnouncementMessageInResponse(_MessageResponseBase):
     msg_type: Literal["announcement"] = "announcement"
 
 
+class RoutingMessageInResponse(_MessageResponseBase):
+    """路由卡片响应。content_data 包含 { q?, picks: [...], plan? }。"""
+    msg_type: Literal["routing"] = "routing"
+
+
 AnyMessageInResponse = Annotated[
-    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse | AnnouncementMessageInResponse,
+    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse | AnnouncementMessageInResponse | RoutingMessageInResponse,
     Field(discriminator="msg_type"),
 ]
 

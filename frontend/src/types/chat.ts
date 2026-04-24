@@ -28,7 +28,7 @@ export type Message = {
   created_at?: string;
   _streaming?: boolean;
   in_reply_to_msg_id?: string | null;
-  msg_type?: "normal" | "thread" | "reply" | "announcement";
+  msg_type?: "normal" | "thread" | "reply" | "announcement" | "routing";
   content_data?: Record<string, unknown> | null;
   file_ids?: string[];
   files?: FileInfo[];

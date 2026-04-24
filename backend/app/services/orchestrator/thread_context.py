@@ -15,6 +15,7 @@ MSG_TYPE_NORMAL = "normal"
 MSG_TYPE_REPLY = "reply"
 MSG_TYPE_THREAD = "thread"
 MSG_TYPE_ANNOUNCEMENT = "announcement"
+MSG_TYPE_ROUTING = "routing"
 
 _MAX_DEPTH = 10
 _MAX_CHILDREN = 20

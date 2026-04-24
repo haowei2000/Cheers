@@ -1932,6 +1932,125 @@ export default function App() {
                           </div>
                         )}
                       {threadRoots.map((m) => {
+                        // ── routing card: coordinator picks + plan ──────────
+                        if (m.msg_type === "routing") {
+                          const cd = (m.content_data ?? {}) as Record<
+                            string,
+                            unknown
+                          >;
+                          const q = typeof cd.q === "string" ? cd.q : null;
+                          const plan =
+                            typeof cd.plan === "string" ? cd.plan : null;
+                          const picksRaw = Array.isArray(cd.picks)
+                            ? (cd.picks as Array<Record<string, unknown>>)
+                            : [];
+                          const picks = picksRaw.map((p) => ({
+                            agent:
+                              typeof p.agent === "string" ? p.agent : "agent",
+                            score:
+                              typeof p.score === "string" ? p.score : null,
+                            why: typeof p.why === "string" ? p.why : null,
+                            picked: p.picked === true,
+                            secondary: p.secondary === true,
+                          }));
+                          const coordBot = channelBots.find(
+                            (b) =>
+                              b.username === "channel bot" ||
+                              b.username === "coordinator",
+                          );
+                          const rTime = m.created_at
+                            ? formatTs(m.created_at)
+                            : "";
+                          return (
+                            <div
+                              key={m.msg_id}
+                              id={`msg-${m.msg_id}`}
+                              className="px-4 pt-2"
+                            >
+                              <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+                                <span className="text-[13px] font-semibold text-gray-900">
+                                  {coordBot?.display_name ||
+                                    coordBot?.username ||
+                                    "Coordinator"}
+                                </span>
+                                <span
+                                  className="an-tag coord"
+                                  style={{
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    letterSpacing: "0.6px",
+                                    padding: "1px 5px",
+                                    borderRadius: 3,
+                                    background: "var(--accent-muted)",
+                                    color: "var(--accent)",
+                                  }}
+                                >
+                                  COORDINATOR
+                                </span>
+                                {rTime && (
+                                  <span className="text-[11px] text-gray-400">
+                                    {rTime}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="an-routing">
+                                {q && (
+                                  <div className="an-rq">
+                                    路由: <b>{q}</b>
+                                  </div>
+                                )}
+                                {picks.length > 0 && (
+                                  <div className="an-picks">
+                                    {picks.map((p) => {
+                                      const bot = channelBots.find(
+                                        (b) => b.username === p.agent,
+                                      );
+                                      const color =
+                                        bot?.avatar_url ?? null;
+                                      return (
+                                        <span
+                                          key={p.agent}
+                                          className={
+                                            "an-pick" +
+                                            (p.picked ? " picked" : "")
+                                          }
+                                          title={p.why || undefined}
+                                        >
+                                          <span
+                                            className="an-dot"
+                                            style={{
+                                              background: color
+                                                ? "var(--accent)"
+                                                : "var(--fg-3)",
+                                            }}
+                                          />
+                                          @{p.agent}
+                                          {p.score && (
+                                            <span
+                                              style={{
+                                                color: "var(--fg-3)",
+                                                marginLeft: 2,
+                                                fontSize: 11,
+                                              }}
+                                            >
+                                              {p.score}
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {plan && (
+                                  <div className="an-plan">
+                                    <b>计划:</b> {plan}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
                         // ── announcement card: pinned banner, no bubble ──────
                         if (m.msg_type === "announcement") {
                           const cd = (m.content_data ?? {}) as Record<
