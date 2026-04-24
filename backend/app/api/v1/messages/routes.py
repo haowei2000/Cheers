@@ -266,7 +266,11 @@ async def _handle_send_message(
         stored_content = body.content
         token = None
 
-    from app.services.orchestrator.thread_context import MSG_TYPE_NORMAL, MSG_TYPE_REPLY, promote_to_thread
+    from app.services.orchestrator.thread_context import (
+        MSG_TYPE_NORMAL,
+        MSG_TYPE_REPLY,
+        ensure_thread_root,
+    )
 
     in_reply_to = getattr(body, "in_reply_to_msg_id", None) or None
     msg_type = getattr(body, "msg_type", None) or (MSG_TYPE_REPLY if in_reply_to else MSG_TYPE_NORMAL)
@@ -291,13 +295,13 @@ async def _handle_send_message(
     session.add(msg)
     await session.flush()
 
+    # The after_insert listener already flipped the parent row in DB; do an
+    # explicit in-memory promote on the loaded instance (if any) so any
+    # subsequent code in this request that reads parent.msg_type sees the
+    # updated value without a refresh.
     if in_reply_to:
-        from sqlalchemy import select as _sel2
-        parent_r = await session.execute(_sel2(Message).where(Message.msg_id == in_reply_to))
-        parent = parent_r.scalar_one_or_none()
-        if parent:
-            promote_to_thread(parent)
-            await session.flush()
+        await ensure_thread_root(session, in_reply_to)
+        await session.flush()
 
     # Build file_map for response
     fids = sorted({fid for fid in (msg.file_ids or []) if fid})

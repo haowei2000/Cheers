@@ -1,10 +1,23 @@
-"""消息线程上下文收集器：根据 in_reply_to_msg_id 构建回复链。"""
+"""消息线程相关工具。
+
+职责拆分：
+- promote_to_thread(msg)：在已加载到 session 里的 Message 上翻 msg_type
+  字段，最轻量的形式。调用者必须持有 Message 对象且在同一 session。
+- ensure_thread_root(session, msg_id)：仅有 id 时使用。自己 fetch 父消息并
+  翻字段。幂等，找不到父消息时安静返回。
+- install_auto_promote_listener(): 注册一次，之后任何新 Message 只要带着
+  in_reply_to_msg_id 写入库，父消息就会被自动升级。这是防御性兜底，
+  让未来新增的写消息路径不必再显式调用 promote_to_thread。
+
+gather_thread_context() 继续只消费 msg_type，不关心谁翻的字段。
+"""
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, Message, User
@@ -18,13 +31,85 @@ MSG_TYPE_ANNOUNCEMENT = "announcement"
 MSG_TYPE_ROUTING = "routing"
 MSG_TYPE_PERMISSION = "permission"
 
+# msg_type 值中可以成为 thread 根的集合——非这些的 kind（如 routing / permission /
+# announcement）即便带了 in_reply_to_msg_id 也不应被提升为 thread。实际使用中
+# 这些类型都不会设置 in_reply_to_msg_id，但显式列出作为文档。
+_PROMOTABLE_PARENT_KINDS = {MSG_TYPE_NORMAL, MSG_TYPE_REPLY, MSG_TYPE_THREAD}
+
 _MAX_DEPTH = 10
 _MAX_CHILDREN = 20
 
 
 def promote_to_thread(msg: Message) -> None:
+    """In-memory flip: mark `msg` as the root of a thread.
+
+    Idempotent. Callers who already hold the parent Message in their session
+    should prefer this over ensure_thread_root because it avoids an extra
+    round-trip to the database.
+    """
     if msg.msg_type != MSG_TYPE_THREAD:
         msg.msg_type = MSG_TYPE_THREAD
+
+
+async def ensure_thread_root(
+    session: AsyncSession, parent_msg_id: str | None,
+) -> Message | None:
+    """Given a parent message id (typically from `child.in_reply_to_msg_id`),
+    fetch the parent and flip its msg_type to THREAD.
+
+    Returns the parent Message if it existed. Silent on missing parent so a
+    stale reply doesn't explode. Caller is responsible for the subsequent
+    flush/commit — this keeps the helper composable inside larger
+    transactions.
+    """
+    if not parent_msg_id:
+        return None
+    parent = await session.get(Message, parent_msg_id)
+    if parent is None:
+        return None
+    promote_to_thread(parent)
+    return parent
+
+
+def _auto_promote_parent(_mapper, connection: Connection, target: Message) -> None:
+    """SQLAlchemy after_insert hook: when a Message lands with
+    in_reply_to_msg_id, make sure the parent's row is flipped to THREAD.
+
+    Runs as a raw UPDATE on the given connection so it participates in the
+    same transaction. Bypasses any ORM-level object state, which means
+    in-memory Message instances with the old msg_type won't see the change
+    until they are refreshed — callers that care about the in-memory view
+    should still call promote_to_thread on the loaded parent explicitly.
+    """
+    parent_id = target.in_reply_to_msg_id
+    if not parent_id:
+        return
+    tbl = Message.__table__
+    connection.execute(
+        tbl.update()
+        .where(tbl.c.msg_id == parent_id)
+        .where(tbl.c.msg_type.in_(tuple(_PROMOTABLE_PARENT_KINDS)))
+        .values(msg_type=MSG_TYPE_THREAD),
+    )
+
+
+_listener_installed = False
+
+
+def install_auto_promote_listener() -> None:
+    """Register the after_insert listener once. Idempotent; safe to call at
+    module import or from app startup. Intentionally module-level (not
+    attached to a specific engine) so it applies to any future session."""
+    global _listener_installed
+    if _listener_installed:
+        return
+    event.listen(Message, "after_insert", _auto_promote_parent)
+    _listener_installed = True
+
+
+# Install on import — the listener is a no-op for messages without
+# in_reply_to_msg_id, so there's no cost to having it always on.
+install_auto_promote_listener()
 
 
 async def _batch_sender_names(msgs: list[Message], session: AsyncSession) -> dict[str, str]:
