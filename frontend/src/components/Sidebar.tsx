@@ -169,7 +169,11 @@ export function Sidebar({
     }
     setSearchBusy(true);
     const timer = setTimeout(() => {
-      apiFetch(`search?q=${encodeURIComponent(q)}&limit=5`, {
+      const params = new URLSearchParams({ q, limit: "5" });
+      // When a workspace is active, restrict channel + message hits to it.
+      // Users and bots stay global since DMs cross workspaces.
+      if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
+      apiFetch(`search?${params.toString()}`, {
         token: authToken ?? undefined,
       })
         .then((r) => r.json())
@@ -180,7 +184,7 @@ export function Sidebar({
         .finally(() => setSearchBusy(false));
     }, 150);
     return () => clearTimeout(timer);
-  }, [searchQ, authToken]);
+  }, [searchQ, authToken, selectedWorkspaceId]);
 
   const dmWorkspaceId = useMemo(
     () => selectedWorkspaceId || workspaces[0]?.workspace_id || "",

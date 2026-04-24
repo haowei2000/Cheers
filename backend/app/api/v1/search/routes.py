@@ -31,6 +31,10 @@ router = APIRouter(prefix="/search", tags=["search"])
 async def global_search(
     q: str = Query("", description="query, 1+ chars; empty → no hits"),
     limit: int = Query(5, ge=1, le=20),
+    workspace_id: str | None = Query(
+        None,
+        description="restrict channel + message hits to this workspace; users and bots stay global",
+    ),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
@@ -41,22 +45,24 @@ async def global_search(
         )
 
     pattern = f"%{q}%"
+    ws_scope: str | None = (workspace_id or "").strip() or None
 
     # — Channels — only those the caller is a member of, excluding DMs
     # (DMs surface through user/bot hits instead).
-    ch_rows = (
-        await session.execute(
-            select(Channel)
-            .join(ChannelMembership, ChannelMembership.channel_id == Channel.channel_id)
-            .where(
-                ChannelMembership.member_id == current_user.user_id,
-                ChannelMembership.member_type == "user",
-                Channel.type != "dm",
-                Channel.name.ilike(pattern),
-            )
-            .order_by(Channel.created_at.desc())
-            .limit(limit)
+    ch_query = (
+        select(Channel)
+        .join(ChannelMembership, ChannelMembership.channel_id == Channel.channel_id)
+        .where(
+            ChannelMembership.member_id == current_user.user_id,
+            ChannelMembership.member_type == "user",
+            Channel.type != "dm",
+            Channel.name.ilike(pattern),
         )
+    )
+    if ws_scope:
+        ch_query = ch_query.where(Channel.workspace_id == ws_scope)
+    ch_rows = (
+        await session.execute(ch_query.order_by(Channel.created_at.desc()).limit(limit))
     ).scalars().all()
 
     # — Users — exclude the caller themselves.
@@ -93,22 +99,25 @@ async def global_search(
     # — Messages — content ILIKE %q%, restricted to channels the caller is a
     # member of. Skip secret / placeholder-encrypted messages so the search
     # result doesn't leak "this secret mentions …" noise.
-    msg_rows = (
-        await session.execute(
-            select(Message)
-            .join(
-                ChannelMembership,
-                ChannelMembership.channel_id == Message.channel_id,
-            )
-            .where(
-                ChannelMembership.member_id == current_user.user_id,
-                ChannelMembership.member_type == "user",
-                Message.content.ilike(pattern),
-                Message.is_secret == False,  # noqa: E712 — SQLAlchemy comparison
-            )
-            .order_by(Message.created_at.desc())
-            .limit(limit)
+    msg_query = (
+        select(Message)
+        .join(
+            ChannelMembership,
+            ChannelMembership.channel_id == Message.channel_id,
         )
+        .where(
+            ChannelMembership.member_id == current_user.user_id,
+            ChannelMembership.member_type == "user",
+            Message.content.ilike(pattern),
+            Message.is_secret == False,  # noqa: E712 — SQLAlchemy comparison
+        )
+    )
+    if ws_scope:
+        msg_query = msg_query.join(
+            Channel, Channel.channel_id == Message.channel_id
+        ).where(Channel.workspace_id == ws_scope)
+    msg_rows = (
+        await session.execute(msg_query.order_by(Message.created_at.desc()).limit(limit))
     ).scalars().all()
 
     # Resolve channel names + sender labels for the hit cards.
