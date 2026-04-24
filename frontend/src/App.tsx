@@ -47,6 +47,7 @@ import {
   isMsgReply,
   parseQuotePrefix,
   formatTs,
+  formatDayLabel,
   THREAD_DISPLAY_THRESHOLD,
 } from "./lib/message";
 import {
@@ -2290,7 +2291,8 @@ export default function App() {
                             </div>
                           </div>
                         )}
-                      {threadRoots.map((m) => {
+                      {(() => {
+                      const renderedRows = threadRoots.map((m) => {
                         // ── routing card: coordinator picks + plan ──────────
                         if (m.msg_type === "routing") {
                           const cd = (m.content_data ?? {}) as Record<
@@ -3919,7 +3921,31 @@ export default function App() {
                             </div>
                           </div>
                         );
-                      })}
+                      });
+                      // Intersperse day dividers between message groups based
+                      // on their created_at calendar day. Purely presentational
+                      // — runs outside the big map callback so none of the
+                      // existing branch logic has to change.
+                      const out: React.ReactNode[] = [];
+                      let lastDay = "";
+                      for (let i = 0; i < threadRoots.length; i++) {
+                        const m = threadRoots[i];
+                        const day = formatDayLabel(m.created_at);
+                        if (day && day !== lastDay) {
+                          out.push(
+                            <div
+                              key={`day-${i}-${day}`}
+                              className="an-day-divider"
+                            >
+                              <span>{day}</span>
+                            </div>,
+                          );
+                          lastDay = day;
+                        }
+                        out.push(renderedRows[i]);
+                      }
+                      return out;
+                      })()}
                       {waitingForBotReply && <ThinkingIndicator />}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (

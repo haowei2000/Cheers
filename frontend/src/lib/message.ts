@@ -48,3 +48,27 @@ export function parseQuotePrefix(
 export function formatTs(ts?: string): string {
   return (ts || "").slice(0, 19);
 }
+
+/**
+ * Stable label for a day divider in the message stream:
+ * - "今天" for today
+ * - "昨天" for yesterday
+ * - "YYYY年M月D日" otherwise (local timezone)
+ *
+ * Returns "" for missing / unparseable timestamps so the caller can
+ * skip inserting a divider.
+ */
+export function formatDayLabel(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const startOf = (x: Date) =>
+    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const now = new Date();
+  const diffDays = Math.round(
+    (startOf(d) - startOf(now)) / 86_400_000,
+  );
+  if (diffDays === 0) return "今天";
+  if (diffDays === -1) return "昨天";
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
