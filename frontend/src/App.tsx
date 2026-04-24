@@ -46,9 +46,10 @@ import {
   downloadText,
 } from "./lib/qa";
 import { renderWithThinkFolding, stripThinkTags } from "./lib/think";
-import { refreshChannels, refreshWorkspaces } from "./lib/refresh";
+import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
 import type {
   Channel,
+  DM,
   Workspace,
   Message,
   QaPair,
@@ -115,6 +116,7 @@ export default function App() {
   }, []);
 
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [dms, setDMs] = useState<DM[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -351,6 +353,7 @@ export default function App() {
     setSelectedId(null);
     setSelectedWorkspaceId("");
     setChannels([]);
+    setDMs([]);
     setWorkspaces([]);
     setMessages([]);
     setHasMore(true);
@@ -457,6 +460,7 @@ export default function App() {
 
   useEffect(() => {
     refreshChannels(setChannels, authToken ?? undefined);
+    refreshDMs(setDMs, authToken ?? undefined);
     refreshWorkspaces(setWorkspaces, authToken ?? undefined);
   }, [authToken]);
 
@@ -754,6 +758,13 @@ export default function App() {
               c.channel_id === chId
                 ? { ...c, unread_count: (c.unread_count ?? 0) + 1 }
                 : c,
+            ),
+          );
+          setDMs((prev) =>
+            prev.map((d) =>
+              d.channel_id === chId
+                ? { ...d, unread_count: (d.unread_count ?? 0) + 1 }
+                : d,
             ),
           );
         } catch {
@@ -1327,8 +1338,28 @@ export default function App() {
     );
   };
 
-  const selectedChannel =
-    channels.find((c) => c.channel_id === selectedId) || null;
+  const selectedChannel: Channel | null = (() => {
+    const hit = channels.find((c) => c.channel_id === selectedId);
+    if (hit) return hit;
+    // DMs aren't in the channels[] list — synthesize a minimal Channel so
+    // downstream references to selectedChannel.name / .workspace_id work.
+    const dm = selectedId
+      ? dms.find((d) => d.channel_id === selectedId)
+      : undefined;
+    if (!dm) return null;
+    const label =
+      dm.counterparty.display_name ||
+      dm.counterparty.username ||
+      "DM";
+    return {
+      channel_id: dm.channel_id,
+      workspace_id: dm.workspace_id,
+      name: label,
+      type: "dm",
+      auto_assist: false,
+      unread_count: dm.unread_count ?? 0,
+    };
+  })();
   const blocks = buildLogicalQaBlocks(messages);
   const blockPairsForExport: QaPair[] = blocks.map((b) => {
     const lastBot = [...b.messages]
@@ -1411,6 +1442,15 @@ export default function App() {
       )
         ? prev.map((c) =>
             c.channel_id === selectedId ? { ...c, unread_count: 0 } : c,
+          )
+        : prev,
+    );
+    setDMs((prev) =>
+      prev.some(
+        (d) => d.channel_id === selectedId && (d.unread_count ?? 0) > 0,
+      )
+        ? prev.map((d) =>
+            d.channel_id === selectedId ? { ...d, unread_count: 0 } : d,
           )
         : prev,
     );
@@ -1568,6 +1608,7 @@ export default function App() {
           setSelectedWorkspaceId={setSelectedWorkspaceId}
           channels={channels}
           setChannels={setChannels}
+          dms={dms}
           selectedId={selectedId}
           setSelectedId={setSelectedId}
           setSidebarOpen={setSidebarOpen}
@@ -1913,6 +1954,11 @@ export default function App() {
                 <ChannelHeader
                   channel={selectedChannel}
                   selectedId={selectedId}
+                  activeDm={
+                    selectedId
+                      ? dms.find((d) => d.channel_id === selectedId) ?? null
+                      : null
+                  }
                   isMobile={isMobile}
                   onOpenSidebar={() => setSidebarOpen(true)}
                   autoAssist={autoAssist}

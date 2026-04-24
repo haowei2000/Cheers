@@ -1,0 +1,83 @@
+"""Direct-message v1 路由。
+
+DM 模型：type="dm" 的 Channel，仅两位成员（用户 + 用户 或 用户 + bot）。
+- GET  /api/v1/dms         — 列出当前用户所有 DM，并附带对方档案
+- POST /api/v1/dms         — 幂等：返回已存在的 DM 或新建一条
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.dependencies import get_current_user, get_session
+from app.core.responses import APIResponse
+from app.core.schemas import DMCounterparty, DMCreateRequest, DMInResponse
+from app.db.models import User
+from app.services.channel_service import ChannelService
+
+router = APIRouter(prefix="/dms", tags=["dms"])
+
+
+@router.get("", response_model=APIResponse[list[DMInResponse]])
+async def list_dms(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    rows = await svc.list_dms_with_counterparty(current_user)
+    unread = await svc.unread_counts_for(
+        current_user.user_id, [r["channel_id"] for r in rows]
+    )
+    out: list[DMInResponse] = []
+    for r in rows:
+        out.append(
+            DMInResponse(
+                channel_id=r["channel_id"],
+                workspace_id=r["workspace_id"],
+                counterparty=DMCounterparty(**r["counterparty"]),
+                unread_count=int(unread.get(r["channel_id"], 0)),
+            )
+        )
+    return APIResponse.ok(out)
+
+
+@router.post("", response_model=APIResponse[DMInResponse])
+async def upsert_dm(
+    body: DMCreateRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Return the DM channel with (workspace_id, member). Create on first call."""
+    svc = ChannelService(session)
+    ch = await svc.get_or_create_dm(
+        workspace_id=body.workspace_id,
+        current_user=current_user,
+        other_id=body.member_id,
+        other_type=body.member_type,
+    )
+    await session.commit()
+
+    # Refetch counterparty profile so the response matches GET /dms shape.
+    cp_rows = await svc.list_dms_with_counterparty(current_user)
+    cp_row = next((r for r in cp_rows if r["channel_id"] == ch.channel_id), None)
+    if not cp_row:
+        # Defensive — shouldn't happen since we just created/confirmed it.
+        return APIResponse.ok(
+            DMInResponse(
+                channel_id=ch.channel_id,
+                workspace_id=ch.workspace_id,
+                counterparty=DMCounterparty(
+                    member_id=body.member_id, member_type=body.member_type,
+                ),
+                unread_count=0,
+            )
+        )
+    unread = await svc.unread_counts_for(current_user.user_id, [ch.channel_id])
+    return APIResponse.ok(
+        DMInResponse(
+            channel_id=ch.channel_id,
+            workspace_id=ch.workspace_id,
+            counterparty=DMCounterparty(**cp_row["counterparty"]),
+            unread_count=int(unread.get(ch.channel_id, 0)),
+        )
+    )

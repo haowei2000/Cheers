@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Channel, CurrentUser, QaPair } from "../types";
+import type { Channel, CurrentUser, DM, QaPair } from "../types";
 import { apiFetch } from "../api";
 
 export type ThreadSummary = {
@@ -91,6 +91,9 @@ export const MEMORY_TABS: {
 interface ChannelHeaderProps {
   channel: Channel | undefined | null;
   selectedId: string | null;
+  /** When the active channel is a DM, this carries the counterparty info so
+   *  the header can render "@display_name" instead of the raw dm:uuid:uuid. */
+  activeDm?: DM | null;
   isMobile: boolean;
   onOpenSidebar: () => void;
 
@@ -117,6 +120,7 @@ interface ChannelHeaderProps {
 export function ChannelHeader({
   channel,
   selectedId,
+  activeDm,
   isMobile,
   onOpenSidebar,
   autoAssist,
@@ -177,8 +181,23 @@ export function ChannelHeader({
       {/* Title block */}
       <div className="min-w-0 flex-1 flex items-baseline gap-3">
         <h1 className="an-title truncate">
-          <span className="an-hash">#</span>
-          <span>{channel?.name || ""}</span>
+          {activeDm ? (
+            <>
+              <span className="an-hash">
+                {activeDm.counterparty.member_type === "bot" ? "⦿" : "@"}
+              </span>
+              <span>
+                {activeDm.counterparty.display_name ||
+                  activeDm.counterparty.username ||
+                  "DM"}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="an-hash">#</span>
+              <span>{channel?.name || ""}</span>
+            </>
+          )}
         </h1>
         {subtitle && (
           <span className="an-sub truncate hidden sm:inline">{subtitle}</span>

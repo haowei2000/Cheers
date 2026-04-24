@@ -7,6 +7,7 @@ from app.api.v1.bots.routes import router as bots_router
 from app.api.v1.bulletin.routes import router as bulletin_router
 from app.api.v1.channels.routes import router as channels_router
 from app.api.v1.context.routes import router as context_router
+from app.api.v1.dms.routes import router as dms_router
 from app.api.v1.files.routes import router as files_router
 from app.api.v1.friends.routes import router as friends_router
 from app.api.v1.image_gen.routes import router as image_gen_router
@@ -25,6 +26,7 @@ v1_router = APIRouter(prefix="/api/v1")
 
 v1_router.include_router(workspaces_router)
 v1_router.include_router(channels_router)
+v1_router.include_router(dms_router)
 v1_router.include_router(messages_router)
 v1_router.include_router(bots_router)
 v1_router.include_router(auth_router)

@@ -211,6 +211,30 @@ class ChannelInResponse(BaseModel):
     unread_count: int | None = None
 
 
+class DMCounterparty(BaseModel):
+    """DM 对方的最小档案。既可以是用户也可以是 bot。"""
+    member_id: str
+    member_type: str  # "user" | "bot"
+    username: str | None = None
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
+class DMInResponse(BaseModel):
+    """一条 Direct Message 在列表里展示所需的字段。"""
+    channel_id: str
+    workspace_id: str
+    counterparty: DMCounterparty
+    unread_count: int | None = None
+
+
+class DMCreateRequest(BaseModel):
+    """POST /api/v1/dms 请求体：在某 workspace 内与对方开启/复用 DM。"""
+    workspace_id: str
+    member_id: str
+    member_type: str  # "user" | "bot"
+
+
 class MemberAdd(BaseModel):
     """添加成员."""
     member_id: str

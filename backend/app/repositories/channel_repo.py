@@ -17,20 +17,26 @@ class ChannelRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_for_user(self, user_id: str) -> list[Channel]:
-        result = await self.session.execute(
+    async def list_for_user(
+        self, user_id: str, include_dms: bool = True
+    ) -> list[Channel]:
+        q = (
             select(Channel)
             .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
             .where(
                 ChannelMembership.member_id == user_id,
                 ChannelMembership.member_type == "user",
             )
-            .order_by(Channel.created_at)
         )
-        return list(result.scalars().all())
+        if not include_dms:
+            q = q.where(Channel.type != "dm")
+        q = q.order_by(Channel.created_at)
+        return list((await self.session.execute(q)).scalars().all())
 
-    async def list_for_user_in_workspace(self, workspace_id: str, user_id: str) -> list[Channel]:
-        result = await self.session.execute(
+    async def list_for_user_in_workspace(
+        self, workspace_id: str, user_id: str, include_dms: bool = True
+    ) -> list[Channel]:
+        q = (
             select(Channel)
             .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
             .where(
@@ -38,9 +44,24 @@ class ChannelRepository:
                 ChannelMembership.member_id == user_id,
                 ChannelMembership.member_type == "user",
             )
+        )
+        if not include_dms:
+            q = q.where(Channel.type != "dm")
+        q = q.order_by(Channel.created_at)
+        return list((await self.session.execute(q)).scalars().all())
+
+    async def list_dms_for_user(self, user_id: str) -> list[Channel]:
+        q = (
+            select(Channel)
+            .join(ChannelMembership, Channel.channel_id == ChannelMembership.channel_id)
+            .where(
+                ChannelMembership.member_id == user_id,
+                ChannelMembership.member_type == "user",
+                Channel.type == "dm",
+            )
             .order_by(Channel.created_at)
         )
-        return list(result.scalars().all())
+        return list((await self.session.execute(q)).scalars().all())
 
     async def list_by_workspace(self, workspace_id: str) -> list[Channel]:
         result = await self.session.execute(

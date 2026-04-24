@@ -14,6 +14,21 @@ export type Channel = {
   unread_count?: number;
 };
 
+export type DMCounterparty = {
+  member_id: string;
+  member_type: "user" | "bot";
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+};
+
+export type DM = {
+  channel_id: string;
+  workspace_id: string;
+  counterparty: DMCounterparty;
+  unread_count?: number | null;
+};
+
 export type FileInfo = {
   file_id: string;
   original_filename?: string;

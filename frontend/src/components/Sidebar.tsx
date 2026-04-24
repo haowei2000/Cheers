@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import type { Channel, Workspace, CurrentUser } from "../types";
+import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
 import { refreshChannels, refreshWorkspaces } from "../lib/refresh";
 
@@ -21,6 +21,7 @@ interface SidebarProps {
 
   channels: Channel[];
   setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
+  dms?: DM[];
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
 
@@ -53,6 +54,7 @@ export function Sidebar({
   setSelectedWorkspaceId,
   channels,
   setChannels,
+  dms = [],
   selectedId,
   setSelectedId,
   setSidebarOpen,
@@ -229,7 +231,8 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Channels list */}
+      {/* Channels + Direct sections share a single scroller */}
+      <div className="overflow-auto flex-1">
       <div className="an-rail-section-h">
         <span>频道</span>
         <button
@@ -247,7 +250,7 @@ export function Sidebar({
           +
         </button>
       </div>
-      <ul className="overflow-auto flex-1 px-2 py-1">
+      <ul className="px-2 py-1">
         {channels
           .filter((c) => !selectedWorkspaceId || c.workspace_id === selectedWorkspaceId)
           .map((c) => {
@@ -301,6 +304,63 @@ export function Sidebar({
             );
           })}
       </ul>
+
+      {/* Direct section — 1:1 DMs with users + bots */}
+      {dms.length > 0 && (
+        <>
+          <div className="an-rail-section-h">
+            <span>私信</span>
+          </div>
+          <ul className="px-2 py-1 pb-2">
+            {dms
+              .filter(
+                (d) =>
+                  !selectedWorkspaceId || d.workspace_id === selectedWorkspaceId,
+              )
+              .map((d) => {
+                const isActive = selectedId === d.channel_id;
+                const cp = d.counterparty;
+                const label =
+                  cp.display_name ||
+                  cp.username ||
+                  (cp.member_type === "bot" ? "Bot" : "用户");
+                const isBot = cp.member_type === "bot";
+                return (
+                  <li
+                    key={d.channel_id}
+                    className="group relative"
+                    onClick={() => isMobile && setSidebarOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(d.channel_id)}
+                      className={`an-rail-row w-full ${isActive ? "active" : ""}`}
+                      title={
+                        cp.username
+                          ? `${label} · @${cp.username}`
+                          : label
+                      }
+                    >
+                      <span className="an-sigil">
+                        {isBot ? "⦿" : "@"}
+                      </span>
+                      <span className="an-name">{label}</span>
+                      {!isActive && (d.unread_count ?? 0) > 0 && (
+                        <span className="an-unread">
+                          {(d.unread_count ?? 0) > 99
+                            ? "99+"
+                            : d.unread_count}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        </>
+      )}
+
+      </div>
 
       {/* .me footer — avatar + name + status + cog (matches design's .me) */}
       <div className="an-rail-foot">

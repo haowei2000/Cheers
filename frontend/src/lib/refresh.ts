@@ -1,4 +1,4 @@
-import type { Channel, Workspace } from "../types";
+import type { Channel, DM, Workspace } from "../types";
 import { apiFetch } from "../api";
 
 export function refreshChannels(
@@ -8,6 +8,16 @@ export function refreshChannels(
   apiFetch("channels", { token: token ?? undefined })
     .then((r) => r.json())
     .then((d) => d.data && setChannels(d.data))
+    .catch(console.error);
+}
+
+export function refreshDMs(
+  setDMs: (d: DM[]) => void,
+  token?: string | null,
+) {
+  apiFetch("dms", { token: token ?? undefined })
+    .then((r) => r.json())
+    .then((d) => d.data && setDMs(d.data))
     .catch(console.error);
 }
 
