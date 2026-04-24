@@ -1177,6 +1177,18 @@ export default function App() {
       .catch(console.error);
   };
 
+  // Copy a message's rendered text (stripping think-folds / guide payload
+  // JSON) to the system clipboard. Best-effort — silently toasts failure.
+  const copyMessageText = async (m: Message) => {
+    const raw = parseGuidePayload(m.content || "").text || m.content || "";
+    try {
+      await navigator.clipboard.writeText(raw);
+      toast.success("已复制");
+    } catch {
+      toast.error("复制失败");
+    }
+  };
+
   const sendThreadReply = async (
     channelId: string,
     rootMsgId: string,
@@ -2356,7 +2368,7 @@ export default function App() {
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="px-4 pt-2"
+                              className="an-chat-msg px-4 pt-2"
                             >
                               <div className="flex items-baseline gap-1.5 mb-1 pl-1">
                                 <span className="text-[13px] font-semibold text-gray-900">
@@ -2511,7 +2523,7 @@ export default function App() {
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="px-4 pt-2"
+                              className="an-chat-msg px-4 pt-2"
                             >
                               <div className="flex items-baseline gap-1.5 mb-1 pl-1">
                                 <span className="text-[13px] font-semibold text-gray-900">
@@ -2626,7 +2638,7 @@ export default function App() {
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="px-4 pt-2"
+                              className="an-chat-msg px-4 pt-2"
                             >
                               <div className="an-announce">
                                 <div className="an-ann-ico" aria-hidden="true">
@@ -2767,7 +2779,7 @@ export default function App() {
                           // (stacked messages hide their avatar + header).
                           <div
                             id={`msg-${m.msg_id}`}
-                            className="group relative px-4 transition-colors"
+                            className="an-chat-msg group relative px-4 transition-colors"
                             style={{
                               paddingTop: isStacked ? 2 : 8,
                               paddingBottom: 2,
@@ -2964,31 +2976,47 @@ export default function App() {
                                   />
                                 )}
                               </div>
-                              <button
-                                type="button"
-                                title="回复"
-                                onClick={() => {
-                                  setReplyingTo(m);
-                                  const mention =
-                                    m.sender_type === "bot" &&
-                                    senderBot?.username
-                                      ? `@${senderBot.username} `
-                                      : "";
-                                  if (mention) setInput(mention);
-                                  (secretMode
-                                    ? secretInputRef.current
-                                    : inputRef.current
-                                  )?.focus();
-                                }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity self-start w-7 h-7 flex items-center justify-center rounded-md flex-shrink-0"
-                                style={{
-                                  color: "var(--fg-3)",
-                                  background: "var(--bg-1)",
-                                  border: "1px solid var(--border)",
-                                }}
-                              >
-                                {replyIcon}
-                              </button>
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  title="复制消息内容"
+                                  onClick={() => copyMessageText(m)}
+                                  className="an-chat-action"
+                                >
+                                  <svg
+                                    viewBox="0 0 16 16"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    className="w-3.5 h-3.5"
+                                  >
+                                    <rect x="5" y="5" width="8" height="9" rx="1.5" />
+                                    <path d="M5 11H3.5A1.5 1.5 0 0 1 2 9.5v-6A1.5 1.5 0 0 1 3.5 2h6A1.5 1.5 0 0 1 11 3.5V5" />
+                                  </svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  title="回复"
+                                  onClick={() => {
+                                    setReplyingTo(m);
+                                    const mention =
+                                      m.sender_type === "bot" &&
+                                      senderBot?.username
+                                        ? `@${senderBot.username} `
+                                        : "";
+                                    if (mention) setInput(mention);
+                                    (secretMode
+                                      ? secretInputRef.current
+                                      : inputRef.current
+                                    )?.focus();
+                                  }}
+                                  className="an-chat-action"
+                                >
+                                  {replyIcon}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ) : isOwn ? (
@@ -3422,7 +3450,7 @@ export default function App() {
                               id={`msg-${r.msg_id}`}
                               className={
                                 rFlat
-                                  ? "group flex gap-3 px-4 py-1 items-start transition-colors"
+                                  ? "an-chat-msg group flex gap-3 px-4 py-1 items-start transition-colors"
                                   : `group flex gap-2.5 px-4 py-1 transition-all ${
                                       rIsOwn
                                         ? "flex-row-reverse items-end"
@@ -3616,36 +3644,57 @@ export default function App() {
                                     />
                                   )}
                                 </div>
-                                <button
-                                  type="button"
-                                  title="回复"
-                                  onClick={() => {
-                                    setReplyingTo(r);
-                                    const mention =
-                                      r.sender_type === "bot" && rBot?.username
-                                        ? `@${rBot.username} `
-                                        : "";
-                                    if (mention) setInput(mention);
-                                    (secretMode
-                                      ? secretInputRef.current
-                                      : inputRef.current
-                                    )?.focus();
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 16 16"
-                                    fill="currentColor"
-                                    className="w-3.5 h-3.5"
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+                                  <button
+                                    type="button"
+                                    title="复制消息内容"
+                                    onClick={() => copyMessageText(r)}
+                                    className="an-chat-action"
                                   >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                </button>
+                                    <svg
+                                      viewBox="0 0 16 16"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="1.5"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      className="w-3.5 h-3.5"
+                                    >
+                                      <rect x="5" y="5" width="8" height="9" rx="1.5" />
+                                      <path d="M5 11H3.5A1.5 1.5 0 0 1 2 9.5v-6A1.5 1.5 0 0 1 3.5 2h6A1.5 1.5 0 0 1 11 3.5V5" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="回复"
+                                    onClick={() => {
+                                      setReplyingTo(r);
+                                      const mention =
+                                        r.sender_type === "bot" && rBot?.username
+                                          ? `@${rBot.username} `
+                                          : "";
+                                      if (mention) setInput(mention);
+                                      (secretMode
+                                        ? secretInputRef.current
+                                        : inputRef.current
+                                      )?.focus();
+                                    }}
+                                    className="an-chat-action"
+                                  >
+                                    <svg
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      viewBox="0 0 16 16"
+                                      fill="currentColor"
+                                      className="w-3.5 h-3.5"
+                                    >
+                                      <path
+                                        fillRule="evenodd"
+                                        d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
+                                        clipRule="evenodd"
+                                      />
+                                    </svg>
+                                  </button>
+                                </div>
                               </div>
                           );
                           };

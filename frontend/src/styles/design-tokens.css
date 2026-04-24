@@ -246,6 +246,55 @@
 }
 .an-threads-btn.on .an-tb-n { color: var(--accent); background: #fff2; }
 
+/* Per-message hover actions — copy, reply, etc. Kept minimal so a row
+ * of icon buttons reads as one control strip instead of scattered
+ * affordances. */
+.an-chat-action {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  color: var(--fg-3);
+  cursor: pointer;
+  transition:
+    color var(--motion-fast),
+    background var(--motion-fast),
+    border-color var(--motion-fast);
+  padding: 0;
+  font-family: inherit;
+}
+.an-chat-action:hover {
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+}
+
+/* All non-DM message rows share one width so the stream reads as a
+ * single column. 70% of the chat container, centered. Thread cards
+ * already use this via Tailwind; keep them consistent with this token
+ * so future tweaks update everyone.
+ *
+ * DMs intentionally opt out: bubbles + self-right alignment need the
+ * bubble to float against the edge, not the middle. */
+.an-chat-msg {
+  width: 70%;
+  max-width: 70%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* On narrow viewports 70% is too cramped; give it the full column. */
+@media (max-width: 720px) {
+  .an-chat-msg {
+    width: auto;
+    max-width: none;
+  }
+}
+
 /* Bot message outline — a subtle iridescent gradient border wrapped
  * around a bot's content column in the flat channel render. Signals
  * "this is an agent reply" without resorting to a bubble background.
