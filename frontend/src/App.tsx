@@ -721,6 +721,65 @@ export default function App() {
     };
   }, [selectedId, reportClientError]);
 
+  // User-scoped WebSocket: receives lightweight notifications for channels
+  // the user isn't currently viewing. Used to live-increment rail unread
+  // counts without opening a per-channel socket for every membership.
+  useEffect(() => {
+    if (!currentUserId) return;
+    let ws: WebSocket | null = null;
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    const MAX_RETRIES = 10;
+    const BASE_DELAY = 1000;
+    const MAX_DELAY = 30000;
+
+    const connect = () => {
+      if (disposed) return;
+      ws = new WebSocket(buildWsUrl(`/ws/users/${currentUserId}`));
+      ws.onopen = () => {
+        retryCount = 0;
+      };
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type !== "channel_new_message" || !msg.data) return;
+          const chId = msg.data.channel_id as string | undefined;
+          if (!chId) return;
+          // Ignore the channel the user is actively viewing — they'll get the
+          // message on the channel WS and we'll mark-read on scroll/select.
+          if (chId === selectedId) return;
+          setChannels((prev) =>
+            prev.map((c) =>
+              c.channel_id === chId
+                ? { ...c, unread_count: (c.unread_count ?? 0) + 1 }
+                : c,
+            ),
+          );
+        } catch {
+          /* ignore malformed payloads */
+        }
+      };
+      ws.onclose = () => {
+        if (disposed) return;
+        if (retryCount >= MAX_RETRIES) return;
+        const delay = Math.min(BASE_DELAY * 2 ** retryCount, MAX_DELAY);
+        retryCount += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+      ws.onerror = () => {
+        // onclose will run after onerror, which handles the retry.
+      };
+    };
+    connect();
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
+    };
+  }, [currentUserId, selectedId]);
+
   useEffect(() => {
     if ((memoryPanelOpen || memoryPageOpen) && selectedId) {
       fetch(`${API}/channels/${selectedId}/context`)
