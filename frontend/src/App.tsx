@@ -1932,6 +1932,62 @@ export default function App() {
                           </div>
                         )}
                       {threadRoots.map((m) => {
+                        // ── announcement card: pinned banner, no bubble ──────
+                        if (m.msg_type === "announcement") {
+                          const cd = (m.content_data ?? {}) as Record<
+                            string,
+                            unknown
+                          >;
+                          const title =
+                            typeof cd.title === "string" ? cd.title : null;
+                          const pinnedById =
+                            typeof cd.pinned_by === "string"
+                              ? cd.pinned_by
+                              : null;
+                          const pinnedUser = pinnedById
+                            ? pinnedById === currentUserId
+                              ? { display_name: "我", username: "me" }
+                              : channelUsers.find(
+                                  (u) => u.member_id === pinnedById,
+                                )
+                            : null;
+                          const pinnedLabel =
+                            pinnedUser?.display_name ||
+                            pinnedUser?.username ||
+                            pinnedById ||
+                            "频道管理员";
+                          const annTime = m.created_at
+                            ? formatTs(m.created_at)
+                            : "";
+                          return (
+                            <div
+                              key={m.msg_id}
+                              id={`msg-${m.msg_id}`}
+                              className="px-4 pt-2"
+                            >
+                              <div className="an-announce">
+                                <div className="an-ann-ico" aria-hidden="true">
+                                  !
+                                </div>
+                                <div className="an-ann-tag">公告 · Announcement</div>
+                                {title && (
+                                  <div className="an-ann-title">{title}</div>
+                                )}
+                                <div className="an-ann-body">{m.content}</div>
+                                <div className="an-ann-foot">
+                                  <span>由 {pinnedLabel} 置顶</span>
+                                  {annTime && (
+                                    <>
+                                      <span>·</span>
+                                      <span>{annTime}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         const replies = threadRepliesOf(m.msg_id);
 
                         // ── helpers shared by root & replies ──────────────────

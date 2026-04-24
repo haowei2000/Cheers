@@ -246,6 +246,11 @@ class ThreadContentData(BaseModel):
     title: str | None = None
 
 
+class AnnouncementContentData(BaseModel):
+    """公告消息的结构化数据。"""
+    title: str | None = None
+    pinned_by: str | None = None  # user_id of whoever pinned it (display-only)
+
 
 # ==================== Message Create Schemas (discriminated union) ====================
 
@@ -278,6 +283,12 @@ class ThreadMessageCreate(_MessageCreateBase):
     content_data: ThreadContentData | None = None
 
 
+class AnnouncementMessageCreate(_MessageCreateBase):
+    """频道公告：顶部置顶展示，带标题和置顶人。"""
+    msg_type: Literal["announcement"] = "announcement"
+    content_data: AnnouncementContentData | None = None
+
+
 # 统一入口：兼容旧客户端（不含 msg_type 时按 in_reply_to_msg_id 自动推断）
 class MessageCreate(BaseModel):
     """发送消息（兼容入口，自动推断 msg_type）。"""
@@ -300,7 +311,7 @@ class MessageCreate(BaseModel):
 
 # Discriminated union（供新客户端使用）
 AnyMessageCreate = Annotated[
-    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate,
+    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate | AnnouncementMessageCreate,
     Field(discriminator="msg_type"),
 ]
 
@@ -352,8 +363,13 @@ class ThreadMessageInResponse(_MessageResponseBase):
     msg_type: Literal["thread"] = "thread"
 
 
+class AnnouncementMessageInResponse(_MessageResponseBase):
+    """公告消息响应。content_data 包含 { title?, pinned_by? }。"""
+    msg_type: Literal["announcement"] = "announcement"
+
+
 AnyMessageInResponse = Annotated[
-    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse,
+    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse | AnnouncementMessageInResponse,
     Field(discriminator="msg_type"),
 ]
 
