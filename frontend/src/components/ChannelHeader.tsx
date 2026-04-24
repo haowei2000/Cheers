@@ -114,7 +114,12 @@ interface ChannelHeaderProps {
   onOpenChannelProfile: () => void;
 
   threads?: ThreadSummary[];
+  /** Scroll the main stream to the given message id (used by existing
+   *  threads-popover behaviour when no panel handler is provided). */
   onJumpToMessage?: (msgId: string) => void;
+  /** When provided, the threads popover opens the given thread root in the
+   *  side-dock ThreadPanel instead of scrolling the main stream. */
+  onOpenThread?: (rootMsgId: string) => void;
 }
 
 export function ChannelHeader({
@@ -136,6 +141,7 @@ export function ChannelHeader({
   onOpenChannelProfile,
   threads = [],
   onJumpToMessage,
+  onOpenThread,
 }: ChannelHeaderProps) {
   const subtitle = autoAssist ? "自动接管已开启" : "";
   const [threadsOpen, setThreadsOpen] = useState(false);
@@ -297,7 +303,8 @@ export function ChannelHeader({
                   className="an-it"
                   onClick={() => {
                     setThreadsOpen(false);
-                    onJumpToMessage?.(t.rootId);
+                    if (onOpenThread) onOpenThread(t.rootId);
+                    else onJumpToMessage?.(t.rootId);
                   }}
                 >
                   <div className="an-it-t">{t.title || "(无标题)"}</div>

@@ -34,6 +34,8 @@ import {
 import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
+import { ThreadPanel } from "./components/ThreadPanel";
+import { ThreadPage } from "./components/ThreadPage";
 import { apiFetch, buildWsUrl } from "./api";
 import {
   parseGuidePayload,
@@ -118,6 +120,15 @@ export default function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [dms, setDMs] = useState<DM[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  // Thread viewers:
+  //   openThreadId  — root msg_id for the side-dock panel
+  //   pageThreadId  — root msg_id for the full-page view (mirrored to URL hash)
+  const [openThreadId, setOpenThreadId] = useState<string | null>(null);
+  const [pageThreadId, setPageThreadId] = useState<string | null>(() => {
+    if (typeof location === "undefined") return null;
+    const m = /#thread=([^&]+)/.exec(location.hash || "");
+    return m ? decodeURIComponent(m[1]) : null;
+  });
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -463,6 +474,36 @@ export default function App() {
     refreshDMs(setDMs, authToken ?? undefined);
     refreshWorkspaces(setWorkspaces, authToken ?? undefined);
   }, [authToken]);
+
+  // ── URL hash sync for #thread=<id> ──────────────────────────────────────
+  // Writer: whenever pageThreadId changes, reflect it into the hash (without
+  // adding history entries — replaceState). Reader: listen to popstate in
+  // case the user navigates back/forward.
+  useEffect(() => {
+    if (typeof history === "undefined") return;
+    const hash = location.hash || "";
+    const current = /#thread=([^&]+)/.exec(hash);
+    const currentId = current ? decodeURIComponent(current[1]) : null;
+    if (pageThreadId === currentId) return;
+    if (pageThreadId) {
+      history.replaceState(
+        null,
+        "",
+        `${location.pathname}${location.search}#thread=${encodeURIComponent(pageThreadId)}`,
+      );
+    } else if (/#thread=/.test(hash)) {
+      history.replaceState(null, "", `${location.pathname}${location.search}`);
+    }
+  }, [pageThreadId]);
+
+  useEffect(() => {
+    const onPop = () => {
+      const m = /#thread=([^&]+)/.exec(location.hash || "");
+      setPageThreadId(m ? decodeURIComponent(m[1]) : null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   useEffect(() => {
     if (!selectedId) {
@@ -1064,6 +1105,33 @@ export default function App() {
         }
       })
       .catch(console.error);
+  };
+
+  const sendThreadReply = async (
+    channelId: string,
+    rootMsgId: string,
+    text: string,
+  ) => {
+    if (!text.trim()) return;
+    const body: Record<string, unknown> = {
+      content: text.trim(),
+      sender_id: currentUserId,
+      sender_type: "user",
+      file_ids: [],
+      is_secret: false,
+      msg_type: "reply",
+      in_reply_to_msg_id: rootMsgId,
+    };
+    const r = await authFetch(`${API}/channels/${channelId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => null);
+    if (d?.data && selectedIdRef.current === channelId) {
+      setMessages((prev) =>
+        prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data],
+      );
+    }
   };
 
   const handleClarifyContinue = (
@@ -1949,6 +2017,47 @@ export default function App() {
               isDark={isDark}
             />
 
+            {pageThreadId &&
+              selectedId &&
+              (() => {
+                const rootMsg = messages.find(
+                  (m) => m.msg_id === pageThreadId,
+                );
+                if (!rootMsg) return null;
+                const rootId = pageThreadId; // narrowed non-null
+                const threadReplies = messages
+                  .filter((m) => m.in_reply_to_msg_id === rootId)
+                  .sort((a, b) =>
+                    (a.created_at || "") < (b.created_at || "") ? -1 : 1,
+                  );
+                return (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background: "var(--bg-0)",
+                      zIndex: 20,
+                      display: "flex",
+                      flexDirection: "column",
+                      minHeight: 0,
+                    }}
+                  >
+                    <ThreadPage
+                      rootMsg={rootMsg}
+                      replies={threadReplies}
+                      channel={selectedChannel}
+                      channelBots={channelBots}
+                      channelUsers={channelUsers}
+                      currentUserId={currentUserId}
+                      onBack={() => setPageThreadId(null)}
+                      onGoToChannel={() => setPageThreadId(null)}
+                      onSendReply={(text) =>
+                        sendThreadReply(selectedId, rootId, text)
+                      }
+                    />
+                  </div>
+                );
+              })()}
 
             {selectedId ? (
               <>
@@ -2002,6 +2111,9 @@ export default function App() {
                       };
                     })
                     .filter((x): x is NonNullable<typeof x> => x !== null)}
+                  onOpenThread={(rootId) => {
+                    setOpenThreadId(rootId);
+                  }}
                   onJumpToMessage={(id) => {
                     const el = document.getElementById(`msg-${id}`);
                     if (!el) return;
@@ -3214,25 +3326,46 @@ export default function App() {
                                   对话串 · {replies.length + 1} 条消息
                                 </span>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => toggleThread(m.msg_id)}
-                                className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
-                              >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 16 16"
-                                  fill="currentColor"
-                                  className="w-3 h-3"
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenThreadId(m.msg_id)}
+                                  className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#1264A3] px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
+                                  title="在侧栏打开对话串"
                                 >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                                收起
-                              </button>
+                                  <svg
+                                    viewBox="0 0 12 12"
+                                    width="10"
+                                    height="10"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.5"
+                                  >
+                                    <path d="M4 2H2v8h8V8" strokeLinecap="round" />
+                                    <path d="M7 2h3v3M10 2L6 6" strokeLinecap="round" />
+                                  </svg>
+                                  在侧栏打开
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleThread(m.msg_id)}
+                                  className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
+                                >
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 16 16"
+                                    fill="currentColor"
+                                    className="w-3 h-3"
+                                  >
+                                    <path
+                                      fillRule="evenodd"
+                                      d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
+                                      clipRule="evenodd"
+                                    />
+                                  </svg>
+                                  收起
+                                </button>
+                              </div>
                             </div>
                             {/* Root message */}
                             {rootBubble}
@@ -4211,6 +4344,55 @@ export default function App() {
               </div>
             )}
           </main>
+
+          {/* Thread side panel (sibling of memory panel). Hidden while the
+              full-page ThreadPage is active — a side panel on top of a page
+              view duplicates the same thread. */}
+          {openThreadId && !pageThreadId && selectedId && (() => {
+            const rootMsg = messages.find(
+              (m) => m.msg_id === openThreadId,
+            );
+            if (!rootMsg) return null;
+            const rootId = openThreadId;
+            const threadReplies = messages
+              .filter((m) => m.in_reply_to_msg_id === rootId)
+              .sort((a, b) =>
+                (a.created_at || "") < (b.created_at || "") ? -1 : 1,
+              );
+            return (
+              <ThreadPanel
+                rootMsg={rootMsg}
+                replies={threadReplies}
+                channelBots={channelBots}
+                channelUsers={channelUsers}
+                currentUserId={currentUserId}
+                onClose={() => setOpenThreadId(null)}
+                onOpenAsPage={() => {
+                  setPageThreadId(rootId);
+                  setOpenThreadId(null);
+                }}
+                onJumpToParent={() => {
+                  const el = document.getElementById(`msg-${rootId}`);
+                  if (!el) return;
+                  el.scrollIntoView({
+                    block: "center",
+                    behavior: "smooth",
+                  });
+                  const orig = el.style.transition;
+                  const prev = el.style.background;
+                  el.style.transition = "background 200ms";
+                  el.style.background = "var(--accent-muted)";
+                  setTimeout(() => {
+                    el.style.background = prev;
+                    el.style.transition = orig;
+                  }, 1200);
+                }}
+                onSendReply={(text) =>
+                  sendThreadReply(selectedId, rootId, text)
+                }
+              />
+            );
+          })()}
 
           {/* Memory right panel */}
           {memoryPanelOpen && selectedId && (
