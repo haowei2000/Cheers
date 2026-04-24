@@ -307,7 +307,11 @@ async def run_orchestrator(
             logger.exception("failed to prepare attachments channel_id=%s", channel_id)
             attachment_error = f"读取上传文件失败：{exc}"
 
-    from app.services.orchestrator.thread_context import MSG_TYPE_REPLY, gather_thread_context, promote_to_thread
+    from app.services.orchestrator.thread_context import (
+        MSG_TYPE_REPLY,
+        ensure_thread_root,
+        gather_thread_context,
+    )
 
     memory_context, _, thread_result = await asyncio.gather(
         memory_load(channel_id, session),
@@ -452,7 +456,6 @@ async def run_orchestrator(
         from app.services.ws_service import ws_manager
 
         mention_user_ids = await resolve_user_mentions(content, session, channel_id)
-        promote_to_thread(trigger_msg)
         msg = Message(
             channel_id=channel_id,
             sender_id=sender_id,
@@ -465,6 +468,12 @@ async def run_orchestrator(
         )
         session.add(msg)
         await session.flush()
+        # after_insert listener in thread_context.py will flip trigger_msg's
+        # row to "thread" once the reply count crosses
+        # THREAD_PROMOTE_THRESHOLD. Mirror the flip into the in-memory
+        # Message object so any later code in this request sees the new
+        # msg_type without a refresh.
+        await ensure_thread_root(session, trigger_msg.msg_id)
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()
@@ -485,7 +494,6 @@ async def run_orchestrator(
         from app.core.schemas import MessageInResponse
         from app.services.ws_service import ws_manager
 
-        promote_to_thread(trigger_msg)
         msg = Message(
             channel_id=channel_id,
             sender_id=bot_id,
@@ -497,6 +505,8 @@ async def run_orchestrator(
         )
         session.add(msg)
         await session.flush()
+        # Same threshold-aware promotion as _create_msg_and_broadcast.
+        await ensure_thread_root(session, trigger_msg.msg_id)
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()

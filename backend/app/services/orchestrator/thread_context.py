@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import event, select
+from sqlalchemy import event, func, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +36,11 @@ MSG_TYPE_PERMISSION = "permission"
 # 这些类型都不会设置 in_reply_to_msg_id，但显式列出作为文档。
 _PROMOTABLE_PARENT_KINDS = {MSG_TYPE_NORMAL, MSG_TYPE_REPLY, MSG_TYPE_THREAD}
 
+# 一条普通消息升级为 thread 根所需的最少回复数。低于这个数量只当成"父消息 +
+# 少量 inline 回复"来展示，不包裹成对话串。改动时前端
+# frontend/src/lib/message.ts 里的 THREAD_DISPLAY_THRESHOLD 需要同步。
+THREAD_PROMOTE_THRESHOLD = 4
+
 _MAX_DEPTH = 10
 _MAX_CHILDREN = 20
 
@@ -43,48 +48,87 @@ _MAX_CHILDREN = 20
 def promote_to_thread(msg: Message) -> None:
     """In-memory flip: mark `msg` as the root of a thread.
 
-    Idempotent. Callers who already hold the parent Message in their session
-    should prefer this over ensure_thread_root because it avoids an extra
-    round-trip to the database.
+    Idempotent. Note: this bypasses the THREAD_PROMOTE_THRESHOLD check —
+    callers that want the gated behaviour must use ensure_thread_root
+    instead. Kept as a low-level primitive so tests and advanced callers
+    can force a promotion when needed.
     """
     if msg.msg_type != MSG_TYPE_THREAD:
         msg.msg_type = MSG_TYPE_THREAD
+
+
+async def _count_replies(
+    session: AsyncSession, parent_msg_id: str
+) -> int:
+    """How many messages currently point at this parent via
+    in_reply_to_msg_id? Used to gate thread promotion on a minimum
+    reply count (see THREAD_PROMOTE_THRESHOLD)."""
+    r = await session.execute(
+        select(func.count())
+        .select_from(Message)
+        .where(Message.in_reply_to_msg_id == parent_msg_id)
+    )
+    return int(r.scalar() or 0)
 
 
 async def ensure_thread_root(
     session: AsyncSession, parent_msg_id: str | None,
 ) -> Message | None:
     """Given a parent message id (typically from `child.in_reply_to_msg_id`),
-    fetch the parent and flip its msg_type to THREAD.
+    promote it to THREAD — but only if the reply count has reached
+    THREAD_PROMOTE_THRESHOLD.
 
-    Returns the parent Message if it existed. Silent on missing parent so a
-    stale reply doesn't explode. Caller is responsible for the subsequent
-    flush/commit — this keeps the helper composable inside larger
-    transactions.
+    Returns the parent Message if it existed, otherwise None. Silent on
+    missing parent (a stale reply pointing nowhere doesn't explode).
+    Idempotent: calling repeatedly after promotion is a no-op. Caller is
+    responsible for the subsequent flush/commit.
     """
     if not parent_msg_id:
         return None
     parent = await session.get(Message, parent_msg_id)
     if parent is None:
         return None
+    if parent.msg_type == MSG_TYPE_THREAD:
+        return parent
+    if parent.msg_type not in _PROMOTABLE_PARENT_KINDS:
+        return parent
+    count = await _count_replies(session, parent_msg_id)
+    if count < THREAD_PROMOTE_THRESHOLD:
+        return parent
     promote_to_thread(parent)
     return parent
 
 
 def _auto_promote_parent(_mapper, connection: Connection, target: Message) -> None:
     """SQLAlchemy after_insert hook: when a Message lands with
-    in_reply_to_msg_id, make sure the parent's row is flipped to THREAD.
+    in_reply_to_msg_id, check whether the parent has now accumulated
+    THREAD_PROMOTE_THRESHOLD replies and, if so, flip its msg_type to
+    THREAD in the same transaction.
 
-    Runs as a raw UPDATE on the given connection so it participates in the
-    same transaction. Bypasses any ORM-level object state, which means
-    in-memory Message instances with the old msg_type won't see the change
-    until they are refreshed — callers that care about the in-memory view
-    should still call promote_to_thread on the loaded parent explicitly.
+    Uses raw UPDATE / SELECT on the given connection so it participates
+    in the transaction that inserted the reply. The new row has already
+    been inserted on this connection by the time after_insert fires, so
+    the COUNT below sees it.
+
+    Caveat: bypasses ORM object state, so an in-memory Message held by
+    the caller won't auto-reflect the new msg_type. Callers that need
+    in-memory consistency should call ensure_thread_root explicitly.
     """
     parent_id = target.in_reply_to_msg_id
     if not parent_id:
         return
     tbl = Message.__table__
+    # Count of existing children for this parent (includes the row we just
+    # inserted — after_insert fires post-emit so it's visible on this
+    # connection).
+    count_q = (
+        select(func.count())
+        .select_from(tbl)
+        .where(tbl.c.in_reply_to_msg_id == parent_id)
+    )
+    count = int(connection.execute(count_q).scalar() or 0)
+    if count < THREAD_PROMOTE_THRESHOLD:
+        return
     connection.execute(
         tbl.update()
         .where(tbl.c.msg_id == parent_id)
