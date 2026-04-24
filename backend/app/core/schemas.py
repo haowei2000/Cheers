@@ -259,11 +259,21 @@ class SearchBotHit(BaseModel):
     avatar_url: str | None = None
 
 
+class SearchMessageHit(BaseModel):
+    msg_id: str
+    channel_id: str
+    channel_name: str
+    sender_label: str                 # 显示名（或 @username / "me"）
+    snippet: str                      # 正文片段（已截断，高亮可客户端处理）
+    created_at: datetime | None = None
+
+
 class SearchResults(BaseModel):
     q: str
     channels: list[SearchChannelHit] = Field(default_factory=list)
     users: list[SearchUserHit] = Field(default_factory=list)
     bots: list[SearchBotHit] = Field(default_factory=list)
+    messages: list[SearchMessageHit] = Field(default_factory=list)
 
 
 class MemberAdd(BaseModel):
