@@ -268,6 +268,21 @@ class RoutingContentData(BaseModel):
     plan: str | None = None       # 一句话的执行计划
 
 
+class PermissionContentData(BaseModel):
+    """审批卡片的结构化数据。Bot 在发起需要人工授权的写操作前产出。
+
+    - tool: 请求的工具名（例如 write_file / run_sql）
+    - body: 面向人类的摘要（"Apply patch to gateway/src/put.rs (+4/-1)"）
+    - resolved / resolution / resolved_by / resolved_at 在 /resolve 端点被填充。
+    """
+    tool: str | None = None
+    body: str | None = None
+    resolved: bool = False
+    resolution: Literal["allow", "deny"] | None = None
+    resolved_by: str | None = None
+    resolved_at: datetime | None = None
+
+
 # ==================== Message Create Schemas (discriminated union) ====================
 
 class _MessageCreateBase(BaseModel):
@@ -311,6 +326,12 @@ class RoutingMessageCreate(_MessageCreateBase):
     content_data: RoutingContentData | None = None
 
 
+class PermissionMessageCreate(_MessageCreateBase):
+    """审批卡片：bot 发起需要人工授权的写操作时产出。content 为人类可读说明。"""
+    msg_type: Literal["permission"] = "permission"
+    content_data: PermissionContentData | None = None
+
+
 # 统一入口：兼容旧客户端（不含 msg_type 时含 in_reply_to_msg_id 自动推断）
 class MessageCreate(BaseModel):
     """发送消息（兼容入口，自动推断 msg_type）。"""
@@ -333,7 +354,7 @@ class MessageCreate(BaseModel):
 
 # Discriminated union（供新客户端使用）
 AnyMessageCreate = Annotated[
-    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate | AnnouncementMessageCreate | RoutingMessageCreate,
+    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate | AnnouncementMessageCreate | RoutingMessageCreate | PermissionMessageCreate,
     Field(discriminator="msg_type"),
 ]
 
@@ -395,10 +416,22 @@ class RoutingMessageInResponse(_MessageResponseBase):
     msg_type: Literal["routing"] = "routing"
 
 
+class PermissionMessageInResponse(_MessageResponseBase):
+    """审批卡片响应。content_data 包含 { tool?, body?, resolved, resolution?, resolved_by?, resolved_at? }。"""
+    msg_type: Literal["permission"] = "permission"
+
+
 AnyMessageInResponse = Annotated[
-    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse | AnnouncementMessageInResponse | RoutingMessageInResponse,
+    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse | AnnouncementMessageInResponse | RoutingMessageInResponse | PermissionMessageInResponse,
     Field(discriminator="msg_type"),
 ]
+
+
+# ==================== Permission resolve endpoint ========================
+
+class PermissionResolveRequest(BaseModel):
+    """POST /messages/{msg_id}/resolve 的请求体。"""
+    resolution: Literal["allow", "deny"]
 
 
 # 保持向后兼容：统一响应类（含全部字段）

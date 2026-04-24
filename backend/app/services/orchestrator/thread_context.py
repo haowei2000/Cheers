@@ -16,6 +16,7 @@ MSG_TYPE_REPLY = "reply"
 MSG_TYPE_THREAD = "thread"
 MSG_TYPE_ANNOUNCEMENT = "announcement"
 MSG_TYPE_ROUTING = "routing"
+MSG_TYPE_PERMISSION = "permission"
 
 _MAX_DEPTH = 10
 _MAX_CHILDREN = 20
