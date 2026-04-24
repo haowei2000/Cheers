@@ -18,10 +18,11 @@ from app.core.responses import APIResponse
 from app.core.schemas import (
     SearchBotHit,
     SearchChannelHit,
+    SearchMessageHit,
     SearchResults,
     SearchUserHit,
 )
-from app.db.models import BotAccount, Channel, ChannelMembership, User
+from app.db.models import BotAccount, Channel, ChannelMembership, Message, User
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -35,7 +36,9 @@ async def global_search(
 ) -> APIResponse:
     q = (q or "").strip()
     if not q:
-        return APIResponse.ok(SearchResults(q="", channels=[], users=[], bots=[]))
+        return APIResponse.ok(
+            SearchResults(q="", channels=[], users=[], bots=[], messages=[])
+        )
 
     pattern = f"%{q}%"
 
@@ -87,6 +90,91 @@ async def global_search(
         )
     ).scalars().all()
 
+    # — Messages — content ILIKE %q%, restricted to channels the caller is a
+    # member of. Skip secret / placeholder-encrypted messages so the search
+    # result doesn't leak "this secret mentions …" noise.
+    msg_rows = (
+        await session.execute(
+            select(Message)
+            .join(
+                ChannelMembership,
+                ChannelMembership.channel_id == Message.channel_id,
+            )
+            .where(
+                ChannelMembership.member_id == current_user.user_id,
+                ChannelMembership.member_type == "user",
+                Message.content.ilike(pattern),
+                Message.is_secret == False,  # noqa: E712 — SQLAlchemy comparison
+            )
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    # Resolve channel names + sender labels for the hit cards.
+    channel_ids = list({m.channel_id for m in msg_rows})
+    channel_name_by_id: dict[str, str] = {}
+    if channel_ids:
+        for c in (
+            await session.execute(
+                select(Channel).where(Channel.channel_id.in_(channel_ids))
+            )
+        ).scalars():
+            channel_name_by_id[c.channel_id] = c.name
+
+    sender_user_ids = {m.sender_id for m in msg_rows if m.sender_type == "user"}
+    sender_bot_ids = {m.sender_id for m in msg_rows if m.sender_type == "bot"}
+    user_label: dict[str, str] = {}
+    bot_label: dict[str, str] = {}
+    if sender_user_ids:
+        for u in (
+            await session.execute(
+                select(User).where(User.user_id.in_(sender_user_ids))
+            )
+        ).scalars():
+            user_label[u.user_id] = u.display_name or u.username or "user"
+    if sender_bot_ids:
+        for b in (
+            await session.execute(
+                select(BotAccount).where(BotAccount.bot_id.in_(sender_bot_ids))
+            )
+        ).scalars():
+            bot_label[b.bot_id] = b.display_name or b.username or "Bot"
+
+    def _snippet(text: str | None, needle: str, width: int = 80) -> str:
+        if not text:
+            return ""
+        t = text.replace("\n", " ").strip()
+        idx = t.lower().find(needle.lower())
+        if idx < 0:
+            return t[:width] + ("…" if len(t) > width else "")
+        start = max(0, idx - width // 3)
+        end = min(len(t), start + width)
+        out = t[start:end]
+        if start > 0:
+            out = "…" + out
+        if end < len(t):
+            out = out + "…"
+        return out
+
+    message_hits = [
+        SearchMessageHit(
+            msg_id=m.msg_id,
+            channel_id=m.channel_id,
+            channel_name=channel_name_by_id.get(m.channel_id, ""),
+            sender_label=(
+                "me"
+                if m.sender_id == current_user.user_id
+                else bot_label.get(m.sender_id)
+                or user_label.get(m.sender_id)
+                or "user"
+            ),
+            snippet=_snippet(m.content, q),
+            created_at=m.created_at,
+        )
+        for m in msg_rows
+    ]
+
     return APIResponse.ok(
         SearchResults(
             q=q,
@@ -117,5 +205,6 @@ async def global_search(
                 )
                 for b in bot_rows
             ],
+            messages=message_hits,
         )
     )

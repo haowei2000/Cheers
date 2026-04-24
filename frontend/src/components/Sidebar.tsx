@@ -24,6 +24,14 @@ type SearchResultsPayload = {
     display_name: string | null;
     avatar_url: string | null;
   }[];
+  messages?: {
+    msg_id: string;
+    channel_id: string;
+    channel_name: string;
+    sender_label: string;
+    snippet: string;
+    created_at: string | null;
+  }[];
 };
 
 interface SidebarProps {
@@ -232,7 +240,28 @@ export function Sidebar({
     !!searchResults &&
     (searchResults.channels.length > 0 ||
       searchResults.users.length > 0 ||
-      searchResults.bots.length > 0);
+      searchResults.bots.length > 0 ||
+      (searchResults.messages?.length ?? 0) > 0);
+
+  const openMessageHit = (channelId: string, msgId: string) => {
+    setSelectedId(channelId);
+    resetSearch();
+    if (isMobile) setSidebarOpen(false);
+    // Give the chat column time to mount / fetch before we scroll.
+    setTimeout(() => {
+      const el = document.getElementById(`msg-${msgId}`);
+      if (!el) return;
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      const orig = el.style.transition;
+      const prev = el.style.background;
+      el.style.transition = "background 200ms";
+      el.style.background = "var(--accent-muted)";
+      setTimeout(() => {
+        el.style.background = prev;
+        el.style.transition = orig;
+      }, 1200);
+    }, 400);
+  };
 
   return (
     <aside
@@ -456,6 +485,45 @@ export function Sidebar({
                     {b.display_name && b.display_name !== b.username && (
                       <span className="an-search-sub">@{b.username}</span>
                     )}
+                  </button>
+                ))}
+              </>
+            )}
+            {searchResults && (searchResults.messages?.length ?? 0) > 0 && (
+              <>
+                <div className="an-search-group">消息</div>
+                {searchResults.messages!.map((m) => (
+                  <button
+                    key={m.msg_id}
+                    type="button"
+                    className="an-search-hit"
+                    onClick={() =>
+                      openMessageHit(m.channel_id, m.msg_id)
+                    }
+                    style={{ alignItems: "flex-start" }}
+                  >
+                    <span className="an-search-sigil">#</span>
+                    <span
+                      className="an-search-name"
+                      style={{ whiteSpace: "normal" }}
+                    >
+                      <span style={{ color: "var(--fg-2)", fontWeight: 500 }}>
+                        {m.channel_name || "频道"} ·{" "}
+                      </span>
+                      <span style={{ color: "var(--fg-3)", fontSize: 11 }}>
+                        {m.sender_label}
+                      </span>
+                      <div
+                        style={{
+                          color: "var(--fg-2)",
+                          fontSize: 11.5,
+                          marginTop: 2,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {m.snippet}
+                      </div>
+                    </span>
                   </button>
                 ))}
               </>
