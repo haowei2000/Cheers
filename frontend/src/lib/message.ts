@@ -1,6 +1,16 @@
 import type { Message } from "../types";
 
 /**
+ * A conversation only becomes a "message thread" (对话串) once this many
+ * direct replies have accumulated under the root. Below the threshold,
+ * replies render as plain inline messages under the root — no dock,
+ * no thread card. Keep this in sync with the backend constant
+ * THREAD_PROMOTE_THRESHOLD in
+ * backend/app/services/orchestrator/thread_context.py.
+ */
+export const THREAD_DISPLAY_THRESHOLD = 4;
+
+/**
  * Decide whether a message should be grouped as a reply (i.e. rendered
  * inside its parent's thread instead of as its own root).
  *

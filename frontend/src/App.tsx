@@ -42,7 +42,12 @@ import {
   parseGuidePayload,
   isClarifyReplyUserMessage,
 } from "./lib/guide";
-import { isMsgReply, parseQuotePrefix, formatTs } from "./lib/message";
+import {
+  isMsgReply,
+  parseQuotePrefix,
+  formatTs,
+  THREAD_DISPLAY_THRESHOLD,
+} from "./lib/message";
 import {
   buildLogicalQaBlocks,
   buildQaMarkdown,
@@ -2972,9 +2977,12 @@ export default function App() {
                           return <div key={m.msg_id}>{rootBubble}</div>;
                         }
 
-                        // Single reply — render root bubble + one reply inline (no card)
-                        if (replies.length === 1) {
-                          const r = replies[0];
+                        // 1–3 replies — render root bubble + each reply inline
+                        // below it. No thread chrome: the conversation only
+                        // becomes a 消息串 (dock/card) once replies hit the
+                        // THREAD_DISPLAY_THRESHOLD (4).
+                        if (replies.length < THREAD_DISPLAY_THRESHOLD) {
+                          const renderReplyRow = (r: Message) => {
                           const rIsOwn =
                             r.sender_type === "user" &&
                             r.sender_id === currentUserId;
@@ -3041,19 +3049,15 @@ export default function App() {
                                   : "form"
                               : null;
                           return (
-                            <div key={m.msg_id} className="an-thread-dock">
-                              <div className="an-thread-dock-label">
-                                对话串 · 2 条消息
-                              </div>
-                              {rootBubble}
-                              <div
-                                id={`msg-${r.msg_id}`}
-                                className={`group flex gap-2.5 px-4 py-1 transition-all ${
-                                  rIsOwn
-                                    ? "flex-row-reverse items-end"
-                                    : "items-start"
-                                }`}
-                              >
+                            <div
+                              key={r.msg_id}
+                              id={`msg-${r.msg_id}`}
+                              className={`group flex gap-2.5 px-4 py-1 transition-all ${
+                                rIsOwn
+                                  ? "flex-row-reverse items-end"
+                                  : "items-start"
+                              }`}
+                            >
                                 <div className="flex-shrink-0 mt-0.5">
                                   {r.sender_type === "bot" ? (
                                     rBot?.avatar_url ? (
@@ -3200,11 +3204,18 @@ export default function App() {
                                   </svg>
                                 </button>
                               </div>
+                          );
+                          };
+                          return (
+                            <div key={m.msg_id}>
+                              {rootBubble}
+                              {replies.map(renderReplyRow)}
                             </div>
                           );
                         }
 
-                        // ≥2 replies — Collapsed thread card (overview) ───────────
+                        // ≥ THREAD_DISPLAY_THRESHOLD replies — Collapsed thread
+                        // card (overview) ───────────────────────────────────────
                         if (!isExpanded) {
                           const qPreview = displayContent
                             .replace(/\s+/g, " ")
