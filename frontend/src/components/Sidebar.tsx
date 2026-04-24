@@ -538,12 +538,40 @@ export function Sidebar({
           })}
       </ul>
 
-      {/* Direct section — 1:1 DMs with users + bots */}
+      {/* Direct section — 1:1 DMs with users + bots. Header is always
+          shown so users have an affordance to start a new DM even when
+          the list is empty. */}
+      <div className="an-rail-section-h">
+        <span>私信</span>
+        <button
+          type="button"
+          className="an-add"
+          title="搜索用户/Bot 开始私信"
+          onClick={() => {
+            setSearchOpen(true);
+            setSearchQ("");
+            setTimeout(() => {
+              searchInputRef.current?.focus();
+              searchInputRef.current?.select();
+            }, 0);
+          }}
+        >
+          +
+        </button>
+      </div>
+      {dms.length === 0 && (
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--fg-3)",
+            padding: "0 12px 6px",
+          }}
+        >
+          还没有 DM · 点 ＋ 开始一个
+        </div>
+      )}
       {dms.length > 0 && (
         <>
-          <div className="an-rail-section-h">
-            <span>私信</span>
-          </div>
           <ul className="px-2 py-1 pb-2">
             {dms
               .filter(
