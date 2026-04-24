@@ -37,6 +37,7 @@ import { ChannelHeader } from "./components/ChannelHeader";
 import { ThreadPanel } from "./components/ThreadPanel";
 import { ThreadPage } from "./components/ThreadPage";
 import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
+import { WorkspaceRail } from "./components/WorkspaceRail";
 import { apiFetch, buildWsUrl } from "./api";
 import {
   parseGuidePayload,
@@ -481,6 +482,26 @@ export default function App() {
     refreshDMs(setDMs, authToken ?? undefined);
     refreshWorkspaces(setWorkspaces, authToken ?? undefined);
   }, [authToken]);
+
+  // Default to the user's Personal workspace on first load (or when the
+  // currently-selected workspace is no longer in the list, e.g. after a
+  // deletion). Explicit team-workspace picks from the rail are preserved.
+  useEffect(() => {
+    if (workspaces.length === 0) return;
+    const current = workspaces.find(
+      (w) => w.workspace_id === selectedWorkspaceId,
+    );
+    if (current) return;
+    const personal = workspaces.find((w) => w.kind === "personal");
+    setSelectedWorkspaceId(
+      personal?.workspace_id ?? workspaces[0].workspace_id,
+    );
+  }, [workspaces, selectedWorkspaceId]);
+
+  const activeWorkspace = workspaces.find(
+    (w) => w.workspace_id === selectedWorkspaceId,
+  );
+  const isPersonalWorkspace = activeWorkspace?.kind === "personal";
 
   // ── URL hash sync for #thread=<id> ──────────────────────────────────────
   // Writer: whenever pageThreadId changes, reflect it into the hash (without
@@ -1669,6 +1690,14 @@ export default function App() {
             onClick={() => setSidebarOpen(false)}
           />
         )}
+        {!isMobile && (
+          <WorkspaceRail
+            workspaces={workspaces}
+            selectedWorkspaceId={selectedWorkspaceId}
+            onSelect={setSelectedWorkspaceId}
+            onCreate={() => setCreateWsOpen(true)}
+          />
+        )}
         <Sidebar
           isMobile={isMobile}
           sidebarOpen={sidebarOpen}
@@ -1681,6 +1710,7 @@ export default function App() {
           setWorkspaces={setWorkspaces}
           selectedWorkspaceId={selectedWorkspaceId}
           setSelectedWorkspaceId={setSelectedWorkspaceId}
+          isPersonalWorkspace={isPersonalWorkspace}
           channels={channels}
           setChannels={setChannels}
           dms={dms}

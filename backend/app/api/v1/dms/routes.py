@@ -14,6 +14,7 @@ from app.core.responses import APIResponse
 from app.core.schemas import DMCounterparty, DMCreateRequest, DMInResponse
 from app.db.models import User
 from app.services.channel_service import ChannelService
+from app.services.workspace_service import WorkspaceService
 
 router = APIRouter(prefix="/dms", tags=["dms"])
 
@@ -47,10 +48,15 @@ async def upsert_dm(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """Return the DM channel with (workspace_id, member). Create on first call."""
+    """Return the DM channel with the named counterparty. Create on first
+    call. Regardless of the workspace_id the client sent, the DM always
+    lives in the caller's Personal workspace — DMs are a personal-space
+    concept in this product."""
+    ws_svc = WorkspaceService(session)
+    personal = await ws_svc.ensure_personal_workspace(current_user)
     svc = ChannelService(session)
     ch = await svc.get_or_create_dm(
-        workspace_id=body.workspace_id,
+        workspace_id=personal.workspace_id,
         current_user=current_user,
         other_id=body.member_id,
         other_type=body.member_type,

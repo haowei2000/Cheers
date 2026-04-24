@@ -48,6 +48,9 @@ interface SidebarProps {
   setWorkspaces: (w: Workspace[]) => void;
   selectedWorkspaceId: string;
   setSelectedWorkspaceId: (id: string) => void;
+  /** True iff the active workspace is the Personal workspace — hides the
+   *  channels section, pins the DMs section on top. */
+  isPersonalWorkspace?: boolean;
 
   channels: Channel[];
   setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
@@ -83,6 +86,7 @@ export function Sidebar({
   setWorkspaces,
   selectedWorkspaceId,
   setSelectedWorkspaceId,
+  isPersonalWorkspace = false,
   channels,
   setChannels,
   dms = [],
@@ -90,7 +94,7 @@ export function Sidebar({
   selectedId,
   setSelectedId,
   setSidebarOpen,
-  onOpenCreateWorkspace,
+  onOpenCreateWorkspace: _onOpenCreateWorkspace,
   onOpenInviteWsMember,
   onOpenCreateChannel,
   onOpenSettings,
@@ -277,136 +281,95 @@ export function Sidebar({
         minHeight: 0,
       }}
     >
-      {/* Rail head: workspace picker (matches design's .rail-head) */}
+      {/* Rail head: workspace picker has moved to the vertical WorkspaceRail
+          on the left. This header now just names the active workspace with a
+          minimal overflow ⋯ for invite / delete on team workspaces. */}
       <div className="an-rail-head">
-        <div className="relative flex-1 min-w-0" ref={wsMenuRef}>
-          <button
-            type="button"
-            className="an-ws"
-            aria-label="切换工作空间"
-            aria-haspopup="menu"
-            aria-expanded={wsMenuOpen}
-            onClick={() => setWsMenuOpen((o) => !o)}
+        <div
+          className="flex items-center gap-2 flex-1 min-w-0 relative"
+          ref={wsMenuRef}
+        >
+          <span
+            className="an-ws-letter"
+            style={{ background: currentWsAccent }}
           >
-            <span
-              className="an-ws-letter"
-              style={{ background: currentWsAccent }}
+            {currentWsLetter}
+          </span>
+          <span
+            className="truncate flex-1"
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--fg-1)",
+            }}
+          >
+            {currentWsLabel}
+          </span>
+          {selectedWorkspaceId && !isPersonalWorkspace && (
+            <button
+              type="button"
+              onClick={() => setWsMenuOpen((o) => !o)}
+              title="工作空间操作"
+              aria-label="工作空间操作"
+              aria-haspopup="menu"
+              aria-expanded={wsMenuOpen}
+              className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+              style={{ color: "var(--fg-3)" }}
             >
-              {currentWsLetter}
-            </span>
-            <span className="truncate flex-1 text-left">{currentWsLabel}</span>
-            <span style={{ color: "var(--fg-3)", fontSize: 10 }}>▾</span>
-          </button>
+              ⋯
+            </button>
+          )}
           {wsMenuOpen && (
             <div
               className="an-menu absolute"
-              style={{ left: 0, right: 0, top: "calc(100% + 4px)", minWidth: 220 }}
+              style={{ right: 0, top: "calc(100% + 4px)", minWidth: 180 }}
               role="menu"
             >
-              <button
-                type="button"
-                className={`an-menu-item ${!selectedWorkspaceId ? "on" : ""}`}
-                onClick={() => {
-                  setSelectedWorkspaceId("");
-                  setWsMenuOpen(false);
-                }}
-              >
-                <span className="an-mi-ico">∗</span>
-                <span>全部工作空间</span>
-                {!selectedWorkspaceId && <span className="an-mi-ck">✓</span>}
-              </button>
-              {workspaces.length > 0 && <div className="an-menu-sep" />}
-              {workspaces.map((w) => {
-                const isOn = w.workspace_id === selectedWorkspaceId;
-                return (
-                  <button
-                    key={w.workspace_id}
-                    type="button"
-                    className={`an-menu-item ${isOn ? "on" : ""}`}
-                    onClick={() => {
-                      setSelectedWorkspaceId(w.workspace_id);
-                      setWsMenuOpen(false);
-                    }}
-                  >
-                    <span
-                      className="an-mi-ico"
-                      style={{
-                        background: wsColor(w.workspace_id),
-                        color: "#fff",
-                        width: 18,
-                        height: 18,
-                        borderRadius: 4,
-                        fontWeight: 700,
-                        fontSize: 10,
-                      }}
-                    >
-                      {w.name.slice(0, 1).toUpperCase()}
-                    </span>
-                    <span className="truncate">{w.name}</span>
-                    {isOn && <span className="an-mi-ck">✓</span>}
-                  </button>
-                );
-              })}
-              <div className="an-menu-sep" />
               <button
                 type="button"
                 className="an-menu-item"
                 onClick={() => {
                   setWsMenuOpen(false);
-                  onOpenCreateWorkspace();
+                  onOpenInviteWsMember();
                 }}
               >
-                <span className="an-mi-ico">＋</span>
-                <span>创建工作空间</span>
+                <span className="an-mi-ico">👤</span>
+                <span>邀请成员</span>
               </button>
-              {selectedWorkspaceId && (
-                <>
-                  <button
-                    type="button"
-                    className="an-menu-item"
-                    onClick={() => {
-                      setWsMenuOpen(false);
-                      onOpenInviteWsMember();
-                    }}
-                  >
-                    <span className="an-mi-ico">👤</span>
-                    <span>邀请成员</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="an-menu-item"
-                    style={{ color: "var(--red)" }}
-                    onClick={() => {
-                      setWsMenuOpen(false);
-                      if (
-                        !confirm("确定删除该工作空间？删除后其下的频道也将被删除。")
-                      )
-                        return;
-                      apiFetch(`/workspaces/${selectedWorkspaceId}`, {
-                        method: "DELETE",
-                        token: authToken,
-                      })
-                        .then((r) => r.json())
-                        .then((d) => {
-                          if (d.status === "success") {
-                            toast.success("工作空间已删除");
-                            setSelectedWorkspaceId("");
-                            refreshWorkspaces(setWorkspaces, authToken);
-                            refreshChannels(setChannels, authToken);
-                          } else {
-                            toast.error(d.detail || "删除失败");
-                          }
-                        })
-                        .catch(() => toast.error("请求失败"));
-                    }}
-                  >
-                    <span className="an-mi-ico" style={{ color: "var(--red)" }}>
-                      ✕
-                    </span>
-                    <span>删除当前工作空间</span>
-                  </button>
-                </>
-              )}
+              <div className="an-menu-sep" />
+              <button
+                type="button"
+                className="an-menu-item"
+                style={{ color: "var(--red)" }}
+                onClick={() => {
+                  setWsMenuOpen(false);
+                  if (
+                    !confirm("确定删除该工作空间？删除后其下的频道也将被删除。")
+                  )
+                    return;
+                  apiFetch(`/workspaces/${selectedWorkspaceId}`, {
+                    method: "DELETE",
+                    token: authToken,
+                  })
+                    .then((r) => r.json())
+                    .then((d) => {
+                      if (d.status === "success") {
+                        toast.success("工作空间已删除");
+                        setSelectedWorkspaceId("");
+                        refreshWorkspaces(setWorkspaces, authToken);
+                        refreshChannels(setChannels, authToken);
+                      } else {
+                        toast.error(d.detail || "删除失败");
+                      }
+                    })
+                    .catch(() => toast.error("请求失败"));
+                }}
+              >
+                <span className="an-mi-ico" style={{ color: "var(--red)" }}>
+                  ✕
+                </span>
+                <span>删除工作空间</span>
+              </button>
             </div>
           )}
         </div>
@@ -556,6 +519,8 @@ export function Sidebar({
 
       {/* Channels + Direct sections share a single scroller */}
       <div className="overflow-auto flex-1">
+      {!isPersonalWorkspace && (
+        <>
       <div className="an-rail-section-h">
         <span>频道</span>
         <button
@@ -636,10 +601,14 @@ export function Sidebar({
             );
           })}
       </ul>
+        </>
+      )}
 
-      {/* Direct section — 1:1 DMs with users + bots. Header is always
-          shown so users have an affordance to start a new DM even when
-          the list is empty. */}
+      {/* Direct section — only in the Personal workspace. 1:1 DMs with
+          users + bots. Header always shown so users have an affordance to
+          start a new DM even when the list is empty. */}
+      {isPersonalWorkspace && (
+        <>
       <div className="an-rail-section-h">
         <span>私信</span>
         <button
@@ -761,6 +730,8 @@ export function Sidebar({
                 );
               })}
           </ul>
+        </>
+      )}
         </>
       )}
 

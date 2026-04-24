@@ -1,6 +1,9 @@
 export type Workspace = {
   workspace_id: string;
   name: string;
+  /** "team" (shared workspace with channels) or "personal" (per-user,
+   *  auto-provisioned, hosts DMs only). Defaults to "team" server-side. */
+  kind?: "team" | "personal";
 };
 
 export type Channel = {

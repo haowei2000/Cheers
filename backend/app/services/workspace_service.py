@@ -1,6 +1,7 @@
 """Workspace 业务逻辑层."""
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
@@ -8,6 +9,9 @@ from app.db.models import User, Workspace, WorkspaceMembership
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
 from app.utils.permissions import is_admin
+
+PERSONAL_WORKSPACE_KIND = "personal"
+TEAM_WORKSPACE_KIND = "team"
 
 
 class WorkspaceService:
@@ -39,7 +43,38 @@ class WorkspaceService:
         return ws
 
     async def list_for_user(self, user: User) -> list[Workspace]:
+        # Make sure every user has a personal workspace the first time
+        # they're observed. This is where DMs land.
+        await self.ensure_personal_workspace(user)
         return await self.repo.list_for_user(user.user_id)
+
+    async def get_personal_workspace(self, user: User) -> Workspace | None:
+        """Return the caller's personal workspace if it exists, else None."""
+        rows = await self.session.execute(
+            select(Workspace)
+            .join(
+                WorkspaceMembership,
+                WorkspaceMembership.workspace_id == Workspace.workspace_id,
+            )
+            .where(
+                WorkspaceMembership.user_id == user.user_id,
+                Workspace.kind == PERSONAL_WORKSPACE_KIND,
+            )
+            .limit(1)
+        )
+        return rows.scalar_one_or_none()
+
+    async def ensure_personal_workspace(self, user: User) -> Workspace:
+        """Idempotent: return (creating if necessary) the caller's personal
+        workspace. Owner role; the name is simply "Personal" — the UI can
+        decorate it however it wants."""
+        existing = await self.get_personal_workspace(user)
+        if existing:
+            return existing
+        ws = await self.repo.create("Personal", kind=PERSONAL_WORKSPACE_KIND)
+        await self.repo.add_member(ws.workspace_id, user.user_id, role="owner")
+        await self.session.flush()
+        return ws
 
     async def list_all(self) -> list[Workspace]:
         return await self.repo.list_all()

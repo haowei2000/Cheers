@@ -18,6 +18,7 @@ class WorkspaceOut(BaseModel):
 
     workspace_id: str
     name: str
+    kind: str = "team"  # "team" | "personal"
 
 
 class WorkspaceCreateBody(BaseModel):

@@ -110,6 +110,11 @@ class Workspace(Base):
 
     workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # "team" (default, shared workspace with channels) or "personal" (auto-
+    # provisioned per user; hosts their DMs).
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="team", default="team"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     channels: Mapped[list["Channel"]] = relationship("Channel", back_populates="workspace", cascade="all, delete-orphan")

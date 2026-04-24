@@ -232,6 +232,84 @@
 }
 .an-threads-btn.on .an-tb-n { color: var(--accent); background: #fff2; }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Workspace rail — vertical strip of workspace tiles, sits to the left of
+ * the main Sidebar. One tile per workspace + a + tile. Personal workspace
+ * pins at the top with a round tile; teams use rounded-square tiles.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.an-wsr {
+  flex-shrink: 0;
+  width: 56px;
+  background: var(--bg-0);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 8px;
+  overflow-y: auto;
+}
+.an-wsr::-webkit-scrollbar { display: none; }
+.an-wsr-sep {
+  width: 28px;
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.an-wsr-tile {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition:
+    border-radius var(--motion-fast),
+    transform var(--motion-fast),
+    box-shadow var(--motion-fast);
+  position: relative;
+  flex-shrink: 0;
+  font-family: inherit;
+}
+.an-wsr-tile:hover {
+  border-radius: 12px !important;
+  transform: translateY(-0.5px);
+}
+.an-wsr-tile[data-active="1"] {
+  border-radius: 12px !important;
+  box-shadow: 0 0 0 2px var(--accent), 0 6px 14px var(--shadow);
+}
+.an-wsr-tile[data-active="1"]::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 20px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+.an-wsr-add {
+  background: var(--surface-soft) !important;
+  color: var(--fg-3) !important;
+  border: 1px dashed var(--border-strong) !important;
+  font-weight: 300;
+  font-size: 20px;
+  border-radius: 12px !important;
+}
+.an-wsr-add:hover {
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+  background: var(--accent-muted) !important;
+}
+
 /* Rail — used by the Sidebar */
 .an-rail {
   background: var(--bg-1);
