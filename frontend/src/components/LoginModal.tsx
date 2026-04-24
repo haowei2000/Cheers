@@ -177,11 +177,20 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
       }}
     >
       <div
-        className="bg-white rounded-xl p-8 w-full max-w-sm shadow-2xl"
+        className="rounded-xl p-8 w-full max-w-sm"
+        style={{
+          background: "var(--bg-1)",
+          color: "var(--fg-1)",
+          border: "1px solid var(--border)",
+          boxShadow: "0 30px 80px var(--shadow)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-lg bg-[#4A154B] flex items-center justify-center mx-auto mb-3">
+          <div
+            className="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-3"
+            style={{ background: "var(--accent)" }}
+          >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"

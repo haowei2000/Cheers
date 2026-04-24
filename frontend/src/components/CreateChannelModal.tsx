@@ -24,21 +24,31 @@ export function CreateChannelModal({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[120] flex items-center justify-center p-4"
+      style={{ background: "var(--overlay)" }}
       onClick={onClose}
       aria-modal="true"
       role="dialog"
     >
       <div
-        className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6 text-left"
+        className="rounded-xl max-w-md w-full mx-4 p-6 text-left"
+        style={{
+          background: "var(--bg-1)",
+          border: "1px solid var(--border)",
+          color: "var(--fg-1)",
+          boxShadow: "0 30px 80px var(--shadow)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold text-gray-900">创建频道</h2>
+          <h2 className="text-lg font-bold" style={{ color: "var(--fg-1)" }}>
+            创建频道
+          </h2>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none"
+            className="w-8 h-8 flex items-center justify-center rounded-full text-xl leading-none"
+            style={{ color: "var(--fg-3)" }}
             aria-label="关闭"
           >
             ×
@@ -46,13 +56,16 @@ export function CreateChannelModal({
         </div>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              className="block text-sm font-medium mb-1"
+              style={{ color: "var(--fg-2)" }}
+            >
               工作空间
             </label>
             <select
               value={selectedWorkspaceId}
               onChange={(e) => onSelectWorkspace(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              className="an-select"
             >
               <option value="">选择工作空间</option>
               {workspaces.map((w) => (
@@ -63,7 +76,10 @@ export function CreateChannelModal({
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              className="block text-sm font-medium mb-1"
+              style={{ color: "var(--fg-2)" }}
+            >
               频道名称
             </label>
             <input
@@ -71,7 +87,7 @@ export function CreateChannelModal({
               value={channelName}
               onChange={(e) => onChannelNameChange(e.target.value)}
               placeholder="输入频道名称"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              className="an-input"
               onKeyDown={(e) => e.key === "Enter" && onSubmit()}
             />
           </div>
@@ -79,14 +95,14 @@ export function CreateChannelModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
+              className="an-btn an-btn-ghost"
             >
               取消
             </button>
             <button
               type="button"
               onClick={onSubmit}
-              className="px-4 py-2 bg-[#4A154B] text-white rounded-lg text-sm font-medium hover:bg-[#3d1040]"
+              className="an-btn an-btn-primary"
             >
               创建
             </button>
