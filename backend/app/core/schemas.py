@@ -309,8 +309,8 @@ class MessageFileInResponse(BaseModel):
 
 # ==================== content_data schemas (per msg_type) ====================
 
-class ThreadContentData(BaseModel):
-    """消息串的结构化数据。"""
+class TopicContentData(BaseModel):
+    """主题的结构化数据。"""
     title: str | None = None
 
 
@@ -376,10 +376,10 @@ class ReplyMessageCreate(_MessageCreateBase):
     content_data: dict[str, Any] | None = None
 
 
-class ThreadMessageCreate(_MessageCreateBase):
-    """消息串：显式创建一个话题串。"""
-    msg_type: Literal["thread"] = "thread"
-    content_data: ThreadContentData | None = None
+class TopicMessageCreate(_MessageCreateBase):
+    """主题：显式创建一个主题。"""
+    msg_type: Literal["topic"] = "topic"
+    content_data: TopicContentData | None = None
 
 
 class AnnouncementMessageCreate(_MessageCreateBase):
@@ -422,7 +422,7 @@ class MessageCreate(BaseModel):
 
 # Discriminated union（供新客户端使用）
 AnyMessageCreate = Annotated[
-    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate | AnnouncementMessageCreate | RoutingMessageCreate | PermissionMessageCreate,
+    NormalMessageCreate | ReplyMessageCreate | TopicMessageCreate | AnnouncementMessageCreate | RoutingMessageCreate | PermissionMessageCreate,
     Field(discriminator="msg_type"),
 ]
 
@@ -469,9 +469,9 @@ class ReplyMessageInResponse(_MessageResponseBase):
     in_reply_to_msg_id: str
 
 
-class ThreadMessageInResponse(_MessageResponseBase):
-    """消息串响应。content_data 包含 { title?: string } 等线程专有字段。"""
-    msg_type: Literal["thread"] = "thread"
+class TopicMessageInResponse(_MessageResponseBase):
+    """主题响应。content_data 包含 { title?: string } 等主题专有字段。"""
+    msg_type: Literal["topic"] = "topic"
 
 
 class AnnouncementMessageInResponse(_MessageResponseBase):
@@ -490,7 +490,7 @@ class PermissionMessageInResponse(_MessageResponseBase):
 
 
 AnyMessageInResponse = Annotated[
-    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse | AnnouncementMessageInResponse | RoutingMessageInResponse | PermissionMessageInResponse,
+    NormalMessageInResponse | ReplyMessageInResponse | TopicMessageInResponse | AnnouncementMessageInResponse | RoutingMessageInResponse | PermissionMessageInResponse,
     Field(discriminator="msg_type"),
 ]
 
