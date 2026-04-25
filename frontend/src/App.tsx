@@ -1824,9 +1824,13 @@ export default function App() {
           setTheme={setTheme}
           authToken={authToken}
           currentUser={currentUser}
-          onOpenUserProfile={() => setUserProfileOpen(true)}
-          onOpenKeychain={() => setKeychainModalOpen(true)}
-          onOpenFriends={() => setFriendsPanelOpen(true)}
+          onProfileUpdated={(data) => {
+            if (!currentUser) return;
+            setCurrentUser({
+              ...currentUser,
+              display_name: data.display_name,
+            });
+          }}
           onLogout={handleLogout}
         />
 
