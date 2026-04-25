@@ -9,7 +9,7 @@
  *  Rail (sidebar)      .an-rail*           Sidebar.tsx
  *                      .an-ws, .an-ws-*    Workspace picker button + menu
  *  Floating menu       .an-menu*           Workspace / upload / keychain /
- *                                          @mention / threads popover
+ *                                          @mention / topics popover
  *  Modal shell         .an-modal*          SettingsModal (all modals can opt-in)
  *  Settings left nav   .an-settings-nav,   SettingsModal tabs
  *                      .an-sn-item, .an-sn-sep
@@ -31,12 +31,12 @@
  *  Chat stream         .an-msg*, .an-routing,
  *                      .an-approval, .an-announce,
  *                      .an-reply-quote,
- *                      .an-thread-tag
+ *                      .an-topic-tag
  *  Composer            .an-composer
  *  Channel header      .an-head*,          ChannelHeader.tsx
  *                      .an-mem-cluster,
- *                      .an-threads-btn,
- *                      .an-threads-pop
+ *                      .an-topics-btn,
+ *                      .an-topics-pop
  *  Context memory      .an-memory*,        MemoryPanel.tsx + MemoryPage
  *                      .an-mem-item,
  *                      .an-timeline,
@@ -206,8 +206,8 @@
 .an-mem-cluster .an-mc-btn .an-mc-n { font-size: 10px; font-weight: 600; opacity: 0.75; }
 .an-mem-cluster .an-mc-btn .an-mc-label { font-weight: 500; }
 
-/* Channel-header threads pill */
-.an-threads-btn {
+/* Channel-header topics pill */
+.an-topics-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -222,18 +222,18 @@
   transition: all var(--motion-fast);
   height: 28px;
 }
-.an-threads-btn:hover {
+.an-topics-btn:hover {
   color: var(--fg-1);
   border-color: var(--border-strong);
   background: var(--surface-soft);
 }
-.an-threads-btn.on {
+.an-topics-btn.on {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-muted);
 }
-.an-threads-btn svg { width: 13px; height: 13px; }
-.an-threads-btn .an-tb-n {
+.an-topics-btn svg { width: 13px; height: 13px; }
+.an-topics-btn .an-tb-n {
   font-size: 10px;
   font-weight: 600;
   color: var(--fg-3);
@@ -244,15 +244,15 @@
   min-width: 14px;
   text-align: center;
 }
-.an-threads-btn.on .an-tb-n { color: var(--accent); background: #fff2; }
+.an-topics-btn.on .an-tb-n { color: var(--accent); background: #fff2; }
 
-/* Collapsed thread card — compact chip showing stacked participant
+/* Collapsed topic card — compact chip showing stacked participant
  * avatars + title summary + a metadata line. Click anywhere to expand
- * into the full thread view below.
+ * into the full topic view below.
  *
  * Laid out as a single row so it reads as one clickable unit instead
  * of a multi-zone card. */
-.an-thread-chip {
+.an-topic-chip {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -270,16 +270,16 @@
     background var(--motion-fast),
     box-shadow var(--motion-fast);
 }
-.an-thread-chip:hover {
+.an-topic-chip:hover {
   border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
   background: var(--accent-muted);
   box-shadow: 0 4px 14px var(--shadow);
 }
-.an-thread-chip-faces {
+.an-topic-chip-faces {
   display: inline-flex;
   flex-shrink: 0;
 }
-.an-thread-chip-face {
+.an-topic-chip-face {
   width: 24px;
   height: 24px;
   border-radius: 8px;
@@ -295,17 +295,17 @@
   flex-shrink: 0;
   overflow: hidden;
 }
-.an-thread-chip-face:last-child {
+.an-topic-chip-face:last-child {
   margin-right: 0;
 }
-.an-thread-chip-body {
+.an-topic-chip-body {
   display: flex;
   flex-direction: column;
   min-width: 0;
   flex: 1;
   gap: 1px;
 }
-.an-thread-chip-title {
+.an-topic-chip-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--fg-1);
@@ -315,12 +315,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.an-thread-chip-meta {
+.an-topic-chip-meta {
   font-size: 11px;
   color: var(--fg-3);
   line-height: 1.3;
 }
-.an-thread-chip-open {
+.an-topic-chip-open {
   flex-shrink: 0;
   font-size: 11.5px;
   font-weight: 600;
@@ -476,7 +476,7 @@
 }
 
 /* All non-DM message rows share one width so the stream reads as a
- * single column. 70% of the chat container, centered. Thread cards
+ * single column. 70% of the chat container, centered. Topic cards
  * already use this via Tailwind; keep them consistent with this token
  * so future tweaks update everyone.
  *
@@ -1237,8 +1237,8 @@
   flex-shrink: 0;
 }
 
-/* Thread tag under a message */
-.an-thread-tag {
+/* Topic tag under a message */
+.an-topic-tag {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1253,18 +1253,18 @@
   transition: all var(--motion-fast);
   font-family: inherit;
 }
-.an-thread-tag:hover {
+.an-topic-tag:hover {
   border-color: var(--accent);
   color: var(--fg-1);
   background: var(--accent-muted);
 }
-.an-thread-tag .an-tt-count { font-weight: 600; color: var(--accent); }
-.an-thread-tag .an-tt-title { color: var(--fg-2); }
-.an-thread-tag .an-tt-open { color: var(--fg-3); font-size: 10px; margin-left: 2px; }
-.an-thread-tag .an-tt-faces {
+.an-topic-tag .an-tt-count { font-weight: 600; color: var(--accent); }
+.an-topic-tag .an-tt-title { color: var(--fg-2); }
+.an-topic-tag .an-tt-open { color: var(--fg-3); font-size: 10px; margin-left: 2px; }
+.an-topic-tag .an-tt-faces {
   display: inline-flex;
 }
-.an-thread-tag .an-tt-faces .an-fc {
+.an-topic-tag .an-tt-faces .an-fc {
   width: 18px;
   height: 18px;
   border-radius: 4px;
@@ -1277,11 +1277,11 @@
   border: 1.5px solid var(--bg-1);
 }
 
-/* Thread dock — wraps a thread's messages (root + its reply/replies) in
+/* Topic dock — wraps a topic's messages (root + its reply/replies) in
  * one visible container so they read as a single grouped unit in the
  * stream. Used by the 1-reply inline render. The 2+-reply render has
  * its own richer card wrapper. */
-.an-thread-dock {
+.an-topic-dock {
   margin: 6px 12px;
   padding: 4px 0;
   background: var(--surface-soft);
@@ -1290,7 +1290,7 @@
   position: relative;
   overflow: hidden;
 }
-.an-thread-dock::before {
+.an-topic-dock::before {
   content: "";
   position: absolute;
   left: 0;
@@ -1301,7 +1301,7 @@
   border-radius: 0 1px 1px 0;
   opacity: 0.55;
 }
-.an-thread-dock-label {
+.an-topic-dock-label {
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.7px;
@@ -1312,7 +1312,7 @@
   align-items: center;
   gap: 6px;
 }
-.an-thread-dock-label::before {
+.an-topic-dock-label::before {
   content: "";
   width: 4px;
   height: 4px;
@@ -1320,14 +1320,14 @@
   background: var(--accent);
 }
 
-/* Thread peek — collapsed first-few-replies rendered inline under parent */
-.an-thread-peek {
+/* Topic peek — collapsed first-few-replies rendered inline under parent */
+.an-topic-peek {
   margin: 8px 0 2px;
   padding: 8px 0 2px 14px;
   border-left: 2px solid var(--border);
   position: relative;
 }
-.an-thread-peek::before {
+.an-topic-peek::before {
   content: "";
   position: absolute;
   left: -1.5px;
@@ -1337,23 +1337,23 @@
   border-radius: 50%;
   background: var(--border-strong);
 }
-.an-thread-peek .an-tp-row {
+.an-topic-peek .an-tp-row {
   display: flex;
   gap: 8px;
   padding: 4px 0;
   align-items: baseline;
   font-size: 12px;
 }
-.an-thread-peek .an-tp-row .an-who {
+.an-topic-peek .an-tp-row .an-who {
   font-weight: 500;
   color: var(--fg-1);
   font-size: 12px;
 }
-.an-thread-peek .an-tp-row .an-t {
+.an-topic-peek .an-tp-row .an-t {
   font-size: 10.5px;
   color: var(--fg-3);
 }
-.an-thread-peek .an-tp-row .an-c {
+.an-topic-peek .an-tp-row .an-c {
   color: var(--fg-2);
   flex: 1;
   min-width: 0;
@@ -1361,7 +1361,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.an-thread-peek .an-tp-more {
+.an-topic-peek .an-tp-more {
   font-size: 11px;
   color: var(--fg-3);
   padding: 4px 0 2px;
@@ -1371,13 +1371,13 @@
   font-family: inherit;
   text-align: left;
 }
-.an-thread-peek .an-tp-more:hover { color: var(--accent); }
+.an-topic-peek .an-tp-more:hover { color: var(--accent); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Thread panel (side dock inside the chat column) + full-page thread view.
+ * Topic panel (side dock inside the chat column) + full-page topic view.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-.an-thread-panel {
+.an-topic-panel {
   width: 420px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
@@ -1387,25 +1387,25 @@
   min-height: 0;
   color: var(--fg-1);
 }
-.an-thread-panel .an-tp-head {
+.an-topic-panel .an-tp-head {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding: 14px 18px 12px;
   border-bottom: 1px solid var(--border);
 }
-.an-thread-panel .an-tp-head .an-tp-t {
+.an-topic-panel .an-tp-head .an-tp-t {
   font-size: 13px;
   font-weight: 600;
   color: var(--fg-1);
   letter-spacing: -0.01em;
 }
-.an-thread-panel .an-tp-head .an-tp-sub {
+.an-topic-panel .an-tp-head .an-tp-sub {
   font-size: 11px;
   color: var(--fg-3);
   margin-top: 2px;
 }
-.an-thread-panel .an-tp-head .an-tp-x {
+.an-topic-panel .an-tp-head .an-tp-x {
   margin-left: auto;
   background: transparent;
   border: 0;
@@ -1416,11 +1416,11 @@
   font-family: inherit;
   font-size: 13px;
 }
-.an-thread-panel .an-tp-head .an-tp-x:hover {
+.an-topic-panel .an-tp-head .an-tp-x:hover {
   color: var(--fg-1);
   background: var(--surface-soft);
 }
-.an-thread-panel .an-tp-head .an-tp-pop {
+.an-topic-panel .an-tp-head .an-tp-pop {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--fg-2);
@@ -1433,17 +1433,17 @@
   align-items: center;
   gap: 5px;
 }
-.an-thread-panel .an-tp-head .an-tp-pop:hover {
+.an-topic-panel .an-tp-head .an-tp-pop:hover {
   color: var(--fg-1);
   border-color: var(--accent);
   background: var(--accent-muted);
 }
-.an-thread-panel .an-tp-parent {
+.an-topic-panel .an-tp-parent {
   padding: 12px 18px;
   background: var(--surface-soft);
   border-bottom: 1px solid var(--border);
 }
-.an-thread-panel .an-tp-parent .an-pw {
+.an-topic-panel .an-tp-parent .an-pw {
   font-size: 10px;
   font-weight: 700;
   color: var(--fg-3);
@@ -1451,7 +1451,7 @@
   text-transform: uppercase;
   margin-bottom: 4px;
 }
-.an-thread-panel .an-tp-parent .an-pm-jump {
+.an-topic-panel .an-tp-parent .an-pm-jump {
   font-size: 12px;
   color: var(--fg-2);
   cursor: pointer;
@@ -1460,32 +1460,32 @@
   padding: 0;
   font-family: inherit;
 }
-.an-thread-panel .an-tp-parent .an-pm-jump:hover { color: var(--accent); }
-.an-thread-panel .an-tp-body {
+.an-topic-panel .an-tp-parent .an-pm-jump:hover { color: var(--accent); }
+.an-topic-panel .an-tp-body {
   flex: 1;
   overflow-y: auto;
   padding: 12px 18px;
 }
-.an-thread-panel .an-tp-foot {
+.an-topic-panel .an-tp-foot {
   border-top: 1px solid var(--border);
   padding: 10px 18px;
 }
-.an-thread-panel .an-tp-reply {
+.an-topic-panel .an-tp-reply {
   display: flex;
   gap: 8px;
   padding: 8px 0;
   align-items: baseline;
 }
-.an-thread-panel .an-tp-reply .an-who {
+.an-topic-panel .an-tp-reply .an-who {
   font-size: 12px;
   font-weight: 600;
   color: var(--fg-1);
 }
-.an-thread-panel .an-tp-reply .an-t {
+.an-topic-panel .an-tp-reply .an-t {
   font-size: 10.5px;
   color: var(--fg-3);
 }
-.an-thread-panel .an-tp-reply .an-c {
+.an-topic-panel .an-tp-reply .an-c {
   font-size: 12.5px;
   color: var(--fg-2);
   white-space: pre-wrap;
@@ -1494,15 +1494,15 @@
   min-width: 0;
 }
 
-/* Full-page thread view */
-.an-thread-page {
+/* Full-page topic view */
+.an-topic-page {
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
   background: var(--bg-0);
 }
-.an-thread-page .an-tpp-top {
+.an-topic-page .an-tpp-top {
   padding: 14px 28px 12px;
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -1510,7 +1510,7 @@
   gap: 16px;
   background: var(--bg-1);
 }
-.an-thread-page .an-tpp-back {
+.an-topic-page .an-tpp-back {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--fg-2);
@@ -1525,13 +1525,13 @@
   height: 30px;
   flex-shrink: 0;
 }
-.an-thread-page .an-tpp-back:hover {
+.an-topic-page .an-tpp-back:hover {
   color: var(--fg-1);
   border-color: var(--border-strong);
   background: var(--surface-soft);
 }
-.an-thread-page .an-tpp-meta { flex: 1; min-width: 0; }
-.an-thread-page .an-tpp-crumbs {
+.an-topic-page .an-tpp-meta { flex: 1; min-width: 0; }
+.an-topic-page .an-tpp-crumbs {
   font-size: 11px;
   color: var(--fg-3);
   display: flex;
@@ -1539,22 +1539,22 @@
   gap: 6px;
   margin-bottom: 4px;
 }
-.an-thread-page .an-tpp-crumbs a {
+.an-topic-page .an-tpp-crumbs a {
   color: var(--fg-3);
   cursor: pointer;
 }
-.an-thread-page .an-tpp-crumbs a:hover { color: var(--accent); }
-.an-thread-page .an-tpp-crumbs .an-sep {
+.an-topic-page .an-tpp-crumbs a:hover { color: var(--accent); }
+.an-topic-page .an-tpp-crumbs .an-sep {
   color: var(--fg-3);
   opacity: 0.5;
 }
-.an-thread-page .an-tpp-title {
+.an-topic-page .an-tpp-title {
   font-size: 18px;
   font-weight: 600;
   color: var(--fg-1);
   letter-spacing: -0.015em;
 }
-.an-thread-page .an-tpp-sub {
+.an-topic-page .an-tpp-sub {
   font-size: 12px;
   color: var(--fg-3);
   margin-top: 4px;
@@ -1562,13 +1562,13 @@
   gap: 10px;
   align-items: center;
 }
-.an-thread-page .an-tpp-sub .an-d {
+.an-topic-page .an-tpp-sub .an-d {
   width: 3px;
   height: 3px;
   border-radius: 50%;
   background: var(--fg-3);
 }
-.an-thread-page .an-tpp-body {
+.an-topic-page .an-tpp-body {
   flex: 1;
   overflow-y: auto;
   padding: 24px 28px 20px;
@@ -1577,7 +1577,7 @@
   margin: 0 auto;
   align-self: center;
 }
-.an-thread-page .an-tpp-parent-card {
+.an-topic-page .an-tpp-parent-card {
   background: var(--bg-1);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
@@ -1585,7 +1585,7 @@
   padding: 14px 16px;
   margin-bottom: 22px;
 }
-.an-thread-page .an-tpp-parent-card .an-pw {
+.an-topic-page .an-tpp-parent-card .an-pw {
   font-size: 10px;
   font-weight: 700;
   color: var(--accent);
@@ -1593,28 +1593,28 @@
   text-transform: uppercase;
   margin-bottom: 8px;
 }
-.an-thread-page .an-tpp-parent-card .an-pm-head {
+.an-topic-page .an-tpp-parent-card .an-pm-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
   margin-bottom: 4px;
 }
-.an-thread-page .an-tpp-parent-card .an-pm-who {
+.an-topic-page .an-tpp-parent-card .an-pm-who {
   font-weight: 600;
   color: var(--fg-1);
   font-size: 13px;
 }
-.an-thread-page .an-tpp-parent-card .an-pm-t {
+.an-topic-page .an-tpp-parent-card .an-pm-t {
   font-size: 11px;
   color: var(--fg-3);
 }
-.an-thread-page .an-tpp-parent-card .an-pm-c {
+.an-topic-page .an-tpp-parent-card .an-pm-c {
   font-size: 13px;
   color: var(--fg-2);
   white-space: pre-wrap;
   line-height: 1.55;
 }
-.an-thread-page .an-tpp-divider {
+.an-topic-page .an-tpp-divider {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1625,43 +1625,43 @@
   letter-spacing: 0.6px;
   text-transform: uppercase;
 }
-.an-thread-page .an-tpp-divider::before,
-.an-thread-page .an-tpp-divider::after {
+.an-topic-page .an-tpp-divider::before,
+.an-topic-page .an-tpp-divider::after {
   content: "";
   height: 1px;
   background: var(--border);
   flex: 1;
 }
-.an-thread-page .an-tpp-foot {
+.an-topic-page .an-tpp-foot {
   border-top: 1px solid var(--border);
   padding: 14px 28px;
   background: var(--bg-1);
 }
-.an-thread-page .an-tpp-foot .an-wrap {
+.an-topic-page .an-tpp-foot .an-wrap {
   max-width: 920px;
   margin: 0 auto;
 }
-.an-thread-page .an-tpp-reply {
+.an-topic-page .an-tpp-reply {
   padding: 10px 0;
   border-bottom: 1px dashed var(--border);
 }
-.an-thread-page .an-tpp-reply:last-child { border-bottom: 0; }
-.an-thread-page .an-tpp-reply .an-r-head {
+.an-topic-page .an-tpp-reply:last-child { border-bottom: 0; }
+.an-topic-page .an-tpp-reply .an-r-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
   margin-bottom: 4px;
 }
-.an-thread-page .an-tpp-reply .an-r-who {
+.an-topic-page .an-tpp-reply .an-r-who {
   font-weight: 600;
   color: var(--fg-1);
   font-size: 13px;
 }
-.an-thread-page .an-tpp-reply .an-r-t {
+.an-topic-page .an-tpp-reply .an-r-t {
   font-size: 11px;
   color: var(--fg-3);
 }
-.an-thread-page .an-tpp-reply .an-r-c {
+.an-topic-page .an-tpp-reply .an-r-c {
   font-size: 13px;
   color: var(--fg-2);
   white-space: pre-wrap;
@@ -1694,7 +1694,7 @@
 }
 
 /* Kind-tinted composer shells — announcement picks up the accent color,
- * thread picks up the green semantic color. The cues are subtle (1px
+ * topic picks up the green semantic color. The cues are subtle (1px
  * border + a light gradient on the kind header) so the chrome doesn't
  * scream. */
 .an-composer.is-announcement {
@@ -1704,15 +1704,15 @@
 .an-composer.is-announcement:focus-within {
   border-color: var(--accent);
 }
-.an-composer.is-thread {
+.an-composer.is-topic {
   border-color: color-mix(in oklab, var(--green) 50%, var(--border));
   background: linear-gradient(180deg, var(--green-muted), var(--bg-1) 46px);
 }
-.an-composer.is-thread:focus-within {
+.an-composer.is-topic:focus-within {
   border-color: var(--green);
 }
 
-/* Kind header — sits above the textarea when announcement/thread is
+/* Kind header — sits above the textarea when announcement/topic is
  * active, carries the kind tag + the title input. */
 .an-composer-kindhead {
   display: flex;
@@ -1737,7 +1737,7 @@
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
 }
-.an-composer.is-thread .an-composer-kindhead-tag {
+.an-composer.is-topic .an-composer-kindhead-tag {
   color: var(--green);
   border-color: color-mix(in oklab, var(--green) 40%, var(--border));
 }
@@ -1811,7 +1811,7 @@
   background: var(--accent-muted);
   color: var(--accent);
 }
-.an-msgkind-label.is-thread {
+.an-msgkind-label.is-topic {
   border-color: color-mix(in oklab, var(--green) 40%, var(--border));
   background: var(--green-muted);
   color: var(--green);
@@ -2807,8 +2807,8 @@ kbd {
   text-align: center;
 }
 
-/* Threads popover (used in channel header) */
-.an-threads-pop {
+/* Topics popover (used in channel header) */
+.an-topics-pop {
   position: absolute;
   right: 20px;
   top: 54px;
@@ -2821,7 +2821,7 @@ kbd {
   overflow: hidden;
   color: var(--fg-1);
 }
-.an-threads-pop .an-hd {
+.an-topics-pop .an-hd {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   font-size: 11px;
@@ -2830,7 +2830,7 @@ kbd {
   text-transform: uppercase;
   font-weight: 600;
 }
-.an-threads-pop .an-it {
+.an-topics-pop .an-it {
   padding: 10px 14px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
@@ -2843,9 +2843,9 @@ kbd {
   font-family: inherit;
   color: inherit;
 }
-.an-threads-pop .an-it:last-child { border-bottom: 0; }
-.an-threads-pop .an-it:hover { background: var(--surface-soft); }
-.an-threads-pop .an-it .an-it-t {
+.an-topics-pop .an-it:last-child { border-bottom: 0; }
+.an-topics-pop .an-it:hover { background: var(--surface-soft); }
+.an-topics-pop .an-it .an-it-t {
   font-size: 12.5px;
   color: var(--fg-1);
   font-weight: 500;
@@ -2854,7 +2854,7 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.an-threads-pop .an-it .an-it-s {
+.an-topics-pop .an-it .an-it-s {
   font-size: 11px;
   color: var(--fg-3);
   margin-top: 2px;
@@ -2862,7 +2862,7 @@ kbd {
   align-items: center;
   gap: 6px;
 }
-.an-threads-pop .an-it .an-it-s .an-d {
+.an-topics-pop .an-it .an-it-s .an-d {
   width: 4px;
   height: 4px;
   border-radius: 50%;

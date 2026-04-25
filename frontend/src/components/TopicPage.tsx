@@ -1,11 +1,11 @@
-/* ThreadPage — full-page thread view (displayed in place of the chat stream
- * when App's pageThreadId is set, synced to URL hash #thread=<msg_id>). */
+/* TopicPage — full-page topic view (displayed in place of the chat stream
+ * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { MessageMarkdown } from "../MessageMarkdown";
-import { ThreadComposer } from "./ThreadComposer";
+import { TopicComposer } from "./TopicComposer";
 
-export interface ThreadPageProps {
+export interface TopicPageProps {
   rootMsg: Message;
   replies: Message[];
   channel: Channel | null;
@@ -43,7 +43,7 @@ function formatDateTime(iso: string | undefined): string {
   }
 }
 
-export function ThreadPage({
+export function TopicPage({
   rootMsg,
   replies,
   channel,
@@ -53,15 +53,15 @@ export function ThreadPage({
   onBack,
   onGoToChannel,
   onSendReply,
-}: ThreadPageProps) {
+}: TopicPageProps) {
   const title =
     stripThinkTags(rootMsg.content || "")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 80) || "对话串";
+      .slice(0, 80) || "主题";
 
   return (
-    <div className="an-thread-page">
+    <div className="an-topic-page">
       <div className="an-tpp-top">
         <button type="button" className="an-tpp-back" onClick={onBack}>
           ← 返回频道
@@ -74,7 +74,7 @@ export function ThreadPage({
               <span>频道</span>
             )}
             <span className="an-sep">›</span>
-            <span>对话串</span>
+            <span>主题</span>
           </div>
           <div className="an-tpp-title">{title}</div>
           <div className="an-tpp-sub">
@@ -162,7 +162,7 @@ export function ThreadPage({
       </div>
       <div className="an-tpp-foot">
         <div className="an-wrap">
-          <ThreadComposer
+          <TopicComposer
             placeholder={`回复 "${title}"…`}
             channelBots={channelBots}
             channelUsers={channelUsers}
@@ -170,7 +170,7 @@ export function ThreadPage({
             hint={
               <>
                 <kbd>@</kbd> 提及 · <kbd>↵</kbd> 发送 · <kbd>⇧↵</kbd> 换行 ·
-                在这里的回复只留在本对话串里
+                在这里的回复只留在本主题里
               </>
             }
           />

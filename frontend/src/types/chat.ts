@@ -51,7 +51,7 @@ export type Message = {
   in_reply_to_msg_id?: string | null;
   msg_type?:
     | "normal"
-    | "thread"
+    | "topic"
     | "reply"
     | "announcement"
     | "routing"

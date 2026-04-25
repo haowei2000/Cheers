@@ -1,4 +1,4 @@
-/* ThreadPanel — right-docked thread overlay inside the chat column.
+/* TopicPanel — right-docked topic overlay inside the chat column.
  *
  * Wraps a root message + its reply chain (derived from in_reply_to) as its
  * own focused view. "Open as page ↗" promotes it to the full-page view
@@ -6,9 +6,9 @@
 import type { ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { MessageMarkdown } from "../MessageMarkdown";
-import { ThreadComposer } from "./ThreadComposer";
+import { TopicComposer } from "./TopicComposer";
 
-export interface ThreadPanelProps {
+export interface TopicPanelProps {
   rootMsg: Message;
   replies: Message[];
   channelBots: ChannelBot[];
@@ -46,7 +46,7 @@ function shortTime(iso: string | undefined): string {
   }
 }
 
-export function ThreadPanel({
+export function TopicPanel({
   rootMsg,
   replies,
   channelBots,
@@ -56,20 +56,20 @@ export function ThreadPanel({
   onOpenAsPage,
   onJumpToParent,
   onSendReply,
-}: ThreadPanelProps) {
+}: TopicPanelProps) {
   const titleSource = rootMsg.content || "(空消息)";
   const title = stripThinkTags(titleSource)
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 60) || "对话串";
+    .slice(0, 60) || "主题";
 
   return (
-    <aside className="an-thread-panel" role="complementary" aria-label="Thread">
+    <aside className="an-topic-panel" role="complementary" aria-label="Topic">
       <div className="an-tp-head">
         <div className="min-w-0 flex-1">
           <div className="an-tp-t truncate">{title}</div>
           <div className="an-tp-sub">
-            {replies.length} 条回复 · 对话串
+            {replies.length} 条回复 · 主题
           </div>
         </div>
         <button
@@ -95,7 +95,7 @@ export function ThreadPanel({
           type="button"
           className="an-tp-x"
           onClick={onClose}
-          aria-label="关闭对话串"
+          aria-label="关闭主题"
           title="关闭"
         >
           ✕
@@ -191,7 +191,7 @@ export function ThreadPanel({
         )}
       </div>
       <div className="an-tp-foot">
-        <ThreadComposer
+        <TopicComposer
           placeholder={`回复 "${title}"…`}
           channelBots={channelBots}
           channelUsers={channelUsers}

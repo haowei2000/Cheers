@@ -1,17 +1,17 @@
-/* ThreadComposer — shared composer for the thread side-panel and the
- * full-page thread view.
+/* TopicComposer — shared composer for the topic side-panel and the
+ * full-page topic view.
  *
  * Matches the main channel composer's visible capabilities that apply to
- * threads: multi-line auto-grow textarea, Enter-to-send / Shift-Enter for
+ * topics: multi-line auto-grow textarea, Enter-to-send / Shift-Enter for
  * newline, and a mention dropdown over channel users + bots.
  *
- * Not yet wired: file upload, secret mode, explicit reply-quote (thread
- * replies are already implicitly scoped to the thread root, so per-reply
- * replying inside a thread is low value right now). */
+ * Not yet wired: file upload, secret mode, explicit reply-quote (topic
+ * replies are already implicitly scoped to the topic root, so per-reply
+ * replying inside a topic is low value right now). */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChannelBot, ChannelUser } from "../types";
 
-export interface ThreadComposerProps {
+export interface TopicComposerProps {
   placeholder: string;
   channelBots: ChannelBot[];
   channelUsers: ChannelUser[];
@@ -27,13 +27,13 @@ type MentionTarget = {
   kind: "bot" | "user";
 };
 
-export function ThreadComposer({
+export function TopicComposer({
   placeholder,
   channelBots,
   channelUsers,
   onSend,
   hint,
-}: ThreadComposerProps) {
+}: TopicComposerProps) {
   const [v, setV] = useState("");
   const [busy, setBusy] = useState(false);
   const [mention, setMention] = useState<{
