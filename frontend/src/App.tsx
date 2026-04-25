@@ -2829,7 +2829,7 @@ export default function App() {
                                       <div
                                         className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
                                         style={{
-                                          background: "var(--green)",
+                                          background: "var(--fg-3)",
                                         }}
                                       >
                                         {botInitials}
@@ -2882,19 +2882,6 @@ export default function App() {
                                           ? botLabel
                                           : userLabel}
                                     </span>
-                                    {m.sender_type === "bot" && (
-                                      <span
-                                        className="text-[9px] px-1.5 py-px rounded"
-                                        style={{
-                                          background: "var(--green-muted)",
-                                          color: "var(--green)",
-                                          fontWeight: 700,
-                                          letterSpacing: "0.4px",
-                                        }}
-                                      >
-                                        BOT
-                                      </span>
-                                    )}
                                     <span
                                       className="text-[11px]"
                                       style={{ color: "var(--fg-3)" }}
@@ -2913,11 +2900,6 @@ export default function App() {
                                 ) : null}
                                 {renderFileAttachments(m)}
                                 <div
-                                  className={
-                                    m.sender_type === "bot"
-                                      ? "an-bot-outline inline-block"
-                                      : ""
-                                  }
                                   style={{
                                     fontSize: "var(--fs-chat-body)",
                                     lineHeight: "var(--lh-chat-body)",
@@ -3524,7 +3506,7 @@ export default function App() {
                                         }
                                         style={
                                           rFlat
-                                            ? { background: "var(--green)" }
+                                            ? { background: "var(--fg-3)" }
                                             : undefined
                                         }
                                       >
@@ -3572,19 +3554,6 @@ export default function App() {
                                     >
                                       {rIsOwn ? "我" : rLabel}
                                     </span>
-                                    {r.sender_type === "bot" && (
-                                      <span
-                                        className="text-[9px] px-1.5 py-px rounded leading-none"
-                                        style={{
-                                          background: "var(--green-muted)",
-                                          color: "var(--green)",
-                                          fontWeight: 700,
-                                          letterSpacing: "0.4px",
-                                        }}
-                                      >
-                                        BOT
-                                      </span>
-                                    )}
                                     <span
                                       className="text-[11px] leading-none"
                                       style={{ color: "var(--fg-3)" }}
@@ -3596,9 +3565,7 @@ export default function App() {
                                   <div
                                     className={
                                       rFlat
-                                        ? r.sender_type === "bot"
-                                          ? "an-bot-outline inline-block"
-                                          : ""
+                                        ? ""
                                         : `rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
                                             rIsOwn
                                               ? "text-white rounded-tr-sm"
