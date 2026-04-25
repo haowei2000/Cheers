@@ -1822,13 +1822,11 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           isDark={isDark}
           setTheme={setTheme}
+          authToken={authToken}
           currentUser={currentUser}
           onOpenUserProfile={() => setUserProfileOpen(true)}
           onOpenKeychain={() => setKeychainModalOpen(true)}
-          onOpenNotifications={() => setNotifPanelOpen(true)}
           onOpenFriends={() => setFriendsPanelOpen(true)}
-          onOpenQuickConnect={() => setQcOpen(true)}
-          onOpenHelp={() => setHelpOpen(true)}
           onLogout={handleLogout}
         />
 

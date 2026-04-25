@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CurrentUser } from "../types";
+import { apiFetch } from "../api";
 
 type Density = "comfy" | "compact";
 type AccentId = "indigo" | "teal" | "amber" | "rose" | "blue";
@@ -47,36 +48,42 @@ interface SettingsModalProps {
   onClose: () => void;
   isDark: boolean;
   setTheme: (t: "light" | "dark") => void;
+  authToken: string | null;
 
   currentUser: CurrentUser;
   onOpenUserProfile: () => void;
   onOpenKeychain: () => void;
-  onOpenNotifications: () => void;
   onOpenFriends: () => void;
-  onOpenQuickConnect: () => void;
-  onOpenHelp: () => void;
   onLogout: () => void;
 }
 
-type Tab = "appearance" | "shortcuts" | "account" | "about";
+type BotRow = {
+  bot_id: string;
+  username: string;
+  display_name?: string | null;
+};
+
+/** Right pane: only views that have content of their own.
+ *  Action-only entries (new bot, logout, open keychain, …) close the
+ *  modal and run their handler, so they don't need a pane. */
+type Pane = "appearance";
 
 export function SettingsModal({
   open,
   onClose,
   isDark,
   setTheme,
+  authToken,
   currentUser,
   onOpenUserProfile,
   onOpenKeychain,
-  onOpenNotifications,
   onOpenFriends,
-  onOpenQuickConnect,
-  onOpenHelp,
   onLogout,
 }: SettingsModalProps) {
-  const [tab, setTab] = useState<Tab>("appearance");
+  const [pane, setPane] = useState<Pane>("appearance");
   const [density, setDensityState] = useState<Density>(() => getStoredDensity());
   const [accent, setAccentState] = useState<AccentId>(() => getStoredAccent());
+  const [bots, setBots] = useState<BotRow[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -87,6 +94,14 @@ export function SettingsModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    apiFetch("/bots", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => setBots(Array.isArray(d?.data) ? d.data : []))
+      .catch(() => setBots([]));
+  }, [open, authToken]);
 
   const changeDensity = (d: Density) => {
     setDensityState(d);
@@ -100,14 +115,14 @@ export function SettingsModal({
     applyAccent(id);
   };
 
-  const go = (path: string) => {
-    onClose();
-    navigate(path);
-  };
-
-  const openAndClose = (fn: () => void) => {
+  const closeAndRun = (fn: () => void) => {
     onClose();
     fn();
+  };
+
+  const closeAndGo = (path: string) => {
+    onClose();
+    navigate(path);
   };
 
   if (!open) return null;
@@ -127,38 +142,87 @@ export function SettingsModal({
           </button>
         </div>
         <div className="an-modal-body">
-          <div className="an-settings-nav">
-            <button
-              type="button"
-              className={`an-sn-item ${tab === "appearance" ? "on" : ""}`}
-              onClick={() => setTab("appearance")}
+          <nav className="an-settings-nav">
+            <NavGroup label="Bot">
+              <NavLeaf
+                active={false}
+                onClick={() => closeAndGo("/admin")}
+              >
+                <span className="an-sn-ico">＋</span> 新建 Bot
+              </NavLeaf>
+              {bots.map((b) => (
+                <NavLeaf
+                  key={b.bot_id}
+                  active={false}
+                  onClick={() => closeAndGo("/admin")}
+                >
+                  <span className="an-sn-ico">◉</span>{" "}
+                  {b.display_name || b.username || b.bot_id.slice(0, 6)}
+                </NavLeaf>
+              ))}
+              {bots.length === 0 && (
+                <div
+                  style={{
+                    padding: "6px 16px 6px 36px",
+                    fontSize: 11,
+                    color: "var(--fg-3)",
+                  }}
+                >
+                  暂无 Bot
+                </div>
+              )}
+            </NavGroup>
+
+            <NavGroup label="账户">
+              <NavLeaf
+                active={false}
+                onClick={() => closeAndRun(onOpenUserProfile)}
+                disabled={!currentUser}
+              >
+                <span className="an-sn-ico">◉</span> 编辑资料
+              </NavLeaf>
+              <NavLeaf
+                active={false}
+                onClick={() => closeAndRun(onLogout)}
+                disabled={!currentUser}
+                danger
+              >
+                <span className="an-sn-ico">↗</span> 退出登录
+              </NavLeaf>
+            </NavGroup>
+
+            <NavRoot
+              active={false}
+              onClick={() => closeAndRun(onOpenFriends)}
+            >
+              <span className="an-sn-ico">◎</span> 好友
+            </NavRoot>
+
+            <NavRoot
+              active={pane === "appearance"}
+              onClick={() => setPane("appearance")}
             >
               <span className="an-sn-ico">◐</span> 外观
-            </button>
-            <button
-              type="button"
-              className={`an-sn-item ${tab === "shortcuts" ? "on" : ""}`}
-              onClick={() => setTab("shortcuts")}
+            </NavRoot>
+
+            <NavRoot
+              active={false}
+              onClick={() => closeAndGo("/bulletin")}
             >
-              <span className="an-sn-ico">⌘</span> 快捷方式
-            </button>
-            <button
-              type="button"
-              className={`an-sn-item ${tab === "account" ? "on" : ""}`}
-              onClick={() => setTab("account")}
-            >
-              <span className="an-sn-ico">◉</span> 账户
-            </button>
-            <button
-              type="button"
-              className={`an-sn-item ${tab === "about" ? "on" : ""}`}
-              onClick={() => setTab("about")}
-            >
-              <span className="an-sn-ico">◎</span> 关于
-            </button>
-          </div>
+              <span className="an-sn-ico">💬</span> 留言板
+            </NavRoot>
+
+            <NavGroup label="其他">
+              <NavLeaf
+                active={false}
+                onClick={() => closeAndRun(onOpenKeychain)}
+              >
+                <span className="an-sn-ico">⌘</span> 钥匙链
+              </NavLeaf>
+            </NavGroup>
+          </nav>
           <div className="an-settings-pane">
-            {tab === "appearance" && (
+            {pane === "appearance" && (
               <AppearancePane
                 isDark={isDark}
                 setTheme={setTheme}
@@ -168,33 +232,87 @@ export function SettingsModal({
                 setAccent={changeAccent}
               />
             )}
-            {tab === "shortcuts" && (
-              <ShortcutsPane
-                onOpenNotifications={() => openAndClose(onOpenNotifications)}
-                onOpenFriends={() => openAndClose(onOpenFriends)}
-                onOpenKeychain={() => openAndClose(onOpenKeychain)}
-                onOpenQuickConnect={() => openAndClose(onOpenQuickConnect)}
-                onOpenHelp={() => openAndClose(onOpenHelp)}
-                goAdmin={() => go("/admin")}
-                goDocs={() => go("/docs")}
-                goBulletin={() => go("/bulletin")}
-              />
-            )}
-            {tab === "account" && (
-              <AccountPane
-                currentUser={currentUser}
-                onOpenUserProfile={() => openAndClose(onOpenUserProfile)}
-                onLogout={() => {
-                  onClose();
-                  onLogout();
-                }}
-              />
-            )}
-            {tab === "about" && <AboutPane />}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function NavRoot({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`an-sn-item ${active ? "on" : ""}`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function NavGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="an-sn-group">
+      <div
+        style={{
+          padding: "10px 16px 4px",
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.8px",
+          textTransform: "uppercase",
+          color: "var(--fg-3)",
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function NavLeaf({
+  active,
+  onClick,
+  disabled,
+  danger,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className={`an-sn-item ${active ? "on" : ""}`}
+      style={{
+        paddingLeft: 28,
+        opacity: disabled ? 0.45 : undefined,
+        color: danger ? "var(--red)" : undefined,
+        cursor: disabled ? "not-allowed" : undefined,
+      }}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -283,266 +401,6 @@ function AppearancePane({
                 title={a.label}
               />
             ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ShortcutRow({
-  ico,
-  title,
-  sub,
-  action,
-  onClick,
-  danger,
-}: {
-  ico: string;
-  title: string;
-  sub?: string;
-  action: string;
-  onClick: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      className="an-row-card"
-      style={{
-        width: "100%",
-        textAlign: "left",
-        cursor: "pointer",
-        fontFamily: "inherit",
-      }}
-      onClick={onClick}
-    >
-      <span
-        className="an-mi-ico"
-        style={{
-          width: 28,
-          height: 28,
-          borderRadius: 7,
-          background: "var(--surface-soft)",
-          color: danger ? "var(--red)" : "var(--accent)",
-          fontSize: 14,
-          flexShrink: 0,
-        }}
-      >
-        {ico}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          className="an-rc-title"
-          style={{ color: danger ? "var(--red)" : "var(--fg-1)" }}
-        >
-          {title}
-        </div>
-        {sub && <div className="an-rc-sub">{sub}</div>}
-      </div>
-      <span
-        style={{
-          color: "var(--fg-3)",
-          fontSize: 12,
-          flexShrink: 0,
-        }}
-      >
-        {action} ›
-      </span>
-    </button>
-  );
-}
-
-function ShortcutsPane({
-  onOpenNotifications,
-  onOpenFriends,
-  onOpenKeychain,
-  onOpenQuickConnect,
-  onOpenHelp,
-  goAdmin,
-  goDocs,
-  goBulletin,
-}: {
-  onOpenNotifications: () => void;
-  onOpenFriends: () => void;
-  onOpenKeychain: () => void;
-  onOpenQuickConnect: () => void;
-  onOpenHelp: () => void;
-  goAdmin: () => void;
-  goDocs: () => void;
-  goBulletin: () => void;
-}) {
-  return (
-    <div>
-      <div className="an-pane-head">
-        <div>
-          <div className="an-pane-title">快捷方式</div>
-          <div className="an-pane-sub">
-            从侧栏移入此处的常用入口。
-          </div>
-        </div>
-      </div>
-      <div className="an-list-table">
-        <ShortcutRow
-          ico="◉"
-          title="通知消息"
-          sub="Bot 回复、提及、审批请求"
-          action="打开"
-          onClick={onOpenNotifications}
-        />
-        <ShortcutRow
-          ico="◎"
-          title="好友"
-          sub="联系人与跨工作空间私信"
-          action="打开"
-          onClick={onOpenFriends}
-        />
-        <ShortcutRow
-          ico="⌘"
-          title="密钥链"
-          sub="管理插入到消息里的 $secret{...}"
-          action="管理"
-          onClick={onOpenKeychain}
-        />
-        <ShortcutRow
-          ico="⚡"
-          title="接入 OpenClaw"
-          sub="快速连接外部 Bot / 代理"
-          action="配置"
-          onClick={onOpenQuickConnect}
-        />
-        <ShortcutRow
-          ico="⚙"
-          title="管理后台"
-          sub="模型、提示词、工作空间、Bot、日志"
-          action="前往"
-          onClick={goAdmin}
-        />
-        <ShortcutRow
-          ico="📄"
-          title="文档"
-          sub="使用说明与集成文档"
-          action="打开"
-          onClick={goDocs}
-        />
-        <ShortcutRow
-          ico="💬"
-          title="留言板"
-          sub="内部反馈与变更记录"
-          action="打开"
-          onClick={goBulletin}
-        />
-        <ShortcutRow
-          ico="?"
-          title="帮助"
-          sub="常见问题与键盘快捷键"
-          action="查看"
-          onClick={onOpenHelp}
-        />
-      </div>
-    </div>
-  );
-}
-
-function AccountPane({
-  currentUser,
-  onOpenUserProfile,
-  onLogout,
-}: {
-  currentUser: CurrentUser;
-  onOpenUserProfile: () => void;
-  onLogout: () => void;
-}) {
-  const initial = currentUser?.display_name?.slice(0, 1)?.toUpperCase() || "?";
-  return (
-    <div>
-      <div className="an-pane-head">
-        <div>
-          <div className="an-pane-title">账户</div>
-          <div className="an-pane-sub">当前登录信息与个人设置。</div>
-        </div>
-      </div>
-      <div className="an-list-table">
-        <div className="an-row-card">
-          <span
-            className="an-mi-ico"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              background: "var(--accent)",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 14,
-              flexShrink: 0,
-            }}
-          >
-            {initial}
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title">
-              {currentUser?.display_name || "未登录"}
-            </div>
-            <div className="an-rc-sub">
-              {currentUser?.user_id
-                ? `UUID · ${currentUser.user_id}`
-                : "登录以同步你的工作空间与记忆"}
-            </div>
-          </div>
-          {currentUser && (
-            <button
-              type="button"
-              className="an-sn-item"
-              style={{
-                width: "auto",
-                padding: "6px 12px",
-                border: "1px solid var(--border)",
-              }}
-              onClick={onOpenUserProfile}
-            >
-              编辑资料
-            </button>
-          )}
-        </div>
-        {currentUser && (
-          <ShortcutRow
-            ico="↗"
-            title="退出登录"
-            sub="清除本地令牌并返回登录界面"
-            action="执行"
-            onClick={onLogout}
-            danger
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AboutPane() {
-  return (
-    <div>
-      <div className="an-pane-head">
-        <div>
-          <div className="an-pane-title">关于</div>
-          <div className="an-pane-sub">AgentNexus · 智枢协作平台</div>
-        </div>
-      </div>
-      <div className="an-list-table">
-        <div className="an-row-card">
-          <div style={{ flex: 1 }}>
-            <div className="an-rc-title">设计系统</div>
-            <div className="an-rc-sub">
-              Haowei / Parallel — 深色底、indigo 主色、紧凑栅格。
-            </div>
-          </div>
-        </div>
-        <div className="an-row-card">
-          <div style={{ flex: 1 }}>
-            <div className="an-rc-title">反馈与问题</div>
-            <div className="an-rc-sub">
-              通过「留言板」或管理后台提交反馈。
-            </div>
           </div>
         </div>
       </div>
