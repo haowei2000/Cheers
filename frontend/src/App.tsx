@@ -34,7 +34,6 @@ import {
 import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
-import { TopicPanel } from "./components/TopicPanel";
 import { TopicPage } from "./components/TopicPage";
 import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
 import { WorkspaceRail } from "./components/WorkspaceRail";
@@ -128,9 +127,9 @@ export default function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [dms, setDMs] = useState<DM[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  // Topic viewers:
-  //   openTopicId  — root msg_id for the side-dock panel
-  //   pageTopicId  — root msg_id for the full-page view (mirrored to URL hash)
+  // Topic viewer: pageTopicId — root msg_id for the full-page view,
+  // mirrored to URL hash. There is no side-dock panel; opening a topic
+  // always replaces the channel stream with the dedicated page.
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   // Composer send-kind: switchable between 普通消息 / 公告 / 主题 via
   // Shift-Tab or the ‹ › buttons flanking the composer. Always resets to
@@ -157,7 +156,6 @@ export default function App() {
       return MSG_KINDS_ORDER[next];
     });
   };
-  const [openTopicId, setOpenTopicId] = useState<string | null>(null);
   const [pageTopicId, setPageTopicId] = useState<string | null>(() => {
     if (typeof location === "undefined") return null;
     const m = /#topic=([^&]+)/.exec(location.hash || "");
@@ -2255,7 +2253,7 @@ export default function App() {
                     })
                     .filter((x): x is NonNullable<typeof x> => x !== null)}
                   onOpenTopic={(rootId) => {
-                    setOpenTopicId(rootId);
+                    setPageTopicId(rootId);
                   }}
                   onJumpToMessage={(id) => {
                     const el = document.getElementById(`msg-${id}`);
@@ -3899,9 +3897,9 @@ export default function App() {
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => setOpenTopicId(m.msg_id)}
+                                  onClick={() => setPageTopicId(m.msg_id)}
                                   className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#1264A3] px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
-                                  title="在侧栏打开主题"
+                                  title="以独立页打开主题"
                                 >
                                   <svg
                                     viewBox="0 0 12 12"
@@ -3914,7 +3912,7 @@ export default function App() {
                                     <path d="M4 2H2v8h8V8" strokeLinecap="round" />
                                     <path d="M7 2h3v3M10 2L6 6" strokeLinecap="round" />
                                   </svg>
-                                  在侧栏打开
+                                  独立页打开
                                 </button>
                                 <button
                                   type="button"
@@ -5054,55 +5052,6 @@ export default function App() {
               </div>
             )}
           </main>
-
-          {/* Topic side panel (sibling of memory panel). Hidden while the
-              full-page TopicPage is active — a side panel on top of a page
-              view duplicates the same topic. */}
-          {openTopicId && !pageTopicId && selectedId && (() => {
-            const rootMsg = messages.find(
-              (m) => m.msg_id === openTopicId,
-            );
-            if (!rootMsg) return null;
-            const rootId = openTopicId;
-            const topicReplies = messages
-              .filter((m) => m.in_reply_to_msg_id === rootId)
-              .sort((a, b) =>
-                (a.created_at || "") < (b.created_at || "") ? -1 : 1,
-              );
-            return (
-              <TopicPanel
-                rootMsg={rootMsg}
-                replies={topicReplies}
-                channelBots={channelBots}
-                channelUsers={channelUsers}
-                currentUserId={currentUserId}
-                onClose={() => setOpenTopicId(null)}
-                onOpenAsPage={() => {
-                  setPageTopicId(rootId);
-                  setOpenTopicId(null);
-                }}
-                onJumpToParent={() => {
-                  const el = document.getElementById(`msg-${rootId}`);
-                  if (!el) return;
-                  el.scrollIntoView({
-                    block: "center",
-                    behavior: "smooth",
-                  });
-                  const orig = el.style.transition;
-                  const prev = el.style.background;
-                  el.style.transition = "background 200ms";
-                  el.style.background = "var(--accent-muted)";
-                  setTimeout(() => {
-                    el.style.background = prev;
-                    el.style.transition = orig;
-                  }, 1200);
-                }}
-                onSendReply={(text) =>
-                  sendTopicReply(selectedId, rootId, text)
-                }
-              />
-            );
-          })()}
 
           {/* Memory right panel */}
           {memoryPanelOpen && selectedId && (

@@ -118,11 +118,12 @@ interface ChannelHeaderProps {
   onOpenAnnouncementComposer?: () => void;
 
   topics?: TopicSummary[];
-  /** Scroll the main stream to the given message id (used by existing
-   *  topics-popover behaviour when no panel handler is provided). */
+  /** Scroll the main stream to the given message id — fallback used when
+   *  no onOpenTopic handler is wired. */
   onJumpToMessage?: (msgId: string) => void;
-  /** When provided, the topics popover opens the given topic root in the
-   *  side-dock TopicPanel instead of scrolling the main stream. */
+  /** When provided, the topics popover opens the given topic root as a
+   *  full-page TopicPage (replacing the channel stream) instead of
+   *  scrolling the main stream. */
   onOpenTopic?: (rootMsgId: string) => void;
 }
 
