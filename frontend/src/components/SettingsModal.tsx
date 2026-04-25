@@ -61,16 +61,10 @@ type BotRow = {
   description?: string | null;
 };
 
-/** Active right pane. Bot panes carry the bot_id; "bot:new" is the
- *  inline create form. All non-Bot leaves get their own pane id. */
-type Pane =
-  | "appearance"
-  | "profile"
-  | "keychain"
-  | "friends"
-  | "bulletin"
-  | "bot:new"
-  | `bot:${string}`;
+/** One pane per top-level category. Drill-down within a category (e.g.
+ *  selecting a specific bot inside the Bot pane) is local state on that
+ *  pane, not a separate sidebar entry. */
+type Pane = "bot" | "account" | "friends" | "appearance" | "bulletin" | "other";
 
 export function SettingsModal({
   open,
@@ -82,7 +76,7 @@ export function SettingsModal({
   onProfileUpdated,
   onLogout,
 }: SettingsModalProps) {
-  const [pane, setPane] = useState<Pane>("appearance");
+  const [pane, setPane] = useState<Pane>("bot");
   const [density, setDensityState] = useState<Density>(() => getStoredDensity());
   const [accent, setAccentState] = useState<AccentId>(() => getStoredAccent());
   const [bots, setBots] = useState<BotRow[]>([]);
@@ -123,12 +117,14 @@ export function SettingsModal({
 
   if (!open) return null;
 
-  const selectedBotId = pane.startsWith("bot:") && pane !== "bot:new"
-    ? pane.slice(4)
-    : null;
-  const selectedBot = selectedBotId
-    ? bots.find((b) => b.bot_id === selectedBotId)
-    : null;
+  const NAV_ITEMS: { id: Pane; ico: string; label: string }[] = [
+    { id: "bot", ico: "◉", label: "Bot" },
+    { id: "account", ico: "◉", label: "账户" },
+    { id: "friends", ico: "◎", label: "好友" },
+    { id: "appearance", ico: "◐", label: "外观" },
+    { id: "bulletin", ico: "💬", label: "留言板" },
+    { id: "other", ico: "⌘", label: "其他" },
+  ];
 
   return (
     <div className="an-modal-overlay" onClick={onClose}>
@@ -146,88 +142,42 @@ export function SettingsModal({
         </div>
         <div className="an-modal-body">
           <nav className="an-settings-nav">
-            <NavGroup label="Bot">
-              <NavLeaf
-                active={pane === "bot:new"}
-                onClick={() => setPane("bot:new")}
+            {NAV_ITEMS.map((it) => (
+              <button
+                key={it.id}
+                type="button"
+                className={`an-sn-item ${pane === it.id ? "on" : ""}`}
+                onClick={() => setPane(it.id)}
               >
-                <span className="an-sn-ico">＋</span> 新建 Bot
-              </NavLeaf>
-              {bots.map((b) => (
-                <NavLeaf
-                  key={b.bot_id}
-                  active={pane === `bot:${b.bot_id}`}
-                  onClick={() => setPane(`bot:${b.bot_id}` as Pane)}
-                >
-                  <span className="an-sn-ico">◉</span>{" "}
-                  {b.display_name || b.username || b.bot_id.slice(0, 6)}
-                </NavLeaf>
-              ))}
-              {bots.length === 0 && (
-                <div
-                  style={{
-                    padding: "6px 16px 6px 36px",
-                    fontSize: 11,
-                    color: "var(--fg-3)",
-                  }}
-                >
-                  暂无 Bot
-                </div>
-              )}
-            </NavGroup>
-
-            <NavGroup label="账户">
-              <NavLeaf
-                active={pane === "profile"}
-                onClick={() => setPane("profile")}
-                disabled={!currentUser}
-              >
-                <span className="an-sn-ico">◉</span> 编辑资料
-              </NavLeaf>
-              <NavLeaf
-                active={false}
-                onClick={() => {
+                <span className="an-sn-ico">{it.ico}</span> {it.label}
+              </button>
+            ))}
+          </nav>
+          <div className="an-settings-pane">
+            {pane === "bot" && (
+              <BotPane
+                bots={bots}
+                authToken={authToken}
+                onChanged={reloadBots}
+              />
+            )}
+            {pane === "account" && (
+              <AccountPane
+                currentUser={currentUser}
+                authToken={authToken}
+                onProfileUpdated={onProfileUpdated}
+                onLogout={() => {
                   onClose();
                   onLogout();
                 }}
-                disabled={!currentUser}
-                danger
-              >
-                <span className="an-sn-ico">↗</span> 退出登录
-              </NavLeaf>
-            </NavGroup>
-
-            <NavRoot
-              active={pane === "friends"}
-              onClick={() => setPane("friends")}
-            >
-              <span className="an-sn-ico">◎</span> 好友
-            </NavRoot>
-
-            <NavRoot
-              active={pane === "appearance"}
-              onClick={() => setPane("appearance")}
-            >
-              <span className="an-sn-ico">◐</span> 外观
-            </NavRoot>
-
-            <NavRoot
-              active={pane === "bulletin"}
-              onClick={() => setPane("bulletin")}
-            >
-              <span className="an-sn-ico">💬</span> 留言板
-            </NavRoot>
-
-            <NavGroup label="其他">
-              <NavLeaf
-                active={pane === "keychain"}
-                onClick={() => setPane("keychain")}
-              >
-                <span className="an-sn-ico">⌘</span> 钥匙链
-              </NavLeaf>
-            </NavGroup>
-          </nav>
-          <div className="an-settings-pane">
+              />
+            )}
+            {pane === "friends" && (
+              <FriendsPane
+                currentUserId={currentUser?.user_id || ""}
+                authToken={authToken}
+              />
+            )}
             {pane === "appearance" && (
               <AppearancePane
                 isDark={isDark}
@@ -238,22 +188,6 @@ export function SettingsModal({
                 setAccent={changeAccent}
               />
             )}
-            {pane === "profile" && currentUser && (
-              <ProfilePane
-                currentUser={currentUser}
-                authToken={authToken}
-                onProfileUpdated={onProfileUpdated}
-              />
-            )}
-            {pane === "keychain" && authToken && (
-              <KeychainPane authToken={authToken} />
-            )}
-            {pane === "friends" && (
-              <FriendsPane
-                currentUserId={currentUser?.user_id || ""}
-                authToken={authToken}
-              />
-            )}
             {pane === "bulletin" && (
               <BulletinPane
                 authToken={authToken}
@@ -261,109 +195,13 @@ export function SettingsModal({
                 userRole={currentUser?.role || ""}
               />
             )}
-            {pane === "bot:new" && (
-              <BotNewPane
-                authToken={authToken}
-                onCreated={(b) => {
-                  reloadBots();
-                  setPane(`bot:${b.bot_id}` as Pane);
-                }}
-              />
-            )}
-            {selectedBot && (
-              <BotEditPane
-                bot={selectedBot}
-                authToken={authToken}
-                onUpdated={reloadBots}
-                onDeleted={() => {
-                  reloadBots();
-                  setPane("appearance");
-                }}
-              />
+            {pane === "other" && authToken && (
+              <KeychainPane authToken={authToken} />
             )}
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-// ── Nav primitives ─────────────────────────────────────────────────────────
-
-function NavRoot({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className={`an-sn-item ${active ? "on" : ""}`}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-function NavGroup({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="an-sn-group">
-      <div
-        style={{
-          padding: "10px 16px 4px",
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: "0.8px",
-          textTransform: "uppercase",
-          color: "var(--fg-3)",
-        }}
-      >
-        {label}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function NavLeaf({
-  active,
-  onClick,
-  disabled,
-  danger,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-  danger?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      className={`an-sn-item ${active ? "on" : ""}`}
-      style={{
-        paddingLeft: 28,
-        opacity: disabled ? 0.45 : undefined,
-        color: danger ? "var(--red)" : undefined,
-        cursor: disabled ? "not-allowed" : undefined,
-      }}
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -1506,6 +1344,212 @@ function BulletinPane({
 }
 
 // ── Bot panes ─────────────────────────────────────────────────────────────
+
+/** BotPane — top-level Bot view. Default state: a list of cards (one per
+ *  bot, plus a "New Bot" card at the top). Selecting a card drills into
+ *  the per-bot edit form (or the create form), with a back button that
+ *  returns here. All drill state is local — the sidebar only sees "Bot". */
+function BotPane({
+  bots,
+  authToken,
+  onChanged,
+}: {
+  bots: BotRow[];
+  authToken: string | null;
+  onChanged: () => void;
+}) {
+  const [view, setView] = useState<"list" | "new" | { botId: string }>("list");
+
+  if (view === "new") {
+    return (
+      <div>
+        <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
+        <BotNewPane
+          authToken={authToken}
+          onCreated={(b) => {
+            onChanged();
+            setView({ botId: b.bot_id });
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (typeof view === "object") {
+    const bot = bots.find((b) => b.bot_id === view.botId);
+    if (!bot) {
+      // Bot disappeared (e.g. deleted in another window) — fall back to list.
+      return (
+        <div>
+          <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
+          <div className="an-row-card" style={{ color: "var(--fg-3)" }}>
+            该 Bot 已不存在
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
+        <BotEditPane
+          bot={bot}
+          authToken={authToken}
+          onUpdated={onChanged}
+          onDeleted={() => {
+            onChanged();
+            setView("list");
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="an-pane-head">
+        <div>
+          <div className="an-pane-title">Bot</div>
+          <div className="an-pane-sub">
+            管理你的 Bot。点击卡片查看详情或编辑。
+          </div>
+        </div>
+      </div>
+      <div className="an-list-table">
+        <button
+          type="button"
+          className="an-row-card"
+          style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}
+          onClick={() => setView("new")}
+        >
+          <span
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 6,
+              background: "var(--surface-soft)",
+              color: "var(--accent)",
+              fontSize: 16,
+              display: "inline-grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            ＋
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="an-rc-title">新建 Bot</div>
+            <div className="an-rc-sub">创建一个新的频道 Bot</div>
+          </div>
+          <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
+        </button>
+        {bots.length === 0 ? (
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
+            暂无 Bot
+          </div>
+        ) : (
+          bots.map((b) => (
+            <button
+              key={b.bot_id}
+              type="button"
+              className="an-row-card"
+              style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}
+              onClick={() => setView({ botId: b.bot_id })}
+            >
+              <span
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 6,
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  display: "inline-grid",
+                  placeItems: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {(b.display_name || b.username || "?").slice(0, 1).toUpperCase()}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="an-rc-title">{b.display_name || b.username}</div>
+                <div className="an-rc-sub">@{b.username}</div>
+              </div>
+              <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      style={{
+        background: "transparent",
+        border: 0,
+        color: "var(--fg-3)",
+        fontSize: 12,
+        padding: "4px 0",
+        marginBottom: 8,
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+    >
+      ← {label}
+    </button>
+  );
+}
+
+/** AccountPane — bundles 编辑资料 + 退出登录 as cards on a single pane.
+ *  Profile editing is inline; logout is a separate destructive card at
+ *  the bottom. */
+function AccountPane({
+  currentUser,
+  authToken,
+  onProfileUpdated,
+  onLogout,
+}: {
+  currentUser: CurrentUser;
+  authToken: string | null;
+  onProfileUpdated: (data: { display_name: string; bio?: string }) => void;
+  onLogout: () => void;
+}) {
+  if (!currentUser) {
+    return (
+      <div>
+        <div className="an-pane-head">
+          <div>
+            <div className="an-pane-title">账户</div>
+            <div className="an-pane-sub">尚未登录</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <ProfilePane
+        currentUser={currentUser}
+        authToken={authToken}
+        onProfileUpdated={onProfileUpdated}
+      />
+      <div className="an-list-table" style={{ marginTop: 12 }}>
+        <div className="an-row-card" style={{ justifyContent: "space-between" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="an-rc-title" style={{ color: "var(--red)" }}>退出登录</div>
+            <div className="an-rc-sub">清除本地令牌并返回登录界面。</div>
+          </div>
+          <DangerButton onClick={onLogout}>退出登录</DangerButton>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function BotNewPane({
   authToken,
