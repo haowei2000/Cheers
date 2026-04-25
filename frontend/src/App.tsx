@@ -2393,7 +2393,7 @@ export default function App() {
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="an-chat-msg px-4 pt-2"
+                              className="an-chat-msg pl-16 pr-4 pt-2"
                             >
                               <div className="flex items-baseline gap-1.5 mb-1 pl-1">
                                 <span className="text-[13px] font-semibold text-gray-900">
@@ -2548,7 +2548,7 @@ export default function App() {
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="an-chat-msg px-4 pt-2"
+                              className="an-chat-msg pl-16 pr-4 pt-2"
                             >
                               <div className="flex items-baseline gap-1.5 mb-1 pl-1">
                                 <span className="text-[13px] font-semibold text-gray-900">
@@ -2663,7 +2663,7 @@ export default function App() {
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="an-chat-msg px-4 pt-2"
+                              className="an-chat-msg pl-16 pr-4 pt-2"
                             >
                               <div className="an-announce">
                                 <div className="an-ann-ico" aria-hidden="true">
@@ -3811,7 +3811,7 @@ export default function App() {
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="an-chat-msg my-1.5"
+                              className="an-chat-msg pl-16 my-1.5"
                             >
                               <button
                                 type="button"
@@ -3872,7 +3872,10 @@ export default function App() {
                           <div
                             key={m.msg_id}
                             id={`msg-${m.msg_id}`}
-                            className="mx-auto my-1.5 w-[70%] max-w-[70%] rounded-xl border border-[#1264A3]/30 bg-gray-100 shadow-sm overflow-hidden"
+                            className="an-chat-msg pl-16 my-1.5"
+                          >
+                          <div
+                            className="rounded-xl border border-[#1264A3]/30 bg-gray-100 shadow-sm overflow-hidden"
                           >
                             {/* Thread header */}
                             <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
@@ -4321,6 +4324,7 @@ export default function App() {
                                 收起对话串
                               </button>
                             </div>
+                          </div>
                           </div>
                         );
                       });
