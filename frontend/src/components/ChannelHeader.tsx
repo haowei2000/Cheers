@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Channel, CurrentUser, DM, QaPair } from "../types";
 import { apiFetch } from "../api";
 
-export type ThreadSummary = {
+export type TopicSummary = {
   rootId: string;
   title: string;
   count: number;
@@ -117,13 +117,13 @@ interface ChannelHeaderProps {
    *  doesn't render (e.g. on DM headers where announcements don't apply). */
   onOpenAnnouncementComposer?: () => void;
 
-  threads?: ThreadSummary[];
+  topics?: TopicSummary[];
   /** Scroll the main stream to the given message id (used by existing
-   *  threads-popover behaviour when no panel handler is provided). */
+   *  topics-popover behaviour when no panel handler is provided). */
   onJumpToMessage?: (msgId: string) => void;
-  /** When provided, the threads popover opens the given thread root in the
-   *  side-dock ThreadPanel instead of scrolling the main stream. */
-  onOpenThread?: (rootMsgId: string) => void;
+  /** When provided, the topics popover opens the given topic root in the
+   *  side-dock TopicPanel instead of scrolling the main stream. */
+  onOpenTopic?: (rootMsgId: string) => void;
 }
 
 export function ChannelHeader({
@@ -144,24 +144,24 @@ export function ChannelHeader({
   currentUser,
   onOpenChannelProfile,
   onOpenAnnouncementComposer,
-  threads = [],
+  topics = [],
   onJumpToMessage,
-  onOpenThread,
+  onOpenTopic,
 }: ChannelHeaderProps) {
   const subtitle = autoAssist ? "自动接管已开启" : "";
-  const [threadsOpen, setThreadsOpen] = useState(false);
+  const [topicsOpen, setTopicsOpen] = useState(false);
   const popRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!threadsOpen) return;
+    if (!topicsOpen) return;
     const handler = (e: MouseEvent) => {
       if (popRef.current && !popRef.current.contains(e.target as Node)) {
-        setThreadsOpen(false);
+        setTopicsOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [threadsOpen]);
+  }, [topicsOpen]);
 
   return (
     <div className="an-head" style={{ paddingLeft: isMobile ? 12 : undefined }}>
@@ -272,14 +272,14 @@ export function ChannelHeader({
         </button>
       </label>
 
-      {/* Threads pill */}
-      {threads.length > 0 && (
+      {/* Topics pill */}
+      {topics.length > 0 && (
         <div className="relative" ref={popRef}>
           <button
             type="button"
-            className={`an-threads-btn ${threadsOpen ? "on" : ""}`}
-            onClick={() => setThreadsOpen((v) => !v)}
-            title="频道对话串"
+            className={`an-topics-btn ${topicsOpen ? "on" : ""}`}
+            onClick={() => setTopicsOpen((v) => !v)}
+            title="频道主题"
           >
             <svg
               viewBox="0 0 16 16"
@@ -290,27 +290,27 @@ export function ChannelHeader({
               <path d="M2 3h12M2 7h9M2 11h6" strokeLinecap="round" />
               <circle cx="13" cy="11" r="2.3" />
             </svg>
-            <span className="hidden sm:inline">对话串</span>
-            <span className="an-tb-n">{threads.length}</span>
+            <span className="hidden sm:inline">主题</span>
+            <span className="an-tb-n">{topics.length}</span>
           </button>
-          {threadsOpen && (
+          {topicsOpen && (
             <div
-              className="an-threads-pop"
+              className="an-topics-pop"
               style={{
                 right: 0,
                 top: "calc(100% + 6px)",
                 position: "absolute",
               }}
             >
-              <div className="an-hd">频道内的对话串</div>
-              {threads.map((t) => (
+              <div className="an-hd">频道内的主题</div>
+              {topics.map((t) => (
                 <button
                   key={t.rootId}
                   type="button"
                   className="an-it"
                   onClick={() => {
-                    setThreadsOpen(false);
-                    if (onOpenThread) onOpenThread(t.rootId);
+                    setTopicsOpen(false);
+                    if (onOpenTopic) onOpenTopic(t.rootId);
                     else onJumpToMessage?.(t.rootId);
                   }}
                 >

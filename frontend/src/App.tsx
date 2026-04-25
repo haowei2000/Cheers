@@ -34,8 +34,8 @@ import {
 import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
-import { ThreadPanel } from "./components/ThreadPanel";
-import { ThreadPage } from "./components/ThreadPage";
+import { TopicPanel } from "./components/TopicPanel";
+import { TopicPage } from "./components/TopicPage";
 import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { apiFetch, buildWsUrl } from "./api";
@@ -48,7 +48,7 @@ import {
   parseQuotePrefix,
   formatTs,
   formatDayLabel,
-  THREAD_DISPLAY_THRESHOLD,
+  TOPIC_DISPLAY_THRESHOLD,
 } from "./lib/message";
 import {
   buildLogicalQaBlocks,
@@ -128,23 +128,23 @@ export default function App() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [dms, setDMs] = useState<DM[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  // Thread viewers:
-  //   openThreadId  — root msg_id for the side-dock panel
-  //   pageThreadId  — root msg_id for the full-page view (mirrored to URL hash)
+  // Topic viewers:
+  //   openTopicId  — root msg_id for the side-dock panel
+  //   pageTopicId  — root msg_id for the full-page view (mirrored to URL hash)
   const [announcementOpen, setAnnouncementOpen] = useState(false);
-  // Composer send-kind: switchable between 普通消息 / 公告 / 对话串 via
+  // Composer send-kind: switchable between 普通消息 / 公告 / 主题 via
   // Shift-Tab or the ‹ › buttons flanking the composer. Always resets to
   // "normal" after each send. "reply" is orthogonal — replyingTo overrides
   // this.
-  type MsgKind = "normal" | "announcement" | "thread";
-  const MSG_KINDS_ORDER: MsgKind[] = ["normal", "announcement", "thread"];
+  type MsgKind = "normal" | "announcement" | "topic";
+  const MSG_KINDS_ORDER: MsgKind[] = ["normal", "announcement", "topic"];
   const MSG_KIND_LABEL: Record<MsgKind, string> = {
     normal: "消息",
     announcement: "公告",
-    thread: "对话串",
+    topic: "主题",
   };
   const [msgKind, setMsgKind] = useState<MsgKind>("normal");
-  // Optional title carried by announcement + thread kinds. Normal messages
+  // Optional title carried by announcement + topic kinds. Normal messages
   // ignore it; we clear it whenever kind cycles or a send completes.
   const [composerTitle, setComposerTitle] = useState<string>("");
   const composerTitleRef = useRef<HTMLInputElement | null>(null);
@@ -157,10 +157,10 @@ export default function App() {
       return MSG_KINDS_ORDER[next];
     });
   };
-  const [openThreadId, setOpenThreadId] = useState<string | null>(null);
-  const [pageThreadId, setPageThreadId] = useState<string | null>(() => {
+  const [openTopicId, setOpenTopicId] = useState<string | null>(null);
+  const [pageTopicId, setPageTopicId] = useState<string | null>(() => {
     if (typeof location === "undefined") return null;
-    const m = /#thread=([^&]+)/.exec(location.hash || "");
+    const m = /#topic=([^&]+)/.exec(location.hash || "");
     return m ? decodeURIComponent(m[1]) : null;
   });
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
@@ -278,11 +278,11 @@ export default function App() {
   >(null);
   const [autoAssist, setAutoAssist] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(
+  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(
     new Set(),
   );
-  const toggleThread = (rootId: string) =>
-    setExpandedThreads((prev) => {
+  const toggleTopic = (rootId: string) =>
+    setExpandedTopics((prev) => {
       const next = new Set(prev);
       next.has(rootId) ? next.delete(rootId) : next.add(rootId);
       return next;
@@ -529,31 +529,31 @@ export default function App() {
   );
   const isPersonalWorkspace = activeWorkspace?.kind === "personal";
 
-  // ── URL hash sync for #thread=<id> ──────────────────────────────────────
-  // Writer: whenever pageThreadId changes, reflect it into the hash (without
+  // ── URL hash sync for #topic=<id> ──────────────────────────────────────
+  // Writer: whenever pageTopicId changes, reflect it into the hash (without
   // adding history entries — replaceState). Reader: listen to popstate in
   // case the user navigates back/forward.
   useEffect(() => {
     if (typeof history === "undefined") return;
     const hash = location.hash || "";
-    const current = /#thread=([^&]+)/.exec(hash);
+    const current = /#topic=([^&]+)/.exec(hash);
     const currentId = current ? decodeURIComponent(current[1]) : null;
-    if (pageThreadId === currentId) return;
-    if (pageThreadId) {
+    if (pageTopicId === currentId) return;
+    if (pageTopicId) {
       history.replaceState(
         null,
         "",
-        `${location.pathname}${location.search}#thread=${encodeURIComponent(pageThreadId)}`,
+        `${location.pathname}${location.search}#topic=${encodeURIComponent(pageTopicId)}`,
       );
-    } else if (/#thread=/.test(hash)) {
+    } else if (/#topic=/.test(hash)) {
       history.replaceState(null, "", `${location.pathname}${location.search}`);
     }
-  }, [pageThreadId]);
+  }, [pageTopicId]);
 
   useEffect(() => {
     const onPop = () => {
-      const m = /#thread=([^&]+)/.exec(location.hash || "");
-      setPageThreadId(m ? decodeURIComponent(m[1]) : null);
+      const m = /#topic=([^&]+)/.exec(location.hash || "");
+      setPageTopicId(m ? decodeURIComponent(m[1]) : null);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -1135,7 +1135,7 @@ export default function App() {
         pinned_by: currentUserId,
         ...(titleTrim ? { title: titleTrim } : {}),
       };
-    } else if (effectiveKind === "thread") {
+    } else if (effectiveKind === "topic") {
       body.content_data = titleTrim ? { title: titleTrim } : {};
     }
     setInput("");
@@ -1214,7 +1214,7 @@ export default function App() {
     }
   };
 
-  const sendThreadReply = async (
+  const sendTopicReply = async (
     channelId: string,
     rootMsgId: string,
     text: string,
@@ -1690,7 +1690,7 @@ export default function App() {
     refreshQaLlmStatus();
   }, [selectedId]);
 
-  // Auto-expand threads that contain streaming (incoming) messages
+  // Auto-expand topics that contain streaming (incoming) messages
   useEffect(() => {
     const msgIdSet = new Set(messages.map((x) => x.msg_id));
     const rootIdCache = new Map<string, string>();
@@ -1709,11 +1709,11 @@ export default function App() {
       .filter((m) => isMsgReply(m, msgIdSet) && m._streaming)
       .map((m) => getRootId(m.msg_id));
     if (toExpand.length > 0)
-      setExpandedThreads((prev) => new Set([...prev, ...toExpand]));
+      setExpandedTopics((prev) => new Set([...prev, ...toExpand]));
   }, [messages]);
 
-  // Build thread tree: follow parent chain to find root, group all descendants under it
-  const { threadRoots, threadRepliesOf } = (() => {
+  // Build topic tree: follow parent chain to find root, group all descendants under it
+  const { topicRoots, topicRepliesOf } = (() => {
     const msgIdSet = new Set(messages.map((x) => x.msg_id));
     const rootIdCache = new Map<string, string>();
     function getRootId(msgId: string): string {
@@ -1744,8 +1744,8 @@ export default function App() {
       );
     }
     return {
-      threadRoots: messages.filter((m) => !replySet.has(m.msg_id)),
-      threadRepliesOf: (rootId: string): Message[] =>
+      topicRoots: messages.filter((m) => !replySet.has(m.msg_id)),
+      topicRepliesOf: (rootId: string): Message[] =>
         replyMap.get(rootId) ?? [],
     };
   })();
@@ -2144,15 +2144,15 @@ export default function App() {
               isDark={isDark}
             />
 
-            {pageThreadId &&
+            {pageTopicId &&
               selectedId &&
               (() => {
                 const rootMsg = messages.find(
-                  (m) => m.msg_id === pageThreadId,
+                  (m) => m.msg_id === pageTopicId,
                 );
                 if (!rootMsg) return null;
-                const rootId = pageThreadId; // narrowed non-null
-                const threadReplies = messages
+                const rootId = pageTopicId; // narrowed non-null
+                const topicReplies = messages
                   .filter((m) => m.in_reply_to_msg_id === rootId)
                   .sort((a, b) =>
                     (a.created_at || "") < (b.created_at || "") ? -1 : 1,
@@ -2169,17 +2169,17 @@ export default function App() {
                       minHeight: 0,
                     }}
                   >
-                    <ThreadPage
+                    <TopicPage
                       rootMsg={rootMsg}
-                      replies={threadReplies}
+                      replies={topicReplies}
                       channel={selectedChannel}
                       channelBots={channelBots}
                       channelUsers={channelUsers}
                       currentUserId={currentUserId}
-                      onBack={() => setPageThreadId(null)}
-                      onGoToChannel={() => setPageThreadId(null)}
+                      onBack={() => setPageTopicId(null)}
+                      onGoToChannel={() => setPageTopicId(null)}
                       onSendReply={(text) =>
-                        sendThreadReply(selectedId, rootId, text)
+                        sendTopicReply(selectedId, rootId, text)
                       }
                     />
                   </div>
@@ -2227,16 +2227,16 @@ export default function App() {
                       ? undefined
                       : () => setAnnouncementOpen(true)
                   }
-                  threads={threadRoots
+                  topics={topicRoots
                     .map((r) => {
-                      const replies = threadRepliesOf(r.msg_id);
-                      // Surface if the user explicitly sent this as a 对话串
-                      // (msg_type="thread") OR if a plain message has
+                      const replies = topicRepliesOf(r.msg_id);
+                      // Surface if the user explicitly sent this as a 主题
+                      // (msg_type="topic") OR if a plain message has
                       // accumulated enough replies to promote implicitly.
-                      const isExplicit = r.msg_type === "thread";
+                      const isExplicit = r.msg_type === "topic";
                       if (
                         !isExplicit &&
-                        replies.length < THREAD_DISPLAY_THRESHOLD
+                        replies.length < TOPIC_DISPLAY_THRESHOLD
                       ) {
                         return null;
                       }
@@ -2254,8 +2254,8 @@ export default function App() {
                       };
                     })
                     .filter((x): x is NonNullable<typeof x> => x !== null)}
-                  onOpenThread={(rootId) => {
-                    setOpenThreadId(rootId);
+                  onOpenTopic={(rootId) => {
+                    setOpenTopicId(rootId);
                   }}
                   onJumpToMessage={(id) => {
                     const el = document.getElementById(`msg-${id}`);
@@ -2329,7 +2329,7 @@ export default function App() {
                           </div>
                         )}
                       {(() => {
-                      const renderedRows = threadRoots.map((m, idx) => {
+                      const renderedRows = topicRoots.map((m, idx) => {
                         // isDM gates the "intimate" bubble + self-right
                         // treatment; channel rendering is Discord-style
                         // flat, all-left, with sender grouping.
@@ -2338,7 +2338,7 @@ export default function App() {
                         // Stack against the previous root if same sender
                         // within 2 minutes — hide avatar/header row.
                         const prevRoot =
-                          idx > 0 ? threadRoots[idx - 1] : null;
+                          idx > 0 ? topicRoots[idx - 1] : null;
                         const prevTs = prevRoot?.created_at
                           ? new Date(prevRoot.created_at).getTime()
                           : 0;
@@ -2356,7 +2356,7 @@ export default function App() {
                           m.msg_type !== "announcement" &&
                           m.msg_type !== "routing" &&
                           m.msg_type !== "permission" &&
-                          m.msg_type !== "thread" &&
+                          m.msg_type !== "topic" &&
                           prevTs > 0 &&
                           curTs > 0 &&
                           curTs - prevTs < 2 * 60 * 1000;
@@ -2688,7 +2688,7 @@ export default function App() {
                           );
                         }
 
-                        const replies = threadRepliesOf(m.msg_id);
+                        const replies = topicRepliesOf(m.msg_id);
 
                         // ── helpers shared by root & replies ──────────────────
                         const replyIcon = (
@@ -3090,9 +3090,9 @@ export default function App() {
                               </button>
                               <div className="flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
                                 <div className="flex items-baseline gap-1.5 mb-1 justify-end">
-                                  {m.msg_type === "thread" && (
+                                  {m.msg_type === "topic" && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
-                                      消息串
+                                      主题
                                     </span>
                                   )}
                                   <span className="text-[11px] text-gray-400 mr-0.5">
@@ -3223,9 +3223,9 @@ export default function App() {
                                     Bot
                                   </span>
                                 )}
-                                {m.msg_type === "thread" && (
+                                {m.msg_type === "topic" && (
                                   <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
-                                    消息串
+                                    主题
                                   </span>
                                 )}
                                 <span className="text-[11px] text-gray-400 leading-none">
@@ -3374,32 +3374,32 @@ export default function App() {
                           </div>
                         );
 
-                        // ── thread card ───────────────────────────────────────
-                        // An explicit 对话串 (msg_type="thread") should render
-                        // as a thread card regardless of reply count, so the
+                        // ── topic card ───────────────────────────────────────
+                        // An explicit 主题 (msg_type="topic") should render
+                        // as a topic card regardless of reply count, so the
                         // user sees the intent reflected immediately. The
                         // 4-reply threshold only gates implicit promotion of
                         // a normal message that's accumulated replies.
-                        const isExplicitThread = m.msg_type === "thread";
+                        const isExplicitTopic = m.msg_type === "topic";
                         // Force expansion when there's nothing to collapse
-                        // (0-reply explicit thread) — otherwise the collapsed
+                        // (0-reply explicit topic) — otherwise the collapsed
                         // preview path would blow up on replies[length-1].
                         const isExpanded =
-                          expandedThreads.has(m.msg_id) ||
-                          (isExplicitThread && replies.length === 0);
+                          expandedTopics.has(m.msg_id) ||
+                          (isExplicitTopic && replies.length === 0);
 
-                        // No replies and not an explicit thread — render as a
+                        // No replies and not an explicit topic — render as a
                         // plain standalone bubble.
-                        if (!isExplicitThread && replies.length === 0) {
+                        if (!isExplicitTopic && replies.length === 0) {
                           return <div key={m.msg_id}>{rootBubble}</div>;
                         }
 
                         // 1–3 replies on a plain message — inline render, no
-                        // thread chrome. Explicit 对话串 messages fall through
-                        // to the thread-card branch below regardless of count.
+                        // topic chrome. Explicit 主题 messages fall through
+                        // to the topic-card branch below regardless of count.
                         if (
-                          !isExplicitThread &&
-                          replies.length < THREAD_DISPLAY_THRESHOLD
+                          !isExplicitTopic &&
+                          replies.length < TOPIC_DISPLAY_THRESHOLD
                         ) {
                           const renderReplyRow = (r: Message) => {
                           const rIsOwn =
@@ -3718,7 +3718,7 @@ export default function App() {
                           );
                         }
 
-                        // ≥ THREAD_DISPLAY_THRESHOLD replies — Collapsed thread
+                        // ≥ TOPIC_DISPLAY_THRESHOLD replies — Collapsed topic
                         // card (overview) ───────────────────────────────────────
                         // Compact form: stacked participant avatars + summary.
                         // No full question/last-reply preview — click to expand.
@@ -3732,7 +3732,7 @@ export default function App() {
                             "(无标题)";
                           // Participants = root sender ∪ all unique reply
                           // senders. Keep insertion order so the root comes
-                          // first and reads as the "owner" of the thread.
+                          // first and reads as the "owner" of the topic.
                           type Participant = {
                             key: string;
                             kind: "user" | "bot";
@@ -3815,23 +3815,23 @@ export default function App() {
                             >
                               <button
                                 type="button"
-                                onClick={() => toggleThread(m.msg_id)}
-                                className="an-thread-chip"
+                                onClick={() => toggleTopic(m.msg_id)}
+                                className="an-topic-chip"
                                 title={titleSummary}
                               >
-                                <span className="an-thread-chip-faces">
+                                <span className="an-topic-chip-faces">
                                   {visibleAvatars.map((p) =>
                                     p.avatarUrl ? (
                                       <img
                                         key={p.key}
                                         src={p.avatarUrl}
                                         alt={p.label}
-                                        className="an-thread-chip-face"
+                                        className="an-topic-chip-face"
                                       />
                                     ) : (
                                       <span
                                         key={p.key}
-                                        className="an-thread-chip-face"
+                                        className="an-topic-chip-face"
                                         style={{ background: p.color }}
                                       >
                                         {p.initial}
@@ -3840,7 +3840,7 @@ export default function App() {
                                   )}
                                   {extraCount > 0 && (
                                     <span
-                                      className="an-thread-chip-face"
+                                      className="an-topic-chip-face"
                                       style={{
                                         background: "var(--bg-2)",
                                         color: "var(--fg-2)",
@@ -3850,16 +3850,16 @@ export default function App() {
                                     </span>
                                   )}
                                 </span>
-                                <span className="an-thread-chip-body">
-                                  <span className="an-thread-chip-title">
+                                <span className="an-topic-chip-body">
+                                  <span className="an-topic-chip-title">
                                     {titleSummary}
                                   </span>
-                                  <span className="an-thread-chip-meta">
-                                    对话串 · {replies.length + 1} 条消息 ·{" "}
+                                  <span className="an-topic-chip-meta">
+                                    主题 · {replies.length + 1} 条消息 ·{" "}
                                     {participants.length} 人参与
                                   </span>
                                 </span>
-                                <span className="an-thread-chip-open">
+                                <span className="an-topic-chip-open">
                                   展开 ›
                                 </span>
                               </button>
@@ -3867,7 +3867,7 @@ export default function App() {
                           );
                         }
 
-                        // ── Expanded thread card ───────────────────────────────
+                        // ── Expanded topic card ───────────────────────────────
                         return (
                           <div
                             key={m.msg_id}
@@ -3877,7 +3877,7 @@ export default function App() {
                           <div
                             className="rounded-xl border border-[#1264A3]/30 bg-gray-100 shadow-sm overflow-hidden"
                           >
-                            {/* Thread header */}
+                            {/* Topic header */}
                             <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
                               <div className="flex items-center gap-1.5">
                                 <svg
@@ -3893,15 +3893,15 @@ export default function App() {
                                   />
                                 </svg>
                                 <span className="text-[12px] font-medium text-[#1264A3]">
-                                  对话串 · {replies.length + 1} 条消息
+                                  主题 · {replies.length + 1} 条消息
                                 </span>
                               </div>
                               <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => setOpenThreadId(m.msg_id)}
+                                  onClick={() => setOpenTopicId(m.msg_id)}
                                   className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#1264A3] px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
-                                  title="在侧栏打开对话串"
+                                  title="在侧栏打开主题"
                                 >
                                   <svg
                                     viewBox="0 0 12 12"
@@ -3918,7 +3918,7 @@ export default function App() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => toggleThread(m.msg_id)}
+                                  onClick={() => toggleTopic(m.msg_id)}
                                   className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
                                 >
                                   <svg
@@ -4306,7 +4306,7 @@ export default function App() {
                             <div className="flex justify-center py-1.5 border-t border-gray-100">
                               <button
                                 type="button"
-                                onClick={() => toggleThread(m.msg_id)}
+                                onClick={() => toggleTopic(m.msg_id)}
                                 className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded hover:bg-gray-100 transition-colors"
                               >
                                 <svg
@@ -4321,7 +4321,7 @@ export default function App() {
                                     clipRule="evenodd"
                                   />
                                 </svg>
-                                收起对话串
+                                收起主题
                               </button>
                             </div>
                           </div>
@@ -4334,8 +4334,8 @@ export default function App() {
                       // existing branch logic has to change.
                       const out: React.ReactNode[] = [];
                       let lastDay = "";
-                      for (let i = 0; i < threadRoots.length; i++) {
-                        const m = threadRoots[i];
+                      for (let i = 0; i < topicRoots.length; i++) {
+                        const m = topicRoots[i];
                         const day = formatDayLabel(m.created_at);
                         if (day && day !== lastDay) {
                           out.push(
@@ -4419,15 +4419,15 @@ export default function App() {
                           "an-msgkind-label" +
                           (msgKind === "announcement"
                             ? " is-announcement"
-                            : msgKind === "thread"
-                              ? " is-thread"
+                            : msgKind === "topic"
+                              ? " is-topic"
                               : "")
                         }
                         title="Tab 切换 · Shift+Tab 反向"
                       >
                         {msgKind === "announcement"
                           ? "📣"
-                          : msgKind === "thread"
+                          : msgKind === "topic"
                             ? "🧵"
                             : "💬"}{" "}
                         {MSG_KIND_LABEL[msgKind]}
@@ -4582,19 +4582,19 @@ export default function App() {
                         "an-composer overflow-hidden" +
                         (!replyingTo && msgKind === "announcement"
                           ? " is-announcement"
-                          : !replyingTo && msgKind === "thread"
-                            ? " is-thread"
+                          : !replyingTo && msgKind === "topic"
+                            ? " is-topic"
                             : "")
                       }
                     >
                       {!replyingTo &&
                         (msgKind === "announcement" ||
-                          msgKind === "thread") && (
+                          msgKind === "topic") && (
                           <div className="an-composer-kindhead">
                             <span className="an-composer-kindhead-tag">
                               {msgKind === "announcement"
                                 ? "📣 公告"
-                                : "🧵 对话串"}
+                                : "🧵 主题"}
                             </span>
                             <input
                               ref={composerTitleRef}
@@ -4602,7 +4602,7 @@ export default function App() {
                               placeholder={
                                 msgKind === "announcement"
                                   ? "标题（可选，例如「周五发布窗口」）…"
-                                  : "对话串标题（可选，例如「升级计划讨论」）…"
+                                  : "主题标题（可选，例如「升级计划讨论」）…"
                               }
                               value={composerTitle}
                               onChange={(e) =>
@@ -4659,7 +4659,7 @@ export default function App() {
                             return;
                           }
                           // Tab / Shift-Tab cycles msgKind (normal → 公告 →
-                          // 对话串 → normal …). Skip in DMs where only
+                          // 主题 → normal …). Skip in DMs where only
                           // "normal" makes sense.
                           if (
                             e.key === "Tab" &&
@@ -4689,8 +4689,8 @@ export default function App() {
                             ? "输入加密内容（仅 Bot 可读取原文）…"
                             : msgKind === "announcement"
                               ? `发布公告到 #${selectedChannel?.name || "频道"}…`
-                              : msgKind === "thread"
-                                ? `开启对话串 · 标题将取首行…`
+                              : msgKind === "topic"
+                                ? `开启主题 · 标题将取首行…`
                                 : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
                         }
                         className="an-composer-textarea"
@@ -5055,31 +5055,31 @@ export default function App() {
             )}
           </main>
 
-          {/* Thread side panel (sibling of memory panel). Hidden while the
-              full-page ThreadPage is active — a side panel on top of a page
-              view duplicates the same thread. */}
-          {openThreadId && !pageThreadId && selectedId && (() => {
+          {/* Topic side panel (sibling of memory panel). Hidden while the
+              full-page TopicPage is active — a side panel on top of a page
+              view duplicates the same topic. */}
+          {openTopicId && !pageTopicId && selectedId && (() => {
             const rootMsg = messages.find(
-              (m) => m.msg_id === openThreadId,
+              (m) => m.msg_id === openTopicId,
             );
             if (!rootMsg) return null;
-            const rootId = openThreadId;
-            const threadReplies = messages
+            const rootId = openTopicId;
+            const topicReplies = messages
               .filter((m) => m.in_reply_to_msg_id === rootId)
               .sort((a, b) =>
                 (a.created_at || "") < (b.created_at || "") ? -1 : 1,
               );
             return (
-              <ThreadPanel
+              <TopicPanel
                 rootMsg={rootMsg}
-                replies={threadReplies}
+                replies={topicReplies}
                 channelBots={channelBots}
                 channelUsers={channelUsers}
                 currentUserId={currentUserId}
-                onClose={() => setOpenThreadId(null)}
+                onClose={() => setOpenTopicId(null)}
                 onOpenAsPage={() => {
-                  setPageThreadId(rootId);
-                  setOpenThreadId(null);
+                  setPageTopicId(rootId);
+                  setOpenTopicId(null);
                 }}
                 onJumpToParent={() => {
                   const el = document.getElementById(`msg-${rootId}`);
@@ -5098,7 +5098,7 @@ export default function App() {
                   }, 1200);
                 }}
                 onSendReply={(text) =>
-                  sendThreadReply(selectedId, rootId, text)
+                  sendTopicReply(selectedId, rootId, text)
                 }
               />
             );
