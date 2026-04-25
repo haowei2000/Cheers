@@ -1551,6 +1551,16 @@ function AccountPane({
   );
 }
 
+type BindingType = "http" | "websocket";
+
+type ModelItem = { model_id: string; name: string };
+type TemplateItem = { template_id: string; name: string };
+
+/** BotNewPane — two-step wizard.
+ *  Step 1: pick the binding type (HTTP / WebSocket).
+ *  Step 2: render type-specific fields. HTTP needs a model + template
+ *  (fetched lazily when step 2 mounts); WebSocket only needs an optional
+ *  agent_id which gets shipped as binding_config. */
 function BotNewPane({
   authToken,
   onCreated,
@@ -1558,34 +1568,82 @@ function BotNewPane({
   authToken: string | null;
   onCreated: (b: BotRow) => void;
 }) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [bindingType, setBindingType] = useState<BindingType>("http");
+
+  // Shared base fields
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
+
+  // HTTP-only
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [modelId, setModelId] = useState("");
+  const [templateId, setTemplateId] = useState("");
+
+  // WebSocket-only
+  const [agentId, setAgentId] = useState("");
+
   const [creating, setCreating] = useState(false);
+
+  // Lazy-load models/templates when entering step 2 with HTTP selected.
+  useEffect(() => {
+    if (step !== 2 || bindingType !== "http") return;
+    apiFetch("/admin/models?include_disabled=false", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => {
+        const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
+        setModels(list);
+        if (!modelId && list.length > 0) setModelId(list[0].model_id);
+      })
+      .catch(() => setModels([]));
+    apiFetch("/admin/templates", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => {
+        const list: TemplateItem[] = Array.isArray(d?.data) ? d.data : [];
+        setTemplates(list);
+        if (!templateId && list.length > 0) setTemplateId(list[0].template_id);
+      })
+      .catch(() => setTemplates([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, bindingType, authToken]);
 
   const create = async () => {
     if (!username.trim()) {
       toast.error("用户名必填");
       return;
     }
+    if (bindingType === "http" && (!modelId || !templateId)) {
+      toast.error("HTTP Bot 必须选择模型和模板");
+      return;
+    }
+    const body: Record<string, unknown> = {
+      username: username.trim(),
+      display_name: displayName.trim() || username.trim(),
+      description: description.trim() || null,
+      binding_type: bindingType,
+      status: "online",
+      is_public: true,
+    };
+    if (bindingType === "http") {
+      body.model_id = modelId;
+      body.template_id = templateId;
+    } else {
+      const cfg: Record<string, string> = {};
+      if (agentId.trim()) cfg.agent_id = agentId.trim();
+      body.binding_config = Object.keys(cfg).length > 0 ? cfg : null;
+    }
     setCreating(true);
     try {
       const res = await apiFetch("/bots", {
         method: "POST",
         token: authToken,
-        body: {
-          username: username.trim(),
-          display_name: displayName.trim() || username.trim(),
-          description: description.trim() || null,
-          binding_type: "channel",
-        },
+        body,
       });
       const data = await res.json();
       if (data?.status === "success") {
         toast.success("Bot 创建成功");
-        setUsername("");
-        setDisplayName("");
-        setDescription("");
         onCreated(data.data);
       } else {
         toast.error(data?.message || data?.detail || "创建失败");
@@ -1597,18 +1655,67 @@ function BotNewPane({
     }
   };
 
+  if (step === 1) {
+    return (
+      <div>
+        <div className="an-pane-head">
+          <div>
+            <div className="an-pane-title">新建 Bot · 选择类型</div>
+            <div className="an-pane-sub">不同类型的 Bot 需要不同的配置项。</div>
+          </div>
+        </div>
+        <div className="an-list-table">
+          <BindingTypeCard
+            id="http"
+            active={bindingType === "http"}
+            title="HTTP Bot"
+            sub="由后端调用 LLM provider，需要绑定 AI 模型与 Prompt 模板。"
+            onClick={() => setBindingType("http")}
+          />
+          <BindingTypeCard
+            id="websocket"
+            active={bindingType === "websocket"}
+            title="WebSocket Bot"
+            sub="由 OpenClaw plugin 反向连接，能力由 plugin 提供，无需绑定模型。"
+            onClick={() => setBindingType("websocket")}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <PrimaryButton onClick={() => setStep(2)}>下一步 →</PrimaryButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="an-pane-head">
         <div>
-          <div className="an-pane-title">新建 Bot</div>
+          <div className="an-pane-title">
+            新建 Bot · {bindingType === "http" ? "HTTP" : "WebSocket"} 配置
+          </div>
           <div className="an-pane-sub">
-            填写基础信息创建一个频道型 Bot。需要绑定 LLM 模型时请到管理后台配置。
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              style={{
+                background: "transparent",
+                border: 0,
+                color: "var(--accent)",
+                fontSize: 12,
+                padding: 0,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              ← 重新选择类型
+            </button>
           </div>
         </div>
       </div>
       <div className="an-list-table">
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+          <div className="an-rc-title">基本信息</div>
           <Field label="用户名（@后跟的标识）">
             <input
               value={username}
@@ -1629,18 +1736,148 @@ function BotNewPane({
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={3}
+              rows={2}
               className={`${inputCls} resize-none`}
             />
           </Field>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <PrimaryButton onClick={create} disabled={creating || !username.trim()}>
-              {creating ? "创建中…" : "创建"}
-            </PrimaryButton>
+        </div>
+
+        {bindingType === "http" && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">LLM 绑定</div>
+            <Field label="AI 模型">
+              <select
+                value={modelId}
+                onChange={(e) => setModelId(e.target.value)}
+                className={inputCls}
+              >
+                {models.length === 0 ? (
+                  <option value="">（无可用模型，请先到管理后台创建）</option>
+                ) : (
+                  models.map((m) => (
+                    <option key={m.model_id} value={m.model_id}>
+                      {m.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </Field>
+            <Field label="Prompt 模板">
+              <select
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                className={inputCls}
+              >
+                {templates.length === 0 ? (
+                  <option value="">（无可用模板，请先到管理后台创建）</option>
+                ) : (
+                  templates.map((t) => (
+                    <option key={t.template_id} value={t.template_id}>
+                      {t.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </Field>
           </div>
+        )}
+
+        {bindingType === "websocket" && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">OpenClaw 绑定</div>
+            <div className="an-rc-sub" style={{ marginTop: 0 }}>
+              创建后将得到一次性的 bot token，把它填到 plugin 配置里，plugin 连
+              <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
+                /ws/openclaw/control
+              </code>
+              和
+              <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
+                /ws/openclaw/data
+              </code>
+              即可接管该 Bot。
+            </div>
+            <Field label="OpenClaw agent id（可选）">
+              <input
+                value={agentId}
+                onChange={(e) => setAgentId(e.target.value)}
+                className={inputCls}
+                placeholder="如 agent-codereview"
+              />
+            </Field>
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => setStep(1)}
+            style={{
+              padding: "8px 12px",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              fontSize: 13,
+              color: "var(--fg-2)",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            上一步
+          </button>
+          <PrimaryButton onClick={create} disabled={creating || !username.trim()}>
+            {creating ? "创建中…" : "创建"}
+          </PrimaryButton>
         </div>
       </div>
     </div>
+  );
+}
+
+function BindingTypeCard({
+  id,
+  active,
+  title,
+  sub,
+  onClick,
+}: {
+  id: string;
+  active: boolean;
+  title: string;
+  sub: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="an-row-card"
+      style={{
+        width: "100%",
+        textAlign: "left",
+        cursor: "pointer",
+        fontFamily: "inherit",
+        borderColor: active ? "var(--accent)" : "var(--border)",
+        background: active ? "var(--accent-muted)" : "var(--bg-0)",
+      }}
+      onClick={onClick}
+      aria-pressed={active}
+      data-id={id}
+    >
+      <span
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: "50%",
+          border: `2px solid ${active ? "var(--accent)" : "var(--border-strong)"}`,
+          background: active ? "var(--accent)" : "transparent",
+          flexShrink: 0,
+          marginTop: 2,
+        }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="an-rc-title">{title}</div>
+        <div className="an-rc-sub">{sub}</div>
+      </div>
+    </button>
   );
 }
 
