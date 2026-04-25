@@ -1,15 +1,14 @@
-"""消息线程相关工具。
+"""消息主题（topic）相关工具。
 
 职责拆分：
-- promote_to_thread(msg)：在已加载到 session 里的 Message 上翻 msg_type
+- promote_to_topic(msg)：在已加载到 session 里的 Message 上翻 msg_type
   字段，最轻量的形式。调用者必须持有 Message 对象且在同一 session。
-- ensure_thread_root(session, msg_id)：仅有 id 时使用。自己 fetch 父消息并
+- ensure_topic_root(session, msg_id)：仅有 id 时使用。自己 fetch 父消息并
   翻字段。幂等，找不到父消息时安静返回。
 - install_auto_promote_listener(): 注册一次，之后任何新 Message 只要带着
-  in_reply_to_msg_id 写入库，父消息就会被自动升级。这是防御性兜底，
-  让未来新增的写消息路径不必再显式调用 promote_to_thread。
+  in_reply_to_msg_id 写入库，父消息就会被自动升级为 topic 根。
 
-gather_thread_context() 继续只消费 msg_type，不关心谁翻的字段。
+gather_topic_context() 继续只消费 msg_type，不关心谁翻的字段。
 """
 from __future__ import annotations
 
@@ -22,47 +21,48 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, Message, User
 
-logger = logging.getLogger("app.services.orchestrator.thread_context")
+logger = logging.getLogger("app.services.orchestrator.topic_context")
 
 MSG_TYPE_NORMAL = "normal"
 MSG_TYPE_REPLY = "reply"
-MSG_TYPE_THREAD = "thread"
+MSG_TYPE_TOPIC = "topic"
 MSG_TYPE_ANNOUNCEMENT = "announcement"
 MSG_TYPE_ROUTING = "routing"
 MSG_TYPE_PERMISSION = "permission"
 
-# msg_type 值中可以成为 thread 根的集合——非这些的 kind（如 routing / permission /
-# announcement）即便带了 in_reply_to_msg_id 也不应被提升为 thread。实际使用中
-# 这些类型都不会设置 in_reply_to_msg_id，但显式列出作为文档。
-_PROMOTABLE_PARENT_KINDS = {MSG_TYPE_NORMAL, MSG_TYPE_REPLY, MSG_TYPE_THREAD}
+# msg_type 值中可以成为 topic 根的集合——非这些的 kind（如 routing /
+# permission / announcement）即便带了 in_reply_to_msg_id 也不应被提升为
+# topic。实际使用中这些类型都不会设置 in_reply_to_msg_id，但显式列出作为
+# 文档。
+_PROMOTABLE_PARENT_KINDS = {MSG_TYPE_NORMAL, MSG_TYPE_REPLY, MSG_TYPE_TOPIC}
 
-# 一条普通消息升级为 thread 根所需的最少回复数。低于这个数量只当成"父消息 +
-# 少量 inline 回复"来展示，不包裹成对话串。改动时前端
-# frontend/src/lib/message.ts 里的 THREAD_DISPLAY_THRESHOLD 需要同步。
-THREAD_PROMOTE_THRESHOLD = 4
+# 一条普通消息升级为 topic 根所需的最少回复数。低于这个数量只当成"父消息 +
+# 少量 inline 回复"来展示，不包裹成主题。改动时前端
+# frontend/src/lib/message.ts 里的 TOPIC_DISPLAY_THRESHOLD 需要同步。
+TOPIC_PROMOTE_THRESHOLD = 4
 
 _MAX_DEPTH = 10
 _MAX_CHILDREN = 20
 
 
-def promote_to_thread(msg: Message) -> None:
-    """In-memory flip: mark `msg` as the root of a thread.
+def promote_to_topic(msg: Message) -> None:
+    """In-memory flip: mark `msg` as the root of a topic.
 
-    Idempotent. Note: this bypasses the THREAD_PROMOTE_THRESHOLD check —
-    callers that want the gated behaviour must use ensure_thread_root
+    Idempotent. Note: this bypasses the TOPIC_PROMOTE_THRESHOLD check —
+    callers that want the gated behaviour must use ensure_topic_root
     instead. Kept as a low-level primitive so tests and advanced callers
     can force a promotion when needed.
     """
-    if msg.msg_type != MSG_TYPE_THREAD:
-        msg.msg_type = MSG_TYPE_THREAD
+    if msg.msg_type != MSG_TYPE_TOPIC:
+        msg.msg_type = MSG_TYPE_TOPIC
 
 
 async def _count_replies(
     session: AsyncSession, parent_msg_id: str
 ) -> int:
     """How many messages currently point at this parent via
-    in_reply_to_msg_id? Used to gate thread promotion on a minimum
-    reply count (see THREAD_PROMOTE_THRESHOLD)."""
+    in_reply_to_msg_id? Used to gate topic promotion on a minimum
+    reply count (see TOPIC_PROMOTE_THRESHOLD)."""
     r = await session.execute(
         select(func.count())
         .select_from(Message)
@@ -71,12 +71,12 @@ async def _count_replies(
     return int(r.scalar() or 0)
 
 
-async def ensure_thread_root(
+async def ensure_topic_root(
     session: AsyncSession, parent_msg_id: str | None,
 ) -> Message | None:
-    """Given a parent message id (typically from `child.in_reply_to_msg_id`),
-    promote it to THREAD — but only if the reply count has reached
-    THREAD_PROMOTE_THRESHOLD.
+    """Given a parent message id (typically from
+    `child.in_reply_to_msg_id`), promote it to TOPIC — but only if the
+    reply count has reached TOPIC_PROMOTE_THRESHOLD.
 
     Returns the parent Message if it existed, otherwise None. Silent on
     missing parent (a stale reply pointing nowhere doesn't explode).
@@ -88,22 +88,22 @@ async def ensure_thread_root(
     parent = await session.get(Message, parent_msg_id)
     if parent is None:
         return None
-    if parent.msg_type == MSG_TYPE_THREAD:
+    if parent.msg_type == MSG_TYPE_TOPIC:
         return parent
     if parent.msg_type not in _PROMOTABLE_PARENT_KINDS:
         return parent
     count = await _count_replies(session, parent_msg_id)
-    if count < THREAD_PROMOTE_THRESHOLD:
+    if count < TOPIC_PROMOTE_THRESHOLD:
         return parent
-    promote_to_thread(parent)
+    promote_to_topic(parent)
     return parent
 
 
 def _auto_promote_parent(_mapper, connection: Connection, target: Message) -> None:
     """SQLAlchemy after_insert hook: when a Message lands with
     in_reply_to_msg_id, check whether the parent has now accumulated
-    THREAD_PROMOTE_THRESHOLD replies and, if so, flip its msg_type to
-    THREAD in the same transaction.
+    TOPIC_PROMOTE_THRESHOLD replies and, if so, flip its msg_type to
+    TOPIC in the same transaction.
 
     Uses raw UPDATE / SELECT on the given connection so it participates
     in the transaction that inserted the reply. The new row has already
@@ -112,28 +112,25 @@ def _auto_promote_parent(_mapper, connection: Connection, target: Message) -> No
 
     Caveat: bypasses ORM object state, so an in-memory Message held by
     the caller won't auto-reflect the new msg_type. Callers that need
-    in-memory consistency should call ensure_thread_root explicitly.
+    in-memory consistency should call ensure_topic_root explicitly.
     """
     parent_id = target.in_reply_to_msg_id
     if not parent_id:
         return
     tbl = Message.__table__
-    # Count of existing children for this parent (includes the row we just
-    # inserted — after_insert fires post-emit so it's visible on this
-    # connection).
     count_q = (
         select(func.count())
         .select_from(tbl)
         .where(tbl.c.in_reply_to_msg_id == parent_id)
     )
     count = int(connection.execute(count_q).scalar() or 0)
-    if count < THREAD_PROMOTE_THRESHOLD:
+    if count < TOPIC_PROMOTE_THRESHOLD:
         return
     connection.execute(
         tbl.update()
         .where(tbl.c.msg_id == parent_id)
         .where(tbl.c.msg_type.in_(tuple(_PROMOTABLE_PARENT_KINDS)))
-        .values(msg_type=MSG_TYPE_THREAD),
+        .values(msg_type=MSG_TYPE_TOPIC),
     )
 
 
@@ -191,20 +188,20 @@ def _to_dict(msg: Message, name: str) -> dict[str, Any]:
     }
 
 
-async def gather_thread_context(
+async def gather_topic_context(
     trigger_msg: Message,
     session: AsyncSession,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
-    收集触发消息的线程上下文，基于 msg_type 判断规则：
+    收集触发消息的主题上下文，基于 msg_type 判断规则：
 
     - 规则1: normal，无子回复          → ([], [])
     - 规则2: reply，链深度=1           → ([parent], [])
     - 规则3: reply，链深度>1           → ([ancestor...], [])
-    - 规则4: thread，已有子回复         → ([], [child...])
+    - 规则4: topic，已有子回复          → ([], [child...])
 
     Returns:
-        (thread_chain, child_replies)
+        (topic_chain, child_replies)
     """
     if trigger_msg.msg_type == MSG_TYPE_REPLY and trigger_msg.in_reply_to_msg_id:
         # 规则2/3：沿 in_reply_to_msg_id 链向上收集祖先消息
@@ -225,8 +222,8 @@ async def gather_thread_context(
         name_map = await _batch_sender_names(msgs_in_chain, session)
         return [_to_dict(m, name_map.get(m.sender_id, "")) for m in msgs_in_chain], []
 
-    if trigger_msg.msg_type == MSG_TYPE_THREAD:
-        # 规则4：当前消息是线程串根，拉取已有子回复作为上下文
+    if trigger_msg.msg_type == MSG_TYPE_TOPIC:
+        # 规则4：当前消息是主题根，拉取已有子回复作为上下文
         r = await session.execute(
             select(Message)
             .where(Message.in_reply_to_msg_id == trigger_msg.msg_id)

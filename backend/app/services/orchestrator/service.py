@@ -307,18 +307,18 @@ async def run_orchestrator(
             logger.exception("failed to prepare attachments channel_id=%s", channel_id)
             attachment_error = f"读取上传文件失败：{exc}"
 
-    from app.services.orchestrator.thread_context import (
+    from app.services.orchestrator.topic_context import (
         MSG_TYPE_REPLY,
-        ensure_thread_root,
-        gather_thread_context,
+        ensure_topic_root,
+        gather_topic_context,
     )
 
-    memory_context, _, thread_result = await asyncio.gather(
+    memory_context, _, topic_result = await asyncio.gather(
         memory_load(channel_id, session),
         _load_attachments(),
-        gather_thread_context(trigger_msg, session),
+        gather_topic_context(trigger_msg, session),
     )
-    thread_chain, child_replies = thread_result
+    topic_chain, child_replies = topic_result
 
     # 查出发送者的昵称，注入到 trigger_message 供模板变量 {{sender_name}} 使用
     sender_name = ""
@@ -400,7 +400,7 @@ async def run_orchestrator(
                     "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                     "msg_id": trigger_msg.msg_id,
                     "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
-                    "thread_history": thread_chain,
+                    "topic_chain": topic_chain,
                     "child_replies": child_replies,
                 },
                 memory_context=memory_context,
@@ -468,12 +468,12 @@ async def run_orchestrator(
         )
         session.add(msg)
         await session.flush()
-        # after_insert listener in thread_context.py will flip trigger_msg's
-        # row to "thread" once the reply count crosses
-        # THREAD_PROMOTE_THRESHOLD. Mirror the flip into the in-memory
+        # after_insert listener in topic_context.py will flip trigger_msg's
+        # row to "topic" once the reply count crosses
+        # TOPIC_PROMOTE_THRESHOLD. Mirror the flip into the in-memory
         # Message object so any later code in this request sees the new
         # msg_type without a refresh.
-        await ensure_thread_root(session, trigger_msg.msg_id)
+        await ensure_topic_root(session, trigger_msg.msg_id)
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()
@@ -506,7 +506,7 @@ async def run_orchestrator(
         session.add(msg)
         await session.flush()
         # Same threshold-aware promotion as _create_msg_and_broadcast.
-        await ensure_thread_root(session, trigger_msg.msg_id)
+        await ensure_topic_root(session, trigger_msg.msg_id)
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()
@@ -657,7 +657,7 @@ async def run_orchestrator(
                     "msg_id": trigger_msg.msg_id,
                     "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
                     "msg_type": trigger_msg.msg_type,
-                    "thread_history": thread_chain,
+                    "topic_chain": topic_chain,
                     "child_replies": child_replies,
                 },
                 memory_context=memory_context,
@@ -746,7 +746,7 @@ async def run_orchestrator(
                             "text": trigger_content,
                             "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                             "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
-                            "thread_history": thread_chain,
+                            "topic_chain": topic_chain,
                             "child_replies": child_replies,
                         },
                         memory_context=memory_context,
@@ -817,7 +817,7 @@ async def run_orchestrator(
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                 "msg_id": trigger_msg.msg_id,
                 "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
-                "thread_history": thread_chain,
+                "topic_chain": topic_chain,
                 "child_replies": child_replies,
             },
             memory_context=memory_context,

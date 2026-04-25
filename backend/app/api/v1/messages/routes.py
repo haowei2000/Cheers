@@ -266,10 +266,10 @@ async def _handle_send_message(
         stored_content = body.content
         token = None
 
-    from app.services.orchestrator.thread_context import (
+    from app.services.orchestrator.topic_context import (
         MSG_TYPE_NORMAL,
         MSG_TYPE_REPLY,
-        ensure_thread_root,
+        ensure_topic_root,
     )
 
     in_reply_to = getattr(body, "in_reply_to_msg_id", None) or None
@@ -300,7 +300,7 @@ async def _handle_send_message(
     # subsequent code in this request that reads parent.msg_type sees the
     # updated value without a refresh.
     if in_reply_to:
-        await ensure_thread_root(session, in_reply_to)
+        await ensure_topic_root(session, in_reply_to)
         await session.flush()
 
     # Build file_map for response
