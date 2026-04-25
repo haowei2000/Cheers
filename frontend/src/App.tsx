@@ -1177,6 +1177,31 @@ export default function App() {
       .catch(console.error);
   };
 
+  // Reveal an encrypted message by hitting /messages/:id/secret with the
+  // per-send token (only the sender holds one, captured in secretTokens).
+  // On success, stashes plaintext into revealedSecrets so the stream
+  // renders it in place of the 🔒 veil.
+  const revealSecretMessage = (msgId: string) => {
+    const token = secretTokens[msgId];
+    if (!selectedId || !token) return;
+    fetch(
+      `${API}/channels/${selectedId}/messages/${msgId}/secret?token=${encodeURIComponent(token)}`,
+      { headers: { Authorization: `Bearer ${authToken}` } },
+    )
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.data?.content) {
+          setRevealedSecrets((prev) => ({
+            ...prev,
+            [msgId]: d.data.content,
+          }));
+        } else {
+          toast.error(d.detail || "无法查看加密内容");
+        }
+      })
+      .catch(() => toast.error("请求失败"));
+  };
+
   // Copy a message's rendered text (stripping think-folds / guide payload
   // JSON) to the system clipboard. Best-effort — silently toasts failure.
   const copyMessageText = async (m: Message) => {
@@ -2901,13 +2926,46 @@ export default function App() {
                                   }}
                                 >
                                   {isSecretExpired ? (
-                                    <span style={{ color: "var(--fg-3)" }}>
-                                      🔒 加密消息（已过期）
-                                    </span>
+                                    <div className="an-secret-veil is-expired">
+                                      <span className="an-secret-veil-icon">
+                                        🔒
+                                      </span>
+                                      <div className="an-secret-veil-body">
+                                        <span className="an-secret-veil-label">
+                                          加密消息已过期
+                                        </span>
+                                        <span className="an-secret-veil-meta">
+                                          一次性查看窗口已关闭
+                                        </span>
+                                      </div>
+                                    </div>
                                   ) : isSecretUnrevealed ? (
-                                    <span style={{ color: "var(--orange)" }}>
-                                      🔒 加密消息
-                                    </span>
+                                    <div className="an-secret-veil">
+                                      <span className="an-secret-veil-icon">
+                                        🔒
+                                      </span>
+                                      <div className="an-secret-veil-body">
+                                        <span className="an-secret-veil-label">
+                                          加密消息
+                                        </span>
+                                        <span className="an-secret-veil-meta">
+                                          {secretSecsLeft !== null
+                                            ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
+                                            : "仅 Bot 可读"}
+                                        </span>
+                                      </div>
+                                      {secretTokens[m.msg_id] && (
+                                        <button
+                                          type="button"
+                                          className="an-secret-veil-reveal"
+                                          onClick={() =>
+                                            revealSecretMessage(m.msg_id)
+                                          }
+                                        >
+                                          查看
+                                        </button>
+                                      )}
+                                    </div>
                                   ) : (
                                     renderWithThinkFolding(
                                       displayContent,
@@ -3065,60 +3123,52 @@ export default function App() {
                                   </div>
                                 ) : null}
                                 {renderFileAttachments(m, true)}
-                                <div
-                                  className={`${isSecretUnrevealed ? "bg-amber-500" : isSecretExpired ? "bg-gray-400" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}
-                                >
-                                  {isSecretExpired ? (
-                                    <span className="opacity-80">
-                                      🔒 加密消息（已过期）
+                                {isSecretExpired ? (
+                                  <div className="an-secret-veil is-expired">
+                                    <span className="an-secret-veil-icon">
+                                      🔒
                                     </span>
-                                  ) : isSecretUnrevealed ? (
-                                    <div className="flex items-center gap-2">
-                                      <span>🔒 加密消息</span>
-                                      {secretSecsLeft !== null && (
-                                        <span className="text-[11px] opacity-70 tabular-nums">
-                                          {secretSecsLeft}s
-                                        </span>
-                                      )}
-                                      {secretTokens[m.msg_id] && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            fetch(
-                                              `${API}/channels/${selectedId}/messages/${m.msg_id}/secret?token=${encodeURIComponent(secretTokens[m.msg_id])}`,
-                                              {
-                                                headers: {
-                                                  Authorization: `Bearer ${authToken}`,
-                                                },
-                                              },
-                                            )
-                                              .then((r) => r.json())
-                                              .then((d) => {
-                                                if (d.data?.content) {
-                                                  setRevealedSecrets(
-                                                    (prev) => ({
-                                                      ...prev,
-                                                      [m.msg_id]:
-                                                        d.data.content,
-                                                    }),
-                                                  );
-                                                } else {
-                                                  alert(
-                                                    d.detail ||
-                                                      "无法查看加密内容",
-                                                  );
-                                                }
-                                              })
-                                              .catch(() => alert("请求失败"));
-                                          }}
-                                          className="text-[12px] underline opacity-80 hover:opacity-100"
-                                        >
-                                          查看
-                                        </button>
-                                      )}
+                                    <div className="an-secret-veil-body">
+                                      <span className="an-secret-veil-label">
+                                        加密消息已过期
+                                      </span>
+                                      <span className="an-secret-veil-meta">
+                                        一次性查看窗口已关闭
+                                      </span>
                                     </div>
-                                  ) : (
-                                    (() => {
+                                  </div>
+                                ) : isSecretUnrevealed ? (
+                                  <div className="an-secret-veil">
+                                    <span className="an-secret-veil-icon">
+                                      🔒
+                                    </span>
+                                    <div className="an-secret-veil-body">
+                                      <span className="an-secret-veil-label">
+                                        加密消息
+                                      </span>
+                                      <span className="an-secret-veil-meta">
+                                        {secretSecsLeft !== null
+                                          ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
+                                          : "仅 Bot 可读"}
+                                      </span>
+                                    </div>
+                                    {secretTokens[m.msg_id] && (
+                                      <button
+                                        type="button"
+                                        className="an-secret-veil-reveal"
+                                        onClick={() =>
+                                          revealSecretMessage(m.msg_id)
+                                        }
+                                      >
+                                        查看
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div
+                                    className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words"
+                                  >
+                                    {(() => {
                                       const q =
                                         parseQuotePrefix(displayContent);
                                       if (q)
@@ -3149,9 +3199,9 @@ export default function App() {
                                             .trim() || displayContent}
                                         </span>
                                       );
-                                    })()
-                                  )}
-                                </div>
+                                    })()}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -3217,46 +3267,41 @@ export default function App() {
                                 }}
                               >
                                 {isSecretExpired ? (
-                                  <span className="text-gray-400">
-                                    🔒 加密消息（已过期）
-                                  </span>
-                                ) : isSecretUnrevealed ? (
-                                  <div className="flex items-center gap-2 text-amber-700">
-                                    <span>🔒 加密消息</span>
-                                    {secretSecsLeft !== null && (
-                                      <span className="text-[11px] opacity-70 tabular-nums">
-                                        {secretSecsLeft}s
+                                  <div className="an-secret-veil is-expired">
+                                    <span className="an-secret-veil-icon">
+                                      🔒
+                                    </span>
+                                    <div className="an-secret-veil-body">
+                                      <span className="an-secret-veil-label">
+                                        加密消息已过期
                                       </span>
-                                    )}
+                                      <span className="an-secret-veil-meta">
+                                        一次性查看窗口已关闭
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : isSecretUnrevealed ? (
+                                  <div className="an-secret-veil">
+                                    <span className="an-secret-veil-icon">
+                                      🔒
+                                    </span>
+                                    <div className="an-secret-veil-body">
+                                      <span className="an-secret-veil-label">
+                                        加密消息
+                                      </span>
+                                      <span className="an-secret-veil-meta">
+                                        {secretSecsLeft !== null
+                                          ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
+                                          : "仅 Bot 可读"}
+                                      </span>
+                                    </div>
                                     {secretTokens[m.msg_id] && (
                                       <button
                                         type="button"
-                                        onClick={() => {
-                                          fetch(
-                                            `${API}/channels/${selectedId}/messages/${m.msg_id}/secret?token=${encodeURIComponent(secretTokens[m.msg_id])}`,
-                                            {
-                                              headers: {
-                                                Authorization: `Bearer ${authToken}`,
-                                              },
-                                            },
-                                          )
-                                            .then((r) => r.json())
-                                            .then((d) => {
-                                              if (d.data?.content) {
-                                                setRevealedSecrets((prev) => ({
-                                                  ...prev,
-                                                  [m.msg_id]: d.data.content,
-                                                }));
-                                              } else {
-                                                alert(
-                                                  d.detail ||
-                                                    "无法查看加密内容",
-                                                );
-                                              }
-                                            })
-                                            .catch(() => alert("请求失败"));
-                                        }}
-                                        className="text-[12px] underline opacity-80 hover:opacity-100"
+                                        className="an-secret-veil-reveal"
+                                        onClick={() =>
+                                          revealSecretMessage(m.msg_id)
+                                        }
                                       >
                                         查看
                                       </button>
