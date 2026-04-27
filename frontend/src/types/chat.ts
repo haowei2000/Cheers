@@ -61,6 +61,9 @@ export type Message = {
   files?: FileInfo[];
   is_secret?: boolean;
   secret_token?: string;
+  /** True when the bot reply was finalized mid-stream (cancel/error).
+   *  Renders a "已取消" / "已中断" badge. */
+  is_partial?: boolean;
 };
 
 export type QaPair = { question: Message; answer: Message };

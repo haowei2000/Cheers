@@ -229,6 +229,7 @@ class Message(Base):
     is_secret: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
     secret_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     secret_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    is_partial: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="messages")
 

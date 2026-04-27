@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, FileRecord, Message
 from app.services.openclaw_bridge.pending import PendingReply, pending_replies
+from app.services.openclaw_bridge.streams import StreamState, stream_registry
 from app.services.orchestrator.mention import resolve_user_mentions
 from app.services.ws_service import ws_manager
 
@@ -50,6 +51,10 @@ async def finalize_bot_reply(
     pending: PendingReply | None = await pending_replies.resolve(
         task_id=task_id, bot_id=bot_id, msg_id=reply_to_msg_id,
     )
+    # If the same msg_id has a streaming buffer (legacy plugin chose `reply`
+    # instead of `delta`/`done`), drop it — the full text in `content` wins.
+    if pending:
+        await stream_registry.pop(pending.msg_id)
     file_ids = list(dict.fromkeys(file_ids or []))
 
     if pending:
@@ -135,3 +140,167 @@ async def _broadcast_done(session: AsyncSession, msg: Message, *, file_ids: list
             if (r := file_map.get(fid)) is not None
         ]
     await ws_manager.broadcast_to_channel(msg.channel_id, {"type": "message_done", "data": done})
+
+
+# ============================================================================
+# Streaming reply path: plugin → delta frames → frontend message_stream events
+# ============================================================================
+
+
+async def register_stream(
+    *,
+    msg_id: str,
+    bot_id: str,
+    channel_id: str,
+    task_id: str | None = None,
+) -> StreamState:
+    """Mark a placeholder message as eligible for streaming deltas.
+
+    Called by WebsocketBotAdapter right before dispatching to the plugin; the
+    matching plugin reply will arrive as `delta` frames keyed on this msg_id.
+    """
+    return await stream_registry.register(
+        msg_id=msg_id, bot_id=bot_id, channel_id=channel_id, task_id=task_id,
+    )
+
+
+async def apply_delta(
+    *,
+    msg_id: str,
+    bot_id: str,
+    seq: int | None,
+    delta: str,
+) -> bool:
+    """Append a streamed delta and broadcast it as a `message_stream` event.
+
+    Returns False if the stream is unknown / wrong bot / already finalized
+    (caller should ignore — frame is stale or spoofed). Out-of-order frames
+    (`seq <= last_seq`) are dropped with a warning rather than reordered.
+    """
+    state = await stream_registry.get(msg_id)
+    if state is None or state.bot_id != bot_id:
+        return False
+    async with state.lock:
+        if state.finalized:
+            return False
+        if seq is not None:
+            if seq <= state.last_seq:
+                logger.warning(
+                    "bridge.stream: dropping out-of-order delta msg_id=%s seq=%s last=%s",
+                    msg_id, seq, state.last_seq,
+                )
+                return False
+            state.last_seq = seq
+        state.buffer += delta or ""
+    await ws_manager.broadcast_to_channel(
+        state.channel_id,
+        {"type": "message_stream", "data": {"msg_id": msg_id, "delta": delta}},
+    )
+    return True
+
+
+async def finalize_stream(
+    session: AsyncSession,
+    *,
+    msg_id: str,
+    bot_id: str,
+    partial: bool = False,
+    error: str | None = None,
+    file_ids: list[str] | None = None,
+) -> Message | None:
+    """Flush buffered deltas to the placeholder Message, broadcast message_done.
+
+    Idempotent: if the stream was already finalized (or never registered),
+    returns None and does nothing.
+
+    `file_ids` lets the plugin attach binary outputs uploaded during the
+    stream (sendMedia path) to the same finalized message so the frontend
+    renders text + files as a single bot reply.
+    """
+    state = await stream_registry.pop(msg_id)
+    if state is None:
+        return None
+    async with state.lock:
+        if state.finalized:
+            return None
+        state.finalized = True
+        content = state.buffer
+
+    pending = await pending_replies.resolve(
+        task_id=state.task_id, bot_id=bot_id, msg_id=msg_id,
+    )
+    msg: Message | None = None
+    if pending:
+        msg = await session.get(Message, pending.msg_id)
+
+    if msg is None:
+        logger.warning(
+            "bridge.stream.finalize: placeholder missing msg_id=%s; dropping stream", msg_id,
+        )
+        return None
+
+    msg.content = content
+    msg.is_partial = bool(partial)
+    msg.mention_user_ids = await resolve_user_mentions(content, session, state.channel_id)
+    if file_ids:
+        msg.file_ids = list(dict.fromkeys([*(msg.file_ids or []), *file_ids]))
+    await session.flush()
+
+    done: dict[str, Any] = {
+        "msg_id": msg.msg_id,
+        "content": msg.content,
+        "is_partial": msg.is_partial,
+    }
+    if error:
+        done["error"] = error
+    if msg.file_ids:
+        from app.core.schemas import MessageFileInResponse
+
+        rows = (await session.execute(
+            select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
+        )).scalars().all()
+        file_map = {r.file_id: r for r in rows}
+        done["file_ids"] = msg.file_ids
+        done["files"] = [
+            MessageFileInResponse(
+                file_id=r.file_id,
+                original_filename=r.original_filename,
+                content_type=r.content_type,
+                size_bytes=r.size_bytes,
+                status=r.status or "ready",
+            ).model_dump()
+            for fid in msg.file_ids
+            if (r := file_map.get(fid)) is not None
+        ]
+    await ws_manager.broadcast_to_channel(
+        state.channel_id, {"type": "message_done", "data": done},
+    )
+    logger.info(
+        "bridge.stream.finalize: msg_id=%s bot_id=%s partial=%s len=%d files=%d",
+        msg_id, bot_id, partial, len(content), len(msg.file_ids or []),
+    )
+    return msg
+
+
+async def cancel_stream(
+    session: AsyncSession,
+    *,
+    msg_id: str,
+    reason: str = "user_cancelled",
+) -> Message | None:
+    """User-triggered cancel: flag the stream, notify plugin, finalize partial.
+
+    The cancel frame to the plugin is sent by the route layer (which owns the
+    control WS socket) — here we only mark the state and run finalize.
+    """
+    state = await stream_registry.get(msg_id)
+    if state is None:
+        return None
+    async with state.lock:
+        if state.finalized:
+            return None
+        state.cancel_requested = True
+        bot_id = state.bot_id
+    return await finalize_stream(
+        session, msg_id=msg_id, bot_id=bot_id, partial=True, error=reason,
+    )

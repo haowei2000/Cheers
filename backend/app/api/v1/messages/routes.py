@@ -452,6 +452,74 @@ async def send_message_stream(
     )
 
 
+@router.post("/{msg_id}/cancel", response_model=APIResponse[dict])
+async def cancel_streaming_message(
+    channel_id: str,
+    msg_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Cancel an in-progress streaming bot reply.
+
+    Marks the stream as cancelled, finalizes the placeholder message with
+    `is_partial=True` (preserving whatever tokens have arrived so far), and
+    notifies the plugin via control WS so it can stop generating.
+
+    Idempotent: if the stream is already finalized, returns 200 with the
+    current message state and no plugin notification is sent.
+    """
+    from sqlalchemy import select
+
+    from app.core.exceptions import ForbiddenError, NotFoundError
+    from app.db.models import ChannelMembership
+    from app.services.openclaw_bridge.registry import bot_session_registry
+    from app.services.openclaw_bridge.service import cancel_stream as bridge_cancel_stream
+    from app.services.openclaw_bridge.streams import stream_registry
+
+    membership = (
+        await session.execute(
+            select(ChannelMembership.member_id).where(
+                ChannelMembership.channel_id == channel_id,
+                ChannelMembership.member_id == current_user.user_id,
+                ChannelMembership.member_type == "user",
+            )
+        )
+    ).first()
+    if not membership:
+        raise ForbiddenError("not a member of this channel")
+
+    msg = await session.get(Message, msg_id)
+    if not msg or msg.channel_id != channel_id:
+        raise NotFoundError("message not found")
+
+    state = await stream_registry.get(msg_id)
+    if state is None:
+        # Already finalized or never streamed: idempotent success.
+        return APIResponse.ok(_serialize(msg, {}))
+
+    bot_id = state.bot_id
+    finalized = await bridge_cancel_stream(
+        session, msg_id=msg_id, reason="user_cancelled",
+    )
+    if finalized is not None:
+        await session.commit()
+        # Tell the plugin to stop generating. Best-effort: if plugin is
+        # offline the cancel still succeeds locally.
+        await bot_session_registry.dispatch_control(bot_id, {
+            "type": "cancel",
+            "msg_id": msg_id,
+            "reason": "user_cancelled",
+        })
+        logger.info(
+            "cancel_streaming_message: msg_id=%s bot_id=%s by_user=%s",
+            msg_id, bot_id, current_user.user_id,
+        )
+        return APIResponse.ok(_serialize(finalized, {}))
+    # Race: registry had it but cancel raced with done. Return current msg.
+    await session.refresh(msg)
+    return APIResponse.ok(_serialize(msg, {}))
+
+
 @router.post("/{msg_id}/resolve", response_model=APIResponse[dict])
 async def resolve_permission(
     channel_id: str,

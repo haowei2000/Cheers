@@ -18,6 +18,9 @@ import type {
   ChannelInfo,
   ControlInbound,
   DataInbound,
+  DeltaFrame,
+  DoneFrame,
+  ErrorFrame,
   MessageEvent,
   ReplyFrame,
   SendAck,
@@ -68,6 +71,12 @@ export interface SessionEvents {
   onChannelJoined?: (channel: ChannelInfo, invitedBy: string | null) => void;
   /** 成员被移除 */
   onChannelLeft?: (channelId: string, reason: string) => void;
+  /** 用户在前端点击 ⏹ 取消正在生成的 bot 回复。`msgId` = 占位消息 id
+   *  (= sendText/sendMedia 在 sendXxx ctx.to 用到的 taskId 对应的 placeholder)。
+   *  Plugin 应停止为该消息推送 delta，并 best-effort 中止背后的 LLM/agent 调用。
+   *  服务端在收到 cancel 那一刻就已经本地 finalize 了 partial，所以这里 plugin
+   *  即便不发 done 也不会卡死前端 —— done 只是为了让 plugin 自己日志好看。 */
+  onCancel?: (msgId: string, reason?: string) => void;
   onError?: (err: unknown) => void;
   onFatal?: (reason: string) => void;
   /** control/data 连接状态变更（observability） */
@@ -237,6 +246,14 @@ export class BotSession {
           this.events.onChannelLeft?.(frame.channel_id, frame.reason);
           break;
         }
+        case "cancel": {
+          // 用户在前端点了 ⏹。后端已本地 finalize 了 partial，发 cancel 只是
+          // 告诉我们停止继续生成。
+          if (typeof frame.msg_id === "string" && frame.msg_id) {
+            this.events.onCancel?.(frame.msg_id, frame.reason);
+          }
+          break;
+        }
         case "pong":
           break;
         default:
@@ -341,6 +358,43 @@ export class BotSession {
       text,
       file_ids: fileIds,
     });
+  }
+
+  // ============== streaming reply: delta / done / error ==================
+  // Fire-and-forget: 服务端不回 send_ack（这些帧被设计为高频 / 容错），
+  // 直接把 frame 推上 data WS。返回 boolean 表示 WS 是否在线 / 写入是否成功。
+
+  /** Push a single token / chunk into a streaming reply identified by `msgId`. */
+  streamDelta(args: { msgId: string; seq: number; delta: string }): boolean {
+    if (!this.data.isOpen) return false;
+    const frame: DeltaFrame = {
+      type: "delta",
+      msg_id: args.msgId,
+      seq: args.seq,
+      delta: args.delta,
+    };
+    return this.data.send(frame);
+  }
+
+  /** End of a streaming reply. Server flushes the buffer + broadcasts
+   *  message_done. Optional `fileIds` attaches binary outputs uploaded
+   *  during the stream (e.g. images / .md from sendMedia). */
+  streamDone(args: { msgId: string; fileIds?: string[] }): boolean {
+    if (!this.data.isOpen) return false;
+    const frame: DoneFrame = { type: "done", msg_id: args.msgId };
+    if (args.fileIds && args.fileIds.length > 0) frame.file_ids = args.fileIds;
+    return this.data.send(frame);
+  }
+
+  /** Mid-stream error: server finalizes partial with the given message tag. */
+  streamError(args: { msgId: string; message: string }): boolean {
+    if (!this.data.isOpen) return false;
+    const frame: ErrorFrame = {
+      type: "error",
+      msg_id: args.msgId,
+      message: args.message,
+    };
+    return this.data.send(frame);
   }
 
   /** 非响应式主动发一条消息到频道（例如定时提醒）。 */

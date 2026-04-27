@@ -760,7 +760,7 @@ export default function App() {
               ),
             );
           } else if (msg.type === "message_done" && msg.data) {
-            const { msg_id, content, files, file_ids } = msg.data;
+            const { msg_id, content, files, file_ids, is_partial } = msg.data;
             setMessages((prev) =>
               prev.map((m) =>
                 m.msg_id === msg_id
@@ -770,6 +770,9 @@ export default function App() {
                       _streaming: false,
                       ...(files ? { files } : {}),
                       ...(file_ids ? { file_ids } : {}),
+                      ...(typeof is_partial === "boolean"
+                        ? { is_partial }
+                        : {}),
                     }
                   : m,
               ),
@@ -1210,6 +1213,86 @@ export default function App() {
     } catch {
       toast.error("复制失败");
     }
+  };
+
+  const cancelStreamingMessage = async (m: Message) => {
+    if (!selectedId) return;
+    // Optimistic: stop the streaming pulse immediately so the user sees feedback;
+    // the message_done event will arrive shortly with is_partial=true and the
+    // final buffered content. If the request fails we restore _streaming.
+    setMessages((prev) =>
+      prev.map((x) =>
+        x.msg_id === m.msg_id ? { ...x, _streaming: false } : x,
+      ),
+    );
+    try {
+      const r = await apiFetch(
+        `/channels/${selectedId}/messages/${m.msg_id}/cancel`,
+        { method: "POST", token: authToken },
+      );
+      if (!r.ok) {
+        setMessages((prev) =>
+          prev.map((x) =>
+            x.msg_id === m.msg_id ? { ...x, _streaming: true } : x,
+          ),
+        );
+        toast.error("取消失败");
+      }
+    } catch {
+      setMessages((prev) =>
+        prev.map((x) =>
+          x.msg_id === m.msg_id ? { ...x, _streaming: true } : x,
+        ),
+      );
+      toast.error("取消失败");
+    }
+  };
+
+  /** Inline ⏹ stop button shown next to the streaming pulse on bot bubbles.
+   *  Returns null for non-streaming or non-bot messages so callers can drop
+   *  it next to every pulse location without an extra wrapping condition. */
+  const renderStopStreamButton = (m: Message) => {
+    if (!m._streaming || m.sender_type !== "bot") return null;
+    return (
+      <button
+        type="button"
+        title="停止生成"
+        onClick={() => cancelStreamingMessage(m)}
+        className="inline-flex items-center justify-center align-middle ml-1.5 w-5 h-5 rounded border"
+        style={{
+          borderColor: "var(--border)",
+          background: "var(--surface-soft)",
+          color: "var(--fg-2)",
+          cursor: "pointer",
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            background: "currentColor",
+            borderRadius: 1,
+          }}
+        />
+      </button>
+    );
+  };
+
+  /** Inline "已取消" badge shown after a streaming bot reply was cancelled. */
+  const renderPartialBadge = (m: Message) => {
+    if (m._streaming || !m.is_partial || m.sender_type !== "bot") return null;
+    return (
+      <span
+        className="inline-block align-middle ml-1.5 px-1.5 py-0.5 rounded text-[10px]"
+        style={{
+          background: "var(--surface-soft)",
+          border: "1px solid var(--border)",
+          color: "var(--fg-3)",
+        }}
+      >
+        已取消
+      </span>
+    );
   };
 
   const sendTopicReply = async (
@@ -2976,6 +3059,8 @@ export default function App() {
                                         }}
                                       />
                                     )}
+                                  {renderStopStreamButton(m)}
+                                  {renderPartialBadge(m)}
                                 </div>
                                 {form && selectedId && m.sender_type === "bot" && (
                                   <GuideFormBlock
@@ -3315,6 +3400,8 @@ export default function App() {
                                   !!text && (
                                     <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
                                   )}
+                                {!isSecretUnrevealed && renderStopStreamButton(m)}
+                                {!isSecretUnrevealed && renderPartialBadge(m)}
                               </div>
                               {form &&
                                 selectedId &&
@@ -3616,6 +3703,8 @@ export default function App() {
                                     {r._streaming && !!rTextRaw && (
                                       <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
                                     )}
+                                    {renderStopStreamButton(r)}
+                                    {renderPartialBadge(r)}
                                   </div>
                                   {rForm &&
                                     selectedId &&
@@ -4220,6 +4309,8 @@ export default function App() {
                                             {r._streaming && !!rTextRaw && (
                                               <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
                                             )}
+                                            {renderStopStreamButton(r)}
+                                            {renderPartialBadge(r)}
                                           </div>
                                           {rForm &&
                                             selectedId &&

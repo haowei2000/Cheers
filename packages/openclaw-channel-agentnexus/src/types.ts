@@ -45,10 +45,21 @@ export interface PongFrame {
   type: "pong";
 }
 
+/** Server pushes this on the control stream when a user clicks the ⏹ button
+ *  on a streaming bot reply. The plugin should stop emitting deltas for the
+ *  given msg_id and (best-effort) abort whatever LLM/agent run is producing
+ *  the answer. */
+export interface CancelInbound {
+  type: "cancel";
+  msg_id: string;
+  reason?: string;
+}
+
 export type ControlInbound =
   | ControlHello
   | ChannelJoinedEvent
   | ChannelLeftEvent
+  | CancelInbound
   | PongFrame
   | { type: "error"; detail?: string };
 
@@ -168,4 +179,38 @@ export interface TypingFrame {
 export interface ResumeFrame {
   type: "resume";
   last_event_seq: number;
+}
+
+// ---- Streaming reply frames (client → server, fire-and-forget, no ack) ----
+
+/** One token / chunk of a streaming bot reply. The server appends `delta`
+ *  to the placeholder identified by `msg_id` and broadcasts a
+ *  `message_stream` event so the frontend can render it incrementally. */
+export interface DeltaFrame {
+  type: "delta";
+  msg_id: string;
+  /** Monotonic per-stream sequence; out-of-order frames are dropped server-side. */
+  seq: number;
+  delta: string;
+}
+
+/** End of a streaming reply. Server flushes the buffer to the placeholder
+ *  Message and broadcasts `message_done`. Idempotent.
+ *
+ *  `file_ids` lets the plugin attach binary outputs (uploaded via the
+ *  /openclaw/bridge/files/upload-binary HTTP route while the stream was in
+ *  flight) to the same finalized message — so a "正在打字 → 文件浮现" UX
+ *  shows up as a single bot reply, not text + a separate media message. */
+export interface DoneFrame {
+  type: "done";
+  msg_id: string;
+  file_ids?: string[];
+}
+
+/** Plugin reports a mid-stream error. Server finalizes the placeholder with
+ *  `is_partial=true` and includes `message` in the message_done event. */
+export interface ErrorFrame {
+  type: "error";
+  msg_id: string;
+  message: string;
 }
