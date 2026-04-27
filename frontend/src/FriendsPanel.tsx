@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { UsersIcon } from "@heroicons/react/24/solid";
 import type { Friend, UserSearchResult } from "./types";
 
 const API = "/api/v1";
@@ -209,7 +210,7 @@ export default function FriendsPanel({ currentUserId, userToken, isOpen, onClose
               </div>
             ) : friends.length === 0 ? (
               <div className="text-center py-8">
-                <div className="text-4xl mb-2">👥</div>
+                <UsersIcon className="w-10 h-10 mx-auto mb-2 text-gray-400" />
                 <p className="text-gray-500 text-sm">暂无好友</p>
                 <button
                   onClick={() => setActiveTab("add")}

@@ -4,6 +4,8 @@ import {
   Cog6ToothIcon,
   MinusIcon,
   TrashIcon,
+  UserPlusIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/solid";
 import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
@@ -338,7 +340,9 @@ export function Sidebar({
                   onOpenInviteWsMember();
                 }}
               >
-                <span className="an-mi-ico">👤</span>
+                <span className="an-mi-ico inline-flex w-4 h-4">
+                  <UserPlusIcon className="w-full h-full" />
+                </span>
                 <span>邀请成员</span>
               </button>
               <div className="an-menu-sep" />
@@ -370,8 +374,11 @@ export function Sidebar({
                     .catch(() => toast.error("请求失败"));
                 }}
               >
-                <span className="an-mi-ico" style={{ color: "var(--red)" }}>
-                  ✕
+                <span
+                  className="an-mi-ico inline-flex w-4 h-4"
+                  style={{ color: "var(--red)" }}
+                >
+                  <XMarkIcon className="w-full h-full" />
                 </span>
                 <span>删除工作空间</span>
               </button>

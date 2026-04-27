@@ -1,43 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
+import { ChatBubbleLeftIcon } from "@heroicons/react/24/solid";
 import type { CurrentUser, Friend, UserSearchResult } from "../types";
 import { apiFetch } from "../api";
 import { Modal } from "./Modal";
 
 type Density = "comfy" | "compact";
-type AccentId = "indigo" | "teal" | "amber" | "rose" | "blue";
-
-const ACCENTS: { id: AccentId; c: string; label: string }[] = [
-  { id: "indigo", c: "#7c6cf5", label: "Indigo" },
-  { id: "teal", c: "#3ecf8e", label: "Teal" },
-  { id: "amber", c: "#f5a623", label: "Amber" },
-  { id: "rose", c: "#f05478", label: "Rose" },
-  { id: "blue", c: "#56a7ff", label: "Blue" },
-];
 
 const DENSITY_KEY = "agentnexus-density";
-const ACCENT_KEY = "agentnexus-accent";
 
 export function getStoredDensity(): Density {
   if (typeof window === "undefined") return "comfy";
   const v = localStorage.getItem(DENSITY_KEY);
   return v === "compact" ? "compact" : "comfy";
-}
-
-export function getStoredAccent(): AccentId {
-  if (typeof window === "undefined") return "indigo";
-  const v = localStorage.getItem(ACCENT_KEY) as AccentId | null;
-  return ACCENTS.some((a) => a.id === v) ? (v as AccentId) : "indigo";
-}
-
-export function applyAccent(id: AccentId) {
-  const hit = ACCENTS.find((a) => a.id === id) || ACCENTS[0];
-  const root = document.documentElement.style;
-  root.setProperty("--accent", hit.c);
-  root.setProperty("--accent-hover", hit.c);
-  root.setProperty("--accent-muted", hit.c + "24");
-  root.setProperty("--accent-ring", hit.c + "66");
-  root.setProperty("--border-focus", hit.c + "99");
 }
 
 export function applyDensity(d: Density) {
@@ -79,7 +54,6 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [pane, setPane] = useState<Pane>("bot");
   const [density, setDensityState] = useState<Density>(() => getStoredDensity());
-  const [accent, setAccentState] = useState<AccentId>(() => getStoredAccent());
   const [bots, setBots] = useState<BotRow[]>([]);
 
   useEffect(() => {
@@ -110,18 +84,16 @@ export function SettingsModal({
     applyDensity(d);
   };
 
-  const changeAccent = (id: AccentId) => {
-    setAccentState(id);
-    localStorage.setItem(ACCENT_KEY, id);
-    applyAccent(id);
-  };
-
-  const NAV_ITEMS: { id: Pane; ico: string; label: string }[] = [
+  const NAV_ITEMS: { id: Pane; ico: ReactNode; label: string }[] = [
     { id: "bot", ico: "◉", label: "Bot" },
     { id: "account", ico: "◉", label: "账户" },
     { id: "friends", ico: "◎", label: "好友" },
     { id: "appearance", ico: "◐", label: "外观" },
-    { id: "bulletin", ico: "💬", label: "留言板" },
+    {
+      id: "bulletin",
+      ico: <ChatBubbleLeftIcon className="inline-block w-3.5 h-3.5 align-text-bottom" />,
+      label: "留言板",
+    },
     { id: "other", ico: "⌘", label: "其他" },
   ];
 
@@ -177,8 +149,6 @@ export function SettingsModal({
                 setTheme={setTheme}
                 density={density}
                 setDensity={changeDensity}
-                accent={accent}
-                setAccent={changeAccent}
               />
             )}
             {pane === "bulletin" && (
@@ -297,22 +267,18 @@ function AppearancePane({
   setTheme,
   density,
   setDensity,
-  accent,
-  setAccent,
 }: {
   isDark: boolean;
   setTheme: (t: "light" | "dark") => void;
   density: Density;
   setDensity: (d: Density) => void;
-  accent: AccentId;
-  setAccent: (id: AccentId) => void;
 }) {
   return (
     <div>
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">外观</div>
-          <div className="an-pane-sub">主题、密度与主色。</div>
+          <div className="an-pane-sub">主题与密度。</div>
         </div>
       </div>
       <div className="an-list-table">
@@ -358,25 +324,6 @@ function AppearancePane({
             >
               紧凑
             </button>
-          </div>
-        </div>
-        <div className="an-row-card" style={{ justifyContent: "space-between" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title">主色</div>
-            <div className="an-rc-sub">按钮、高亮与链接的主色。</div>
-          </div>
-          <div className="an-swatch-row">
-            {ACCENTS.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                className={`an-sw ${accent === a.id ? "on" : ""}`}
-                style={{ background: a.c }}
-                onClick={() => setAccent(a.id)}
-                aria-label={a.label}
-                title={a.label}
-              />
-            ))}
           </div>
         </div>
       </div>

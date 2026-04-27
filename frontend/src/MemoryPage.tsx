@@ -9,10 +9,29 @@
  * - MEMBERS：成员卡片
  * - TODO：任务看板
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  ArchiveBoxIcon,
+  ArrowTrendingUpIcon,
+  BookmarkIcon,
+  CheckCircleIcon,
+  ClipboardDocumentListIcon,
+  ClockIcon,
+  UsersIcon,
+} from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "./MessageMarkdown";
 import type { MemoryEntryItem, MemberItem, TodoItem } from "./types";
 import { getAuthToken as getStoredToken } from "./api";
+
+const ico = (Icon: typeof BookmarkIcon): ReactNode =>
+  createElement(Icon, { className: "w-full h-full" });
 
 const API = "/api/v1";
 
@@ -52,7 +71,7 @@ const LAYER_META: Record<
   {
     label: string;
     desc: string;
-    icon: string;
+    icon: ReactNode;
     color: string;
     bgLight: string;
     borderColor: string;
@@ -63,7 +82,7 @@ const LAYER_META: Record<
   ANCHOR: {
     label: "项目锚点",
     desc: "核心目标、约束、背景",
-    icon: "⚓",
+    icon: ico(BookmarkIcon),
     color: "text-blue-600",
     bgLight: "bg-blue-50",
     borderColor: "border-blue-200",
@@ -72,7 +91,7 @@ const LAYER_META: Record<
   PROGRESS: {
     label: "项目进度",
     desc: "当前进度、已完成、下一步",
-    icon: "📈",
+    icon: ico(ArrowTrendingUpIcon),
     color: "text-teal-600",
     bgLight: "bg-teal-50",
     borderColor: "border-teal-200",
@@ -81,7 +100,7 @@ const LAYER_META: Record<
   DECISIONS: {
     label: "决策记录",
     desc: "重要决策及原因",
-    icon: "📋",
+    icon: ico(ClipboardDocumentListIcon),
     color: "text-purple-600",
     bgLight: "bg-purple-50",
     borderColor: "border-purple-200",
@@ -90,7 +109,7 @@ const LAYER_META: Record<
   FILES_INDEX: {
     label: "资料索引",
     desc: "上传的文件与参考资料",
-    icon: "🗂️",
+    icon: ico(ArchiveBoxIcon),
     color: "text-amber-600",
     bgLight: "bg-amber-50",
     borderColor: "border-amber-200",
@@ -99,7 +118,7 @@ const LAYER_META: Record<
   RECENT: {
     label: "近期动态",
     desc: "历史对话摘要",
-    icon: "🕐",
+    icon: ico(ClockIcon),
     color: "text-green-600",
     bgLight: "bg-green-50",
     borderColor: "border-green-200",
@@ -108,7 +127,7 @@ const LAYER_META: Record<
   MEMBERS: {
     label: "频道成员",
     desc: "用户与 Bot 能力一览",
-    icon: "👥",
+    icon: ico(UsersIcon),
     color: "text-gray-600",
     bgLight: "bg-gray-50",
     borderColor: "border-gray-200",
@@ -117,7 +136,7 @@ const LAYER_META: Record<
   TODO: {
     label: "待办事项",
     desc: "频道任务清单",
-    icon: "✅",
+    icon: ico(CheckCircleIcon),
     color: "text-rose-600",
     bgLight: "bg-rose-50",
     borderColor: "border-rose-200",
@@ -638,7 +657,7 @@ export default function MemoryPage({
         {/* Empty state */}
         {entries.length === 0 && !addingNew && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <span className="text-5xl mb-4 opacity-20">{meta.icon}</span>
+            <span className="block w-12 h-12 mx-auto mb-4 opacity-20">{meta.icon}</span>
             <p className="text-gray-500 font-medium mb-1">{meta.desc}</p>
             <p className="text-sm text-gray-400 mb-4">
               暂无记录，点击下方添加第一条
@@ -663,7 +682,7 @@ export default function MemoryPage({
     if (!cards.length) {
       return (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <span className="text-5xl mb-4 opacity-20">🗂️</span>
+          <ArchiveBoxIcon className="w-12 h-12 mb-4 opacity-20" />
           <p className="text-gray-500 font-medium">暂无上传文件</p>
           <p className="text-sm text-gray-400">
             在频道中上传文件后，索引将自动生成
@@ -720,7 +739,7 @@ export default function MemoryPage({
     if (!items.length) {
       return (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <span className="text-5xl mb-4 opacity-20">🕐</span>
+          <ClockIcon className="w-12 h-12 mb-4 opacity-20" />
           <p className="text-gray-500 font-medium">暂无历史动态</p>
           <p className="text-sm text-gray-400">对话消息累积后将自动归档</p>
         </div>
@@ -764,7 +783,7 @@ export default function MemoryPage({
     if (!members.length) {
       return (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <span className="text-5xl mb-4 opacity-20">👥</span>
+          <UsersIcon className="w-12 h-12 mb-4 opacity-20" />
           <p className="text-gray-500">暂无成员</p>
         </div>
       );
@@ -862,7 +881,7 @@ export default function MemoryPage({
           <div className="text-center py-8 text-gray-400">加载中…</div>
         ) : todos.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <span className="text-5xl mb-4 opacity-20">✅</span>
+            <CheckCircleIcon className="w-12 h-12 mb-4 opacity-20" />
             <p className="text-gray-500">暂无待办</p>
           </div>
         ) : (
@@ -1043,7 +1062,7 @@ export default function MemoryPage({
                   onClick={() => switchLayer(layer)}
                   className={`an-sn-item ${active ? "on" : ""}`}
                 >
-                  <span className="an-sn-ico">{lm.icon}</span>
+                  <span className="an-sn-ico inline-block w-4 h-4">{lm.icon}</span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate" style={{ color: "inherit" }}>
                       {lm.label}
@@ -1081,7 +1100,7 @@ export default function MemoryPage({
             style={{ borderBottom: "1px solid var(--border)" }}
           >
             <div className="flex items-center gap-3">
-              <span className="text-2xl">{meta.icon}</span>
+              <span className="inline-block w-6 h-6">{meta.icon}</span>
               <div>
                 <div
                   style={{

@@ -10,6 +10,7 @@ import { useResize } from "./hooks/useResize";
 import {
   ArrowUturnLeftIcon,
   Bars3Icon,
+  ChatBubbleLeftEllipsisIcon,
   ChatBubbleLeftIcon,
   ChevronDownIcon,
   ChevronUpIcon,
@@ -17,6 +18,8 @@ import {
   DocumentIcon,
   KeyIcon,
   LinkIcon,
+  LockClosedIcon,
+  MegaphoneIcon,
   PhotoIcon,
   PlusIcon,
   QuestionMarkCircleIcon,
@@ -42,9 +45,7 @@ import { Sidebar } from "./components/Sidebar";
 import { HelpModal } from "./components/HelpModal";
 import {
   SettingsModal,
-  applyAccent,
   applyDensity,
-  getStoredAccent,
   getStoredDensity,
 } from "./components/SettingsModal";
 import { DragOverlay } from "./components/DragOverlay";
@@ -96,10 +97,10 @@ const API_DOCS_URL = "/docs";
 export default function App() {
   const { isDark, setTheme } = useTheme();
 
-  // Apply stored appearance prefs (density + accent) on mount
+  // Apply stored appearance prefs (density only — theme is light/dark, no
+  // custom accent since the brand color is fixed in design-tokens.css).
   useEffect(() => {
     applyDensity(getStoredDensity());
-    applyAccent(getStoredAccent());
   }, []);
 
   const { currentUser, authToken, currentUserId, authFetch, setAuth, setCurrentUser, logout: clearAuth } =
@@ -3036,7 +3037,7 @@ export default function App() {
                                   {isSecretExpired ? (
                                     <div className="an-secret-veil is-expired">
                                       <span className="an-secret-veil-icon">
-                                        🔒
+                                        <LockClosedIcon className="w-5 h-5" />
                                       </span>
                                       <div className="an-secret-veil-body">
                                         <span className="an-secret-veil-label">
@@ -3050,7 +3051,7 @@ export default function App() {
                                   ) : isSecretUnrevealed ? (
                                     <div className="an-secret-veil">
                                       <span className="an-secret-veil-icon">
-                                        🔒
+                                        <LockClosedIcon className="w-5 h-5" />
                                       </span>
                                       <div className="an-secret-veil-body">
                                         <span className="an-secret-veil-label">
@@ -3235,7 +3236,7 @@ export default function App() {
                                 {isSecretExpired ? (
                                   <div className="an-secret-veil is-expired">
                                     <span className="an-secret-veil-icon">
-                                      🔒
+                                      <LockClosedIcon className="w-5 h-5" />
                                     </span>
                                     <div className="an-secret-veil-body">
                                       <span className="an-secret-veil-label">
@@ -3249,7 +3250,7 @@ export default function App() {
                                 ) : isSecretUnrevealed ? (
                                   <div className="an-secret-veil">
                                     <span className="an-secret-veil-icon">
-                                      🔒
+                                      <LockClosedIcon className="w-5 h-5" />
                                     </span>
                                     <div className="an-secret-veil-body">
                                       <span className="an-secret-veil-label">
@@ -3373,7 +3374,7 @@ export default function App() {
                                 {isSecretExpired ? (
                                   <div className="an-secret-veil is-expired">
                                     <span className="an-secret-veil-icon">
-                                      🔒
+                                      <LockClosedIcon className="w-5 h-5" />
                                     </span>
                                     <div className="an-secret-veil-body">
                                       <span className="an-secret-veil-label">
@@ -3387,7 +3388,7 @@ export default function App() {
                                 ) : isSecretUnrevealed ? (
                                   <div className="an-secret-veil">
                                     <span className="an-secret-veil-icon">
-                                      🔒
+                                      <LockClosedIcon className="w-5 h-5" />
                                     </span>
                                     <div className="an-secret-veil-body">
                                       <span className="an-secret-veil-label">
@@ -4416,7 +4417,7 @@ export default function App() {
                       </button>
                       <span
                         className={
-                          "an-msgkind-label" +
+                          "an-msgkind-label inline-flex items-center gap-1.5" +
                           (msgKind === "secret"
                             ? " is-secret"
                             : msgKind === "announcement"
@@ -4427,13 +4428,15 @@ export default function App() {
                         }
                         title="Tab 切换 · Shift+Tab 反向"
                       >
-                        {msgKind === "secret"
-                          ? "🔒"
-                          : msgKind === "announcement"
-                            ? "📣"
-                            : msgKind === "topic"
-                              ? "🧵"
-                              : "💬"}{" "}
+                        {msgKind === "secret" ? (
+                          <LockClosedIcon className="w-3.5 h-3.5" />
+                        ) : msgKind === "announcement" ? (
+                          <MegaphoneIcon className="w-3.5 h-3.5" />
+                        ) : msgKind === "topic" ? (
+                          <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChatBubbleLeftIcon className="w-3.5 h-3.5" />
+                        )}
                         {MSG_KIND_LABEL[msgKind]}
                       </span>
                       <button
@@ -4824,7 +4827,7 @@ export default function App() {
                                 : undefined
                             }
                           >
-                            🔒
+                            <LockClosedIcon className="w-4 h-4" />
                           </button>
                         )}
                         <button

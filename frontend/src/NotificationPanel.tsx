@@ -1,4 +1,9 @@
 import { useEffect, useState } from "react";
+import {
+  ChatBubbleLeftIcon,
+  CheckCircleIcon,
+} from "@heroicons/react/24/solid";
+import { Square2StackIcon } from "@heroicons/react/24/outline";
 
 const API = "/api/v1";
 
@@ -121,8 +126,14 @@ function Section({
               className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
             >
               <div className="flex items-start gap-3">
-                <span className="text-lg flex-shrink-0 mt-0.5">
-                  {n.notif_type === "mention" ? "💬" : n.todo_status === "completed" ? "✅" : "⬜"}
+                <span className="flex-shrink-0 mt-0.5">
+                  {n.notif_type === "mention" ? (
+                    <ChatBubbleLeftIcon className="w-5 h-5 text-[#1264A3]" />
+                  ) : n.todo_status === "completed" ? (
+                    <CheckCircleIcon className="w-5 h-5 text-[#2EB67D]" />
+                  ) : (
+                    <Square2StackIcon className="w-5 h-5 text-gray-400" />
+                  )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 mb-0.5">
