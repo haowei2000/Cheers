@@ -491,6 +491,28 @@ async function startAccount(rawCtx: unknown): Promise<void> {
           }).catch(() => { /* ignore */ });
         }
       },
+      onCancel: (msgId, reason) => {
+        // Frontend ⏹: server already finalized the placeholder with whatever
+        // deltas had landed before the cancel. We just stop pushing more.
+        const to = taskByPlaceholder.get(msgId);
+        const slot = to ? pendingStreamByTo.get(to) : undefined;
+        if (!slot) {
+          log.info?.(`agentnexus: ${accountId} cancel for unknown msg=${msgId} (already done?)`);
+          return;
+        }
+        slot.cancelled = true;
+        if (slot.doneTimer) {
+          clearTimeout(slot.doneTimer);
+          slot.doneTimer = null;
+        }
+        log.info?.(
+          `agentnexus: ${accountId} cancel msg=${msgId} task=${to} reason=${reason ?? ""} chars=${slot.totalChars}`,
+        );
+        // NOTE: we don't currently abort the underlying subagent run — the
+        // SDK doesn't expose a runId-based abort here, and the user-visible
+        // effect is identical: further deltas / sendText calls are silently
+        // dropped. Reclaiming that wasted compute is a follow-up.
+      },
       onConnectionChange: (stream, state) => {
         log.info?.(`agentnexus: ${accountId} ${stream} ${state}`);
       },
@@ -606,6 +628,41 @@ const PENDING_MEDIA_DEBOUNCE_MS = 500;
 
 /** 每条逻辑回复最多挂多少媒体附件，防 agent 一次刷屏。 */
 const PENDING_MEDIA_CAP = 20;
+
+/** sendText 流式聚合的 debounce：最后一个 chunk 之后等这么久再发 done。
+ *  gateway 调 sendText 是同步串行的，相邻调用通常 < 50ms；500ms 既能撑过
+ *  网络抖动，也能让 LLM 自然停顿后及时收尾。 */
+const STREAM_DONE_DEBOUNCE_MS = 500;
+
+/** 单条流式回复最多累积多少字符，防 agent 一次性写一本小说。超过即自动收尾 + 截断。 */
+const STREAM_TEXT_CAP_CHARS = 200_000;
+
+interface PendingStreamSlot {
+  /** 触发该 stream 的 inbound message —— 用于回滚 fallback 到 session.reply */
+  source: InboundMessage;
+  /** 服务端要的占位 msg_id；为 null 则 stream 不可用，直接降级到 reply 路径 */
+  placeholderMsgId: string | null;
+  /** 累积字符数，达到 STREAM_TEXT_CAP_CHARS 后强制 done */
+  totalChars: number;
+  /** 单调递增的 delta seq */
+  seq: number;
+  /** 用户已点 ⏹ 取消 → 后续 sendText 不再推 delta，也不发 done */
+  cancelled: boolean;
+  /** 至少推过一次 delta —— 决定 done debounce 何时启动；
+   *  也用于"sendText 全空也要发 done"这类边角 case 的判断 */
+  hasDeltas: boolean;
+  /** sendMedia 期间累积的 file_ids；done 帧把它们一并交给 server,
+   *  让 server 的 finalize_stream 把它们合并进占位消息的 file_ids 字段. */
+  fileIds: string[];
+  doneTimer: ReturnType<typeof setTimeout> | null;
+}
+
+/** key = ctx.to（deliver 路径下等于 taskId）。流式聚合 + 取消查找都走这里。 */
+const pendingStreamByTo = new Map<string, PendingStreamSlot>();
+
+/** key = placeholderMsgId → ctx.to。control WS 推 cancel 帧时只知道 msg_id，
+ *  需要据此反查到 stream 槽位。 */
+const taskByPlaceholder = new Map<string, string>();
 
 interface PendingMediaSlot {
   fileIds: string[];
@@ -732,8 +789,8 @@ async function flushPendingMedia(to: string, entry: AccountRuntime): Promise<voi
 }
 
 async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
-  const { entry } = resolveActiveEntry(ctx.accountId);
-  const { lastInboundByTaskId } = entry;
+  const { accountId, entry } = resolveActiveEntry(ctx.accountId);
+  const { session, lastInboundByTaskId, lastInboundBySessionKey } = entry;
 
   // gateway 运行时传 mediaUrl；旧 docs 示例用 filePath，兼容二者
   const mediaUrl = ctx.mediaUrl || ctx.filePath || "";
@@ -741,11 +798,14 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
   // index>0 传 undefined/""。我们抓第一个非空的作为最终 reply text。
   const caption = ((ctx.text ?? ctx.caption) ?? "").toString();
 
-  const source = lastInboundByTaskId.get(ctx.to);
-  const channelId = source?.channelId
-    ?? (entry.session.membership.channelIds.has(ctx.to) ? ctx.to : null);
+  // 解析 channelId 而**不**消费 inbound source —— 上传可能失败，
+  // 失败时不能让 source 丢失（否则后续 sendText/sendMedia 也走不到流式）。
+  const existingSlot = pendingStreamByTo.get(ctx.to);
+  const peekedSource = existingSlot ? null : lastInboundByTaskId.get(ctx.to);
+  const channelId = existingSlot?.source.channelId
+    ?? peekedSource?.channelId
+    ?? (session.membership.channelIds.has(ctx.to) ? ctx.to : null);
   if (!channelId || !mediaUrl) {
-    // 没法解析 channel / 没给 url —— gateway 的 lastMessageId 仍然需要一个非 undefined
     return { channel: PLUGIN_ID, messageId: "", chatId: channelId ?? "" };
   }
 
@@ -766,21 +826,62 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
     return { channel: PLUGIN_ID, messageId: "", chatId: channelId };
   }
 
-  let slot = pendingMediaByTo.get(ctx.to);
-  if (!slot) {
-    slot = { fileIds: [], caption: "", channelId, timer: null };
-    pendingMediaByTo.set(ctx.to, slot);
+  // Upload succeeded — *now* it's safe to consume the inbound source and
+  // promote it into a stream slot.
+  let slot = existingSlot;
+  if (!slot && peekedSource) {
+    lastInboundByTaskId.delete(peekedSource.event.task_id);
+    lastInboundBySessionKey.delete(`agentnexus:${accountId}:${peekedSource.channelId}`);
+    const placeholder = peekedSource.event.placeholder_msg_id ?? null;
+    slot = {
+      source: peekedSource,
+      placeholderMsgId: placeholder,
+      totalChars: 0,
+      seq: 0,
+      cancelled: false,
+      hasDeltas: false,
+      fileIds: [],
+      doneTimer: null,
+    };
+    pendingStreamByTo.set(ctx.to, slot);
+    if (placeholder) taskByPlaceholder.set(placeholder, ctx.to);
   }
-  if (slot.fileIds.length < PENDING_MEDIA_CAP) slot.fileIds.push(fileId);
-  if (caption && !slot.caption) slot.caption = caption;
 
-  // 每次 sendMedia 都重置 debounce；gateway 循环结束后 timer 触发 → 一次性 flush
-  if (slot.timer) clearTimeout(slot.timer);
-  slot.timer = setTimeout(() => {
-    flushPendingMedia(ctx.to, entry).catch(() => { /* swallow, gateway 无需感知 */ });
+  // ── 主路径：把 fileId 投到流式 slot，与 sendText 的 deltas 共用一个 done ──
+  if (slot && slot.placeholderMsgId && !slot.cancelled) {
+    if (slot.fileIds.length < PENDING_MEDIA_CAP) slot.fileIds.push(fileId);
+    // 首个 sendMedia 的 caption（= 整段文本）：如果还没有任何 sendText delta，
+    // 把它作为单个 delta 推一次，让前端能即时把文字显示出来再补文件。
+    // 已经流过 sendText 的情况下不要重复推 —— gateway 这时给的 caption 会
+    // 跟 sendText 的总和重复。
+    if (caption && !slot.hasDeltas) {
+      slot.seq += 1;
+      slot.totalChars += caption.length;
+      slot.hasDeltas = true;
+      session.streamDelta({ msgId: slot.placeholderMsgId, seq: slot.seq, delta: caption });
+    }
+    armStreamDoneTimer(ctx.to, entry, slot);
+    return {
+      channel: PLUGIN_ID,
+      messageId: `${slot.placeholderMsgId}-f${slot.fileIds.length}`,
+      chatId: channelId,
+    };
+  }
+
+  // ── 兜底：source-less 广播 / 流式槽不可用 → 老的 pendingMediaByTo debounce ──
+  let mslot = pendingMediaByTo.get(ctx.to);
+  if (!mslot) {
+    mslot = { fileIds: [], caption: "", channelId, timer: null };
+    pendingMediaByTo.set(ctx.to, mslot);
+  }
+  if (mslot.fileIds.length < PENDING_MEDIA_CAP) mslot.fileIds.push(fileId);
+  if (caption && !mslot.caption) mslot.caption = caption;
+
+  if (mslot.timer) clearTimeout(mslot.timer);
+  mslot.timer = setTimeout(() => {
+    flushPendingMedia(ctx.to, entry).catch(() => { /* swallow */ });
   }, PENDING_MEDIA_DEBOUNCE_MS);
 
-  // 合成 messageId —— 真实 msg_id 要等 flush 后 bridge broadcast 才知道
   return {
     channel: PLUGIN_ID,
     messageId: `pending-media-${ctx.to}-${fileId.slice(0, 8)}`,
@@ -788,32 +889,170 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
   };
 }
 
+/** Schedule (or reschedule) the `done` frame for a stream. Called after every
+ *  delta — whichever sendText is the *last* one will be the one that fires. */
+function armStreamDoneTimer(to: string, entry: AccountRuntime, slot: PendingStreamSlot): void {
+  if (slot.doneTimer) clearTimeout(slot.doneTimer);
+  slot.doneTimer = setTimeout(() => {
+    flushStreamDone(to, entry).catch(() => { /* swallow */ });
+  }, STREAM_DONE_DEBOUNCE_MS);
+}
+
+/** Send `done` and clean up. Idempotent; safe to call after cancel. */
+async function flushStreamDone(to: string, entry: AccountRuntime): Promise<void> {
+  const slot = pendingStreamByTo.get(to);
+  if (!slot) return;
+  if (slot.doneTimer) {
+    clearTimeout(slot.doneTimer);
+    slot.doneTimer = null;
+  }
+  pendingStreamByTo.delete(to);
+  if (slot.placeholderMsgId) taskByPlaceholder.delete(slot.placeholderMsgId);
+
+  // Cancelled streams: server already finalized partial when it pushed the
+  // cancel frame to us. We deliberately do NOT send `done` again; the server
+  // would no-op on it but skipping the round-trip is cleaner.
+  if (slot.cancelled) return;
+
+  if (slot.placeholderMsgId && (slot.hasDeltas || slot.fileIds.length > 0)) {
+    entry.session.streamDone({
+      msgId: slot.placeholderMsgId,
+      fileIds: slot.fileIds.length > 0 ? slot.fileIds : undefined,
+    });
+    return;
+  }
+
+  // No deltas and no files — agent produced nothing for this `to`. Drop the
+  // stream silently; the placeholder will be finalized by orchestrator timeout.
+}
+
+/** sendText 主路径：把每次调用当作一个 delta 推到服务端，debounce 之后发 done。
+ *
+ *  Why this works: gateway deliver:true 模式会把 agent 的输出按 chunk 多次调
+ *  sendText（典型间隔 < 50ms），相比一次性 reply：
+ *    - 用户能在浏览器里看到 token-by-token 渲染
+ *    - 用户点 ⏹ 时控制 WS 推 cancel，我们立即停止后续 delta 推送
+ *    - 服务端在 cancel 那一刻就用当前 buffer finalize 了 partial，所以即使
+ *      agent 还在跑也不会再影响前端
+ *
+ *  Fallback: 如果 inbound source / placeholderMsgId 拿不到，或 data WS 不
+ *  可写，则降级回老的 session.reply 一次性整段路径，行为等同于流式前。 */
 async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
   const { accountId, entry } = resolveActiveEntry(ctx.accountId);
   const { session, lastInboundBySessionKey, lastInboundByTaskId } = entry;
 
-  // deliver:true 路径：ctx.to === conversationId === taskId（见 bindingAdapter 注册）
-  const byTask = lastInboundByTaskId.get(ctx.to);
-  const bySk = lastInboundBySessionKey.get(ctx.to);
-  const source = byTask ?? bySk;
-  if (source) {
+  let slot = pendingStreamByTo.get(ctx.to);
+
+  if (!slot) {
+    // First chunk for this `to`. Locate the inbound source so we have a
+    // placeholder to stream against (and a fallback target if streaming
+    // turns out to be unusable).
+    const byTask = lastInboundByTaskId.get(ctx.to);
+    const bySk = lastInboundBySessionKey.get(ctx.to);
+    const source = byTask ?? bySk;
+    if (!source) {
+      // 非响应式 send：保留原行为（主动 send 到 channel），不走流式
+      const channelId = ctx.to;
+      if (!session.membership.channelIds.has(channelId)) {
+        throw new Error(`agentnexus: bot not in channel ${channelId} (to=${ctx.to})`);
+      }
+      const fileIds = await maybeAutoAttachReplyAsFile(entry, channelId, ctx.text);
+      const r = await session.send({ channelId, text: ctx.text, fileIds });
+      if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: channelId };
+      throw new Error(`agentnexus: session.send failed (${r.code ?? "?"} ${r.error ?? ""})`);
+    }
+
+    // Consume the inbound source so subsequent sendText calls won't try to
+    // restart the stream — once the slot exists we keep accumulating into it.
     lastInboundByTaskId.delete(source.event.task_id);
     lastInboundBySessionKey.delete(`agentnexus:${accountId}:${source.channelId}`);
-    const fileIds = await maybeAutoAttachReplyAsFile(entry, source.channelId, ctx.text);
-    const r = await session.reply({ source, text: ctx.text, fileIds });
-    if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: source.channelId };
+
+    const placeholder = source.event.placeholder_msg_id ?? null;
+    slot = {
+      source,
+      placeholderMsgId: placeholder,
+      totalChars: 0,
+      seq: 0,
+      cancelled: false,
+      hasDeltas: false,
+      fileIds: [],
+      doneTimer: null,
+    };
+    pendingStreamByTo.set(ctx.to, slot);
+    if (placeholder) taskByPlaceholder.set(placeholder, ctx.to);
+  }
+
+  // Cancelled mid-stream: drop further deltas silently. Returning a
+  // "messageId" keeps the gateway happy.
+  if (slot.cancelled) {
+    return {
+      channel: PLUGIN_ID,
+      messageId: `cancelled-${ctx.to}`,
+      chatId: slot.source.channelId,
+    };
+  }
+
+  // No placeholder available → can't stream. Degrade to one-shot reply on the
+  // first chunk, and turn the slot into a "no-op" sink so subsequent chunks
+  // are dropped (gateway will keep calling sendText, but we already replied).
+  if (!slot.placeholderMsgId) {
+    if (slot.hasDeltas) {
+      // Already replied once for this `to`; ignore subsequent chunks.
+      return {
+        channel: PLUGIN_ID,
+        messageId: `dup-${ctx.to}`,
+        chatId: slot.source.channelId,
+      };
+    }
+    slot.hasDeltas = true;
+    const fileIds = await maybeAutoAttachReplyAsFile(entry, slot.source.channelId, ctx.text);
+    const r = await session.reply({ source: slot.source, text: ctx.text, fileIds });
+    pendingStreamByTo.delete(ctx.to);
+    if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: slot.source.channelId };
     throw new Error(`agentnexus: session.reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
   }
 
-  // 最终兜底：把 to 当 channelId，走主动 send（非响应场景）
-  const channelId = ctx.to;
-  if (!session.membership.channelIds.has(channelId)) {
-    throw new Error(`agentnexus: bot not in channel ${channelId} (to=${ctx.to})`);
+  // Cap protection: once we've streamed enough, force a done and refuse more.
+  const incoming = ctx.text || "";
+  if (slot.totalChars >= STREAM_TEXT_CAP_CHARS) {
+    if (slot.placeholderMsgId) {
+      session.streamDone({ msgId: slot.placeholderMsgId });
+    }
+    pendingStreamByTo.delete(ctx.to);
+    if (slot.placeholderMsgId) taskByPlaceholder.delete(slot.placeholderMsgId);
+    return {
+      channel: PLUGIN_ID,
+      messageId: `truncated-${ctx.to}`,
+      chatId: slot.source.channelId,
+    };
   }
-  const fileIds = await maybeAutoAttachReplyAsFile(entry, channelId, ctx.text);
-  const r = await session.send({ channelId, text: ctx.text, fileIds });
-  if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: channelId };
-  throw new Error(`agentnexus: session.send failed (${r.code ?? "?"} ${r.error ?? ""})`);
+
+  // Happy path: push the delta, arm the done timer.
+  slot.seq += 1;
+  slot.totalChars += incoming.length;
+  slot.hasDeltas = true;
+  const ok = session.streamDelta({
+    msgId: slot.placeholderMsgId,
+    seq: slot.seq,
+    delta: incoming,
+  });
+  if (!ok) {
+    // data WS dropped between chunks — abandon the stream and fall back to a
+    // single reply with everything we have. We don't have the prior chunks
+    // (they went out as deltas), so just send this one as a reply and stop.
+    pendingStreamByTo.delete(ctx.to);
+    if (slot.placeholderMsgId) taskByPlaceholder.delete(slot.placeholderMsgId);
+    const fileIds = await maybeAutoAttachReplyAsFile(entry, slot.source.channelId, incoming);
+    const r = await session.reply({ source: slot.source, text: incoming, fileIds });
+    if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: slot.source.channelId };
+    throw new Error(`agentnexus: session.reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
+  }
+  armStreamDoneTimer(ctx.to, entry, slot);
+  return {
+    channel: PLUGIN_ID,
+    messageId: `${slot.placeholderMsgId}-d${slot.seq}`,
+    chatId: slot.source.channelId,
+  };
 }
 
 // ============================================================================
@@ -904,4 +1143,9 @@ export const __testonly = {
   sendMedia,
   pendingMediaByTo,
   flushPendingMedia,
+  pendingStreamByTo,
+  taskByPlaceholder,
+  flushStreamDone,
+  STREAM_DONE_DEBOUNCE_MS,
+  STREAM_TEXT_CAP_CHARS,
 };

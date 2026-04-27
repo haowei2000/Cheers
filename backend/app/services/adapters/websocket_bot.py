@@ -42,6 +42,8 @@ class WebsocketBotAdapter(OpenClawAdapter):
         # 延迟导入以避免 import 时拉起 bridge 依赖
         from app.services.openclaw_bridge.pending import PendingReply, pending_replies
         from app.services.openclaw_bridge.registry import bot_session_registry
+        from app.services.openclaw_bridge.service import register_stream
+        from app.services.openclaw_bridge.streams import stream_registry
 
         # orchestrator 将占位 bot_msg.msg_id 放在 process_config 里传下来
         placeholder_msg_id = (payload.process_config or {}).get("_placeholder_msg_id")
@@ -59,6 +61,17 @@ class WebsocketBotAdapter(OpenClawAdapter):
                 msg_id=placeholder_msg_id,
             ))
             preregistered = True
+            # Also open a streaming buffer keyed on the same msg_id; if the
+            # plugin chooses to stream `delta` frames the data WS handler
+            # routes them here. If it instead sends a single `reply` (legacy
+            # path) the stream stays empty and is later cleaned up alongside
+            # the pending entry by `finalize_bot_reply`.
+            await register_stream(
+                msg_id=placeholder_msg_id,
+                bot_id=self.bot.bot_id,
+                channel_id=payload.channel_id,
+                task_id=payload.task_id,
+            )
 
         event = {
             "type": "message",
@@ -84,6 +97,7 @@ class WebsocketBotAdapter(OpenClawAdapter):
             # 没 plugin 在线：回滚预登记，让 orchestrator 走原同步 finalize 路径
             if preregistered and placeholder_msg_id:
                 await pending_replies.pop_by_msg(placeholder_msg_id)
+                await stream_registry.pop(placeholder_msg_id)
             return AgentResponse(
                 content=f"[{self.bot.display_name or self.bot.username}] 没有在线的 OpenClaw channel plugin",
                 task_id=payload.task_id,

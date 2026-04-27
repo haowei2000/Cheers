@@ -456,6 +456,7 @@ class _MessageResponseBase(BaseModel):
     in_reply_to_msg_id: str | None = None
     created_at: datetime | None = None
     is_secret: bool = False
+    is_partial: bool = False
 
 
 class NormalMessageInResponse(_MessageResponseBase):
