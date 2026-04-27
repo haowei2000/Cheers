@@ -1009,6 +1009,138 @@ async def _handle_data_send(
     })
 
 
+async def _handle_data_file_upload(
+    websocket: WebSocket, bot: BotAccount, frame: dict,
+) -> None:
+    """Plugin 通过 data WS 直传二进制文件，避免依赖 HTTP /files/upload-binary。
+
+    入帧:
+      {
+        "type": "file_upload",
+        "client_file_id": "<plugin 自定关联 id，回 ack 时原样带回>",
+        "channel_id": "<目标频道>",
+        "filename": "report.pdf",
+        "content_type": "application/pdf",   # optional
+        "data_b64": "<base64 of raw bytes>",
+      }
+
+    回帧:
+      成功 -> {type:"file_upload_ack", client_file_id, ok:true, file_id, filename, content_type, size_bytes}
+      失败 -> {type:"file_upload_ack", client_file_id, ok:false, code, error}
+    """
+    import base64
+    import mimetypes as _mimetypes
+
+    from app.db.session import async_session_factory
+    from app.services.openclaw_bridge.validators import check_bot_in_channel
+
+    client_file_id = frame.get("client_file_id")
+
+    async def _err(code: str, detail: str) -> None:
+        await websocket.send_json({
+            "type": "file_upload_ack",
+            "client_file_id": client_file_id,
+            "ok": False,
+            "code": code,
+            "error": detail,
+        })
+
+    channel_id = frame.get("channel_id")
+    filename = frame.get("filename")
+    content_type = frame.get("content_type")
+    data_b64 = frame.get("data_b64")
+
+    if not isinstance(channel_id, str) or not channel_id:
+        await _err("missing_channel", "channel_id 必填")
+        return
+    if not isinstance(filename, str) or not filename.strip():
+        await _err("missing_filename", "filename 必填")
+        return
+    if not isinstance(data_b64, str) or not data_b64:
+        await _err("missing_data", "data_b64 必填")
+        return
+
+    try:
+        raw = base64.b64decode(data_b64, validate=False)
+    except Exception:  # noqa: BLE001
+        await _err("invalid_data", "data_b64 无法解码")
+        return
+
+    max_bytes = int(settings.file_upload_max_bytes)
+    if len(raw) == 0:
+        await _err("empty_file", "文件不能为空")
+        return
+    if len(raw) > max_bytes:
+        await _err("too_large", f"文件超过上限 {max_bytes} bytes")
+        return
+
+    safe_name = _sanitize_filename(filename)
+    suffix = Path(safe_name).suffix.lower()
+
+    file_id = str(uuid.uuid4())
+    gen_dir = resolve_data_dir() / "generated" / channel_id
+    gen_dir.mkdir(parents=True, exist_ok=True)
+    dst = gen_dir / f"{file_id}{suffix}"
+    if not dst.resolve().is_relative_to(gen_dir.resolve()):
+        await _err("invalid_path", "invalid channel_id path")
+        return
+
+    async with async_session_factory() as s:
+        err = await check_bot_in_channel(s, bot_id=bot.bot_id, channel_id=channel_id)
+        if err:
+            await _err(err[0], err[1])
+            return
+
+        try:
+            with open(dst, "wb") as fh:
+                fh.write(raw)
+        except OSError as exc:
+            dst.unlink(missing_ok=True)
+            logger.warning(
+                "data_ws.file_upload: write failed bot_id=%s channel=%s: %s",
+                bot.bot_id, channel_id, exc,
+            )
+            await _err("write_failed", "write failed")
+            return
+
+        header_ctype = (
+            content_type.split(";")[0].strip()
+            if isinstance(content_type, str) else ""
+        )
+        if not header_ctype or header_ctype == "application/octet-stream":
+            header_ctype = _mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+
+        now = datetime.now(timezone.utc)
+        record = FileRecord(
+            file_id=file_id,
+            channel_id=channel_id,
+            uploader_id=bot.bot_id,
+            original_path=str(dst),
+            original_filename=safe_name,
+            content_type=header_ctype,
+            size_bytes=len(raw),
+            status="ready",
+            uploaded_at=now,
+        )
+        s.add(record)
+        await s.commit()
+
+    logger.info(
+        "data_ws.file_upload: ok bot_id=%s channel=%s file_id=%s name=%s size=%d",
+        bot.bot_id, channel_id, file_id, safe_name, len(raw),
+    )
+
+    await websocket.send_json({
+        "type": "file_upload_ack",
+        "client_file_id": client_file_id,
+        "ok": True,
+        "file_id": file_id,
+        "filename": safe_name,
+        "content_type": header_ctype,
+        "size_bytes": len(raw),
+    })
+
+
 @ws_router.websocket("/ws/openclaw/data")
 async def data_websocket(websocket: WebSocket) -> None:
     """OpenClaw channel plugin 的 data 流 —— 消息入站 + reply/send 回推 + 心跳。
@@ -1077,6 +1209,8 @@ async def data_websocket(websocket: WebSocket) -> None:
                 await _handle_data_done(websocket, bot, frame)
             elif ftype == "error":
                 await _handle_data_error(websocket, bot, frame)
+            elif ftype == "file_upload":
+                await _handle_data_file_upload(websocket, bot, frame)
             elif ftype == "ping":
                 await websocket.send_json({"type": "pong"})
             elif ftype == "typing":

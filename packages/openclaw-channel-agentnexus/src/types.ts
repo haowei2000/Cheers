@@ -143,10 +143,31 @@ export interface ResumeAck {
   up_to_seq: number;
 }
 
+export interface FileUploadAckOk {
+  type: "file_upload_ack";
+  client_file_id?: string | null;
+  ok: true;
+  file_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+}
+
+export interface FileUploadAckErr {
+  type: "file_upload_ack";
+  client_file_id?: string | null;
+  ok: false;
+  code: string;
+  error: string;
+}
+
+export type FileUploadAck = FileUploadAckOk | FileUploadAckErr;
+
 export type DataInbound =
   | DataHello
   | MessageEvent
   | SendAck
+  | FileUploadAck
   | ResumeAck
   | PongFrame
   | { type: "error"; detail?: string };
@@ -213,4 +234,18 @@ export interface ErrorFrame {
   type: "error";
   msg_id: string;
   message: string;
+}
+
+/** In-band binary upload over the data WS (avoids the HTTP
+ *  /files/upload-binary route). Server creates a FileRecord under
+ *  channel_id/uploader=bot and acks with a real file_id that can be
+ *  attached to subsequent reply / done / send frames. */
+export interface FileUploadFrame {
+  type: "file_upload";
+  client_file_id: string;
+  channel_id: string;
+  filename: string;
+  content_type?: string;
+  /** Base64 of raw bytes. Capped server-side by file_upload_max_bytes. */
+  data_b64: string;
 }

@@ -21,6 +21,8 @@ import type {
   DeltaFrame,
   DoneFrame,
   ErrorFrame,
+  FileUploadAck,
+  FileUploadFrame,
   MessageEvent,
   ReplyFrame,
   SendAck,
@@ -110,6 +112,7 @@ export class BotSession {
   private data: ReconnectingClient;
   private heartbeatTimers: Array<NodeJS.Timeout | null> = [null, null];
   private inflight = new Map<string, { resolve: InflightResolver; timer: NodeJS.Timeout }>();
+  private inflightUploads = new Map<string, { resolve: (ack: FileUploadAck) => void; timer: NodeJS.Timeout }>();
   private stopped = false;
   private readyPromise: Promise<void>;
   private resolveReady!: () => void;
@@ -308,6 +311,17 @@ export class BotSession {
           }
           break;
         }
+        case "file_upload_ack": {
+          const ack = frame as FileUploadAck;
+          const cid = ack.client_file_id ?? "";
+          const entry = this.inflightUploads.get(cid);
+          if (entry) {
+            clearTimeout(entry.timer);
+            this.inflightUploads.delete(cid);
+            entry.resolve(ack);
+          }
+          break;
+        }
         case "resume_ack":
           // Phase D：重放已结束，后续是实时事件
           break;
@@ -414,6 +428,61 @@ export class BotSession {
     });
   }
 
+  /** Upload a binary file inline over the data WS. Returns the bridge file_id
+   *  on success, which can then be referenced in reply / done / send frames.
+   *  No HTTP fallback — pure WS path so the plugin only needs WS connectivity. */
+  uploadFile(args: {
+    channelId: string;
+    filename: string;
+    data: Uint8Array;
+    contentType?: string;
+  }): Promise<FileUploadAck> {
+    if (!this.data.isOpen) {
+      return Promise.resolve({
+        type: "file_upload_ack",
+        client_file_id: null,
+        ok: false,
+        code: "ws_not_open",
+        error: "data WS not connected",
+      });
+    }
+    const clientFileId = randomUUID();
+    const dataB64 = Buffer.from(args.data).toString("base64");
+    const frame: FileUploadFrame = {
+      type: "file_upload",
+      client_file_id: clientFileId,
+      channel_id: args.channelId,
+      filename: args.filename,
+      content_type: args.contentType,
+      data_b64: dataB64,
+    };
+    return new Promise<FileUploadAck>((resolve) => {
+      const timer = setTimeout(() => {
+        this.inflightUploads.delete(clientFileId);
+        resolve({
+          type: "file_upload_ack",
+          client_file_id: clientFileId,
+          ok: false,
+          code: "ack_timeout",
+          error: "file_upload_ack timeout",
+        });
+      }, this.sendAckTimeoutMs);
+      this.inflightUploads.set(clientFileId, { resolve, timer });
+      const sent = this.data.send(frame);
+      if (!sent) {
+        clearTimeout(timer);
+        this.inflightUploads.delete(clientFileId);
+        resolve({
+          type: "file_upload_ack",
+          client_file_id: clientFileId,
+          ok: false,
+          code: "ws_send_failed",
+          error: "data WS send failed",
+        });
+      }
+    });
+  }
+
   private sendFrame<F extends ReplyFrame | SendFrame>(frame: F): Promise<SendResult> {
     if (!this.data.isOpen) {
       return Promise.resolve({ ok: false, error: "data WS not connected", code: "ws_not_open" });
@@ -455,6 +524,17 @@ export class BotSession {
       entry.resolve({ type: "send_ack", client_msg_id: id, ok: false, error: reason, code: "session_closed" });
     }
     this.inflight.clear();
+    for (const [id, entry] of this.inflightUploads) {
+      clearTimeout(entry.timer);
+      entry.resolve({
+        type: "file_upload_ack",
+        client_file_id: id,
+        ok: false,
+        code: "session_closed",
+        error: reason,
+      });
+    }
+    this.inflightUploads.clear();
   }
 
   // =================== heartbeat / close ===================
