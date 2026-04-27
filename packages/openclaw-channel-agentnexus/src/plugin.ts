@@ -96,27 +96,21 @@ async function fetchFileContentForBot(
 const AUTO_ATTACH_THRESHOLD_CHARS = 4000;
 
 async function uploadBotMarkdownFile(
-  httpBase: string,
-  botToken: string,
+  session: BotSession,
   channelId: string,
   filename: string,
   content: string,
 ): Promise<string | null> {
-  if (!httpBase) return null;
-  const url = `${httpBase}/api/v1/openclaw/bridge/files/upload`;
+  // 复用同一条 file_upload 帧：把 markdown 文本当二进制发，contentType=text/markdown。
   try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ channel_id: channelId, filename, content }),
-      signal: AbortSignal.timeout(BRIDGE_FETCH_TIMEOUT_MS),
+    const safeName = filename.endsWith(".md") ? filename : `${filename}.md`;
+    const ack = await session.uploadFile({
+      channelId,
+      filename: safeName,
+      data: Buffer.from(content, "utf8"),
+      contentType: "text/markdown; charset=utf-8",
     });
-    if (!resp.ok) return null;
-    const body = await resp.json() as { data?: { file_id?: string } };
-    return body.data?.file_id ?? null;
+    return ack.ok ? ack.file_id : null;
   } catch {
     return null;
   }
@@ -678,30 +672,19 @@ interface PendingMediaSlot {
 const pendingMediaByTo = new Map<string, PendingMediaSlot>();
 
 async function uploadBotBinaryFile(
-  httpBase: string,
-  botToken: string,
+  session: BotSession,
   channelId: string,
   filename: string,
   data: Uint8Array,
   contentType?: string,
 ): Promise<string | null> {
-  if (!httpBase) return null;
-  const url = `${httpBase}/api/v1/openclaw/bridge/files/upload-binary`;
+  // 走 data WS 内嵌 file_upload 帧，不再依赖 HTTP /files/upload-binary。
   try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${botToken}`,
-        "Content-Type": contentType || "application/octet-stream",
-        "X-Channel-Id": channelId,
-        "X-Filename": filename,
-      },
-      body: data,
-      signal: AbortSignal.timeout(BRIDGE_FETCH_TIMEOUT_MS),
+    const ack = await session.uploadFile({
+      channelId, filename, data, contentType,
     });
-    if (!resp.ok) return null;
-    const body = await resp.json() as { data?: { file_id?: string } };
-    return body.data?.file_id ?? null;
+    if (ack.ok) return ack.file_id;
+    return null;
   } catch {
     return null;
   }
@@ -751,10 +734,9 @@ async function maybeAutoAttachReplyAsFile(
   entry: AccountRuntime, channelId: string, text: string,
 ): Promise<string[] | undefined> {
   if (text.length < AUTO_ATTACH_THRESHOLD_CHARS) return undefined;
-  const httpBase = deriveHttpBase(entry.account.dataUrl);
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const fileId = await uploadBotMarkdownFile(
-    httpBase, entry.account.botToken, channelId, `reply-${ts}.md`, text,
+    entry.session, channelId, `reply-${ts}.md`, text,
   );
   return fileId ? [fileId] : undefined;
 }
@@ -815,8 +797,7 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
   }
 
   const fileId = await uploadBotBinaryFile(
-    deriveHttpBase(entry.account.dataUrl),
-    entry.account.botToken,
+    session,
     channelId,
     media.filename,
     media.bytes,
