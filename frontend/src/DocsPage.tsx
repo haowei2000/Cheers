@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import { ArrowLeftIcon, Bars3Icon } from "@heroicons/react/24/solid";
 
 const API = "/api";  // docs 端点由 manual_routes 提供，路径不含 /v1
 
@@ -249,9 +250,7 @@ export default function DocsPage() {
     <div className="flex h-screen flex-col bg-gray-50 font-sans text-gray-900 overflow-hidden">
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4 flex-shrink-0">
         <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-            <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
-          </svg>
+          <ArrowLeftIcon className="w-4 h-4" />
           返回
         </Link>
         <h1 className="text-lg font-semibold text-gray-800">文档</h1>
@@ -338,7 +337,7 @@ export default function DocsPage() {
                 <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                   {isMobile && (
                     <button onClick={() => setSidebarOpen(true)} className="p-1 -ml-1 text-gray-400 hover:text-gray-600">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>
+                      <Bars3Icon className="w-6 h-6" />
                     </button>
                   )}
                   <h1 className="text-base font-semibold text-gray-900 truncate">

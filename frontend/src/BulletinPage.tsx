@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ArrowLeftIcon, XMarkIcon } from "@heroicons/react/24/solid";
 
 const API = "/api/v1";
 
@@ -173,9 +174,7 @@ export default function BulletinPage() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4">
         <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-            <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
-          </svg>
+          <ArrowLeftIcon className="w-4 h-4" />
           返回
         </Link>
         <h1 className="text-lg font-semibold text-gray-800">公共留言板</h1>
@@ -302,9 +301,7 @@ export default function BulletinPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <h2 className="font-semibold text-gray-800">新建 Issue</h2>
               <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-                </svg>
+                <XMarkIcon className="w-5 h-5" />
               </button>
             </div>
             <div className="px-5 py-4 space-y-4">
@@ -395,9 +392,7 @@ export default function BulletinPage() {
                 </div>
               </div>
               <button onClick={() => setDetailIssue(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-                </svg>
+                <XMarkIcon className="w-5 h-5" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">

@@ -1,15 +1,18 @@
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
+import { Modal } from "./Modal";
 
 const API = "/api/v1";
 
 // ── User Profile Modal ────────────────────────────────────────────────────────
 export function UserProfileModal({
+  open,
   currentUser,
   userToken,
   onClose,
   onProfileUpdated,
 }: {
+  open: boolean;
   currentUser: {
     user_id: string;
     username: string;
@@ -143,28 +146,8 @@ export function UserProfileModal({
     "w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]";
 
   return (
-    <div
-      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
-      aria-modal="true"
-      role="dialog"
-    >
-      <div
-        className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex justify-between items-center px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
-          <h2 className="text-lg font-bold text-gray-900">个人资料</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-
+    <Modal open={open} onClose={onClose} title="个人资料">
+      <div className="-mx-5 -my-4 max-h-[80vh] flex flex-col">
         {/* Avatar + username */}
         <div className="flex items-center gap-4 px-6 py-4 flex-shrink-0">
           <div className="w-16 h-16 rounded-full bg-[#1264A3] text-white flex items-center justify-center text-2xl font-bold flex-shrink-0">
@@ -383,6 +366,6 @@ export function UserProfileModal({
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

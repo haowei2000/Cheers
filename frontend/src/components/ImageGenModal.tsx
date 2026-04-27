@@ -1,6 +1,8 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
+import { XMarkIcon } from "@heroicons/react/24/solid";
 import type { Message } from "../types";
+import { Modal } from "./Modal";
 
 const API = "/api/v1";
 
@@ -41,7 +43,6 @@ export function ImageGenModal({
   const [imageEditLoading, setImageEditLoading] = useState(false);
   const [imageEditPreview, setImageEditPreview] = useState<ImagePreview | null>(null);
 
-  if (!open) return null;
 
   const postMessage = async (content: string, fileId: string) => {
     if (!channelId) return;
@@ -136,32 +137,13 @@ export function ImageGenModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="AI 图片"
+      maxWidth="max-w-lg"
     >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="text-[15px] font-semibold text-gray-800">AI 图片</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 16 16"
-              fill="currentColor"
-              className="w-4 h-4"
-            >
-              <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
-            </svg>
-          </button>
-        </div>
-
+      <div className="-mx-5 -my-4">
         {/* Tab 切换 */}
         <div className="flex border-b border-gray-100">
           <button
@@ -313,14 +295,7 @@ export function ImageGenModal({
                       }}
                       className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center text-xs hover:bg-black/70"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 16 16"
-                        fill="currentColor"
-                        className="w-3.5 h-3.5"
-                      >
-                        <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
-                      </svg>
+                      <XMarkIcon className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ) : (
@@ -461,6 +436,6 @@ export function ImageGenModal({
           </>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }

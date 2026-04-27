@@ -29,7 +29,6 @@ from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdap
 from app.services.admin.settings_store import get_provider_for_scope
 from app.services.guide.help_index import (
     build_guide_content_with_form,
-    get_form_for_intent,
     get_help_context_for_llm,
 )
 
@@ -1428,11 +1427,6 @@ class ChannelBotAdapter(OpenClawAdapter):
                 channel_id,
                 (user_text[:60] + "…") if len(user_text) > 60 else user_text,
             )
-
-        # ── 6. 附加动态表单（如有匹配意图） ────────────────────────────────────
-        form = get_form_for_intent(user_text)
-        if form:
-            content += "\n\n```guide-form\n" + json.dumps(form, ensure_ascii=False) + "\n```"
 
         created_file_ids = tool_ctx.get("_created_file_ids") or []
         return AgentResponse(content=content, task_id=payload.task_id, success=True, file_ids=created_file_ids)
