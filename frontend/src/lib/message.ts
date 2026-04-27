@@ -45,6 +45,17 @@ export function parseQuotePrefix(
   return { label: m[1], quote: m[2], rest: m[3] };
 }
 
+/**
+ * Strip leading `> [Author]: … \n` blockquote-prefix lines from content.
+ * Called on bot-generated messages to remove the name-prefix format that
+ * LLMs sometimes hallucinate when they've seen reply-quote prefixes in the
+ * conversation history.
+ */
+export function stripLeadingQuotePrefixes(text: string): string {
+  const cleaned = text.replace(/^(?:> \[[^\]]+\]: [^\n]*\n+)+/, "").trim();
+  return cleaned || text;
+}
+
 export function formatTs(ts?: string): string {
   return (ts || "").slice(0, 19);
 }

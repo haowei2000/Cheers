@@ -1035,6 +1035,11 @@ async def _fetch_recent_history(
         content = _strip_ui_blocks(m.content or "")
         if not content:
             continue
+        # Strip the > [Author]: snippet\n\n reply-quote prefix added by the
+        # frontend's reply UI so the LLM doesn't learn to mimic this format.
+        content = re.sub(r'^> \[[^\]]+\]: .+?\n\n', '', content, count=1, flags=re.DOTALL).strip()
+        if not content:
+            continue
         if len(content) > HISTORY_MSG_MAX_CHARS:
             content = content[:HISTORY_MSG_MAX_CHARS] + "…"
         name = display_names.get(m.sender_id, "")

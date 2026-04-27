@@ -62,6 +62,7 @@ import {
 import {
   isMsgReply,
   parseQuotePrefix,
+  stripLeadingQuotePrefixes,
   formatTs,
   formatDayLabel,
   TOPIC_DISPLAY_THRESHOLD,
@@ -2851,16 +2852,19 @@ export default function App() {
                                 ? "answered"
                                 : "form"
                             : null;
-                        const displayContent = isClarifyReplyUserMessage(
-                          effectiveContent,
-                        )
-                          ? effectiveContent
-                              .replace(
-                                /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
-                                "",
-                              )
-                              .trim()
-                          : text || effectiveContent;
+                        const displayContent = (() => {
+                          const base = isClarifyReplyUserMessage(effectiveContent)
+                            ? effectiveContent
+                                .replace(
+                                  /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                  "",
+                                )
+                                .trim()
+                            : text || effectiveContent;
+                          return m.sender_type === "bot"
+                            ? stripLeadingQuotePrefixes(base)
+                            : base;
+                        })();
                         const isOwn =
                           m.sender_type === "user" &&
                           m.sender_id === currentUserId;
@@ -3543,14 +3547,19 @@ export default function App() {
                             text: rTextRaw,
                             clarify: rClarify,
                           } = parseGuidePayload(r.content);
-                          const rDisplay = isClarifyReplyUserMessage(r.content)
-                            ? r.content
-                                .replace(
-                                  /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
-                                  "",
-                                )
-                                .trim()
-                            : rTextRaw || r.content;
+                          const rDisplay = (() => {
+                            const base = isClarifyReplyUserMessage(r.content)
+                              ? r.content
+                                  .replace(
+                                    /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                    "",
+                                  )
+                                  .trim()
+                              : rTextRaw || r.content;
+                            return r.sender_type === "bot"
+                              ? stripLeadingQuotePrefixes(base)
+                              : base;
+                          })();
                           const rClarifyAnswered =
                             !!rClarify &&
                             messages.some(
@@ -4046,16 +4055,19 @@ export default function App() {
                                   text: rTextRaw,
                                   clarify: rClarify,
                                 } = parseGuidePayload(r.content);
-                                const rDisplay = isClarifyReplyUserMessage(
-                                  r.content,
-                                )
-                                  ? r.content
-                                      .replace(
-                                        /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
-                                        "",
-                                      )
-                                      .trim()
-                                  : rTextRaw || r.content;
+                                const rDisplay = (() => {
+                                  const base = isClarifyReplyUserMessage(r.content)
+                                    ? r.content
+                                        .replace(
+                                          /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                          "",
+                                        )
+                                        .trim()
+                                    : rTextRaw || r.content;
+                                  return r.sender_type === "bot"
+                                    ? stripLeadingQuotePrefixes(base)
+                                    : base;
+                                })();
                                 const rClarifyAnswered =
                                   !!rClarify &&
                                   messages.some(
