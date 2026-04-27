@@ -69,7 +69,7 @@ export function ClarifyInlineBlock({
 
   if (status === "answered") {
     const displayReply =
-      replyContent?.replace(/^@channel bot\s*澄清回答[：:]\s*/i, "").trim() ||
+      replyContent?.replace(/^@(?:Coordinator|channel bot)\s*澄清回答[：:]\s*/i, "").trim() ||
       "";
     return (
       <div className="my-2 rounded-lg border border-gray-200 bg-[#F8F8F8] overflow-hidden">

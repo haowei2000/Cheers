@@ -39,7 +39,7 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
           </button>
         </div>
         <p className="text-sm mb-3" style={{ color: "var(--fg-2)" }}>
-          在任意频道输入 <strong>@channel bot</strong> 并输入你的问题，channel bot
+          在任意频道输入 <strong>@Coordinator</strong> 并输入你的问题，Coordinator
           会根据说明书自动回复，并显示相关入口。
         </p>
         <p className="text-xs mb-2" style={{ color: "var(--fg-3)" }}>
@@ -49,11 +49,11 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
           className="text-sm space-y-1 list-disc list-inside mb-2"
           style={{ color: "var(--fg-2)" }}
         >
-          <li>@channel bot 怎么用</li>
-          <li>@channel bot 怎么创建项目</li>
-          <li>@channel bot 怎么加入项目</li>
-          <li>@channel bot 怎么接入 OpenClaw</li>
-          <li>@channel bot 入口</li>
+          <li>@Coordinator 怎么用</li>
+          <li>@Coordinator 怎么创建项目</li>
+          <li>@Coordinator 怎么加入项目</li>
+          <li>@Coordinator 怎么接入 OpenClaw</li>
+          <li>@Coordinator 入口</li>
         </ul>
         <p className="text-xs mb-2" style={{ color: "var(--fg-3)" }}>
           前端入口：

@@ -29,23 +29,23 @@ TEMPLATE_CREATIVE_ID = "template-creative-001"
 
 
 async def _seed_unified_bot(session: AsyncSession) -> bool:
-    """创建统一内置 Bot（@channel bot）：引导 + 助手 + 记忆管理三合一。"""
+    """创建统一内置 Bot（@Coordinator）：引导 + 助手 + 记忆管理三合一。"""
     r = await session.execute(select(BotAccount).where(BotAccount.bot_id == GUIDE_BOT_ID))
     existing = r.scalar_one_or_none()
     if existing is not None:
-        # 迁移旧用户名
-        if existing.username == "引导":
-            existing.username = "channel bot"
+        # 迁移旧用户名 → 现在统一叫 Coordinator
+        if existing.username in ("引导", "channel bot"):
+            existing.username = "Coordinator"
             await session.flush()
         return False
 
     session.add(
         BotAccount(
             bot_id=GUIDE_BOT_ID,
-            username="channel bot",
-            display_name="内置助手",
+            username="Coordinator",
+            display_name="协调者",
             description=(
-                "系统内置统一助手，集引导、项目助手、记忆管理三合一。"
+                "系统内置协调者（Coordinator），集引导、项目助手、记忆管理三合一。"
                 "可回答系统使用问题、结合项目记忆回答业务问题、"
                 "读写四层项目记忆、并在需要时建议路由到专业 Bot。"
             ),
@@ -53,8 +53,8 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
             template_id=None,
             status="online",
             intro=(
-                '{"capabilities":["系统引导","项目问答","记忆读写","澄清弹窗","动态表单","Bot路由建议"],'
-                '"description":"内置统一助手，@channel bot 即可使用"}'
+                '{"capabilities":["系统引导","项目问答","记忆读写","澄清弹窗","Bot路由建议"],'
+                '"description":"内置协调者，@Coordinator 即可使用"}'
             ),
         )
     )
@@ -62,23 +62,27 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
 
 
 async def _seed_guide_helper_bot(session: AsyncSession) -> bool:
-    """创建智枢协作操作指引助手 Bot（@guide-helper）：加载 docs/help/ 下所有帮助文档，回答 AgentNexus 使用问题."""
+    """创建操作指引助手 Bot（@Helper）：加载 docs/help/ 下所有帮助文档，回答 AgentNexus 使用问题."""
     r = await session.execute(select(BotAccount).where(BotAccount.bot_id == GUIDE_HELPER_BOT_ID))
     existing = r.scalar_one_or_none()
     if existing is not None:
+        # 迁移旧用户名 → 现在统一叫 Helper
+        if existing.username == "guide-helper":
+            existing.username = "Helper"
+            await session.flush()
         return False
 
     session.add(
         BotAccount(
             bot_id=GUIDE_HELPER_BOT_ID,
-            username="guide-helper",
-            display_name="智枢协作操作指引助手",
-            description="智枢协作操作指引助手，加载所有帮助文档，回答平台使用问题。",
+            username="Helper",
+            display_name="操作指引助手",
+            description="操作指引助手，加载所有帮助文档，回答平台使用问题。",
             model_id=None,
             template_id=None,
             status="online",
             is_public=True,
-            intro='{"capabilities":["使用说明","功能问答","操作指南"],"description":"输入 @guide-helper 即可获得操作指引"}',
+            intro='{"capabilities":["使用说明","功能问答","操作指南"],"description":"输入 @Helper 即可获得操作指引"}',
         )
     )
     await session.flush()
@@ -327,5 +331,5 @@ if __name__ == "__main__":
         f"  Workspace: {WORKSPACE_ID}\n"
         f"  Channel: {CHANNEL_ID}\n"
         f"  Templates: 通用助手, 代码审查, 创意写作\n"
-        f"  Bots: @channel bot（内置统一Bot）, @guide-helper（智枢协作操作指引助手）"
+        f"  Bots: @Coordinator（内置协调者）, @Helper（操作指引助手）"
     )

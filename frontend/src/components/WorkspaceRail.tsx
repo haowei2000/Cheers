@@ -45,6 +45,9 @@ function Tile({
   title?: string;
   onClick: () => void;
 }) {
+  // Scale font down as initials grow so a 4-char label still fits in a 40px tile.
+  const len = [...initials].length;
+  const fontSize = len >= 4 ? 9 : len === 3 ? 11 : len === 2 ? 13 : 14;
   return (
     <button
       type="button"
@@ -55,6 +58,7 @@ function Tile({
       style={{
         background: color,
         borderRadius: round ? 999 : 12,
+        fontSize,
       }}
     >
       {initials}
@@ -87,17 +91,23 @@ export function WorkspaceRail({
           <div className="an-wsr-sep" />
         </>
       )}
-      {teams.map((w) => (
-        <Tile
-          key={w.workspace_id}
-          label={w.name}
-          initials={w.name.slice(0, 1).toUpperCase()}
-          color={wsColor(w.workspace_id)}
-          active={selectedWorkspaceId === w.workspace_id}
-          title={w.name}
-          onClick={() => onSelect(w.workspace_id)}
-        />
-      ))}
+      {teams.map((w) => {
+        // Pick up to the first 4 visually meaningful chars from the name.
+        // Trim whitespace so " AgentNexus " doesn't render as " Age".
+        const trimmed = w.name.trim();
+        const initials = [...trimmed].slice(0, 4).join("").toUpperCase();
+        return (
+          <Tile
+            key={w.workspace_id}
+            label={w.name}
+            initials={initials || "?"}
+            color={wsColor(w.workspace_id)}
+            active={selectedWorkspaceId === w.workspace_id}
+            title={w.name}
+            onClick={() => onSelect(w.workspace_id)}
+          />
+        );
+      })}
       {onCreate && (
         <button
           type="button"

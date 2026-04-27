@@ -54,7 +54,8 @@ def extract_mentions(text: str, known_space_names: list[str] | None = None) -> l
              "@a 你好 @b"        → ["a"]
              "@a@b 你好"         → ["a", "b"]
 
-    known_space_names 用于处理含空格的 Bot 名（如 "channel bot"）：
+    known_space_names 用于处理含空格的 Bot 名（历史曾用 "channel bot"，
+    现统一为不含空格的 "Coordinator"，但机制保留以兼容自定义 Bot 含空格的命名）：
     在每个位置会优先长匹配，确保 "@channel bot ..." 识别为 "channel bot" 而非 "channel"。
     """
     if not text or not text.strip():

@@ -7,8 +7,8 @@ import MemoryPage from "./MemoryPage";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
+import { BotAvatar } from "./components/BotAvatar";
 import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
-import { GuideFormBlock } from "./components/GuideFormBlock";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
 import { ThinkingIndicator } from "./components/ThinkingIndicator";
 import { MemoryPanel } from "./components/MemoryPanel";
@@ -131,14 +131,17 @@ export default function App() {
   // mirrored to URL hash. There is no side-dock panel; opening a topic
   // always replaces the channel stream with the dedicated page.
   const [announcementOpen, setAnnouncementOpen] = useState(false);
-  // Composer send-kind: switchable between 普通消息 / 公告 / 主题 via
-  // Shift-Tab or the ‹ › buttons flanking the composer. Always resets to
-  // "normal" after each send. "reply" is orthogonal — replyingTo overrides
-  // this.
-  type MsgKind = "normal" | "announcement" | "topic";
-  const MSG_KINDS_ORDER: MsgKind[] = ["normal", "announcement", "topic"];
+  // Composer send-kind: 4 unified types — 普通 / 加密 / 公告 / 主题.
+  // Switchable via Tab / Shift-Tab and the ‹ › buttons flanking the composer.
+  // Always resets to "normal" after each send. "reply" is orthogonal —
+  // replyingTo overrides this. The "secret" kind syncs with the legacy
+  // `secretMode` boolean so downstream code (send payload, render path) keeps
+  // working unchanged.
+  type MsgKind = "normal" | "secret" | "announcement" | "topic";
+  const MSG_KINDS_ORDER: MsgKind[] = ["normal", "secret", "announcement", "topic"];
   const MSG_KIND_LABEL: Record<MsgKind, string> = {
     normal: "消息",
+    secret: "加密",
     announcement: "公告",
     topic: "主题",
   };
@@ -309,8 +312,46 @@ export default function App() {
   const [imageGenInitialTab, setImageGenInitialTab] = useState<"gen" | "edit">(
     "gen",
   );
-  // 加密消息状态
+  // 加密消息状态。Bound to msgKind === "secret" via the effect below — the
+  // 🔒 toolbar button and the kind switcher both flip this through msgKind,
+  // and downstream send/render code keeps reading `secretMode` unchanged.
   const [secretMode, setSecretMode] = useState(false);
+  useEffect(() => {
+    if (msgKind === "secret" && !secretMode) setSecretMode(true);
+    if (msgKind !== "secret" && secretMode) setSecretMode(false);
+  }, [msgKind, secretMode]);
+
+  // Drag-resize: user can grab the top edge of the composer to pull it taller.
+  // null = use the CSS default (auto-grow up to max-height); otherwise a pinned
+  // textarea height in pixels. Double-click on the handle resets to default.
+  const [composerTextareaHeight, setComposerTextareaHeight] = useState<
+    number | null
+  >(null);
+  const composerDragRef = useRef<{ startY: number; startH: number } | null>(
+    null,
+  );
+  const onComposerResizeDown = (e: React.PointerEvent) => {
+    const ta = inputRef.current;
+    const startH = ta?.offsetHeight ?? 40;
+    composerDragRef.current = { startY: e.clientY, startH };
+    (e.target as Element).setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onComposerResizeMove = (e: React.PointerEvent) => {
+    const drag = composerDragRef.current;
+    if (!drag) return;
+    // 用户向上拖拽 → composer 变高（startY > clientY → delta > 0）
+    const next = Math.max(40, Math.min(600, drag.startH + (drag.startY - e.clientY)));
+    setComposerTextareaHeight(next);
+  };
+  const onComposerResizeUp = (e: React.PointerEvent) => {
+    composerDragRef.current = null;
+    try {
+      (e.target as Element).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
   const [revealedSecrets, setRevealedSecrets] = useState<
     Record<string, string>
   >({});
@@ -1327,7 +1368,7 @@ export default function App() {
     schema: ClarifySchema,
     answers: ClarifyAnswers,
   ) => {
-    const lines = ["@channel bot 澄清回答："];
+    const lines = ["@Coordinator 澄清回答："];
     const optText = answers.option_text || {};
     for (const q of schema.questions) {
       const picked = new Set(answers.selected[q.id] || []);
@@ -1355,7 +1396,7 @@ export default function App() {
   const handleClarifySkip = (msgId: string) => {
     setPendingClarifyReplyMsgId(msgId);
     sendUserMessage(
-      "@channel bot 用户选择跳过澄清，请在当前信息下继续回答。",
+      "@Coordinator 用户选择跳过澄清，请在当前信息下继续回答。",
       msgId,
     ).catch(() => {
       setPendingClarifyReplyMsgId(null);
@@ -2466,6 +2507,8 @@ export default function App() {
                           }));
                           const coordBot = channelBots.find(
                             (b) =>
+                              // 现行用户名 + 历史名兜底（"channel bot" 老版本数据库）
+                              b.username === "Coordinator" ||
                               b.username === "channel bot" ||
                               b.username === "coordinator",
                           );
@@ -2794,7 +2837,7 @@ export default function App() {
                         const effectiveContent = m.is_secret
                           ? (revealedContent ?? m.content)
                           : m.content;
-                        const { text, form, clarify } =
+                        const { text, clarify } =
                           parseGuidePayload(effectiveContent);
                         const clarifyAnswered =
                           !!clarify &&
@@ -2822,7 +2865,7 @@ export default function App() {
                         )
                           ? effectiveContent
                               .replace(
-                                /^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
                                 "",
                               )
                               .trim()
@@ -2841,7 +2884,6 @@ export default function App() {
                           senderBot?.display_name ||
                           senderBot?.username ||
                           "Bot";
-                        const botInitials = botLabel.slice(0, 2).toUpperCase();
                         const senderUser =
                           m.sender_type === "user" && !isOwn
                             ? channelUsers.find(
@@ -2902,22 +2944,12 @@ export default function App() {
                               <div className="w-9 flex-shrink-0">
                                 {!isStacked ? (
                                   m.sender_type === "bot" ? (
-                                    senderBot?.avatar_url ? (
-                                      <img
-                                        src={senderBot.avatar_url}
-                                        alt={botLabel}
-                                        className="w-9 h-9 rounded-xl object-cover mt-0.5"
-                                      />
-                                    ) : (
-                                      <div
-                                        className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
-                                        style={{
-                                          background: "var(--fg-3)",
-                                        }}
-                                      >
-                                        {botInitials}
-                                      </div>
-                                    )
+                                    <BotAvatar
+                                      label={botLabel}
+                                      avatarUrl={senderBot?.avatar_url}
+                                      size={36}
+                                      className="mt-0.5"
+                                    />
                                   ) : (
                                     <div
                                       className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
@@ -2981,6 +3013,27 @@ export default function App() {
                                     {m.content_data.title as string}
                                   </div>
                                 ) : null}
+                                {/* Unified reply-quote: lifted out of the
+                                    body so all 4 message paths render the
+                                    "回复某条消息" indicator the exact same
+                                    way (.an-reply-quote with elbow connector). */}
+                                {(() => {
+                                  const mq = parseQuotePrefix(displayContent);
+                                  if (!mq || isSecretExpired || isSecretUnrevealed)
+                                    return null;
+                                  return (
+                                    <div
+                                      className="an-reply-quote"
+                                      title={`回复 ${mq.label}`}
+                                    >
+                                      <span className="an-rq-arrow">↪</span>
+                                      <span className="an-rq-name">{mq.label}</span>
+                                      <span className="an-rq-snip">
+                                        {mq.quote.replace(/\s+/g, " ").trim()}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
                                 {renderFileAttachments(m)}
                                 <div
                                   style={{
@@ -3033,7 +3086,12 @@ export default function App() {
                                     </div>
                                   ) : (
                                     renderWithThinkFolding(
-                                      displayContent,
+                                      // Strip the `> [Author]: …\n\n` prefix
+                                      // (rendered separately as .an-reply-quote
+                                      // above) so the body shows only the
+                                      // actual content.
+                                      parseQuotePrefix(displayContent)?.rest ??
+                                        displayContent,
                                       `${m.msg_id}-`,
                                       !!m._streaming,
                                       (src) => {
@@ -3062,26 +3120,6 @@ export default function App() {
                                   {renderStopStreamButton(m)}
                                   {renderPartialBadge(m)}
                                 </div>
-                                {form && selectedId && m.sender_type === "bot" && (
-                                  <GuideFormBlock
-                                    msgId={m.msg_id}
-                                    form={form}
-                                    channelId={selectedId}
-                                    onReply={(newMsg) =>
-                                      setMessages((prev) => [
-                                        ...prev,
-                                        newMsg,
-                                      ])
-                                    }
-                                    onChannelsRefresh={() =>
-                                      refreshChannels(
-                                        setChannels,
-                                        authToken ?? undefined,
-                                      )
-                                    }
-                                    userToken={authToken ?? undefined}
-                                  />
-                                )}
                                 {clarifyStatus !== null && selectedId && (
                                   <ClarifyInlineBlock
                                     msgId={m.msg_id}
@@ -3190,6 +3228,31 @@ export default function App() {
                                   </div>
                                 ) : null}
                                 {renderFileAttachments(m, true)}
+                                {/* If this user message starts with a "> [X]: ..."
+                                    quote prefix (set when the user used the
+                                    reply UI), surface it as a small-gray
+                                    .an-reply-quote ABOVE the bubble. The
+                                    bubble itself then renders just `q.rest`
+                                    so the parent context doesn't intrude on
+                                    the body. The CSS connector elbow visually
+                                    bridges quote → body. */}
+                                {(() => {
+                                  const q = parseQuotePrefix(displayContent);
+                                  if (!q || isSecretExpired || isSecretUnrevealed)
+                                    return null;
+                                  return (
+                                    <div
+                                      className="an-reply-quote"
+                                      title={`回复 ${q.label}`}
+                                    >
+                                      <span className="an-rq-arrow">↪</span>
+                                      <span className="an-rq-name">{q.label}</span>
+                                      <span className="an-rq-snip">
+                                        {q.quote.replace(/\s+/g, " ").trim()}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
                                 {isSecretExpired ? (
                                   <div className="an-secret-veil is-expired">
                                     <span className="an-secret-veil-icon">
@@ -3236,34 +3299,17 @@ export default function App() {
                                     className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words"
                                   >
                                     {(() => {
+                                      // The quote prefix (if any) is already
+                                      // rendered above as .an-reply-quote;
+                                      // here we render only the body text.
                                       const q =
                                         parseQuotePrefix(displayContent);
-                                      if (q)
-                                        return (
-                                          <>
-                                            <div className="border-l-2 border-white/50 pl-2 mb-2 text-[12px] leading-snug opacity-80">
-                                              <span className="font-semibold block">
-                                                {q.label}
-                                              </span>
-                                              <span className="block line-clamp-2">
-                                                {q.quote}
-                                              </span>
-                                            </div>
-                                            <div className="whitespace-pre-wrap">
-                                              {q.rest
-                                                .replace(
-                                                  /!\[.*?\]\(.*?\)\s*/g,
-                                                  "",
-                                                )
-                                                .trim() || q.rest}
-                                            </div>
-                                          </>
-                                        );
+                                      const body = q ? q.rest : displayContent;
                                       return (
                                         <span className="whitespace-pre-wrap">
-                                          {displayContent
+                                          {body
                                             .replace(/!\[.*?\]\(.*?\)\s*/g, "")
-                                            .trim() || displayContent}
+                                            .trim() || body}
                                         </span>
                                       );
                                     })()}
@@ -3279,17 +3325,11 @@ export default function App() {
                           >
                             <div className="flex-shrink-0 mt-0.5">
                               {m.sender_type === "bot" ? (
-                                senderBot?.avatar_url ? (
-                                  <img
-                                    src={senderBot.avatar_url}
-                                    alt={botLabel}
-                                    className="w-8 h-8 rounded-xl object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">
-                                    {botInitials}
-                                  </div>
-                                )
+                                <BotAvatar
+                                  label={botLabel}
+                                  avatarUrl={senderBot?.avatar_url}
+                                  size={32}
+                                />
                               ) : (
                                 <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">
                                   {userInitials}
@@ -3322,6 +3362,24 @@ export default function App() {
                                   {m.content_data.title as string}
                                 </div>
                               ) : null}
+                              {(() => {
+                                const cq = parseQuotePrefix(text);
+                                if (!cq) return null;
+                                return (
+                                  <div
+                                    className="an-reply-quote"
+                                    title={`回复 ${cq.label}`}
+                                  >
+                                    <span className="an-rq-arrow">↪</span>
+                                    <span className="an-rq-name">
+                                      {cq.label}
+                                    </span>
+                                    <span className="an-rq-snip">
+                                      {cq.quote.replace(/\s+/g, " ").trim()}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                               {renderFileAttachments(m)}
                               <div
                                 className="rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed"
@@ -3378,7 +3436,7 @@ export default function App() {
                                   <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                 ) : (
                                   renderWithThinkFolding(
-                                    text,
+                                    parseQuotePrefix(text)?.rest ?? text,
                                     `${m.msg_id}-`,
                                     !!m._streaming,
                                     (src) => {
@@ -3403,25 +3461,6 @@ export default function App() {
                                 {!isSecretUnrevealed && renderStopStreamButton(m)}
                                 {!isSecretUnrevealed && renderPartialBadge(m)}
                               </div>
-                              {form &&
-                                selectedId &&
-                                m.sender_type === "bot" && (
-                                  <GuideFormBlock
-                                    msgId={m.msg_id}
-                                    form={form}
-                                    channelId={selectedId}
-                                    onReply={(newMsg) =>
-                                      setMessages((prev) => [...prev, newMsg])
-                                    }
-                                    onChannelsRefresh={() =>
-                                      refreshChannels(
-                                        setChannels,
-                                        authToken ?? undefined,
-                                      )
-                                    }
-                                    userToken={authToken ?? undefined}
-                                  />
-                                )}
                               {clarifyStatus !== null && selectedId && (
                                 <ClarifyInlineBlock
                                   msgId={m.msg_id}
@@ -3522,13 +3561,12 @@ export default function App() {
                             : "";
                           const {
                             text: rTextRaw,
-                            form: rForm,
                             clarify: rClarify,
                           } = parseGuidePayload(r.content);
                           const rDisplay = isClarifyReplyUserMessage(r.content)
                             ? r.content
                                 .replace(
-                                  /^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                  /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
                                   "",
                                 )
                                 .trim()
@@ -3648,6 +3686,32 @@ export default function App() {
                                       {rTime}
                                     </span>
                                   </div>
+                                  {(() => {
+                                    // Unified reply-quote rendering for the
+                                    // rFlat (channel-list reply) path. Source
+                                    // of truth = the `> [Author]: snippet`
+                                    // prefix on the message text, set by the
+                                    // reply UI. We strip it from the body
+                                    // and surface it as .an-reply-quote so
+                                    // the visual exactly matches the topic-
+                                    // view and own-bubble paths.
+                                    const rq = parseQuotePrefix(rDisplay);
+                                    if (!rq) return null;
+                                    return (
+                                      <div
+                                        className="an-reply-quote"
+                                        title={`回复 ${rq.label}`}
+                                      >
+                                        <span className="an-rq-arrow">↪</span>
+                                        <span className="an-rq-name">
+                                          {rq.label}
+                                        </span>
+                                        <span className="an-rq-snip">
+                                          {rq.quote.replace(/\s+/g, " ").trim()}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
                                   {renderFileAttachments(r)}
                                   <div
                                     className={
@@ -3683,7 +3747,11 @@ export default function App() {
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                     ) : (
                                       renderWithThinkFolding(
-                                        rDisplay,
+                                        // Drop the `> [Author]: …\n\n` prefix
+                                        // (now rendered above as an
+                                        // .an-reply-quote) so the body shows
+                                        // only the actual content.
+                                        parseQuotePrefix(rDisplay)?.rest ?? rDisplay,
                                         `${r.msg_id}-`,
                                         !!r._streaming,
                                         (src) => {
@@ -3706,28 +3774,6 @@ export default function App() {
                                     {renderStopStreamButton(r)}
                                     {renderPartialBadge(r)}
                                   </div>
-                                  {rForm &&
-                                    selectedId &&
-                                    r.sender_type === "bot" && (
-                                      <GuideFormBlock
-                                        msgId={r.msg_id}
-                                        form={rForm}
-                                        channelId={selectedId}
-                                        onReply={(newMsg) =>
-                                          setMessages((prev) => [
-                                            ...prev,
-                                            newMsg,
-                                          ])
-                                        }
-                                        onChannelsRefresh={() =>
-                                          refreshChannels(
-                                            setChannels,
-                                            authToken ?? undefined,
-                                          )
-                                        }
-                                        userToken={authToken ?? undefined}
-                                      />
-                                    )}
                                   {rClarifyStatus !== null && selectedId && (
                                     <ClarifyInlineBlock
                                       msgId={r.msg_id}
@@ -4072,7 +4118,6 @@ export default function App() {
                                   : "";
                                 const {
                                   text: rTextRaw,
-                                  form: rForm,
                                   clarify: rClarify,
                                 } = parseGuidePayload(r.content);
                                 const rDisplay = isClarifyReplyUserMessage(
@@ -4080,7 +4125,7 @@ export default function App() {
                                 )
                                   ? r.content
                                       .replace(
-                                        /^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                        /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
                                         "",
                                       )
                                       .trim()
@@ -4312,30 +4357,6 @@ export default function App() {
                                             {renderStopStreamButton(r)}
                                             {renderPartialBadge(r)}
                                           </div>
-                                          {rForm &&
-                                            selectedId &&
-                                            r.sender_type === "bot" && (
-                                              <GuideFormBlock
-                                                msgId={r.msg_id}
-                                                form={rForm}
-                                                channelId={selectedId}
-                                                onReply={(newMsg) =>
-                                                  setMessages((prev) => [
-                                                    ...prev,
-                                                    newMsg,
-                                                  ])
-                                                }
-                                                onChannelsRefresh={() =>
-                                                  refreshChannels(
-                                                    setChannels,
-                                                    authToken ?? undefined,
-                                                  )
-                                                }
-                                                userToken={
-                                                  authToken ?? undefined
-                                                }
-                                              />
-                                            )}
                                           {rClarifyStatus !== null &&
                                             selectedId && (
                                               <ClarifyInlineBlock
@@ -4508,19 +4529,23 @@ export default function App() {
                       <span
                         className={
                           "an-msgkind-label" +
-                          (msgKind === "announcement"
-                            ? " is-announcement"
-                            : msgKind === "topic"
-                              ? " is-topic"
-                              : "")
+                          (msgKind === "secret"
+                            ? " is-secret"
+                            : msgKind === "announcement"
+                              ? " is-announcement"
+                              : msgKind === "topic"
+                                ? " is-topic"
+                                : "")
                         }
                         title="Tab 切换 · Shift+Tab 反向"
                       >
-                        {msgKind === "announcement"
-                          ? "📣"
-                          : msgKind === "topic"
-                            ? "🧵"
-                            : "💬"}{" "}
+                        {msgKind === "secret"
+                          ? "🔒"
+                          : msgKind === "announcement"
+                            ? "📣"
+                            : msgKind === "topic"
+                              ? "🧵"
+                              : "💬"}{" "}
                         {MSG_KIND_LABEL[msgKind]}
                       </span>
                       <button
@@ -4671,22 +4696,36 @@ export default function App() {
                     <div
                       className={
                         "an-composer overflow-hidden" +
-                        (!replyingTo && msgKind === "announcement"
-                          ? " is-announcement"
-                          : !replyingTo && msgKind === "topic"
-                            ? " is-topic"
-                            : "")
+                        (!replyingTo && msgKind === "secret"
+                          ? " is-secret"
+                          : !replyingTo && msgKind === "announcement"
+                            ? " is-announcement"
+                            : !replyingTo && msgKind === "topic"
+                              ? " is-topic"
+                              : "")
                       }
                     >
-                      {!replyingTo &&
-                        (msgKind === "announcement" ||
-                          msgKind === "topic") && (
-                          <div className="an-composer-kindhead">
-                            <span className="an-composer-kindhead-tag">
-                              {msgKind === "announcement"
-                                ? "📣 公告"
-                                : "🧵 主题"}
-                            </span>
+                      {/* Top-edge drag handle: pull up to grow taller, pull
+                          down to shrink. Double-click to reset to auto. */}
+                      <div
+                        className="an-composer-resize"
+                        onPointerDown={onComposerResizeDown}
+                        onPointerMove={onComposerResizeMove}
+                        onPointerUp={onComposerResizeUp}
+                        onPointerCancel={onComposerResizeUp}
+                        onDoubleClick={() => setComposerTextareaHeight(null)}
+                        title="拖拽调整高度 · 双击重置"
+                        aria-label="拖拽调整发送框高度"
+                      >
+                        <span className="an-composer-resize-grip" />
+                      </div>
+                      {/* Always render the kindhead so the composer's overall
+                          height stays constant across all 4 kinds — switching
+                          types becomes a pure tint change with no layout shift. */}
+                      {!replyingTo && (
+                        <div className="an-composer-kindhead">
+                          {(msgKind === "announcement" ||
+                            msgKind === "topic") && (
                             <input
                               ref={composerTitleRef}
                               className="an-composer-title"
@@ -4707,8 +4746,19 @@ export default function App() {
                               }}
                               maxLength={120}
                             />
-                          </div>
-                        )}
+                          )}
+                          {msgKind === "secret" && (
+                            <span className="an-composer-kindhead-hint">
+                              端到端加密 · 仅 @ 的 Bot 可读原文
+                            </span>
+                          )}
+                          {msgKind === "normal" && (
+                            <span className="an-composer-kindhead-hint">
+                              @ 呼叫 Bot · Tab 切换类型 · ↵ 发送
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <textarea
                         ref={inputRef}
                         value={input}
@@ -4786,7 +4836,12 @@ export default function App() {
                         }
                         className="an-composer-textarea"
                         style={
-                          secretMode ? { color: "var(--orange)" } : undefined
+                          composerTextareaHeight !== null
+                            ? {
+                                height: composerTextareaHeight,
+                                maxHeight: composerTextareaHeight,
+                              }
+                            : undefined
                         }
                         rows={1}
                       />
@@ -4922,22 +4977,33 @@ export default function App() {
                           <span style={{ opacity: 0.5 }}>·</span>
                           <kbd>⇧↵</kbd> 换行
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setSecretMode((v) => !v)}
-                          title={
-                            secretMode
-                              ? "取消加密模式"
-                              : "开启加密模式（仅 Bot 可读原文）"
-                          }
-                          style={
-                            secretMode
-                              ? { color: "var(--orange)", background: "var(--orange-muted)" }
-                              : undefined
-                          }
-                        >
-                          🔒
-                        </button>
+                        {/* 加密只对普通对话有意义；公告/主题是面向全频道的，
+                            不允许加密发送。 */}
+                        {(msgKind === "normal" || msgKind === "secret") && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setMsgKind((k) =>
+                                k === "secret" ? "normal" : "secret",
+                              )
+                            }
+                            title={
+                              msgKind === "secret"
+                                ? "取消加密模式"
+                                : "开启加密模式（仅 Bot 可读原文）"
+                            }
+                            style={
+                              msgKind === "secret"
+                                ? {
+                                    color: "var(--orange)",
+                                    background: "var(--orange-muted)",
+                                  }
+                                : undefined
+                            }
+                          >
+                            🔒
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={send}
@@ -4945,13 +5011,8 @@ export default function App() {
                           disabled={
                             !input.trim() && pendingFileIds.length === 0
                           }
-                          style={
-                            secretMode && (input.trim() || pendingFileIds.length > 0)
-                              ? { background: "var(--orange)" }
-                              : undefined
-                          }
                         >
-                          {secretMode ? "加密发送" : "发送"}
+                          {msgKind === "secret" ? "加密发送" : "发送"}
                         </button>
                       </div>
                     </div>
