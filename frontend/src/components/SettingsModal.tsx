@@ -2291,6 +2291,11 @@ function BotNewPane({
 
   const [creating, setCreating] = useState(false);
 
+  // Set after a successful WebSocket bot creation: holds the one-shot
+  // plaintext token returned by the backend so the user can copy it into
+  // their OpenClaw plugin config before we navigate away.
+  const [issued, setIssued] = useState<{ token: string; bot: BotRow } | null>(null);
+
   // Lazy-load models/templates when entering step 2 with HTTP selected.
   useEffect(() => {
     if (step !== 2 || bindingType !== "http") return;
@@ -2348,7 +2353,12 @@ function BotNewPane({
       const data = await res.json();
       if (data?.status === "success") {
         toast.success("Bot 创建成功");
-        onCreated(data.data);
+        const created = data.data as BotRow & { bot_token?: string | null };
+        if (bindingType === "websocket" && created?.bot_token) {
+          setIssued({ token: created.bot_token, bot: created });
+        } else {
+          onCreated(created);
+        }
       } else {
         toast.error(data?.message || data?.detail || "创建失败");
       }
@@ -2358,6 +2368,83 @@ function BotNewPane({
       setCreating(false);
     }
   };
+
+  if (issued) {
+    return (
+      <div>
+        <div className="an-pane-head">
+          <div>
+            <div className="an-pane-title">Bot 已创建 · 保存 OpenClaw Token</div>
+            <div className="an-pane-sub">
+              这是一次性明文 token，关闭此页面后将无法再查看。请立即复制并填入
+              OpenClaw plugin 配置；之后只能通过"轮换 token"重新生成。
+            </div>
+          </div>
+        </div>
+        <div className="an-list-table">
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">Bot Token</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <code
+                style={{
+                  flex: 1,
+                  padding: "8px 10px",
+                  background: "var(--bg-0)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  color: "var(--fg-1)",
+                  userSelect: "all",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {issued.token}
+              </code>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(issued.token);
+                  toast.success("Token 已复制");
+                }}
+                style={{
+                  padding: "8px 12px",
+                  background: "var(--surface-soft)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  color: "var(--fg-2)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                复制
+              </button>
+            </div>
+            <div className="an-rc-sub" style={{ marginTop: 0 }}>
+              在 plugin 端用
+              <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
+                Authorization: Bearer {"<token>"}
+              </code>
+              连接
+              <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
+                /ws/openclaw/control
+              </code>
+              和
+              <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
+                /ws/openclaw/data
+              </code>
+              即可接管该 Bot。
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <PrimaryButton onClick={() => onCreated(issued.bot)}>完成</PrimaryButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (step === 1) {
     return (
