@@ -1,0 +1,319 @@
+/* ============================================================================
+ * Composer — chat input shell.
+ *
+ * Single source of truth for the message-composer chrome. All four send
+ * types share the same shell (radius, shadow, padding, toolbar position) so
+ * the layout is invariant across:
+ *
+ *   1. normal       💬  free-form chat reply
+ *   2. secret       🔒  end-to-end encrypted (only the addressed bot can read)
+ *   3. announcement 📣  notification pinned to the top of the channel
+ *   4. topic        🧵  thread-starter (msg_type=topic)
+ *
+ * The kind only changes the *tint* (border + soft top gradient) and the
+ * label/placeholder strings. Geometry (border-radius, padding, max-width,
+ * focus ring spread) stays identical so users see "same composer, four
+ * accents" instead of four visually different blocks.
+ *
+ * Owner: this file. Don't add composer rules elsewhere.
+ * ============================================================================ */
+
+/* ── Shared shell (geometry is identical for all 4 kinds) ─────────────────── */
+.an-composer {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition:
+    border-color var(--motion-fast),
+    box-shadow var(--motion-fast),
+    background var(--motion-fast);
+  position: relative;
+  box-shadow:
+    0 1px 0 var(--border) inset,
+    0 8px 20px var(--shadow);
+  max-width: 920px;
+  margin: 0 auto;
+}
+.an-composer:focus-within {
+  border-color: var(--border-focus);
+  box-shadow:
+    0 1px 0 var(--border-focus) inset,
+    0 10px 26px var(--shadow);
+}
+
+/* ── Per-kind tinting ─────────────────────────────────────────────────────── */
+.an-composer.is-secret {
+  border-color: color-mix(in oklab, var(--orange) 50%, var(--border));
+  background: linear-gradient(180deg, var(--orange-muted), var(--bg-1) 46px);
+}
+.an-composer.is-secret:focus-within {
+  border-color: var(--orange);
+  box-shadow:
+    0 1px 0 var(--orange) inset,
+    0 10px 26px var(--shadow);
+}
+.an-composer.is-announcement {
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+  background: linear-gradient(180deg, var(--accent-muted), var(--bg-1) 46px);
+}
+.an-composer.is-announcement:focus-within {
+  border-color: var(--accent);
+}
+.an-composer.is-topic {
+  border-color: color-mix(in oklab, var(--green) 50%, var(--border));
+  background: linear-gradient(180deg, var(--green-muted), var(--bg-1) 46px);
+}
+.an-composer.is-topic:focus-within {
+  border-color: var(--green);
+}
+
+/* ── Top-edge drag handle: vertical resize ────────────────────────────────
+ * Composer is bottom-anchored, so native `resize: vertical` would grow the
+ * box downward off-screen. Instead we put a thin grab strip on the *top*
+ * edge; pulling it upward makes the composer taller. Double-click resets to
+ * auto-grow (CSS default). The grip itself is a 28×3 pill that fades in on
+ * hover, identical across all 4 kinds. */
+.an-composer-resize {
+  position: relative;
+  height: 8px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+}
+.an-composer-resize-grip {
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  opacity: 0.45;
+  transition: opacity var(--motion-fast), background var(--motion-fast);
+}
+.an-composer-resize:hover .an-composer-resize-grip,
+.an-composer-resize:active .an-composer-resize-grip {
+  opacity: 0.9;
+  background: var(--accent);
+}
+
+/* ── Kind header (shown for kinds that carry an optional title) ───────────── */
+.an-composer-kindhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.an-composer-kindhead-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--fg-2);
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+}
+.an-composer.is-secret .an-composer-kindhead-tag {
+  color: var(--orange);
+  border-color: color-mix(in oklab, var(--orange) 40%, var(--border));
+}
+.an-composer.is-announcement .an-composer-kindhead-tag {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+}
+.an-composer.is-topic .an-composer-kindhead-tag {
+  color: var(--green);
+  border-color: color-mix(in oklab, var(--green) 40%, var(--border));
+}
+.an-composer-title {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--fg-1);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 2px 0;
+}
+.an-composer-title::placeholder {
+  color: var(--fg-3);
+  font-weight: 500;
+}
+/* Inline hint shown in the kindhead for kinds that don't carry a title input
+ * (normal, secret). Geometry matches the title-input row so all 4 kinds share
+ * an identical kindhead height. */
+.an-composer-kindhead-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--fg-3);
+  letter-spacing: 0.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.an-composer.is-secret .an-composer-kindhead-hint {
+  color: color-mix(in oklab, var(--orange) 70%, var(--fg-3));
+}
+
+/* ── Kind switcher: "‹ 普通 / 加密 / 公告 / 主题 ›" bar above the composer ── */
+.an-msgkind-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 6px;
+  max-width: 920px;
+  color: var(--fg-3);
+}
+.an-msgkind-arrow {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-1);
+  color: var(--fg-2);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    color var(--motion-fast);
+}
+.an-msgkind-arrow:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+.an-msgkind-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-1);
+  color: var(--fg-2);
+  letter-spacing: 0.2px;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    color var(--motion-fast);
+}
+.an-msgkind-label.is-secret {
+  border-color: color-mix(in oklab, var(--orange) 40%, var(--border));
+  background: var(--orange-muted);
+  color: var(--orange);
+}
+.an-msgkind-label.is-announcement {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.an-msgkind-label.is-topic {
+  border-color: color-mix(in oklab, var(--green) 40%, var(--border));
+  background: var(--green-muted);
+  color: var(--green);
+}
+
+/* ── Textarea (shared) ────────────────────────────────────────────────────── */
+.an-composer-textarea {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: none;
+  padding: 12px 14px 4px;
+  color: var(--fg-1);
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  max-height: 180px;
+  min-height: 40px;
+}
+.an-composer-textarea::placeholder { color: var(--fg-3); }
+/* Secret kind: tint the typed text so users see at a glance what they're sending. */
+.an-composer.is-secret .an-composer-textarea {
+  color: var(--orange);
+}
+
+/* ── Toolbar row + send button (shared geometry, kind-tinted send) ────────── */
+.an-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 8px;
+}
+.an-composer-bar .an-composer-hint {
+  flex: 1;
+  font-size: 11px;
+  color: var(--fg-3);
+  padding-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.an-composer-bar button {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast),
+    color var(--motion-fast);
+}
+.an-composer-bar button:hover:not(:disabled) {
+  color: var(--fg-1);
+  background: var(--surface-soft);
+}
+.an-composer-bar .an-composer-send {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 500;
+  padding: 5px 14px;
+}
+.an-composer-bar .an-composer-send:hover:not(:disabled) {
+  background: var(--accent-hover);
+  color: #fff;
+}
+.an-composer-bar .an-composer-send:disabled {
+  background: var(--surface-soft);
+  color: var(--fg-3);
+  cursor: default;
+}
+/* Send-button accent follows the composer kind so the call-to-action color
+ * matches the surrounding chrome — no need for inline styles per kind. */
+.an-composer.is-secret .an-composer-send {
+  background: var(--orange);
+}
+.an-composer.is-secret .an-composer-send:hover:not(:disabled) {
+  background: var(--orange-hover, var(--orange));
+  filter: brightness(0.95);
+}
+.an-composer.is-announcement .an-composer-send {
+  background: var(--accent);
+}
+.an-composer.is-topic .an-composer-send {
+  background: var(--green);
+}
+.an-composer.is-topic .an-composer-send:hover:not(:disabled) {
+  background: var(--green);
+  filter: brightness(0.95);
+}

@@ -23,14 +23,16 @@ from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.orchestrator.service")
 
-COORDINATOR_USERNAME = "channel bot"
+COORDINATOR_USERNAME = "Coordinator"
 
 
 def _is_guide_clarify_reply(content: str) -> bool:
-    """判断是否为引导 Bot 的澄清回答消息（兼容 @引导 与 @channel bot）."""
+    """判断是否为协调者 Bot 的澄清回答消息（兼容历史名 @引导 / @channel bot 与
+    现行名 @Coordinator）."""
     t = (content or "").strip()
     return (
-        t.startswith("@引导 澄清回答：")
+        t.startswith("@Coordinator 澄清回答：")
+        or t.startswith("@引导 澄清回答：")
         or t.startswith("@channel bot 澄清回答：")
         or "用户选择跳过澄清" in t
     )

@@ -1,6 +1,6 @@
 """内置 Bot 注册表：bot_id → adapter 工厂。
 
-内置 Bot（@channel bot、@guide-helper 等）不走 ``BotAccount.binding_type``
+内置 Bot（@Coordinator、@Helper 等）不走 ``BotAccount.binding_type``
 的 http/websocket 分流，而是按固定 ``bot_id`` 直接返回专用 adapter。
 这里把所有内置 Bot 聚拢到一张表里，``adapter_resolver`` 只需一次 lookup，
 新增内置 Bot 只需在这里加一行。
@@ -16,9 +16,9 @@ from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 
 # 工厂必须零参：内置 Bot 运行时不读取 DB 中的 AIModel / PromptTemplate。
 BUILTIN_BOT_ADAPTERS: dict[str, Callable[[], OpenClawAdapter]] = {
-    # @channel bot —— 引导 / 助手 / 记忆管理三合一
+    # @Coordinator —— 引导 / 助手 / 记忆管理三合一（adapter 类名保留历史命名 ChannelBotAdapter）
     GUIDE_BOT_ID: ChannelBotAdapter,
-    # @guide-helper —— 加载 docs/help/ 回答使用问题
+    # @Helper —— 加载 docs/help/ 回答使用问题
     GUIDE_HELPER_BOT_ID: HelpBotAdapter,
 }
 

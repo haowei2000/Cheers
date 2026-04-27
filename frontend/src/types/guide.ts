@@ -1,18 +1,3 @@
-export type GuideFormField = {
-  name: string;
-  type: string;
-  label: string;
-  placeholder?: string;
-  options_url?: string;
-  option_value?: string;
-  option_label?: string;
-};
-
-export type GuideFormSchema = {
-  action: string;
-  fields: GuideFormField[];
-};
-
 export type ClarifyOption = {
   id: string;
   label: string;

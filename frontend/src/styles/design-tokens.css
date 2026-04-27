@@ -1199,42 +1199,81 @@
   border-top: 1px dashed var(--border);
 }
 
-/* Reply quote above a message */
+/* Reply quote shown above a reply message.
+ *
+ * Style: thin one-line snippet rendered in small muted gray; an
+ * L-shaped CSS connector (elbow rendered via ::before's border-top +
+ * border-left + border-top-left-radius) anchors the snippet on the
+ * left and drops a vertical line down past the quote's bottom edge,
+ * visually bridging into the reply body bubble that follows in the DOM.
+ *
+ *      ┌─ Alice · 之前的消息片段             ← .an-reply-quote
+ *      │
+ *      │                                     ← connector continues
+ *      ┌──────────────────────────┐
+ *      │  回复正文 …              │           ← body bubble (sibling)
+ *      └──────────────────────────┘
+ */
 .an-reply-quote {
-  display: flex;
-  gap: 8px;
+  display: inline-flex;
   align-items: center;
-  padding: 4px 10px 4px 8px;
-  margin-bottom: 4px;
-  font-size: 11.5px;
+  gap: 6px;
+  font-size: 10.5px;
+  line-height: 1.4;
   color: var(--fg-3);
-  background: var(--surface-soft);
-  border-left: 2px solid var(--border-strong);
-  border-radius: 4px;
-  max-width: 560px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 2px 0 2px 16px;
+  margin: 2px 0 8px;
+  position: relative;
   cursor: pointer;
+  max-width: 560px;
+}
+.an-reply-quote::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  bottom: -8px;
+  width: 9px;
+  border-left: 1.5px solid var(--border-strong);
+  border-top: 1.5px solid var(--border-strong);
+  border-top-left-radius: 6px;
+  pointer-events: none;
+  transition:
+    border-color var(--motion-fast);
 }
 .an-reply-quote:hover {
-  border-left-color: var(--accent);
   color: var(--fg-2);
+}
+.an-reply-quote:hover::before {
+  border-color: var(--accent);
+}
+.an-reply-quote .an-rq-arrow {
+  /* The CSS elbow already conveys "this is a reply" — hide the unicode
+   * fallback so it doesn't double up. Kept in DOM for screen readers. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 .an-reply-quote .an-rq-name {
   color: var(--fg-2);
   font-weight: 500;
+  font-size: 10.5px;
   white-space: nowrap;
+  letter-spacing: 0.1px;
 }
 .an-reply-quote .an-rq-snip {
   color: var(--fg-3);
+  font-size: 10.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
   min-width: 0;
-}
-.an-reply-quote .an-rq-arrow {
-  color: var(--fg-3);
-  font-size: 12px;
-  flex-shrink: 0;
 }
 
 /* Topic tag under a message */
@@ -1668,219 +1707,7 @@
   line-height: 1.55;
 }
 
-/* Composer — chat input shell (matches design's .composer / .composer-bar).
- * Floating treatment: drop shadow + generous radius + accent ring on
- * focus-within. Parent (.composer-wrap in App.tsx) already centers it at
- * the bottom of the chat column. */
-.an-composer {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  transition:
-    border-color var(--motion-fast),
-    box-shadow var(--motion-fast);
-  position: relative;
-  box-shadow:
-    0 1px 0 var(--border) inset,
-    0 8px 20px var(--shadow);
-  max-width: 920px;
-  margin: 0 auto;
-}
-.an-composer:focus-within {
-  border-color: var(--border-focus);
-  box-shadow:
-    0 1px 0 var(--border-focus) inset,
-    0 10px 26px var(--shadow);
-}
-
-/* Kind-tinted composer shells — announcement picks up the accent color,
- * topic picks up the green semantic color. The cues are subtle (1px
- * border + a light gradient on the kind header) so the chrome doesn't
- * scream. */
-.an-composer.is-announcement {
-  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
-  background: linear-gradient(180deg, var(--accent-muted), var(--bg-1) 46px);
-}
-.an-composer.is-announcement:focus-within {
-  border-color: var(--accent);
-}
-.an-composer.is-topic {
-  border-color: color-mix(in oklab, var(--green) 50%, var(--border));
-  background: linear-gradient(180deg, var(--green-muted), var(--bg-1) 46px);
-}
-.an-composer.is-topic:focus-within {
-  border-color: var(--green);
-}
-
-/* Kind header — sits above the textarea when announcement/topic is
- * active, carries the kind tag + the title input. */
-.an-composer-kindhead {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px 6px;
-  border-bottom: 1px dashed var(--border);
-}
-.an-composer-kindhead-tag {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--fg-2);
-  padding: 2px 8px;
-  border-radius: 12px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-}
-.an-composer.is-announcement .an-composer-kindhead-tag {
-  color: var(--accent);
-  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
-}
-.an-composer.is-topic .an-composer-kindhead-tag {
-  color: var(--green);
-  border-color: color-mix(in oklab, var(--green) 40%, var(--border));
-}
-.an-composer-title {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: 0;
-  outline: 0;
-  color: var(--fg-1);
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  padding: 2px 0;
-}
-.an-composer-title::placeholder {
-  color: var(--fg-3);
-  font-weight: 500;
-}
-
-/* Kind switcher — the "‹ 消息 ›" bar that sits above the composer. */
-.an-msgkind-switcher {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 0 auto 6px;
-  max-width: 920px;
-  color: var(--fg-3);
-}
-.an-msgkind-arrow {
-  width: 24px;
-  height: 24px;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-1);
-  color: var(--fg-2);
-  font-size: 14px;
-  font-family: inherit;
-  cursor: pointer;
-  padding: 0;
-  transition:
-    border-color var(--motion-fast),
-    background var(--motion-fast),
-    color var(--motion-fast);
-}
-.an-msgkind-arrow:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-muted);
-}
-.an-msgkind-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 3px 12px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--bg-1);
-  color: var(--fg-2);
-  letter-spacing: 0.2px;
-  transition:
-    border-color var(--motion-fast),
-    background var(--motion-fast),
-    color var(--motion-fast);
-}
-.an-msgkind-label.is-announcement {
-  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
-  background: var(--accent-muted);
-  color: var(--accent);
-}
-.an-msgkind-label.is-topic {
-  border-color: color-mix(in oklab, var(--green) 40%, var(--border));
-  background: var(--green-muted);
-  color: var(--green);
-}
-.an-composer-textarea {
-  width: 100%;
-  background: transparent;
-  border: 0;
-  outline: 0;
-  resize: none;
-  padding: 12px 14px 4px;
-  color: var(--fg-1);
-  font-family: inherit;
-  font-size: 13.5px;
-  line-height: 1.5;
-  max-height: 180px;
-  min-height: 40px;
-}
-.an-composer-textarea::placeholder { color: var(--fg-3); }
-.an-composer-bar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px 8px;
-}
-.an-composer-bar .an-composer-hint {
-  flex: 1;
-  font-size: 11px;
-  color: var(--fg-3);
-  padding-left: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.an-composer-bar button {
-  font-family: inherit;
-  font-size: 12px;
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-3);
-  cursor: pointer;
-  transition:
-    background var(--motion-fast),
-    color var(--motion-fast);
-}
-.an-composer-bar button:hover:not(:disabled) {
-  color: var(--fg-1);
-  background: var(--surface-soft);
-}
-.an-composer-bar .an-composer-send {
-  background: var(--accent);
-  color: #fff;
-  font-weight: 500;
-  padding: 5px 14px;
-}
-.an-composer-bar .an-composer-send:hover:not(:disabled) {
-  background: var(--accent-hover);
-  color: #fff;
-}
-.an-composer-bar .an-composer-send:disabled {
-  background: var(--surface-soft);
-  color: var(--fg-3);
-  cursor: default;
-}
+/* Composer chrome (.an-composer*, .an-msgkind*) lives in styles/composer.css. */
 
 /* <kbd> chip styling (used in composer hint, elsewhere) */
 kbd {
