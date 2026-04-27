@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
-import { MoonIcon, SunIcon } from "@heroicons/react/24/solid";
+import { LockClosedIcon, MoonIcon, SunIcon } from "@heroicons/react/24/solid";
 import { useTheme } from "./useTheme";
 import type { Workspace, Channel } from "./types";
 import { getAuthToken, makeAuthFetch } from "./api";
@@ -838,7 +838,7 @@ export default function AdminPage() {
     return (
       <div className="min-h-screen bg-[#F8F8F8] flex items-center justify-center">
         <div className="text-center">
-          <div className="text-6xl mb-4">🔒</div>
+          <LockClosedIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
           <h2 className="text-2xl font-bold text-gray-800 mb-2">请先登录</h2>
           <p className="text-gray-500 mb-6">您需要登录后才能访问此页面。</p>
           <Link to="/" className="px-4 py-2 bg-[#4A154B] text-white rounded-lg hover:bg-[#611f69] text-sm font-medium">

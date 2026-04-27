@@ -44,46 +44,62 @@
  *
  * New components should prefer these primitives over ad-hoc Tailwind hex. */
 
+/* Dark theme — ColorHunt teal palette
+ *   222831 / 393E46 / 00ADB5 / EEEEEE
+ *
+ * Only 4 raw colors are given; the remaining 6-7 grayscale stops + state
+ * colors (red/orange/yellow/blue/green) are derived to fill the full token
+ * surface IM products need. Keep semantic role names stable so component
+ * code doesn't have to change.
+ */
 :root,
 :root[data-theme="dark"] {
-  --bg-0: #131418;
-  --bg-1: #1a1b21;
-  --bg-2: #22242c;
-  --bg-3: #2b2d36;
-  --bg-hover: #2f3240;
-  --bg-elevated: #1e2027;
+  /* —— Given 4 raw colors —— */
+  --bg-0: #222831;            /* deepest background */
+  --bg-1: #393E46;            /* sidebar / card surface */
+  --accent: #00ADB5;          /* teal brand accent */
+  --fg-1: #EEEEEE;            /* primary text */
 
-  --fg-1: #f4f5f7;
-  --fg-2: #b8bcc6;
-  --fg-3: #8a8f9a;
+  /* —— Derived grayscale stops —— */
+  --bg-2: #1A1F26;            /* deeper than bg-0, used behind modals */
+  --bg-3: #2D333C;            /* between bg-0 and bg-1 — for blockquote / inline blocks */
+  --bg-hover: #454B55;        /* hover on bg-1 surfaces */
+  --bg-elevated: #393E46;     /* elevated panel background == bg-1 */
 
-  --accent: #7c6cf5;
-  --accent-hover: #9586ff;
-  --accent-muted: #7c6cf524;
-  --accent-ring: #7c6cf566;
+  --fg-2: #C7CCD4;            /* secondary text (timestamps, sub-titles) */
+  --fg-3: #8C939E;            /* tertiary text (placeholders, hints) */
 
-  --green: #3ecf8e;
-  --red: #f05454;
-  --red-hover: #d63a3f;
-  --orange: #f5a623;
-  --blue: #56a7ff;
+  /* —— Accent (teal) derivatives —— */
+  --accent-hover: #00969D;
+  --accent-muted: #00ADB51F;   /* ~12% alpha tag bg */
+  --accent-ring: #00ADB559;    /* ~35% alpha focus ring */
 
-  --green-muted: #3ecf8e26;
-  --red-muted: #f0545426;
-  --red-border: #f0545440;
-  --orange-muted: #f5a62326;
-  --blue-muted: #56a7ff26;
+  /* —— Semantic state colors (independent of brand) —— */
+  --green: #34D399;            /* topic kind — emerald, pulled away from teal accent */
+  --red: #EF4444;
+  --red-hover: #DC2626;
+  --orange: #F5A623;           /* secret kind */
+  --blue: #56A7FF;             /* announcement kind */
+  --yellow: #FBBF24;
 
-  --border: #ffffff0f;
-  --border-strong: #ffffff1f;
-  --border-focus: #7c6cf599;
+  --green-muted: #34D39926;
+  --red-muted: #EF444426;
+  --red-border: #EF444440;
+  --orange-muted: #F5A62326;
+  --blue-muted: #56A7FF26;
 
-  --surface-soft: #ffffff08;
-  --surface-hover: #ffffff12;
-  --surface-strong: #ffffff1f;
+  /* —— Borders —— */
+  --border: #2F353E;           /* default border (bg-0 + 1 step) */
+  --border-strong: #4A5260;    /* strong border (between bg-1 and bg-hover) */
+  --border-focus: #00ADB599;   /* focus = accent at 60% */
 
-  --overlay: #00000099;
-  --shadow: #00000066;
+  /* —— Translucent overlays / surfaces —— */
+  --surface-soft: #FFFFFF0A;   /* hover wash on bg-0 (~4% white) */
+  --surface-hover: #FFFFFF12;  /* hover wash on bg-1 (~7% white) */
+  --surface-strong: #FFFFFF1F; /* press / pinned wash (~12% white) */
+
+  --overlay: #000000A6;
+  --shadow: #00000099;
 }
 
 :root[data-theme="light"] {

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import {
   ArrowDownTrayIcon,
   ArrowsPointingOutIcon,
+  CheckCircleIcon,
+  UsersIcon,
 } from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
 import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
@@ -348,7 +350,7 @@ export function MemoryPanel({
         {/* Entry list */}
         {entries.length === 0 && !addingNew ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
-            <span className="text-3xl opacity-30">{meta.icon}</span>
+            <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
             <p className="text-xs font-medium text-gray-500">暂无内容</p>
             <p className="text-[11px] text-gray-400">{meta.desc}</p>
             <button
@@ -758,7 +760,7 @@ export function MemoryPanel({
                 </div>
               ) : todos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-20 text-gray-400 gap-1 text-center px-4">
-                  <span className="text-2xl opacity-30">✅</span>
+                  <CheckCircleIcon className="w-6 h-6 opacity-30" />
                   <p className="text-xs text-gray-400">暂无待办</p>
                 </div>
               ) : (
@@ -818,7 +820,7 @@ export function MemoryPanel({
             </div>
           ) : members.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 text-center px-4">
-              <span className="text-3xl opacity-30">👥</span>
+              <UsersIcon className="w-8 h-8 opacity-30" />
               <p className="text-xs text-gray-500">暂无成员</p>
             </div>
           ) : (
@@ -831,7 +833,7 @@ export function MemoryPanel({
             </div>
           ) : channelFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
-              <span className="text-3xl opacity-30">{meta.icon}</span>
+              <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
               <p className="text-xs font-medium text-gray-500">暂无文件</p>
               <p className="text-[11px] text-gray-400">{meta.desc}</p>
             </div>
@@ -907,7 +909,7 @@ export function MemoryPanel({
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
-            <span className="text-3xl opacity-30">{meta.icon}</span>
+            <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
             <p className="text-xs font-medium text-gray-500">暂无内容</p>
             <p className="text-[11px] text-gray-400">{meta.desc}</p>
           </div>
