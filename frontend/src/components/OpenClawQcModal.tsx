@@ -1,6 +1,8 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
+import { BoltIcon, CheckIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { apiFetch } from "../api";
+import { Modal } from "./Modal";
 
 type QcResult = {
   bot: { bot_id: string; username: string; display_name: string };
@@ -25,7 +27,6 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
   const [qcResult, setQcResult] = useState<QcResult | null>(null);
   const [qcError, setQcError] = useState("");
 
-  if (!open) return null;
 
   const handleConnect = async () => {
     setQcLoading(true);
@@ -64,52 +65,23 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-      onClick={() => {
+    <Modal
+      open={open}
+      onClose={() => {
         if (!qcLoading) onClose();
       }}
-      aria-modal="true"
-      role="dialog"
+      maxWidth="max-w-lg"
+      title={
+        <span className="flex items-center gap-3">
+          <span className="w-9 h-9 rounded-xl bg-[#4A154B] flex items-center justify-center flex-shrink-0">
+            <BoltIcon className="w-5 h-5 text-white" />
+          </span>
+          <span>接入 OpenClaw</span>
+        </span>
+      }
+      description="输入 Gateway URL 和 Token，自动创建 Bot 并探测其能力"
     >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center gap-3 px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-[#4A154B] flex items-center justify-center flex-shrink-0">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="white"
-              className="w-5 h-5"
-            >
-              <path
-                fillRule="evenodd"
-                d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h6.572l-1.305 6.093a.75.75 0 0 0 1.292.657l8.5-9.5A.75.75 0 0 0 17.25 8h-6.572l1.305-6.093Z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-[15px] font-bold text-gray-900">接入 OpenClaw</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              输入 Gateway URL 和 Token，自动创建 Bot 并探测其能力
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (!qcLoading) onClose();
-            }}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl leading-none flex-shrink-0"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="max-h-[70vh] overflow-y-auto">
           {!qcResult ? (
             /* ── 表单 ── */
             <div className="space-y-4">
@@ -212,27 +184,9 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${qcResult.probe.connected ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}
               >
                 {qcResult.probe.connected ? (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    className="w-4 h-4 flex-shrink-0"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
+                  <CheckIcon className="w-4 h-4 flex-shrink-0" />
                 ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    className="w-4 h-4 flex-shrink-0"
-                  >
-                    <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
-                  </svg>
+                  <XMarkIcon className="w-4 h-4 flex-shrink-0" />
                 )}
                 {qcResult.probe.connected
                   ? `已连接 · Bot @${qcResult.bot.username} 创建成功`
@@ -263,7 +217,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 flex justify-between items-center gap-3 flex-shrink-0">
+        <div className="pt-3 mt-3 border-t border-gray-100 flex justify-between items-center gap-3">
           {!qcResult ? (
             <>
               <button
@@ -287,18 +241,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
                   </>
                 ) : (
                   <>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 16 16"
-                      fill="currentColor"
-                      className="w-3.5 h-3.5"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M9.58 1.077a.75.75 0 0 1 .43.82L9.188 6h4.062a.75.75 0 0 1 .558 1.252l-7.5 8.25a.75.75 0 0 1-1.358-.588L5.812 10H1.75a.75.75 0 0 1-.557-1.252l7.5-8.25a.75.75 0 0 1 .887-.42Z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
+                    <BoltIcon className="w-3.5 h-3.5" />
                     连接并探测
                   </>
                 )}
@@ -323,7 +266,6 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,4 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  Bars3Icon,
+  BriefcaseIcon,
+  CheckCircleIcon,
+  ChatBubbleLeftEllipsisIcon,
+  ChatBubbleLeftRightIcon,
+  DocumentTextIcon,
+  MegaphoneIcon,
+  UserIcon,
+  UserPlusIcon,
+  UsersIcon,
+} from "@heroicons/react/24/outline";
 import type { Channel, CurrentUser, DM, QaPair } from "../types";
 import { apiFetch } from "../api";
 
@@ -20,70 +32,28 @@ export const MEMORY_TABS: {
     id: "PROJECT",
     label: "Project",
     icon: (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3 7h18M5 7v12a1 1 0 001 1h12a1 1 0 001-1V7M9 4h6a1 1 0 011 1v2H8V5a1 1 0 011-1z" />
-      </svg>
+      <BriefcaseIcon />
     ),
   },
   {
     id: "FILES_INDEX",
     label: "Files",
     icon: (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z" />
-        <path d="M14 3v5h5M9 13h6M9 17h4" />
-      </svg>
+      <DocumentTextIcon />
     ),
   },
   {
     id: "MEMBERS",
     label: "Members",
     icon: (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <circle cx="9" cy="9" r="3.2" />
-        <path d="M3 19c.8-3.2 3.2-5 6-5s5.2 1.8 6 5" />
-        <circle cx="17" cy="8" r="2.2" />
-        <path d="M15 14.5c1.8-.5 3.6 0 5 2" />
-      </svg>
+      <UsersIcon />
     ),
   },
   {
     id: "TODO",
     label: "Todos",
     icon: (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 7l2 2 4-4" />
-        <path d="M4 15l2 2 4-4" />
-        <path d="M13 7h7M13 15h7" />
-      </svg>
+      <CheckCircleIcon />
     ),
   },
 ];
@@ -173,20 +143,7 @@ export function ChannelHeader({
           className="w-8 h-8 flex items-center justify-center rounded-md flex-shrink-0 hover:bg-[var(--surface-soft)] transition-colors"
           style={{ color: "var(--fg-2)" }}
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={1.5}
-            stroke="currentColor"
-            className="w-6 h-6"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
-            />
-          </svg>
+          <Bars3Icon className="w-6 h-6" />
         </button>
       )}
 
@@ -282,15 +239,7 @@ export function ChannelHeader({
             onClick={() => setTopicsOpen((v) => !v)}
             title="频道主题"
           >
-            <svg
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M2 3h12M2 7h9M2 11h6" strokeLinecap="round" />
-              <circle cx="13" cy="11" r="2.3" />
-            </svg>
+            <ChatBubbleLeftEllipsisIcon className="w-4 h-4" />
             <span className="hidden sm:inline">主题</span>
             <span className="an-tb-n">{topics.length}</span>
           </button>
@@ -362,19 +311,7 @@ export function ChannelHeader({
           className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
           style={{ color: "var(--fg-3)" }}
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="w-4 h-4"
-          >
-            <path d="M3 11v2a1 1 0 0 0 1 1h1l6 5V5L5 10H4a1 1 0 0 0-1 1Z" />
-            <path d="M15 8.5a4 4 0 0 1 0 7" />
-            <path d="M18 6a7 7 0 0 1 0 12" />
-          </svg>
+          <MegaphoneIcon className="w-4 h-4" />
         </button>
       )}
       {blockPairsForExport.length > 0 && (
@@ -385,18 +322,7 @@ export function ChannelHeader({
           className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
           style={{ color: "var(--fg-3)" }}
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="w-4 h-4"
-          >
-            <path d="M8 10h8M8 14h5" />
-            <path d="M21 12a9 9 0 11-3.7-7.25L21 3v5h-5" />
-          </svg>
+          <ChatBubbleLeftRightIcon className="w-4 h-4" />
         </button>
       )}
       <button
@@ -406,19 +332,7 @@ export function ChannelHeader({
         className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
         style={{ color: "var(--fg-3)" }}
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="w-4 h-4"
-        >
-          <circle cx="9" cy="8" r="3.2" />
-          <path d="M3 19c.8-3.2 3.2-5 6-5s5.2 1.8 6 5" />
-          <path d="M17 11v4M15 13h4" />
-        </svg>
+        <UserPlusIcon className="w-4 h-4" />
       </button>
       {currentUser && (
         <button
@@ -428,18 +342,7 @@ export function ChannelHeader({
           className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
           style={{ color: "var(--fg-3)" }}
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="w-4 h-4"
-          >
-            <circle cx="12" cy="8" r="3.2" />
-            <path d="M5 19c1-3.6 3.8-6 7-6s6 2.4 7 6" />
-          </svg>
+          <UserIcon className="w-4 h-4" />
         </button>
       )}
     </div>

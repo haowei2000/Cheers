@@ -7,6 +7,22 @@ import MemoryPage from "./MemoryPage";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
+import {
+  ArrowUturnLeftIcon,
+  Bars3Icon,
+  ChatBubbleLeftIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  DocumentDuplicateIcon,
+  DocumentIcon,
+  KeyIcon,
+  LinkIcon,
+  PhotoIcon,
+  PlusIcon,
+  QuestionMarkCircleIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/solid";
+import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import { BotAvatar } from "./components/BotAvatar";
 import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
@@ -1578,18 +1594,7 @@ export default function App() {
             />
             {f.original_filename && (
               <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  className="w-3 h-3 text-gray-400"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Zm10.5 5.707a.5.5 0 0 0-.146-.353l-2.5-2.5a.5.5 0 0 0-.708 0L7.5 8.5 6.354 7.354a.5.5 0 0 0-.708 0l-3.146 3.15V12a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-2.293ZM11 5.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+                <PhotoIcon className="w-3 h-3 text-gray-400" />
                 <span className="truncate max-w-[200px]">
                   {f.original_filename}
                 </span>
@@ -1611,14 +1616,7 @@ export default function App() {
             className="flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[300px] hover:bg-gray-50 transition-colors cursor-pointer no-underline"
           >
             <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="w-5 h-5 text-blue-500"
-              >
-                <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
-              </svg>
+              <DocumentIcon className="w-5 h-5 text-blue-500" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-medium text-gray-700 truncate">
@@ -2171,16 +2169,18 @@ export default function App() {
         )}
 
         {/* Keychain modal */}
-        {keychainModalOpen && authToken && (
+        {authToken && (
           <KeychainModal
+            open={keychainModalOpen}
             userToken={authToken}
             onClose={() => setKeychainModalOpen(false)}
           />
         )}
 
         {/* User profile modal */}
-        {userProfileOpen && currentUser && (
+        {currentUser && (
           <UserProfileModal
+            open={userProfileOpen}
             currentUser={currentUser}
             userToken={authToken!}
             onClose={() => setUserProfileOpen(false)}
@@ -2195,8 +2195,9 @@ export default function App() {
         )}
 
         {/* Channel profile modal */}
-        {channelProfileOpen && currentUser && selectedId && (
+        {currentUser && selectedId && (
           <ChannelProfileModal
+            open={channelProfileOpen}
             channelId={selectedId}
             channelName={selectedChannel?.name || ""}
             userToken={authToken!}
@@ -2818,18 +2819,7 @@ export default function App() {
 
                         // ── helpers shared by root & replies ──────────────────
                         const replyIcon = (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 16 16"
-                            fill="currentColor"
-                            className="w-3.5 h-3.5"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
+                          <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
                         );
 
                         // ── root message ───────────────────────────────────────
@@ -3146,18 +3136,7 @@ export default function App() {
                                   onClick={() => copyMessageText(m)}
                                   className="an-chat-action"
                                 >
-                                  <svg
-                                    viewBox="0 0 16 16"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    className="w-3.5 h-3.5"
-                                  >
-                                    <rect x="5" y="5" width="8" height="9" rx="1.5" />
-                                    <path d="M5 11H3.5A1.5 1.5 0 0 1 2 9.5v-6A1.5 1.5 0 0 1 3.5 2h6A1.5 1.5 0 0 1 11 3.5V5" />
-                                  </svg>
+                                  <DocumentDuplicateIcon className="w-3.5 h-3.5" />
                                 </button>
                                 <button
                                   type="button"
@@ -3798,18 +3777,7 @@ export default function App() {
                                     onClick={() => copyMessageText(r)}
                                     className="an-chat-action"
                                   >
-                                    <svg
-                                      viewBox="0 0 16 16"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="1.5"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      className="w-3.5 h-3.5"
-                                    >
-                                      <rect x="5" y="5" width="8" height="9" rx="1.5" />
-                                      <path d="M5 11H3.5A1.5 1.5 0 0 1 2 9.5v-6A1.5 1.5 0 0 1 3.5 2h6A1.5 1.5 0 0 1 11 3.5V5" />
-                                    </svg>
+                                    <DocumentDuplicateIcon className="w-3.5 h-3.5" />
                                   </button>
                                   <button
                                     type="button"
@@ -3828,18 +3796,7 @@ export default function App() {
                                     }}
                                     className="an-chat-action"
                                   >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      viewBox="0 0 16 16"
-                                      fill="currentColor"
-                                      className="w-3.5 h-3.5"
-                                    >
-                                      <path
-                                        fillRule="evenodd"
-                                        d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
-                                        clipRule="evenodd"
-                                      />
-                                    </svg>
+                                    <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </div>
@@ -4015,18 +3972,7 @@ export default function App() {
                             {/* Topic header */}
                             <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
                               <div className="flex items-center gap-1.5">
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 16 16"
-                                  fill="currentColor"
-                                  className="w-3.5 h-3.5 text-[#1264A3]"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v6A1.5 1.5 0 0 1 13.5 11H9.25l-2.35 2.35A.75.75 0 0 1 5.5 12.75V11H2.5A1.5 1.5 0 0 1 1 9.5v-6Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
+                                <ChatBubbleLeftIcon className="w-3.5 h-3.5 text-[#1264A3]" />
                                 <span className="text-[12px] font-medium text-[#1264A3]">
                                   主题 · {replies.length + 1} 条消息
                                 </span>
@@ -4038,17 +3984,7 @@ export default function App() {
                                   className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#1264A3] px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
                                   title="以独立页打开主题"
                                 >
-                                  <svg
-                                    viewBox="0 0 12 12"
-                                    width="10"
-                                    height="10"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.5"
-                                  >
-                                    <path d="M4 2H2v8h8V8" strokeLinecap="round" />
-                                    <path d="M7 2h3v3M10 2L6 6" strokeLinecap="round" />
-                                  </svg>
+                                  <ArrowTopRightOnSquareIcon className="w-3 h-3" />
                                   独立页打开
                                 </button>
                                 <button
@@ -4056,18 +3992,7 @@ export default function App() {
                                   onClick={() => toggleTopic(m.msg_id)}
                                   className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
                                 >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 16 16"
-                                    fill="currentColor"
-                                    className="w-3 h-3"
-                                  >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
+                                  <ChevronUpIcon className="w-3 h-3" />
                                   收起
                                 </button>
                               </div>
@@ -4243,26 +4168,11 @@ export default function App() {
                                           className="opacity-0 group-hover/tr:opacity-100 transition-opacity ml-0.5 flex items-center justify-center w-4 h-4 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
                                           title={rCollapsed ? "展开" : "折叠"}
                                         >
-                                          <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            viewBox="0 0 16 16"
-                                            fill="currentColor"
-                                            className="w-3 h-3"
-                                          >
-                                            {rCollapsed ? (
-                                              <path
-                                                fillRule="evenodd"
-                                                d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
-                                                clipRule="evenodd"
-                                              />
-                                            ) : (
-                                              <path
-                                                fillRule="evenodd"
-                                                d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
-                                                clipRule="evenodd"
-                                              />
-                                            )}
-                                          </svg>
+                                          {rCollapsed ? (
+                                            <ChevronDownIcon className="w-3 h-3" />
+                                          ) : (
+                                            <ChevronUpIcon className="w-3 h-3" />
+                                          )}
                                         </button>
                                       </div>
                                       {!rCollapsed && rDirectParent && rParentLabel && (
@@ -4397,18 +4307,7 @@ export default function App() {
                                       }}
                                       className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
                                     >
-                                      <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        viewBox="0 0 16 16"
-                                        fill="currentColor"
-                                        className="w-3 h-3"
-                                      >
-                                        <path
-                                          fillRule="evenodd"
-                                          d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
-                                          clipRule="evenodd"
-                                        />
-                                      </svg>
+                                      <ArrowUturnLeftIcon className="w-3 h-3" />
                                     </button>
                                   </div>
                                 );
@@ -4421,18 +4320,7 @@ export default function App() {
                                 onClick={() => toggleTopic(m.msg_id)}
                                 className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded hover:bg-gray-100 transition-colors"
                               >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 16 16"
-                                  fill="currentColor"
-                                  className="w-3 h-3"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
+                                <ChevronUpIcon className="w-3 h-3" />
                                 收起主题
                               </button>
                             </div>
@@ -4598,14 +4486,7 @@ export default function App() {
                             style={{ color: "var(--fg-3)" }}
                             title="取消回复"
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 16 16"
-                              fill="currentColor"
-                              className="w-3 h-3"
-                            >
-                              <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
-                            </svg>
+                            <XMarkIcon className="w-3 h-3" />
                           </button>
                         </div>
                       );
@@ -4635,18 +4516,7 @@ export default function App() {
                               className="max-w-[180px] max-h-[140px] object-cover block"
                             />
                             <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5 max-w-[180px]">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 16 16"
-                                fill="currentColor"
-                                className="w-3 h-3 text-gray-400 flex-shrink-0"
-                              >
-                                <path
-                                  fillRule="evenodd"
-                                  d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Zm10.5 5.707a.5.5 0 0 0-.146-.353l-2.5-2.5a.5.5 0 0 0-.708 0L7.5 8.5 6.354 7.354a.5.5 0 0 0-.708 0l-3.146 3.15V12a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-2.293ZM11 5.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"
-                                  clipRule="evenodd"
-                                />
-                              </svg>
+                              <PhotoIcon className="w-3 h-3 text-gray-400 flex-shrink-0" />
                               <span className="truncate">{name}</span>
                             </div>
                             <button
@@ -4663,14 +4533,7 @@ export default function App() {
                             className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[240px]"
                           >
                             <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                                className="w-5 h-5 text-blue-500"
-                              >
-                                <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
-                              </svg>
+                              <DocumentIcon className="w-5 h-5 text-blue-500" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="text-[13px] font-medium text-gray-700 truncate">
@@ -4869,18 +4732,7 @@ export default function App() {
                                 }}
                                 title="插入密钥链"
                               >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 20 20"
-                                  fill="currentColor"
-                                  className="w-4 h-4"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
+                                <KeyIcon className="w-4 h-4" />
                               </button>
                               {keychainPopupOpen && (
                                 <div className="an-menu absolute" style={{ bottom: 40, left: 0, minWidth: 220, maxHeight: 256, overflowY: "auto" }}>
@@ -4902,18 +4754,7 @@ export default function App() {
                                         className="an-menu-item"
                                       >
                                         <span className="an-mi-ico">
-                                          <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            viewBox="0 0 16 16"
-                                            fill="currentColor"
-                                            className="w-3.5 h-3.5"
-                                          >
-                                            <path
-                                              fillRule="evenodd"
-                                              d="M6.5 5.5a4 4 0 1 1 2.88 3.838.75.75 0 0 0-.88.72V11h1.25a.75.75 0 0 1 0 1.5H8.5v1.25a.75.75 0 0 1-1.5 0v-3.44a5.5 5.5 0 1 1 5.5-5.31.75.75 0 0 1-1.499.05A4.001 4.001 0 0 0 6.5 5.5Zm.5 0a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1Z"
-                                              clipRule="evenodd"
-                                            />
-                                          </svg>
+                                          <QuestionMarkCircleIcon className="w-3.5 h-3.5" />
                                         </span>
                                         <span className="font-mono truncate">{item.name}</span>
                                       </button>
@@ -4931,14 +4772,7 @@ export default function App() {
                               className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
                               title="上传文件和图片"
                             >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                                className="w-4.5 h-4.5"
-                              >
-                                <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-                              </svg>
+                              <PlusIcon className="w-[18px] h-[18px]" />
                             </button>
                             {uploadMenuOpen && (
                               <div className="an-menu absolute" style={{ bottom: 40, left: 0, minWidth: 180 }}>
@@ -4951,18 +4785,7 @@ export default function App() {
                                   }}
                                 >
                                   <span className="an-mi-ico">
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      viewBox="0 0 16 16"
-                                      fill="currentColor"
-                                      className="w-4 h-4"
-                                    >
-                                      <path
-                                        fillRule="evenodd"
-                                        d="M15.621 4.379a3 3 0 0 0-4.242 0l-7 7a3 3 0 0 0 4.241 4.243h.001l.497-.5a.75.75 0 0 1 1.064 1.057l-.498.501-.002.002a4.5 4.5 0 0 1-6.364-6.364l7-7a4.5 4.5 0 0 1 6.368 6.36l-3.455 3.553A2.625 2.625 0 1 1 9.52 9.52l3.45-3.451a.75.75 0 1 1 1.061 1.06l-3.45 3.451a1.125 1.125 0 0 0 1.587 1.595l3.454-3.553a3 3 0 0 0 0-4.242Z"
-                                        clipRule="evenodd"
-                                      />
-                                    </svg>
+                                    <LinkIcon className="w-4 h-4" />
                                   </span>
                                   <span>上传文件和图片</span>
                                 </button>
@@ -5160,20 +4983,7 @@ export default function App() {
                       onClick={() => setSidebarOpen(true)}
                       className="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 flex-shrink-0"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={1.5}
-                        stroke="currentColor"
-                        className="w-6 h-6"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
-                        />
-                      </svg>
+                      <Bars3Icon className="w-6 h-6" />
                     </button>
                     <span className="text-sm font-semibold text-gray-700">
                       智枢协作
@@ -5182,18 +4992,7 @@ export default function App() {
                 )}
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
                   <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      className="w-10 h-10 text-gray-300"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M4.848 2.771A49.144 49.144 0 0 1 12 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 0 1-3.476.383.39.39 0 0 0-.297.17l-2.755 4.133a.75.75 0 0 1-1.248 0l-2.755-4.133a.39.39 0 0 0-.297-.17 48.9 48.9 0 0 1-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97Z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
+                    <ChatBubbleLeftIcon className="w-10 h-10 text-gray-300" />
                   </div>
                   <p className="text-gray-700 text-[15px] font-semibold">
                     选择一个频道

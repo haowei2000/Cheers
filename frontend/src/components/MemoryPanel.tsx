@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+import {
+  ArrowDownTrayIcon,
+  ArrowsPointingOutIcon,
+} from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
 import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
@@ -580,19 +584,7 @@ export function MemoryPanel({
             style={{ color: "var(--fg-3)" }}
             title="全屏查看"
           >
-            <svg
-              className="w-3.5 h-3.5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
-              />
-            </svg>
+            <ArrowsPointingOutIcon className="w-3.5 h-3.5" />
           </button>
           <button
             type="button"
@@ -901,15 +893,7 @@ export function MemoryPanel({
                       className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
                       title="下载文件"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="w-4 h-4"
-                      >
-                        <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                        <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
-                      </svg>
+                      <ArrowDownTrayIcon className="w-4 h-4" />
                     </a>
                   </div>
                 );

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import type { CurrentUser, Friend, UserSearchResult } from "../types";
 import { apiFetch } from "../api";
+import { Modal } from "./Modal";
 
 type Density = "comfy" | "compact";
 type AccentId = "indigo" | "teal" | "amber" | "rose" | "blue";
@@ -115,8 +116,6 @@ export function SettingsModal({
     applyAccent(id);
   };
 
-  if (!open) return null;
-
   const NAV_ITEMS: { id: Pane; ico: string; label: string }[] = [
     { id: "bot", ico: "◉", label: "Bot" },
     { id: "account", ico: "◉", label: "账户" },
@@ -127,20 +126,14 @@ export function SettingsModal({
   ];
 
   return (
-    <div className="an-modal-overlay" onClick={onClose}>
-      <div className="an-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="an-modal-head">
-          <div className="an-modal-title">设置 · Settings</div>
-          <button
-            type="button"
-            className="an-modal-close"
-            onClick={onClose}
-            aria-label="关闭"
-          >
-            ✕
-          </button>
-        </div>
-        <div className="an-modal-body">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="设置 · Settings"
+      maxWidth="max-w-3xl"
+      panelClassName="overflow-hidden"
+    >
+      <div className="an-modal-body -mx-5 -my-4">
           <nav className="an-settings-nav">
             {NAV_ITEMS.map((it) => (
               <button
@@ -200,8 +193,7 @@ export function SettingsModal({
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
