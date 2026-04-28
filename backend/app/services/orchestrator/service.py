@@ -48,7 +48,6 @@ async def run_orchestrator(
         trigger_msg=trigger_msg,
         adapter_factory=adapter_factory,
         broadcast_processing=broadcast_processing,
-        t_start=t_start,
         root_task_id=str(uuid.uuid4()),
     )
     ctx.writer = BotMessageWriter(ctx)

@@ -30,10 +30,8 @@ class BotRunContext:
     trigger_msg: Message
     adapter_factory: Callable[[str], Awaitable[OpenClawAdapter]]
     broadcast_processing: Callable[[str, str, str], Awaitable[None]] | None = None
-    t_start: float = 0.0  # perf_counter() at orchestrator entry
 
     # ── filled by IngestStage ───────────────────────────────────────────
-    rows: list[Any] = field(default_factory=list)  # list[(ChannelMembership, BotAccount)]
     channel_bot_usernames: list[str] = field(default_factory=list)
     bot_id_by_username: dict[str, str] = field(default_factory=dict)
     bot_details_by_username: dict[str, dict] = field(default_factory=dict)
