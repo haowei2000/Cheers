@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_provider_for_scope
+from app.services.pipeline.adapter_events import Delta, Final
 
 logger = logging.getLogger("app.services.adapters.help_bot")
 
@@ -157,23 +158,28 @@ async def _fetch_recent_history(session, channel_id: str, before_msg_id: str | N
     return lc_messages
 
 
-async def _run_llm(
+async def _stream_llm(
     system_prompt: str,
     user_content: str,
-    ctx: dict,
-    stream_cb=None,
     history: list | None = None,
-) -> str:
-    """调用 LLM，返回文本内容（无工具调用）。"""
+):
+    """Stream LLM tokens. Yields ``(delta_text, final_text_or_None)``. The
+    last tuple has delta_text="" and final_text=accumulated content.
+
+    Returns early with a single ``("", message)`` tuple on init failure or
+    config-missing, so the caller can wrap the message into a Final event.
+    """
     cfg = _get_llm_config()
     if not cfg:
-        return "LLM 服务未配置，无法回答。"
+        yield "", "LLM 服务未配置，无法回答。"
+        return
 
     try:
         llm = _make_llm(cfg)
     except Exception as e:
         logger.exception("help_bot: failed to create LLM: %s", e)
-        return f"LLM 初始化失败：{e}"
+        yield "", f"LLM 初始化失败：{e}"
+        return
 
     messages: list = [
         SystemMessage(content=system_prompt),
@@ -181,32 +187,23 @@ async def _run_llm(
         HumanMessage(content=user_content),
     ]
 
-    if stream_cb:
-        accumulated = None
-        try:
-            async for chunk in llm.astream(messages):
-                # chunk.content 在 LangChain 中可能是 str 或 list（多模态），仅处理 str 类型
-                accumulated = chunk if accumulated is None else accumulated + chunk
-                if chunk.content and isinstance(chunk.content, str):
-                    await stream_cb(chunk.content)
-        except Exception as e:
-            logger.warning("help_bot: stream error, falling back: %s", e)
-            try:
-                response = await llm.ainvoke(messages)
-                return _extract_text(response.content)
-            except Exception as e2:
-                logger.exception("help_bot: invoke fallback failed: %s", e2)
-                return ""
-        if accumulated is None:
-            return ""
-        return _extract_text(accumulated.content)
-    else:
+    accumulated = None
+    try:
+        async for chunk in llm.astream(messages):
+            accumulated = chunk if accumulated is None else accumulated + chunk
+            if chunk.content and isinstance(chunk.content, str):
+                yield chunk.content, None
+    except Exception as e:
+        logger.warning("help_bot: stream error, falling back: %s", e)
         try:
             response = await llm.ainvoke(messages)
-            return _extract_text(response.content)
-        except Exception as e:
-            logger.exception("help_bot: invoke error: %s", e)
-            return f"LLM 调用出错：{e}"
+            yield "", _extract_text(response.content)
+            return
+        except Exception as e2:
+            logger.exception("help_bot: invoke fallback failed: %s", e2)
+            yield "", ""
+            return
+    yield "", _extract_text(accumulated.content) if accumulated is not None else ""
 
 
 def _extract_text(content: Any) -> str:
@@ -224,12 +221,14 @@ class HelpBotAdapter(OpenClawAdapter):
     """帮助助手 Bot：加载 docs/help/ 下所有帮助文档，回答 AgentNexus 使用问题。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
+        return await self._drain_execute_iter(payload)
+
+    async def execute_iter(self, payload: AgentPayload):
         user_text = (payload.trigger_message or {}).get("text", "") or ""
         pconfig = payload.process_config or {}
         channel_id = payload.channel_id
         memory = payload.memory_context or {}
         db_session = pconfig.get("_db_session")
-        stream_cb = pconfig.get("_stream_token")
         trigger_meta = payload.trigger_message or {}
         trigger_msg_id = trigger_meta.get("msg_id")
         sender_id = trigger_meta.get("user", "")
@@ -315,17 +314,23 @@ class HelpBotAdapter(OpenClawAdapter):
         else:
             user_content = user_text
 
-        # ── 调用 LLM ───────────────────────────────────────────────────────────
-        content = await _run_llm(system_prompt, user_content, {}, stream_cb=stream_cb, history=chat_history)
+        # ── 调用 LLM (stream Delta tokens directly) ────────────────────────────
+        full_content = ""
+        async for delta_text, final_text in _stream_llm(system_prompt, user_content, history=chat_history):
+            if delta_text:
+                full_content += delta_text
+                yield Delta(text=delta_text)
+            if final_text is not None:
+                full_content = final_text or full_content
+                break
 
-        if not content:
-            content = (
+        if not full_content:
+            full_content = (
                 "抱歉，帮助助手暂时无法回答您的问题，可能是 LLM 服务不可用。"
                 "您可以查看 docs/help/使用说明书.md 获取帮助，"
                 "或联系管理员检查 LLM 配置。"
             )
-
-        return AgentResponse(content=content, task_id=payload.task_id, success=True)
+        yield Final(content=full_content, success=True)
 
     async def health_check(self) -> bool:
         return _get_llm_config() is not None
