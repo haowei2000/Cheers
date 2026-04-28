@@ -158,6 +158,63 @@ class BotMessageWriter:
             )
         )
 
+    # ── routing card (coordinator's pick + plan) ────────────────────────
+
+    async def emit_routing_card(
+        self,
+        coordinator_bot_id: str,
+        coordinator_content: str,
+        picked_usernames: list[str],
+    ) -> None:
+        """Persist a msg_type='routing' Message carrying the coordinator's
+        decision (which bots were picked + a terse plan snippet) and
+        broadcast it. Non-fatal: any error is logged and swallowed so the
+        takeover flow continues.
+        """
+        from app.core.schemas import MessageInResponse
+
+        ctx = self.ctx
+        try:
+            picks = [{"agent": u, "picked": True} for u in picked_usernames]
+            q = (ctx.trigger_content or "").strip().replace("\n", " ")
+            if len(q) > 160:
+                q = q[:160] + "…"
+            plan = (coordinator_content or "").strip().replace("\n", " ")
+            if len(plan) > 200:
+                plan = plan[:200] + "…"
+
+            routing_msg = Message(
+                channel_id=ctx.channel_id,
+                sender_id=coordinator_bot_id,
+                sender_type="bot",
+                content="",
+                msg_type="routing",
+                content_data={"q": q or None, "picks": picks, "plan": plan or None},
+            )
+            ctx.session.add(routing_msg)
+            await ctx.session.flush()
+
+            data = MessageInResponse.model_validate(routing_msg).model_dump()
+            if routing_msg.created_at:
+                data["created_at"] = routing_msg.created_at.isoformat()
+            coord_row = await ctx.session.execute(
+                select(BotAccount.display_name, BotAccount.username).where(
+                    BotAccount.bot_id == coordinator_bot_id
+                )
+            )
+            coord_info = coord_row.first()
+            if coord_info:
+                data["sender_name"] = coord_info[0] or coord_info[1] or ""
+
+            await ctx.bus.publish(MessageCreated(data=data))
+            ctx.already_broadcast.add(routing_msg.msg_id)
+            ctx.bot_messages.append(routing_msg)
+        except Exception:
+            logger.exception(
+                "orchestrator: failed to emit routing card channel_id=%s",
+                ctx.channel_id,
+            )
+
     # ── post-dispatch bookkeeping ───────────────────────────────────────
 
     async def record_task(self, bot_id: str, response_msg_id: str) -> None:
