@@ -1001,23 +1001,31 @@ async def _fetch_recent_history(
 
 # ─── Agent Loop ───────────────────────────────────────────────────────────────
 
-async def _run_agent(
+async def _run_agent_iter(
     system_prompt: str,
     user_content: str | list,
     ctx: dict,
-    stream_cb=None,
     history: list | None = None,
-) -> str:
-    """使用 LangChain bind_tools + 手动 agent loop 运行 Agent，支持流式输出。"""
+):
+    """使用 LangChain bind_tools + 手动 agent loop 运行 Agent，async-iterator 流式输出。
+
+    Yields ``Delta(text)`` per token chunk and tool-progress marker, then
+    a terminal ``Final(content)`` when the agent settles. Replaces the
+    legacy stream_cb callback path.
+    """
+    from app.services.pipeline.adapter_events import Delta, Final
+
     cfg = _get_llm_config()
     if not cfg:
-        return ""
+        yield Final(content="", success=True)
+        return
 
     try:
         llm = _make_llm(cfg)
     except Exception as e:
         logger.exception("channel_bot: failed to create LLM: %s", e)
-        return ""
+        yield Final(content="", success=True)
+        return
 
     tools = _make_tools(ctx)
     tool_map = {t.name: t for t in tools}
@@ -1055,47 +1063,39 @@ async def _run_agent(
 
     for iteration in range(MAX_LOOP_ITERATIONS):
         response: AIMessage | None = None
-
-        if stream_cb:
-            # Stream tokens, accumulate full response for tool call detection
-            accumulated = None
-            streaming_success = False
+        accumulated = None
+        streaming_success = False
+        try:
+            async for chunk in llm_with_tools.astream(messages):
+                streaming_success = True
+                accumulated = chunk if accumulated is None else accumulated + chunk
+                # Forward pure text tokens — skip tool-call argument chunks
+                if (
+                    chunk.content
+                    and isinstance(chunk.content, str)
+                    and not getattr(chunk, "tool_call_chunks", None)
+                ):
+                    yield Delta(text=chunk.content)
+        except Exception as e:
+            logger.warning(
+                "channel_bot: LLM stream error iteration=%d: %s, falling back to non-streaming",
+                iteration, e,
+            )
             try:
-                async for chunk in llm_with_tools.astream(messages):
-                    streaming_success = True
-                    # Accumulate chunks to reconstruct complete AIMessage
-                    accumulated = chunk if accumulated is None else accumulated + chunk
-                    # Forward pure text tokens — skip tool-call argument chunks
-                    if (
-                        chunk.content
-                        and isinstance(chunk.content, str)
-                        and not getattr(chunk, "tool_call_chunks", None)
-                    ):
-                        await stream_cb(chunk.content)
-            except Exception as e:
-                logger.warning("channel_bot: LLM stream error iteration=%d: %s, falling back to non-streaming", iteration, e)
-                # Fall back to non-streaming mode
-                try:
-                    response = await llm_with_tools.ainvoke(messages)
-                except Exception as e2:
-                    logger.exception("channel_bot: LLM invoke fallback also failed: %s", e2)
-                    break
-                continue
-            if not streaming_success or accumulated is None:
+                response = await llm_with_tools.ainvoke(messages)
+            except Exception as e2:
+                logger.exception("channel_bot: LLM invoke fallback also failed: %s", e2)
+                break
+        else:
+            if streaming_success and accumulated is not None:
+                response = accumulated
+            else:
                 # No chunks received, try non-streaming
                 try:
                     response = await llm_with_tools.ainvoke(messages)
                 except Exception as e:
                     logger.exception("channel_bot: LLM invoke fallback failed: %s", e)
                     break
-                continue
-            response = accumulated
-        else:
-            try:
-                response = await llm_with_tools.ainvoke(messages)
-            except Exception as e:
-                logger.exception("channel_bot: LLM invoke error iteration=%d: %s", iteration, e)
-                break
 
         if response is None:
             logger.warning("channel_bot: LLM returned None at iteration=%d", iteration)
@@ -1107,11 +1107,11 @@ async def _run_agent(
             # No tool calls → final answer
             content = response.content
             if isinstance(content, list):
-                # Multimodal content — extract text parts
                 content = " ".join(
                     part.get("text", "") for part in content if isinstance(part, dict)
                 )
-            return str(content or "").strip()
+            yield Final(content=str(content or "").strip(), success=True)
+            return
 
         # Append assistant turn to history
         messages.append(response)
@@ -1129,9 +1129,8 @@ async def _run_agent(
             tool_args = tc.get("args") or {}
             tool_call_id = tc.get("id") or tool_name
 
-            if stream_cb:
-                label = _tool_label(tool_name, tool_args if isinstance(tool_args, dict) else {})
-                await stream_cb(f"\n\n`🔧 {label}…`")
+            label = _tool_label(tool_name, tool_args if isinstance(tool_args, dict) else {})
+            yield Delta(text=f"\n\n`🔧 {label}…`")
 
             t = tool_map.get(tool_name)
             if t is None:
@@ -1143,14 +1142,15 @@ async def _run_agent(
                     logger.exception("channel_bot[tool]: %s failed: %s", tool_name, e)
                     result_str = f"工具执行出错：{e}"
 
-            if stream_cb and tool_name != "call_user":
-                await stream_cb(" ✓\n\n")
+            if tool_name != "call_user":
+                yield Delta(text=" ✓\n\n")
 
             messages.append(ToolMessage(content=result_str, tool_call_id=tool_call_id))
 
             # return_direct: stop immediately and return this tool's output
             if t is not None and getattr(t, "return_direct", False):
-                return result_str
+                yield Final(content=result_str, success=True)
+                return
 
     # Max iterations reached — return last assistant content
     logger.warning(
@@ -1167,8 +1167,9 @@ async def _run_agent(
             content = " ".join(
                 part.get("text", "") for part in content if isinstance(part, dict)
             )
-        return str(content or "").strip()
-    return ""
+        yield Final(content=str(content or "").strip(), success=True)
+        return
+    yield Final(content="", success=True)
 
 
 # ─── Adapter ──────────────────────────────────────────────────────────────────
@@ -1177,6 +1178,11 @@ class ChannelBotAdapter(OpenClawAdapter):
     """@channel bot 内置适配器：LangChain Agent 驱动，支持 call_bot / call_user / update_anchor / update_decision 等工具。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
+        return await self._drain_execute_iter(payload)
+
+    async def execute_iter(self, payload: AgentPayload):
+        from app.services.pipeline.adapter_events import Delta, Final
+
         user_text = (payload.trigger_message or {}).get("text") or ""
         all_attachments = payload.attachments or []
 
@@ -1342,7 +1348,6 @@ class ChannelBotAdapter(OpenClawAdapter):
             user_text = f"[{current_user_name}]: {user_text}"
 
         # ── 5. Agent（支持 Vision 多模态）─────────────────────────────────────
-        stream_cb = pconfig.get("_stream_token")
         cfg = _get_llm_config()
         supports_vision = (cfg or {}).get("supports_vision", True) if cfg else True
 
@@ -1361,10 +1366,18 @@ class ChannelBotAdapter(OpenClawAdapter):
                 user_text += "\n\n（注：当前 LLM 未启用图片识别，已忽略图片附件。）"
             user_content = user_text
 
-        content = await _run_agent(
-            system_prompt, user_content, tool_ctx,
-            stream_cb=stream_cb, history=chat_history,
-        )
+        # Stream Delta tokens directly out; capture the agent's final content.
+        agent_final: Final | None = None
+        async for event in _run_agent_iter(
+            system_prompt, user_content, tool_ctx, history=chat_history,
+        ):
+            if isinstance(event, Delta):
+                yield event
+            elif isinstance(event, Final):
+                agent_final = event
+                break
+
+        content = agent_final.content if agent_final else ""
 
         # ── 5. 关键词兜底（LLM 不可用时） ─────────────────────────────────────
         if not content:
@@ -1380,7 +1393,7 @@ class ChannelBotAdapter(OpenClawAdapter):
             )
 
         created_file_ids = tool_ctx.get("_created_file_ids") or []
-        return AgentResponse(content=content, task_id=payload.task_id, success=True, file_ids=created_file_ids)
+        yield Final(content=content, success=True, file_ids=created_file_ids)
 
     async def health_check(self) -> bool:
         return _get_llm_config() is not None
