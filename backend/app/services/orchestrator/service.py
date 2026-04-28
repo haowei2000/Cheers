@@ -14,10 +14,18 @@ from app.core.log_context import bind_context
 from app.db.models import AgentTask, BotAccount, FileRecord, Message
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
-from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
-from app.services.pipeline.bot import BotRunContext, IngestStage, RouteStage
+from app.services.orchestrator.topic_context import (
+    MSG_TYPE_REPLY,
+    ensure_topic_root,
+)
+from app.services.pipeline.bot import (
+    BotRunContext,
+    ContextLoadStage,
+    IngestStage,
+    RouteStage,
+)
 from app.services.pipeline.bus import EventBus
 from app.services.pipeline.events import (
     BotMessagePlaceholder,
@@ -133,52 +141,13 @@ async def run_orchestrator(
     target_usernames = ctx.target_usernames
     direct_answer_mode = ctx.direct_answer_mode
     original_question = ctx.original_question
-    original_file_ids = ctx.original_file_ids
 
-    from app.services.memory.manager import load as memory_load
-
-    attachments: list[dict[str, str]] = []
-    attachment_error: str | None = None
-
-    async def _load_attachments() -> None:
-        nonlocal attachments, attachment_error
-        # 优先使用当前触发消息的附件；澄清回答场景下回退到原问题的附件
-        file_ids = trigger_msg.file_ids or original_file_ids
-        if not file_ids:
-            return
-        try:
-            attachments = await FilePipelineService().prepare_metadata_only(
-                session,
-                channel_id=channel_id,
-                file_ids=file_ids,
-            )
-            if original_file_ids and not trigger_msg.file_ids:
-                logger.info(
-                    "orchestrator: restored %d attachment(s) from original clarify question channel=%s",
-                    len(attachments),
-                    channel_id,
-                )
-        except FileFlowError as exc:
-            attachment_error = exc.detail
-        except Exception as exc:
-            logger.exception("failed to prepare attachments channel_id=%s", channel_id)
-            attachment_error = f"读取上传文件失败：{exc}"
-
-    from app.services.orchestrator.topic_context import (
-        MSG_TYPE_REPLY,
-        ensure_topic_root,
-        gather_topic_context,
-    )
-
-    memory_context, _, topic_result = await asyncio.gather(
-        memory_load(channel_id, session),
-        _load_attachments(),
-        gather_topic_context(trigger_msg, session),
-    )
-    topic_chain, child_replies = topic_result
-
-    # sender_name was populated by IngestStage; the legacy second fetch
-    # here was a duplicate and has been removed.
+    await ContextLoadStage().run(ctx)
+    memory_context = ctx.memory_context
+    attachments = ctx.attachments
+    attachment_error = ctx.attachment_error
+    topic_chain = ctx.topic_chain
+    child_replies = ctx.child_replies
 
     created: list[Message] = []
     already_broadcast: set[str] = set()
