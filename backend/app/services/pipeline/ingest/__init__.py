@@ -7,6 +7,7 @@ same wire format.
 """
 from app.services.pipeline.ingest.context import IngestContext
 from app.services.pipeline.ingest.stages import (
+    CommitStage,
     EmitStage,
     FanoutUnreadStage,
     PersistStage,
@@ -16,6 +17,7 @@ from app.services.pipeline.ingest.stages import (
 )
 
 __all__ = [
+    "CommitStage",
     "EmitStage",
     "FanoutUnreadStage",
     "IngestContext",

@@ -15,21 +15,21 @@ from app.core.dependencies import get_current_user, try_get_current_user
 from app.core.responses import APIResponse
 from app.core.schemas import (
     MessageCreate,
-    MessageFileInResponse,
     MessageInResponse,
     MessageStreamCreate,
     PermissionResolveRequest,
 )
-from app.db.models import FileRecord, Message, User
+from app.db.models import Message, User
 from app.db.session import async_session_factory, get_session
 from app.services.guide.constants import GUIDE_BOT_ID
 from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
 from app.services.orchestrator.service import run_orchestrator
-from app.services.pipeline.bus import EventBus, make_event_bus
+from app.services.pipeline.bus import EventBus, WSEventBus, make_event_bus
 from app.services.pipeline.events import BotProcessing
+from app.services.pipeline.ingest import IngestContext, make_ingest_pipeline
 from app.services.ws_service import ws_manager
-from app.utils.crypto import decrypt_value, encrypt_value
+from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.api.v1.messages")
 
@@ -229,107 +229,35 @@ async def _handle_send_message(
     body: MessageCreate,
 ) -> tuple[dict, str | None]:
     """持久化消息、广播、调度 orchestrator。返回 (payload_dict, secret_token)。"""
-    from sqlalchemy import select
-
-    from app.db.models import Channel, FileRecord
-    from app.services.file_processor.service import FileFlowError, FilePipelineService
-    from app.services.storage.base import StorageError
-
-    result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
-    if not result.scalar_one_or_none():
-        from app.core.exceptions import NotFoundError
-        raise NotFoundError("channel not found")
-
-    file_ids = _normalize_file_ids(body.file_ids)
-
-    if file_ids:
-        try:
-            await FilePipelineService().validate_message_files(
-                session, channel_id=channel_id, file_ids=file_ids
-            )
-        except FileFlowError as exc:
-            from app.core.exceptions import BadRequestError
-            raise BadRequestError(exc.detail)
-        except StorageError as exc:
-            from app.core.exceptions import AppError
-            raise AppError(f"storage unavailable: {exc}")
-
-    _SECRET_PLACEHOLDER = "🔒 [加密消息]"
-    is_secret = bool(body.is_secret)
-    if is_secret:
-        import secrets as _sec
-        encrypted = encrypt_value(body.content)
-        stored_content = _SECRET_PLACEHOLDER
-        token = _sec.token_urlsafe(32)
-    else:
-        encrypted = None
-        stored_content = body.content
-        token = None
-
-    from app.services.orchestrator.topic_context import (
-        MSG_TYPE_NORMAL,
-        MSG_TYPE_REPLY,
-        ensure_topic_root,
-    )
-
-    in_reply_to = getattr(body, "in_reply_to_msg_id", None) or None
-    msg_type = getattr(body, "msg_type", None) or (MSG_TYPE_REPLY if in_reply_to else MSG_TYPE_NORMAL)
     raw_content_data = getattr(body, "content_data", None)
     if hasattr(raw_content_data, "model_dump"):
         raw_content_data = raw_content_data.model_dump(exclude_none=True) or None
 
-    msg = Message(
+    ctx = IngestContext(
         channel_id=channel_id,
+        bus=WSEventBus(channel_id),
+        session=session,
         sender_id=body.sender_id,
         sender_type=body.sender_type,
-        content=stored_content,
-        file_ids=file_ids,
+        content=body.content,
+        file_ids=_normalize_file_ids(body.file_ids),
         mention_bot_ids=body.mention_bot_ids or [],
-        in_reply_to_msg_id=in_reply_to,
-        msg_type=msg_type,
+        in_reply_to_msg_id=getattr(body, "in_reply_to_msg_id", None) or None,
+        msg_type=getattr(body, "msg_type", None) or None,
         content_data=raw_content_data,
-        is_secret=is_secret,
-        secret_encrypted=encrypted,
-        secret_token=token,
+        is_secret=bool(body.is_secret),
     )
-    session.add(msg)
-    await session.flush()
-
-    # The after_insert listener already flipped the parent row in DB; do an
-    # explicit in-memory promote on the loaded instance (if any) so any
-    # subsequent code in this request that reads parent.msg_type sees the
-    # updated value without a refresh.
-    if in_reply_to:
-        await ensure_topic_root(session, in_reply_to)
-        await session.flush()
-
-    # Build file_map for response
-    fids = sorted({fid for fid in (msg.file_ids or []) if fid})
-    file_map: dict = {}
-    if fids:
-        from sqlalchemy import select as _sel
-        fres = await session.execute(_sel(FileRecord).where(FileRecord.file_id.in_(fids)))
-        for rec in fres.scalars().all():
-            file_map[rec.file_id] = MessageFileInResponse(
-                file_id=rec.file_id,
-                original_filename=rec.original_filename,
-                content_type=rec.content_type,
-                size_bytes=rec.size_bytes,
-                status=rec.status,
-            )
-
-    payload = _serialize(msg, file_map)
-    await session.commit()
-    await _broadcast_message(channel_id, payload)
+    await make_ingest_pipeline().run(ctx)
     _schedule_recent_update(channel_id)
 
+    assert ctx.msg is not None and ctx.payload is not None
     if _should_run_orchestrator_inline(session):
-        await _run_orchestrator_bg(channel_id, msg.msg_id)
+        await _run_orchestrator_bg(channel_id, ctx.msg.msg_id)
     else:
-        asyncio.create_task(_run_orchestrator_bg(channel_id, msg.msg_id))
+        asyncio.create_task(_run_orchestrator_bg(channel_id, ctx.msg.msg_id))
         await asyncio.sleep(0)
 
-    return payload, token
+    return ctx.payload, ctx.secret_token
 
 
 @router.post("", response_model=APIResponse[dict])
@@ -352,11 +280,7 @@ async def send_message_stream(
     body: MessageStreamCreate,
 ) -> StreamingResponse:
     """发送消息，通过 SSE 返回 Bot 流式输出。"""
-    from sqlalchemy import select
-
-    from app.db.models import Channel
-    from app.services.file_processor.service import FileFlowError, FilePipelineService
-    from app.services.storage.base import StorageError
+    from app.core.exceptions import AppError, BadRequestError, NotFoundError
 
     normalized_file_ids = _normalize_file_ids(body.file_ids, body.file_id)
 
@@ -369,54 +293,31 @@ async def send_message_stream(
         async with async_session_factory() as session:
             orchestrator_task = None
             try:
-                result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
-                if not result.scalar_one_or_none():
-                    yield _format_sse("error", {"detail": "channel not found", "status_code": 404})
-                    return
-
-                if normalized_file_ids:
-                    try:
-                        await FilePipelineService().validate_message_files(
-                            session, channel_id=channel_id, file_ids=normalized_file_ids
-                        )
-                    except (FileFlowError, StorageError) as exc:
-                        yield _format_sse("error", {"detail": str(exc), "status_code": 400})
-                        return
-
-                _SECRET_PLACEHOLDER = "🔒 [加密消息]"
-                msg = Message(
+                ctx = IngestContext(
                     channel_id=channel_id,
+                    bus=WSEventBus(channel_id),
+                    session=session,
                     sender_id=body.sender_id,
                     sender_type=body.sender_type,
                     content=body.content,
                     file_ids=normalized_file_ids,
                     mention_bot_ids=body.mention_bot_ids or [],
                 )
-                session.add(msg)
-                await session.flush()
-
-                from sqlalchemy import select as _select
-                file_ids = sorted({fid for fid in (msg.file_ids or []) if fid})
-                file_map: dict = {}
-                if file_ids:
-                    fres = await session.execute(_select(FileRecord).where(FileRecord.file_id.in_(file_ids)))
-                    for rec in fres.scalars().all():
-                        file_map[rec.file_id] = MessageFileInResponse(
-                            file_id=rec.file_id,
-                            original_filename=rec.original_filename,
-                            content_type=rec.content_type,
-                            size_bytes=rec.size_bytes,
-                            status=rec.status,
-                        )
-                payload = _serialize(msg, file_map)
-                await session.commit()
-                await _broadcast_message(channel_id, payload)
+                try:
+                    await make_ingest_pipeline().run(ctx)
+                except NotFoundError as exc:
+                    yield _format_sse("error", {"detail": str(exc), "status_code": 404})
+                    return
+                except (BadRequestError, AppError) as exc:
+                    yield _format_sse("error", {"detail": str(exc), "status_code": 400})
+                    return
                 _schedule_recent_update(channel_id)
-                yield _format_sse("user_message", payload)
+                assert ctx.msg is not None and ctx.payload is not None
+                yield _format_sse("user_message", ctx.payload)
 
                 bus = make_event_bus(channel_id, stream_to_ws=False, stream_event=emit)
                 orchestrator_task = asyncio.create_task(
-                    _run_orchestrator_once(channel_id, msg, session, event_bus=bus)
+                    _run_orchestrator_once(channel_id, ctx.msg, session, event_bus=bus)
                 )
 
                 while True:
@@ -566,7 +467,12 @@ async def resolve_permission(
     await session.refresh(msg)
 
     payload = _serialize(msg, {})
-    await _broadcast_message(channel_id, payload)
+    # Permission resolve is a "modify + re-broadcast" of an existing message;
+    # it doesn't fit IngestPipeline (no new row, no envelope, no fanout).
+    # Publish the updated row through the same EventBus the rest of the
+    # pipeline uses so subscribers see one consistent wire format.
+    from app.services.pipeline.events import MessageCreated
+    await WSEventBus(channel_id).publish(MessageCreated(data=payload))
     return APIResponse.ok(payload)
 
 
@@ -629,21 +535,15 @@ async def guide_reply(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     """由引导 Bot 在频道内发送一条跟帖。"""
-    from sqlalchemy import select
-
-    from app.db.models import Channel
-    result = await session.execute(select(Channel).where(Channel.channel_id == channel_id))
-    if not result.scalar_one_or_none():
-        from app.core.exceptions import NotFoundError
-        raise NotFoundError("channel not found")
-    msg = Message(
+    ctx = IngestContext(
         channel_id=channel_id,
+        bus=WSEventBus(channel_id),
+        session=session,
         sender_id=GUIDE_BOT_ID,
         sender_type="bot",
         content=body.content.strip(),
+        skip_secret=True,  # builtin bot post-back never carries secrets
     )
-    session.add(msg)
-    await session.flush()
-    d = _serialize(msg, {})
-    await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": d})
-    return APIResponse.ok(d)
+    await make_ingest_pipeline().run(ctx)
+    assert ctx.payload is not None
+    return APIResponse.ok(ctx.payload)

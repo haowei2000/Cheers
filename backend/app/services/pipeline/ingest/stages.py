@@ -128,10 +128,14 @@ class PersistStage(Stage[IngestContext]):
                 )
 
 
-class EmitStage(Stage[IngestContext]):
+class _SerializeStage(Stage[IngestContext]):
+    """Capture the response payload before commit so msg attributes can't
+    be expired by SQLAlchemy's expire_on_commit semantics. Intermediate
+    stage only; not exported."""
+
     async def run(self, ctx: IngestContext) -> None:
         if ctx.msg is None:
-            raise RuntimeError("EmitStage: PersistStage must run before EmitStage")
+            raise RuntimeError("SerializeStage: PersistStage must run first")
         payload = MessageInResponse.model_validate(ctx.msg).model_dump()
         if ctx.msg.created_at:
             payload["created_at"] = ctx.msg.created_at.isoformat()
@@ -144,7 +148,27 @@ class EmitStage(Stage[IngestContext]):
         else:
             payload["files"] = []
         ctx.payload = payload
-        await ctx.bus.publish(MessageCreated(data=payload))
+
+
+class CommitStage(Stage[IngestContext]):
+    """Commit the request transaction so EmitStage broadcasts a durable row.
+
+    Mirrors the legacy ``_handle_send_message`` order (commit-then-broadcast).
+    Skipped when ``ctx.skip_commit`` — used by tests or callers that want to
+    drive the transaction lifecycle themselves.
+    """
+
+    async def run(self, ctx: IngestContext) -> None:
+        if ctx.skip_commit:
+            return
+        await ctx.session.commit()
+
+
+class EmitStage(Stage[IngestContext]):
+    async def run(self, ctx: IngestContext) -> None:
+        if ctx.payload is None:
+            raise RuntimeError("EmitStage: SerializeStage must run before EmitStage")
+        await ctx.bus.publish(MessageCreated(data=ctx.payload))
 
 
 class FanoutUnreadStage(Stage[IngestContext]):
@@ -205,6 +229,8 @@ def make_ingest_pipeline() -> Pipeline[IngestContext]:
             ValidateStage(),
             SecretEnvelopeStage(),
             PersistStage(),
+            _SerializeStage(),
+            CommitStage(),
             EmitStage(),
             FanoutUnreadStage(),
         ]

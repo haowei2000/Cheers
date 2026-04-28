@@ -34,6 +34,7 @@ class IngestContext:
 
     # ── flags ───────────────────────────────────────────────────────────
     skip_secret: bool = False  # builtin-bot post-back doesn't carry secrets
+    skip_commit: bool = False  # caller manages the request transaction itself
     skip_fanout: bool = False  # tests / scenarios that suppress unread bumps
 
     # ── intermediates / output ──────────────────────────────────────────

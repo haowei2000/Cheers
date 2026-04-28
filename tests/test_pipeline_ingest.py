@@ -102,43 +102,19 @@ async def test_secret_envelope_unique_token_per_run() -> None:
 # ── EmitStage ──────────────────────────────────────────────────────────
 
 
-async def test_emit_stage_raises_when_persist_skipped() -> None:
+async def test_emit_stage_raises_when_serialize_skipped() -> None:
     ctx = _make_ctx()
-    with pytest.raises(RuntimeError, match="PersistStage must run"):
+    with pytest.raises(RuntimeError, match="SerializeStage must run"):
         await EmitStage().run(ctx)
 
 
-async def test_emit_stage_publishes_message_created(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_emit_stage_publishes_prebuilt_payload() -> None:
     bus = _RecordingBus()
     ctx = _make_ctx(bus=bus)
-    ctx.msg = _FakeMsg(
-        msg_id="m-1", channel_id="ch1", content="hi", file_ids=[],
-    )
-
-    # MessageInResponse.model_validate checks ORM mapping; bypass with a
-    # monkeypatch that returns a stable dict so this test stays free of DB
-    # / Pydantic ORM coupling.
-    captured: dict = {}
-
-    class _FakeResp:
-        @staticmethod
-        def model_dump() -> dict:
-            return {"msg_id": "m-1", "channel_id": "ch1", "content": "hi"}
-
-    def _fake_validate(_msg):
-        captured["called"] = True
-        return _FakeResp()
-
-    import app.services.pipeline.ingest.stages as stages_mod
-
-    monkeypatch.setattr(stages_mod.MessageInResponse, "model_validate", _fake_validate)
+    ctx.payload = {"msg_id": "m-1", "content": "hi", "files": []}
 
     await EmitStage().run(ctx)
 
-    assert captured.get("called") is True
-    assert ctx.payload == {
-        "msg_id": "m-1", "channel_id": "ch1", "content": "hi", "files": [],
-    }
     assert len(bus.published) == 1
     event = bus.published[0]
     assert isinstance(event, MessageCreated)
