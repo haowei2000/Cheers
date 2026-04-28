@@ -7,11 +7,11 @@ the Coordinator.
 
 Per-bot dispatch (pre-create, execute, finalize, record_task, recurse) is
 shared with DispatchStage / call_bot via ``pipeline.bot.subagent``. This
-stage's job is the policy: which capabilities to give the coordinator
-(``Capabilities.coordinator()`` — full call_bot + streaming hooks),
-parsing the coordinator's reply for ``建议 @bot1, @bot2`` mentions, and
-dispatching the suggestees with ``Capabilities.leaf()`` so they can't
-recursively call_bot further.
+stage's job is the policy: give the coordinator
+``Capabilities.coordinator()`` (full call_bot + msg_type for clarify
+rendering), parse the coordinator's reply for ``建议 @bot1, @bot2``
+mentions, and dispatch the suggestees with ``Capabilities.leaf()`` so
+they can't recursively call_bot further.
 """
 from __future__ import annotations
 
