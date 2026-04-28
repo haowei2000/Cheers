@@ -265,24 +265,25 @@ export default function App() {
     }
   };
 
-  const insertSecret = (name: string) => {
-    const snippet = `$secret{${name}}`;
+  const insertAtCursor = (snippet: string) => {
     const el = inputRef.current;
     if (!el) {
       setInput((v) => v + snippet);
-      setKeychainPopupOpen(false);
       return;
     }
     const start = el.selectionStart ?? input.length;
     const end = el.selectionEnd ?? input.length;
     const newVal = input.slice(0, start) + snippet + input.slice(end);
     setInput(newVal);
-    setKeychainPopupOpen(false);
-    // Restore cursor after snippet
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(start + snippet.length, start + snippet.length);
     });
+  };
+
+  const insertSecret = (name: string) => {
+    insertAtCursor(`$secret{${name}}`);
+    setKeychainPopupOpen(false);
   };
   const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>(
     {},
@@ -4725,7 +4726,7 @@ export default function App() {
                       />
                       {/* Input toolbar */}
                       <div className="an-composer-bar">
-                        <div className="flex items-center gap-0.5">
+                        <div className="flex items-center gap-1">
                           {/* 上传文件和图片菜单 */}
                           <input
                             ref={fileImgInputRef}
@@ -4740,11 +4741,10 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={openKeychainPopup}
-                                className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-                                style={{
-                                  color: keychainPopupOpen ? "var(--accent)" : "var(--fg-3)",
-                                  background: keychainPopupOpen ? "var(--accent-muted)" : "transparent",
-                                }}
+                                className={
+                                  "an-composer-iconbtn" +
+                                  (keychainPopupOpen ? " is-active" : "")
+                                }
                                 title="插入密钥链"
                               >
                                 <KeyIcon className="w-4 h-4" />
@@ -4784,7 +4784,10 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => setUploadMenuOpen((o) => !o)}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                              className={
+                                "an-composer-iconbtn" +
+                                (uploadMenuOpen ? " is-active" : "")
+                              }
                               title="上传文件和图片"
                             >
                               <PlusIcon className="w-[18px] h-[18px]" />
@@ -4807,14 +4810,32 @@ export default function App() {
                               </div>
                             )}
                           </div>
+                          {/* @ mention trigger */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              insertAtCursor("@");
+                              if (!secretMode) {
+                                setMentionFilter("");
+                                setMentionDropdownPlacement("top");
+                                setShowMentionDropdown(true);
+                              }
+                            }}
+                            className="an-composer-iconbtn"
+                            title="提及成员或 Bot"
+                          >
+                            <span className="text-[15px] font-semibold leading-none">@</span>
+                          </button>
+                          {/* Newline insert — label matches the keyboard shortcut */}
+                          <button
+                            type="button"
+                            onClick={() => insertAtCursor("\n")}
+                            className="an-composer-iconbtn is-kbd"
+                            title="插入换行（快捷键 Shift+Enter）"
+                          >
+                            <span className="an-kbd-glyph">⇧↵</span>
+                          </button>
                         </div>
-                        <span className="an-composer-hint hidden sm:inline-flex">
-                          <kbd>@</kbd> 提及
-                          <span style={{ opacity: 0.5 }}>·</span>
-                          <kbd>↵</kbd> 发送
-                          <span style={{ opacity: 0.5 }}>·</span>
-                          <kbd>⇧↵</kbd> 换行
-                        </span>
                         {/* 加密只对普通对话有意义；公告/主题是面向全频道的，
                             不允许加密发送。 */}
                         {(msgKind === "normal" || msgKind === "secret") && (
@@ -4830,13 +4851,9 @@ export default function App() {
                                 ? "取消加密模式"
                                 : "开启加密模式（仅 Bot 可读原文）"
                             }
-                            style={
-                              msgKind === "secret"
-                                ? {
-                                    color: "var(--orange)",
-                                    background: "var(--orange-muted)",
-                                  }
-                                : undefined
+                            className={
+                              "an-composer-iconbtn ml-auto" +
+                              (msgKind === "secret" ? " is-secret-on" : "")
                             }
                           >
                             <LockClosedIcon className="w-4 h-4" />
