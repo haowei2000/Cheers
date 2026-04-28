@@ -81,9 +81,15 @@ class MessageDone(Event):
     content: str
     file_ids: list[str] | None = None
     files: list[dict] | None = None
+    is_partial: bool | None = None
+    error: str | None = None
 
     def _payload(self) -> dict:
         d: dict = {"msg_id": self.msg_id, "content": self.content}
+        if self.is_partial is not None:
+            d["is_partial"] = self.is_partial
+        if self.error is not None:
+            d["error"] = self.error
         if self.file_ids is not None:
             d["file_ids"] = self.file_ids
         if self.files is not None:

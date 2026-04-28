@@ -21,7 +21,8 @@ from app.db.models import BotAccount, FileRecord, Message
 from app.services.openclaw_bridge.pending import PendingReply, pending_replies
 from app.services.openclaw_bridge.streams import StreamState, stream_registry
 from app.services.orchestrator.mention import resolve_user_mentions
-from app.services.ws_service import ws_manager
+from app.services.pipeline.bus import WSEventBus
+from app.services.pipeline.events import MessageCreated, MessageDone, MessageStreamDelta
 
 logger = logging.getLogger("app.services.openclaw_bridge.service")
 
@@ -115,11 +116,12 @@ async def _broadcast_new(session: AsyncSession, msg: Message) -> None:
     if bot_row:
         data["sender_name"] = bot_row[0] or bot_row[1] or ""
 
-    await ws_manager.broadcast_to_channel(msg.channel_id, {"type": "message", "data": data})
+    await WSEventBus(msg.channel_id).publish(MessageCreated(data=data))
 
 
 async def _broadcast_done(session: AsyncSession, msg: Message, *, file_ids: list[str]) -> None:
-    done: dict[str, Any] = {"msg_id": msg.msg_id, "content": msg.content}
+    out_files: list[dict] | None = None
+    out_file_ids: list[str] | None = None
     if file_ids:
         from app.core.schemas import MessageFileInResponse
 
@@ -127,8 +129,8 @@ async def _broadcast_done(session: AsyncSession, msg: Message, *, file_ids: list
             select(FileRecord).where(FileRecord.file_id.in_(file_ids))
         )).scalars().all()
         file_map = {r.file_id: r for r in rows}
-        done["file_ids"] = file_ids
-        done["files"] = [
+        out_file_ids = file_ids
+        out_files = [
             MessageFileInResponse(
                 file_id=r.file_id,
                 original_filename=r.original_filename,
@@ -139,7 +141,14 @@ async def _broadcast_done(session: AsyncSession, msg: Message, *, file_ids: list
             for fid in file_ids
             if (r := file_map.get(fid)) is not None
         ]
-    await ws_manager.broadcast_to_channel(msg.channel_id, {"type": "message_done", "data": done})
+    await WSEventBus(msg.channel_id).publish(
+        MessageDone(
+            msg_id=msg.msg_id,
+            content=msg.content,
+            file_ids=out_file_ids,
+            files=out_files,
+        )
+    )
 
 
 # ============================================================================
@@ -192,9 +201,8 @@ async def apply_delta(
                 return False
             state.last_seq = seq
         state.buffer += delta or ""
-    await ws_manager.broadcast_to_channel(
-        state.channel_id,
-        {"type": "message_stream", "data": {"msg_id": msg_id, "delta": delta}},
+    await WSEventBus(state.channel_id).publish(
+        MessageStreamDelta(msg_id=msg_id, delta=delta)
     )
     return True
 
@@ -246,13 +254,8 @@ async def finalize_stream(
         msg.file_ids = list(dict.fromkeys([*(msg.file_ids or []), *file_ids]))
     await session.flush()
 
-    done: dict[str, Any] = {
-        "msg_id": msg.msg_id,
-        "content": msg.content,
-        "is_partial": msg.is_partial,
-    }
-    if error:
-        done["error"] = error
+    out_files: list[dict] | None = None
+    out_file_ids: list[str] | None = None
     if msg.file_ids:
         from app.core.schemas import MessageFileInResponse
 
@@ -260,8 +263,8 @@ async def finalize_stream(
             select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
         )).scalars().all()
         file_map = {r.file_id: r for r in rows}
-        done["file_ids"] = msg.file_ids
-        done["files"] = [
+        out_file_ids = msg.file_ids
+        out_files = [
             MessageFileInResponse(
                 file_id=r.file_id,
                 original_filename=r.original_filename,
@@ -272,8 +275,15 @@ async def finalize_stream(
             for fid in msg.file_ids
             if (r := file_map.get(fid)) is not None
         ]
-    await ws_manager.broadcast_to_channel(
-        state.channel_id, {"type": "message_done", "data": done},
+    await WSEventBus(state.channel_id).publish(
+        MessageDone(
+            msg_id=msg.msg_id,
+            content=msg.content,
+            is_partial=msg.is_partial,
+            error=error,
+            file_ids=out_file_ids,
+            files=out_files,
+        )
     )
     logger.info(
         "bridge.stream.finalize: msg_id=%s bot_id=%s partial=%s len=%d files=%d",

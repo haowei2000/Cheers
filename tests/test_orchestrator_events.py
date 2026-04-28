@@ -98,6 +98,37 @@ def test_message_done_wire_format_with_files() -> None:
     assert e.to_sse() == ("done", payload)
 
 
+def test_message_done_wire_format_partial_stream() -> None:
+    """OpenClaw bridge's finalize_stream emits is_partial + optional error
+    alongside the standard fields. Key order matches the legacy hand-written
+    dict so existing WS clients see byte-identical frames."""
+    e = MessageDone(msg_id="m5", content="hi", is_partial=True, error="user_cancelled")
+    payload = {
+        "msg_id": "m5",
+        "content": "hi",
+        "is_partial": True,
+        "error": "user_cancelled",
+    }
+    assert e.to_ws_frame() == {"type": "message_done", "data": payload}
+    assert e.to_sse() == ("done", payload)
+
+
+def test_message_done_wire_format_partial_with_files() -> None:
+    files = [{"file_id": "f1"}]
+    e = MessageDone(
+        msg_id="m6", content="x", is_partial=False, file_ids=["f1"], files=files,
+    )
+    payload = {
+        "msg_id": "m6",
+        "content": "x",
+        "is_partial": False,
+        "file_ids": ["f1"],
+        "files": files,
+    }
+    assert e.to_ws_frame() == {"type": "message_done", "data": payload}
+    assert e.to_sse() == ("done", payload)
+
+
 def test_make_event_bus_returns_null_when_no_sinks() -> None:
     bus = make_event_bus("ch", stream_to_ws=False, stream_event=None)
     assert isinstance(bus, NullEventBus)
