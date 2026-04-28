@@ -4,8 +4,15 @@
 （HTTP LLM、内置 @Coordinator、WebSocket Bot 等）共用的协议。
 """
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
+
+from app.services.pipeline.adapter_events import (
+    AdapterEvent,
+    DispatchedAsync,
+    Final,
+)
 
 
 @dataclass
@@ -23,7 +30,13 @@ class AgentPayload:
 
 @dataclass
 class AgentResponse:
-    """adapter 回给 orchestrator 的标准输出。"""
+    """Legacy single-result summary kept for back-compat.
+
+    Phase 4 introduced :class:`AdapterEvent` streaming via ``execute_iter``;
+    this dataclass is now mostly a reduction target for tests and a few
+    callers that haven't migrated. ``dispatch_one`` returns ``Final | None``
+    going forward — prefer that over constructing this directly.
+    """
     content: str
     task_id: str
     success: bool = True
@@ -35,12 +48,36 @@ class AgentResponse:
 
 
 class OpenClawAdapter(ABC):
-    """所有 Bot 执行路径的共同协议。Orchestrator 只调这里的方法，adapter 可随意换实现。"""
+    """所有 Bot 执行路径的共同协议。Orchestrator 只调这里的方法，adapter 可随意换实现。
+
+    Subclasses must implement ``execute`` (legacy single-result API).
+    They may additionally override ``execute_iter`` to yield streaming
+    Delta events natively; the default impl wraps ``execute`` into a
+    single-yield iterator so non-streaming adapters keep working.
+    """
 
     @abstractmethod
     async def execute(self, payload: AgentPayload) -> AgentResponse:
-        """唯一执行入口：输入标准 Payload，输出标准 Response."""
+        """Single-result entry point. Returns an AgentResponse with the
+        final content. Streaming token deltas, if any, are routed through
+        the legacy ``payload.process_config['_stream_token']`` callback."""
         raise NotImplementedError
+
+    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+        """Streaming entry point. Default impl wraps ``execute`` into a
+        single-yield iterator (no Delta events, just one Final or
+        DispatchedAsync). Adapters with native streaming override this
+        and yield Delta(text) per token + a terminal Final."""
+        resp = await self.execute(payload)
+        if resp.dispatched_async:
+            yield DispatchedAsync()
+            return
+        yield Final(
+            content=resp.content,
+            success=resp.success,
+            error_message=resp.error_message,
+            file_ids=list(resp.file_ids),
+        )
 
     @abstractmethod
     async def health_check(self) -> bool:
