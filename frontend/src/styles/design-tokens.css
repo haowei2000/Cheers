@@ -949,6 +949,9 @@
   display: grid;
   grid-template-columns: 200px 1fr;
   min-height: 0;
+  /* Fixed height keeps the settings modal stable across panes; the inner
+   * pane scrolls its list rather than resizing the dialog. */
+  height: min(560px, calc(100vh - 200px));
 }
 
 .an-settings-nav {
@@ -979,9 +982,36 @@
 .an-sn-sep { height: 1px; background: var(--border); margin: 12px 0; }
 
 .an-settings-pane {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Pane container — owns a fixed height inside the settings modal so that
+ * switching between sub-settings doesn't resize the modal. The pane's
+ * header and any tab strip stay pinned; the embedded list scrolls. */
+.an-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 20px 24px;
+  overflow: hidden;
+}
+.an-pane > .an-pane-head { flex-shrink: 0; }
+.an-pane > .an-seg { flex-shrink: 0; }
+.an-pane > .an-back { flex-shrink: 0; }
+.an-pane > .an-list-table {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
+/* Sub-pane nested inside another pane (e.g. BotPane's tab content) shares
+ * the parent's padding instead of stacking. */
+.an-pane > .an-pane { padding: 0; }
+
 .an-pane-head {
   display: flex;
   align-items: center;
