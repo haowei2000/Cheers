@@ -43,45 +43,6 @@ class BotMessageWriter:
     def __init__(self, ctx: "BotRunContext") -> None:
         self.ctx = ctx
 
-    # ── full-message broadcast (coordinator aggregate, etc.) ────────────
-
-    async def create_and_broadcast(self, sender_id: str, content: str) -> None:
-        from app.core.schemas import MessageInResponse
-
-        ctx = self.ctx
-        mention_user_ids = await resolve_user_mentions(content, ctx.session, ctx.channel_id)
-        msg = Message(
-            channel_id=ctx.channel_id,
-            sender_id=sender_id,
-            sender_type="bot",
-            content=content,
-            task_id=ctx.root_task_id,
-            in_reply_to_msg_id=ctx.trigger_msg.msg_id,
-            mention_user_ids=mention_user_ids,
-            msg_type=MSG_TYPE_REPLY,
-        )
-        ctx.session.add(msg)
-        await ctx.session.flush()
-        # after_insert listener in topic_context.py promotes the trigger
-        # row to "topic" once reply count crosses the threshold; we mirror
-        # the flip into the loaded instance here so any later same-request
-        # code reads the new msg_type without a refresh.
-        await ensure_topic_root(ctx.session, ctx.trigger_msg.msg_id)
-        data = MessageInResponse.model_validate(msg).model_dump()
-        if msg.created_at:
-            data["created_at"] = msg.created_at.isoformat()
-        bot_row = await ctx.session.execute(
-            select(BotAccount.display_name, BotAccount.username).where(
-                BotAccount.bot_id == sender_id
-            )
-        )
-        bot_info = bot_row.first()
-        if bot_info:
-            data["sender_name"] = bot_info[0] or bot_info[1] or ""
-        await ctx.bus.publish(MessageCreated(data=data))
-        ctx.already_broadcast.add(msg.msg_id)
-        ctx.bot_messages.append(msg)
-
     # ── streaming lifecycle: placeholder → deltas → done ────────────────
 
     async def pre_create(self, bot_id: str, task_id: str) -> Message:

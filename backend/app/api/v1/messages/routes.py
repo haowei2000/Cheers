@@ -114,7 +114,7 @@ async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
             )
             # Sanity guard: every bot message produced by the pipeline
             # should have already been broadcast (BotMessageWriter
-            # pre_create / create_and_broadcast / emit_routing_card all
+            # pre_create / emit_routing_card / finish_with_error all
             # add to ctx.already_broadcast). If anything slips through,
             # log loudly — it points to a missing writer call somewhere.
             unbroadcast = [bm for bm in bot_messages if bm.msg_id not in already_broadcast_ids]
