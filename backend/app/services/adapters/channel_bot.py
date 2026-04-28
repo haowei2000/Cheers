@@ -190,91 +190,40 @@ def _make_tools(ctx: dict) -> list:
             username: Bot 用户名（不含 @ 符号）
             message: 发给该 Bot 的任务描述
         """
+        from app.services.pipeline.bot import Capabilities, dispatch_one
+
         username = username.strip().lstrip("@")
         message = message.strip()
         if not username or not message:
             return "错误：需要提供 username 和 message"
 
-        bot_id_by_username: dict = ctx.get("bot_id_by_username") or {}
-        adapter_factory = ctx.get("adapter_factory")
-        create_and_broadcast = ctx.get("create_and_broadcast")
-        pre_create_bot_msg = ctx.get("_pre_create_bot_msg")
-        finalize_bot_msg = ctx.get("_finalize_bot_msg")
-        make_stream_token_cb = ctx.get("_make_stream_token_cb")
+        run_ctx = ctx.get("_run_ctx")
+        if run_ctx is None:
+            return "错误：_run_ctx 未注入（内部错误）"
 
-        if username not in bot_id_by_username:
-            available = list(bot_id_by_username.keys())
-            return f"错误：频道内没有 @{username}，可用 Bot：{available}"
-        if not adapter_factory:
-            return "错误：adapter_factory 未注入（内部错误）"
+        bot_id = run_ctx.bot_id_by_username.get(username)
+        if bot_id is None:
+            return f"错误：频道内没有 @{username}，可用 Bot：{list(run_ctx.bot_id_by_username.keys())}"
 
-        bot_id = bot_id_by_username[username]
         logger.debug(
             "channel_bot[tool]: call_bot @%s message(%d chars):\n%s",
             username, len(message), message,
         )
         try:
-            adapter = await adapter_factory(bot_id)
-            if adapter is None:
-                logger.error(
-                    "channel_bot[tool]: call_bot @%s adapter_factory returned None channel=%s",
-                    username, ctx["channel_id"],
-                )
-                return f"@{username} 加载失败（adapter 为空）"
-            task_id = ctx.get("task_id", "")
-
-            # 构建子 Bot 的完整上下文（四层记忆 + 当前会话历史）
-            memory_context = ctx.get("memory") or {}
-
-            # 子 Bot 需要的上下文字段，确保模板变量能正确渲染
-            from datetime import datetime, timezone
-            sub_trigger = {
-                "user": ctx.get("sender_id", ""),
-                "sender_name": ctx.get("sender_name", ""),
-                "text": message,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            sub_process_config: dict = {
-                "_sender_name": ctx.get("sender_name", ""),
-                "_channel_name": ctx.get("channel_name", ""),
-                "_skip_system_prompt": True,
-            }
-
-            if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
-                # 流式路径：预先创建空消息气泡，边生成边推送 delta，完成后写入最终内容
-                bot_msg = await pre_create_bot_msg(bot_id, task_id)
-                sub_process_config["_stream_token"] = make_stream_token_cb(bot_msg.msg_id)
-                sub_payload = AgentPayload(
-                    task_id=task_id,
-                    channel_id=ctx["channel_id"],
-                    trigger_message=sub_trigger,
-                    memory_context=memory_context,
-                    attachments=ctx.get("attachments") or [],
-                    original_question_text=ctx.get("original_question_text"),
-                    process_config=sub_process_config,
-                )
-                resp: AgentResponse = await adapter.execute(sub_payload)
-                result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
-                await finalize_bot_msg(bot_msg, result)
-            else:
-                # 降级路径：非流式，执行完成后一次性广播
-                sub_payload = AgentPayload(
-                    task_id=task_id,
-                    channel_id=ctx["channel_id"],
-                    trigger_message=sub_trigger,
-                    memory_context=memory_context,
-                    attachments=ctx.get("attachments") or [],
-                    original_question_text=ctx.get("original_question_text"),
-                    process_config=sub_process_config,
-                )
-                resp = await adapter.execute(sub_payload)
-                result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
-                if create_and_broadcast:
-                    await create_and_broadcast(bot_id, result)
-
+            resp = await dispatch_one(
+                run_ctx,
+                bot_id,
+                capabilities=Capabilities.regular(),
+                trigger_text_override=message,
+                skip_system_prompt=True,
+                skip_attachment_error=True,
+            )
+            if resp is None:
+                return f"@{username} 调用失败（异步派发或错误）"
+            result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
             logger.info(
-                "channel_bot[tool]: call_bot @%s completed channel=%s memory_keys=%s",
-                username, ctx["channel_id"], list(memory_context.keys()),
+                "channel_bot[tool]: call_bot @%s completed channel=%s",
+                username, run_ctx.channel_id,
             )
             return f"@{username} 回复：\n{result}"
         except Exception as e:
@@ -1245,9 +1194,6 @@ class ChannelBotAdapter(OpenClawAdapter):
         pconfig = payload.process_config or {}
         channel_bots: list[str] = pconfig.get("channel_bot_usernames") or []
         bot_details: dict = pconfig.get("channel_bot_details") or {}
-        bot_id_by_username: dict = pconfig.get("bot_id_by_username") or {}
-        adapter_factory = pconfig.get("_adapter_factory")
-        create_and_broadcast = pconfig.get("_create_and_broadcast")
         sender_id = (payload.trigger_message or {}).get("user") or ""
 
         # ── 1. 构建 System Prompt ──────────────────────────────────────────────
@@ -1325,11 +1271,11 @@ class ChannelBotAdapter(OpenClawAdapter):
                 logger.info("channel_bot: clarify answer saved to decisions channel=%s", channel_id)
 
         # ── 3. 工具上下文 ──────────────────────────────────────────────────────
+        # Tools mostly read run_ctx (see call_bot) or task-specific fields;
+        # the loose closures (_pre_create_bot_msg, _adapter_factory, etc.)
+        # that used to live here moved into BotMessageWriter / dispatch_one.
         tool_ctx: dict = {
             "channel_id": channel_id,
-            "bot_id_by_username": bot_id_by_username,
-            "adapter_factory": adapter_factory,
-            "create_and_broadcast": create_and_broadcast,
             "memory": memory,
             "task_id": payload.task_id,
             "sender_id": sender_id,
@@ -1340,13 +1286,7 @@ class ChannelBotAdapter(OpenClawAdapter):
             "_db_session": pconfig.get("_db_session"),
             "_bot_id": pconfig.get("_bot_id"),
             "_event_bus": pconfig.get("_event_bus"),
-            # Streaming hooks: call_bot uses these to pre-create the sub-bot's
-            # placeholder message and stream its tokens directly to the
-            # frontend (otherwise the sub-bot reply lands as a single
-            # non-streamed broadcast on completion).
-            "_pre_create_bot_msg": pconfig.get("_pre_create_bot_msg"),
-            "_finalize_bot_msg": pconfig.get("_finalize_bot_msg"),
-            "_make_stream_token_cb": pconfig.get("_make_stream_token_cb"),
+            "_run_ctx": pconfig.get("_run_ctx"),
         }
 
         # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────
