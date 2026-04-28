@@ -165,14 +165,19 @@ async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
             bot_messages, already_broadcast_ids = await _run_orchestrator_once(
                 channel_id, msg, session, event_bus=bus
             )
-            for bm in bot_messages:
-                if bm.msg_id in already_broadcast_ids:
-                    continue
-                data = MessageInResponse.model_validate(bm).model_dump()
-                if bm.created_at:
-                    data["created_at"] = bm.created_at.isoformat()
-                # _broadcast_message 会包装成 {"type": "message", "data": payload}
-                await _broadcast_message(channel_id, data)
+            # Sanity guard: every bot message produced by the pipeline
+            # should have already been broadcast (BotMessageWriter
+            # pre_create / create_and_broadcast / emit_routing_card all
+            # add to ctx.already_broadcast). If anything slips through,
+            # log loudly — it points to a missing writer call somewhere.
+            unbroadcast = [bm for bm in bot_messages if bm.msg_id not in already_broadcast_ids]
+            if unbroadcast:
+                logger.error(
+                    "orchestrator_bg: %d bot message(s) escaped the "
+                    "BotMessageWriter broadcast path (expected zero) "
+                    "channel_id=%s ids=%s",
+                    len(unbroadcast), channel_id, [bm.msg_id for bm in unbroadcast],
+                )
             if bot_messages:
                 _schedule_recent_update(channel_id)
                 logger.info(
