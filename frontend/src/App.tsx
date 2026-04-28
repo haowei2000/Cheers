@@ -1160,21 +1160,11 @@ export default function App() {
   const send = () => {
     if (!selectedId || !input.trim()) return;
     const targetChannelId = selectedId;
-    let content = input.trim();
-    if (replyingTo) {
-      const refBot =
-        replyingTo.sender_type === "bot"
-          ? channelBots.find((b) => b.member_id === replyingTo.sender_id)
-          : null;
-      const refLabel =
-        replyingTo.sender_type === "bot"
-          ? refBot?.display_name || refBot?.username || "Bot"
-          : currentUser?.display_name || "用户";
-      const quotedRaw =
-        parseGuidePayload(replyingTo.content).text || replyingTo.content;
-      const quotedText = quotedRaw.replace(/\n+/g, " ").trim().slice(0, 400);
-      content = `> [${refLabel}]: ${quotedText}\n\n${content}`;
-    }
+    const content = input.trim();
+    // Reply context is conveyed by `in_reply_to_msg_id` (rendered as a chip).
+    // We intentionally do NOT prepend a markdown blockquote of the parent
+    // message: that would duplicate what the chip already shows AND pollute
+    // bot adapters' user-message text.
     const isSecretSend = secretMode;
     // Resolve msg_type: a pending reply-to always wins; otherwise use the
     // user's current msgKind pick from the composer switcher.
