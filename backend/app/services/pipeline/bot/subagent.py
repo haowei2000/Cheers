@@ -93,8 +93,9 @@ def build_payload(
     if capabilities.include_msg_type:
         trigger_message["msg_type"] = ctx.trigger_msg.msg_type
 
+    # Token streaming flows through execute_iter's Delta events directly;
+    # _stream_token in process_config is no longer consumed by any adapter.
     process_config: dict = {
-        "_stream_token": ctx.writer.make_stream_token_cb(bot_msg.msg_id),
         "_event_bus": ctx.bus,
         "_bot_id": bot_id,
         "_placeholder_msg_id": bot_msg.msg_id,
