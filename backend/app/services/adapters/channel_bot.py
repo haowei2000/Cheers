@@ -429,7 +429,8 @@ def _make_tools(ctx: dict) -> list:
 
         from app.db.models import Message
         from app.services.image_gen.service import ImageGenError, ImageGenService
-        from app.services.ws_service import ws_manager
+        from app.services.orchestrator.bus import WSEventBus
+        from app.services.orchestrator.events import MessageCreated
 
         channel_id = ctx["channel_id"]
         sender_id = ctx.get("sender_id") or "system"
@@ -489,10 +490,8 @@ def _make_tools(ctx: dict) -> list:
         if img_msg.created_at:
             data["created_at"] = img_msg.created_at.isoformat()
         data["files"] = [{"file_id": result.file_id, "preview_url": result.preview_url, "content_type": result.content_type}]
-        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
-        stream_event = ctx.get("_stream_event")
-        if stream_event:
-            await stream_event("message", data)
+        event_bus = ctx.get("_event_bus") or WSEventBus(channel_id)
+        await event_bus.publish(MessageCreated(data=data))
         await db_session.commit()
 
         logger.info("channel_bot[tool]: generate_image ok file_id=%s", result.file_id)
@@ -510,7 +509,8 @@ def _make_tools(ctx: dict) -> list:
         """
         from app.db.models import Message
         from app.services.image_gen.service import ImageGenError, ImageGenService
-        from app.services.ws_service import ws_manager
+        from app.services.orchestrator.bus import WSEventBus
+        from app.services.orchestrator.events import MessageCreated
 
         channel_id = ctx["channel_id"]
         sender_id = ctx.get("sender_id") or "system"
@@ -579,10 +579,8 @@ def _make_tools(ctx: dict) -> list:
         if img_msg.created_at:
             data["created_at"] = img_msg.created_at.isoformat()
         data["files"] = [{"file_id": result.file_id, "preview_url": result.preview_url, "content_type": result.content_type}]
-        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
-        stream_event = ctx.get("_stream_event")
-        if stream_event:
-            await stream_event("message", data)
+        event_bus = ctx.get("_event_bus") or WSEventBus(channel_id)
+        await event_bus.publish(MessageCreated(data=data))
         await db_session.commit()
 
         logger.info("channel_bot[tool]: edit_image ok file_id=%s", result.file_id)
@@ -1341,6 +1339,7 @@ class ChannelBotAdapter(OpenClawAdapter):
             "original_question_text": payload.original_question_text,
             "_db_session": pconfig.get("_db_session"),
             "_bot_id": pconfig.get("_bot_id"),
+            "_event_bus": pconfig.get("_event_bus"),
             # Streaming hooks: call_bot uses these to pre-create the sub-bot's
             # placeholder message and stream its tokens directly to the
             # frontend (otherwise the sub-bot reply lands as a single
