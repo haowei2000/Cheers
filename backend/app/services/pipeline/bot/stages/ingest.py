@@ -18,6 +18,8 @@ from app.services.pipeline.bot.context import BotRunContext
 from app.services.pipeline.stage import Stage
 from app.utils.crypto import decrypt_value
 
+_PromptOverrides = dict[str, PromptTemplate]
+
 logger = logging.getLogger("app.services.pipeline.bot.ingest")
 
 
@@ -35,14 +37,14 @@ def _get_trigger_content(msg) -> str:
 
 class IngestStage(Stage[BotRunContext]):
     async def run(self, ctx: BotRunContext) -> None:
-        await self._load_channel_bots(ctx)
-        self._wrap_adapter_factory(ctx)
+        overrides = await self._load_channel_bots(ctx)
+        self._wrap_adapter_factory(ctx, overrides)
         self._build_bot_details(ctx)
         await self._unwrap_secret_content(ctx)
         await self._lookup_sender_and_channel(ctx)
 
     @staticmethod
-    async def _load_channel_bots(ctx: BotRunContext) -> None:
+    async def _load_channel_bots(ctx: BotRunContext) -> _PromptOverrides:
         result = await ctx.session.execute(
             select(ChannelMembership, BotAccount)
             .join(BotAccount, ChannelMembership.member_id == BotAccount.bot_id)
@@ -59,17 +61,16 @@ class IngestStage(Stage[BotRunContext]):
         ctx.rows = rows
         ctx.channel_bot_usernames = [row[1].username for row in rows]
         ctx.bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
-        overrides: dict[str, PromptTemplate] = {}
-        for membership, bot in rows:
-            if membership.prompt_template:
-                overrides[bot.bot_id] = membership.prompt_template
-        ctx.channel_template_override_by_bot_id = overrides
+        return {
+            bot.bot_id: membership.prompt_template
+            for membership, bot in rows
+            if membership.prompt_template
+        }
 
     @staticmethod
-    def _wrap_adapter_factory(ctx: BotRunContext) -> None:
+    def _wrap_adapter_factory(ctx: BotRunContext, overrides: _PromptOverrides) -> None:
         """Inject channel-level template overrides into adapter resolution."""
         orig = ctx.adapter_factory
-        overrides = ctx.channel_template_override_by_bot_id
         session = ctx.session
 
         async def wrapped(bot_id: str) -> OpenClawAdapter:

@@ -120,9 +120,8 @@ async def run_orchestrator(
     ctx.writer = BotMessageWriter(ctx)
     await IngestStage().run(ctx)
 
-    # Pull stage outputs into local names so the (still-unmigrated) tail
-    # of run_orchestrator below reads as before. Subsequent stage commits
-    # will progressively eliminate these locals.
+    # Locals shim: read by the still-unmigrated dispatch / auto-takeover
+    # blocks below. Goes away once they're stage-extracted.
     channel_bot_usernames = ctx.channel_bot_usernames
     bot_id_by_username = ctx.bot_id_by_username
     bot_details_by_username = ctx.bot_details_by_username
@@ -145,8 +144,6 @@ async def run_orchestrator(
     topic_chain = ctx.topic_chain
     child_replies = ctx.child_replies
 
-    # Aliased to ctx so writer-method appends are visible to the legacy
-    # tail of run_orchestrator (and to the final return).
     created = ctx.bot_messages
     already_broadcast = ctx.already_broadcast
     root_task_id = ctx.root_task_id
@@ -262,12 +259,8 @@ async def run_orchestrator(
         trigger_msg.msg_id, target_usernames, len(target_usernames),
     )
 
-    # The bot reply lifecycle (pre-create placeholder → stream → finalize +
-    # broadcast + record + arm websocket-bot timeout) is owned by
-    # ``ctx.writer``. The aliases below preserve the legacy in-function
-    # names so the still-unmigrated dispatch / auto-takeover blocks below
-    # keep reading naturally; subsequent stage extractions will eliminate
-    # them in favour of direct ``ctx.writer.X`` calls.
+    # Writer aliases: bound-method handles to ctx.writer for the legacy
+    # in-function call sites.
     _writer = ctx.writer
     assert _writer is not None
     _create_msg_and_broadcast = _writer.create_and_broadcast
