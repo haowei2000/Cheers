@@ -43,9 +43,11 @@ class BotRunContext:
     channel_name: str = ""
     channel: Channel | None = None
 
-    # ── filled by RouteStage (future commit) ────────────────────────────
-    mentioned_bots: list[Any] = field(default_factory=list)
-    mode: str = ""  # "explicit" | "coord_agg" | "auto_assist" | "direct_answer" | "noop"
+    # ── filled by RouteStage ────────────────────────────────────────────
+    mentioned: list[str] = field(default_factory=list)  # raw @-mention usernames
+    target_usernames: list[str] = field(default_factory=list)  # resolved valid bots to dispatch
+    direct_answer_mode: bool = False  # auto-assist routed to coordinator
+    mode: str = ""  # "explicit" | "direct_answer" | "noop"
 
     # ── filled by ContextLoadStage (future commit) ──────────────────────
     memory_context: dict[str, str] = field(default_factory=dict)

@@ -11,13 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.log_context import bind_context
-from app.db.models import AgentTask, BotAccount, FileRecord, Message, User
+from app.db.models import AgentTask, BotAccount, FileRecord, Message
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
-from app.services.pipeline.bot import BotRunContext, IngestStage
+from app.services.pipeline.bot import BotRunContext, IngestStage, RouteStage
 from app.services.pipeline.bus import EventBus
 from app.services.pipeline.events import (
     BotMessagePlaceholder,
@@ -29,62 +29,6 @@ from app.services.pipeline.events import (
 logger = logging.getLogger("app.services.orchestrator.service")
 
 COORDINATOR_USERNAME = "Coordinator"
-
-
-def _is_guide_clarify_reply(content: str) -> bool:
-    """判断是否为协调者 Bot 的澄清回答消息（兼容历史名 @引导 / @channel bot 与
-    现行名 @Coordinator）."""
-    t = (content or "").strip()
-    return (
-        t.startswith("@Coordinator 澄清回答：")
-        or t.startswith("@引导 澄清回答：")
-        or t.startswith("@channel bot 澄清回答：")
-        or "用户选择跳过澄清" in t
-    )
-
-
-async def _fetch_original_question_for_clarify(
-    session: AsyncSession, channel_id: str, trigger_msg: Message
-) -> tuple[str | None, list[str]]:
-    """
-    当 trigger_msg 为澄清回答时，查找并返回原问题文本及其附件 file_ids。
-    逻辑：澄清回答前一条应为 Bot 的 guide-clarify 消息，其 in_reply_to_msg_id 指向原问题。
-    返回：(原问题文本 | None, 原问题 file_ids 列表)
-    """
-    r = await session.execute(
-        select(Message)
-        .where(
-            Message.channel_id == channel_id,
-            Message.created_at < trigger_msg.created_at,
-        )
-        .order_by(Message.created_at.desc())
-        .limit(5)
-    )
-    prev_msgs = list(r.scalars().all())
-    for m in prev_msgs:
-        if m.sender_type != "bot":
-            continue
-        if "guide-clarify" not in (m.content or ""):
-            continue
-        orig_id = m.in_reply_to_msg_id
-        if not orig_id:
-            continue
-        orig_r = await session.execute(select(Message).where(Message.msg_id == orig_id))
-        orig = orig_r.scalar_one_or_none()
-        if orig and orig.sender_type == "user":
-            out = (orig.content or "").strip()
-            orig_file_ids: list[str] = orig.file_ids or []
-            logger.info(
-                "orchestrator: fetched original_question for clarify, len=%s file_ids=%s",
-                len(out),
-                orig_file_ids,
-            )
-            return out, orig_file_ids
-        break
-    logger.warning("orchestrator: no original_question found for clarify reply")
-    return None, []
-
-
 
 
 
@@ -179,45 +123,17 @@ async def run_orchestrator(
     bot_id_by_username = ctx.bot_id_by_username
     bot_details_by_username = ctx.bot_details_by_username
     adapter_factory = ctx.adapter_factory
-    analysis_content = ctx.analysis_content
     trigger_content = ctx.trigger_content
     user_secrets = ctx.user_secrets
     sender_name = ctx.sender_name
     channel_name = ctx.channel_name
-    channel_obj = ctx.channel
-
-    # 澄清场景：若为澄清回答，提取原问题及其附件
-    original_question = None
-    original_file_ids: list[str] = []
-    if _is_guide_clarify_reply(analysis_content):
-        original_question, original_file_ids = await _fetch_original_question_for_clarify(session, channel_id, trigger_msg)
-
-    mentioned = extract_mentions(analysis_content, channel_bot_usernames)
-    target_usernames = filter_mentioned_bots(mentioned, channel_bot_usernames)
-    direct_answer_mode = False
-    if not target_usernames:
-        channel_auto_assist = bool(channel_obj.auto_assist) if channel_obj else False
-        if (
-            not mentioned
-            and COORDINATOR_USERNAME in channel_bot_usernames
-            and channel_auto_assist
-        ):
-            target_usernames = [COORDINATOR_USERNAME]
-            direct_answer_mode = True
-            logger.info(
-                "orchestrator route -> coordinator channel_id=%s auto_assist=%s",
-                channel_id,
-                channel_auto_assist,
-            )
-        else:
-            if mentioned:
-                logger.warning(
-                    "no mentioned bots in channel: channel_id=%s mentioned=%s channel_bots=%s",
-                    channel_id,
-                    mentioned,
-                    channel_bot_usernames,
-                )
-            return [], set()
+    await RouteStage().run(ctx)
+    if not ctx.target_usernames:
+        return [], set()
+    target_usernames = ctx.target_usernames
+    direct_answer_mode = ctx.direct_answer_mode
+    original_question = ctx.original_question
+    original_file_ids = ctx.original_file_ids
 
     from app.services.memory.manager import load as memory_load
 
@@ -261,22 +177,8 @@ async def run_orchestrator(
     )
     topic_chain, child_replies = topic_result
 
-    # 查出发送者的昵称，注入到 trigger_message 供模板变量 {{sender_name}} 使用
-    sender_name = ""
-    if trigger_msg.sender_type == "user":
-        user_row = await session.execute(
-            select(User.display_name, User.username).where(User.user_id == trigger_msg.sender_id)
-        )
-        user_info = user_row.first()
-        if user_info:
-            sender_name = user_info[0] or user_info[1] or ""
-    elif trigger_msg.sender_type == "bot":
-        bot_row = await session.execute(
-            select(BotAccount.display_name, BotAccount.username).where(BotAccount.bot_id == trigger_msg.sender_id)
-        )
-        bot_info = bot_row.first()
-        if bot_info:
-            sender_name = bot_info[0] or bot_info[1] or ""
+    # sender_name was populated by IngestStage; the legacy second fetch
+    # here was a duplicate and has been removed.
 
     created: list[Message] = []
     already_broadcast: set[str] = set()
