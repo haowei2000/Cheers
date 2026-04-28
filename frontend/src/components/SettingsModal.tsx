@@ -35,6 +35,7 @@ type BotRow = {
   username: string;
   display_name?: string | null;
   description?: string | null;
+  created_by?: string | null;
 };
 
 /** One pane per top-level category. Drill-down within a category (e.g.
@@ -121,7 +122,7 @@ export function SettingsModal({
           <div className="an-settings-pane">
             {pane === "bot" && (
               <BotPane
-                bots={bots}
+                bots={bots.filter((b) => b.created_by === currentUser?.user_id)}
                 authToken={authToken}
                 onChanged={reloadBots}
               />
