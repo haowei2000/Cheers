@@ -107,8 +107,8 @@ class IngestStage(Stage[BotRunContext]):
         """
         msg = ctx.trigger_msg
         ctx.analysis_content = _get_trigger_content(msg)
-        ctx.is_encrypted_msg = bool(msg.is_secret) and bool(msg.secret_encrypted)
-        ctx.trigger_content = msg.content if ctx.is_encrypted_msg else ctx.analysis_content
+        is_encrypted = bool(msg.is_secret) and bool(msg.secret_encrypted)
+        ctx.trigger_content = msg.content if is_encrypted else ctx.analysis_content
 
         secret_refs = extract_secret_refs(ctx.analysis_content)
         if secret_refs and msg.sender_type == "user":
@@ -118,7 +118,7 @@ class IngestStage(Stage[BotRunContext]):
                 len(ctx.user_secrets), len(secret_refs), msg.sender_id,
             )
 
-        if ctx.is_encrypted_msg and msg.sender_type == "user":
+        if is_encrypted and msg.sender_type == "user":
             ctx.user_secrets["_encrypted_msg"] = ctx.analysis_content
             logger.info(
                 "orchestrator: encrypted message content injected as _encrypted_msg for user %s",

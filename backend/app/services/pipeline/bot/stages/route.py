@@ -85,33 +85,30 @@ class RouteStage(Stage[BotRunContext]):
                 await _fetch_original_question_for_clarify(ctx)
             )
 
-        ctx.mentioned = extract_mentions(ctx.analysis_content, ctx.channel_bot_usernames)
+        mentioned = extract_mentions(ctx.analysis_content, ctx.channel_bot_usernames)
         ctx.target_usernames = filter_mentioned_bots(
-            ctx.mentioned, ctx.channel_bot_usernames
+            mentioned, ctx.channel_bot_usernames
         )
 
         if ctx.target_usernames:
-            ctx.mode = "explicit"
             return
 
         channel_auto_assist = bool(ctx.channel.auto_assist) if ctx.channel else False
         if (
-            not ctx.mentioned
+            not mentioned
             and COORDINATOR_USERNAME in ctx.channel_bot_usernames
             and channel_auto_assist
         ):
             ctx.target_usernames = [COORDINATOR_USERNAME]
             ctx.direct_answer_mode = True
-            ctx.mode = "direct_answer"
             logger.info(
                 "orchestrator route -> coordinator channel_id=%s auto_assist=%s",
                 ctx.channel_id, channel_auto_assist,
             )
             return
 
-        ctx.mode = "noop"
-        if ctx.mentioned:
+        if mentioned:
             logger.warning(
                 "no mentioned bots in channel: channel_id=%s mentioned=%s channel_bots=%s",
-                ctx.channel_id, ctx.mentioned, ctx.channel_bot_usernames,
+                ctx.channel_id, mentioned, ctx.channel_bot_usernames,
             )

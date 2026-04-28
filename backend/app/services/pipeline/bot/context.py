@@ -37,17 +37,14 @@ class BotRunContext:
     bot_details_by_username: dict[str, dict] = field(default_factory=dict)
     analysis_content: str = ""
     trigger_content: str = ""
-    is_encrypted_msg: bool = False
     user_secrets: dict[str, str] = field(default_factory=dict)
     sender_name: str = ""
     channel_name: str = ""
     channel: Channel | None = None
 
     # ── filled by RouteStage ────────────────────────────────────────────
-    mentioned: list[str] = field(default_factory=list)  # raw @-mention usernames
     target_usernames: list[str] = field(default_factory=list)  # resolved valid bots to dispatch
     direct_answer_mode: bool = False  # auto-assist routed to coordinator
-    mode: str = ""  # "explicit" | "direct_answer" | "noop"
 
     # ── filled by ContextLoadStage (future commit) ──────────────────────
     memory_context: dict[str, str] = field(default_factory=dict)
