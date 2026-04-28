@@ -13,14 +13,15 @@ from app.core.log_context import bind_context
 from app.db.models import Message
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
-from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
 from app.services.pipeline.bot import (
     BotMessageWriter,
     BotRunContext,
     ContextLoadStage,
+    DispatchStage,
     IngestStage,
     RouteStage,
+    trigger_sub_bots_from_mentions,
 )
 from app.services.pipeline.bus import EventBus
 
@@ -83,111 +84,9 @@ async def run_orchestrator(
     created = ctx.bot_messages
     already_broadcast = ctx.already_broadcast
     root_task_id = ctx.root_task_id
+    triggered_bot_ids = ctx.triggered_bot_ids
+    bot_msg_by_id = ctx.bot_msg_by_id
 
-    # Bot @ Bot 自动触发：追踪已触发的 bot 及其发送的消息（用于子回复和循环检测）
-    triggered_bot_ids: set[str] = set()  # 已触发过的 bot_id 集合（避免重复触发）
-    bot_msg_by_id: dict[str, Message] = {}  # bot_id -> 已创建的消息（用于子回复的 in_reply_to）
-
-    # 最大递归深度：Bot @ Bot 最多触发 3 层
-    MAX_BOT_MENTION_DEPTH = 3
-
-    def _extract_bot_mentions_from_content(content: str) -> list[str]:
-        """从消息内容中提取频道内 Bot 的 @ 提及。"""
-        mentioned = extract_mentions(content or "", channel_bot_usernames)
-        return filter_mentioned_bots(mentioned, channel_bot_usernames)
-
-    async def _trigger_sub_bots_from_mentions(
-        parent_msg: Message,
-        parent_bot_id: str,
-        trigger_content: str,
-        depth: int,
-    ) -> None:
-        """递归触发 @ 提及的子 Bot（Bot @ Bot 自动触发）。"""
-        if depth >= MAX_BOT_MENTION_DEPTH:
-            return
-
-        mentions = _extract_bot_mentions_from_content(parent_msg.content or "")
-        for sub_username in mentions:
-            sub_bot_id = bot_id_by_username.get(sub_username)
-            if not sub_bot_id:
-                continue
-            # 循环检测：跳过已触发过的 bot
-            if sub_bot_id in triggered_bot_ids:
-                logger.info("bot_mention_trigger: skip %s (already triggered)", sub_username)
-                continue
-            # 避免自己调用自己
-            if sub_bot_id == parent_bot_id:
-                logger.info("bot_mention_trigger: skip %s (self-call)", sub_username)
-                continue
-
-            triggered_bot_ids.add(sub_bot_id)
-            logger.info(
-                "bot_mention_trigger: @%s triggered by bot_id=%s depth=%d",
-                sub_username, parent_bot_id, depth,
-            )
-
-            sub_adapter = await adapter_factory(sub_bot_id)
-            sub_msg = await _pre_create_bot_msg(sub_bot_id, root_task_id)
-            # 子回复的 in_reply_to 指向父消息
-            sub_msg.in_reply_to_msg_id = parent_msg.msg_id
-            await session.flush()
-
-            other_bots = [item for item in channel_bot_usernames if item != sub_username]
-            sub_payload = AgentPayload(
-                task_id=root_task_id,
-                channel_id=channel_id,
-                trigger_message={
-                    "user": trigger_msg.sender_id,
-                    "sender_name": sender_name,
-                    "text": trigger_content,
-                    "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
-                    "msg_id": trigger_msg.msg_id,
-                    "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
-                    "topic_chain": topic_chain,
-                    "child_replies": child_replies,
-                },
-                memory_context=memory_context,
-                attachments=attachments,
-                original_question_text=original_question,
-                process_config={
-                    "channel_bot_usernames": other_bots,
-                    "channel_bot_details": {key: value for key, value in bot_details_by_username.items() if key != sub_username},
-                    "bot_id_by_username": {key: value for key, value in bot_id_by_username.items() if key != sub_username},
-                    "_adapter_factory": adapter_factory,
-                    "_create_and_broadcast": _create_msg_and_broadcast,
-                    "_stream_token": _make_stream_token_cb(sub_msg.msg_id),
-                    "_event_bus": event_bus,
-                    "_db_session": session,
-                    "_bot_id": sub_bot_id,
-                    "_placeholder_msg_id": sub_msg.msg_id,
-                    "_user_secrets": user_secrets,
-                    "_sender_name": sender_name,
-                    "_channel_name": channel_name,
-                },
-            )
-
-            try:
-                sub_resp = await sub_adapter.execute(sub_payload)
-                if sub_resp.dispatched_async:
-                    await _register_async_pending(sub_msg, root_task_id, sub_bot_id)
-                    await _record_agent_task(sub_bot_id, sub_msg.msg_id)
-                    created.append(sub_msg)
-                    bot_msg_by_id[sub_bot_id] = sub_msg
-                    continue
-                sub_content = sub_resp.content if sub_resp.success else (sub_resp.error_message or "处理出错")
-                sub_file_ids = sub_resp.file_ids or []
-            except Exception as exc:
-                logger.warning("bot_mention_trigger: bot %s raised: %s", sub_username, exc)
-                sub_content = f"处理出错: {exc}"
-                sub_file_ids = []
-
-            await _finalize_bot_msg(sub_msg, sub_content, file_ids=sub_file_ids)
-            await _record_agent_task(sub_bot_id, sub_msg.msg_id)
-            created.append(sub_msg)
-            bot_msg_by_id[sub_bot_id] = sub_msg
-
-            # 递归：检查子 Bot 的回复是否也有 @ 提及
-            await _trigger_sub_bots_from_mentions(sub_msg, sub_bot_id, trigger_content, depth + 1)
     _ctx_token = bind_context(channel_id=channel_id, trace_id=root_task_id)
     _ctx_token.__enter__()
     logger.info(
@@ -206,13 +105,6 @@ async def run_orchestrator(
     _record_agent_task = _writer.record_task
     _register_async_pending = _writer.register_async_pending
 
-    async def _finish_with_attachment_error(bot_id: str, task_id: str) -> Message:
-        bot_msg = await _pre_create_bot_msg(bot_id, task_id)
-        await _finalize_bot_msg(bot_msg, attachment_error or "读取上传文件失败")
-        await _record_agent_task(bot_id, bot_msg.msg_id)
-        created.append(bot_msg)
-        return bot_msg
-
     # ── Coordinator（direct_answer_mode）─────────────────────────────────────
     if COORDINATOR_USERNAME in target_usernames and direct_answer_mode:
         bot_id = bot_id_by_username[COORDINATOR_USERNAME]
@@ -220,7 +112,7 @@ async def run_orchestrator(
         task_id = root_task_id
         other_bots = [item for item in channel_bot_usernames if item != COORDINATOR_USERNAME]
         if attachment_error:
-            await _finish_with_attachment_error(bot_id, task_id)
+            await ctx.writer.finish_with_error(bot_id, task_id, attachment_error)
         else:
             orch_msg = await _pre_create_bot_msg(bot_id, task_id)
             payload = AgentPayload(
@@ -280,7 +172,9 @@ async def run_orchestrator(
                 triggered_bot_ids.add(bot_id)
                 bot_msg_by_id[bot_id] = orch_msg
                 # Bot @ Bot 自动触发：递归处理 @ 提及
-                await _trigger_sub_bots_from_mentions(orch_msg, bot_id, trigger_content, depth=0)
+                await trigger_sub_bots_from_mentions(
+                    ctx, orch_msg, bot_id, trigger_content, depth=0,
+                )
 
             orch_settings = get_assist_settings()
             if content is not None and orch_settings.get("auto_takeover"):
@@ -364,113 +258,7 @@ async def run_orchestrator(
                         created.append(sug_msg)
                         logger.info("orchestrator_auto_takeover: triggered @%s", sug_username)
 
-    # ── 普通 Bot（并发执行）────────────────────────────────────────────────
-    regular_targets = [u for u in target_usernames if not (u == COORDINATOR_USERNAME and direct_answer_mode)]
-
-    # 阶段1：串行 broadcast + 预建消息（需要 DB session）
-    pending_bots: list[tuple[str, str, Message, AgentPayload, OpenClawAdapter]] = []
-    for username in regular_targets:
-        bot_id = bot_id_by_username[username]
-        if broadcast_processing:
-            await broadcast_processing(channel_id, bot_id, username)
-        if attachment_error:
-            await _finish_with_attachment_error(bot_id, root_task_id)
-            continue
-        adapter = await adapter_factory(bot_id)
-        other_bots = [item for item in channel_bot_usernames if item != username]
-        bot_msg = await _pre_create_bot_msg(bot_id, root_task_id)
-
-        payload = AgentPayload(
-            task_id=root_task_id,
-            channel_id=channel_id,
-            trigger_message={
-                "user": trigger_msg.sender_id,
-                "sender_name": sender_name,
-                "text": trigger_content,
-                "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
-                "msg_id": trigger_msg.msg_id,
-                "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
-                "topic_chain": topic_chain,
-                "child_replies": child_replies,
-            },
-            memory_context=memory_context,
-            attachments=attachments,
-            original_question_text=original_question,
-            process_config={
-                "channel_bot_usernames": other_bots,
-                "channel_bot_details": {key: value for key, value in bot_details_by_username.items() if key != username},
-                "bot_id_by_username": {key: value for key, value in bot_id_by_username.items() if key != username},
-                "_adapter_factory": adapter_factory,
-                "_create_and_broadcast": _create_msg_and_broadcast,
-                "_stream_token": _make_stream_token_cb(bot_msg.msg_id),
-                "_event_bus": event_bus,
-                "_db_session": session,
-                "_bot_id": bot_id,
-                "_placeholder_msg_id": bot_msg.msg_id,
-                "_user_secrets": user_secrets,
-                "_sender_name": sender_name,
-                "_channel_name": channel_name,
-            },
-        )
-        logger.info(
-            "orchestrator: queuing bot bot_id=%s username=%s memory_layers=%d attachments=%d",
-            bot_id, username, len(memory_context), len(attachments),
-        )
-        pending_bots.append((username, bot_id, bot_msg, payload, adapter))
-
-    # 阶段2：并发调用所有 Bot 的 LLM（无 DB 操作）
-    if pending_bots:
-        async def _timed_execute(adapter, payload):
-            t0 = time.perf_counter()
-            try:
-                return await adapter.execute(payload), (time.perf_counter() - t0) * 1000
-            except Exception as exc:
-                return exc, (time.perf_counter() - t0) * 1000
-
-        timed_results = await asyncio.gather(
-            *[_timed_execute(_adapter, _payload) for _, _, _, _payload, _adapter in pending_bots],
-        )
-        # 阶段3：串行写库 + 广播（需要 DB session）
-        for (username, bot_id, bot_msg, _, _), (resp, dur_ms) in zip(pending_bots, timed_results):
-            if isinstance(resp, BaseException):
-                logger.warning(
-                    "orchestrator: bot %s raised exception: %s duration_ms=%.0f",
-                    username, resp, dur_ms,
-                )
-                content = f"处理出错: {resp}"
-                resp_file_ids: list[str] = []
-            elif resp.dispatched_async:
-                logger.info(
-                    "orchestrator: bot %s async-dispatched via bridge duration_ms=%.0f",
-                    username, dur_ms,
-                )
-                await _register_async_pending(bot_msg, root_task_id, bot_id)
-                await _record_agent_task(bot_id, bot_msg.msg_id)
-                created.append(bot_msg)
-                triggered_bot_ids.add(bot_id)
-                bot_msg_by_id[bot_id] = bot_msg
-                # 异步派发：跳过本同步路径的 finalize 与 Bot@Bot 递归
-                continue
-            else:
-                if not resp.success:
-                    logger.warning(
-                        "orchestrator: bot %s failed: %s duration_ms=%.0f",
-                        username, resp.error_message or "unknown", dur_ms,
-                    )
-                else:
-                    logger.info(
-                        "orchestrator: bot %s completed duration_ms=%.0f",
-                        username, dur_ms,
-                    )
-                content = resp.content if resp.success else (resp.error_message or "处理出错")
-                resp_file_ids = resp.file_ids or []
-            await _finalize_bot_msg(bot_msg, content, file_ids=resp_file_ids)
-            await _record_agent_task(bot_id, bot_msg.msg_id)
-            created.append(bot_msg)
-            triggered_bot_ids.add(bot_id)
-            bot_msg_by_id[bot_id] = bot_msg
-            # Bot @ Bot 自动触发：递归处理 @ 提及
-            await _trigger_sub_bots_from_mentions(bot_msg, bot_id, trigger_content, depth=0)
+    await DispatchStage().run(ctx)
 
     total_ms = (time.perf_counter() - t_start) * 1000
     logger.info(

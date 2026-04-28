@@ -215,6 +215,20 @@ class BotMessageWriter:
                 ctx.channel_id,
             )
 
+    # ── error-path shortcut ─────────────────────────────────────────────
+
+    async def finish_with_error(
+        self, bot_id: str, task_id: str, error_msg: str,
+    ) -> Message:
+        """Pre-create a placeholder, finalize it with an error message, and
+        record the AgentTask. Used when an attachment-prep failure means
+        the bot can't even start — the user still gets a visible reply."""
+        msg = await self.pre_create(bot_id, task_id)
+        await self.finalize(msg, error_msg)
+        await self.record_task(bot_id, msg.msg_id)
+        self.ctx.bot_messages.append(msg)
+        return msg
+
     # ── post-dispatch bookkeeping ───────────────────────────────────────
 
     async def record_task(self, bot_id: str, response_msg_id: str) -> None:
