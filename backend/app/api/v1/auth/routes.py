@@ -5,48 +5,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_session, require_permission
+from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
 from app.db.models import User
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-# 角色与权限定义（与旧 auth/routes.py 保持一致）
-ROLES = [
-    {
-        "name": "system_admin",
-        "display_name": "系统管理员",
-        "description": "系统级管理：全局 LLM 设置、策略配置、系统健康度检查",
-        "permissions": {"user_management": False, "space_management": False, "channel_management": False, "bot_config": False, "system_settings": True},
-    },
-    {
-        "name": "space_admin",
-        "display_name": "空间管理员",
-        "description": "本空间内：成员管理、频道创建、Bot配置",
-        "permissions": {"user_management": False, "space_management": True, "channel_management": True, "bot_config": True, "system_settings": False},
-    },
-    {
-        "name": "channel_admin",
-        "display_name": "频道管理员",
-        "description": "本频道内：成员管理、频道信息编辑、置顶消息",
-        "permissions": {"user_management": False, "space_management": False, "channel_management": True, "bot_config": False, "system_settings": False},
-    },
-    {
-        "name": "member",
-        "display_name": "成员",
-        "description": "发送消息、上传文件、@Bot",
-        "permissions": {"user_management": False, "space_management": False, "channel_management": False, "bot_config": False, "system_settings": False},
-    },
-    {
-        "name": "guest",
-        "display_name": "访客",
-        "description": "仅查看公开频道（不可发言）",
-        "permissions": {"user_management": False, "space_management": False, "channel_management": False, "bot_config": False, "system_settings": False},
-    },
-]
-
-VALID_ROLES = [r["name"] for r in ROLES]
 
 
 class UserOut(BaseModel):
@@ -118,10 +82,6 @@ class UpdateProfileBody(BaseModel):
     avatar_url: str | None = None
 
 
-class UpdateRoleBody(BaseModel):
-    role: str
-
-
 # ---- Routes ----
 
 @router.post("/send-code", response_model=APIResponse[None])
@@ -180,14 +140,14 @@ async def forgot_password(
     return APIResponse.ok(None, message="密码已重置，请重新登录")
 
 
-@router.get("/me", response_model=APIResponse[UserOut])
+@router.get("/users/me", response_model=APIResponse[UserOut])
 async def get_me(
     current_user: User = Depends(get_current_user),
 ) -> APIResponse:
     return APIResponse.ok(UserOut.from_user(current_user))
 
 
-@router.patch("/me", response_model=APIResponse[UserOut])
+@router.put("/users/me", response_model=APIResponse[UserOut])
 async def update_profile(
     body: UpdateProfileBody,
     current_user: User = Depends(get_current_user),
@@ -203,30 +163,7 @@ async def update_profile(
     return APIResponse.ok(UserOut.from_user(user))
 
 
-@router.put("/users/me", response_model=APIResponse[UserOut])
-async def update_profile_put(
-    body: UpdateProfileBody,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = AuthService(session)
-    user = await svc.update_profile(
-        current_user,
-        display_name=body.display_name,
-        bio=body.bio,
-        avatar_url=body.avatar_url,
-    )
-    return APIResponse.ok(UserOut.from_user(user))
-
-
-@router.get("/users/me", response_model=APIResponse[UserOut])
-async def get_me_legacy(
-    current_user: User = Depends(get_current_user),
-) -> APIResponse:
-    return APIResponse.ok(UserOut.from_user(current_user))
-
-
-@router.post("/change-password", response_model=APIResponse[None])
+@router.put("/users/me/password", response_model=APIResponse[None])
 async def change_password(
     body: ChangePasswordBody,
     current_user: User = Depends(get_current_user),
@@ -242,57 +179,5 @@ async def change_password(
     return APIResponse.ok(None, message="密码已更新")
 
 
-@router.put("/users/me/password", response_model=APIResponse[None])
-async def change_password_put(
-    body: ChangePasswordBody,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = AuthService(session)
-    await svc.change_password(
-        current_user,
-        new_password=body.new_password,
-        current_password=body.current_password,
-        email_code=body.email_code,
-    )
-    return APIResponse.ok(None, message="密码已更新")
-
-
-@router.get("/roles", response_model=APIResponse[list[dict]])
-async def list_roles() -> APIResponse:
-    return APIResponse.ok(ROLES)
-
-
-@router.get("/users", response_model=APIResponse[list[UserOut]])
-async def list_users(
-    _: User = Depends(require_permission("user_management")),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = AuthService(session)
-    users = await svc.list_users()
-    return APIResponse.ok([UserOut.from_user(u) for u in users])
-
-
-@router.put("/users/{user_id}/role", response_model=APIResponse[UserOut])
-async def update_user_role(
-    user_id: str,
-    body: UpdateRoleBody,
-    _: User = Depends(require_permission("user_management")),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = AuthService(session)
-    user = await svc.update_role(user_id, body.role, VALID_ROLES)
-    return APIResponse.ok(UserOut.from_user(user))
-
-
-@router.delete("/users/{user_id}", response_model=APIResponse[None])
-async def delete_user(
-    user_id: str,
-    _: User = Depends(require_permission("user_management")),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = AuthService(session)
-    await svc.delete_user(user_id)
-    return APIResponse.ok(None, message="用户已删除")
 
 

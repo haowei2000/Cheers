@@ -92,19 +92,6 @@ class WorkspaceService:
 
     # --- Membership ---
 
-    async def add_member(
-        self, workspace_id: str, user_id: str, role: str, current_user: User
-    ) -> WorkspaceMembership:
-        await self.get_or_404(workspace_id)
-        await self._check_workspace_permission(workspace_id, current_user)
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise NotFoundError("user not found")
-        existing = await self.repo.get_membership(workspace_id, user_id)
-        if existing:
-            return existing
-        return await self.repo.add_member(workspace_id, user_id, role)
-
     async def invite_member(
         self, workspace_id: str, identifier: str, role: str, current_user: User
     ) -> WorkspaceMembership:

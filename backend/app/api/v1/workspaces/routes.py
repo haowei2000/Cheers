@@ -25,11 +25,6 @@ class WorkspaceCreateBody(BaseModel):
     name: str
 
 
-class AddMemberBody(BaseModel):
-    user_id: str
-    role: str = "member"
-
-
 class InviteMemberBody(BaseModel):
     identifier: str
     role: str = "member"
@@ -64,18 +59,6 @@ async def delete_workspace(
 ) -> APIResponse:
     svc = WorkspaceService(session)
     await svc.delete(workspace_id, current_user)
-    return APIResponse.ok(None)
-
-
-@router.post("/{workspace_id}/members", response_model=APIResponse[None])
-async def add_member(
-    workspace_id: str,
-    body: AddMemberBody,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = WorkspaceService(session)
-    await svc.add_member(workspace_id, body.user_id, body.role, current_user)
     return APIResponse.ok(None)
 
 

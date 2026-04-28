@@ -381,22 +381,8 @@ async def get_bot(
     return APIResponse.ok(_to_full(bot))
 
 
-@router.patch("/{bot_id}", response_model=APIResponse[dict])
-async def update_bot(
-    bot_id: str,
-    body: BotUpdate,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = BotService(session)
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
-    bot = await svc.update(bot_id, current_user, **updates)
-    audit.info("action=bot.update actor=%s resource_id=%s fields=%s", current_user.user_id, bot_id, list(updates.keys()))
-    return APIResponse.ok(_to_full(bot))
-
-
 @router.put("/{bot_id}", response_model=APIResponse[dict])
-async def update_bot_put(
+async def update_bot(
     bot_id: str,
     body: BotUpdate,
     current_user: User = Depends(get_current_user),

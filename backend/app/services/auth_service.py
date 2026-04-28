@@ -182,17 +182,3 @@ class AuthService:
     async def list_users(self) -> list[User]:
         return await self.user_repo.list_all()
 
-    async def update_role(self, user_id: str, role: str, valid_roles: list[str]) -> User:
-        if role not in valid_roles:
-            raise BadRequestError(f"无效的角色: {role}")
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise NotFoundError("用户不存在")
-        return await self.user_repo.update(user, role=role)
-
-    async def delete_user(self, user_id: str) -> None:
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise NotFoundError("用户不存在")
-        await self.user_repo.delete(user)
-

@@ -1,7 +1,6 @@
-"""Admin v1 路由（AIModel / PromptTemplate / 系统设置 / 日志 / 用户管理 / 健康检查）."""
+"""Admin v1 路由（AIModel / PromptTemplate / 系统设置 / 日志 / 用户管理）."""
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, Depends
@@ -197,14 +196,6 @@ class LLMProviderBody(BaseModel):
     max_tokens: int = 1000
 
 
-class LLMBindingsBody(BaseModel):
-    channel_bot: str | None = None
-    system_llm: str | None = None
-    log_analyze: str | None = None
-    qa_summarize: str | None = None
-    orchestrator: str | None = None
-
-
 class LLMBindBody(BaseModel):
     scope: str
     provider_id: str = ""
@@ -244,17 +235,6 @@ async def delete_llm_provider_route(provider_id: str) -> APIResponse:
     return APIResponse.ok({"providers": settings["providers"], "bindings": settings["bindings"]})
 
 
-@router.put("/settings/llm/bindings", response_model=APIResponse[dict])
-async def put_llm_bindings(body: LLMBindingsBody) -> APIResponse:
-    SettingsService.set_llm_bindings(
-        channel_bot=body.channel_bot, system_llm=body.system_llm,
-        log_analyze=body.log_analyze, qa_summarize=body.qa_summarize,
-        orchestrator=body.orchestrator,
-    )
-    audit.info("action=settings.llm_bindings body=%s", body.model_dump())
-    return APIResponse.ok({"bindings": SettingsService.get_llm_settings()["bindings"]})
-
-
 @router.post("/settings/llm/bind", response_model=APIResponse[dict])
 async def post_llm_bind(body: LLMBindBody) -> APIResponse:
     scope = (body.scope or "").strip()
@@ -286,8 +266,8 @@ async def get_clarify() -> APIResponse:
     return APIResponse.ok(SettingsService.get_clarify_settings())
 
 
-@router.put("/settings/clarify", response_model=APIResponse[dict])
-async def put_clarify(body: ClarifySettingsBody) -> APIResponse:
+@router.post("/settings/clarify", response_model=APIResponse[dict])
+async def post_clarify(body: ClarifySettingsBody) -> APIResponse:
     updated = SettingsService.set_clarify_settings(
         clarify_strict_mode=body.clarify_strict_mode,
         clarify_force_rule=body.clarify_force_rule,
@@ -295,11 +275,6 @@ async def put_clarify(body: ClarifySettingsBody) -> APIResponse:
     )
     audit.info("action=settings.clarify body=%s", body.model_dump())
     return APIResponse.ok(updated)
-
-
-@router.post("/settings/clarify", response_model=APIResponse[dict])
-async def post_clarify(body: ClarifySettingsBody) -> APIResponse:
-    return await put_clarify(body)
 
 
 @router.get("/settings/assist", response_model=APIResponse[dict])
@@ -387,61 +362,3 @@ async def admin_list_users(session: AsyncSession = Depends(get_session)) -> APIR
     return APIResponse.ok([_user_info(u) for u in users])
 
 
-# ---- 健康检查 ----
-
-async def _health_database_async() -> str:
-    try:
-        from sqlalchemy import text
-
-        from app.db.session import async_engine
-        async with async_engine.connect() as conn:
-            await asyncio.wait_for(conn.execute(text("SELECT 1")), timeout=5.0)
-        return "ok"
-    except asyncio.TimeoutError:
-        return "error: timeout"
-    except Exception as e:
-        return f"error: {e!s}"
-
-
-def _health_redis_sync() -> str:
-    try:
-        import redis
-
-        from app.config import settings
-        r = redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
-        r.ping()
-        return "ok"
-    except Exception:
-        return "optional_unavailable"
-
-
-async def _health_guide_llm_async() -> str:
-    try:
-        from app.services.guide.llm_client import CONNECTION_503_BUSY
-        from app.services.guide.llm_client import check_connection as guide_llm_check
-        ok, msg = await guide_llm_check()
-        if ok:
-            return "degraded (503)" if msg == CONNECTION_503_BUSY else "ok"
-        if msg == "not_configured":
-            return "not_configured"
-        return f"unavailable ({msg})" if msg else "error: unknown"
-    except Exception as e:
-        return f"error: {e!s}"
-
-
-@router.get("/health", response_model=APIResponse[dict])
-async def admin_health() -> APIResponse:
-    status = {"database": "unknown", "redis": "unknown", "guide_llm": "unknown"}
-
-    async def redis_check() -> str:
-        try:
-            return await asyncio.wait_for(asyncio.to_thread(_health_redis_sync), timeout=3.0)
-        except asyncio.TimeoutError:
-            return "timeout"
-        except Exception:
-            return "optional_unavailable"
-
-    status["database"], status["redis"], status["guide_llm"] = await asyncio.gather(
-        _health_database_async(), redis_check(), _health_guide_llm_async()
-    )
-    return APIResponse.ok(status)

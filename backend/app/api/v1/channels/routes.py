@@ -32,10 +32,6 @@ class AddMemberBody(BaseModel):
     member_type: str
 
 
-class AddBotBody(BaseModel):
-    bot_id: str
-
-
 class InviteBody(BaseModel):
     identifier: str
 
@@ -195,22 +191,6 @@ async def add_member(
 ) -> APIResponse:
     svc = ChannelService(session)
     m = await svc.add_member(channel_id, body.member_id, body.member_type, current_user)
-    return APIResponse.ok({
-        "channel_id": m.channel_id,
-        "member_id": m.member_id,
-        "member_type": m.member_type,
-    })
-
-
-@router.post("/{channel_id}/bots", response_model=APIResponse[dict])
-async def add_bot(
-    channel_id: str,
-    body: AddBotBody,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = ChannelService(session)
-    m = await svc.add_member(channel_id, body.bot_id, "bot", current_user)
     return APIResponse.ok({
         "channel_id": m.channel_id,
         "member_id": m.member_id,
