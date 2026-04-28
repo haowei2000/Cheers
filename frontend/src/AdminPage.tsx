@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import { LockClosedIcon, MoonIcon, SunIcon } from "@heroicons/react/24/solid";
@@ -153,6 +153,25 @@ export default function AdminPage() {
     variables: ["message"],
   });
   const [templateEditingId, setTemplateEditingId] = useState<string | null>(null);
+  // Variable autocomplete (triggered by `{{` inside the user-template textarea)
+  const [varDropdownOpen, setVarDropdownOpen] = useState(false);
+  const [varFilter, setVarFilter] = useState("");
+  const [varDropdownStart, setVarDropdownStart] = useState(0);
+  const userTplRef = useRef<HTMLTextAreaElement | null>(null);
+  const TEMPLATE_VARS: { name: string; desc: string }[] = [
+    { name: "message", desc: "用户消息" },
+    { name: "sender_name", desc: "发送者名称" },
+    { name: "bot_name", desc: "当前 Bot 名称" },
+    { name: "channel_name", desc: "频道名称" },
+    { name: "channel_id", desc: "频道 ID" },
+    { name: "timestamp", desc: "消息时间" },
+    { name: "anchor", desc: "项目锚点" },
+    { name: "progress", desc: "项目进度" },
+    { name: "decisions", desc: "决策记录" },
+    { name: "recent", desc: "近期动态" },
+    { name: "todos", desc: "待办事项" },
+    { name: "files_index", desc: "文件索引" },
+  ];
 
   // ==================== Bot States ====================
   const [botList, setBotList] = useState<BotItem[]>([]);
@@ -467,15 +486,30 @@ export default function AdminPage() {
       .catch(console.error);
   };
 
+  const extractTemplateVars = (tpl: string): string[] => {
+    const re = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+    const out = new Set<string>();
+    for (const m of tpl.matchAll(re)) out.add(m[1]);
+    return out.size === 0 ? ["message"] : Array.from(out);
+  };
+
   const createTemplate = () => {
-    if (!templateForm.name.trim() || !templateForm.system_prompt.trim()) {
-      toast.error("请填写必填项");
+    if (!templateForm.name.trim()) {
+      toast.error("请填写模板名称");
       return;
     }
+    const userTpl = templateForm.user_template.trim() || "{{message}}";
+    const payload = {
+      name: templateForm.name,
+      description: templateForm.description || null,
+      system_prompt: templateForm.system_prompt.trim() || "You are a helpful assistant.",
+      user_template: userTpl,
+      variables: extractTemplateVars(userTpl),
+    };
     authFetch(`${API}/templates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(templateForm),
+      body: JSON.stringify(payload),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -492,15 +526,15 @@ export default function AdminPage() {
 
   const updateTemplate = (id: string) => {
     if (!templateForm.name.trim()) { toast.error("模板名称不能为空"); return; }
-    if (!templateForm.system_prompt.trim()) { toast.error("系统提示词不能为空"); return; }
+    const userTpl = templateForm.user_template.trim() || "{{message}}";
     authFetch(`${API}/templates/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: templateForm.name,
         description: templateForm.description || null,
-        system_prompt: templateForm.system_prompt,
-        user_template: templateForm.user_template || "{{message}}",
+        system_prompt: templateForm.system_prompt.trim() || "You are a helpful assistant.",
+        user_template: userTpl,
       }),
     })
       .then((r) => r.json())
@@ -1056,33 +1090,73 @@ export default function AdminPage() {
                           <input type="text" value={templateForm.name} onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })} placeholder="如：代码审查" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-500 mb-1">描述</label>
-                          <input type="text" value={templateForm.description} onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })} placeholder="模板用途描述" className="border border-gray-300 rounded-lg px-3 py-1.5 w-full text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">系统提示词 (System Prompt) *</label>
-                          <textarea value={templateForm.system_prompt} onChange={(e) => setTemplateForm({ ...templateForm, system_prompt: e.target.value })} placeholder="你是一个专业的助手..." className="border border-gray-300 rounded-lg px-3 py-2 w-full h-24 text-sm" />
-                        </div>
-                        <div>
                           <label className="block text-xs text-gray-500 mb-1">用户消息模板 (User Template) *</label>
-                          <textarea value={templateForm.user_template} onChange={(e) => setTemplateForm({ ...templateForm, user_template: e.target.value })} placeholder="{{message}}" className="border border-gray-300 rounded-lg px-3 py-2 w-full h-20 text-sm" />
-                          <div className="mt-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
-                            <p className="text-xs font-medium text-gray-600 mb-1.5">可用模板变量</p>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{message}}"}</code> 用户消息</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{sender_name}}"}</code> 发送者名称</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{bot_name}}"}</code> 当前Bot名称</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{channel_name}}"}</code> 频道名称</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{channel_id}}"}</code> 频道ID</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{timestamp}}"}</code> 消息时间</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{anchor}}"}</code> 项目锚点</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{progress}}"}</code> 项目进度</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{decisions}}"}</code> 决策记录</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{recent}}"}</code> 近期动态</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{todos}}"}</code> 待办事项</span>
-                              <span><code className="bg-gray-200 px-1 rounded">{"{{files_index}}"}</code> 文件索引</span>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-2">* 通过 call_bot 调用的子 Bot 不会使用系统提示词，仅使用用户消息模板</p>
+                          <p className="text-xs text-gray-400 mb-1.5">输入 <code className="bg-gray-100 px-1 rounded">{"{{"}</code> 可弹出可用变量列表</p>
+                          <div className="relative">
+                            <textarea
+                              ref={userTplRef}
+                              value={templateForm.user_template}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                const pos = e.target.selectionStart ?? v.length;
+                                setTemplateForm({ ...templateForm, user_template: v });
+                                const lastBraces = v.lastIndexOf("{{", pos - 1);
+                                if (lastBraces !== -1 && !v.slice(lastBraces + 2, pos).includes("}}") && !v.slice(lastBraces + 2, pos).includes("\n")) {
+                                  setVarFilter(v.slice(lastBraces + 2, pos));
+                                  setVarDropdownStart(lastBraces);
+                                  setVarDropdownOpen(true);
+                                } else {
+                                  setVarDropdownOpen(false);
+                                }
+                              }}
+                              onBlur={() => setTimeout(() => setVarDropdownOpen(false), 150)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Escape" && varDropdownOpen) {
+                                  setVarDropdownOpen(false);
+                                  e.stopPropagation();
+                                }
+                              }}
+                              placeholder="{{message}}"
+                              className="border border-gray-300 rounded-lg px-3 py-2 w-full h-28 text-sm font-mono"
+                            />
+                            {varDropdownOpen && (() => {
+                              const matched = TEMPLATE_VARS.filter((v) =>
+                                v.name.toLowerCase().includes(varFilter.toLowerCase()),
+                              );
+                              if (matched.length === 0) return null;
+                              return (
+                                <div
+                                  className="absolute z-50 left-0 right-0 top-full mt-1 max-h-64 overflow-y-auto rounded-lg shadow-lg"
+                                  style={{ background: "var(--bg-1)", border: "1px solid var(--border)" }}
+                                >
+                                  {matched.map((v) => (
+                                    <button
+                                      key={v.name}
+                                      type="button"
+                                      onMouseDown={(e) => e.preventDefault()}
+                                      onClick={() => {
+                                        const cur = templateForm.user_template;
+                                        const el = userTplRef.current;
+                                        const pos = el?.selectionStart ?? cur.length;
+                                        const insert = `{{${v.name}}}`;
+                                        const next = cur.slice(0, varDropdownStart) + insert + cur.slice(pos);
+                                        setTemplateForm({ ...templateForm, user_template: next });
+                                        setVarDropdownOpen(false);
+                                        requestAnimationFrame(() => {
+                                          el?.focus();
+                                          const cursor = varDropdownStart + insert.length;
+                                          el?.setSelectionRange(cursor, cursor);
+                                        });
+                                      }}
+                                      className="flex w-full items-center gap-3 px-3 py-2 text-left text-xs hover:bg-gray-50"
+                                    >
+                                      <code className="font-mono text-[12px]" style={{ color: "var(--accent)" }}>{`{{${v.name}}}`}</code>
+                                      <span className="text-gray-500">{v.desc}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>

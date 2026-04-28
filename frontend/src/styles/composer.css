@@ -283,11 +283,63 @@
   color: var(--fg-1);
   background: var(--surface-soft);
 }
+
+/* Unified icon button used by keychain / upload / lock toggles in the bar.
+ * Same square footprint, radius, and hover so the toolbar reads as one row. */
+.an-composer-bar .an-composer-iconbtn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--fg-3);
+  background: transparent;
+}
+.an-composer-bar .an-composer-iconbtn:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+.an-composer-bar .an-composer-iconbtn.is-active {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+.an-composer-bar .an-composer-iconbtn.is-secret-on {
+  color: var(--orange);
+  background: var(--orange-muted);
+}
+/* Variant for buttons whose label is a keyboard shortcut (⇧↵).
+ * Same height as the icon buttons but auto-width so the two-glyph
+ * label fits without truncation, and the inner pill reads as a kbd. */
+.an-composer-bar .an-composer-iconbtn.is-kbd {
+  width: auto;
+  min-width: 32px;
+  padding: 0 8px;
+  gap: 4px;
+}
+.an-composer-bar .an-composer-iconbtn.is-kbd .an-kbd-glyph {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
+/* Send always sits at the right edge; if the lock toggle is rendered it
+ * carries `ml-auto` which wins, so the gap pushes between the left cluster
+ * and the right (lock, send) cluster. */
+.an-composer-bar .an-composer-send {
+  margin-left: auto;
+}
 .an-composer-bar .an-composer-send {
   background: var(--accent);
   color: #fff;
   font-weight: 500;
-  padding: 5px 14px;
+  height: 32px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 12.5px;
 }
 .an-composer-bar .an-composer-send:hover:not(:disabled) {
   background: var(--accent-hover);
