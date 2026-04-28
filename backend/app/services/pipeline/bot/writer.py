@@ -1,22 +1,25 @@
 """BotMessageWriter: the single owner of the bot-reply lifecycle.
 
-Encapsulates the six helpers that used to live as closures inside
-``run_orchestrator``: pre-create a placeholder, stream tokens into it,
-finalize content + files, broadcast a fully-formed message, log an
-AgentTask row, and arm the WebSocket-bot timeout. One writer per
-orchestrator run; it holds no state of its own — every method reads
-from the BotRunContext passed to ``__init__``.
+Encapsulates the helpers that used to live as closures inside
+``run_orchestrator``: pre-create a placeholder, finalize content + files,
+broadcast a fully-formed message, emit a routing card, render an error
+fallback, log an AgentTask row, and arm the WebSocket-bot timeout. One
+writer per orchestrator run; it holds no state of its own — every method
+reads from the BotRunContext passed to ``__init__``.
 
 Stages (DispatchStage, AutoTakeoverStage) and adapter sub-bot paths
 (call_bot in channel_bot.py) compose this object instead of carrying
-the four loose closures around inside ``process_config`` dicts.
+loose closures around inside ``process_config``.
+
+Token streaming is no longer part of this class — adapters yield
+``Delta`` events directly out of ``execute_iter`` and ``subagent.
+_consume_execute`` republishes them to the channel EventBus.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -28,7 +31,6 @@ from app.services.pipeline.events import (
     BotMessagePlaceholder,
     MessageCreated,
     MessageDone,
-    MessageStreamDelta,
 )
 
 if TYPE_CHECKING:
@@ -104,14 +106,6 @@ class BotMessageWriter:
         await ctx.bus.publish(BotMessagePlaceholder(data=data))
         ctx.already_broadcast.add(msg.msg_id)
         return msg
-
-    def make_stream_token_cb(self, msg_id: str) -> Callable[[str], Awaitable[None]]:
-        bus = self.ctx.bus
-
-        async def _cb(delta: str) -> None:
-            await bus.publish(MessageStreamDelta(msg_id=msg_id, delta=delta))
-
-        return _cb
 
     async def finalize(
         self,
