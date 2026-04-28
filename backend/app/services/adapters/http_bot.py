@@ -174,7 +174,7 @@ class HttpBotAdapter(OpenClawAdapter):
 
         # 解密：将 $secret{name} 引用替换为实际密钥值，
         # 并将加密消息占位符替换为解密后的原文
-        user_secrets = (payload.process_config or {}).get("_user_secrets") or {}
+        user_secrets = payload.process_config.user_secrets
         if user_secrets:
             encrypted_msg = user_secrets.get("_encrypted_msg")
             if encrypted_msg and "🔒" in user_text:
@@ -206,12 +206,12 @@ class HttpBotAdapter(OpenClawAdapter):
         if isinstance(extra_headers, dict):
             headers.update({str(key): str(value) for key, value in extra_headers.items()})
 
-        pconfig = payload.process_config or {}
+        pconfig = payload.process_config
         trigger_meta = payload.trigger_message or {}
 
         context_vars: dict[str, str] = {
-            "sender_name": trigger_meta.get("sender_name") or pconfig.get("_sender_name") or "",
-            "channel_name": pconfig.get("_channel_name") or "",
+            "sender_name": trigger_meta.get("sender_name") or pconfig.sender_name,
+            "channel_name": pconfig.channel_name,
             "channel_id": payload.channel_id,
             "bot_name": self.bot.display_name or self.bot.username,
             "timestamp": trigger_meta.get("timestamp", ""),
@@ -227,7 +227,7 @@ class HttpBotAdapter(OpenClawAdapter):
             })
 
         # 子 bot 调用（call_bot）时跳过 system prompt，父 bot 的 message 已包含任务描述
-        skip_system_prompt = bool(pconfig.get("_skip_system_prompt"))
+        skip_system_prompt = pconfig.skip_system_prompt
 
         # Vision 路径：模型支持且有图片时，构建多模态消息
         supports_vision = (self.model.config or {}).get("supports_vision", True)

@@ -55,7 +55,7 @@ class OrchestratorAdapter(OpenClawAdapter):
     async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
         user_text = (payload.trigger_message or {}).get("text") or ""
         memory_context = payload.memory_context or {}
-        channel_bots = (payload.process_config or {}).get("channel_bot_usernames") or []
+        channel_bots = payload.process_config.channel_bot_usernames
 
         # 拼接上下文
         anchor = memory_context.get("anchor", "")

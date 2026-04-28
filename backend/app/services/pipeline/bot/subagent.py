@@ -95,27 +95,28 @@ def build_payload(
 
     # Token streaming flows through execute_iter's Delta events directly;
     # _stream_token in process_config is no longer consumed by any adapter.
-    process_config: dict = {
-        "_event_bus": ctx.bus,
-        "_bot_id": bot_id,
-        "_placeholder_msg_id": bot_msg.msg_id,
-        "_user_secrets": ctx.user_secrets,
-        "_sender_name": ctx.sender_name,
-        "_channel_name": ctx.channel_name,
-    }
-    if skip_system_prompt:
-        process_config["_skip_system_prompt"] = True
+    from app.services.pipeline.process_config import ProcessConfig
+
+    process_config = ProcessConfig(
+        bot_id=bot_id,
+        placeholder_msg_id=bot_msg.msg_id,
+        user_secrets=dict(ctx.user_secrets),
+        sender_name=ctx.sender_name,
+        channel_name=ctx.channel_name,
+        event_bus=ctx.bus,
+        skip_system_prompt=skip_system_prompt,
+    )
     if capabilities.can_call_bot:
         # channel_bot_usernames + details still feed the system-prompt
         # building in ChannelBotAdapter; everything else moved to
-        # ``_run_ctx`` (sub-adapter tools hop into dispatch_one rather
+        # ``run_ctx`` (sub-adapter tools hop into dispatch_one rather
         # than carrying loose closures around).
-        process_config["channel_bot_usernames"] = other_bots
-        process_config["channel_bot_details"] = {
+        process_config.channel_bot_usernames = other_bots
+        process_config.channel_bot_details = {
             k: v for k, v in ctx.bot_details_by_username.items() if k != sub_username
         }
-        process_config["_db_session"] = ctx.session
-        process_config["_run_ctx"] = ctx
+        process_config.db_session = ctx.session
+        process_config.run_ctx = ctx
 
     return AgentPayload(
         task_id=ctx.root_task_id,

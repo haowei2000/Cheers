@@ -1,17 +1,15 @@
 """验证 HttpBotAdapter 模板变量在直接调用和 call_bot 子调用场景下均能正确渲染。"""
 from __future__ import annotations
 
-import ast
 import re
-import textwrap
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.services.adapters.base import AgentPayload, AgentResponse
 from app.services.adapters.http_bot import HttpBotAdapter
-
+from app.services.pipeline.process_config import ProcessConfig
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -181,10 +179,10 @@ async def test_execute_renders_all_context_vars() -> None:
             "recent": "最近活动",
             "todos": "- TODO1",
         },
-        process_config={
-            "_sender_name": "王五",
-            "_channel_name": "测试频道",
-        },
+        process_config=ProcessConfig(
+            sender_name="王五",
+            channel_name="测试频道",
+        ),
     )
 
     captured_body: dict = {}
@@ -283,11 +281,11 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
     assert len(captured_payload) == 1
     sub = captured_payload[0]
 
-    # process_config 应包含 _channel_name、_sender_name 和 _skip_system_prompt
-    pc = sub.process_config or {}
-    assert pc.get("_channel_name") == "协作频道", f"_channel_name 缺失或不正确: {pc}"
-    assert pc.get("_sender_name") == "赵六", f"_sender_name 缺失或不正确: {pc}"
-    assert pc.get("_skip_system_prompt") is True, f"_skip_system_prompt 应为 True: {pc}"
+    # process_config 应包含 channel_name、sender_name 和 skip_system_prompt
+    pc = sub.process_config
+    assert pc.channel_name == "协作频道", f"channel_name 缺失或不正确: {pc}"
+    assert pc.sender_name == "赵六", f"sender_name 缺失或不正确: {pc}"
+    assert pc.skip_system_prompt is True, f"skip_system_prompt 应为 True: {pc}"
 
     # trigger_message 应包含 sender_name 和非空 timestamp
     tm = sub.trigger_message or {}
@@ -300,55 +298,15 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
 
 
 # ── orchestrator process_config 一致性测试 ──────────────────────────────────
-
-# 必须出现在每条路径的 process_config 中的模板相关 key
-_REQUIRED_TEMPLATE_KEYS = {"_sender_name", "_channel_name"}
-
-
-def _extract_process_config_blocks(source: str) -> list[tuple[int, str]]:
-    """从 orchestrator/service.py 源码中提取所有 process_config={...} 字典字面量。
-
-    返回 [(行号, 源码片段), ...]。使用简单的大括号匹配而非 AST，
-    因为 process_config 值中包含运行时变量，无法用 ast.literal_eval 解析。
-    """
-    blocks: list[tuple[int, str]] = []
-    lines = source.splitlines()
-    i = 0
-    while i < len(lines):
-        stripped = lines[i].lstrip()
-        if stripped.startswith("process_config={") or stripped.startswith("process_config= {"):
-            start_line = i + 1  # 1-indexed
-            # 收集到匹配的 } 为止
-            depth = 0
-            buf: list[str] = []
-            for j in range(i, len(lines)):
-                buf.append(lines[j])
-                depth += lines[j].count("{") - lines[j].count("}")
-                if depth == 0:
-                    break
-            blocks.append((start_line, "\n".join(buf)))
-            i = j + 1
-        else:
-            i += 1
-    return blocks
-
-
-def test_orchestrator_process_config_has_template_keys() -> None:
-    """验证 orchestrator/service.py 中所有 process_config 都包含 _sender_name 和 _channel_name。"""
-    import pathlib
-    src = (
-        pathlib.Path(__file__).resolve().parent.parent
-        / "backend" / "app" / "services" / "orchestrator" / "service.py"
-    ).read_text()
-
-    blocks = _extract_process_config_blocks(src)
-    assert len(blocks) >= 3, f"预期至少 3 个 process_config 块，实际找到 {len(blocks)}"
-
-    for line_no, block_src in blocks:
-        for key in _REQUIRED_TEMPLATE_KEYS:
-            assert f'"{key}"' in block_src or f"'{key}'" in block_src, (
-                f"service.py 第 {line_no} 行附近的 process_config 缺少 {key}:\n{block_src}"
-            )
+#
+# Phase 5: process_config is now a typed ProcessConfig dataclass; the
+# legacy meta-test that grepped service.py for ``process_config={...}``
+# dict literals is obsolete because:
+#   1. service.py no longer constructs process_config — the construction
+#      moved to pipeline/bot/subagent.py:build_payload.
+#   2. ProcessConfig has typed fields, so a typo on sender_name /
+#      channel_name is a static type error rather than a runtime miss.
+# (Removed test_orchestrator_process_config_has_template_keys.)
 
 
 # ── call_bot → HttpBotAdapter 端到端模板渲染 ──────────────────────────────────

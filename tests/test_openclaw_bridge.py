@@ -8,7 +8,7 @@ import pytest
 
 from app.services.adapters.base import AgentPayload
 from app.services.adapters.websocket_bot import WebsocketBotAdapter
-from app.services.openclaw_bridge.dispatcher import BridgeDispatcher, bridge_dispatcher
+from app.services.openclaw_bridge.dispatcher import BridgeDispatcher
 from app.services.openclaw_bridge.pending import PendingReply, PendingReplyRegistry
 
 
@@ -120,7 +120,7 @@ async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound() -> No
         adapter = WebsocketBotAdapter(_fake_bot())
         payload = _payload("t-ws-001")
         # 模拟 orchestrator：把占位 msg_id 放到 process_config
-        payload.process_config["_placeholder_msg_id"] = "placeholder-123"
+        payload.process_config.placeholder_msg_id = "placeholder-123"
 
         resp = await adapter.execute(payload)
         assert resp.success is True
@@ -153,7 +153,7 @@ async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
 
     adapter = WebsocketBotAdapter(_fake_bot(display_name="Alpha"))
     payload = _payload()
-    payload.process_config["_placeholder_msg_id"] = "placeholder-fail-001"
+    payload.process_config.placeholder_msg_id = "placeholder-fail-001"
     resp = await adapter.execute(payload)
     assert resp.success is False
     assert resp.dispatched_async is False

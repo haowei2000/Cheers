@@ -13,6 +13,7 @@ from app.services.pipeline.adapter_events import (
     DispatchedAsync,
     Final,
 )
+from app.services.pipeline.process_config import ProcessConfig
 
 
 @dataclass
@@ -23,7 +24,7 @@ class AgentPayload:
     trigger_message: dict[str, Any]
     memory_context: dict[str, str]
     attachments: list[dict[str, str]] = field(default_factory=list)
-    process_config: dict[str, Any] = field(default_factory=lambda: {"mode": "sequential", "timeout_seconds": 120})
+    process_config: ProcessConfig = field(default_factory=ProcessConfig)
     # 澄清场景：原问题文本，供引导 Bot 合并上下文后生成最终回答
     original_question_text: str | None = None
 

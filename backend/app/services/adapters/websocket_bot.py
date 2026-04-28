@@ -51,7 +51,7 @@ class WebsocketBotAdapter(OpenClawAdapter):
         from app.services.openclaw_bridge.streams import stream_registry
 
         # orchestrator 将占位 bot_msg.msg_id 放在 process_config 里传下来
-        placeholder_msg_id = (payload.process_config or {}).get("_placeholder_msg_id")
+        placeholder_msg_id = payload.process_config.placeholder_msg_id
 
         # 先把 pending 登记到内存（不附 timeout），确保 plugin 秒回时
         # `/ws/openclaw/data` 的 reply handler 能从 pending 里 peek 到 channel_id /

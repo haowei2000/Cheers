@@ -71,7 +71,7 @@ def _make_ctx(**overrides):
 
 def test_leaf_payload_omits_run_ctx() -> None:
     """The auto-takeover phase-2 contract: suggested bots cannot recursively
-    call_bot. build_payload omits _run_ctx for Capabilities.leaf() so
+    call_bot. build_payload leaves run_ctx as None for Capabilities.leaf() so
     channel_bot.call_bot's first check ('错误：_run_ctx 未注入') refuses
     to dispatch further."""
     ctx = _make_ctx()
@@ -79,8 +79,9 @@ def test_leaf_payload_omits_run_ctx() -> None:
         ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
         capabilities=Capabilities.leaf(),
     )
-    assert "_run_ctx" not in payload.process_config
-    assert "_adapter_factory" not in payload.process_config
+    assert payload.process_config.run_ctx is None
+    assert payload.process_config.db_session is None
+    assert payload.process_config.channel_bot_usernames == []
 
 
 def test_leaf_payload_omits_msg_id_and_msg_type() -> None:
@@ -105,8 +106,8 @@ def test_regular_payload_carries_run_ctx() -> None:
         ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
         capabilities=Capabilities.regular(),
     )
-    assert payload.process_config["_run_ctx"] is ctx
-    assert payload.process_config["channel_bot_usernames"] == ["bob"]
+    assert payload.process_config.run_ctx is ctx
+    assert payload.process_config.channel_bot_usernames == ["bob"]
 
 
 def test_regular_payload_includes_msg_id() -> None:
@@ -130,7 +131,7 @@ def test_coordinator_payload_includes_msg_type() -> None:
     )
     assert payload.trigger_message["msg_type"] == "normal"
     assert payload.trigger_message["msg_id"] == "trig-1"
-    assert payload.process_config["_run_ctx"] is ctx
+    assert payload.process_config.run_ctx is ctx
 
 
 # ── overrides ─────────────────────────────────────────────────────────
@@ -154,7 +155,7 @@ def test_skip_system_prompt_flag_propagates() -> None:
         capabilities=Capabilities.regular(),
         skip_system_prompt=True,
     )
-    assert payload.process_config["_skip_system_prompt"] is True
+    assert payload.process_config.skip_system_prompt is True
 
 
 def test_in_reply_to_override_chains_bot_at_bot() -> None:
@@ -181,5 +182,5 @@ def test_other_bots_excludes_self() -> None:
         ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
         capabilities=Capabilities.regular(),
     )
-    assert "alice" not in payload.process_config["channel_bot_usernames"]
-    assert payload.process_config["channel_bot_usernames"] == ["bob"]
+    assert "alice" not in payload.process_config.channel_bot_usernames
+    assert payload.process_config.channel_bot_usernames == ["bob"]

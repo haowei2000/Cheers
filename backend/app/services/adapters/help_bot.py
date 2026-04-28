@@ -225,10 +225,10 @@ class HelpBotAdapter(OpenClawAdapter):
 
     async def execute_iter(self, payload: AgentPayload):
         user_text = (payload.trigger_message or {}).get("text", "") or ""
-        pconfig = payload.process_config or {}
+        pconfig = payload.process_config
         channel_id = payload.channel_id
         memory = payload.memory_context or {}
-        db_session = pconfig.get("_db_session")
+        db_session = pconfig.db_session
         trigger_meta = payload.trigger_message or {}
         trigger_msg_id = trigger_meta.get("msg_id")
         sender_id = trigger_meta.get("user", "")

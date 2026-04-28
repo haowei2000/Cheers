@@ -1197,9 +1197,9 @@ class ChannelBotAdapter(OpenClawAdapter):
 
         memory = payload.memory_context or {}
         channel_id = payload.channel_id
-        pconfig = payload.process_config or {}
-        channel_bots: list[str] = pconfig.get("channel_bot_usernames") or []
-        bot_details: dict = pconfig.get("channel_bot_details") or {}
+        pconfig = payload.process_config
+        channel_bots: list[str] = pconfig.channel_bot_usernames
+        bot_details: dict = pconfig.channel_bot_details
         sender_id = (payload.trigger_message or {}).get("user") or ""
 
         # ── 1. 构建 System Prompt ──────────────────────────────────────────────
@@ -1285,19 +1285,19 @@ class ChannelBotAdapter(OpenClawAdapter):
             "memory": memory,
             "task_id": payload.task_id,
             "sender_id": sender_id,
-            "sender_name": pconfig.get("_sender_name") or (payload.trigger_message or {}).get("sender_name") or "",
-            "channel_name": pconfig.get("_channel_name") or "",
+            "sender_name": pconfig.sender_name or (payload.trigger_message or {}).get("sender_name") or "",
+            "channel_name": pconfig.channel_name,
             "attachments": payload.attachments or [],
             "original_question_text": payload.original_question_text,
-            "_db_session": pconfig.get("_db_session"),
-            "_bot_id": pconfig.get("_bot_id"),
-            "_event_bus": pconfig.get("_event_bus"),
-            "_run_ctx": pconfig.get("_run_ctx"),
+            "_db_session": pconfig.db_session,
+            "_bot_id": pconfig.bot_id,
+            "_event_bus": pconfig.event_bus,
+            "_run_ctx": pconfig.run_ctx,
         }
 
         # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────
         chat_history: list = []
-        db_session = pconfig.get("_db_session")
+        db_session = pconfig.db_session
         trigger_meta = payload.trigger_message or {}
         trigger_msg_id = trigger_meta.get("msg_id")
         in_reply_to_msg_id = trigger_meta.get("in_reply_to_msg_id")
