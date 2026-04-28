@@ -8,7 +8,7 @@ import { getAuthToken, makeAuthFetch } from "./api";
 
 const API = "/api/v1";
 
-type TabId = "models" | "templates" | "bot" | "llm" | "perf" | "logs" | "health" | "user" | "workspace" | "image_api";
+type TabId = "models" | "templates" | "bot" | "llm" | "perf" | "logs" | "user" | "workspace" | "image_api";
 
 // ==================== AI Model Types ====================
 type AIModel = {
@@ -225,7 +225,6 @@ export default function AdminPage() {
   const [logQuestion, setLogQuestion] = useState("");
   const [logAnalysis, setLogAnalysis] = useState("");
   const [logLoading, setLogLoading] = useState(false);
-  const [healthStatus, setHealthStatus] = useState<{ database: string; redis: string; guide_llm?: string } | null>(null);
   type UserItem = { user_id: string; username: string; display_name?: string; role: string; created_at?: string };
   const [userList, setUserList] = useState<UserItem[]>([]);
   // 图片 API 设置
@@ -305,12 +304,6 @@ export default function AdminPage() {
   useEffect(() => {
     if (activeTab === "logs") {
       authFetch(`${API}/admin/logs?limit=200`).then((r) => r.json()).then((d) => { if (d.data) setLogEntries(d.data); }).catch(console.error);
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab === "health") {
-      fetch(`${API}/health`).then((r) => r.json()).then((d) => setHealthStatus(d.data)).catch(console.error);
     }
   }, [activeTab]);
 
@@ -925,7 +918,6 @@ export default function AdminPage() {
                   <button onClick={() => setActiveTab("image_api")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "image_api" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>图片 API</button>
                   <button onClick={() => setActiveTab("perf")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "perf" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>性能监控</button>
                   <button onClick={() => setActiveTab("logs")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "logs" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>日志查看</button>
-                  <button onClick={() => setActiveTab("health")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "health" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>健康检查</button>
                   <button onClick={() => setActiveTab("user")} className={`whitespace-nowrap md:whitespace-normal w-auto md:w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition ${activeTab === "user" ? "bg-[#4A154B] text-white" : "text-gray-700 hover:bg-gray-100"}`}>用户管理</button>
                 </>
               )}
@@ -1603,31 +1595,6 @@ export default function AdminPage() {
                   {logAnalysis && <div className="mt-3 p-3 bg-gray-50 rounded text-sm whitespace-pre-wrap">{logAnalysis}</div>}
                 </section>
               </>
-            )}
-
-            {/* ==================== Health Tab ==================== */}
-            {activeTab === "health" && userRole === "system_admin" && (
-              <section className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
-                <h3 className="text-sm font-semibold text-gray-800 mb-4">健康检查</h3>
-                {healthStatus && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between p-2 bg-gray-50 rounded text-sm">
-                      <span>数据库</span>
-                      <span className={healthStatus.database === "ok" ? "text-green-600" : "text-red-600"}>{healthStatus.database}</span>
-                    </div>
-                    <div className="flex justify-between p-2 bg-gray-50 rounded text-sm">
-                      <span>Redis</span>
-                      <span className={healthStatus.redis === "ok" ? "text-green-600" : "text-red-600"}>{healthStatus.redis}</span>
-                    </div>
-                    {healthStatus.guide_llm && (
-                      <div className="flex justify-between p-2 bg-gray-50 rounded text-sm">
-                        <span>引导 LLM</span>
-                        <span className={healthStatus.guide_llm === "ok" ? "text-green-600" : "text-yellow-600"}>{healthStatus.guide_llm}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </section>
             )}
 
             {/* ==================== User Tab ==================== */}

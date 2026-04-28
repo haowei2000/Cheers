@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import FriendsPanel from "./FriendsPanel";
 import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import MemoryPage from "./MemoryPage";
@@ -36,8 +35,6 @@ import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
 import { CreateChannelModal } from "./components/CreateChannelModal";
 import { OpenClawQcModal } from "./components/OpenClawQcModal";
-import { KeychainModal } from "./components/KeychainModal";
-import { UserProfileModal } from "./components/UserProfileModal";
 import { ChannelProfileModal } from "./components/ChannelProfileModal";
 import { QaSummaryModal } from "./components/QaSummaryModal";
 import { ImageGenModal } from "./components/ImageGenModal";
@@ -422,11 +419,8 @@ export default function App() {
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
   const [manageMembersOpen, setManageMembersOpen] = useState(false);
-  const [friendsPanelOpen, setFriendsPanelOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
-  const [userProfileOpen, setUserProfileOpen] = useState(false);
-  const [keychainModalOpen, setKeychainModalOpen] = useState(false);
   const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
@@ -2141,14 +2135,6 @@ export default function App() {
           onNavigate={handleNotifNavigate}
         />
 
-        {/* 好友管理面板 */}
-        <FriendsPanel
-          currentUserId={currentUserId}
-          userToken={authToken ?? undefined}
-          isOpen={friendsPanelOpen}
-          onClose={() => setFriendsPanelOpen(false)}
-        />
-
         {/* 频道成员管理模态框 */}
         {selectedId && (
           <ChannelMembersModal
@@ -2158,32 +2144,6 @@ export default function App() {
             userToken={authToken ?? undefined}
             isOpen={manageMembersOpen}
             onClose={() => setManageMembersOpen(false)}
-          />
-        )}
-
-        {/* Keychain modal */}
-        {authToken && (
-          <KeychainModal
-            open={keychainModalOpen}
-            userToken={authToken}
-            onClose={() => setKeychainModalOpen(false)}
-          />
-        )}
-
-        {/* User profile modal */}
-        {currentUser && (
-          <UserProfileModal
-            open={userProfileOpen}
-            currentUser={currentUser}
-            userToken={authToken!}
-            onClose={() => setUserProfileOpen(false)}
-            onProfileUpdated={(data) => {
-              if (!currentUser) return;
-              setCurrentUser({
-                ...currentUser,
-                display_name: data.display_name,
-              });
-            }}
           />
         )}
 
