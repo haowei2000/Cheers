@@ -36,7 +36,6 @@ class BotRunContext:
     rows: list[Any] = field(default_factory=list)  # list[(ChannelMembership, BotAccount)]
     channel_bot_usernames: list[str] = field(default_factory=list)
     bot_id_by_username: dict[str, str] = field(default_factory=dict)
-    channel_template_override_by_bot_id: dict[str, Any] = field(default_factory=dict)
     bot_details_by_username: dict[str, dict] = field(default_factory=dict)
     analysis_content: str = ""
     trigger_content: str = ""
