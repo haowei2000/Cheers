@@ -46,30 +46,51 @@ def build_payload(
     bot_msg: Message,
     capabilities: Capabilities,
     in_reply_to_msg_id: str | None = None,
+    trigger_text_override: str | None = None,
+    skip_system_prompt: bool = False,
 ) -> AgentPayload:
     """Compose AgentPayload according to the bot's capabilities.
 
     ``in_reply_to_msg_id`` defaults to the trigger's own; Bot@Bot recursion
     overrides it to point at the parent bot's reply so the sub-reply chains
     correctly.
+
+    ``trigger_text_override`` replaces ``ctx.trigger_content`` in the
+    sub-trigger — used by call_bot when an LLM dispatches a synthetic
+    sub-task with its own message text.
+
+    ``skip_system_prompt`` adds a ``_skip_system_prompt`` flag to
+    process_config so the sub-adapter knows to suppress its full system
+    prompt for short delegated tasks.
     """
     sub_username = next(
         (u for u, bid in ctx.bot_id_by_username.items() if bid == bot_id), "",
     )
     other_bots = [u for u in ctx.channel_bot_usernames if u != sub_username]
 
+    if trigger_text_override is not None:
+        from datetime import datetime, timezone
+        text = trigger_text_override
+        timestamp = datetime.now(timezone.utc).isoformat()
+    else:
+        text = ctx.trigger_content
+        timestamp = (
+            ctx.trigger_msg.created_at.isoformat()
+            if ctx.trigger_msg.created_at else ""
+        )
+
     trigger_message: dict = {
         "user": ctx.trigger_msg.sender_id,
         "sender_name": ctx.sender_name,
-        "text": ctx.trigger_content,
-        "timestamp": ctx.trigger_msg.created_at.isoformat() if ctx.trigger_msg.created_at else "",
+        "text": text,
+        "timestamp": timestamp,
         "in_reply_to_msg_id": in_reply_to_msg_id or ctx.trigger_msg.in_reply_to_msg_id,
         "topic_chain": ctx.topic_chain,
         "child_replies": ctx.child_replies,
     }
     if capabilities.can_call_bot:
         trigger_message["msg_id"] = ctx.trigger_msg.msg_id
-    if capabilities.has_streaming_hooks:
+    if capabilities.include_msg_type:
         trigger_message["msg_type"] = ctx.trigger_msg.msg_type
 
     process_config: dict = {
@@ -81,21 +102,19 @@ def build_payload(
         "_sender_name": ctx.sender_name,
         "_channel_name": ctx.channel_name,
     }
+    if skip_system_prompt:
+        process_config["_skip_system_prompt"] = True
     if capabilities.can_call_bot:
+        # channel_bot_usernames + details still feed the system-prompt
+        # building in ChannelBotAdapter; everything else moved to
+        # ``_run_ctx`` (sub-adapter tools hop into dispatch_one rather
+        # than carrying loose closures around).
         process_config["channel_bot_usernames"] = other_bots
         process_config["channel_bot_details"] = {
             k: v for k, v in ctx.bot_details_by_username.items() if k != sub_username
         }
-        process_config["bot_id_by_username"] = {
-            k: v for k, v in ctx.bot_id_by_username.items() if k != sub_username
-        }
-        process_config["_adapter_factory"] = ctx.adapter_factory
-        process_config["_create_and_broadcast"] = ctx.writer.create_and_broadcast
         process_config["_db_session"] = ctx.session
-    if capabilities.has_streaming_hooks:
-        process_config["_pre_create_bot_msg"] = ctx.writer.pre_create
-        process_config["_finalize_bot_msg"] = ctx.writer.finalize
-        process_config["_make_stream_token_cb"] = ctx.writer.make_stream_token_cb
+        process_config["_run_ctx"] = ctx
 
     return AgentPayload(
         task_id=ctx.root_task_id,
@@ -122,6 +141,8 @@ async def _prepare(
     *,
     capabilities: Capabilities,
     in_reply_to_msg_id: str | None = None,
+    trigger_text_override: str | None = None,
+    skip_system_prompt: bool = False,
 ) -> _Prepared:
     """Pre-create placeholder + build payload + load adapter for one bot."""
     username = await _username_for(ctx, bot_id)
@@ -133,6 +154,8 @@ async def _prepare(
         bot_msg=bot_msg,
         capabilities=capabilities,
         in_reply_to_msg_id=in_reply_to_msg_id,
+        trigger_text_override=trigger_text_override,
+        skip_system_prompt=skip_system_prompt,
     )
     return username, bot_id, bot_msg, payload, adapter
 
@@ -222,12 +245,19 @@ async def dispatch_one(
     recurse: bool = False,
     depth: int = 0,
     in_reply_to_msg_id: str | None = None,
+    trigger_text_override: str | None = None,
+    skip_system_prompt: bool = False,
+    skip_attachment_error: bool = False,
 ) -> AgentResponse | None:
     """Pre-create + execute + finalize one bot, serially. Used by single-bot
     paths: coordinator dispatch, Bot@Bot recursion, channel_bot's call_bot.
-    Returns the AgentResponse on success, ``None`` for async / errors."""
+    Returns the AgentResponse on success, ``None`` for async / errors.
+
+    ``skip_attachment_error``: call_bot dispatches a synthetic sub-task
+    that doesn't carry the original user's attachments, so an ingest-time
+    attachment_error shouldn't short-circuit it."""
     username = await _username_for(ctx, bot_id)
-    if ctx.attachment_error:
+    if ctx.attachment_error and not skip_attachment_error:
         await ctx.writer.finish_with_error(bot_id, ctx.root_task_id, ctx.attachment_error)
         return None
     if ctx.broadcast_processing:
@@ -237,6 +267,8 @@ async def dispatch_one(
         bot_id,
         capabilities=capabilities,
         in_reply_to_msg_id=in_reply_to_msg_id,
+        trigger_text_override=trigger_text_override,
+        skip_system_prompt=skip_system_prompt,
     )
     resp_or_exc, dur_ms = await _timed_execute(adapter, payload)
     return await _finalize_response(
