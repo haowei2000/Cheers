@@ -11,16 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.log_context import bind_context
-from app.db.models import AgentTask, BotAccount, FileRecord, Message
+from app.db.models import BotAccount, Message
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
-from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
+from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
-from app.services.orchestrator.topic_context import (
-    MSG_TYPE_REPLY,
-    ensure_topic_root,
-)
 from app.services.pipeline.bot import (
+    BotMessageWriter,
     BotRunContext,
     ContextLoadStage,
     IngestStage,
@@ -28,10 +25,7 @@ from app.services.pipeline.bot import (
 )
 from app.services.pipeline.bus import EventBus
 from app.services.pipeline.events import (
-    BotMessagePlaceholder,
     MessageCreated,
-    MessageDone,
-    MessageStreamDelta,
 )
 
 logger = logging.getLogger("app.services.orchestrator.service")
@@ -121,7 +115,9 @@ async def run_orchestrator(
         adapter_factory=adapter_factory,
         broadcast_processing=broadcast_processing,
         t_start=t_start,
+        root_task_id=str(uuid.uuid4()),
     )
+    ctx.writer = BotMessageWriter(ctx)
     await IngestStage().run(ctx)
 
     # Pull stage outputs into local names so the (still-unmigrated) tail
@@ -149,9 +145,11 @@ async def run_orchestrator(
     topic_chain = ctx.topic_chain
     child_replies = ctx.child_replies
 
-    created: list[Message] = []
-    already_broadcast: set[str] = set()
-    root_task_id = str(uuid.uuid4())
+    # Aliased to ctx so writer-method appends are visible to the legacy
+    # tail of run_orchestrator (and to the final return).
+    created = ctx.bot_messages
+    already_broadcast = ctx.already_broadcast
+    root_task_id = ctx.root_task_id
 
     # Bot @ Bot 自动触发：追踪已触发的 bot 及其发送的消息（用于子回复和循环检测）
     triggered_bot_ids: set[str] = set()  # 已触发过的 bot_id 集合（避免重复触发）
@@ -264,170 +262,20 @@ async def run_orchestrator(
         trigger_msg.msg_id, target_usernames, len(target_usernames),
     )
 
-    async def _create_msg_and_broadcast(sender_id: str, content: str) -> None:
-        from app.core.schemas import MessageInResponse
-
-        mention_user_ids = await resolve_user_mentions(content, session, channel_id)
-        msg = Message(
-            channel_id=channel_id,
-            sender_id=sender_id,
-            sender_type="bot",
-            content=content,
-            task_id=root_task_id,
-            in_reply_to_msg_id=trigger_msg.msg_id,
-            mention_user_ids=mention_user_ids,
-            msg_type=MSG_TYPE_REPLY,
-        )
-        session.add(msg)
-        await session.flush()
-        # after_insert listener in topic_context.py will flip trigger_msg's
-        # row to "topic" once the reply count crosses
-        # TOPIC_PROMOTE_THRESHOLD. Mirror the flip into the in-memory
-        # Message object so any later code in this request sees the new
-        # msg_type without a refresh.
-        await ensure_topic_root(session, trigger_msg.msg_id)
-        data = MessageInResponse.model_validate(msg).model_dump()
-        if msg.created_at:
-            data["created_at"] = msg.created_at.isoformat()
-        # 查出 bot 的 display_name
-        bot_row = await session.execute(
-            select(BotAccount.display_name, BotAccount.username).where(BotAccount.bot_id == sender_id)
-        )
-        bot_info = bot_row.first()
-        if bot_info:
-            data["sender_name"] = bot_info[0] or bot_info[1] or ""
-        await event_bus.publish(MessageCreated(data=data))
-        already_broadcast.add(msg.msg_id)
-        created.append(msg)
-
-    async def _pre_create_bot_msg(bot_id: str, task_id: str) -> Message:
-        from app.core.schemas import MessageInResponse
-
-        msg = Message(
-            channel_id=channel_id,
-            sender_id=bot_id,
-            sender_type="bot",
-            content="",
-            task_id=task_id,
-            in_reply_to_msg_id=trigger_msg.msg_id,
-            msg_type=MSG_TYPE_REPLY,
-        )
-        session.add(msg)
-        await session.flush()
-        # Same threshold-aware promotion as _create_msg_and_broadcast.
-        await ensure_topic_root(session, trigger_msg.msg_id)
-        data = MessageInResponse.model_validate(msg).model_dump()
-        if msg.created_at:
-            data["created_at"] = msg.created_at.isoformat()
-        await event_bus.publish(BotMessagePlaceholder(data=data))
-        already_broadcast.add(msg.msg_id)
-        return msg
-
-    def _make_stream_token_cb(msg_id: str):
-        async def _cb(delta: str) -> None:
-            await event_bus.publish(MessageStreamDelta(msg_id=msg_id, delta=delta))
-
-        return _cb
-
-    async def _finalize_bot_msg(
-        msg: Message, content: str, *, file_ids: list[str] | None = None,
-    ) -> None:
-        msg.content = content
-        msg.mention_user_ids = await resolve_user_mentions(content, session, channel_id)
-        if file_ids:
-            msg.file_ids = list({*(msg.file_ids or []), *file_ids})
-        await session.flush()
-
-        out_file_ids: list[str] | None = None
-        out_files: list[dict] | None = None
-        if msg.file_ids:
-            from app.core.schemas import MessageFileInResponse
-            result = await session.execute(
-                select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
-            )
-            file_map = {r.file_id: r for r in result.scalars().all()}
-            out_file_ids = msg.file_ids
-            out_files = [
-                MessageFileInResponse(
-                    file_id=r.file_id,
-                    original_filename=r.original_filename,
-                    content_type=r.content_type,
-                    size_bytes=r.size_bytes,
-                    status=r.status or "ready",
-                ).model_dump()
-                for fid in msg.file_ids
-                if (r := file_map.get(fid))
-            ]
-        await event_bus.publish(
-            MessageDone(
-                msg_id=msg.msg_id,
-                content=content,
-                file_ids=out_file_ids,
-                files=out_files,
-            )
-        )
-
-    async def _record_agent_task(bot_id: str, response_msg_id: str) -> None:
-        session.add(
-            AgentTask(
-                task_id=str(uuid.uuid4()),
-                channel_id=channel_id,
-                bot_id=bot_id,
-                trigger_msg_id=trigger_msg.msg_id,
-                response_msg_id=response_msg_id,
-            )
-        )
-        await session.flush()
-
-    async def _register_async_pending(bot_msg: Message, task_id: str, bot_id: str) -> None:
-        """WebSocket Bot 异步派发：占位消息不立即 finalize，为超时兜底武装 timer。
-
-        PendingReply 已由 WebsocketBotAdapter.execute() 在 dispatch 之前预登记
-        （避免 plugin 秒回时 pending 未登记的竞态）；这里只 arm timer。"""
-        from app.config import settings as _settings
-        from app.db.session import async_session_factory
-        from app.services.openclaw_bridge.pending import pending_replies
-        from app.services.openclaw_bridge.service import finalize_bot_reply
-
-        timeout_s = max(5, int(_settings.openclaw_bridge_timeout_seconds or 60))
-
-        async def _on_timeout() -> None:
-            popped = await pending_replies.pop_by_msg(bot_msg.msg_id)
-            if popped is None:
-                return  # 已被回推 finalize
-            logger.warning(
-                "websocket_bot_timeout: bot_id=%s task_id=%s msg_id=%s after %ds",
-                bot_id, task_id, bot_msg.msg_id, timeout_s,
-            )
-            async with async_session_factory() as s2:
-                try:
-                    await finalize_bot_reply(
-                        s2,
-                        bot_id=bot_id,
-                        channel_id=channel_id,
-                        content=f"[WebSocket Bot] 等待 OpenClaw channel plugin 回推超时（>{timeout_s}s）",
-                        task_id=task_id,
-                        reply_to_msg_id=bot_msg.msg_id,
-                    )
-                    await s2.commit()
-                except Exception:
-                    await s2.rollback()
-                    raise
-
-        pending = await pending_replies.peek_by_msg(bot_msg.msg_id)
-        if pending is None:
-            logger.warning(
-                "register_async_pending: pending not pre-registered for msg_id=%s; "
-                "reply may race",
-                bot_msg.msg_id,
-            )
-            return
-        loop = asyncio.get_event_loop()
-
-        def _fire() -> None:
-            asyncio.create_task(_on_timeout())
-
-        pending.timeout_handle = loop.call_later(timeout_s, _fire)
+    # The bot reply lifecycle (pre-create placeholder → stream → finalize +
+    # broadcast + record + arm websocket-bot timeout) is owned by
+    # ``ctx.writer``. The aliases below preserve the legacy in-function
+    # names so the still-unmigrated dispatch / auto-takeover blocks below
+    # keep reading naturally; subsequent stage extractions will eliminate
+    # them in favour of direct ``ctx.writer.X`` calls.
+    _writer = ctx.writer
+    assert _writer is not None
+    _create_msg_and_broadcast = _writer.create_and_broadcast
+    _pre_create_bot_msg = _writer.pre_create
+    _make_stream_token_cb = _writer.make_stream_token_cb
+    _finalize_bot_msg = _writer.finalize
+    _record_agent_task = _writer.record_task
+    _register_async_pending = _writer.register_async_pending
 
     async def _finish_with_attachment_error(bot_id: str, task_id: str) -> Message:
         bot_msg = await _pre_create_bot_msg(bot_id, task_id)

@@ -8,5 +8,12 @@ from app.services.pipeline.bot.context import BotRunContext
 from app.services.pipeline.bot.stages.context_load import ContextLoadStage
 from app.services.pipeline.bot.stages.ingest import IngestStage
 from app.services.pipeline.bot.stages.route import RouteStage
+from app.services.pipeline.bot.writer import BotMessageWriter
 
-__all__ = ["BotRunContext", "ContextLoadStage", "IngestStage", "RouteStage"]
+__all__ = [
+    "BotMessageWriter",
+    "BotRunContext",
+    "ContextLoadStage",
+    "IngestStage",
+    "RouteStage",
+]

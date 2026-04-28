@@ -9,13 +9,16 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Channel, Message
 from app.services.adapters.base import OpenClawAdapter
 from app.services.pipeline.bus import EventBus
+
+if TYPE_CHECKING:
+    from app.services.pipeline.bot.writer import BotMessageWriter
 
 
 @dataclass
@@ -57,6 +60,10 @@ class BotRunContext:
     child_replies: list[Any] = field(default_factory=list)
     original_question: str | None = None
     original_file_ids: list[str] = field(default_factory=list)
+
+    # ── orchestrator-run identity ───────────────────────────────────────
+    root_task_id: str = ""
+    writer: "BotMessageWriter | None" = None
 
     # ── output ──────────────────────────────────────────────────────────
     bot_messages: list[Message] = field(default_factory=list)
