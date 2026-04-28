@@ -7,8 +7,27 @@ import MemoryPage from "./MemoryPage";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
+import {
+  ArrowUturnLeftIcon,
+  Bars3Icon,
+  ChatBubbleLeftEllipsisIcon,
+  ChatBubbleLeftIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  DocumentDuplicateIcon,
+  DocumentIcon,
+  KeyIcon,
+  LinkIcon,
+  LockClosedIcon,
+  MegaphoneIcon,
+  PhotoIcon,
+  PlusIcon,
+  QuestionMarkCircleIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/solid";
+import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
+import { BotAvatar } from "./components/BotAvatar";
 import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
-import { GuideFormBlock } from "./components/GuideFormBlock";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
 import { ThinkingIndicator } from "./components/ThinkingIndicator";
 import { MemoryPanel } from "./components/MemoryPanel";
@@ -24,24 +43,40 @@ import { QaSummaryModal } from "./components/QaSummaryModal";
 import { ImageGenModal } from "./components/ImageGenModal";
 import { Sidebar } from "./components/Sidebar";
 import { HelpModal } from "./components/HelpModal";
+import {
+  SettingsModal,
+  applyDensity,
+  getStoredDensity,
+} from "./components/SettingsModal";
 import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
-import { buildWsUrl } from "./api";
+import { TopicPage } from "./components/TopicPage";
+import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
+import { WorkspaceRail } from "./components/WorkspaceRail";
+import { apiFetch, buildWsUrl } from "./api";
 import {
   parseGuidePayload,
   isClarifyReplyUserMessage,
 } from "./lib/guide";
-import { isMsgReply, parseQuotePrefix, formatTs } from "./lib/message";
+import {
+  isMsgReply,
+  parseQuotePrefix,
+  stripLeadingQuotePrefixes,
+  formatTs,
+  formatDayLabel,
+  TOPIC_DISPLAY_THRESHOLD,
+} from "./lib/message";
 import {
   buildLogicalQaBlocks,
   buildQaMarkdown,
   downloadText,
 } from "./lib/qa";
 import { renderWithThinkFolding, stripThinkTags } from "./lib/think";
-import { refreshChannels, refreshWorkspaces } from "./lib/refresh";
+import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
 import type {
   Channel,
+  DM,
   Workspace,
   Message,
   QaPair,
@@ -61,7 +96,13 @@ const API_DOCS_URL = "/docs";
 
 
 export default function App() {
-  const { toggleTheme, isDark } = useTheme();
+  const { isDark, setTheme } = useTheme();
+
+  // Apply stored appearance prefs (density only — theme is light/dark, no
+  // custom accent since the brand color is fixed in design-tokens.css).
+  useEffect(() => {
+    applyDensity(getStoredDensity());
+  }, []);
 
   const { currentUser, authToken, currentUserId, authFetch, setAuth, setCurrentUser, logout: clearAuth } =
     useAuth(DEV_USER_ID);
@@ -102,7 +143,45 @@ export default function App() {
   }, []);
 
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [dms, setDMs] = useState<DM[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  // Topic viewer: pageTopicId — root msg_id for the full-page view,
+  // mirrored to URL hash. There is no side-dock panel; opening a topic
+  // always replaces the channel stream with the dedicated page.
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
+  // Composer send-kind: 4 unified types — 普通 / 加密 / 公告 / 主题.
+  // Switchable via Tab / Shift-Tab and the ‹ › buttons flanking the composer.
+  // Always resets to "normal" after each send. "reply" is orthogonal —
+  // replyingTo overrides this. The "secret" kind syncs with the legacy
+  // `secretMode` boolean so downstream code (send payload, render path) keeps
+  // working unchanged.
+  type MsgKind = "normal" | "secret" | "announcement" | "topic";
+  const MSG_KINDS_ORDER: MsgKind[] = ["normal", "secret", "announcement", "topic"];
+  const MSG_KIND_LABEL: Record<MsgKind, string> = {
+    normal: "消息",
+    secret: "加密",
+    announcement: "公告",
+    topic: "主题",
+  };
+  const [msgKind, setMsgKind] = useState<MsgKind>("normal");
+  // Optional title carried by announcement + topic kinds. Normal messages
+  // ignore it; we clear it whenever kind cycles or a send completes.
+  const [composerTitle, setComposerTitle] = useState<string>("");
+  const composerTitleRef = useRef<HTMLInputElement | null>(null);
+  const cycleMsgKind = (direction: 1 | -1) => {
+    setMsgKind((prev) => {
+      const idx = MSG_KINDS_ORDER.indexOf(prev);
+      const next =
+        (idx + direction + MSG_KINDS_ORDER.length) % MSG_KINDS_ORDER.length;
+      setComposerTitle("");
+      return MSG_KINDS_ORDER[next];
+    });
+  };
+  const [pageTopicId, setPageTopicId] = useState<string | null>(() => {
+    if (typeof location === "undefined") return null;
+    const m = /#topic=([^&]+)/.exec(location.hash || "");
+    return m ? decodeURIComponent(m[1]) : null;
+  });
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -113,7 +192,17 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // memoryTab drives the 4-tab cluster in the channel header + the drawer.
+  //   null          — drawer closed
+  //   "PROJECT"     — anchors + progress + decisions (design's Project view)
+  //   "FILES_INDEX" — channel files
+  //   "MEMBERS"     — members list
+  //   "TODO"        — todos
+  const [memoryTab, setMemoryTab] = useState<
+    "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO" | null
+  >(null);
+  const memoryPanelOpen = memoryTab !== null;
   const [memoryPageOpen, setMemoryPageOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
@@ -208,11 +297,11 @@ export default function App() {
   >(null);
   const [autoAssist, setAutoAssist] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(
+  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(
     new Set(),
   );
-  const toggleThread = (rootId: string) =>
-    setExpandedThreads((prev) => {
+  const toggleTopic = (rootId: string) =>
+    setExpandedTopics((prev) => {
       const next = new Set(prev);
       next.has(rootId) ? next.delete(rootId) : next.add(rootId);
       return next;
@@ -241,8 +330,46 @@ export default function App() {
   const [imageGenInitialTab, setImageGenInitialTab] = useState<"gen" | "edit">(
     "gen",
   );
-  // 加密消息状态
+  // 加密消息状态。Bound to msgKind === "secret" via the effect below — the
+  // 🔒 toolbar button and the kind switcher both flip this through msgKind,
+  // and downstream send/render code keeps reading `secretMode` unchanged.
   const [secretMode, setSecretMode] = useState(false);
+  useEffect(() => {
+    if (msgKind === "secret" && !secretMode) setSecretMode(true);
+    if (msgKind !== "secret" && secretMode) setSecretMode(false);
+  }, [msgKind, secretMode]);
+
+  // Drag-resize: user can grab the top edge of the composer to pull it taller.
+  // null = use the CSS default (auto-grow up to max-height); otherwise a pinned
+  // textarea height in pixels. Double-click on the handle resets to default.
+  const [composerTextareaHeight, setComposerTextareaHeight] = useState<
+    number | null
+  >(null);
+  const composerDragRef = useRef<{ startY: number; startH: number } | null>(
+    null,
+  );
+  const onComposerResizeDown = (e: React.PointerEvent) => {
+    const ta = inputRef.current;
+    const startH = ta?.offsetHeight ?? 40;
+    composerDragRef.current = { startY: e.clientY, startH };
+    (e.target as Element).setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onComposerResizeMove = (e: React.PointerEvent) => {
+    const drag = composerDragRef.current;
+    if (!drag) return;
+    // 用户向上拖拽 → composer 变高（startY > clientY → delta > 0）
+    const next = Math.max(40, Math.min(600, drag.startH + (drag.startY - e.clientY)));
+    setComposerTextareaHeight(next);
+  };
+  const onComposerResizeUp = (e: React.PointerEvent) => {
+    composerDragRef.current = null;
+    try {
+      (e.target as Element).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
   const [revealedSecrets, setRevealedSecrets] = useState<
     Record<string, string>
   >({});
@@ -328,6 +455,7 @@ export default function App() {
     setSelectedId(null);
     setSelectedWorkspaceId("");
     setChannels([]);
+    setDMs([]);
     setWorkspaces([]);
     setMessages([]);
     setHasMore(true);
@@ -434,8 +562,59 @@ export default function App() {
 
   useEffect(() => {
     refreshChannels(setChannels, authToken ?? undefined);
+    refreshDMs(setDMs, authToken ?? undefined);
     refreshWorkspaces(setWorkspaces, authToken ?? undefined);
   }, [authToken]);
+
+  // Default to the user's Personal workspace on first load (or when the
+  // currently-selected workspace is no longer in the list, e.g. after a
+  // deletion). Explicit team-workspace picks from the rail are preserved.
+  useEffect(() => {
+    if (workspaces.length === 0) return;
+    const current = workspaces.find(
+      (w) => w.workspace_id === selectedWorkspaceId,
+    );
+    if (current) return;
+    const personal = workspaces.find((w) => w.kind === "personal");
+    setSelectedWorkspaceId(
+      personal?.workspace_id ?? workspaces[0].workspace_id,
+    );
+  }, [workspaces, selectedWorkspaceId]);
+
+  const activeWorkspace = workspaces.find(
+    (w) => w.workspace_id === selectedWorkspaceId,
+  );
+  const isPersonalWorkspace = activeWorkspace?.kind === "personal";
+
+  // ── URL hash sync for #topic=<id> ──────────────────────────────────────
+  // Writer: whenever pageTopicId changes, reflect it into the hash (without
+  // adding history entries — replaceState). Reader: listen to popstate in
+  // case the user navigates back/forward.
+  useEffect(() => {
+    if (typeof history === "undefined") return;
+    const hash = location.hash || "";
+    const current = /#topic=([^&]+)/.exec(hash);
+    const currentId = current ? decodeURIComponent(current[1]) : null;
+    if (pageTopicId === currentId) return;
+    if (pageTopicId) {
+      history.replaceState(
+        null,
+        "",
+        `${location.pathname}${location.search}#topic=${encodeURIComponent(pageTopicId)}`,
+      );
+    } else if (/#topic=/.test(hash)) {
+      history.replaceState(null, "", `${location.pathname}${location.search}`);
+    }
+  }, [pageTopicId]);
+
+  useEffect(() => {
+    const onPop = () => {
+      const m = /#topic=([^&]+)/.exec(location.hash || "");
+      setPageTopicId(m ? decodeURIComponent(m[1]) : null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   useEffect(() => {
     if (!selectedId) {
@@ -598,7 +777,22 @@ export default function App() {
           if (msg.type === "message" && msg.data) {
             setMessages((prev) => {
               const id = msg.data.msg_id;
-              if (id && prev.some((m) => m.msg_id === id)) return prev;
+              if (id && prev.some((m) => m.msg_id === id)) {
+                // Already present — merge post-hoc updates (e.g. permission
+                // card resolution flipping content_data.resolved). Keep any
+                // client-local transient fields like _streaming.
+                return prev.map((m) =>
+                  m.msg_id === id
+                    ? {
+                        ...m,
+                        content: msg.data.content ?? m.content,
+                        content_data:
+                          msg.data.content_data ?? m.content_data,
+                        msg_type: msg.data.msg_type ?? m.msg_type,
+                      }
+                    : m,
+                );
+              }
               const entry =
                 msg.data.sender_type === "bot"
                   ? { ...msg.data, _streaming: true }
@@ -625,7 +819,7 @@ export default function App() {
               ),
             );
           } else if (msg.type === "message_done" && msg.data) {
-            const { msg_id, content, files, file_ids } = msg.data;
+            const { msg_id, content, files, file_ids, is_partial } = msg.data;
             setMessages((prev) =>
               prev.map((m) =>
                 m.msg_id === msg_id
@@ -635,6 +829,9 @@ export default function App() {
                       _streaming: false,
                       ...(files ? { files } : {}),
                       ...(file_ids ? { file_ids } : {}),
+                      ...(typeof is_partial === "boolean"
+                        ? { is_partial }
+                        : {}),
                     }
                   : m,
               ),
@@ -682,6 +879,72 @@ export default function App() {
       if (ws) ws.close();
     };
   }, [selectedId, reportClientError]);
+
+  // User-scoped WebSocket: receives lightweight notifications for channels
+  // the user isn't currently viewing. Used to live-increment rail unread
+  // counts without opening a per-channel socket for every membership.
+  useEffect(() => {
+    if (!currentUserId) return;
+    let ws: WebSocket | null = null;
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    const MAX_RETRIES = 10;
+    const BASE_DELAY = 1000;
+    const MAX_DELAY = 30000;
+
+    const connect = () => {
+      if (disposed) return;
+      ws = new WebSocket(buildWsUrl(`/ws/users/${currentUserId}`));
+      ws.onopen = () => {
+        retryCount = 0;
+      };
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type !== "channel_new_message" || !msg.data) return;
+          const chId = msg.data.channel_id as string | undefined;
+          if (!chId) return;
+          // Ignore the channel the user is actively viewing — they'll get the
+          // message on the channel WS and we'll mark-read on scroll/select.
+          if (chId === selectedId) return;
+          setChannels((prev) =>
+            prev.map((c) =>
+              c.channel_id === chId
+                ? { ...c, unread_count: (c.unread_count ?? 0) + 1 }
+                : c,
+            ),
+          );
+          setDMs((prev) =>
+            prev.map((d) =>
+              d.channel_id === chId
+                ? { ...d, unread_count: (d.unread_count ?? 0) + 1 }
+                : d,
+            ),
+          );
+        } catch {
+          /* ignore malformed payloads */
+        }
+      };
+      ws.onclose = () => {
+        if (disposed) return;
+        if (retryCount >= MAX_RETRIES) return;
+        const delay = Math.min(BASE_DELAY * 2 ** retryCount, MAX_DELAY);
+        retryCount += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+      ws.onerror = () => {
+        // onclose will run after onerror, which handles the retry.
+      };
+    };
+    connect();
+
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
+    };
+  }, [currentUserId, selectedId]);
 
   useEffect(() => {
     if ((memoryPanelOpen || memoryPageOpen) && selectedId) {
@@ -912,17 +1175,33 @@ export default function App() {
       content = `> [${refLabel}]: ${quotedText}\n\n${content}`;
     }
     const isSecretSend = secretMode;
+    // Resolve msg_type: a pending reply-to always wins; otherwise use the
+    // user's current msgKind pick from the composer switcher.
+    const effectiveKind: MsgKind | "reply" = replyingTo
+      ? "reply"
+      : msgKind;
     const body: Record<string, unknown> = {
       content,
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: pendingFileIds,
       is_secret: isSecretSend,
-      msg_type: replyingTo ? "reply" : "normal",
+      msg_type: effectiveKind,
     };
     if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
+    const titleTrim = composerTitle.trim() || null;
+    if (effectiveKind === "announcement") {
+      body.content_data = {
+        pinned_by: currentUserId,
+        ...(titleTrim ? { title: titleTrim } : {}),
+      };
+    } else if (effectiveKind === "topic") {
+      body.content_data = titleTrim ? { title: titleTrim } : {};
+    }
     setInput("");
     setSecretMode(false);
+    setMsgKind("normal");
+    setComposerTitle("");
     setPendingFileIds([]);
     setPendingFileNames([]);
     setPendingFilePreviews((prev) => {
@@ -958,12 +1237,156 @@ export default function App() {
       .catch(console.error);
   };
 
+  // Reveal an encrypted message by hitting /messages/:id/secret with the
+  // per-send token (only the sender holds one, captured in secretTokens).
+  // On success, stashes plaintext into revealedSecrets so the stream
+  // renders it in place of the 🔒 veil.
+  const revealSecretMessage = (msgId: string) => {
+    const token = secretTokens[msgId];
+    if (!selectedId || !token) return;
+    fetch(
+      `${API}/channels/${selectedId}/messages/${msgId}/secret?token=${encodeURIComponent(token)}`,
+      { headers: { Authorization: `Bearer ${authToken}` } },
+    )
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.data?.content) {
+          setRevealedSecrets((prev) => ({
+            ...prev,
+            [msgId]: d.data.content,
+          }));
+        } else {
+          toast.error(d.detail || "无法查看加密内容");
+        }
+      })
+      .catch(() => toast.error("请求失败"));
+  };
+
+  // Copy a message's rendered text (stripping think-folds / guide payload
+  // JSON) to the system clipboard. Best-effort — silently toasts failure.
+  const copyMessageText = async (m: Message) => {
+    const raw = parseGuidePayload(m.content || "").text || m.content || "";
+    try {
+      await navigator.clipboard.writeText(raw);
+      toast.success("已复制");
+    } catch {
+      toast.error("复制失败");
+    }
+  };
+
+  const cancelStreamingMessage = async (m: Message) => {
+    if (!selectedId) return;
+    // Optimistic: stop the streaming pulse immediately so the user sees feedback;
+    // the message_done event will arrive shortly with is_partial=true and the
+    // final buffered content. If the request fails we restore _streaming.
+    setMessages((prev) =>
+      prev.map((x) =>
+        x.msg_id === m.msg_id ? { ...x, _streaming: false } : x,
+      ),
+    );
+    try {
+      const r = await apiFetch(
+        `/channels/${selectedId}/messages/${m.msg_id}/cancel`,
+        { method: "POST", token: authToken },
+      );
+      if (!r.ok) {
+        setMessages((prev) =>
+          prev.map((x) =>
+            x.msg_id === m.msg_id ? { ...x, _streaming: true } : x,
+          ),
+        );
+        toast.error("取消失败");
+      }
+    } catch {
+      setMessages((prev) =>
+        prev.map((x) =>
+          x.msg_id === m.msg_id ? { ...x, _streaming: true } : x,
+        ),
+      );
+      toast.error("取消失败");
+    }
+  };
+
+  /** Inline ⏹ stop button shown next to the streaming pulse on bot bubbles.
+   *  Returns null for non-streaming or non-bot messages so callers can drop
+   *  it next to every pulse location without an extra wrapping condition. */
+  const renderStopStreamButton = (m: Message) => {
+    if (!m._streaming || m.sender_type !== "bot") return null;
+    return (
+      <button
+        type="button"
+        title="停止生成"
+        onClick={() => cancelStreamingMessage(m)}
+        className="inline-flex items-center justify-center align-middle ml-1.5 w-5 h-5 rounded border"
+        style={{
+          borderColor: "var(--border)",
+          background: "var(--surface-soft)",
+          color: "var(--fg-2)",
+          cursor: "pointer",
+        }}
+      >
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            background: "currentColor",
+            borderRadius: 1,
+          }}
+        />
+      </button>
+    );
+  };
+
+  /** Inline "已取消" badge shown after a streaming bot reply was cancelled. */
+  const renderPartialBadge = (m: Message) => {
+    if (m._streaming || !m.is_partial || m.sender_type !== "bot") return null;
+    return (
+      <span
+        className="inline-block align-middle ml-1.5 px-1.5 py-0.5 rounded text-[10px]"
+        style={{
+          background: "var(--surface-soft)",
+          border: "1px solid var(--border)",
+          color: "var(--fg-3)",
+        }}
+      >
+        已取消
+      </span>
+    );
+  };
+
+  const sendTopicReply = async (
+    channelId: string,
+    rootMsgId: string,
+    text: string,
+  ) => {
+    if (!text.trim()) return;
+    const body: Record<string, unknown> = {
+      content: text.trim(),
+      sender_id: currentUserId,
+      sender_type: "user",
+      file_ids: [],
+      is_secret: false,
+      msg_type: "reply",
+      in_reply_to_msg_id: rootMsgId,
+    };
+    const r = await authFetch(`${API}/channels/${channelId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => null);
+    if (d?.data && selectedIdRef.current === channelId) {
+      setMessages((prev) =>
+        prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data],
+      );
+    }
+  };
+
   const handleClarifyContinue = (
     msgId: string,
     schema: ClarifySchema,
     answers: ClarifyAnswers,
   ) => {
-    const lines = ["@channel bot 澄清回答："];
+    const lines = ["@Coordinator 澄清回答："];
     const optText = answers.option_text || {};
     for (const q of schema.questions) {
       const picked = new Set(answers.selected[q.id] || []);
@@ -991,7 +1414,7 @@ export default function App() {
   const handleClarifySkip = (msgId: string) => {
     setPendingClarifyReplyMsgId(msgId);
     sendUserMessage(
-      "@channel bot 用户选择跳过澄清，请在当前信息下继续回答。",
+      "@Coordinator 用户选择跳过澄清，请在当前信息下继续回答。",
       msgId,
     ).catch(() => {
       setPendingClarifyReplyMsgId(null);
@@ -1173,18 +1596,7 @@ export default function App() {
             />
             {f.original_filename && (
               <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  className="w-3 h-3 text-gray-400"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Zm10.5 5.707a.5.5 0 0 0-.146-.353l-2.5-2.5a.5.5 0 0 0-.708 0L7.5 8.5 6.354 7.354a.5.5 0 0 0-.708 0l-3.146 3.15V12a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-2.293ZM11 5.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+                <PhotoIcon className="w-3 h-3 text-gray-400" />
                 <span className="truncate max-w-[200px]">
                   {f.original_filename}
                 </span>
@@ -1206,14 +1618,7 @@ export default function App() {
             className="flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[300px] hover:bg-gray-50 transition-colors cursor-pointer no-underline"
           >
             <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                className="w-5 h-5 text-blue-500"
-              >
-                <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
-              </svg>
+              <DocumentIcon className="w-5 h-5 text-blue-500" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-medium text-gray-700 truncate">
@@ -1230,8 +1635,28 @@ export default function App() {
     );
   };
 
-  const selectedChannel =
-    channels.find((c) => c.channel_id === selectedId) || null;
+  const selectedChannel: Channel | null = (() => {
+    const hit = channels.find((c) => c.channel_id === selectedId);
+    if (hit) return hit;
+    // DMs aren't in the channels[] list — synthesize a minimal Channel so
+    // downstream references to selectedChannel.name / .workspace_id work.
+    const dm = selectedId
+      ? dms.find((d) => d.channel_id === selectedId)
+      : undefined;
+    if (!dm) return null;
+    const label =
+      dm.counterparty.display_name ||
+      dm.counterparty.username ||
+      "DM";
+    return {
+      channel_id: dm.channel_id,
+      workspace_id: dm.workspace_id,
+      name: label,
+      type: "dm",
+      auto_assist: false,
+      unread_count: dm.unread_count ?? 0,
+    };
+  })();
   const blocks = buildLogicalQaBlocks(messages);
   const blockPairsForExport: QaPair[] = blocks.map((b) => {
     const lastBot = [...b.messages]
@@ -1304,6 +1729,36 @@ export default function App() {
       messagesContainerRef.current.scrollHeight;
   }, [selectedId, messages.length]);
 
+  // 打开频道时把未读标记为已读：先在本地把徽标清零（立即反馈），再向后端
+  // 同步阅读游标。失败不回滚徽标——下次加载频道列表时会重新计算。
+  useEffect(() => {
+    if (!selectedId || !authToken) return;
+    setChannels((prev) =>
+      prev.some(
+        (c) => c.channel_id === selectedId && (c.unread_count ?? 0) > 0,
+      )
+        ? prev.map((c) =>
+            c.channel_id === selectedId ? { ...c, unread_count: 0 } : c,
+          )
+        : prev,
+    );
+    setDMs((prev) =>
+      prev.some(
+        (d) => d.channel_id === selectedId && (d.unread_count ?? 0) > 0,
+      )
+        ? prev.map((d) =>
+            d.channel_id === selectedId ? { ...d, unread_count: 0 } : d,
+          )
+        : prev,
+    );
+    apiFetch(`/channels/${selectedId}/read`, {
+      method: "POST",
+      token: authToken,
+    }).catch(() => {
+      /* ignore — rail badge stays cleared locally; next list refresh re-syncs */
+    });
+  }, [selectedId, authToken]);
+
   const generateQaSummary = async (pairsToSummarize: QaPair[]) => {
     if (pairsToSummarize.length === 0) {
       toast.error("请勾选至少一组问答");
@@ -1357,7 +1812,7 @@ export default function App() {
     refreshQaLlmStatus();
   }, [selectedId]);
 
-  // Auto-expand threads that contain streaming (incoming) messages
+  // Auto-expand topics that contain streaming (incoming) messages
   useEffect(() => {
     const msgIdSet = new Set(messages.map((x) => x.msg_id));
     const rootIdCache = new Map<string, string>();
@@ -1376,11 +1831,11 @@ export default function App() {
       .filter((m) => isMsgReply(m, msgIdSet) && m._streaming)
       .map((m) => getRootId(m.msg_id));
     if (toExpand.length > 0)
-      setExpandedThreads((prev) => new Set([...prev, ...toExpand]));
+      setExpandedTopics((prev) => new Set([...prev, ...toExpand]));
   }, [messages]);
 
-  // Build thread tree: follow parent chain to find root, group all descendants under it
-  const { threadRoots, threadRepliesOf } = (() => {
+  // Build topic tree: follow parent chain to find root, group all descendants under it
+  const { topicRoots, topicRepliesOf } = (() => {
     const msgIdSet = new Set(messages.map((x) => x.msg_id));
     const rootIdCache = new Map<string, string>();
     function getRootId(msgId: string): string {
@@ -1411,8 +1866,8 @@ export default function App() {
       );
     }
     return {
-      threadRoots: messages.filter((m) => !replySet.has(m.msg_id)),
-      threadRepliesOf: (rootId: string): Message[] =>
+      topicRoots: messages.filter((m) => !replySet.has(m.msg_id)),
+      topicRepliesOf: (rootId: string): Message[] =>
         replyMap.get(rootId) ?? [],
     };
   })();
@@ -1429,11 +1884,19 @@ export default function App() {
         }}
       />
 
-      <div className="flex h-dvh bg-white">
+      <div className="flex h-dvh" style={{ background: "var(--bg-0)" }}>
         {isMobile && sidebarOpen && (
           <div
             className="fixed inset-0 bg-black/50 z-[55]"
             onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        {!isMobile && (
+          <WorkspaceRail
+            workspaces={workspaces}
+            selectedWorkspaceId={selectedWorkspaceId}
+            onSelect={setSelectedWorkspaceId}
+            onCreate={() => setCreateWsOpen(true)}
           />
         )}
         <Sidebar
@@ -1443,34 +1906,56 @@ export default function App() {
           onLeftResize={onLeftResize}
           currentUser={currentUser}
           authToken={authToken}
-          onLogout={handleLogout}
           onLoginClick={() => setLoginModalOpen(true)}
           workspaces={workspaces}
           setWorkspaces={setWorkspaces}
           selectedWorkspaceId={selectedWorkspaceId}
           setSelectedWorkspaceId={setSelectedWorkspaceId}
+          isPersonalWorkspace={isPersonalWorkspace}
           channels={channels}
           setChannels={setChannels}
+          dms={dms}
+          setDMs={setDMs}
           selectedId={selectedId}
           setSelectedId={setSelectedId}
           setSidebarOpen={setSidebarOpen}
-          onOpenKeychain={() => setKeychainModalOpen(true)}
-          onOpenUserProfile={() => setUserProfileOpen(true)}
           onOpenCreateWorkspace={() => setCreateWsOpen(true)}
           onOpenInviteWsMember={() => setInviteWsMemberOpen(true)}
           onOpenCreateChannel={() => setCreateChannelOpen(true)}
-          onOpenQuickConnect={() => setQcOpen(true)}
-          onOpenNotifications={() => setNotifPanelOpen(true)}
-          onOpenFriends={() => setFriendsPanelOpen(true)}
-          onOpenHelp={() => setHelpOpen(true)}
-          isDark={isDark}
-          toggleTheme={toggleTheme}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
 
         <HelpModal
           open={helpOpen}
           onClose={() => setHelpOpen(false)}
           apiDocsUrl={API_DOCS_URL}
+        />
+
+        <AnnouncementComposerModal
+          open={announcementOpen}
+          channelId={selectedId}
+          channelName={selectedChannel?.name}
+          currentUserId={currentUserId}
+          authToken={authToken}
+          onClose={() => setAnnouncementOpen(false)}
+          onPublished={() => toast.success("公告已发布")}
+        />
+
+        <SettingsModal
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          isDark={isDark}
+          setTheme={setTheme}
+          authToken={authToken}
+          currentUser={currentUser}
+          onProfileUpdated={(data) => {
+            if (!currentUser) return;
+            setCurrentUser({
+              ...currentUser,
+              display_name: data.display_name,
+            });
+          }}
+          onLogout={handleLogout}
         />
 
         <OpenClawQcModal
@@ -1686,16 +2171,18 @@ export default function App() {
         )}
 
         {/* Keychain modal */}
-        {keychainModalOpen && authToken && (
+        {authToken && (
           <KeychainModal
+            open={keychainModalOpen}
             userToken={authToken}
             onClose={() => setKeychainModalOpen(false)}
           />
         )}
 
         {/* User profile modal */}
-        {userProfileOpen && currentUser && (
+        {currentUser && (
           <UserProfileModal
+            open={userProfileOpen}
             currentUser={currentUser}
             userToken={authToken!}
             onClose={() => setUserProfileOpen(false)}
@@ -1710,8 +2197,9 @@ export default function App() {
         )}
 
         {/* Channel profile modal */}
-        {channelProfileOpen && currentUser && selectedId && (
+        {currentUser && selectedId && (
           <ChannelProfileModal
+            open={channelProfileOpen}
             channelId={selectedId}
             channelName={selectedChannel?.name || ""}
             userToken={authToken!}
@@ -1746,7 +2234,8 @@ export default function App() {
 
         <div className="flex-1 flex min-w-0">
           <main
-            className="flex-1 flex flex-col min-w-0 bg-white relative"
+            className="flex-1 flex flex-col min-w-0 relative"
+            style={{ background: "var(--bg-0)" }}
             onDragEnter={(e) => {
               if (!selectedId || !e.dataTransfer.types.includes("Files"))
                 return;
@@ -1782,12 +2271,58 @@ export default function App() {
               isDark={isDark}
             />
 
+            {pageTopicId &&
+              selectedId &&
+              (() => {
+                const rootMsg = messages.find(
+                  (m) => m.msg_id === pageTopicId,
+                );
+                if (!rootMsg) return null;
+                const rootId = pageTopicId; // narrowed non-null
+                const topicReplies = messages
+                  .filter((m) => m.in_reply_to_msg_id === rootId)
+                  .sort((a, b) =>
+                    (a.created_at || "") < (b.created_at || "") ? -1 : 1,
+                  );
+                return (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background: "var(--bg-0)",
+                      zIndex: 20,
+                      display: "flex",
+                      flexDirection: "column",
+                      minHeight: 0,
+                    }}
+                  >
+                    <TopicPage
+                      rootMsg={rootMsg}
+                      replies={topicReplies}
+                      channel={selectedChannel}
+                      channelBots={channelBots}
+                      channelUsers={channelUsers}
+                      currentUserId={currentUserId}
+                      onBack={() => setPageTopicId(null)}
+                      onGoToChannel={() => setPageTopicId(null)}
+                      onSendReply={(text) =>
+                        sendTopicReply(selectedId, rootId, text)
+                      }
+                    />
+                  </div>
+                );
+              })()}
 
             {selectedId ? (
               <>
                 <ChannelHeader
                   channel={selectedChannel}
                   selectedId={selectedId}
+                  activeDm={
+                    selectedId
+                      ? dms.find((d) => d.channel_id === selectedId) ?? null
+                      : null
+                  }
                   isMobile={isMobile}
                   onOpenSidebar={() => setSidebarOpen(true)}
                   autoAssist={autoAssist}
@@ -1807,11 +2342,61 @@ export default function App() {
                     setSummaryPreview("");
                     setSummaryModalOpen(true);
                   }}
-                  memoryPanelOpen={memoryPanelOpen}
-                  onToggleMemoryPanel={() => setMemoryPanelOpen((o) => !o)}
+                  memoryTab={memoryTab}
+                  onSetMemoryTab={setMemoryTab}
                   onOpenManageMembers={() => setManageMembersOpen(true)}
                   currentUser={currentUser}
                   onOpenChannelProfile={() => setChannelProfileOpen(true)}
+                  onOpenAnnouncementComposer={
+                    // DMs don't get announcements — the megaphone would make
+                    // no sense in a 1:1 conversation.
+                    selectedChannel?.type === "dm"
+                      ? undefined
+                      : () => setAnnouncementOpen(true)
+                  }
+                  topics={topicRoots
+                    .map((r) => {
+                      const replies = topicRepliesOf(r.msg_id);
+                      // Surface if the user explicitly sent this as a 主题
+                      // (msg_type="topic") OR if a plain message has
+                      // accumulated enough replies to promote implicitly.
+                      const isExplicit = r.msg_type === "topic";
+                      if (
+                        !isExplicit &&
+                        replies.length < TOPIC_DISPLAY_THRESHOLD
+                      ) {
+                        return null;
+                      }
+                      const title =
+                        (r.content || "").replace(/\s+/g, " ").trim().slice(0, 60) ||
+                        "(无标题)";
+                      const last = replies[replies.length - 1];
+                      return {
+                        rootId: r.msg_id,
+                        title,
+                        count: replies.length,
+                        lastTime: last?.created_at
+                          ? formatTs(last.created_at)
+                          : undefined,
+                      };
+                    })
+                    .filter((x): x is NonNullable<typeof x> => x !== null)}
+                  onOpenTopic={(rootId) => {
+                    setPageTopicId(rootId);
+                  }}
+                  onJumpToMessage={(id) => {
+                    const el = document.getElementById(`msg-${id}`);
+                    if (!el) return;
+                    el.scrollIntoView({ block: "center", behavior: "smooth" });
+                    const orig = el.style.transition;
+                    el.style.transition = "background 200ms";
+                    const prev = el.style.background;
+                    el.style.background = "var(--accent-muted)";
+                    setTimeout(() => {
+                      el.style.background = prev;
+                      el.style.transition = orig;
+                    }, 1200);
+                  }}
                 />
 
                 <div
@@ -1835,23 +2420,408 @@ export default function App() {
                           — 已加载全部消息 —
                         </div>
                       )}
-                      {threadRoots.map((m) => {
-                        const replies = threadRepliesOf(m.msg_id);
+                      {!loading &&
+                        !loadingMore &&
+                        messages.length === 0 &&
+                        selectedChannel && (
+                          <div className="an-empty">
+                            <div className="an-empty-big">
+                              # {selectedChannel.name}
+                            </div>
+                            <div className="an-empty-sm">
+                              这里还没有消息。@ 调用一个 Bot 或直接开始对话。
+                            </div>
+                            <div className="an-empty-chips">
+                              {[
+                                "@coordinator 总结这个频道最近的进展",
+                                "这个频道的目标是什么？",
+                                "@coordinator 帮我接下来要做什么",
+                              ].map((s) => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  className="an-empty-chip"
+                                  onClick={() => {
+                                    setInput(s);
+                                    setTimeout(
+                                      () => inputRef.current?.focus(),
+                                      0,
+                                    );
+                                  }}
+                                >
+                                  {s}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      {(() => {
+                      const renderedRows = topicRoots.map((m, idx) => {
+                        // isDM gates the "intimate" bubble + self-right
+                        // treatment; channel rendering is Discord-style
+                        // flat, all-left, with sender grouping.
+                        const isDMRender =
+                          selectedChannel?.type === "dm";
+                        // Stack against the previous root if same sender
+                        // within 2 minutes — hide avatar/header row.
+                        const prevRoot =
+                          idx > 0 ? topicRoots[idx - 1] : null;
+                        const prevTs = prevRoot?.created_at
+                          ? new Date(prevRoot.created_at).getTime()
+                          : 0;
+                        const curTs = m.created_at
+                          ? new Date(m.created_at).getTime()
+                          : 0;
+                        const isStacked =
+                          !isDMRender &&
+                          !!prevRoot &&
+                          prevRoot.sender_id === m.sender_id &&
+                          prevRoot.sender_type === m.sender_type &&
+                          prevRoot.msg_type !== "announcement" &&
+                          prevRoot.msg_type !== "routing" &&
+                          prevRoot.msg_type !== "permission" &&
+                          m.msg_type !== "announcement" &&
+                          m.msg_type !== "routing" &&
+                          m.msg_type !== "permission" &&
+                          m.msg_type !== "topic" &&
+                          prevTs > 0 &&
+                          curTs > 0 &&
+                          curTs - prevTs < 2 * 60 * 1000;
+                        // ── routing card: coordinator picks + plan ──────────
+                        if (m.msg_type === "routing") {
+                          const cd = (m.content_data ?? {}) as Record<
+                            string,
+                            unknown
+                          >;
+                          const q = typeof cd.q === "string" ? cd.q : null;
+                          const plan =
+                            typeof cd.plan === "string" ? cd.plan : null;
+                          const picksRaw = Array.isArray(cd.picks)
+                            ? (cd.picks as Array<Record<string, unknown>>)
+                            : [];
+                          const picks = picksRaw.map((p) => ({
+                            agent:
+                              typeof p.agent === "string" ? p.agent : "agent",
+                            score:
+                              typeof p.score === "string" ? p.score : null,
+                            why: typeof p.why === "string" ? p.why : null,
+                            picked: p.picked === true,
+                            secondary: p.secondary === true,
+                          }));
+                          const coordBot = channelBots.find(
+                            (b) =>
+                              // 现行用户名 + 历史名兜底（"channel bot" 老版本数据库）
+                              b.username === "Coordinator" ||
+                              b.username === "channel bot" ||
+                              b.username === "coordinator",
+                          );
+                          const rTime = m.created_at
+                            ? formatTs(m.created_at)
+                            : "";
+                          return (
+                            <div
+                              key={m.msg_id}
+                              id={`msg-${m.msg_id}`}
+                              className="an-chat-msg pl-16 pr-4 pt-2"
+                            >
+                              <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+                                <span className="text-[13px] font-semibold text-gray-900">
+                                  {coordBot?.display_name ||
+                                    coordBot?.username ||
+                                    "Coordinator"}
+                                </span>
+                                <span
+                                  className="an-tag coord"
+                                  style={{
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    letterSpacing: "0.6px",
+                                    padding: "1px 5px",
+                                    borderRadius: 3,
+                                    background: "var(--accent-muted)",
+                                    color: "var(--accent)",
+                                  }}
+                                >
+                                  COORDINATOR
+                                </span>
+                                {rTime && (
+                                  <span className="text-[11px] text-gray-400">
+                                    {rTime}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="an-routing">
+                                {q && (
+                                  <div className="an-rq">
+                                    路由: <b>{q}</b>
+                                  </div>
+                                )}
+                                {picks.length > 0 && (
+                                  <div className="an-picks">
+                                    {picks.map((p) => {
+                                      const bot = channelBots.find(
+                                        (b) => b.username === p.agent,
+                                      );
+                                      const color =
+                                        bot?.avatar_url ?? null;
+                                      return (
+                                        <span
+                                          key={p.agent}
+                                          className={
+                                            "an-pick" +
+                                            (p.picked ? " picked" : "")
+                                          }
+                                          title={p.why || undefined}
+                                        >
+                                          <span
+                                            className="an-dot"
+                                            style={{
+                                              background: color
+                                                ? "var(--accent)"
+                                                : "var(--fg-3)",
+                                            }}
+                                          />
+                                          @{p.agent}
+                                          {p.score && (
+                                            <span
+                                              style={{
+                                                color: "var(--fg-3)",
+                                                marginLeft: 2,
+                                                fontSize: 11,
+                                              }}
+                                            >
+                                              {p.score}
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {plan && (
+                                  <div className="an-plan">
+                                    <b>计划:</b> {plan}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // ── permission card: Allow/Deny for tool writes ──────
+                        if (m.msg_type === "permission") {
+                          const cd = (m.content_data ?? {}) as Record<
+                            string,
+                            unknown
+                          >;
+                          const tool =
+                            typeof cd.tool === "string" ? cd.tool : null;
+                          const body =
+                            typeof cd.body === "string"
+                              ? cd.body
+                              : m.content || "";
+                          const resolved = cd.resolved === true;
+                          const resolution =
+                            cd.resolution === "allow" ||
+                            cd.resolution === "deny"
+                              ? cd.resolution
+                              : null;
+                          const senderBot =
+                            m.sender_type === "bot"
+                              ? channelBots.find(
+                                  (b) => b.member_id === m.sender_id,
+                                )
+                              : null;
+                          const senderLabel =
+                            senderBot?.display_name ||
+                            senderBot?.username ||
+                            "Bot";
+                          const pTime = m.created_at
+                            ? formatTs(m.created_at)
+                            : "";
+                          const submitResolution = async (
+                            res: "allow" | "deny",
+                          ) => {
+                            try {
+                              const r = await apiFetch(
+                                `/channels/${selectedId}/messages/${m.msg_id}/resolve`,
+                                {
+                                  method: "POST",
+                                  body: { resolution: res },
+                                  token: authToken,
+                                },
+                              );
+                              if (!r.ok) return;
+                              const data = await r.json();
+                              // Optimistic local update — the WS broadcast also
+                              // merges it back in, so this mainly covers the case
+                              // where the user clicks while offline-ish.
+                              if (data?.data?.content_data) {
+                                setMessages((prev) =>
+                                  prev.map((x) =>
+                                    x.msg_id === m.msg_id
+                                      ? {
+                                          ...x,
+                                          content_data:
+                                            data.data.content_data,
+                                        }
+                                      : x,
+                                  ),
+                                );
+                              }
+                            } catch {
+                              /* ignore — UI stays un-resolved so user can retry */
+                            }
+                          };
+                          return (
+                            <div
+                              key={m.msg_id}
+                              id={`msg-${m.msg_id}`}
+                              className="an-chat-msg pl-16 pr-4 pt-2"
+                            >
+                              <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+                                <span className="text-[13px] font-semibold text-gray-900">
+                                  {senderLabel}
+                                </span>
+                                <span
+                                  className="an-tag bot"
+                                  style={{
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    letterSpacing: "0.6px",
+                                    padding: "1px 5px",
+                                    borderRadius: 3,
+                                    background: "var(--surface-soft)",
+                                    color: "var(--fg-3)",
+                                    border: "1px solid var(--border)",
+                                  }}
+                                >
+                                  BOT
+                                </span>
+                                {pTime && (
+                                  <span className="text-[11px] text-gray-400">
+                                    {pTime}
+                                  </span>
+                                )}
+                              </div>
+                              <div
+                                className={
+                                  "an-approval" +
+                                  (resolved ? " resolved" : "")
+                                }
+                              >
+                                <div className="an-body">
+                                  <b>Approval needed.</b> {body}
+                                  {tool && (
+                                    <span
+                                      style={{
+                                        fontFamily: "var(--font-mono)",
+                                        fontSize: 11,
+                                        marginLeft: 6,
+                                        color: "var(--fg-3)",
+                                      }}
+                                    >
+                                      ({tool})
+                                    </span>
+                                  )}
+                                  {resolved && resolution && (
+                                    <span
+                                      style={{
+                                        marginLeft: 8,
+                                        color: "var(--fg-3)",
+                                      }}
+                                    >
+                                      ·{" "}
+                                      {resolution === "allow"
+                                        ? "已通过"
+                                        : "已拒绝"}
+                                    </span>
+                                  )}
+                                </div>
+                                {!resolved && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="deny"
+                                      onClick={() => submitResolution("deny")}
+                                    >
+                                      拒绝
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="allow"
+                                      onClick={() => submitResolution("allow")}
+                                    >
+                                      通过
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // ── announcement card: pinned banner, no bubble ──────
+                        if (m.msg_type === "announcement") {
+                          const cd = (m.content_data ?? {}) as Record<
+                            string,
+                            unknown
+                          >;
+                          const title =
+                            typeof cd.title === "string" ? cd.title : null;
+                          const pinnedById =
+                            typeof cd.pinned_by === "string"
+                              ? cd.pinned_by
+                              : null;
+                          const pinnedUser = pinnedById
+                            ? pinnedById === currentUserId
+                              ? { display_name: "我", username: "me" }
+                              : channelUsers.find(
+                                  (u) => u.member_id === pinnedById,
+                                )
+                            : null;
+                          const pinnedLabel =
+                            pinnedUser?.display_name ||
+                            pinnedUser?.username ||
+                            pinnedById ||
+                            "频道管理员";
+                          const annTime = m.created_at
+                            ? formatTs(m.created_at)
+                            : "";
+                          return (
+                            <div
+                              key={m.msg_id}
+                              id={`msg-${m.msg_id}`}
+                              className="an-chat-msg pl-16 pr-4 pt-2"
+                            >
+                              <div className="an-announce">
+                                <div className="an-ann-ico" aria-hidden="true">
+                                  !
+                                </div>
+                                <div className="an-ann-tag">公告 · Announcement</div>
+                                {title && (
+                                  <div className="an-ann-title">{title}</div>
+                                )}
+                                <div className="an-ann-body">{m.content}</div>
+                                <div className="an-ann-foot">
+                                  <span>由 {pinnedLabel} 置顶</span>
+                                  {annTime && (
+                                    <>
+                                      <span>·</span>
+                                      <span>{annTime}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        const replies = topicRepliesOf(m.msg_id);
 
                         // ── helpers shared by root & replies ──────────────────
                         const replyIcon = (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 16 16"
-                            fill="currentColor"
-                            className="w-3.5 h-3.5"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
+                          <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
                         );
 
                         // ── root message ───────────────────────────────────────
@@ -1859,7 +2829,7 @@ export default function App() {
                         const effectiveContent = m.is_secret
                           ? (revealedContent ?? m.content)
                           : m.content;
-                        const { text, form, clarify } =
+                        const { text, clarify } =
                           parseGuidePayload(effectiveContent);
                         const clarifyAnswered =
                           !!clarify &&
@@ -1882,16 +2852,19 @@ export default function App() {
                                 ? "answered"
                                 : "form"
                             : null;
-                        const displayContent = isClarifyReplyUserMessage(
-                          effectiveContent,
-                        )
-                          ? effectiveContent
-                              .replace(
-                                /^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i,
-                                "",
-                              )
-                              .trim()
-                          : text || effectiveContent;
+                        const displayContent = (() => {
+                          const base = isClarifyReplyUserMessage(effectiveContent)
+                            ? effectiveContent
+                                .replace(
+                                  /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                  "",
+                                )
+                                .trim()
+                            : text || effectiveContent;
+                          return m.sender_type === "bot"
+                            ? stripLeadingQuotePrefixes(base)
+                            : base;
+                        })();
                         const isOwn =
                           m.sender_type === "user" &&
                           m.sender_id === currentUserId;
@@ -1906,7 +2879,6 @@ export default function App() {
                           senderBot?.display_name ||
                           senderBot?.username ||
                           "Bot";
-                        const botInitials = botLabel.slice(0, 2).toUpperCase();
                         const senderUser =
                           m.sender_type === "user" && !isOwn
                             ? channelUsers.find(
@@ -1946,7 +2918,255 @@ export default function App() {
                           secretSecsLeft !== null && secretSecsLeft <= 0;
                         const isSecretUnrevealed =
                           m.is_secret && !revealedContent && !isSecretExpired;
-                        const rootBubble = isOwn ? (
+                        const rootBubble = !isDMRender ? (
+                          // ── Channel flat render — Discord style ────────
+                          // All-left alignment, no bubble, sender grouping
+                          // (stacked messages hide their avatar + header).
+                          <div
+                            id={`msg-${m.msg_id}`}
+                            className="an-chat-msg group relative px-4 transition-colors"
+                            style={{
+                              paddingTop: isStacked ? 2 : 8,
+                              paddingBottom: 2,
+                            }}
+                          >
+                            {/* subtle hover tint covering the full row width */}
+                            <div
+                              className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                              style={{ background: "var(--surface-soft)" }}
+                            />
+                            <div className="relative flex gap-3">
+                              <div className="w-9 flex-shrink-0">
+                                {!isStacked ? (
+                                  m.sender_type === "bot" ? (
+                                    <BotAvatar
+                                      label={botLabel}
+                                      avatarUrl={senderBot?.avatar_url}
+                                      size={36}
+                                      className="mt-0.5"
+                                    />
+                                  ) : (
+                                    <div
+                                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
+                                      style={{
+                                        background: isOwn
+                                          ? "var(--accent)"
+                                          : "var(--fg-3)",
+                                      }}
+                                    >
+                                      {isOwn ? "我" : userInitials}
+                                    </div>
+                                  )
+                                ) : (
+                                  // stacked: show the timestamp in the
+                                  // gutter on hover so time is still
+                                  // discoverable without the header row
+                                  <div
+                                    className="text-right pr-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1"
+                                    style={{
+                                      fontSize: 10,
+                                      color: "var(--fg-3)",
+                                      fontVariantNumeric: "tabular-nums",
+                                    }}
+                                  >
+                                    {msgTime
+                                      ? msgTime.split(",").pop()?.trim()
+                                      : ""}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                {!isStacked && (
+                                  <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
+                                    <span
+                                      className="font-semibold"
+                                      style={{
+                                        fontSize: "var(--fs-chat-name)",
+                                        lineHeight: 1.2,
+                                        color: "var(--fg-1)",
+                                      }}
+                                    >
+                                      {isOwn
+                                        ? "我"
+                                        : m.sender_type === "bot"
+                                          ? botLabel
+                                          : userLabel}
+                                    </span>
+                                    <span
+                                      className="text-[11px]"
+                                      style={{ color: "var(--fg-3)" }}
+                                    >
+                                      {msgTime}
+                                    </span>
+                                  </div>
+                                )}
+                                {m.content_data?.title ? (
+                                  <div
+                                    className="text-[14px] font-semibold mb-1 leading-snug"
+                                    style={{ color: "var(--fg-1)" }}
+                                  >
+                                    {m.content_data.title as string}
+                                  </div>
+                                ) : null}
+                                {/* Unified reply-quote: lifted out of the
+                                    body so all 4 message paths render the
+                                    "回复某条消息" indicator the exact same
+                                    way (.an-reply-quote with elbow connector). */}
+                                {(() => {
+                                  const mq = parseQuotePrefix(displayContent);
+                                  if (!mq || isSecretExpired || isSecretUnrevealed)
+                                    return null;
+                                  return (
+                                    <div
+                                      className="an-reply-quote"
+                                      title={`回复 ${mq.label}`}
+                                    >
+                                      <span className="an-rq-arrow">↪</span>
+                                      <span className="an-rq-name">{mq.label}</span>
+                                      <span className="an-rq-snip">
+                                        {mq.quote.replace(/\s+/g, " ").trim()}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+                                {renderFileAttachments(m)}
+                                <div
+                                  style={{
+                                    fontSize: "var(--fs-chat-body)",
+                                    lineHeight: "var(--lh-chat-body)",
+                                    color: "var(--fg-1)",
+                                    wordWrap: "break-word",
+                                  }}
+                                >
+                                  {isSecretExpired ? (
+                                    <div className="an-secret-veil is-expired">
+                                      <span className="an-secret-veil-icon">
+                                        <LockClosedIcon className="w-5 h-5" />
+                                      </span>
+                                      <div className="an-secret-veil-body">
+                                        <span className="an-secret-veil-label">
+                                          加密消息已过期
+                                        </span>
+                                        <span className="an-secret-veil-meta">
+                                          一次性查看窗口已关闭
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ) : isSecretUnrevealed ? (
+                                    <div className="an-secret-veil">
+                                      <span className="an-secret-veil-icon">
+                                        <LockClosedIcon className="w-5 h-5" />
+                                      </span>
+                                      <div className="an-secret-veil-body">
+                                        <span className="an-secret-veil-label">
+                                          加密消息
+                                        </span>
+                                        <span className="an-secret-veil-meta">
+                                          {secretSecsLeft !== null
+                                            ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
+                                            : "仅 Bot 可读"}
+                                        </span>
+                                      </div>
+                                      {secretTokens[m.msg_id] && (
+                                        <button
+                                          type="button"
+                                          className="an-secret-veil-reveal"
+                                          onClick={() =>
+                                            revealSecretMessage(m.msg_id)
+                                          }
+                                        >
+                                          查看
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    renderWithThinkFolding(
+                                      // Strip the `> [Author]: …\n\n` prefix
+                                      // (rendered separately as .an-reply-quote
+                                      // above) so the body shows only the
+                                      // actual content.
+                                      parseQuotePrefix(displayContent)?.rest ??
+                                        displayContent,
+                                      `${m.msg_id}-`,
+                                      !!m._streaming,
+                                      (src) => {
+                                        setLightboxSrc(src);
+                                        const m2 = src.match(
+                                          /\/files\/([^/]+)\/preview/,
+                                        );
+                                        setLightboxFileId(
+                                          m2 ? m2[1] : null,
+                                        );
+                                      },
+                                      (url, name) =>
+                                        setFilePreviewPanel({ url, filename: name }),
+                                    )
+                                  )}
+                                  {m._streaming &&
+                                    !!(parseGuidePayload(displayContent).text ||
+                                      displayContent) && (
+                                      <span
+                                        className="inline-block w-1.5 h-4 rounded-sm animate-pulse align-middle ml-0.5"
+                                        style={{
+                                          background: "var(--fg-3)",
+                                        }}
+                                      />
+                                    )}
+                                  {renderStopStreamButton(m)}
+                                  {renderPartialBadge(m)}
+                                </div>
+                                {clarifyStatus !== null && selectedId && (
+                                  <ClarifyInlineBlock
+                                    msgId={m.msg_id}
+                                    schema={clarify!}
+                                    status={clarifyStatus}
+                                    replyContent={undefined}
+                                    onContinue={(answers) =>
+                                      handleClarifyContinue(
+                                        m.msg_id,
+                                        clarify!,
+                                        answers,
+                                      )
+                                    }
+                                    onSkip={() =>
+                                      handleClarifySkip(m.msg_id)
+                                    }
+                                  />
+                                )}
+                              </div>
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  title="复制消息内容"
+                                  onClick={() => copyMessageText(m)}
+                                  className="an-chat-action"
+                                >
+                                  <DocumentDuplicateIcon className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  title="回复"
+                                  onClick={() => {
+                                    setReplyingTo(m);
+                                    const mention =
+                                      m.sender_type === "bot" &&
+                                      senderBot?.username
+                                        ? `@${senderBot.username} `
+                                        : "";
+                                    if (mention) setInput(mention);
+                                    (secretMode
+                                      ? secretInputRef.current
+                                      : inputRef.current
+                                    )?.focus();
+                                  }}
+                                  className="an-chat-action"
+                                >
+                                  {replyIcon}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : isOwn ? (
                           <div
                             id={`msg-${m.msg_id}`}
                             className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
@@ -1977,9 +3197,9 @@ export default function App() {
                               </button>
                               <div className="flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
                                 <div className="flex items-baseline gap-1.5 mb-1 justify-end">
-                                  {m.msg_type === "thread" && (
+                                  {m.msg_type === "topic" && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
-                                      消息串
+                                      主题
                                     </span>
                                   )}
                                   <span className="text-[11px] text-gray-400 mr-0.5">
@@ -1992,93 +3212,93 @@ export default function App() {
                                   </div>
                                 ) : null}
                                 {renderFileAttachments(m, true)}
-                                <div
-                                  className={`${isSecretUnrevealed ? "bg-amber-500" : isSecretExpired ? "bg-gray-400" : "bg-[#1264A3]"} text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words`}
-                                >
-                                  {isSecretExpired ? (
-                                    <span className="opacity-80">
-                                      🔒 加密消息（已过期）
-                                    </span>
-                                  ) : isSecretUnrevealed ? (
-                                    <div className="flex items-center gap-2">
-                                      <span>🔒 加密消息</span>
-                                      {secretSecsLeft !== null && (
-                                        <span className="text-[11px] opacity-70 tabular-nums">
-                                          {secretSecsLeft}s
-                                        </span>
-                                      )}
-                                      {secretTokens[m.msg_id] && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            fetch(
-                                              `${API}/channels/${selectedId}/messages/${m.msg_id}/secret?token=${encodeURIComponent(secretTokens[m.msg_id])}`,
-                                              {
-                                                headers: {
-                                                  Authorization: `Bearer ${authToken}`,
-                                                },
-                                              },
-                                            )
-                                              .then((r) => r.json())
-                                              .then((d) => {
-                                                if (d.data?.content) {
-                                                  setRevealedSecrets(
-                                                    (prev) => ({
-                                                      ...prev,
-                                                      [m.msg_id]:
-                                                        d.data.content,
-                                                    }),
-                                                  );
-                                                } else {
-                                                  alert(
-                                                    d.detail ||
-                                                      "无法查看加密内容",
-                                                  );
-                                                }
-                                              })
-                                              .catch(() => alert("请求失败"));
-                                          }}
-                                          className="text-[12px] underline opacity-80 hover:opacity-100"
-                                        >
-                                          查看
-                                        </button>
-                                      )}
+                                {/* If this user message starts with a "> [X]: ..."
+                                    quote prefix (set when the user used the
+                                    reply UI), surface it as a small-gray
+                                    .an-reply-quote ABOVE the bubble. The
+                                    bubble itself then renders just `q.rest`
+                                    so the parent context doesn't intrude on
+                                    the body. The CSS connector elbow visually
+                                    bridges quote → body. */}
+                                {(() => {
+                                  const q = parseQuotePrefix(displayContent);
+                                  if (!q || isSecretExpired || isSecretUnrevealed)
+                                    return null;
+                                  return (
+                                    <div
+                                      className="an-reply-quote"
+                                      title={`回复 ${q.label}`}
+                                    >
+                                      <span className="an-rq-arrow">↪</span>
+                                      <span className="an-rq-name">{q.label}</span>
+                                      <span className="an-rq-snip">
+                                        {q.quote.replace(/\s+/g, " ").trim()}
+                                      </span>
                                     </div>
-                                  ) : (
-                                    (() => {
+                                  );
+                                })()}
+                                {isSecretExpired ? (
+                                  <div className="an-secret-veil is-expired">
+                                    <span className="an-secret-veil-icon">
+                                      <LockClosedIcon className="w-5 h-5" />
+                                    </span>
+                                    <div className="an-secret-veil-body">
+                                      <span className="an-secret-veil-label">
+                                        加密消息已过期
+                                      </span>
+                                      <span className="an-secret-veil-meta">
+                                        一次性查看窗口已关闭
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : isSecretUnrevealed ? (
+                                  <div className="an-secret-veil">
+                                    <span className="an-secret-veil-icon">
+                                      <LockClosedIcon className="w-5 h-5" />
+                                    </span>
+                                    <div className="an-secret-veil-body">
+                                      <span className="an-secret-veil-label">
+                                        加密消息
+                                      </span>
+                                      <span className="an-secret-veil-meta">
+                                        {secretSecsLeft !== null
+                                          ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
+                                          : "仅 Bot 可读"}
+                                      </span>
+                                    </div>
+                                    {secretTokens[m.msg_id] && (
+                                      <button
+                                        type="button"
+                                        className="an-secret-veil-reveal"
+                                        onClick={() =>
+                                          revealSecretMessage(m.msg_id)
+                                        }
+                                      >
+                                        查看
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div
+                                    className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words"
+                                  >
+                                    {(() => {
+                                      // The quote prefix (if any) is already
+                                      // rendered above as .an-reply-quote;
+                                      // here we render only the body text.
                                       const q =
                                         parseQuotePrefix(displayContent);
-                                      if (q)
-                                        return (
-                                          <>
-                                            <div className="border-l-2 border-white/50 pl-2 mb-2 text-[12px] leading-snug opacity-80">
-                                              <span className="font-semibold block">
-                                                {q.label}
-                                              </span>
-                                              <span className="block line-clamp-2">
-                                                {q.quote}
-                                              </span>
-                                            </div>
-                                            <div className="whitespace-pre-wrap">
-                                              {q.rest
-                                                .replace(
-                                                  /!\[.*?\]\(.*?\)\s*/g,
-                                                  "",
-                                                )
-                                                .trim() || q.rest}
-                                            </div>
-                                          </>
-                                        );
+                                      const body = q ? q.rest : displayContent;
                                       return (
                                         <span className="whitespace-pre-wrap">
-                                          {displayContent
+                                          {body
                                             .replace(/!\[.*?\]\(.*?\)\s*/g, "")
-                                            .trim() || displayContent}
+                                            .trim() || body}
                                         </span>
                                       );
-                                    })()
-                                  )}
-                                </div>
+                                    })()}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -2089,17 +3309,11 @@ export default function App() {
                           >
                             <div className="flex-shrink-0 mt-0.5">
                               {m.sender_type === "bot" ? (
-                                senderBot?.avatar_url ? (
-                                  <img
-                                    src={senderBot.avatar_url}
-                                    alt={botLabel}
-                                    className="w-8 h-8 rounded-xl object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">
-                                    {botInitials}
-                                  </div>
-                                )
+                                <BotAvatar
+                                  label={botLabel}
+                                  avatarUrl={senderBot?.avatar_url}
+                                  size={32}
+                                />
                               ) : (
                                 <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">
                                   {userInitials}
@@ -2118,9 +3332,9 @@ export default function App() {
                                     Bot
                                   </span>
                                 )}
-                                {m.msg_type === "thread" && (
+                                {m.msg_type === "topic" && (
                                   <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
-                                    消息串
+                                    主题
                                   </span>
                                 )}
                                 <span className="text-[11px] text-gray-400 leading-none">
@@ -2132,51 +3346,71 @@ export default function App() {
                                   {m.content_data.title as string}
                                 </div>
                               ) : null}
+                              {(() => {
+                                const cq = parseQuotePrefix(text);
+                                if (!cq) return null;
+                                return (
+                                  <div
+                                    className="an-reply-quote"
+                                    title={`回复 ${cq.label}`}
+                                  >
+                                    <span className="an-rq-arrow">↪</span>
+                                    <span className="an-rq-name">
+                                      {cq.label}
+                                    </span>
+                                    <span className="an-rq-snip">
+                                      {cq.quote.replace(/\s+/g, " ").trim()}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                               {renderFileAttachments(m)}
                               <div
-                                className={`${isSecretExpired ? "bg-gray-100" : isSecretUnrevealed ? "bg-amber-100" : "bg-gray-100"} rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800`}
+                                className="rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed"
+                                style={{
+                                  background: isSecretUnrevealed
+                                    ? "var(--orange-muted)"
+                                    : "var(--surface-soft)",
+                                  color: "var(--fg-1)",
+                                  border: "1px solid var(--border)",
+                                }}
                               >
                                 {isSecretExpired ? (
-                                  <span className="text-gray-400">
-                                    🔒 加密消息（已过期）
-                                  </span>
-                                ) : isSecretUnrevealed ? (
-                                  <div className="flex items-center gap-2 text-amber-700">
-                                    <span>🔒 加密消息</span>
-                                    {secretSecsLeft !== null && (
-                                      <span className="text-[11px] opacity-70 tabular-nums">
-                                        {secretSecsLeft}s
+                                  <div className="an-secret-veil is-expired">
+                                    <span className="an-secret-veil-icon">
+                                      <LockClosedIcon className="w-5 h-5" />
+                                    </span>
+                                    <div className="an-secret-veil-body">
+                                      <span className="an-secret-veil-label">
+                                        加密消息已过期
                                       </span>
-                                    )}
+                                      <span className="an-secret-veil-meta">
+                                        一次性查看窗口已关闭
+                                      </span>
+                                    </div>
+                                  </div>
+                                ) : isSecretUnrevealed ? (
+                                  <div className="an-secret-veil">
+                                    <span className="an-secret-veil-icon">
+                                      <LockClosedIcon className="w-5 h-5" />
+                                    </span>
+                                    <div className="an-secret-veil-body">
+                                      <span className="an-secret-veil-label">
+                                        加密消息
+                                      </span>
+                                      <span className="an-secret-veil-meta">
+                                        {secretSecsLeft !== null
+                                          ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
+                                          : "仅 Bot 可读"}
+                                      </span>
+                                    </div>
                                     {secretTokens[m.msg_id] && (
                                       <button
                                         type="button"
-                                        onClick={() => {
-                                          fetch(
-                                            `${API}/channels/${selectedId}/messages/${m.msg_id}/secret?token=${encodeURIComponent(secretTokens[m.msg_id])}`,
-                                            {
-                                              headers: {
-                                                Authorization: `Bearer ${authToken}`,
-                                              },
-                                            },
-                                          )
-                                            .then((r) => r.json())
-                                            .then((d) => {
-                                              if (d.data?.content) {
-                                                setRevealedSecrets((prev) => ({
-                                                  ...prev,
-                                                  [m.msg_id]: d.data.content,
-                                                }));
-                                              } else {
-                                                alert(
-                                                  d.detail ||
-                                                    "无法查看加密内容",
-                                                );
-                                              }
-                                            })
-                                            .catch(() => alert("请求失败"));
-                                        }}
-                                        className="text-[12px] underline opacity-80 hover:opacity-100"
+                                        className="an-secret-veil-reveal"
+                                        onClick={() =>
+                                          revealSecretMessage(m.msg_id)
+                                        }
                                       >
                                         查看
                                       </button>
@@ -2186,7 +3420,7 @@ export default function App() {
                                   <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                 ) : (
                                   renderWithThinkFolding(
-                                    text,
+                                    parseQuotePrefix(text)?.rest ?? text,
                                     `${m.msg_id}-`,
                                     !!m._streaming,
                                     (src) => {
@@ -2208,26 +3442,9 @@ export default function App() {
                                   !!text && (
                                     <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
                                   )}
+                                {!isSecretUnrevealed && renderStopStreamButton(m)}
+                                {!isSecretUnrevealed && renderPartialBadge(m)}
                               </div>
-                              {form &&
-                                selectedId &&
-                                m.sender_type === "bot" && (
-                                  <GuideFormBlock
-                                    msgId={m.msg_id}
-                                    form={form}
-                                    channelId={selectedId}
-                                    onReply={(newMsg) =>
-                                      setMessages((prev) => [...prev, newMsg])
-                                    }
-                                    onChannelsRefresh={() =>
-                                      refreshChannels(
-                                        setChannels,
-                                        authToken ?? undefined,
-                                      )
-                                    }
-                                    userToken={authToken ?? undefined}
-                                  />
-                                )}
                               {clarifyStatus !== null && selectedId && (
                                 <ClarifyInlineBlock
                                   msgId={m.msg_id}
@@ -2267,17 +3484,34 @@ export default function App() {
                           </div>
                         );
 
-                        // ── thread card ───────────────────────────────────────
-                        const isExpanded = expandedThreads.has(m.msg_id);
+                        // ── topic card ───────────────────────────────────────
+                        // An explicit 主题 (msg_type="topic") should render
+                        // as a topic card regardless of reply count, so the
+                        // user sees the intent reflected immediately. The
+                        // 4-reply threshold only gates implicit promotion of
+                        // a normal message that's accumulated replies.
+                        const isExplicitTopic = m.msg_type === "topic";
+                        // Force expansion when there's nothing to collapse
+                        // (0-reply explicit topic) — otherwise the collapsed
+                        // preview path would blow up on replies[length-1].
+                        const isExpanded =
+                          expandedTopics.has(m.msg_id) ||
+                          (isExplicitTopic && replies.length === 0);
 
-                        // No replies — render as a normal standalone bubble
-                        if (replies.length === 0) {
+                        // No replies and not an explicit topic — render as a
+                        // plain standalone bubble.
+                        if (!isExplicitTopic && replies.length === 0) {
                           return <div key={m.msg_id}>{rootBubble}</div>;
                         }
 
-                        // Single reply — render root bubble + one reply inline (no card)
-                        if (replies.length === 1) {
-                          const r = replies[0];
+                        // 1–3 replies on a plain message — inline render, no
+                        // topic chrome. Explicit 主题 messages fall through
+                        // to the topic-card branch below regardless of count.
+                        if (
+                          !isExplicitTopic &&
+                          replies.length < TOPIC_DISPLAY_THRESHOLD
+                        ) {
+                          const renderReplyRow = (r: Message) => {
                           const rIsOwn =
                             r.sender_type === "user" &&
                             r.sender_id === currentUserId;
@@ -2311,17 +3545,21 @@ export default function App() {
                             : "";
                           const {
                             text: rTextRaw,
-                            form: rForm,
                             clarify: rClarify,
                           } = parseGuidePayload(r.content);
-                          const rDisplay = isClarifyReplyUserMessage(r.content)
-                            ? r.content
-                                .replace(
-                                  /^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i,
-                                  "",
-                                )
-                                .trim()
-                            : rTextRaw || r.content;
+                          const rDisplay = (() => {
+                            const base = isClarifyReplyUserMessage(r.content)
+                              ? r.content
+                                  .replace(
+                                    /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                    "",
+                                  )
+                                  .trim()
+                              : rTextRaw || r.content;
+                            return r.sender_type === "bot"
+                              ? stripLeadingQuotePrefixes(base)
+                              : base;
+                          })();
                           const rClarifyAnswered =
                             !!rClarify &&
                             messages.some(
@@ -2343,55 +3581,166 @@ export default function App() {
                                   ? "answered"
                                   : "form"
                               : null;
+                          // Channel flat-reply render: no bubble, all-left,
+                          // iridescent outline on bot replies. DMs keep the
+                          // bubble treatment below.
+                          const rFlat = !isDMRender;
                           return (
-                            <div key={m.msg_id}>
-                              {rootBubble}
-                              <div
-                                id={`msg-${r.msg_id}`}
-                                className="group flex items-start gap-2.5 px-4 py-1 transition-all"
-                              >
+                            <div
+                              key={r.msg_id}
+                              id={`msg-${r.msg_id}`}
+                              className={
+                                rFlat
+                                  ? "an-chat-msg group flex gap-3 px-4 py-1 items-start transition-colors"
+                                  : `group flex gap-2.5 px-4 py-1 transition-all ${
+                                      rIsOwn
+                                        ? "flex-row-reverse items-end"
+                                        : "items-start"
+                                    }`
+                              }
+                            >
                                 <div className="flex-shrink-0 mt-0.5">
                                   {r.sender_type === "bot" ? (
                                     rBot?.avatar_url ? (
                                       <img
                                         src={rBot.avatar_url}
                                         alt={rLabel}
-                                        className="w-8 h-8 rounded-xl object-cover"
+                                        className={
+                                          rFlat
+                                            ? "w-9 h-9 rounded-xl object-cover"
+                                            : "w-8 h-8 rounded-xl object-cover"
+                                        }
                                       />
                                     ) : (
-                                      <div className="w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none">
+                                      <div
+                                        className={
+                                          rFlat
+                                            ? "w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none"
+                                            : "w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none"
+                                        }
+                                        style={
+                                          rFlat
+                                            ? { background: "var(--fg-3)" }
+                                            : undefined
+                                        }
+                                      >
                                         {rInitials}
                                       </div>
                                     )
                                   ) : (
                                     <div
-                                      className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}
+                                      className={
+                                        rFlat
+                                          ? "w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none"
+                                          : `w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`
+                                      }
+                                      style={
+                                        rFlat
+                                          ? {
+                                              background: rIsOwn
+                                                ? "var(--accent)"
+                                                : "var(--fg-3)",
+                                            }
+                                          : undefined
+                                      }
                                     >
                                       {rIsOwn ? "我" : rInitials}
                                     </div>
                                   )}
                                 </div>
-                                <div className="flex flex-col max-w-[85%] sm:max-w-[72%]">
-                                  <div className="flex items-baseline gap-1.5 mb-1">
-                                    <span className="font-semibold text-[13px] text-gray-900 leading-none">
-                                      {rLabel}
+                                <div
+                                  className={
+                                    rFlat
+                                      ? "flex-1 min-w-0 flex flex-col"
+                                      : `flex flex-col max-w-[85%] sm:max-w-[72%] ${rIsOwn ? "items-end" : ""}`
+                                  }
+                                >
+                                  <div
+                                    className={
+                                      rFlat
+                                        ? "flex items-baseline gap-2 mb-0.5 flex-wrap"
+                                        : `flex items-baseline gap-1.5 mb-1 ${rIsOwn ? "justify-end" : ""}`
+                                    }
+                                  >
+                                    <span
+                                      className="font-semibold text-[13.5px] leading-none"
+                                      style={{ color: "var(--fg-1)" }}
+                                    >
+                                      {rIsOwn ? "我" : rLabel}
                                     </span>
-                                    {r.sender_type === "bot" && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">
-                                        Bot
-                                      </span>
-                                    )}
-                                    <span className="text-[11px] text-gray-400 leading-none">
+                                    <span
+                                      className="text-[11px] leading-none"
+                                      style={{ color: "var(--fg-3)" }}
+                                    >
                                       {rTime}
                                     </span>
                                   </div>
+                                  {(() => {
+                                    // Unified reply-quote rendering for the
+                                    // rFlat (channel-list reply) path. Source
+                                    // of truth = the `> [Author]: snippet`
+                                    // prefix on the message text, set by the
+                                    // reply UI. We strip it from the body
+                                    // and surface it as .an-reply-quote so
+                                    // the visual exactly matches the topic-
+                                    // view and own-bubble paths.
+                                    const rq = parseQuotePrefix(rDisplay);
+                                    if (!rq) return null;
+                                    return (
+                                      <div
+                                        className="an-reply-quote"
+                                        title={`回复 ${rq.label}`}
+                                      >
+                                        <span className="an-rq-arrow">↪</span>
+                                        <span className="an-rq-name">
+                                          {rq.label}
+                                        </span>
+                                        <span className="an-rq-snip">
+                                          {rq.quote.replace(/\s+/g, " ").trim()}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
                                   {renderFileAttachments(r)}
-                                  <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed text-gray-800">
+                                  <div
+                                    className={
+                                      rFlat
+                                        ? ""
+                                        : `rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
+                                            rIsOwn
+                                              ? "text-white rounded-tr-sm"
+                                              : "rounded-tl-sm"
+                                          }`
+                                    }
+                                    style={
+                                      rFlat
+                                        ? {
+                                            fontSize: "var(--fs-chat-body)",
+                                            lineHeight:
+                                              "var(--lh-chat-body)",
+                                            color: "var(--fg-1)",
+                                            wordWrap: "break-word",
+                                          }
+                                        : rIsOwn
+                                          ? { background: "var(--accent)" }
+                                          : {
+                                              background:
+                                                "var(--surface-soft)",
+                                              color: "var(--fg-1)",
+                                              border:
+                                                "1px solid var(--border)",
+                                            }
+                                    }
+                                  >
                                     {r._streaming && !rTextRaw ? (
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                     ) : (
                                       renderWithThinkFolding(
-                                        rDisplay,
+                                        // Drop the `> [Author]: …\n\n` prefix
+                                        // (now rendered above as an
+                                        // .an-reply-quote) so the body shows
+                                        // only the actual content.
+                                        parseQuotePrefix(rDisplay)?.rest ?? rDisplay,
                                         `${r.msg_id}-`,
                                         !!r._streaming,
                                         (src) => {
@@ -2411,29 +3760,9 @@ export default function App() {
                                     {r._streaming && !!rTextRaw && (
                                       <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
                                     )}
+                                    {renderStopStreamButton(r)}
+                                    {renderPartialBadge(r)}
                                   </div>
-                                  {rForm &&
-                                    selectedId &&
-                                    r.sender_type === "bot" && (
-                                      <GuideFormBlock
-                                        msgId={r.msg_id}
-                                        form={rForm}
-                                        channelId={selectedId}
-                                        onReply={(newMsg) =>
-                                          setMessages((prev) => [
-                                            ...prev,
-                                            newMsg,
-                                          ])
-                                        }
-                                        onChannelsRefresh={() =>
-                                          refreshChannels(
-                                            setChannels,
-                                            authToken ?? undefined,
-                                          )
-                                        }
-                                        userToken={authToken ?? undefined}
-                                      />
-                                    )}
                                   {rClarifyStatus !== null && selectedId && (
                                     <ClarifyInlineBlock
                                       msgId={r.msg_id}
@@ -2451,222 +3780,232 @@ export default function App() {
                                     />
                                   )}
                                 </div>
-                                <button
-                                  type="button"
-                                  title="回复"
-                                  onClick={() => {
-                                    setReplyingTo(r);
-                                    const mention =
-                                      r.sender_type === "bot" && rBot?.username
-                                        ? `@${rBot.username} `
-                                        : "";
-                                    if (mention) setInput(mention);
-                                    (secretMode
-                                      ? secretInputRef.current
-                                      : inputRef.current
-                                    )?.focus();
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 16 16"
-                                    fill="currentColor"
-                                    className="w-3.5 h-3.5"
+                                <div className="opacity-0 group-hover:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+                                  <button
+                                    type="button"
+                                    title="复制消息内容"
+                                    onClick={() => copyMessageText(r)}
+                                    className="an-chat-action"
                                   >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                </button>
+                                    <DocumentDuplicateIcon className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="回复"
+                                    onClick={() => {
+                                      setReplyingTo(r);
+                                      const mention =
+                                        r.sender_type === "bot" && rBot?.username
+                                          ? `@${rBot.username} `
+                                          : "";
+                                      if (mention) setInput(mention);
+                                      (secretMode
+                                        ? secretInputRef.current
+                                        : inputRef.current
+                                      )?.focus();
+                                    }}
+                                    className="an-chat-action"
+                                  >
+                                    <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
+                          );
+                          };
+                          return (
+                            <div key={m.msg_id}>
+                              {rootBubble}
+                              {replies.map(renderReplyRow)}
                             </div>
                           );
                         }
 
-                        // ≥2 replies — Collapsed thread card (overview) ───────────
+                        // ≥ TOPIC_DISPLAY_THRESHOLD replies — Collapsed topic
+                        // card (overview) ───────────────────────────────────────
+                        // Compact form: stacked participant avatars + summary.
+                        // No full question/last-reply preview — click to expand.
                         if (!isExpanded) {
-                          const qPreview = displayContent
-                            .replace(/\s+/g, " ")
-                            .slice(0, 60);
-                          const qOverflow =
-                            displayContent.replace(/\s+/g, " ").length > 60;
-                          const lastReply = replies[replies.length - 1];
-                          const { text: lastRText } = parseGuidePayload(
-                            lastReply.content,
+                          const titleSummary =
+                            (m.content_data?.title as string | undefined) ||
+                            displayContent
+                              .replace(/\s+/g, " ")
+                              .trim()
+                              .slice(0, 80) ||
+                            "(无标题)";
+                          // Participants = root sender ∪ all unique reply
+                          // senders. Keep insertion order so the root comes
+                          // first and reads as the "owner" of the topic.
+                          type Participant = {
+                            key: string;
+                            kind: "user" | "bot";
+                            label: string;
+                            color: string;
+                            avatarUrl?: string;
+                            initial: string;
+                            isSelf?: boolean;
+                          };
+                          const addParticipant = (
+                            acc: Participant[],
+                            sid: string,
+                            stype: string,
+                          ) => {
+                            const key = `${stype}:${sid}`;
+                            if (acc.some((p) => p.key === key)) return;
+                            if (stype === "bot") {
+                              const b = channelBots.find(
+                                (x) => x.member_id === sid,
+                              );
+                              const label =
+                                b?.display_name || b?.username || "Bot";
+                              acc.push({
+                                key,
+                                kind: "bot",
+                                label,
+                                color: "var(--green)",
+                                avatarUrl: b?.avatar_url,
+                                initial: label.slice(0, 1).toUpperCase(),
+                              });
+                            } else {
+                              const isSelf = sid === currentUserId;
+                              const u = isSelf
+                                ? null
+                                : channelUsers.find(
+                                    (x) => x.member_id === sid,
+                                  );
+                              const label = isSelf
+                                ? "我"
+                                : u?.display_name ||
+                                  u?.username ||
+                                  "用户";
+                              acc.push({
+                                key,
+                                kind: "user",
+                                label,
+                                color: isSelf
+                                  ? "var(--accent)"
+                                  : "var(--fg-3)",
+                                avatarUrl: u?.avatar_url,
+                                initial: isSelf
+                                  ? "我"
+                                  : label.slice(0, 1).toUpperCase(),
+                                isSelf,
+                              });
+                            }
+                          };
+                          const participants: Participant[] = [];
+                          addParticipant(
+                            participants,
+                            m.sender_id,
+                            m.sender_type,
                           );
-                          const lastRDisplay = (
-                            isClarifyReplyUserMessage(lastReply.content)
-                              ? lastReply.content
-                                  .replace(
-                                    /^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i,
-                                    "",
-                                  )
-                                  .trim()
-                              : lastRText || lastReply.content
-                          ).replace(/\s+/g, " ");
-                          const replyBotIds = [
-                            ...new Set(
-                              replies
-                                .filter((r) => r.sender_type === "bot")
-                                .map((r) => r.sender_id),
-                            ),
-                          ];
+                          for (const r of replies) {
+                            addParticipant(
+                              participants,
+                              r.sender_id,
+                              r.sender_type,
+                            );
+                          }
+                          const visibleAvatars = participants.slice(0, 5);
+                          const extraCount =
+                            participants.length - visibleAvatars.length;
+
                           return (
                             <div
                               key={m.msg_id}
                               id={`msg-${m.msg_id}`}
-                              className="mx-3 my-1.5"
+                              className="an-chat-msg pl-16 my-1.5"
                             >
                               <button
                                 type="button"
-                                onClick={() => toggleThread(m.msg_id)}
-                                className="w-full text-left rounded-xl border border-gray-300 bg-gray-100 hover:border-[#1264A3]/50 hover:shadow transition-all overflow-hidden"
+                                onClick={() => toggleTopic(m.msg_id)}
+                                className="an-topic-chip"
+                                title={titleSummary}
                               >
-                                {/* Question row */}
-                                <div className="flex items-center gap-2.5 px-3 pt-2.5 pb-2">
-                                  {isOwn ? (
-                                    <div className="w-7 h-7 rounded-lg bg-[#1264A3] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">
-                                      我
-                                    </div>
-                                  ) : m.sender_type === "bot" ? (
-                                    senderBot?.avatar_url ? (
+                                <span className="an-topic-chip-faces">
+                                  {visibleAvatars.map((p) =>
+                                    p.avatarUrl ? (
                                       <img
-                                        src={senderBot.avatar_url}
-                                        alt={botLabel}
-                                        className="w-7 h-7 rounded-lg object-cover flex-shrink-0"
+                                        key={p.key}
+                                        src={p.avatarUrl}
+                                        alt={p.label}
+                                        className="an-topic-chip-face"
                                       />
                                     ) : (
-                                      <div className="w-7 h-7 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">
-                                        {botInitials}
-                                      </div>
-                                    )
-                                  ) : (
-                                    <div className="w-7 h-7 rounded-lg bg-gray-400 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 select-none">
-                                      {userInitials}
-                                    </div>
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5 mb-0.5">
-                                      <span className="text-[12px] font-semibold text-gray-600">
-                                        {isOwn
-                                          ? "我"
-                                          : m.sender_type === "bot"
-                                            ? botLabel
-                                            : userLabel}
+                                      <span
+                                        key={p.key}
+                                        className="an-topic-chip-face"
+                                        style={{ background: p.color }}
+                                      >
+                                        {p.initial}
                                       </span>
-                                      <span className="text-[11px] text-gray-400">
-                                        {msgTime}
-                                      </span>
-                                    </div>
-                                    <p className="text-[13px] text-gray-800 truncate leading-snug font-medium">
-                                      {qPreview}
-                                      {qOverflow ? "…" : ""}
-                                    </p>
-                                  </div>
-                                </div>
-                                {/* Bot reply preview row */}
-                                <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-300/50 bg-gray-200/40">
-                                  {replyBotIds.length > 0 && (
-                                    <div className="flex -space-x-1.5 flex-shrink-0">
-                                      {replyBotIds.slice(0, 4).map((bid) => {
-                                        const rb = channelBots.find(
-                                          (b) => b.member_id === bid,
-                                        );
-                                        const rl =
-                                          rb?.display_name ||
-                                          rb?.username ||
-                                          "Bot";
-                                        return rb?.avatar_url ? (
-                                          <img
-                                            key={bid}
-                                            src={rb.avatar_url}
-                                            alt={rl}
-                                            className="w-5 h-5 rounded-md object-cover border-2 border-white"
-                                          />
-                                        ) : (
-                                          <div
-                                            key={bid}
-                                            className="w-5 h-5 rounded-md bg-[#2EB67D] flex items-center justify-center text-white text-[9px] font-bold border-2 border-white select-none"
-                                          >
-                                            {rl.slice(0, 1).toUpperCase()}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
+                                    ),
                                   )}
-                                  <span className="flex-1 min-w-0 text-[12px] text-gray-500 truncate">
-                                    {lastRDisplay.slice(0, 80)}
-                                    {lastRDisplay.length > 80 ? "…" : ""}
+                                  {extraCount > 0 && (
+                                    <span
+                                      className="an-topic-chip-face"
+                                      style={{
+                                        background: "var(--bg-2)",
+                                        color: "var(--fg-2)",
+                                      }}
+                                    >
+                                      +{extraCount}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="an-topic-chip-body">
+                                  <span className="an-topic-chip-title">
+                                    {titleSummary}
                                   </span>
-                                  <span className="text-[11px] font-medium text-[#1264A3] whitespace-nowrap flex-shrink-0">
-                                    {replies.length} 条回复
+                                  <span className="an-topic-chip-meta">
+                                    主题 · {replies.length + 1} 条消息 ·{" "}
+                                    {participants.length} 人参与
                                   </span>
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 16 16"
-                                    fill="currentColor"
-                                    className="w-3.5 h-3.5 text-gray-400 flex-shrink-0"
-                                  >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                </div>
+                                </span>
+                                <span className="an-topic-chip-open">
+                                  展开 ›
+                                </span>
                               </button>
                             </div>
                           );
                         }
 
-                        // ── Expanded thread card ───────────────────────────────
+                        // ── Expanded topic card ───────────────────────────────
                         return (
                           <div
                             key={m.msg_id}
                             id={`msg-${m.msg_id}`}
-                            className="mx-3 my-1.5 rounded-xl border border-[#1264A3]/30 bg-gray-100 shadow-sm overflow-hidden"
+                            className="an-chat-msg pl-16 my-1.5"
                           >
-                            {/* Thread header */}
+                          <div
+                            className="rounded-xl border border-[#1264A3]/30 bg-gray-100 shadow-sm overflow-hidden"
+                          >
+                            {/* Topic header */}
                             <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
                               <div className="flex items-center gap-1.5">
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 16 16"
-                                  fill="currentColor"
-                                  className="w-3.5 h-3.5 text-[#1264A3]"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M1 3.5A1.5 1.5 0 0 1 2.5 2h11A1.5 1.5 0 0 1 15 3.5v6A1.5 1.5 0 0 1 13.5 11H9.25l-2.35 2.35A.75.75 0 0 1 5.5 12.75V11H2.5A1.5 1.5 0 0 1 1 9.5v-6Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
+                                <ChatBubbleLeftIcon className="w-3.5 h-3.5 text-[#1264A3]" />
                                 <span className="text-[12px] font-medium text-[#1264A3]">
-                                  对话串 · {replies.length + 1} 条消息
+                                  主题 · {replies.length + 1} 条消息
                                 </span>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => toggleThread(m.msg_id)}
-                                className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
-                              >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 16 16"
-                                  fill="currentColor"
-                                  className="w-3 h-3"
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setPageTopicId(m.msg_id)}
+                                  className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#1264A3] px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
+                                  title="以独立页打开主题"
                                 >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                                收起
-                              </button>
+                                  <ArrowTopRightOnSquareIcon className="w-3 h-3" />
+                                  独立页打开
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTopic(m.msg_id)}
+                                  className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
+                                >
+                                  <ChevronUpIcon className="w-3 h-3" />
+                                  收起
+                                </button>
+                              </div>
                             </div>
                             {/* Root message */}
                             {rootBubble}
@@ -2714,19 +4053,21 @@ export default function App() {
                                   : "";
                                 const {
                                   text: rTextRaw,
-                                  form: rForm,
                                   clarify: rClarify,
                                 } = parseGuidePayload(r.content);
-                                const rDisplay = isClarifyReplyUserMessage(
-                                  r.content,
-                                )
-                                  ? r.content
-                                      .replace(
-                                        /^@(?:channel bot|引导)\s*澄清回答[：:]\s*/i,
-                                        "",
-                                      )
-                                      .trim()
-                                  : rTextRaw || r.content;
+                                const rDisplay = (() => {
+                                  const base = isClarifyReplyUserMessage(r.content)
+                                    ? r.content
+                                        .replace(
+                                          /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                          "",
+                                        )
+                                        .trim()
+                                    : rTextRaw || r.content;
+                                  return r.sender_type === "bot"
+                                    ? stripLeadingQuotePrefixes(base)
+                                    : base;
+                                })();
                                 const rClarifyAnswered =
                                   !!rClarify &&
                                   messages.some(
@@ -2827,14 +4168,6 @@ export default function App() {
                                         <span className="text-[11px] text-gray-400">
                                           {rTime}
                                         </span>
-                                        {rParentLabel && (
-                                          <span className="text-[11px] text-gray-400">
-                                            ↩{" "}
-                                            <span className="font-medium text-gray-500">
-                                              {rParentLabel}
-                                            </span>
-                                          </span>
-                                        )}
                                         {rCollapsed && (
                                           <span className="text-[11px] text-gray-400 truncate max-w-[120px]">
                                             {rPreview}
@@ -2848,33 +4181,75 @@ export default function App() {
                                           className="opacity-0 group-hover/tr:opacity-100 transition-opacity ml-0.5 flex items-center justify-center w-4 h-4 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
                                           title={rCollapsed ? "展开" : "折叠"}
                                         >
-                                          <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            viewBox="0 0 16 16"
-                                            fill="currentColor"
-                                            className="w-3 h-3"
-                                          >
-                                            {rCollapsed ? (
-                                              <path
-                                                fillRule="evenodd"
-                                                d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
-                                                clipRule="evenodd"
-                                              />
-                                            ) : (
-                                              <path
-                                                fillRule="evenodd"
-                                                d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
-                                                clipRule="evenodd"
-                                              />
-                                            )}
-                                          </svg>
+                                          {rCollapsed ? (
+                                            <ChevronDownIcon className="w-3 h-3" />
+                                          ) : (
+                                            <ChevronUpIcon className="w-3 h-3" />
+                                          )}
                                         </button>
                                       </div>
+                                      {!rCollapsed && rDirectParent && rParentLabel && (
+                                        <button
+                                          type="button"
+                                          className="an-reply-quote"
+                                          onClick={() => {
+                                            const el = document.getElementById(
+                                              `msg-${rDirectParent.msg_id}`,
+                                            );
+                                            if (!el) return;
+                                            el.scrollIntoView({
+                                              block: "center",
+                                              behavior: "smooth",
+                                            });
+                                            const origT = el.style.transition;
+                                            const prevBg = el.style.background;
+                                            el.style.transition =
+                                              "background 200ms";
+                                            el.style.background =
+                                              "var(--accent-muted)";
+                                            setTimeout(() => {
+                                              el.style.background = prevBg;
+                                              el.style.transition = origT;
+                                            }, 1200);
+                                          }}
+                                          title="跳转到被回复的消息"
+                                        >
+                                          <span className="an-rq-arrow">↪</span>
+                                          <span className="an-rq-name">
+                                            {rParentLabel}
+                                          </span>
+                                          <span className="an-rq-snip">
+                                            {(
+                                              rDirectParent.content || ""
+                                            )
+                                              .replace(/<think>[\s\S]*?<\/think>/g, "")
+                                              .replace(/\s+/g, " ")
+                                              .trim()
+                                              .slice(0, 80) ||
+                                              "(无内容)"}
+                                          </span>
+                                        </button>
+                                      )}
                                       {!rCollapsed && (
                                         <>
                                           {renderFileAttachments(r)}
                                           <div
-                                            className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "bg-[#1264A3]/10 text-gray-800 whitespace-pre-wrap break-words" : "bg-gray-50 border border-gray-200 text-gray-800"}`}
+                                            className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "whitespace-pre-wrap break-words" : ""}`}
+                                            style={
+                                              rIsOwn
+                                                ? {
+                                                    background:
+                                                      "var(--accent-muted)",
+                                                    color: "var(--fg-1)",
+                                                  }
+                                                : {
+                                                    background:
+                                                      "var(--surface-soft)",
+                                                    color: "var(--fg-1)",
+                                                    border:
+                                                      "1px solid var(--border)",
+                                                  }
+                                            }
                                           >
                                             {r._streaming && !rTextRaw ? (
                                               <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
@@ -2902,31 +4277,9 @@ export default function App() {
                                             {r._streaming && !!rTextRaw && (
                                               <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
                                             )}
+                                            {renderStopStreamButton(r)}
+                                            {renderPartialBadge(r)}
                                           </div>
-                                          {rForm &&
-                                            selectedId &&
-                                            r.sender_type === "bot" && (
-                                              <GuideFormBlock
-                                                msgId={r.msg_id}
-                                                form={rForm}
-                                                channelId={selectedId}
-                                                onReply={(newMsg) =>
-                                                  setMessages((prev) => [
-                                                    ...prev,
-                                                    newMsg,
-                                                  ])
-                                                }
-                                                onChannelsRefresh={() =>
-                                                  refreshChannels(
-                                                    setChannels,
-                                                    authToken ?? undefined,
-                                                  )
-                                                }
-                                                userToken={
-                                                  authToken ?? undefined
-                                                }
-                                              />
-                                            )}
                                           {rClarifyStatus !== null &&
                                             selectedId && (
                                               <ClarifyInlineBlock
@@ -2967,18 +4320,7 @@ export default function App() {
                                       }}
                                       className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
                                     >
-                                      <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        viewBox="0 0 16 16"
-                                        fill="currentColor"
-                                        className="w-3 h-3"
-                                      >
-                                        <path
-                                          fillRule="evenodd"
-                                          d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
-                                          clipRule="evenodd"
-                                        />
-                                      </svg>
+                                      <ArrowUturnLeftIcon className="w-3 h-3" />
                                     </button>
                                   </div>
                                 );
@@ -2988,27 +4330,41 @@ export default function App() {
                             <div className="flex justify-center py-1.5 border-t border-gray-100">
                               <button
                                 type="button"
-                                onClick={() => toggleThread(m.msg_id)}
+                                onClick={() => toggleTopic(m.msg_id)}
                                 className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded hover:bg-gray-100 transition-colors"
                               >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 16 16"
-                                  fill="currentColor"
-                                  className="w-3 h-3"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M11.78 9.78a.75.75 0 0 1-1.06 0L8 7.06 5.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                                收起对话串
+                                <ChevronUpIcon className="w-3 h-3" />
+                                收起主题
                               </button>
                             </div>
                           </div>
+                          </div>
                         );
-                      })}
+                      });
+                      // Intersperse day dividers between message groups based
+                      // on their created_at calendar day. Purely presentational
+                      // — runs outside the big map callback so none of the
+                      // existing branch logic has to change.
+                      const out: React.ReactNode[] = [];
+                      let lastDay = "";
+                      for (let i = 0; i < topicRoots.length; i++) {
+                        const m = topicRoots[i];
+                        const day = formatDayLabel(m.created_at);
+                        if (day && day !== lastDay) {
+                          out.push(
+                            <div
+                              key={`day-${i}-${day}`}
+                              className="an-day-divider"
+                            >
+                              <span>{day}</span>
+                            </div>,
+                          );
+                          lastDay = day;
+                        }
+                        out.push(renderedRows[i]);
+                      }
+                      return out;
+                      })()}
                       {waitingForBotReply && <ThinkingIndicator />}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
@@ -3050,13 +4406,62 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Input area */}
+                {/* Input area — visually floating: rounded, drop shadow, a
+                    little margin so the stream slides past the edges. */}
                 <div
                   className="flex-shrink-0 px-3 sm:px-4 pb-4 pt-2"
                   style={{
                     paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
                   }}
                 >
+                  {/* Kind switcher — hidden in DMs and when replying to a
+                      specific message (that flow forces msg_type="reply"). */}
+                  {!replyingTo && selectedChannel?.type !== "dm" && (
+                    <div className="an-msgkind-switcher">
+                      <button
+                        type="button"
+                        onClick={() => cycleMsgKind(-1)}
+                        className="an-msgkind-arrow"
+                        title="上一种消息类型 (Shift+Tab)"
+                        aria-label="上一种消息类型"
+                      >
+                        ‹
+                      </button>
+                      <span
+                        className={
+                          "an-msgkind-label inline-flex items-center gap-1.5" +
+                          (msgKind === "secret"
+                            ? " is-secret"
+                            : msgKind === "announcement"
+                              ? " is-announcement"
+                              : msgKind === "topic"
+                                ? " is-topic"
+                                : "")
+                        }
+                        title="Tab 切换 · Shift+Tab 反向"
+                      >
+                        {msgKind === "secret" ? (
+                          <LockClosedIcon className="w-3.5 h-3.5" />
+                        ) : msgKind === "announcement" ? (
+                          <MegaphoneIcon className="w-3.5 h-3.5" />
+                        ) : msgKind === "topic" ? (
+                          <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChatBubbleLeftIcon className="w-3.5 h-3.5" />
+                        )}
+                        {MSG_KIND_LABEL[msgKind]}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => cycleMsgKind(1)}
+                        className="an-msgkind-arrow"
+                        title="下一种消息类型 (Tab)"
+                        aria-label="下一种消息类型"
+                      >
+                        ›
+                      </button>
+                    </div>
+                  )}
                   {/* Reply bar */}
                   {replyingTo &&
                     (() => {
@@ -3077,24 +4482,10 @@ export default function App() {
                         .replace(/\n/g, " ")
                         .slice(0, 80);
                       return (
-                        <div className="flex items-center gap-2 px-3 py-2 mb-1 bg-gray-50 border border-gray-200 rounded-xl text-[13px]">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 16 16"
-                            fill="currentColor"
-                            className="w-3.5 h-3.5 text-[#1264A3] flex-shrink-0"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M1.22 6.53a.75.75 0 0 1 0-1.06l3-3a.75.75 0 0 1 1.06 1.06L3.56 5.25H10a5.75 5.75 0 0 1 0 11.5H6a.75.75 0 0 1 0-1.5h4a4.25 4.25 0 0 0 0-8.5H3.56l1.72 1.72a.75.75 0 1 1-1.06 1.06l-3-3Z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                          <span className="text-gray-500">回复</span>
-                          <span className="font-semibold text-gray-700">
-                            {refLabel}
-                          </span>
-                          <span className="text-gray-400 truncate flex-1">
+                        <div className="an-reply-quote mb-1" style={{ maxWidth: "none" }}>
+                          <span className="an-rq-arrow">↪</span>
+                          <span className="an-rq-name">{refLabel}</span>
+                          <span className="an-rq-snip">
                             {refPreview}
                             {(
                               parseGuidePayload(replyingTo.content).text ||
@@ -3106,16 +4497,11 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => setReplyingTo(null)}
-                            className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600"
+                            className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-[var(--surface-hover)]"
+                            style={{ color: "var(--fg-3)" }}
+                            title="取消回复"
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 16 16"
-                              fill="currentColor"
-                              className="w-3 h-3"
-                            >
-                              <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
-                            </svg>
+                            <XMarkIcon className="w-3 h-3" />
                           </button>
                         </div>
                       );
@@ -3145,18 +4531,7 @@ export default function App() {
                               className="max-w-[180px] max-h-[140px] object-cover block"
                             />
                             <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5 max-w-[180px]">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 16 16"
-                                fill="currentColor"
-                                className="w-3 h-3 text-gray-400 flex-shrink-0"
-                              >
-                                <path
-                                  fillRule="evenodd"
-                                  d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Zm10.5 5.707a.5.5 0 0 0-.146-.353l-2.5-2.5a.5.5 0 0 0-.708 0L7.5 8.5 6.354 7.354a.5.5 0 0 0-.708 0l-3.146 3.15V12a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-2.293ZM11 5.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"
-                                  clipRule="evenodd"
-                                />
-                              </svg>
+                              <PhotoIcon className="w-3 h-3 text-gray-400 flex-shrink-0" />
                               <span className="truncate">{name}</span>
                             </div>
                             <button
@@ -3173,14 +4548,7 @@ export default function App() {
                             className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[240px]"
                           >
                             <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                                className="w-5 h-5 text-blue-500"
-                              >
-                                <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
-                              </svg>
+                              <DocumentIcon className="w-5 h-5 text-blue-500" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="text-[13px] font-medium text-gray-700 truncate">
@@ -3203,64 +4571,160 @@ export default function App() {
                     </div>
                   )}
                   <div className="relative">
-                    <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm focus-within:border-gray-400 focus-within:shadow-md transition-all">
-                      <div>
-                        <textarea
-                          ref={inputRef}
-                          value={input}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            const pos = e.target.selectionStart ?? v.length;
-                            setInput(v);
-                            if (!secretMode) {
-                              const lastAt = v.lastIndexOf("@", pos - 1);
-                              if (lastAt !== -1) {
-                                const after = v.slice(lastAt + 1, pos);
-                                if (
-                                  !after.includes(" ") &&
-                                  !after.includes("\n")
-                                ) {
-                                  const rect = e.target.getBoundingClientRect();
-                                  const spaceBelow =
-                                    window.innerHeight - rect.bottom;
-                                  const spaceAbove = rect.top;
-                                  if (
-                                    spaceBelow < 180 &&
-                                    spaceAbove > spaceBelow
-                                  ) {
-                                    setMentionDropdownPlacement("top");
-                                  } else {
-                                    setMentionDropdownPlacement("bottom");
-                                  }
-                                  setShowMentionDropdown(true);
-                                  setMentionFilter(after);
-                                  return;
+                    <div
+                      className={
+                        "an-composer overflow-hidden" +
+                        (!replyingTo && msgKind === "secret"
+                          ? " is-secret"
+                          : !replyingTo && msgKind === "announcement"
+                            ? " is-announcement"
+                            : !replyingTo && msgKind === "topic"
+                              ? " is-topic"
+                              : "")
+                      }
+                    >
+                      {/* Top-edge drag handle: pull up to grow taller, pull
+                          down to shrink. Double-click to reset to auto. */}
+                      <div
+                        className="an-composer-resize"
+                        onPointerDown={onComposerResizeDown}
+                        onPointerMove={onComposerResizeMove}
+                        onPointerUp={onComposerResizeUp}
+                        onPointerCancel={onComposerResizeUp}
+                        onDoubleClick={() => setComposerTextareaHeight(null)}
+                        title="拖拽调整高度 · 双击重置"
+                        aria-label="拖拽调整发送框高度"
+                      >
+                        <span className="an-composer-resize-grip" />
+                      </div>
+                      {/* Always render the kindhead so the composer's overall
+                          height stays constant across all 4 kinds — switching
+                          types becomes a pure tint change with no layout shift. */}
+                      {!replyingTo && (
+                        <div className="an-composer-kindhead">
+                          {(msgKind === "announcement" ||
+                            msgKind === "topic") && (
+                            <input
+                              ref={composerTitleRef}
+                              className="an-composer-title"
+                              placeholder={
+                                msgKind === "announcement"
+                                  ? "标题（可选，例如「周五发布窗口」）…"
+                                  : "主题标题（可选，例如「升级计划讨论」）…"
+                              }
+                              value={composerTitle}
+                              onChange={(e) =>
+                                setComposerTitle(e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  inputRef.current?.focus();
                                 }
+                              }}
+                              maxLength={120}
+                            />
+                          )}
+                          {msgKind === "secret" && (
+                            <span className="an-composer-kindhead-hint">
+                              端到端加密 · 仅 @ 的 Bot 可读原文
+                            </span>
+                          )}
+                          {msgKind === "normal" && (
+                            <span className="an-composer-kindhead-hint">
+                              @ 呼叫 Bot · Tab 切换类型 · ↵ 发送
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <textarea
+                        ref={inputRef}
+                        value={input}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          const pos = e.target.selectionStart ?? v.length;
+                          setInput(v);
+                          if (!secretMode) {
+                            const lastAt = v.lastIndexOf("@", pos - 1);
+                            if (lastAt !== -1) {
+                              const after = v.slice(lastAt + 1, pos);
+                              if (
+                                !after.includes(" ") &&
+                                !after.includes("\n")
+                              ) {
+                                const rect = e.target.getBoundingClientRect();
+                                const spaceBelow =
+                                  window.innerHeight - rect.bottom;
+                                const spaceAbove = rect.top;
+                                if (
+                                  spaceBelow < 180 &&
+                                  spaceAbove > spaceBelow
+                                ) {
+                                  setMentionDropdownPlacement("top");
+                                } else {
+                                  setMentionDropdownPlacement("bottom");
+                                }
+                                setShowMentionDropdown(true);
+                                setMentionFilter(after);
+                                return;
                               }
                             }
+                          }
+                          setShowMentionDropdown(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (showMentionDropdown && e.key === "Escape") {
                             setShowMentionDropdown(false);
-                          }}
-                          onKeyDown={(e) => {
-                            if (showMentionDropdown && e.key === "Escape") {
-                              setShowMentionDropdown(false);
-                              return;
-                            }
-                            if (e.key === "Enter" && e.ctrlKey) {
-                              e.preventDefault();
+                            return;
+                          }
+                          // Tab / Shift-Tab cycles msgKind (normal → 公告 →
+                          // 主题 → normal …). Skip in DMs where only
+                          // "normal" makes sense.
+                          if (
+                            e.key === "Tab" &&
+                            !showMentionDropdown &&
+                            !replyingTo &&
+                            selectedChannel?.type !== "dm"
+                          ) {
+                            e.preventDefault();
+                            cycleMsgKind(e.shiftKey ? -1 : 1);
+                            return;
+                          }
+                          // Enter sends · Shift+Enter inserts newline
+                          if (
+                            e.key === "Enter" &&
+                            !e.shiftKey &&
+                            !e.nativeEvent.isComposing &&
+                            !showMentionDropdown
+                          ) {
+                            e.preventDefault();
+                            if (input.trim() || pendingFileIds.length > 0) {
                               send();
                             }
-                          }}
-                          placeholder={
-                            secretMode
-                              ? "输入加密内容（仅 Bot 可读取原文）…"
-                              : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
                           }
-                          className={`w-full px-4 pt-3 pb-2 min-h-[48px] max-h-48 resize-none outline-none text-[14px] placeholder-gray-400 bg-transparent ${secretMode ? "text-amber-700" : "text-gray-900"}`}
-                          rows={1}
-                        />
-                      </div>
+                        }}
+                        placeholder={
+                          secretMode
+                            ? "输入加密内容（仅 Bot 可读取原文）…"
+                            : msgKind === "announcement"
+                              ? `发布公告到 #${selectedChannel?.name || "频道"}…`
+                              : msgKind === "topic"
+                                ? `开启主题 · 标题将取首行…`
+                                : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
+                        }
+                        className="an-composer-textarea"
+                        style={
+                          composerTextareaHeight !== null
+                            ? {
+                                height: composerTextareaHeight,
+                                maxHeight: composerTextareaHeight,
+                              }
+                            : undefined
+                        }
+                        rows={1}
+                      />
                       {/* Input toolbar */}
-                      <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100">
+                      <div className="an-composer-bar">
                         <div className="flex items-center gap-0.5">
                           {/* 上传文件和图片菜单 */}
                           <input
@@ -3276,38 +4740,25 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={openKeychainPopup}
-                                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors ${keychainPopupOpen ? "bg-blue-50 text-blue-600" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                                style={{
+                                  color: keychainPopupOpen ? "var(--accent)" : "var(--fg-3)",
+                                  background: keychainPopupOpen ? "var(--accent-muted)" : "transparent",
+                                }}
                                 title="插入密钥链"
                               >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  viewBox="0 0 20 20"
-                                  fill="currentColor"
-                                  className="w-4 h-4"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M8 7a5 5 0 1 1 3.61 4.804l-1.903 1.903A1 1 0 0 1 9 14H8v1a1 1 0 0 1-1 1H6v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a1 1 0 0 1 .293-.707L7.196 10.39A5.002 5.002 0 0 1 8 7Zm5-3a.75.75 0 0 0 0 1.5A1.5 1.5 0 0 1 14.5 7 .75.75 0 0 0 16 7a3 3 0 0 0-3-3Z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
+                                <KeyIcon className="w-4 h-4" />
                               </button>
                               {keychainPopupOpen && (
-                                <div className="absolute bottom-10 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[200px] max-h-64 overflow-y-auto">
-                                  <p className="px-3 py-1.5 text-[11px] font-medium text-gray-400 uppercase tracking-wide">
-                                    插入密钥
-                                  </p>
+                                <div className="an-menu absolute" style={{ bottom: 40, left: 0, minWidth: 220, maxHeight: 256, overflowY: "auto" }}>
+                                  <div className="an-menu-head">插入密钥</div>
                                   {keychainPopupLoading ? (
-                                    <div className="px-3 py-3 text-xs text-gray-400 text-center">
-                                      加载中…
-                                    </div>
+                                    <div className="an-menu-empty">加载中…</div>
                                   ) : keychainPopupItems.length === 0 ? (
-                                    <div className="px-3 py-3 text-xs text-gray-400 text-center">
+                                    <div className="an-menu-empty">
                                       暂无密钥
                                       <br />
-                                      <span className="text-gray-300">
-                                        点击侧边栏钥匙图标添加
-                                      </span>
+                                      <span style={{ opacity: 0.7 }}>点击侧边栏钥匙图标添加</span>
                                     </div>
                                   ) : (
                                     keychainPopupItems.map((item) => (
@@ -3315,23 +4766,12 @@ export default function App() {
                                         key={item.key_id}
                                         type="button"
                                         onClick={() => insertSecret(item.name)}
-                                        className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50"
+                                        className="an-menu-item"
                                       >
-                                        <svg
-                                          xmlns="http://www.w3.org/2000/svg"
-                                          viewBox="0 0 16 16"
-                                          fill="currentColor"
-                                          className="w-3.5 h-3.5 text-gray-400 flex-shrink-0"
-                                        >
-                                          <path
-                                            fillRule="evenodd"
-                                            d="M6.5 5.5a4 4 0 1 1 2.88 3.838.75.75 0 0 0-.88.72V11h1.25a.75.75 0 0 1 0 1.5H8.5v1.25a.75.75 0 0 1-1.5 0v-3.44a5.5 5.5 0 1 1 5.5-5.31.75.75 0 0 1-1.499.05A4.001 4.001 0 0 0 6.5 5.5Zm.5 0a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1Z"
-                                            clipRule="evenodd"
-                                          />
-                                        </svg>
-                                        <span className="font-mono truncate">
-                                          {item.name}
+                                        <span className="an-mi-ico">
+                                          <QuestionMarkCircleIcon className="w-3.5 h-3.5" />
                                         </span>
+                                        <span className="font-mono truncate">{item.name}</span>
                                       </button>
                                     ))
                                   )}
@@ -3347,80 +4787,71 @@ export default function App() {
                               className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
                               title="上传文件和图片"
                             >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                                className="w-4.5 h-4.5"
-                              >
-                                <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-                              </svg>
+                              <PlusIcon className="w-[18px] h-[18px]" />
                             </button>
                             {uploadMenuOpen && (
-                              <div className="absolute bottom-10 left-0 z-50 bg-white border border-gray-200 rounded-xl shadow-lg py-1 min-w-[160px]">
+                              <div className="an-menu absolute" style={{ bottom: 40, left: 0, minWidth: 180 }}>
                                 <button
                                   type="button"
-                                  className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-50 rounded-lg"
+                                  className="an-menu-item"
                                   onClick={() => {
                                     setUploadMenuOpen(false);
                                     fileImgInputRef.current?.click();
                                   }}
                                 >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 16 16"
-                                    fill="currentColor"
-                                    className="w-4 h-4 text-gray-400 flex-shrink-0"
-                                  >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M15.621 4.379a3 3 0 0 0-4.242 0l-7 7a3 3 0 0 0 4.241 4.243h.001l.497-.5a.75.75 0 0 1 1.064 1.057l-.498.501-.002.002a4.5 4.5 0 0 1-6.364-6.364l7-7a4.5 4.5 0 0 1 6.368 6.36l-3.455 3.553A2.625 2.625 0 1 1 9.52 9.52l3.45-3.451a.75.75 0 1 1 1.061 1.06l-3.45 3.451a1.125 1.125 0 0 0 1.587 1.595l3.454-3.553a3 3 0 0 0 0-4.242Z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                  上传文件和图片
+                                  <span className="an-mi-ico">
+                                    <LinkIcon className="w-4 h-4" />
+                                  </span>
+                                  <span>上传文件和图片</span>
                                 </button>
                               </div>
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <span className="an-composer-hint hidden sm:inline-flex">
+                          <kbd>@</kbd> 提及
+                          <span style={{ opacity: 0.5 }}>·</span>
+                          <kbd>↵</kbd> 发送
+                          <span style={{ opacity: 0.5 }}>·</span>
+                          <kbd>⇧↵</kbd> 换行
+                        </span>
+                        {/* 加密只对普通对话有意义；公告/主题是面向全频道的，
+                            不允许加密发送。 */}
+                        {(msgKind === "normal" || msgKind === "secret") && (
                           <button
                             type="button"
-                            onClick={() => setSecretMode((v) => !v)}
+                            onClick={() =>
+                              setMsgKind((k) =>
+                                k === "secret" ? "normal" : "secret",
+                              )
+                            }
                             title={
-                              secretMode
+                              msgKind === "secret"
                                 ? "取消加密模式"
                                 : "开启加密模式（仅 Bot 可读原文）"
                             }
-                            className={`w-8 h-8 flex items-center justify-center rounded-lg text-base transition-colors ${
-                              secretMode
-                                ? "bg-amber-100 text-amber-600 hover:bg-amber-200"
-                                : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                            }`}
-                          >
-                            🔒
-                          </button>
-                          <span className="text-[12px] text-gray-400 hidden sm:inline select-none">
-                            Ctrl+Enter
-                          </span>
-                          <button
-                            type="button"
-                            onClick={send}
-                            className={`px-4 py-1.5 rounded-xl text-[13px] font-semibold transition-all ${
-                              input.trim() || pendingFileIds.length > 0
-                                ? secretMode
-                                  ? "bg-amber-500 text-white hover:bg-amber-600 shadow-sm"
-                                  : "bg-[#007a5a] text-white hover:bg-[#006a4d] shadow-sm"
-                                : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                            }`}
-                            disabled={
-                              !input.trim() && pendingFileIds.length === 0
+                            style={
+                              msgKind === "secret"
+                                ? {
+                                    color: "var(--orange)",
+                                    background: "var(--orange-muted)",
+                                  }
+                                : undefined
                             }
                           >
-                            {secretMode ? "加密发送" : "发送"}
+                            <LockClosedIcon className="w-4 h-4" />
                           </button>
-                        </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={send}
+                          className="an-composer-send"
+                          disabled={
+                            !input.trim() && pendingFileIds.length === 0
+                          }
+                        >
+                          {msgKind === "secret" ? "加密发送" : "发送"}
+                        </button>
                       </div>
                     </div>
                     {showMentionDropdown &&
@@ -3451,14 +4882,19 @@ export default function App() {
                             : "top-full mt-1";
                         return (
                           <ul
-                            className={`absolute left-0 right-0 ${placementClass} bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-48 overflow-auto`}
+                            className={`an-menu absolute left-0 right-0 ${placementClass}`}
+                            style={{ maxHeight: 240, overflowY: "auto" }}
                             role="listbox"
                           >
+                            <li className="an-menu-head" style={{ listStyle: "none" }}>
+                              @提及 · {matched.length} 项
+                            </li>
                             {matched.map((item) => (
                               <li
                                 key={item.member_id}
                                 role="option"
-                                className="px-3 py-2 hover:bg-[#F8F8F8] cursor-pointer text-sm flex items-center gap-2"
+                                className="an-menu-item"
+                                style={{ listStyle: "none" }}
                                 onMouseDown={(e) => {
                                   e.preventDefault();
                                   const el = inputRef.current;
@@ -3483,23 +4919,48 @@ export default function App() {
                                   }, 0);
                                 }}
                               >
-                                <div
-                                  className={`w-6 h-6 rounded flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${item.kind === "bot" ? "bg-[#2EB67D]" : "bg-[#1264A3]"}`}
+                                <span
+                                  className="an-mi-ico"
+                                  style={{
+                                    width: 22,
+                                    height: 22,
+                                    borderRadius: 5,
+                                    color: "#fff",
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    background:
+                                      item.kind === "bot"
+                                        ? "var(--green)"
+                                        : "var(--accent)",
+                                  }}
                                 >
                                   {item.username.slice(0, 1).toUpperCase()}
-                                </div>
-                                <div className="flex flex-col min-w-0">
-                                  <span className="font-medium text-gray-800">
+                                </span>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span
+                                    className="font-medium truncate"
+                                    style={{ color: "var(--fg-1)" }}
+                                  >
                                     @{item.username}
                                   </span>
                                   {item.display_name && (
-                                    <span className="text-xs text-gray-400 truncate">
+                                    <span className="an-mi-sub truncate">
                                       {item.display_name}
                                     </span>
                                   )}
                                 </div>
                                 <span
-                                  className={`ml-auto text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${item.kind === "bot" ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"}`}
+                                  className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
+                                  style={{
+                                    background:
+                                      item.kind === "bot"
+                                        ? "var(--green-muted)"
+                                        : "var(--accent-muted)",
+                                    color:
+                                      item.kind === "bot"
+                                        ? "var(--green)"
+                                        : "var(--accent)",
+                                  }}
                                 >
                                   {item.kind === "bot" ? "Bot" : "用户"}
                                 </span>
@@ -3537,20 +4998,7 @@ export default function App() {
                       onClick={() => setSidebarOpen(true)}
                       className="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 flex-shrink-0"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        strokeWidth={1.5}
-                        stroke="currentColor"
-                        className="w-6 h-6"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
-                        />
-                      </svg>
+                      <Bars3Icon className="w-6 h-6" />
                     </button>
                     <span className="text-sm font-semibold text-gray-700">
                       智枢协作
@@ -3559,18 +5007,7 @@ export default function App() {
                 )}
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
                   <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      className="w-10 h-10 text-gray-300"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M4.848 2.771A49.144 49.144 0 0 1 12 2.25c2.43 0 4.817.178 7.152.52 1.978.292 3.348 2.024 3.348 3.97v6.02c0 1.946-1.37 3.678-3.348 3.97a48.901 48.901 0 0 1-3.476.383.39.39 0 0 0-.297.17l-2.755 4.133a.75.75 0 0 1-1.248 0l-2.755-4.133a.39.39 0 0 0-.297-.17 48.9 48.9 0 0 1-3.476-.384c-1.978-.29-3.348-2.024-3.348-3.97V6.741c0-1.946 1.37-3.68 3.348-3.97Z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
+                    <ChatBubbleLeftIcon className="w-10 h-10 text-gray-300" />
                   </div>
                   <p className="text-gray-700 text-[15px] font-semibold">
                     选择一个频道
@@ -3604,10 +5041,16 @@ export default function App() {
                 channelId={selectedId}
                 channelName={selectedChannel?.name ?? ""}
                 contextData={contextData}
-                onClose={() => setMemoryPanelOpen(false)}
+                activeLayer={memoryTab ?? undefined}
+                onLayerChange={(l) =>
+                  setMemoryTab(
+                    l as "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO",
+                  )
+                }
+                onClose={() => setMemoryTab(null)}
                 onExpand={() => {
                   setMemoryPageOpen(true);
-                  setMemoryPanelOpen(false);
+                  setMemoryTab(null);
                 }}
               />
             </div>

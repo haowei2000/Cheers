@@ -1,5 +1,4 @@
-"""引导 Bot 帮助索引：根据用户问题匹配说明书摘要，引导完成操作；支持动态表单与澄清问答."""
-import json
+"""引导 Bot 帮助索引：根据用户问题匹配说明书摘要，引导完成操作."""
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -119,14 +118,14 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "• 上传文件：选中频道后，输入框旁「上传」（.txt/.md/.docx）。\n"
         "• 频道上下文（四层记忆）：选中频道后，底部「频道上下文」。\n"
         "• API 文档：左侧「管理」内「打开 API 文档」或帮助中的 /docs 链接。\n"
-        "• 使用帮助：左侧「帮助」或频道内 @channel bot 提问。\n\n"
-        "更多可问 @channel bot 怎么创建项目、怎么加入项目、怎么把 Bot 拉进群、怎么用 等。",
+        "• 使用帮助：左侧「帮助」或频道内 @Coordinator 提问。\n\n"
+        "更多可问 @Coordinator 怎么创建项目、怎么加入项目、怎么把 Bot 拉进群、怎么用 等。",
     ),
     HelpEntry(
         ("orchestrator", "coordinator", "主控", "直接回答", "自动接手"),
         "Orchestrator 是什么、怎么用",
         "Orchestrator 是系统内置的业务问答 Bot（@coordinator）。\n\n"
-        "• 直接回答：管理员开启「直接回答未 @ 的问题」后，你发消息不 @ 任何人时，Orchestrator 会优先回答业务问题；系统使用类问题会建议你 @channel bot。\n"
+        "• 直接回答：管理员开启「直接回答未 @ 的问题」后，你发消息不 @ 任何人时，Orchestrator 会优先回答业务问题；系统使用类问题会建议你 @Coordinator。\n"
         "• 显式 @：写 @coordinator 可让 Orchestrator 聚合频道内其他 Bot 的回复，或根据问题建议你 @ 某个部门 Bot。\n"
         "• 自动接手：管理员开启后，Orchestrator 回复中含「建议 @xxx」时，被建议的 Bot 会自动接手回答，你会看到「正在处理...」提示。\n\n"
         "Orchestrator 需管理员加入频道后才能用；配置在「管理」→「LLM 设置」→「Orchestrator 配置」。",
@@ -134,7 +133,7 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
     HelpEntry(
         ("帮助", "怎么用", "不会用", "说明书", "文档"),
         "使用说明总览",
-        "我是 channel bot，根据说明书帮你完成操作。你可以这样问我：\n\n"
+        "我是 Coordinator（协调者），根据说明书帮你完成操作。你可以这样问我：\n\n"
         "• 入口 / 功能入口 → 查看所有前端入口\n"
         "• 怎么创建项目\n"
         "• 怎么加入项目\n"
@@ -172,53 +171,14 @@ def find_help(user_text: str) -> str | None:
     return None
 
 
-# 动态表单：意图关键词 -> (action, fields)
-_FORM_CREATE_CHANNEL = {
-    "action": "create_channel",
-    "fields": [
-        {
-            "name": "workspace_id",
-            "type": "select",
-            "label": "工作空间",
-            "options_url": "/api/workspaces",
-            "option_value": "workspace_id",
-            "option_label": "name",
-        },
-        {
-            "name": "name",
-            "type": "text",
-            "label": "项目名称",
-            "placeholder": "输入项目名称",
-        },
-    ],
-}
-_FORM_INTENT_KEYWORDS: list[tuple[tuple[str, ...], dict[str, Any]]] = [
-    (("帮我创建项目", "帮我建项目", "创建项目", "建项目", "新建项目"), _FORM_CREATE_CHANNEL),
-]
-
-
-def get_form_for_intent(user_text: str) -> dict[str, Any] | None:
-    """若用户意图需要动态表单，返回表单 schema；否则返回 None."""
-    if not user_text or not user_text.strip():
-        return None
-    text = user_text.strip().lower()
-    for keywords, form in _FORM_INTENT_KEYWORDS:
-        for kw in keywords:
-            if kw in text:
-                return form
-    return None
-
-
 def build_guide_content_with_form(user_text: str) -> str:
-    """返回引导回复正文；若匹配到表单意图则附带 guide-form 块供前端解析."""
-    content = find_help(user_text)
-    if not content:
-        return ""
-    form = get_form_for_intent(user_text)
-    if form:
-        blob = json.dumps(form, ensure_ascii=False)
-        content += "\n\n```guide-form\n" + blob + "\n```"
-    return content
+    """返回引导回复正文（仅纯文本说明书摘要）。
+
+    历史名称里的 "_with_form" 已是历史包袱：动态表单功能已下线，此函数现在
+    与 `find_help` 等价。保留函数名是为了不影响调用方；新代码请直接调用
+    `find_help`。
+    """
+    return find_help(user_text) or ""
 
 
 def get_help_context_for_llm() -> str:

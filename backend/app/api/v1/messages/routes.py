@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, try_get_current_user
 from app.core.responses import APIResponse
-from app.core.schemas import MessageCreate, MessageFileInResponse, MessageInResponse, MessageStreamCreate
+from app.core.schemas import (
+    MessageCreate,
+    MessageFileInResponse,
+    MessageInResponse,
+    MessageStreamCreate,
+    PermissionResolveRequest,
+)
 from app.db.models import FileRecord, Message, User
 from app.db.session import async_session_factory, get_session
 from app.services.guide.constants import GUIDE_BOT_ID
@@ -60,6 +66,55 @@ def _normalize_file_ids(file_ids: list[str] | None, file_id: str | None = None) 
 
 async def _broadcast_message(channel_id: str, payload: dict) -> None:
     await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": payload})
+    # Fan out a lightweight notification on each human member's user-scoped WS
+    # so rail unread badges can live-increment for channels that aren't the
+    # user's currently-open one. Errors here must never break the channel
+    # broadcast — swallow everything and log.
+    try:
+        await _fanout_unread(channel_id, payload)
+    except Exception:
+        logger.exception(
+            "fanout_unread: failed to dispatch channel_new_message channel_id=%s",
+            channel_id,
+        )
+
+
+async def _fanout_unread(channel_id: str, payload: dict) -> None:
+    """Notify every human channel member (except the sender) that a new
+    message has landed in this channel. Used to live-update rail unread
+    badges on channels the user isn't currently viewing."""
+    from sqlalchemy import select
+
+    from app.db.models import ChannelMembership
+
+    sender_id = payload.get("sender_id")
+    sender_type = payload.get("sender_type")
+
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(ChannelMembership.member_id).where(
+                    ChannelMembership.channel_id == channel_id,
+                    ChannelMembership.member_type == "user",
+                )
+            )
+        ).all()
+
+    event = {
+        "type": "channel_new_message",
+        "data": {
+            "channel_id": channel_id,
+            "sender_id": sender_id,
+            "sender_type": sender_type,
+            "msg_id": payload.get("msg_id"),
+        },
+    }
+    for row in rows:
+        member_id = row[0]
+        # Don't re-notify the sender about their own message.
+        if sender_type == "user" and member_id == sender_id:
+            continue
+        await ws_manager.broadcast_to_user(member_id, event)
 
 
 def _schedule_recent_update(channel_id: str) -> None:
@@ -211,7 +266,11 @@ async def _handle_send_message(
         stored_content = body.content
         token = None
 
-    from app.services.orchestrator.thread_context import MSG_TYPE_NORMAL, MSG_TYPE_REPLY, promote_to_thread
+    from app.services.orchestrator.topic_context import (
+        MSG_TYPE_NORMAL,
+        MSG_TYPE_REPLY,
+        ensure_topic_root,
+    )
 
     in_reply_to = getattr(body, "in_reply_to_msg_id", None) or None
     msg_type = getattr(body, "msg_type", None) or (MSG_TYPE_REPLY if in_reply_to else MSG_TYPE_NORMAL)
@@ -236,13 +295,13 @@ async def _handle_send_message(
     session.add(msg)
     await session.flush()
 
+    # The after_insert listener already flipped the parent row in DB; do an
+    # explicit in-memory promote on the loaded instance (if any) so any
+    # subsequent code in this request that reads parent.msg_type sees the
+    # updated value without a refresh.
     if in_reply_to:
-        from sqlalchemy import select as _sel2
-        parent_r = await session.execute(_sel2(Message).where(Message.msg_id == in_reply_to))
-        parent = parent_r.scalar_one_or_none()
-        if parent:
-            promote_to_thread(parent)
-            await session.flush()
+        await ensure_topic_root(session, in_reply_to)
+        await session.flush()
 
     # Build file_map for response
     fids = sorted({fid for fid in (msg.file_ids or []) if fid})
@@ -391,6 +450,125 @@ async def send_message_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/{msg_id}/cancel", response_model=APIResponse[dict])
+async def cancel_streaming_message(
+    channel_id: str,
+    msg_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Cancel an in-progress streaming bot reply.
+
+    Marks the stream as cancelled, finalizes the placeholder message with
+    `is_partial=True` (preserving whatever tokens have arrived so far), and
+    notifies the plugin via control WS so it can stop generating.
+
+    Idempotent: if the stream is already finalized, returns 200 with the
+    current message state and no plugin notification is sent.
+    """
+    from sqlalchemy import select
+
+    from app.core.exceptions import ForbiddenError, NotFoundError
+    from app.db.models import ChannelMembership
+    from app.services.openclaw_bridge.registry import bot_session_registry
+    from app.services.openclaw_bridge.service import cancel_stream as bridge_cancel_stream
+    from app.services.openclaw_bridge.streams import stream_registry
+
+    membership = (
+        await session.execute(
+            select(ChannelMembership.member_id).where(
+                ChannelMembership.channel_id == channel_id,
+                ChannelMembership.member_id == current_user.user_id,
+                ChannelMembership.member_type == "user",
+            )
+        )
+    ).first()
+    if not membership:
+        raise ForbiddenError("not a member of this channel")
+
+    msg = await session.get(Message, msg_id)
+    if not msg or msg.channel_id != channel_id:
+        raise NotFoundError("message not found")
+
+    state = await stream_registry.get(msg_id)
+    if state is None:
+        # Already finalized or never streamed: idempotent success.
+        return APIResponse.ok(_serialize(msg, {}))
+
+    bot_id = state.bot_id
+    finalized = await bridge_cancel_stream(
+        session, msg_id=msg_id, reason="user_cancelled",
+    )
+    if finalized is not None:
+        await session.commit()
+        # Tell the plugin to stop generating. Best-effort: if plugin is
+        # offline the cancel still succeeds locally.
+        await bot_session_registry.dispatch_control(bot_id, {
+            "type": "cancel",
+            "msg_id": msg_id,
+            "reason": "user_cancelled",
+        })
+        logger.info(
+            "cancel_streaming_message: msg_id=%s bot_id=%s by_user=%s",
+            msg_id, bot_id, current_user.user_id,
+        )
+        return APIResponse.ok(_serialize(finalized, {}))
+    # Race: registry had it but cancel raced with done. Return current msg.
+    await session.refresh(msg)
+    return APIResponse.ok(_serialize(msg, {}))
+
+
+@router.post("/{msg_id}/resolve", response_model=APIResponse[dict])
+async def resolve_permission(
+    channel_id: str,
+    msg_id: str,
+    body: PermissionResolveRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """对 permission 类型消息（工具调用审批卡）记录 allow/deny。
+
+    - 仅 msg_type == "permission" 的消息可被 resolve；
+    - 已 resolved 的消息不可再次 resolve（返回原值）；
+    - 成功后在同频道广播更新后的消息。
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.core.exceptions import AppError, NotFoundError
+
+    result = await session.execute(
+        select(Message)
+        .where(Message.channel_id == channel_id, Message.msg_id == msg_id)
+        .with_for_update()
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise NotFoundError("message not found")
+    if msg.msg_type != "permission":
+        raise AppError("message is not a permission card")
+
+    cd = dict(msg.content_data or {})
+    if cd.get("resolved"):
+        # 已处理过的请求直接回传当前状态。
+        payload = _serialize(msg, {})
+        return APIResponse.ok(payload)
+
+    cd["resolved"] = True
+    cd["resolution"] = body.resolution
+    cd["resolved_by"] = current_user.user_id
+    cd["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    msg.content_data = cd
+
+    await session.commit()
+    await session.refresh(msg)
+
+    payload = _serialize(msg, {})
+    await _broadcast_message(channel_id, payload)
+    return APIResponse.ok(payload)
 
 
 @router.get("/{msg_id}/secret", response_model=APIResponse[dict])

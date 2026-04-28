@@ -1,7 +1,9 @@
 """Channel 业务逻辑层."""
 from __future__ import annotations
 
-from sqlalchemy import and_, or_, select
+from datetime import datetime, timezone
+
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
@@ -38,10 +40,166 @@ class ChannelService:
         return ch
 
     async def list_for_user(self, user: User) -> list[Channel]:
-        return await self.repo.list_for_user(user.user_id)
+        # Rail "Channels" section — only named channels, DMs live in their own
+        # list via list_dms_for_user / GET /api/v1/dms.
+        return await self.repo.list_for_user(user.user_id, include_dms=False)
 
     async def list_for_user_in_workspace(self, workspace_id: str, user: User) -> list[Channel]:
-        return await self.repo.list_for_user_in_workspace(workspace_id, user.user_id)
+        return await self.repo.list_for_user_in_workspace(
+            workspace_id, user.user_id, include_dms=False
+        )
+
+    async def list_dms_for_user(self, user: User) -> list[Channel]:
+        return await self.repo.list_dms_for_user(user.user_id)
+
+    async def get_or_create_dm(
+        self,
+        workspace_id: str,
+        current_user: User,
+        other_id: str,
+        other_type: str,
+    ) -> Channel:
+        """Return an existing 1:1 DM channel between current_user and (other)
+        in the given workspace, or create one on first request. Idempotent."""
+        if other_type not in ("user", "bot"):
+            raise BadRequestError("member_type must be 'user' or 'bot'")
+        if other_type == "user" and other_id == current_user.user_id:
+            raise BadRequestError("cannot DM yourself")
+
+        # Workspace membership is the only access gate right now.
+        wm = await self.ws_repo.get_membership(workspace_id, current_user.user_id)
+        if not wm and not is_admin(current_user):
+            raise ForbiddenError("not a member of this workspace")
+
+        # Resolve the counterparty exists.
+        if other_type == "user":
+            other = await self.user_repo.get_by_id(other_id)
+        else:
+            other = await self.bot_repo.get_by_id(other_id)
+        if not other:
+            raise NotFoundError("DM counterparty not found")
+
+        # Look for an existing DM channel with exactly these two members.
+        from sqlalchemy.orm import aliased
+
+        m1 = aliased(ChannelMembership)
+        m2 = aliased(ChannelMembership)
+        existing = (await self.session.execute(
+            select(Channel)
+            .join(m1, m1.channel_id == Channel.channel_id)
+            .join(m2, m2.channel_id == Channel.channel_id)
+            .where(
+                Channel.workspace_id == workspace_id,
+                Channel.type == "dm",
+                m1.member_id == current_user.user_id,
+                m1.member_type == "user",
+                m2.member_id == other_id,
+                m2.member_type == other_type,
+            )
+            .limit(1)
+        )).scalar_one_or_none()
+        if existing:
+            return existing
+
+        # Deterministic name for dedup debugging; display comes from counterparty.
+        a, b = sorted([current_user.user_id, other_id])
+        name = f"dm:{a}:{b}"[:255]
+        ch = await self.repo.create(
+            workspace_id=workspace_id, name=name, type="dm", purpose=None,
+        )
+        await self.repo.add_member(
+            ch.channel_id, current_user.user_id, "user", added_by=current_user.user_id,
+        )
+        await self.repo.add_member(
+            ch.channel_id, other_id, other_type, added_by=current_user.user_id,
+        )
+        return ch
+
+    async def list_dms_with_counterparty(self, user: User) -> list[dict]:
+        """Returns each of the user's DM channels paired with the other
+        member's profile — the shape used by the rail's Direct section."""
+        dms = await self.repo.list_dms_for_user(user.user_id)
+        out: list[dict] = []
+        for ch in dms:
+            members = await self.repo.list_memberships(ch.channel_id)
+            other = next(
+                (
+                    m for m in members
+                    if not (m.member_id == user.user_id and m.member_type == "user")
+                ),
+                None,
+            )
+            if not other:
+                continue
+            if other.member_type == "bot":
+                bot = await self.bot_repo.get_by_id(other.member_id)
+                if not bot:
+                    continue
+                cp = {
+                    "member_id": bot.bot_id,
+                    "member_type": "bot",
+                    "username": bot.username,
+                    "display_name": bot.display_name,
+                    "avatar_url": bot.avatar_url,
+                }
+            else:
+                u = await self.user_repo.get_by_id(other.member_id)
+                if not u:
+                    continue
+                cp = {
+                    "member_id": u.user_id,
+                    "member_type": "user",
+                    "username": u.username,
+                    "display_name": u.display_name,
+                    "avatar_url": u.avatar_url,
+                }
+            out.append(
+                {
+                    "channel_id": ch.channel_id,
+                    "workspace_id": ch.workspace_id,
+                    "counterparty": cp,
+                }
+            )
+        return out
+
+    async def unread_counts_for(
+        self, user_id: str, channel_ids: list[str]
+    ) -> dict[str, int]:
+        """Per-channel unread count for a user, derived from
+        channel_memberships.last_read_at. Channels the user isn't a member of
+        return 0. Messages the user sent themselves don't count as unread.
+        """
+        if not channel_ids:
+            return {}
+        membership_rows = (await self.session.execute(
+            select(ChannelMembership).where(
+                ChannelMembership.channel_id.in_(channel_ids),
+                ChannelMembership.member_id == user_id,
+                ChannelMembership.member_type == "user",
+            )
+        )).scalars().all()
+        result: dict[str, int] = {cid: 0 for cid in channel_ids}
+        for m in membership_rows:
+            q = select(func.count()).select_from(Message).where(
+                Message.channel_id == m.channel_id,
+                Message.sender_id != user_id,
+            )
+            if m.last_read_at is not None:
+                q = q.where(Message.created_at > m.last_read_at)
+            cnt = (await self.session.execute(q)).scalar() or 0
+            result[m.channel_id] = int(cnt)
+        return result
+
+    async def mark_read(self, channel_id: str, user_id: str) -> datetime | None:
+        """Move the user's read cursor to "now" for this channel. Returns the
+        new timestamp, or None if the user isn't a member of the channel."""
+        m = await self.repo.get_membership(channel_id, user_id)
+        if not m or m.member_type != "user":
+            return None
+        now = datetime.now(timezone.utc)
+        m.last_read_at = now
+        await self.session.flush()
+        return now
 
     async def create(
         self,

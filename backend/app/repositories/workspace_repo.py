@@ -30,8 +30,8 @@ class WorkspaceRepository:
         result = await self.session.execute(select(Workspace).order_by(Workspace.created_at))
         return list(result.scalars().all())
 
-    async def create(self, name: str) -> Workspace:
-        ws = Workspace(name=name)
+    async def create(self, name: str, kind: str = "team") -> Workspace:
+        ws = Workspace(name=name, kind=kind)
         self.session.add(ws)
         await self.session.flush()
         return ws

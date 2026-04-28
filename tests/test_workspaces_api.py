@@ -8,12 +8,14 @@ from app.db.models import Workspace, WorkspaceMembership
 
 @pytest.mark.asyncio
 async def test_list_workspaces_empty(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/workspaces 无工作空间时返回空列表."""
+    """GET /api/workspaces 无手动创建工作空间时，只返回自动创建的 Personal 空间."""
     resp = await client.get("/api/v1/workspaces")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"
-    assert data["data"] == []
+    # list_for_user lazily creates a Personal workspace on first call
+    assert len(data["data"]) == 1
+    assert data["data"][0]["kind"] == "personal"
 
 
 @pytest.mark.asyncio
@@ -34,6 +36,8 @@ async def test_list_workspaces_returns_created(client: AsyncClient, db_session: 
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"
-    assert len(data["data"]) == 1
-    assert data["data"][0]["workspace_id"] == "b0000000-0000-0000-0000-000000000001"
-    assert data["data"][0]["name"] == "默认空间"
+    # list_for_user also auto-creates Personal workspace, so expect 2 total
+    workspace_ids = [w["workspace_id"] for w in data["data"]]
+    assert "b0000000-0000-0000-0000-000000000001" in workspace_ids
+    names = {w["workspace_id"]: w["name"] for w in data["data"]}
+    assert names["b0000000-0000-0000-0000-000000000001"] == "默认空间"

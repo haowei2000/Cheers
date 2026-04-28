@@ -1,7 +1,7 @@
 """Bot 适配器抽象接口（ADR D-05）：Orchestrator 只依赖此接口，所有 adapter 实现它。
 
 类名 ``OpenClawAdapter`` 保留历史命名；语义已泛化为所有 Bot 执行路径
-（HTTP LLM、内置 @channel bot、WebSocket Bot 等）共用的协议。
+（HTTP LLM、内置 @Coordinator、WebSocket Bot 等）共用的协议。
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

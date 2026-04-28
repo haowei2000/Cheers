@@ -6,6 +6,8 @@ import App from "./App";
 import AdminPage from "./AdminPage";
 import DocsPage from "./DocsPage";
 import BulletinPage from "./BulletinPage";
+import "./styles/design-tokens.css";
+import "./styles/composer.css";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

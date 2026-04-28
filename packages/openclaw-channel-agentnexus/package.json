@@ -23,7 +23,10 @@
     "test:watch": "vitest",
     "lint": "tsc -p tsconfig.json --noEmit",
     "demo": "tsx src/demo.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "release:patch": "npm version patch && git push --follow-tags",
+    "release:minor": "npm version minor && git push --follow-tags",
+    "release:major": "npm version major && git push --follow-tags"
   },
   "keywords": ["openclaw", "channel", "plugin", "agentnexus", "websocket", "bot"],
   "license": "MIT",

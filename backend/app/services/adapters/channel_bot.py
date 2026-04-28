@@ -29,7 +29,6 @@ from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdap
 from app.services.admin.settings_store import get_provider_for_scope
 from app.services.guide.help_index import (
     build_guide_content_with_form,
-    get_form_for_intent,
     get_help_context_for_llm,
 )
 
@@ -90,31 +89,41 @@ def _make_llm(cfg: dict) -> ChatOpenAI:
 
 def _tool_label(tool_name: str, args: dict) -> str:
     """Human-readable label for a tool call notification."""
-    if tool_name == "call_bot":
-        return f"调用 @{args.get('username', '?')}"
-    if tool_name == "update_anchor":
-        return "更新项目锚点"
-    if tool_name == "update_decision":
-        return "记录决策"
-    if tool_name == "update_progress":
-        return "更新项目进度"
-    if tool_name == "call_user":
-        return f"呼叫 @{args.get('username', '?')}"
-    if tool_name == "create_file":
-        return f"创建文件 {args.get('filename', '?')}.md"
-    if tool_name == "read_file":
-        return f"读取文件 {args.get('file_id', '?')[:8]}…"
-    if tool_name == "generate_image":
-        return f"生成图片：{args.get('prompt', '?')[:30]}"
-    if tool_name == "edit_image":
-        return f"编辑图片：{args.get('prompt', '?')[:30]}"
-    if tool_name == "web_fetch":
-        url = args.get('url', '?')
-        return f"获取网页：{url[:50]}{'...' if len(url) > 50 else ''}"
-    if tool_name == "web_search":
-        query = args.get('query', '?')
-        return f"搜索：{query[:40]}{'...' if len(query) > 40 else ''}"
-    return tool_name
+    args = args or {}
+    match tool_name:
+        case "call_bot":
+            return f"调用 @{args.get('username', '?')}"
+        case "update_anchor":
+            return "更新项目锚点"
+        case "update_decision":
+            return "记录决策"
+        case "update_progress":
+            return "更新项目进度"
+        case "call_user":
+            return f"呼叫 @{args.get('username', '?')}"
+        case "create_file":
+            filename = args.get('filename') or '?'
+            return f"创建文件 {filename}.md"
+        case "read_file":
+            file_id = args.get('file_id') or '?'
+            preview = (file_id[:8] + '…') if len(file_id) > 8 else file_id
+            return f"读取文件 {preview}"
+        case "generate_image":
+            prompt = args.get('prompt') or '?'
+            return f"生成图片：{prompt[:30]}"
+        case "edit_image":
+            prompt = args.get('prompt') or '?'
+            return f"编辑图片：{prompt[:30]}"
+        case "web_fetch":
+            url = args.get('url') or '?'
+            suffix = '...' if len(url) > 50 else ''
+            return f"获取网页：{url[:50]}{suffix}"
+        case "web_search":
+            query = args.get('query') or '?'
+            suffix = '...' if len(query) > 40 else ''
+            return f"搜索：{query[:40]}{suffix}"
+        case _:
+            return tool_name
 
 
 # ─── 工具工厂 ──────────────────────────────────────────────────────────────────
@@ -1026,6 +1035,11 @@ async def _fetch_recent_history(
         content = _strip_ui_blocks(m.content or "")
         if not content:
             continue
+        # Strip the > [Author]: snippet\n\n reply-quote prefix added by the
+        # frontend's reply UI so the LLM doesn't learn to mimic this format.
+        content = re.sub(r'^> \[[^\]]+\]: .+?\n\n', '', content, count=1, flags=re.DOTALL).strip()
+        if not content:
+            continue
         if len(content) > HISTORY_MSG_MAX_CHARS:
             content = content[:HISTORY_MSG_MAX_CHARS] + "…"
         name = display_names.get(m.sender_id, "")
@@ -1327,6 +1341,13 @@ class ChannelBotAdapter(OpenClawAdapter):
             "original_question_text": payload.original_question_text,
             "_db_session": pconfig.get("_db_session"),
             "_bot_id": pconfig.get("_bot_id"),
+            # Streaming hooks: call_bot uses these to pre-create the sub-bot's
+            # placeholder message and stream its tokens directly to the
+            # frontend (otherwise the sub-bot reply lands as a single
+            # non-streamed broadcast on completion).
+            "_pre_create_bot_msg": pconfig.get("_pre_create_bot_msg"),
+            "_finalize_bot_msg": pconfig.get("_finalize_bot_msg"),
+            "_make_stream_token_cb": pconfig.get("_make_stream_token_cb"),
         }
 
         # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────
@@ -1418,11 +1439,6 @@ class ChannelBotAdapter(OpenClawAdapter):
                 channel_id,
                 (user_text[:60] + "…") if len(user_text) > 60 else user_text,
             )
-
-        # ── 6. 附加动态表单（如有匹配意图） ────────────────────────────────────
-        form = get_form_for_intent(user_text)
-        if form:
-            content += "\n\n```guide-form\n" + json.dumps(form, ensure_ascii=False) + "\n```"
 
         created_file_ids = tool_ctx.get("_created_file_ids") or []
         return AgentResponse(content=content, task_id=payload.task_id, success=True, file_ids=created_file_ids)

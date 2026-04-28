@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AgentNexus 智枢协作平台</title>
+    <!-- Noto Sans SC — SIL OFL 1.1 — primary UI font. Served from Google
+         Fonts so we don't need to bundle CJK woff2 files locally. If you
+         want a different voice, swap the family below (and the CSS
+         --font-sans token in styles/design-tokens.css / colors_and_type.css)
+         to one of:
+           · HarmonyOS Sans SC  — free for commercial use
+           · 阿里巴巴普惠体 / Alibaba PuHuiTi  — commercial-free
+           · 霞鹜文楷 / LXGW WenKai             — warm handwriting serif
+         Each has its own CDN / self-host story. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+    />
     <style>
       /* Prevent iOS Safari from auto-zooming on input focus (requires font-size >= 16px) */
       @media screen and (max-width: 767px) {
@@ -24,6 +39,7 @@
       (function() {
         var stored = localStorage.getItem('agentnexus-theme');
         var isDark = stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
         if (isDark) document.documentElement.classList.add('dark');
       })();
     </script>

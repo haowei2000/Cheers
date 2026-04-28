@@ -102,7 +102,7 @@ class HttpBotAdapter(OpenClawAdapter):
         attachments_block = "<attachments>\n" + "\n".join(file_parts) + "\n</attachments>"
         return user_message.strip() + "\n\n" + attachments_block
 
-    def _format_thread_messages(self, messages: list[dict]) -> str:
+    def _format_topic_messages(self, messages: list[dict]) -> str:
         lines = []
         for m in messages:
             ts = (m.get("timestamp") or "")[:19].replace("T", " ")
@@ -111,27 +111,27 @@ class HttpBotAdapter(OpenClawAdapter):
             lines.append(f"[{ts}] {name}: {text}")
         return "\n".join(lines)
 
-    def _apply_thread_context(self, trigger_meta: dict, user_text: str) -> str:
-        """根据消息类型（msg_type）注入线程上下文。"""
-        thread_history: list[dict] = trigger_meta.get("thread_history") or []
+    def _apply_topic_context(self, trigger_meta: dict, user_text: str) -> str:
+        """根据消息类型（msg_type）注入主题上下文。"""
+        topic_chain: list[dict] = trigger_meta.get("topic_chain") or []
         child_replies: list[dict] = trigger_meta.get("child_replies") or []
         msg_type = trigger_meta.get("msg_type") or (
             "reply" if trigger_meta.get("in_reply_to_msg_id") else "normal"
         )
 
-        if msg_type == "reply" and thread_history:
+        if msg_type == "reply" and topic_chain:
             # 规则2/3：回复消息，携带祖先链
             return (
-                "--- 消息线程上下文（从旧到新）---\n"
-                + self._format_thread_messages(thread_history)
+                "--- 主题上下文（从旧到新）---\n"
+                + self._format_topic_messages(topic_chain)
                 + "\n--- 当前用户消息 ---\n"
                 + user_text
             )
-        if msg_type == "thread" and child_replies:
-            # 规则4：消息串根，携带已有子回复
+        if msg_type == "topic" and child_replies:
+            # 规则4：主题根，携带已有子回复
             return (
-                "--- 此消息串的已有回复 ---\n"
-                + self._format_thread_messages(child_replies)
+                "--- 此主题的已有回复 ---\n"
+                + self._format_topic_messages(child_replies)
                 + "\n--- 当前用户消息 ---\n"
                 + user_text
             )
@@ -182,9 +182,9 @@ class HttpBotAdapter(OpenClawAdapter):
         # 文档附件合并到文本
         user_text = self._merge_attachments_into_message(user_text, doc_attachments)
 
-        # 注入线程上下文（4条规则）
+        # 注入主题上下文（4条规则）
         trigger_meta = payload.trigger_message or {}
-        user_text = self._apply_thread_context(trigger_meta, user_text)
+        user_text = self._apply_topic_context(trigger_meta, user_text)
 
         if not self.model or not self.template:
             return AgentResponse(

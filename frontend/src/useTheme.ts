@@ -15,6 +15,7 @@ function getInitialTheme(): Theme {
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
+  root.setAttribute("data-theme", theme);
   if (theme === "dark") {
     root.classList.add("dark");
   } else {

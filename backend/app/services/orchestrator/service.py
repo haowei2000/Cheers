@@ -23,14 +23,16 @@ from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.orchestrator.service")
 
-COORDINATOR_USERNAME = "channel bot"
+COORDINATOR_USERNAME = "Coordinator"
 
 
 def _is_guide_clarify_reply(content: str) -> bool:
-    """判断是否为引导 Bot 的澄清回答消息（兼容 @引导 与 @channel bot）."""
+    """判断是否为协调者 Bot 的澄清回答消息（兼容历史名 @引导 / @channel bot 与
+    现行名 @Coordinator）."""
     t = (content or "").strip()
     return (
-        t.startswith("@引导 澄清回答：")
+        t.startswith("@Coordinator 澄清回答：")
+        or t.startswith("@引导 澄清回答：")
         or t.startswith("@channel bot 澄清回答：")
         or "用户选择跳过澄清" in t
     )
@@ -90,6 +92,71 @@ def _get_trigger_content(msg: Message) -> str:
         except Exception:
             logger.warning("orchestrator: failed to decrypt secret message msg_id=%s", msg.msg_id)
     return msg.content
+
+
+async def _emit_routing_card(
+    *,
+    channel_id: str,
+    coordinator_bot_id: str,
+    trigger_content: str,
+    coordinator_content: str,
+    picked_usernames: list[str],
+    session: AsyncSession,
+    already_broadcast: set[str],
+    created: list[Message],
+    stream_event: Callable[[str, dict], Awaitable[None]] | None = None,
+) -> None:
+    """Write a msg_type="routing" Message carrying the coordinator's decision
+    (who was picked + a terse plan snippet) and broadcast it over the
+    channel WS. Non-fatal: any exception is logged and swallowed so the
+    takeover flow continues.
+    """
+    from app.core.schemas import MessageInResponse
+    from app.services.ws_service import ws_manager
+
+    try:
+        picks = [{"agent": u, "picked": True} for u in picked_usernames]
+        q = (trigger_content or "").strip().replace("\n", " ")
+        if len(q) > 160:
+            q = q[:160] + "…"
+        plan = (coordinator_content or "").strip().replace("\n", " ")
+        if len(plan) > 200:
+            plan = plan[:200] + "…"
+
+        routing_msg = Message(
+            channel_id=channel_id,
+            sender_id=coordinator_bot_id,
+            sender_type="bot",
+            content="",
+            msg_type="routing",
+            content_data={"q": q or None, "picks": picks, "plan": plan or None},
+        )
+        session.add(routing_msg)
+        await session.flush()
+
+        data = MessageInResponse.model_validate(routing_msg).model_dump()
+        if routing_msg.created_at:
+            data["created_at"] = routing_msg.created_at.isoformat()
+        coord_row = await session.execute(
+            select(BotAccount.display_name, BotAccount.username).where(
+                BotAccount.bot_id == coordinator_bot_id
+            )
+        )
+        coord_info = coord_row.first()
+        if coord_info:
+            data["sender_name"] = coord_info[0] or coord_info[1] or ""
+
+        await ws_manager.broadcast_to_channel(
+            channel_id, {"type": "message", "data": data}
+        )
+        if stream_event:
+            await stream_event("message", data)
+        already_broadcast.add(routing_msg.msg_id)
+        created.append(routing_msg)
+    except Exception:
+        logger.exception(
+            "orchestrator: failed to emit routing card channel_id=%s", channel_id,
+        )
 
 
 async def run_orchestrator(
@@ -242,14 +309,18 @@ async def run_orchestrator(
             logger.exception("failed to prepare attachments channel_id=%s", channel_id)
             attachment_error = f"读取上传文件失败：{exc}"
 
-    from app.services.orchestrator.thread_context import MSG_TYPE_REPLY, gather_thread_context, promote_to_thread
+    from app.services.orchestrator.topic_context import (
+        MSG_TYPE_REPLY,
+        ensure_topic_root,
+        gather_topic_context,
+    )
 
-    memory_context, _, thread_result = await asyncio.gather(
+    memory_context, _, topic_result = await asyncio.gather(
         memory_load(channel_id, session),
         _load_attachments(),
-        gather_thread_context(trigger_msg, session),
+        gather_topic_context(trigger_msg, session),
     )
-    thread_chain, child_replies = thread_result
+    topic_chain, child_replies = topic_result
 
     # 查出发送者的昵称，注入到 trigger_message 供模板变量 {{sender_name}} 使用
     sender_name = ""
@@ -331,7 +402,7 @@ async def run_orchestrator(
                     "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                     "msg_id": trigger_msg.msg_id,
                     "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
-                    "thread_history": thread_chain,
+                    "topic_chain": topic_chain,
                     "child_replies": child_replies,
                 },
                 memory_context=memory_context,
@@ -387,7 +458,6 @@ async def run_orchestrator(
         from app.services.ws_service import ws_manager
 
         mention_user_ids = await resolve_user_mentions(content, session, channel_id)
-        promote_to_thread(trigger_msg)
         msg = Message(
             channel_id=channel_id,
             sender_id=sender_id,
@@ -400,6 +470,12 @@ async def run_orchestrator(
         )
         session.add(msg)
         await session.flush()
+        # after_insert listener in topic_context.py will flip trigger_msg's
+        # row to "topic" once the reply count crosses
+        # TOPIC_PROMOTE_THRESHOLD. Mirror the flip into the in-memory
+        # Message object so any later code in this request sees the new
+        # msg_type without a refresh.
+        await ensure_topic_root(session, trigger_msg.msg_id)
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()
@@ -420,7 +496,6 @@ async def run_orchestrator(
         from app.core.schemas import MessageInResponse
         from app.services.ws_service import ws_manager
 
-        promote_to_thread(trigger_msg)
         msg = Message(
             channel_id=channel_id,
             sender_id=bot_id,
@@ -432,6 +507,8 @@ async def run_orchestrator(
         )
         session.add(msg)
         await session.flush()
+        # Same threshold-aware promotion as _create_msg_and_broadcast.
+        await ensure_topic_root(session, trigger_msg.msg_id)
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()
@@ -582,7 +659,7 @@ async def run_orchestrator(
                     "msg_id": trigger_msg.msg_id,
                     "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
                     "msg_type": trigger_msg.msg_type,
-                    "thread_history": thread_chain,
+                    "topic_chain": topic_chain,
                     "child_replies": child_replies,
                 },
                 memory_context=memory_context,
@@ -637,6 +714,23 @@ async def run_orchestrator(
                     if sug in channel_bot_usernames and sug != COORDINATOR_USERNAME
                 ]
 
+                if valid_suggested:
+                    # Emit a routing card right before firing the sub-bots, so
+                    # the UI can render the design's .an-routing card (agent
+                    # picks + plan) instead of only seeing the coordinator's
+                    # prose.
+                    await _emit_routing_card(
+                        channel_id=channel_id,
+                        coordinator_bot_id=bot_id,
+                        trigger_content=trigger_content,
+                        coordinator_content=content,
+                        picked_usernames=valid_suggested,
+                        session=session,
+                        already_broadcast=already_broadcast,
+                        created=created,
+                        stream_event=stream_event,
+                    )
+
                 # 阶段 1：串行 broadcast + 预建消息（需要 DB session）
                 pending_sug: list[tuple[str, str, Message, AgentPayload, OpenClawAdapter]] = []
                 for sug_username in valid_suggested:
@@ -654,7 +748,7 @@ async def run_orchestrator(
                             "text": trigger_content,
                             "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                             "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
-                            "thread_history": thread_chain,
+                            "topic_chain": topic_chain,
                             "child_replies": child_replies,
                         },
                         memory_context=memory_context,
@@ -725,7 +819,7 @@ async def run_orchestrator(
                 "timestamp": trigger_msg.created_at.isoformat() if trigger_msg.created_at else "",
                 "msg_id": trigger_msg.msg_id,
                 "in_reply_to_msg_id": trigger_msg.in_reply_to_msg_id,
-                "thread_history": thread_chain,
+                "topic_chain": topic_chain,
                 "child_replies": child_replies,
             },
             memory_context=memory_context,

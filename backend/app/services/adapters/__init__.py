@@ -15,9 +15,9 @@
 
 2. 内置系统 Bot（按 ``bot_id`` 路由，不走 ``BotAccount`` 配置）
    - ``channel_bot.py`` → ``ChannelBotAdapter``
-     ——@channel bot，引导/助手/记忆管理三合一 + 工具系统
+     ——@Coordinator（协调者），引导/助手/记忆管理三合一 + 工具系统
    - ``help_bot.py`` → ``HelpBotAdapter``
-     ——@guide-helper，加载 ``docs/help/`` 回答使用问题
+     ——@Helper，加载 ``docs/help/`` 回答使用问题
    - 路由表在 ``builtin_registry.BUILTIN_BOT_ADAPTERS``（bot_id → 零参工厂），
      新增内置 Bot 加一行即可；``GUIDE_BOT_ID`` / ``GUIDE_HELPER_BOT_ID``
      在 ``services/guide/constants.py`` 里登记。

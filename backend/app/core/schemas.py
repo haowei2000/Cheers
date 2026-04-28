@@ -206,6 +206,74 @@ class ChannelInResponse(BaseModel):
     type: str
     purpose: str | None = None
     auto_assist: bool = False
+    # 用户在该频道未读的消息数（由 channel_memberships.last_read_at 派生）。
+    # 未登录或非成员时保持 None。
+    unread_count: int | None = None
+
+
+class DMCounterparty(BaseModel):
+    """DM 对方的最小档案。既可以是用户也可以是 bot。"""
+    member_id: str
+    member_type: str  # "user" | "bot"
+    username: str | None = None
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
+class DMInResponse(BaseModel):
+    """一条 Direct Message 在列表里展示所需的字段。"""
+    channel_id: str
+    workspace_id: str
+    counterparty: DMCounterparty
+    unread_count: int | None = None
+
+
+class DMCreateRequest(BaseModel):
+    """POST /api/v1/dms 请求体：在某 workspace 内与对方开启/复用 DM。"""
+    workspace_id: str
+    member_id: str
+    member_type: str  # "user" | "bot"
+
+
+# ==================== Global search ====================
+
+
+class SearchChannelHit(BaseModel):
+    channel_id: str
+    name: str
+    workspace_id: str
+    type: str  # 实际值排除了 "dm"（dm 单独通过 people/bot 搜索进入）
+
+
+class SearchUserHit(BaseModel):
+    user_id: str
+    username: str
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
+class SearchBotHit(BaseModel):
+    bot_id: str
+    username: str
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
+class SearchMessageHit(BaseModel):
+    msg_id: str
+    channel_id: str
+    channel_name: str
+    sender_label: str                 # 显示名（或 @username / "me"）
+    snippet: str                      # 正文片段（已截断，高亮可客户端处理）
+    created_at: datetime | None = None
+
+
+class SearchResults(BaseModel):
+    q: str
+    channels: list[SearchChannelHit] = Field(default_factory=list)
+    users: list[SearchUserHit] = Field(default_factory=list)
+    bots: list[SearchBotHit] = Field(default_factory=list)
+    messages: list[SearchMessageHit] = Field(default_factory=list)
 
 
 class MemberAdd(BaseModel):
@@ -241,10 +309,46 @@ class MessageFileInResponse(BaseModel):
 
 # ==================== content_data schemas (per msg_type) ====================
 
-class ThreadContentData(BaseModel):
-    """消息串的结构化数据。"""
+class TopicContentData(BaseModel):
+    """主题的结构化数据。"""
     title: str | None = None
 
+
+class AnnouncementContentData(BaseModel):
+    """公告消息的结构化数据。"""
+    title: str | None = None
+    pinned_by: str | None = None  # user_id of whoever pinned it (display-only)
+
+
+class RoutingPick(BaseModel):
+    """Coordinator 给出的一个候选 agent 以及评分/理由。"""
+    agent: str                    # bot username
+    score: str | None = None      # freeform: "0.92" / "high" / 等
+    why: str | None = None
+    picked: bool | None = None    # True 表示最终选中
+    secondary: bool | None = None  # True 表示作为次要候选
+
+
+class RoutingContentData(BaseModel):
+    """路由卡片的结构化数据。由 coordinator 在派发任务时产出。"""
+    q: str | None = None          # 被路由的请求（通常是用户的原始消息摘要）
+    picks: list[RoutingPick] = Field(default_factory=list)
+    plan: str | None = None       # 一句话的执行计划
+
+
+class PermissionContentData(BaseModel):
+    """审批卡片的结构化数据。Bot 在发起需要人工授权的写操作前产出。
+
+    - tool: 请求的工具名（例如 write_file / run_sql）
+    - body: 面向人类的摘要（"Apply patch to gateway/src/put.rs (+4/-1)"）
+    - resolved / resolution / resolved_by / resolved_at 在 /resolve 端点被填充。
+    """
+    tool: str | None = None
+    body: str | None = None
+    resolved: bool = False
+    resolution: Literal["allow", "deny"] | None = None
+    resolved_by: str | None = None
+    resolved_at: datetime | None = None
 
 
 # ==================== Message Create Schemas (discriminated union) ====================
@@ -272,13 +376,31 @@ class ReplyMessageCreate(_MessageCreateBase):
     content_data: dict[str, Any] | None = None
 
 
-class ThreadMessageCreate(_MessageCreateBase):
-    """消息串：显式创建一个话题串。"""
-    msg_type: Literal["thread"] = "thread"
-    content_data: ThreadContentData | None = None
+class TopicMessageCreate(_MessageCreateBase):
+    """主题：显式创建一个主题。"""
+    msg_type: Literal["topic"] = "topic"
+    content_data: TopicContentData | None = None
 
 
-# 统一入口：兼容旧客户端（不含 msg_type 时按 in_reply_to_msg_id 自动推断）
+class AnnouncementMessageCreate(_MessageCreateBase):
+    """频道公告：顶部置顶展示，带标题和置顶人。"""
+    msg_type: Literal["announcement"] = "announcement"
+    content_data: AnnouncementContentData | None = None
+
+
+class RoutingMessageCreate(_MessageCreateBase):
+    """路由卡片：coordinator 将请求派发给其他 agents 时的结构化说明。"""
+    msg_type: Literal["routing"] = "routing"
+    content_data: RoutingContentData | None = None
+
+
+class PermissionMessageCreate(_MessageCreateBase):
+    """审批卡片：bot 发起需要人工授权的写操作时产出。content 为人类可读说明。"""
+    msg_type: Literal["permission"] = "permission"
+    content_data: PermissionContentData | None = None
+
+
+# 统一入口：兼容旧客户端（不含 msg_type 时含 in_reply_to_msg_id 自动推断）
 class MessageCreate(BaseModel):
     """发送消息（兼容入口，自动推断 msg_type）。"""
     content: str
@@ -300,7 +422,7 @@ class MessageCreate(BaseModel):
 
 # Discriminated union（供新客户端使用）
 AnyMessageCreate = Annotated[
-    NormalMessageCreate | ReplyMessageCreate | ThreadMessageCreate,
+    NormalMessageCreate | ReplyMessageCreate | TopicMessageCreate | AnnouncementMessageCreate | RoutingMessageCreate | PermissionMessageCreate,
     Field(discriminator="msg_type"),
 ]
 
@@ -334,6 +456,7 @@ class _MessageResponseBase(BaseModel):
     in_reply_to_msg_id: str | None = None
     created_at: datetime | None = None
     is_secret: bool = False
+    is_partial: bool = False
 
 
 class NormalMessageInResponse(_MessageResponseBase):
@@ -347,15 +470,37 @@ class ReplyMessageInResponse(_MessageResponseBase):
     in_reply_to_msg_id: str
 
 
-class ThreadMessageInResponse(_MessageResponseBase):
-    """消息串响应。content_data 包含 { title?: string } 等线程专有字段。"""
-    msg_type: Literal["thread"] = "thread"
+class TopicMessageInResponse(_MessageResponseBase):
+    """主题响应。content_data 包含 { title?: string } 等主题专有字段。"""
+    msg_type: Literal["topic"] = "topic"
+
+
+class AnnouncementMessageInResponse(_MessageResponseBase):
+    """公告消息响应。content_data 包含 { title?, pinned_by? }。"""
+    msg_type: Literal["announcement"] = "announcement"
+
+
+class RoutingMessageInResponse(_MessageResponseBase):
+    """路由卡片响应。content_data 包含 { q?, picks: [...], plan? }。"""
+    msg_type: Literal["routing"] = "routing"
+
+
+class PermissionMessageInResponse(_MessageResponseBase):
+    """审批卡片响应。content_data 包含 { tool?, body?, resolved, resolution?, resolved_by?, resolved_at? }。"""
+    msg_type: Literal["permission"] = "permission"
 
 
 AnyMessageInResponse = Annotated[
-    NormalMessageInResponse | ReplyMessageInResponse | ThreadMessageInResponse,
+    NormalMessageInResponse | ReplyMessageInResponse | TopicMessageInResponse | AnnouncementMessageInResponse | RoutingMessageInResponse | PermissionMessageInResponse,
     Field(discriminator="msg_type"),
 ]
+
+
+# ==================== Permission resolve endpoint ========================
+
+class PermissionResolveRequest(BaseModel):
+    """POST /messages/{msg_id}/resolve 的请求体。"""
+    resolution: Literal["allow", "deny"]
 
 
 # 保持向后兼容：统一响应类（含全部字段）
