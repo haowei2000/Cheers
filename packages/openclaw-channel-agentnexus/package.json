@@ -1,6 +1,6 @@
 {
   "name": "openclaw-channel-agentnexus",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenClaw channel plugin for AgentNexus — connects an OpenClaw agent to AgentNexus via the per-bot control + data WebSocket bridge.",
   "type": "module",
   "main": "./dist/index.js",
@@ -28,7 +28,14 @@
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags"
   },
-  "keywords": ["openclaw", "channel", "plugin", "agentnexus", "websocket", "bot"],
+  "keywords": [
+    "openclaw",
+    "channel",
+    "plugin",
+    "agentnexus",
+    "websocket",
+    "bot"
+  ],
   "license": "MIT",
   "author": "haowei <wanghw00@gmail.com>",
   "repository": {
@@ -62,7 +69,9 @@
     "vitest": "^2.1.4"
   },
   "openclaw": {
-    "extensions": ["./dist/index.js"],
+    "extensions": [
+      "./dist/index.js"
+    ],
     "setupEntry": "./dist/setup.js",
     "channel": {
       "id": "agentnexus",
