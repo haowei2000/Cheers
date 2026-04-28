@@ -16,16 +16,16 @@ from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Fil
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
-from app.services.orchestrator.bus import EventBus
-from app.services.orchestrator.events import (
+from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
+from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
+from app.services.orchestrator.secrets import extract_secret_refs, load_user_secrets
+from app.services.pipeline.bus import EventBus
+from app.services.pipeline.events import (
     BotMessagePlaceholder,
     MessageCreated,
     MessageDone,
     MessageStreamDelta,
 )
-from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
-from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
-from app.services.orchestrator.secrets import extract_secret_refs, load_user_secrets
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.orchestrator.service")

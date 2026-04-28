@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
-from app.services.orchestrator.events import Event
+from app.services.pipeline.events import Event
 
 
 class EventBus(Protocol):

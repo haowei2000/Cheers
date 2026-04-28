@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.orchestrator.bus import (
+from app.services.pipeline.bus import (
     NullEventBus,
     SSEEventBus,
     TeeEventBus,
     WSEventBus,
     make_event_bus,
 )
-from app.services.orchestrator.events import (
+from app.services.pipeline.events import (
     BotMessagePlaceholder,
     BotProcessing,
     MessageCreated,
