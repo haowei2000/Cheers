@@ -88,14 +88,6 @@ class SendCodeBody(BaseModel):
     purpose: str
 
 
-class RegisterWithCodeBody(BaseModel):
-    username: str
-    email: str
-    password: str
-    code: str
-    display_name: str | None = None
-
-
 class RegisterBody(BaseModel):
     username: str
     password: str
@@ -146,22 +138,6 @@ async def send_verification_code(
         from app.core.exceptions import AppError
         raise AppError("验证码发送失败，请稍后重试")
     return APIResponse.ok(None, message="验证码已发送")
-
-
-@router.post("/register-with-code", response_model=APIResponse[UserOut])
-async def register_with_code(
-    body: RegisterWithCodeBody,
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = AuthService(session)
-    user = await svc.register_with_code(
-        username=body.username,
-        email=body.email,
-        password=body.password,
-        code=body.code,
-        display_name=body.display_name,
-    )
-    return APIResponse.ok(UserOut.from_user(user))
 
 
 @router.post("/register", response_model=APIResponse[UserOut])
@@ -320,12 +296,3 @@ async def delete_user(
     return APIResponse.ok(None, message="用户已删除")
 
 
-@router.post("/users/reset-password/{user_id}", response_model=APIResponse[dict])
-async def reset_password_admin(
-    user_id: str,
-    _: User = Depends(require_permission("user_management")),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = AuthService(session)
-    temp_pw = await svc.reset_password_admin(user_id)
-    return APIResponse.ok({"temporary_password": temp_pw}, message="密码已重置")

@@ -8,7 +8,6 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, try_get_current_user
@@ -21,7 +20,6 @@ from app.core.schemas import (
 )
 from app.db.models import Message, User
 from app.db.session import async_session_factory, get_session
-from app.services.guide.constants import GUIDE_BOT_ID
 from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
 from app.services.orchestrator.service import run_orchestrator
@@ -476,26 +474,3 @@ async def reveal_secret_message(
     return APIResponse.ok({"content": plaintext})
 
 
-class GuideReplyBody(BaseModel):
-    content: str
-
-
-@router.post("/guide-reply", response_model=APIResponse[dict])
-async def guide_reply(
-    channel_id: str,
-    body: GuideReplyBody,
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    """由引导 Bot 在频道内发送一条跟帖。"""
-    ctx = IngestContext(
-        channel_id=channel_id,
-        bus=WSEventBus(channel_id),
-        session=session,
-        sender_id=GUIDE_BOT_ID,
-        sender_type="bot",
-        content=body.content.strip(),
-        skip_secret=True,  # builtin bot post-back never carries secrets
-    )
-    await make_ingest_pipeline().run(ctx)
-    assert ctx.payload is not None
-    return APIResponse.ok(ctx.payload)

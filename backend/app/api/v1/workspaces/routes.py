@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_session, require_permission, try_get_current_user
+from app.core.dependencies import get_current_user, get_session, try_get_current_user
 from app.core.responses import APIResponse
 from app.db.models import User
 from app.services.workspace_service import WorkspaceService
@@ -54,16 +54,6 @@ async def create_workspace(
     svc = WorkspaceService(session)
     ws = await svc.create(body.name, creator=current_user)
     return APIResponse.ok(WorkspaceOut.model_validate(ws))
-
-
-@router.get("/all", response_model=APIResponse[list[WorkspaceOut]])
-async def list_all_workspaces(
-    _: User = Depends(require_permission("space_management")),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = WorkspaceService(session)
-    workspaces = await svc.list_all()
-    return APIResponse.ok([WorkspaceOut.model_validate(w) for w in workspaces])
 
 
 @router.delete("/{workspace_id}", response_model=APIResponse[None])

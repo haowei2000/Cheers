@@ -11,17 +11,6 @@ from app.services.task_service import TaskService
 router = APIRouter(tags=["tasks"])
 
 
-@router.get("/channels/{channel_id}/tasks", response_model=APIResponse[list[dict]])
-async def list_channel_tasks(
-    channel_id: str,
-    limit: int = Query(50, ge=1, le=200),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = TaskService(session)
-    items = await svc.list_tasks(channel_id=channel_id, limit=limit)
-    return APIResponse.ok(items)
-
-
 @router.get("/tasks", response_model=APIResponse[list[dict]])
 async def list_tasks(
     channel_id: str | None = Query(None),

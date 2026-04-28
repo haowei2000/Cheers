@@ -76,9 +76,6 @@ class WorkspaceService:
         await self.session.flush()
         return ws
 
-    async def list_all(self) -> list[Workspace]:
-        return await self.repo.list_all()
-
     async def update(self, workspace_id: str, name: str, current_user: User) -> Workspace:
         ws = await self.get_or_404(workspace_id)
         await self._check_workspace_permission(workspace_id, current_user)
