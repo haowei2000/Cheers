@@ -16,8 +16,13 @@ from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Fil
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
-from app.services.orchestrator.bus import make_event_bus
-from app.services.orchestrator.events import MessageStreamDelta
+from app.services.orchestrator.bus import EventBus, make_event_bus
+from app.services.orchestrator.events import (
+    BotMessagePlaceholder,
+    MessageCreated,
+    MessageDone,
+    MessageStreamDelta,
+)
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
 from app.services.orchestrator.secrets import extract_secret_refs, load_user_secrets
@@ -106,7 +111,7 @@ async def _emit_routing_card(
     session: AsyncSession,
     already_broadcast: set[str],
     created: list[Message],
-    stream_event: Callable[[str, dict], Awaitable[None]] | None = None,
+    event_bus: EventBus,
 ) -> None:
     """Write a msg_type="routing" Message carrying the coordinator's decision
     (who was picked + a terse plan snippet) and broadcast it over the
@@ -114,7 +119,6 @@ async def _emit_routing_card(
     takeover flow continues.
     """
     from app.core.schemas import MessageInResponse
-    from app.services.ws_service import ws_manager
 
     try:
         picks = [{"agent": u, "picked": True} for u in picked_usernames]
@@ -148,11 +152,7 @@ async def _emit_routing_card(
         if coord_info:
             data["sender_name"] = coord_info[0] or coord_info[1] or ""
 
-        await ws_manager.broadcast_to_channel(
-            channel_id, {"type": "message", "data": data}
-        )
-        if stream_event:
-            await stream_event("message", data)
+        await event_bus.publish(MessageCreated(data=data))
         already_broadcast.add(routing_msg.msg_id)
         created.append(routing_msg)
     except Exception:
@@ -461,7 +461,6 @@ async def run_orchestrator(
 
     async def _create_msg_and_broadcast(sender_id: str, content: str) -> None:
         from app.core.schemas import MessageInResponse
-        from app.services.ws_service import ws_manager
 
         mention_user_ids = await resolve_user_mentions(content, session, channel_id)
         msg = Message(
@@ -492,15 +491,12 @@ async def run_orchestrator(
         bot_info = bot_row.first()
         if bot_info:
             data["sender_name"] = bot_info[0] or bot_info[1] or ""
-        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
-        if stream_event:
-            await stream_event("message", data)
+        await event_bus.publish(MessageCreated(data=data))
         already_broadcast.add(msg.msg_id)
         created.append(msg)
 
     async def _pre_create_bot_msg(bot_id: str, task_id: str) -> Message:
         from app.core.schemas import MessageInResponse
-        from app.services.ws_service import ws_manager
 
         msg = Message(
             channel_id=channel_id,
@@ -518,9 +514,7 @@ async def run_orchestrator(
         data = MessageInResponse.model_validate(msg).model_dump()
         if msg.created_at:
             data["created_at"] = msg.created_at.isoformat()
-        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
-        if stream_event:
-            await stream_event("bot_message", data)
+        await event_bus.publish(BotMessagePlaceholder(data=data))
         already_broadcast.add(msg.msg_id)
         return msg
 
@@ -533,23 +527,22 @@ async def run_orchestrator(
     async def _finalize_bot_msg(
         msg: Message, content: str, *, file_ids: list[str] | None = None,
     ) -> None:
-        from app.services.ws_service import ws_manager
-
         msg.content = content
         msg.mention_user_ids = await resolve_user_mentions(content, session, channel_id)
         if file_ids:
             msg.file_ids = list({*(msg.file_ids or []), *file_ids})
         await session.flush()
 
-        done_data: dict = {"msg_id": msg.msg_id, "content": content}
+        out_file_ids: list[str] | None = None
+        out_files: list[dict] | None = None
         if msg.file_ids:
             from app.core.schemas import MessageFileInResponse
             result = await session.execute(
                 select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
             )
             file_map = {r.file_id: r for r in result.scalars().all()}
-            done_data["file_ids"] = msg.file_ids
-            done_data["files"] = [
+            out_file_ids = msg.file_ids
+            out_files = [
                 MessageFileInResponse(
                     file_id=r.file_id,
                     original_filename=r.original_filename,
@@ -560,12 +553,14 @@ async def run_orchestrator(
                 for fid in msg.file_ids
                 if (r := file_map.get(fid))
             ]
-        await ws_manager.broadcast_to_channel(
-            channel_id,
-            {"type": "message_done", "data": done_data},
+        await event_bus.publish(
+            MessageDone(
+                msg_id=msg.msg_id,
+                content=content,
+                file_ids=out_file_ids,
+                files=out_files,
+            )
         )
-        if stream_event:
-            await stream_event("done", done_data)
 
     async def _record_agent_task(bot_id: str, response_msg_id: str) -> None:
         session.add(
@@ -726,7 +721,7 @@ async def run_orchestrator(
                         session=session,
                         already_broadcast=already_broadcast,
                         created=created,
-                        stream_event=stream_event,
+                        event_bus=event_bus,
                     )
 
                 # 阶段 1：串行 broadcast + 预建消息（需要 DB session）

@@ -27,9 +27,12 @@ class WSEventBus:
         self._channel_id = channel_id
 
     async def publish(self, event: Event) -> None:
+        frame = event.to_ws_frame()
+        if frame is None:
+            return
         from app.services.ws_service import ws_manager
 
-        await ws_manager.broadcast_to_channel(self._channel_id, event.to_ws_frame())
+        await ws_manager.broadcast_to_channel(self._channel_id, frame)
 
 
 class SSEEventBus:
@@ -37,7 +40,10 @@ class SSEEventBus:
         self._stream_event = stream_event
 
     async def publish(self, event: Event) -> None:
-        name, data = event.to_sse()
+        sse = event.to_sse()
+        if sse is None:
+            return
+        name, data = sse
         await self._stream_event(name, data)
 
 
