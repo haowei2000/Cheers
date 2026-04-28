@@ -12,7 +12,6 @@ from app.api.v1.files.routes import router as files_router
 from app.api.v1.friends.routes import router as friends_router
 from app.api.v1.image_gen.routes import router as image_gen_router
 from app.api.v1.keychain.routes import router as keychain_router
-from app.api.v1.mcp.routes import router as mcp_router
 from app.api.v1.memory.routes import router as memory_router
 from app.api.v1.messages.routes import router as messages_router
 from app.api.v1.notifications.routes import router as notifications_router
@@ -37,7 +36,6 @@ v1_router.include_router(files_router)
 v1_router.include_router(context_router)
 v1_router.include_router(tasks_router)
 v1_router.include_router(friends_router)
-v1_router.include_router(mcp_router)
 v1_router.include_router(image_gen_router)
 v1_router.include_router(bulletin_router)
 v1_router.include_router(todos_router)

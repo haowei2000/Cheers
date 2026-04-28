@@ -12,9 +12,6 @@ from app.core.responses import APIResponse
 from app.db.models import User
 from app.services.admin_service import SettingsService
 from app.services.image_gen.service import (
-    IMAGE_EDIT_MODELS,
-    IMAGE_GEN_MODELS,
-    SUPPORTED_SIZES,
     ImageGenError,
     ImageGenService,
 )
@@ -101,11 +98,6 @@ async def edit_image(
         raise AppError(f"图片编辑失败: {exc}") from exc
     await session.commit()
     return APIResponse.ok({"file_id": result.file_id, "preview_url": result.preview_url, "content_type": result.content_type})
-
-
-@router.get("/models", response_model=APIResponse[dict])
-async def list_image_models() -> APIResponse:
-    return APIResponse.ok({"gen_models": IMAGE_GEN_MODELS, "edit_models": IMAGE_EDIT_MODELS, "sizes": SUPPORTED_SIZES})
 
 
 @router.get("/settings", response_model=APIResponse[dict])
