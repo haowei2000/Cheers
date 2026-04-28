@@ -5,6 +5,7 @@ migrated stage-by-stage in subsequent commits. The stages share
 BotRunContext (data) and the same EventBus the IngestPipeline uses.
 """
 from app.services.pipeline.bot.context import BotRunContext
+from app.services.pipeline.bot.stages.auto_takeover import AutoTakeoverStage
 from app.services.pipeline.bot.stages.context_load import ContextLoadStage
 from app.services.pipeline.bot.stages.dispatch import (
     DispatchStage,
@@ -15,6 +16,7 @@ from app.services.pipeline.bot.stages.route import RouteStage
 from app.services.pipeline.bot.writer import BotMessageWriter
 
 __all__ = [
+    "AutoTakeoverStage",
     "BotMessageWriter",
     "BotRunContext",
     "ContextLoadStage",
