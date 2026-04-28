@@ -28,7 +28,6 @@ import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import { BotAvatar } from "./components/BotAvatar";
 import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
-import { ThinkingIndicator } from "./components/ThinkingIndicator";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { LoginModal } from "./components/LoginModal";
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
@@ -431,7 +430,6 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const [waitingForBotReply, setWaitingForBotReply] = useState(false);
   const [processingBots, setProcessingBots] = useState<Record<string, string>>(
     {},
   );
@@ -618,7 +616,6 @@ export default function App() {
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
-      setWaitingForBotReply(false);
       setProcessingBots({});
       setAutoAssist(false);
       setReplyingTo(null);
@@ -769,7 +766,24 @@ export default function App() {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.type === "message" && msg.data) {
+          if (msg.type === "bot_processing" && msg.data) {
+            const { bot_id, username } = msg.data;
+            if (bot_id) {
+              setProcessingBots((prev) => ({
+                ...prev,
+                [bot_id]: username || bot_id,
+              }));
+            }
+          } else if (msg.type === "message" && msg.data) {
+            // Bot placeholder arrived → clear the per-bot thinking indicator.
+            if (msg.data.sender_type === "bot" && msg.data.sender_id) {
+              setProcessingBots((prev) => {
+                if (!(msg.data.sender_id in prev)) return prev;
+                const next = { ...prev };
+                delete next[msg.data.sender_id];
+                return next;
+              });
+            }
             setMessages((prev) => {
               const id = msg.data.msg_id;
               if (id && prev.some((m) => m.msg_id === id)) {
@@ -4316,7 +4330,6 @@ export default function App() {
                       }
                       return out;
                       })()}
-                      {waitingForBotReply && <ThinkingIndicator />}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
                           <div key={botId} className="flex gap-3 px-3 py-2">
