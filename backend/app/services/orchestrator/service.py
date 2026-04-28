@@ -7,11 +7,10 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.log_context import bind_context
-from app.db.models import BotAccount, Message
+from app.db.models import Message
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots
@@ -24,75 +23,12 @@ from app.services.pipeline.bot import (
     RouteStage,
 )
 from app.services.pipeline.bus import EventBus
-from app.services.pipeline.events import (
-    MessageCreated,
-)
 
 logger = logging.getLogger("app.services.orchestrator.service")
 
 COORDINATOR_USERNAME = "Coordinator"
 
 
-
-
-async def _emit_routing_card(
-    *,
-    channel_id: str,
-    coordinator_bot_id: str,
-    trigger_content: str,
-    coordinator_content: str,
-    picked_usernames: list[str],
-    session: AsyncSession,
-    already_broadcast: set[str],
-    created: list[Message],
-    event_bus: EventBus,
-) -> None:
-    """Write a msg_type="routing" Message carrying the coordinator's decision
-    (who was picked + a terse plan snippet) and broadcast it over the
-    channel WS. Non-fatal: any exception is logged and swallowed so the
-    takeover flow continues.
-    """
-    from app.core.schemas import MessageInResponse
-
-    try:
-        picks = [{"agent": u, "picked": True} for u in picked_usernames]
-        q = (trigger_content or "").strip().replace("\n", " ")
-        if len(q) > 160:
-            q = q[:160] + "…"
-        plan = (coordinator_content or "").strip().replace("\n", " ")
-        if len(plan) > 200:
-            plan = plan[:200] + "…"
-
-        routing_msg = Message(
-            channel_id=channel_id,
-            sender_id=coordinator_bot_id,
-            sender_type="bot",
-            content="",
-            msg_type="routing",
-            content_data={"q": q or None, "picks": picks, "plan": plan or None},
-        )
-        session.add(routing_msg)
-        await session.flush()
-
-        data = MessageInResponse.model_validate(routing_msg).model_dump()
-        if routing_msg.created_at:
-            data["created_at"] = routing_msg.created_at.isoformat()
-        coord_row = await session.execute(
-            select(BotAccount.display_name, BotAccount.username).where(
-                BotAccount.bot_id == coordinator_bot_id
-            )
-        )
-        coord_info = coord_row.first()
-        if coord_info:
-            data["sender_name"] = coord_info[0] or coord_info[1] or ""
-
-        await event_bus.publish(MessageCreated(data=data))
-        already_broadcast.add(routing_msg.msg_id)
-        created.append(routing_msg)
-    except Exception:
-        logger.exception(
-            "orchestrator: failed to emit routing card channel_id=%s", channel_id,
-        )
 
 
 async def run_orchestrator(
@@ -359,16 +295,10 @@ async def run_orchestrator(
                     # the UI can render the design's .an-routing card (agent
                     # picks + plan) instead of only seeing the coordinator's
                     # prose.
-                    await _emit_routing_card(
-                        channel_id=channel_id,
+                    await ctx.writer.emit_routing_card(
                         coordinator_bot_id=bot_id,
-                        trigger_content=trigger_content,
                         coordinator_content=content,
                         picked_usernames=valid_suggested,
-                        session=session,
-                        already_broadcast=already_broadcast,
-                        created=created,
-                        event_bus=event_bus,
                     )
 
                 # 阶段 1：串行 broadcast + 预建消息（需要 DB session）
