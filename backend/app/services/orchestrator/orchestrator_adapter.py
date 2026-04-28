@@ -1,9 +1,11 @@
 """Orchestrator 适配器：当用户未 @ 任何人且开启直接回答时，由 Orchestrator 回答业务问题并可选建议 @部门bot."""
 import logging
 import re
+from collections.abc import AsyncIterator
 
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_provider_for_scope
+from app.services.pipeline.adapter_events import AdapterEvent, Final
 
 logger = logging.getLogger("app.services.orchestrator.adapter")
 
@@ -48,6 +50,9 @@ class OrchestratorAdapter(OpenClawAdapter):
     """Orchestrator 直接回答模式：用 LLM 回答业务问题，可建议 @部门bot。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
+        return await self._drain_execute_iter(payload)
+
+    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
         user_text = (payload.trigger_message or {}).get("text") or ""
         memory_context = payload.memory_context or {}
         channel_bots = (payload.process_config or {}).get("channel_bot_usernames") or []
@@ -91,7 +96,7 @@ class OrchestratorAdapter(OpenClawAdapter):
         )
 
         content = await _call_llm(system, user_text)
-        return AgentResponse(content=content, task_id=payload.task_id, success=True)
+        yield Final(content=content, success=True)
 
     async def health_check(self) -> bool:
         cfg = get_provider_for_scope("orchestrator") or get_provider_for_scope("system_llm")
