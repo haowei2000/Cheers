@@ -17,6 +17,45 @@ OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNe
 └────────────────────────────┘        └───────────────────────────┘
 ```
 
+## Install
+
+### A. 从 GitHub Release 装预构建 tarball（推荐）
+
+不用 clone 仓库，对方机器只要能上 GitHub 就行：
+
+```bash
+# 用 gh CLI（最稳，URL 不会被换行截断）
+gh release download openclaw-channel-agentnexus-v0.2.0 \
+  -R Grant-Huang/AgentNexus \
+  --pattern "*.tgz" \
+  --dir /tmp
+openclaw plugins install /tmp/openclaw-channel-agentnexus-0.2.0.tgz
+
+# 或直接 curl（URL 必须用引号括住，避免终端换行截断）
+curl -L -o /tmp/agentnexus.tgz \
+  "https://github.com/Grant-Huang/AgentNexus/releases/download/openclaw-channel-agentnexus-v0.2.0/openclaw-channel-agentnexus-0.2.0.tgz"
+openclaw plugins install /tmp/agentnexus.tgz
+```
+
+### B. 从源码 link 安装（开发态）
+
+```bash
+cd packages/openclaw-channel-agentnexus
+npm install
+npm run build
+openclaw plugins install -l "$(pwd)"      # -l 表示 link，改 dist 重启即生效
+```
+
+两种方式都装完后，应在 `openclaw plugins list` 里看到：
+
+```
+openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.0
+```
+
+如果 `failed to load`：检查 `dist/` 是否齐 + `openclaw.plugin.json` 是否在包根。
+
+---
+
 ## Quick start —— 在本机 OpenClaw 跑起来
 
 以下流程在 OpenClaw CLI `2026.4.15` 上实测通过。
@@ -25,31 +64,15 @@ OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNe
 
 打开 AdminPage → Bot 管理 → 创建 Bot，选 **WebSocket Bot**。弹出的一次性 `ocw_...` token **立刻复制**，关闭后只能 rotate。
 
-### 2. 构建 plugin
+把 bot 加进想让它工作的频道（频道成员里加 bot）。
 
-```bash
-cd packages/openclaw-channel-agentnexus
-npm install
-npm run build
-```
+### 2. 安装 plugin
 
-### 3. 以链接模式安装到 OpenClaw
+按上面 Install 章节，A 或 B 任选。装完 `openclaw plugins list | grep agentnexus` 应该看到 `loaded`。
 
-```bash
-openclaw plugins install -l /absolute/path/to/packages/openclaw-channel-agentnexus
-```
+### 3. 把 bot token 写进 OpenClaw 配置
 
-`openclaw plugins list` 里应出现：
-
-```
-openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.1.0
-```
-
-如果看到 `failed to load`，检查 `dist/` 是不是真的 build 出来了（`openclaw.plugin.json` 与 `dist/index.js` 必须齐）。
-
-### 4. 把 bot token 写进 OpenClaw 配置
-
-编辑 `~/.openclaw/openclaw.json` 的 `channels.agentnexus.accounts`：
+编辑 `~/.openclaw/openclaw.json`，在顶层 `channels` 下加入：
 
 ```jsonc
 {
@@ -57,43 +80,68 @@ openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.
     "agentnexus": {
       "enabled": true,
       "accounts": {
-        "my-bot": {
+        "my-bot": {                    // 任意 ID，对应 AgentNexus 里的一个 WS Bot
           "enabled": true,
-          "botToken": "ocw_xxxxxxxxxxxxxxxx",
-          "controlUrl": "ws://localhost:8002/ws/openclaw/control",
-          "dataUrl": "ws://localhost:8002/ws/openclaw/data"
+          "botToken": "ocw_xxxxxxxxxxxxxxxx",                       // 必填：第 1 步拿到的 token
+          "controlUrl": "ws://your-host:8002/ws/openclaw/control",  // 必填
+          "dataUrl":    "ws://your-host:8002/ws/openclaw/data",     // 必填
+          "advanced": {                              // 可选，全部有合理默认
+            "reconnectBaseMs": 1000,                 // 重连退避起点
+            "reconnectMaxMs": 30000,                 // 重连退避上限
+            "heartbeatIntervalMs": 30000,            // ping 间隔
+            "sendAckTimeoutMs": 10000                // reply/send ack 超时
+          }
         }
+        // 想多挂 bot 就再加 "another-bot": { ... }
       }
     }
   }
 }
 ```
 
-（同一 plugin 可以配多个 account —— 每个对应 AgentNexus 里一个独立的 WS Bot。）
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `botToken` | ✅ | AgentNexus 创建 WS Bot 时弹出的 `ocw_...` token，仅该次可见 |
+| `controlUrl` | ✅ | bridge 控制流，路径固定 `/ws/openclaw/control` |
+| `dataUrl` | ✅ | bridge 数据流，路径固定 `/ws/openclaw/data` |
+| `enabled` | ❌ | 默认 `true`；置 `false` 临时禁用该 account |
+| `advanced.*` | ❌ | 重连 / 心跳 / ACK 超时；默认值适合大多数场景 |
 
-### 5. 重启 gateway 让配置生效
+**HTTPS 部署**：把 `ws://` 换成 `wss://`，端口换成你前端反代上的 SSL 端口；反代的 `proxy_read_timeout` 不能太短（建议 ≥ 600s，否则 WS 长连会被踢）。
+
+### 4. 重启 gateway 让配置生效
 
 ```bash
 openclaw daemon restart
 openclaw channels status --probe
-# 应该看到: - AgentNexus my-bot: enabled
+# - AgentNexus my-bot: enabled
 ```
 
 验证 AgentNexus 后端是否收到 plugin 连接：
 
 ```bash
 curl -H "X-OpenClaw-Token: <BRIDGE_TOKEN>" http://localhost:8002/api/v1/openclaw/bridge/status
-# data.bot_sessions 应从 0 变成 1
+# data.bot_sessions 应从 0 变成 1（或之前的数 +1）
 ```
 
-### 6. 发消息联调
+### 5. 发消息联调
 
-把 Bot 加入 AgentNexus 某频道，然后在频道里 @ 它。`openclaw channels logs` 里能看到：
+在频道里 `@my-bot ...`，`openclaw channels logs | grep agentnexus | tail` 应看到：
 
 ```
 agentnexus: my-bot ready bot_id=... memberships=1
 agentnexus: my-bot inbound channel=ch-... task=... text="@my-bot ..."
 ```
+
+### 常见踩坑
+
+| 现象 / close code | 原因 | 处理 |
+|---|---|---|
+| `4401 token invalid` | token 复制时多了空格/换行；或用了 hash 后的存储值 | 重新 rotate 拿原文 token |
+| `4402 superseded` | 多台机器用了同一 token | 让旧实例退出 |
+| `4403 bot offline` | AgentNexus 里 bot status = `offline` | 改回 `online` |
+| 连不上 / `ECONNREFUSED` | URL 写错（端口、host、是否走反代） | 后端默认 `8002`，不是 `8000` |
+| 连得上但收不到 message | bot 没在 channel 成员里 | 频道成员加 bot |
 
 ### 已知 TODO：真正把消息推进 OpenClaw agent
 

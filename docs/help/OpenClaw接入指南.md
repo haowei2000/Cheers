@@ -49,7 +49,118 @@
 
 ---
 
-## 三、验证与排查
+## 三、适配器路径：Channel Plugin（WebSocket Bot）
+
+把 OpenClaw runtime 当成 channel adapter 接入：一个 OpenClaw `account` ↔ 一个 AgentNexus `WebSocket Bot`，OpenClaw agent 通过 `outbound.sendText / sendMedia` 把回复写回频道（支持流式 token 渲染、文件附件、取消）。
+
+### 3.1 在 AgentNexus 创建 WebSocket Bot
+
+管理面板 → Bot 管理 → 创建 Bot：
+
+- 绑定类型选 **WebSocket Bot**
+- 创建后弹出的一次性 `ocw_...` token **立刻复制**（关闭后只能 rotate）
+- 把该 Bot 加进想让它工作的频道（频道成员里加 bot）
+
+### 3.2 安装 channel plugin
+
+推荐从 GitHub Release 装预构建 tarball（不用 clone 仓库）：
+
+```bash
+gh release download openclaw-channel-agentnexus-v0.2.0 \
+  -R Grant-Huang/AgentNexus \
+  --pattern "*.tgz" \
+  --dir /tmp
+openclaw plugins install /tmp/openclaw-channel-agentnexus-0.2.0.tgz
+```
+
+或用 curl（**URL 必须用引号包住**，避免终端换行截断）：
+
+```bash
+curl -L -o /tmp/agentnexus.tgz \
+  "https://github.com/Grant-Huang/AgentNexus/releases/download/openclaw-channel-agentnexus-v0.2.0/openclaw-channel-agentnexus-0.2.0.tgz"
+openclaw plugins install /tmp/agentnexus.tgz
+```
+
+如果是开发态、想改了立刻生效，从源码 link：
+
+```bash
+cd packages/openclaw-channel-agentnexus
+npm install && npm run build
+openclaw plugins install -l "$(pwd)"
+```
+
+验证：`openclaw plugins list | grep agentnexus` 应看到 `loaded`。
+
+### 3.3 配置 `~/.openclaw/openclaw.json`
+
+```jsonc
+{
+  "channels": {
+    "agentnexus": {
+      "enabled": true,
+      "accounts": {
+        "my-bot": {                    // 任意 ID，对应 AgentNexus 里一个 WS Bot
+          "enabled": true,
+          "botToken": "ocw_xxxxxxxxxxxxxxxx",                       // 第 3.1 步拿到的 token
+          "controlUrl": "ws://your-host:8002/ws/openclaw/control",
+          "dataUrl":    "ws://your-host:8002/ws/openclaw/data",
+          "advanced": {                            // 可选
+            "reconnectBaseMs": 1000,
+            "reconnectMaxMs": 30000,
+            "heartbeatIntervalMs": 30000,
+            "sendAckTimeoutMs": 10000
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `botToken` | ✅ | AgentNexus WS Bot 的一次性 token |
+| `controlUrl` / `dataUrl` | ✅ | bridge 路径固定 `/ws/openclaw/control` 与 `/data` |
+| `enabled` | ❌ | 默认 `true`；可设 `false` 临时禁用 |
+| `advanced.*` | ❌ | 重连/心跳/ACK 超时，默认值够用 |
+
+**HTTPS 部署**：`ws://` → `wss://`；反代 `proxy_read_timeout` ≥ 600s。
+
+### 3.4 重启 gateway 与验证
+
+```bash
+openclaw daemon restart
+openclaw channels status --probe
+# - AgentNexus my-bot: enabled
+
+curl -H "X-OpenClaw-Token: <BRIDGE_TOKEN>" \
+  http://localhost:8002/api/v1/openclaw/bridge/status
+# data.bot_sessions 从 0 变 1（或之前的数 +1）
+```
+
+在频道里 `@my-bot ...`，OpenClaw 日志应看到：
+
+```bash
+openclaw channels logs | grep agentnexus | tail
+# agentnexus: my-bot ready bot_id=... memberships=N
+# agentnexus: my-bot inbound channel=... task=... text="@my-bot ..."
+```
+
+### 3.5 Channel Plugin 模式的常见踩坑
+
+| 现象 / close code | 原因 | 处理 |
+|---|---|---|
+| `4401 token invalid` | token 复制时多了空格/换行 | 重新 rotate 拿原文 |
+| `4402 superseded` | 多台机器用了同一 token | 让旧实例退出 |
+| `4403 bot offline` | AgentNexus 里 bot status = `offline` | 改回 `online` |
+| `ECONNREFUSED` / 连不上 | URL 端口写错（应是 `8002`，不是 `8000`） | 检查 `controlUrl/dataUrl` |
+| 连得上但收不到 message | bot 没在 channel 成员里 | 频道成员里加 bot |
+
+更深入的协议、独立模式（绕过 OpenClaw runtime 直接用 `BotSession`）、close code 全表，见 `docs/develop/OpenClaw_channel_plugin_接入指南.md`。
+
+---
+
+## 四、验证与排查
 
 | 现象 | 常见原因 | 处理建议 |
 |------|----------|----------|
@@ -61,9 +172,10 @@
 
 ---
 
-## 四、相关文档
+## 五、相关文档
 
 - [外部Bot接入指南](外部Bot接入指南.md)
 - [系统管理说明书](系统管理说明书.md)
 - [技术排查Q&A](技术排查Q&A.md)
 - [安装部署说明](安装部署说明.md)
+- [Channel Plugin 开发者深度文档](../develop/OpenClaw_channel_plugin_接入指南.md)
