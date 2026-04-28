@@ -25,9 +25,9 @@ from app.db.session import async_session_factory, get_session
 from app.services.guide.constants import GUIDE_BOT_ID
 from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
-from app.services.orchestrator.bus import EventBus, make_event_bus
-from app.services.orchestrator.events import BotProcessing
 from app.services.orchestrator.service import run_orchestrator
+from app.services.pipeline.bus import EventBus, make_event_bus
+from app.services.pipeline.events import BotProcessing
 from app.services.ws_service import ws_manager
 from app.utils.crypto import decrypt_value, encrypt_value
 

@@ -429,8 +429,8 @@ def _make_tools(ctx: dict) -> list:
 
         from app.db.models import Message
         from app.services.image_gen.service import ImageGenError, ImageGenService
-        from app.services.orchestrator.bus import WSEventBus
-        from app.services.orchestrator.events import MessageCreated
+        from app.services.pipeline.bus import WSEventBus
+        from app.services.pipeline.events import MessageCreated
 
         channel_id = ctx["channel_id"]
         sender_id = ctx.get("sender_id") or "system"
@@ -509,8 +509,8 @@ def _make_tools(ctx: dict) -> list:
         """
         from app.db.models import Message
         from app.services.image_gen.service import ImageGenError, ImageGenService
-        from app.services.orchestrator.bus import WSEventBus
-        from app.services.orchestrator.events import MessageCreated
+        from app.services.pipeline.bus import WSEventBus
+        from app.services.pipeline.events import MessageCreated
 
         channel_id = ctx["channel_id"]
         sender_id = ctx.get("sender_id") or "system"
