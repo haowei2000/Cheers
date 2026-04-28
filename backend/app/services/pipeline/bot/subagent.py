@@ -160,14 +160,60 @@ async def _prepare(
     return username, bot_id, bot_msg, payload, adapter
 
 
-async def _timed_execute(
-    adapter: OpenClawAdapter, payload: AgentPayload,
+async def _consume_execute(
+    ctx: BotRunContext,
+    adapter: OpenClawAdapter,
+    payload: AgentPayload,
+    bot_msg: Message,
 ) -> tuple[AgentResponse | BaseException, float]:
+    """Drain ``adapter.execute_iter`` while republishing Delta events to the
+    channel EventBus. Reduces the terminal Final / DispatchedAsync into the
+    legacy AgentResponse shape so ``_finalize_response`` stays a single
+    branch (existing callers don't see the AsyncIterator)."""
+    from app.services.pipeline.adapter_events import (
+        Delta,
+        DispatchedAsync,
+        Final,
+    )
+    from app.services.pipeline.events import MessageStreamDelta
+
     t0 = time.perf_counter()
+    deltas: list[str] = []
+    terminal: Final | DispatchedAsync | None = None
     try:
-        return await adapter.execute(payload), (time.perf_counter() - t0) * 1000
+        async for event in adapter.execute_iter(payload):
+            if isinstance(event, Delta):
+                deltas.append(event.text)
+                await ctx.bus.publish(
+                    MessageStreamDelta(msg_id=bot_msg.msg_id, delta=event.text),
+                )
+            else:
+                terminal = event
+                break
     except Exception as exc:
         return exc, (time.perf_counter() - t0) * 1000
+
+    dur_ms = (time.perf_counter() - t0) * 1000
+    if isinstance(terminal, DispatchedAsync):
+        return AgentResponse(
+            content="", task_id=payload.task_id, success=True,
+            dispatched_async=True,
+        ), dur_ms
+    if isinstance(terminal, Final):
+        return AgentResponse(
+            content=terminal.content,
+            task_id=payload.task_id,
+            success=terminal.success,
+            error_message=terminal.error_message,
+            file_ids=list(terminal.file_ids),
+        ), dur_ms
+    # No terminal event — fall back to whatever streamed deltas accumulated.
+    return AgentResponse(
+        content="".join(deltas),
+        task_id=payload.task_id,
+        success=False,
+        error_message="adapter yielded no terminal event",
+    ), dur_ms
 
 
 async def _finalize_response(
@@ -270,7 +316,7 @@ async def dispatch_one(
         trigger_text_override=trigger_text_override,
         skip_system_prompt=skip_system_prompt,
     )
-    resp_or_exc, dur_ms = await _timed_execute(adapter, payload)
+    resp_or_exc, dur_ms = await _consume_execute(ctx, adapter, payload, bot_msg)
     return await _finalize_response(
         ctx, username, bot_id, bot_msg, resp_or_exc, dur_ms,
         recurse=recurse, depth=depth,
@@ -308,7 +354,8 @@ async def dispatch_many(
         return
 
     timed_results = await asyncio.gather(
-        *[_timed_execute(adapter, payload) for _, _, _, payload, adapter in pending],
+        *[_consume_execute(ctx, adapter, payload, bot_msg)
+          for _, _, bot_msg, payload, adapter in pending],
     )
     for (username, bot_id, bot_msg, _, _), (resp_or_exc, dur_ms) in zip(pending, timed_results):
         await _finalize_response(
