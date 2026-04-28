@@ -16,7 +16,7 @@ from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Fil
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
-from app.services.orchestrator.bus import EventBus, make_event_bus
+from app.services.orchestrator.bus import EventBus
 from app.services.orchestrator.events import (
     BotMessagePlaceholder,
     MessageCreated,
@@ -166,17 +166,12 @@ async def run_orchestrator(
     trigger_msg: Message,
     session: AsyncSession,
     adapter_factory: Callable[[str], Awaitable[OpenClawAdapter]],
-    broadcast_processing: Callable[[str, str, str], Awaitable[None]] | None = None,
-    stream_event: Callable[[str, dict], Awaitable[None]] | None = None,
     *,
-    stream_to_ws: bool = True,
+    event_bus: EventBus,
+    broadcast_processing: Callable[[str, str, str], Awaitable[None]] | None = None,
 ) -> tuple[list[Message], set[str]]:
     """根据消息中的 @ 提及和上传文件，串行执行频道内 Bot。"""
     t_start = time.perf_counter()
-
-    event_bus = make_event_bus(
-        channel_id, stream_to_ws=stream_to_ws, stream_event=stream_event
-    )
 
     result = await session.execute(
         select(ChannelMembership, BotAccount)

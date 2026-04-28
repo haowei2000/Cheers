@@ -21,6 +21,7 @@ from app.services.orchestrator.bus import (
 )
 from app.services.orchestrator.events import (
     BotMessagePlaceholder,
+    BotProcessing,
     MessageCreated,
     MessageDone,
     MessageStreamDelta,
@@ -71,6 +72,13 @@ def test_bot_message_placeholder_wire_format() -> None:
     e = BotMessagePlaceholder(data=data)
     assert e.to_ws_frame() == {"type": "message", "data": data}
     assert e.to_sse() == ("bot_message", data)
+
+
+def test_bot_processing_wire_format() -> None:
+    e = BotProcessing(bot_id="b1", username="alice")
+    payload = {"bot_id": "b1", "username": "alice"}
+    assert e.to_ws_frame() == {"type": "bot_processing", "data": payload}
+    assert e.to_sse() == ("bot_processing", payload)
 
 
 def test_message_done_wire_format_no_files() -> None:

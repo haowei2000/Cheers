@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -25,6 +25,8 @@ from app.db.session import async_session_factory, get_session
 from app.services.guide.constants import GUIDE_BOT_ID
 from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
+from app.services.orchestrator.bus import EventBus, make_event_bus
+from app.services.orchestrator.events import BotProcessing
 from app.services.orchestrator.service import run_orchestrator
 from app.services.ws_service import ws_manager
 from app.utils.crypto import decrypt_value, encrypt_value
@@ -127,23 +129,18 @@ async def _run_orchestrator_once(
     trigger_msg: Message,
     session: AsyncSession,
     *,
-    stream_event: Callable[[str, dict], Awaitable[None]] | None = None,
-    stream_to_ws: bool = True,
+    event_bus: EventBus,
 ) -> tuple[list[Message], set[str]]:
     async def broadcast_bot_processing(ch_id: str, bot_id: str, username: str) -> None:
-        payload = {"bot_id": bot_id, "username": username}
-        await ws_manager.broadcast_to_channel(ch_id, {"type": "bot_processing", "data": payload})
-        if stream_event:
-            await stream_event("bot_processing", payload)
+        await event_bus.publish(BotProcessing(bot_id=bot_id, username=username))
 
     return await run_orchestrator(
         channel_id,
         trigger_msg,
         session,
         lambda bid: get_adapter_for_bot(bid, session),
+        event_bus=event_bus,
         broadcast_processing=broadcast_bot_processing,
-        stream_event=stream_event,
-        stream_to_ws=stream_to_ws,
     )
 
 
@@ -164,7 +161,10 @@ async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
                 "orchestrator_bg: starting channel_id=%s msg_id=%s sender=%s",
                 channel_id, msg_id, msg.sender_id,
             )
-            bot_messages, already_broadcast_ids = await _run_orchestrator_once(channel_id, msg, session)
+            bus = make_event_bus(channel_id, stream_to_ws=True, stream_event=None)
+            bot_messages, already_broadcast_ids = await _run_orchestrator_once(
+                channel_id, msg, session, event_bus=bus
+            )
             for bm in bot_messages:
                 if bm.msg_id in already_broadcast_ids:
                     continue
@@ -414,10 +414,9 @@ async def send_message_stream(
                 _schedule_recent_update(channel_id)
                 yield _format_sse("user_message", payload)
 
+                bus = make_event_bus(channel_id, stream_to_ws=False, stream_event=emit)
                 orchestrator_task = asyncio.create_task(
-                    _run_orchestrator_once(
-                        channel_id, msg, session, stream_event=emit, stream_to_ws=False
-                    )
+                    _run_orchestrator_once(channel_id, msg, session, event_bus=bus)
                 )
 
                 while True:

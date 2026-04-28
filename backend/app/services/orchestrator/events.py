@@ -59,6 +59,23 @@ class MessageStreamDelta(Event):
 
 
 @dataclass(slots=True)
+class BotProcessing(Event):
+    """A bot has been picked and is about to start producing a reply."""
+
+    bot_id: str
+    username: str
+
+    def _payload(self) -> dict:
+        return {"bot_id": self.bot_id, "username": self.username}
+
+    def to_ws_frame(self) -> dict:
+        return {"type": "bot_processing", "data": self._payload()}
+
+    def to_sse(self) -> tuple[str, dict]:
+        return "bot_processing", self._payload()
+
+
+@dataclass(slots=True)
 class MessageDone(Event):
     msg_id: str
     content: str
