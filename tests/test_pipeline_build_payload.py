@@ -59,7 +59,6 @@ def _make_ctx(**overrides):
     ctx.bus = MagicMock()
     ctx.session = MagicMock()
     ctx.writer = MagicMock()
-    ctx.writer.make_stream_token_cb = lambda mid: f"stream-cb({mid})"
     ctx.writer.create_and_broadcast = MagicMock()
     for key, val in overrides.items():
         setattr(ctx, key, val)

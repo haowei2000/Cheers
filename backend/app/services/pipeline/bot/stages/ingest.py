@@ -37,14 +37,16 @@ def _get_trigger_content(msg) -> str:
 
 class IngestStage(Stage[BotRunContext]):
     async def run(self, ctx: BotRunContext) -> None:
-        overrides = await self._load_channel_bots(ctx)
+        rows, overrides = await self._load_channel_bots(ctx)
         self._wrap_adapter_factory(ctx, overrides)
-        self._build_bot_details(ctx)
+        self._build_bot_details(ctx, rows)
         await self._unwrap_secret_content(ctx)
         await self._lookup_sender_and_channel(ctx)
 
     @staticmethod
-    async def _load_channel_bots(ctx: BotRunContext) -> _PromptOverrides:
+    async def _load_channel_bots(
+        ctx: BotRunContext,
+    ) -> tuple[list, _PromptOverrides]:
         result = await ctx.session.execute(
             select(ChannelMembership, BotAccount)
             .join(BotAccount, ChannelMembership.member_id == BotAccount.bot_id)
@@ -58,14 +60,14 @@ class IngestStage(Stage[BotRunContext]):
             )
         )
         rows = result.all()
-        ctx.rows = rows
         ctx.channel_bot_usernames = [row[1].username for row in rows]
         ctx.bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
-        return {
+        overrides = {
             bot.bot_id: membership.prompt_template
             for membership, bot in rows
             if membership.prompt_template
         }
+        return rows, overrides
 
     @staticmethod
     def _wrap_adapter_factory(ctx: BotRunContext, overrides: _PromptOverrides) -> None:
@@ -85,14 +87,14 @@ class IngestStage(Stage[BotRunContext]):
         ctx.adapter_factory = wrapped
 
     @staticmethod
-    def _build_bot_details(ctx: BotRunContext) -> None:
+    def _build_bot_details(ctx: BotRunContext, rows: list) -> None:
         ctx.bot_details_by_username = {
             row[1].username: {
                 "display_name": row[1].display_name or row[1].username,
                 "description": row[1].description or "",
                 "intro": row[1].intro or "",
             }
-            for row in ctx.rows
+            for row in rows
         }
 
     @staticmethod
