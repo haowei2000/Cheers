@@ -79,6 +79,45 @@ class OpenClawAdapter(ABC):
             file_ids=list(resp.file_ids),
         )
 
+    async def _drain_execute_iter(self, payload: AgentPayload) -> AgentResponse:
+        """Helper for adapters that implement ``execute_iter`` natively and
+        want a one-line ``execute`` override.
+
+        Drains the iterator, joining Delta text into the fallback content
+        and reducing the terminal event into an ``AgentResponse``. Calling
+        this from a subclass that DOESN'T override ``execute_iter`` causes
+        infinite recursion (default execute_iter wraps execute, which
+        would call this, which calls execute_iter…)."""
+        from app.services.pipeline.adapter_events import Delta
+
+        deltas: list[str] = []
+        terminal: AdapterEvent | None = None
+        async for event in self.execute_iter(payload):
+            if isinstance(event, Delta):
+                deltas.append(event.text)
+            else:
+                terminal = event
+                break
+        if isinstance(terminal, DispatchedAsync):
+            return AgentResponse(
+                content="", task_id=payload.task_id, success=True,
+                dispatched_async=True,
+            )
+        if isinstance(terminal, Final):
+            return AgentResponse(
+                content=terminal.content,
+                task_id=payload.task_id,
+                success=terminal.success,
+                error_message=terminal.error_message,
+                file_ids=list(terminal.file_ids),
+            )
+        return AgentResponse(
+            content="".join(deltas),
+            task_id=payload.task_id,
+            success=False,
+            error_message="adapter yielded no terminal event",
+        )
+
     @abstractmethod
     async def health_check(self) -> bool:
         """检查该 adapter 的依赖（远端 LLM / WS 链路 / …）是否可用."""
