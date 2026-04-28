@@ -9,16 +9,15 @@ from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.log_context import bind_context
-from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, FileRecord, Message, PromptTemplate, User
+from app.db.models import AgentTask, BotAccount, FileRecord, Message, User
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
-from app.services.orchestrator.secrets import extract_secret_refs, load_user_secrets
+from app.services.pipeline.bot import BotRunContext, IngestStage
 from app.services.pipeline.bus import EventBus
 from app.services.pipeline.events import (
     BotMessagePlaceholder,
@@ -26,7 +25,6 @@ from app.services.pipeline.events import (
     MessageDone,
     MessageStreamDelta,
 )
-from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.orchestrator.service")
 
@@ -89,16 +87,6 @@ async def _fetch_original_question_for_clarify(
 
 
 
-
-
-def _get_trigger_content(msg: Message) -> str:
-    """返回触发消息的真实文本（加密消息自动解密后返回）。"""
-    if msg.is_secret and msg.secret_encrypted:
-        try:
-            return decrypt_value(msg.secret_encrypted)
-        except Exception:
-            logger.warning("orchestrator: failed to decrypt secret message msg_id=%s", msg.msg_id)
-    return msg.content
 
 
 async def _emit_routing_card(
@@ -173,80 +161,30 @@ async def run_orchestrator(
     """根据消息中的 @ 提及和上传文件，串行执行频道内 Bot。"""
     t_start = time.perf_counter()
 
-    result = await session.execute(
-        select(ChannelMembership, BotAccount)
-        .join(BotAccount, ChannelMembership.member_id == BotAccount.bot_id)
-        .where(
-            ChannelMembership.channel_id == channel_id,
-            ChannelMembership.member_type == "bot",
-        )
-        .options(
-            selectinload(BotAccount.prompt_template),
-            selectinload(ChannelMembership.prompt_template),
-        )
+    ctx = BotRunContext(
+        channel_id=channel_id,
+        bus=event_bus,
+        session=session,
+        trigger_msg=trigger_msg,
+        adapter_factory=adapter_factory,
+        broadcast_processing=broadcast_processing,
+        t_start=t_start,
     )
-    rows = result.all()
-    channel_bot_usernames = [row[1].username for row in rows]
-    bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
-    # 频道级 PromptTemplate 对象覆盖（用于 adapter 的 system_prompt）
-    channel_template_override_by_bot_id: dict[str, PromptTemplate] = {}
-    for membership, bot in rows:
-        if membership.prompt_template:
-            channel_template_override_by_bot_id[bot.bot_id] = membership.prompt_template
+    await IngestStage().run(ctx)
 
-    # 包装 adapter_factory，注入频道级模板覆盖
-    _orig_adapter_factory = adapter_factory
-    async def adapter_factory(bot_id: str) -> OpenClawAdapter:
-        override = channel_template_override_by_bot_id.get(bot_id)
-        if override:
-            from app.services.orchestrator.adapter_resolver import get_adapter_for_bot as _get_adapter
-            return await _get_adapter(bot_id, session, template_override=override)
-        return await _orig_adapter_factory(bot_id)
-
-    bot_details_by_username: dict[str, dict] = {
-        row[1].username: {
-            "display_name": row[1].display_name or row[1].username,
-            "description": row[1].description or "",
-            "intro": row[1].intro or "",
-        }
-        for row in rows
-    }
-
-    # analysis_content: 真实文本（解密后），用于提取 @mentions / 密钥引用 / 澄清检测
-    # trigger_content:  发送给 LLM 的文本（加密消息保持占位符，不暴露原文）
-    analysis_content = _get_trigger_content(trigger_msg)
-    is_encrypted_msg = trigger_msg.is_secret and bool(trigger_msg.secret_encrypted)
-    trigger_content = trigger_msg.content if is_encrypted_msg else analysis_content
-
-    # 提取并加载用户密钥引用（从真实文本中提取）
-    secret_refs = extract_secret_refs(analysis_content)
-    user_secrets = {}
-    if secret_refs and trigger_msg.sender_type == "user":
-        user_secrets = await load_user_secrets(session, trigger_msg.sender_id, secret_refs)
-        logger.info(
-            "orchestrator: loaded %d/%d secrets for user %s",
-            len(user_secrets), len(secret_refs), trigger_msg.sender_id
-        )
-
-    # 加密消息：将解密后的原文作为命名密钥注入，LLM 只看到占位符
-    if is_encrypted_msg and trigger_msg.sender_type == "user":
-        user_secrets["_encrypted_msg"] = analysis_content
-        logger.info("orchestrator: encrypted message content injected as _encrypted_msg for user %s", trigger_msg.sender_id)
-
-    # 查询发送者名称和频道名称（供模板变量使用）
-    sender_name = ""
-    if trigger_msg.sender_type == "user":
-        sender_user = await session.get(User, trigger_msg.sender_id)
-        sender_name = (sender_user.display_name or sender_user.username) if sender_user else ""
-    else:
-        sender_bot_result = await session.execute(
-            select(BotAccount).where(BotAccount.bot_id == trigger_msg.sender_id)
-        )
-        sender_bot = sender_bot_result.scalar_one_or_none()
-        sender_name = (sender_bot.display_name or sender_bot.username) if sender_bot else ""
-
-    channel_obj = await session.get(Channel, channel_id)
-    channel_name = channel_obj.name if channel_obj else ""
+    # Pull stage outputs into local names so the (still-unmigrated) tail
+    # of run_orchestrator below reads as before. Subsequent stage commits
+    # will progressively eliminate these locals.
+    channel_bot_usernames = ctx.channel_bot_usernames
+    bot_id_by_username = ctx.bot_id_by_username
+    bot_details_by_username = ctx.bot_details_by_username
+    adapter_factory = ctx.adapter_factory
+    analysis_content = ctx.analysis_content
+    trigger_content = ctx.trigger_content
+    user_secrets = ctx.user_secrets
+    sender_name = ctx.sender_name
+    channel_name = ctx.channel_name
+    channel_obj = ctx.channel
 
     # 澄清场景：若为澄清回答，提取原问题及其附件
     original_question = None
