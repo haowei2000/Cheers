@@ -2,8 +2,9 @@
 
 Three I/O paths run via asyncio.gather:
 
-- ``memory.manager.load`` — current default loads all 6 layers; the
-  msg_type-aware layer selection covered in the plan plugs in here later.
+- ``memory.manager.load_layers`` — picks the layer set per
+  ``trigger_msg.msg_type`` via ``_LAYERS_BY_MSG_TYPE`` so routing and
+  permission cards skip the heavy renders they don't need.
 - ``FilePipelineService.prepare_metadata_only`` — ingests trigger_msg's
   files (or, in clarify scenarios, falls back to the original question's
   files captured by RouteStage).
@@ -19,7 +20,8 @@ import asyncio
 import logging
 
 from app.services.file_processor.service import FileFlowError, FilePipelineService
-from app.services.memory.manager import load as memory_load
+from app.services.memory.channel_memory import ChannelMemory
+from app.services.memory.manager import load_layers as memory_load_layers
 from app.services.orchestrator.topic_context import gather_topic_context
 from app.services.pipeline.bot.context import BotRunContext
 from app.services.pipeline.stage import Stage
@@ -27,10 +29,31 @@ from app.services.pipeline.stage import Stage
 logger = logging.getLogger("app.services.pipeline.bot.context_load")
 
 
+# msg_type → layers needed. Routing cards and permission approvals don't
+# benefit from the full memory load; everything else falls through to the
+# all-layers default to stay safe.
+_LAYERS_BY_MSG_TYPE: dict[str, frozenset[str]] = {
+    "routing": frozenset({"anchor", "decisions"}),
+    "permission": frozenset({"anchor"}),
+}
+
+
+def select_memory_layers(msg_type: str | None) -> frozenset[str]:
+    """Return the memory layer set to load for this trigger msg_type.
+
+    Conservative fallback: unknown / normal / reply / topic load every
+    layer. The known-narrow types (routing, permission) get a subset.
+    """
+    if not msg_type:
+        return ChannelMemory.ALL_LAYERS
+    return _LAYERS_BY_MSG_TYPE.get(msg_type, ChannelMemory.ALL_LAYERS)
+
+
 class ContextLoadStage(Stage[BotRunContext]):
     async def run(self, ctx: BotRunContext) -> None:
+        layers = select_memory_layers(ctx.trigger_msg.msg_type)
         memory_context, _, topic_result = await asyncio.gather(
-            memory_load(ctx.channel_id, ctx.session),
+            memory_load_layers(ctx.channel_id, ctx.session, layers),
             self._load_attachments(ctx),
             gather_topic_context(ctx.trigger_msg, ctx.session),
         )
