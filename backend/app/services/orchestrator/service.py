@@ -16,6 +16,8 @@ from app.db.models import AgentTask, BotAccount, Channel, ChannelMembership, Fil
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.admin.settings_store import get_assist_settings
 from app.services.file_processor.service import FileFlowError, FilePipelineService
+from app.services.orchestrator.bus import make_event_bus
+from app.services.orchestrator.events import MessageStreamDelta
 from app.services.orchestrator.mention import extract_mentions, filter_mentioned_bots, resolve_user_mentions
 from app.services.orchestrator.orchestrator_adapter import extract_suggested_bots
 from app.services.orchestrator.secrets import extract_secret_refs, load_user_secrets
@@ -171,6 +173,10 @@ async def run_orchestrator(
 ) -> tuple[list[Message], set[str]]:
     """根据消息中的 @ 提及和上传文件，串行执行频道内 Bot。"""
     t_start = time.perf_counter()
+
+    event_bus = make_event_bus(
+        channel_id, stream_to_ws=stream_to_ws, stream_event=stream_event
+    )
 
     result = await session.execute(
         select(ChannelMembership, BotAccount)
@@ -519,16 +525,8 @@ async def run_orchestrator(
         return msg
 
     def _make_stream_token_cb(msg_id: str):
-        from app.services.ws_service import ws_manager as _ws
-
         async def _cb(delta: str) -> None:
-            if stream_to_ws:
-                await _ws.broadcast_to_channel(
-                    channel_id,
-                    {"type": "message_stream", "data": {"msg_id": msg_id, "delta": delta}},
-                )
-            if stream_event:
-                await stream_event("delta", {"msg_id": msg_id, "delta": delta})
+            await event_bus.publish(MessageStreamDelta(msg_id=msg_id, delta=delta))
 
         return _cb
 
