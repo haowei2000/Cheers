@@ -14,7 +14,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import socket
 import uuid
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -23,6 +25,24 @@ import websockets
 
 BASE = os.getenv("TEST_BASE_URL", "http://localhost:8002")
 WS_BASE = BASE.replace("http://", "ws://").replace("https://", "wss://")
+
+
+def _backend_reachable(url: str, timeout: float = 0.5) -> bool:
+    """快速 TCP 探测：CI 没有 live backend 时跳过整个 e2e 模块。"""
+    parsed = urlparse(url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _backend_reachable(BASE),
+    reason=f"E2E backend not reachable at {BASE}; set TEST_BASE_URL to a live server to enable",
+)
 
 CHANNEL_ID = "ba30fc1a-8324-4a30-86fe-102214114ea0"
 ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"

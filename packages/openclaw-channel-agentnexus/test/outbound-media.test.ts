@@ -54,6 +54,7 @@ interface FakeSession {
   streamDelta: ReturnType<typeof vi.fn>;
   streamDone: ReturnType<typeof vi.fn>;
   streamError: ReturnType<typeof vi.fn>;
+  uploadFile: ReturnType<typeof vi.fn>;
   membership: { channelIds: Set<string> };
 }
 
@@ -68,6 +69,12 @@ function installFakeEntry(taskId: string, channelId: string, opts: { placeholder
     streamDelta: vi.fn(() => true),
     streamDone: vi.fn(() => true),
     streamError: vi.fn(() => true),
+    // Default: upload fails — individual tests override via mockResolvedValueOnce.
+    // This keeps the "upload 失败" test honest without per-test wiring.
+    uploadFile: vi.fn(async () => ({
+      type: "file_upload_ack", client_file_id: null, ok: false,
+      code: "no_mock", error: "uploadFile not mocked in this test",
+    })),
     membership: { channelIds: new Set([channelId]) },
   };
   sessionRegistry.set(ACCOUNT_ID, {
@@ -125,9 +132,9 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     const filePath = join(dir, "chart.png");
     await writeFile(filePath, Buffer.from("\x89PNG\r\n\x1a\npayload"));
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true, status: 200, json: async () => ({ data: { file_id: "f-1" } }),
-    } as Response);
+    session.uploadFile.mockResolvedValueOnce({
+      type: "file_upload_ack", client_file_id: "c-1", ok: true, file_id: "f-1",
+    });
 
     const res = await sendMedia({
       to: "task-1", text: "这是图", mediaUrl: filePath, accountId: ACCOUNT_ID,
@@ -138,12 +145,10 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     expect(res.messageId.length).toBeGreaterThan(0);
     expect(res.chatId).toBe("C1");
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toMatch(/\/files\/upload-binary$/);
-    const h = init.headers as Record<string, string>;
-    expect(h["X-Channel-Id"]).toBe("C1");
-    expect(h["X-Filename"]).toBe("chart.png");
+    expect(session.uploadFile).toHaveBeenCalledTimes(1);
+    expect(session.uploadFile.mock.calls[0][0]).toMatchObject({
+      channelId: "C1", filename: "chart.png",
+    });
 
     // caption 走 streamDelta，文件存进 stream slot；不再走老 reply 路径
     expect(session.reply).not.toHaveBeenCalled();
@@ -171,9 +176,9 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     const f2 = join(dir, "b.pdf"); await writeFile(f2, "b");
     const f3 = join(dir, "c.txt"); await writeFile(f3, "c");
 
-    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ data: { file_id: "fA" } }) } as Response);
-    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ data: { file_id: "fB" } }) } as Response);
-    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ data: { file_id: "fC" } }) } as Response);
+    session.uploadFile.mockResolvedValueOnce({ type: "file_upload_ack", client_file_id: "cA", ok: true, file_id: "fA" });
+    session.uploadFile.mockResolvedValueOnce({ type: "file_upload_ack", client_file_id: "cB", ok: true, file_id: "fB" });
+    session.uploadFile.mockResolvedValueOnce({ type: "file_upload_ack", client_file_id: "cC", ok: true, file_id: "fC" });
 
     await sendMedia({ to: "task-2", text: "三个文件", mediaUrl: f1, accountId: ACCOUNT_ID });
     await sendMedia({ to: "task-2", text: "",        mediaUrl: f2, accountId: ACCOUNT_ID });
@@ -194,11 +199,14 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
   });
 
   it("sendMedia upload 失败不阻止 gateway loop；返回带空 messageId，且不消费 inbound", async () => {
-    installFakeEntry("task-3", "C1");
+    const session = installFakeEntry("task-3", "C1");
     const dir = await mkdtemp(join(tmpdir(), "agentnexus-media-"));
     const filePath = join(dir, "bad.png"); await writeFile(filePath, "bad");
 
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 } as Response);
+    session.uploadFile.mockResolvedValueOnce({
+      type: "file_upload_ack", client_file_id: "c-bad", ok: false,
+      code: "ws_send_failed", error: "boom",
+    });
 
     const res = await sendMedia({
       to: "task-3", text: "oops", mediaUrl: filePath, accountId: ACCOUNT_ID,
@@ -211,16 +219,16 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
   });
 
   it("URL 形式的 mediaUrl 先下载再上传，再投到流式槽", async () => {
-    installFakeEntry("task-4", "C1");
+    const session = installFakeEntry("task-4", "C1");
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
       headers: new Map([["content-type", "application/pdf"]]) as unknown as Headers,
       arrayBuffer: async () => new ArrayBuffer(42),
     } as unknown as Response);
-    fetchMock.mockResolvedValueOnce({
-      ok: true, json: async () => ({ data: { file_id: "f-url" } }),
-    } as Response);
+    session.uploadFile.mockResolvedValueOnce({
+      type: "file_upload_ack", client_file_id: "c-url", ok: true, file_id: "f-url",
+    });
 
     const res = await sendMedia({
       to: "task-4", text: "report",
@@ -229,22 +237,24 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
 
     // 现在走流式槽，messageId 形如 `${placeholder}-f1`
     expect(res.messageId).toBe("ph-task-4-f1");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [, uploadInit] = fetchMock.mock.calls[1] as [string, RequestInit];
-    const h = uploadInit.headers as Record<string, string>;
-    expect(h["X-Filename"]).toBe("report.pdf");
-    expect(h["Content-Type"]).toBe("application/pdf");
+    expect(fetchMock).toHaveBeenCalledTimes(1);    // download only
+    expect(session.uploadFile).toHaveBeenCalledTimes(1);
+    expect(session.uploadFile.mock.calls[0][0]).toMatchObject({
+      channelId: "C1",
+      filename: "report.pdf",
+      contentType: "application/pdf",
+    });
     expect(pendingStreamByTo.get("task-4")?.fileIds).toEqual(["f-url"]);
   });
 
   it("兼容旧 filePath 字段名（docs 示例命名，运行时已被 gateway 改名为 mediaUrl）", async () => {
-    installFakeEntry("task-5", "C1");
+    const session = installFakeEntry("task-5", "C1");
     const dir = await mkdtemp(join(tmpdir(), "agentnexus-media-"));
     const filePath = join(dir, "legacy.png"); await writeFile(filePath, "x");
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true, json: async () => ({ data: { file_id: "f-legacy" } }),
-    } as Response);
+    session.uploadFile.mockResolvedValueOnce({
+      type: "file_upload_ack", client_file_id: "c-legacy", ok: true, file_id: "f-legacy",
+    });
 
     const res = await sendMedia({
       to: "task-5", filePath, text: "legacy", accountId: ACCOUNT_ID,
@@ -331,9 +341,9 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     const dir = await mkdtemp(join(tmpdir(), "agentnexus-media-"));
     const f1 = join(dir, "chart.png"); await writeFile(f1, "p");
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true, json: async () => ({ data: { file_id: "fMix" } }),
-    } as Response);
+    session.uploadFile.mockResolvedValueOnce({
+      type: "file_upload_ack", client_file_id: "cMix", ok: true, file_id: "fMix",
+    });
 
     // 先流 token
     await sendText({ to: "task-mix", text: "Here ", accountId: ACCOUNT_ID });
@@ -362,9 +372,9 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     const dir = await mkdtemp(join(tmpdir(), "agentnexus-media-"));
     const fp = join(dir, "broadcast.png"); await writeFile(fp, "x");
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true, json: async () => ({ data: { file_id: "fBC" } }),
-    } as Response);
+    session.uploadFile.mockResolvedValueOnce({
+      type: "file_upload_ack", client_file_id: "cBC", ok: true, file_id: "fBC",
+    });
 
     // ctx.to 直接传 channelId（bot 是 channel 成员），走 source-less 兜底
     const res = await sendMedia({
