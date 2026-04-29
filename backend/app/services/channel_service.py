@@ -220,19 +220,20 @@ class ChannelService:
 
         ch = await self.repo.create(workspace_id=workspace_id, name=name, type=type, purpose=purpose)
 
-        # 内置 Bot 自动加入
-        from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
-        for bot_id in (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID):
-            if not await self.repo.get_membership(ch.channel_id, bot_id):
-                await self.repo.add_member(ch.channel_id, bot_id, "bot")
-
-        # 工作空间所有成员自动加入
-        ws_members = await self.ws_repo.list_members(workspace_id)
         added_user_ids = set()
-        for wm in ws_members:
-            if not await self.repo.get_membership(ch.channel_id, wm.user_id):
-                await self.repo.add_member(ch.channel_id, wm.user_id, "user")
-            added_user_ids.add(wm.user_id)
+        if type != "dm":
+            # 内置 Bot 自动加入普通频道；DM 保持一对一，不注入 Coordinator / Helper。
+            from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
+            for bot_id in (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID):
+                if not await self.repo.get_membership(ch.channel_id, bot_id):
+                    await self.repo.add_member(ch.channel_id, bot_id, "bot")
+
+            # 工作空间所有成员自动加入普通频道。
+            ws_members = await self.ws_repo.list_members(workspace_id)
+            for wm in ws_members:
+                if not await self.repo.get_membership(ch.channel_id, wm.user_id):
+                    await self.repo.add_member(ch.channel_id, wm.user_id, "user")
+                added_user_ids.add(wm.user_id)
 
         # 若创建者不在工作空间成员中
         if creator and creator.user_id not in added_user_ids:

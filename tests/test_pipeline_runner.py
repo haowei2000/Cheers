@@ -7,6 +7,7 @@ the plan calls out as Phase 2's testability dividend.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 import pytest
@@ -60,3 +61,19 @@ def test_pipeline_stages_property_is_immutable_view() -> None:
     pipe = Pipeline([s1, s2])
     assert pipe.stages == (s1, s2)
     assert isinstance(pipe.stages, tuple)
+
+
+async def test_pipeline_logs_stage_flow(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="app.services.pipeline.runner")
+
+    await Pipeline([_AppendStage("logged")], name="unit").run(_Ctx())
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "pipeline.stage.start pipeline=unit stage=AppendStage position=1/1" in message
+        for message in messages
+    )
+    assert any(
+        "pipeline.stage.done pipeline=unit stage=AppendStage position=1/1" in message
+        for message in messages
+    )

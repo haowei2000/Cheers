@@ -4,11 +4,14 @@ Responsibilities:
 
 1. If the trigger is a coordinator-clarify reply, fetch the original question
    and its file_ids so DispatchStage / ContextLoadStage can fall back to them.
-2. Extract @-mentions and intersect with channel members.
-3. If no valid mention exists but the channel has auto-assist enabled and
+2. Resolve explicit mention_bot_ids and leading @-mentions against channel
+   members.
+3. In 1:1 Bot DM channels, route user messages to the counterparty Bot even
+   without an @mention.
+4. If no valid mention exists but the channel has auto-assist enabled and
    the Coordinator bot is a member, route to the Coordinator in
    ``direct_answer_mode``.
-4. Otherwise short-circuit: ``ctx.target_usernames == []`` tells the
+5. Otherwise short-circuit: ``ctx.target_usernames == []`` tells the
    orchestrator there's nothing to dispatch.
 
 Pure logic except for the clarify-reply DB lookup; no side effects on the
@@ -40,6 +43,44 @@ def _is_guide_clarify_reply(content: str) -> bool:
         or t.startswith("@channel bot 澄清回答：")
         or "用户选择跳过澄清" in t
     )
+
+
+def _dedupe_usernames(usernames: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for username in usernames:
+        if username in seen:
+            continue
+        seen.add(username)
+        out.append(username)
+    return out
+
+
+def _targets_from_mention_bot_ids(ctx: BotRunContext) -> list[str]:
+    mention_bot_ids = ctx.trigger_msg.mention_bot_ids or []
+    if not mention_bot_ids:
+        return []
+    username_by_bot_id = {
+        bot_id: username
+        for username, bot_id in ctx.bot_id_by_username.items()
+    }
+    return _dedupe_usernames(
+        [
+            username_by_bot_id[bot_id]
+            for bot_id in mention_bot_ids
+            if bot_id in username_by_bot_id
+        ]
+    )
+
+
+def _dm_counterparty_bot_target(ctx: BotRunContext) -> str | None:
+    if ctx.trigger_msg.sender_type != "user":
+        return None
+    if not ctx.channel or ctx.channel.type != "dm":
+        return None
+    if len(ctx.channel_bot_usernames) != 1:
+        return None
+    return ctx.channel_bot_usernames[0]
 
 
 async def _fetch_original_question_for_clarify(
@@ -85,12 +126,23 @@ class RouteStage(Stage[BotRunContext]):
                 await _fetch_original_question_for_clarify(ctx)
             )
 
+        explicit_targets = _targets_from_mention_bot_ids(ctx)
         mentioned = extract_mentions(ctx.analysis_content, ctx.channel_bot_usernames)
-        ctx.target_usernames = filter_mentioned_bots(
+        text_targets = filter_mentioned_bots(
             mentioned, ctx.channel_bot_usernames
         )
 
+        ctx.target_usernames = _dedupe_usernames(explicit_targets + text_targets)
         if ctx.target_usernames:
+            return
+
+        dm_target = _dm_counterparty_bot_target(ctx)
+        if dm_target:
+            ctx.target_usernames = [dm_target]
+            logger.info(
+                "orchestrator route -> dm bot channel_id=%s bot=%s",
+                ctx.channel_id, dm_target,
+            )
             return
 
         channel_auto_assist = bool(ctx.channel.auto_assist) if ctx.channel else False
