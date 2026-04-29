@@ -37,7 +37,9 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
         # 迁移旧用户名 → 现在统一叫 Coordinator
         if existing.username in ("引导", "channel bot"):
             existing.username = "Coordinator"
-            await session.flush()
+        existing.scope = "everyone"
+        existing.is_public = True
+        await session.flush()
         return False
 
     session.add(
@@ -53,6 +55,8 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
             model_id=None,
             template_id=None,
             status="online",
+            is_public=True,
+            scope="everyone",
             intro=(
                 '{"capabilities":["系统引导","项目问答","记忆读写","澄清弹窗","Bot路由建议"],'
                 '"description":"内置协调者，@Coordinator 即可使用"}'
@@ -70,7 +74,9 @@ async def _seed_guide_helper_bot(session: AsyncSession) -> bool:
         # 迁移旧用户名 → 现在统一叫 Helper
         if existing.username == "guide-helper":
             existing.username = "Helper"
-            await session.flush()
+        existing.scope = "everyone"
+        existing.is_public = True
+        await session.flush()
         return False
 
     session.add(
@@ -83,6 +89,7 @@ async def _seed_guide_helper_bot(session: AsyncSession) -> bool:
             template_id=None,
             status="online",
             is_public=True,
+            scope="everyone",
             intro='{"capabilities":["使用说明","功能问答","操作指南"],"description":"输入 @Helper 即可获得操作指引"}',
         )
     )

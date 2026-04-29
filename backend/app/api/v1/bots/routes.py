@@ -25,10 +25,16 @@ from app.core.schemas import (
 )
 from app.db.models import AIModel, BotAccount, BotRegistrationRequest, PromptTemplate, User, gen_uuid
 from app.services.adapters.http_bot import HttpBotAdapter
-from app.services.bot_service import BotService, is_builtin_bot
+from app.services.bot_service import (
+    BotService,
+    bot_scope,
+    can_manage_bot,
+    is_builtin_bot,
+    normalize_bot_scope,
+    scope_to_is_public,
+)
 from app.services.openclaw_bridge.registry import bot_session_registry
 from app.utils.crypto import encrypt_value
-from app.utils.permissions import is_admin
 
 audit = logging.getLogger("app.audit")
 logger = logging.getLogger("app.api.v1.bots")
@@ -80,7 +86,7 @@ def _connection_fields(bot: BotAccount) -> dict:
 
 
 def _assert_can_test_bot(bot: BotAccount, current_user: User) -> None:
-    if bot.created_by == current_user.user_id or is_admin(current_user):
+    if can_manage_bot(bot, current_user):
         return
     raise ForbiddenError("无权测试该 Bot")
 
@@ -156,7 +162,30 @@ async def _test_bot_connection(bot: BotAccount) -> dict:
     }
 
 
-def _to_simple(bot: BotAccount) -> dict:
+def _owner_payload(owner: User | None) -> dict | None:
+    if not owner:
+        return None
+    return {
+        "user_id": owner.user_id,
+        "username": owner.username,
+        "display_name": owner.display_name,
+    }
+
+
+async def _load_owners(session: AsyncSession, bots: list[BotAccount]) -> dict[str, User]:
+    owner_ids = {b.created_by for b in bots if b.created_by}
+    if not owner_ids:
+        return {}
+    result = await session.execute(select(User).where(User.user_id.in_(owner_ids)))
+    return {u.user_id: u for u in result.scalars().all()}
+
+
+def _to_simple(
+    bot: BotAccount,
+    current_user: User,
+    *,
+    owner: User | None = None,
+) -> dict:
     d = BotSimpleInResponse(
         bot_id=bot.bot_id,
         username=bot.username,
@@ -164,6 +193,7 @@ def _to_simple(bot: BotAccount) -> dict:
         description=bot.description,
         status=bot.status,
         is_public=bot.is_public,
+        scope=bot_scope(bot),
         binding_type=getattr(bot, "binding_type", None) or "http",
         is_builtin=is_builtin_bot(bot),
         **_connection_fields(bot),
@@ -172,6 +202,8 @@ def _to_simple(bot: BotAccount) -> dict:
         model_name=bot.ai_model.name if bot.ai_model else None,
         template_name=bot.prompt_template.name if bot.prompt_template else None,
         created_by=bot.created_by,
+        owner=_owner_payload(owner),
+        can_manage=can_manage_bot(bot, current_user),
         created_at=bot.created_at,
     ).model_dump()
     if bot.created_at:
@@ -181,10 +213,12 @@ def _to_simple(bot: BotAccount) -> dict:
 
 def _to_full(
     bot: BotAccount,
+    current_user: User,
     model_name: str | None = None,
     template_name: str | None = None,
     *,
     bot_token: str | None = None,
+    owner: User | None = None,
 ) -> dict:
     """转换 Bot 为响应体。
 
@@ -201,6 +235,7 @@ def _to_full(
         avatar_url=bot.avatar_url,
         status=bot.status,
         is_public=bot.is_public,
+        scope=bot_scope(bot),
         intro=bot.intro,
         custom_system_prompt=bot.custom_system_prompt,
         created_at=bot.created_at,
@@ -215,6 +250,8 @@ def _to_full(
         bot_token_prefix=getattr(bot, "bot_token_prefix", None),
         bot_token_rotated_at=getattr(bot, "bot_token_rotated_at", None),
         bot_token=bot_token,
+        owner=_owner_payload(owner),
+        can_manage=can_manage_bot(bot, current_user),
         **_connection_fields(bot),
     ).model_dump()
     if bot.created_at:
@@ -232,7 +269,11 @@ async def list_bots(
 ) -> APIResponse:
     svc = BotService(session)
     bots = await svc.list_visible(current_user)
-    return APIResponse.ok([_to_simple(b) for b in bots])
+    owners = await _load_owners(session, bots)
+    return APIResponse.ok([
+        _to_simple(b, current_user, owner=owners.get(b.created_by or ""))
+        for b in bots
+    ])
 
 
 @router.post("", response_model=APIResponse[dict])
@@ -251,6 +292,7 @@ async def create_bot(
         custom_system_prompt=body.custom_system_prompt,
         intro=body.intro,
         is_public=body.is_public,
+        scope=body.scope,
         bot_id=body.bot_id,
         binding_type=body.binding_type,
         binding_config=body.binding_config,
@@ -260,7 +302,8 @@ async def create_bot(
     if plaintext_token:
         audit.info("action=bot.token.issue actor=%s resource_id=%s", current_user.user_id, bot.bot_id)
     bot = await svc.get_or_404(bot.bot_id)
-    return APIResponse.ok(_to_full(bot, bot_token=plaintext_token))
+    owner = await session.get(User, bot.created_by) if bot.created_by else None
+    return APIResponse.ok(_to_full(bot, current_user, bot_token=plaintext_token, owner=owner))
 
 
 @router.post("/{bot_id}/rotate-token", response_model=APIResponse[dict])
@@ -278,7 +321,8 @@ async def rotate_bot_token(
     bot, plaintext_token = await svc.rotate_websocket_token(bot_id, current_user)
     audit.info("action=bot.token.rotate actor=%s resource_id=%s", current_user.user_id, bot.bot_id)
     bot = await svc.get_or_404(bot.bot_id)
-    return APIResponse.ok(_to_full(bot, bot_token=plaintext_token))
+    owner = await session.get(User, bot.created_by) if bot.created_by else None
+    return APIResponse.ok(_to_full(bot, current_user, bot_token=plaintext_token, owner=owner))
 
 
 @router.get("/registration-requests", response_model=APIResponse[list[dict]])
@@ -342,9 +386,11 @@ async def get_bot_online_status(
 ) -> APIResponse:
     svc = BotService(session)
     bot = await svc.get_or_404(bot_id)
+    await svc.assert_can_use(bot, current_user)
     return APIResponse.ok({
         "bot_id": bot.bot_id,
         "status": bot.status,
+        "scope": bot_scope(bot),
         "binding_type": getattr(bot, "binding_type", None) or "http",
         **_connection_fields(bot),
     })
@@ -470,6 +516,7 @@ async def quick_connect_openclaw(
         intro_dict["capabilities"] = skills
     intro_str = json.dumps(intro_dict, ensure_ascii=False)
 
+    scope = normalize_bot_scope(body.scope or "private", False)
     bot = BotAccount(
         bot_id=gen_uuid(),
         username=bot_username,
@@ -478,7 +525,8 @@ async def quick_connect_openclaw(
         model_id=ai_model.model_id,
         template_id=template.template_id,
         status="online",
-        is_public=False,
+        is_public=scope_to_is_public(scope),
+        scope=scope,
         intro=intro_str,
         created_by=current_user.user_id,
     )
@@ -499,7 +547,7 @@ async def quick_connect_openclaw(
 
     await session.flush()
     return APIResponse.ok({
-        "bot": _to_full(bot, ai_model.name, template.name),
+        "bot": _to_full(bot, current_user, ai_model.name, template.name, owner=current_user),
         "probe": {"who_am_i": who_am_i, "skills": skills, "connected": probe_ok},
     })
 
@@ -512,7 +560,9 @@ async def get_bot(
 ) -> APIResponse:
     svc = BotService(session)
     bot = await svc.get_or_404(bot_id)
-    return APIResponse.ok(_to_full(bot))
+    await svc.assert_can_use(bot, current_user)
+    owner = await session.get(User, bot.created_by) if bot.created_by else None
+    return APIResponse.ok(_to_full(bot, current_user, owner=owner))
 
 
 @router.put("/{bot_id}", response_model=APIResponse[dict])
@@ -531,8 +581,10 @@ async def update_bot(
     return APIResponse.ok(
         _to_full(
             bot,
+            current_user,
             model_name=model.name if model else None,
             template_name=template.name if template else None,
+            owner=await session.get(User, bot.created_by) if bot.created_by else None,
         )
     )
 

@@ -10,6 +10,12 @@ export type ChannelMember = MemberItem & {
   template_id?: string | null;
   template_name?: string | null;
   status?: string;
+  scope?: "private" | "friend" | "everyone";
+  owner?: {
+    user_id: string;
+    username: string;
+    display_name?: string | null;
+  } | null;
   binding_type?: "http" | "websocket" | string;
   connection_status?: string;
   is_online?: boolean;
@@ -23,6 +29,12 @@ export type ChannelParticipant = {
   avatar_url?: string;
   display_name?: string;
   status?: string;
+  scope?: "private" | "friend" | "everyone";
+  owner?: {
+    user_id: string;
+    username: string;
+    display_name?: string | null;
+  } | null;
   binding_type?: "http" | "websocket" | string;
   connection_status?: string;
   is_online?: boolean;

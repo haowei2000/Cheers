@@ -49,6 +49,16 @@ function BotOnlinePill({ bot }: { bot: Pick<Bot, "binding_type" | "connection_st
   );
 }
 
+function botScopeText(scope?: Bot["scope"]) {
+  if (scope === "private") return "Private";
+  if (scope === "everyone") return "Everyone";
+  return "Friend";
+}
+
+function botOwnerText(bot: Pick<Bot, "owner">) {
+  return bot.owner?.display_name || bot.owner?.username || "系统";
+}
+
 export default function ChannelMembersModal({
   channelId,
   channelName,
@@ -457,6 +467,9 @@ export default function ChannelMembersModal({
                                 {member.username && (
                                   <p className="text-xs text-gray-500">@{member.username}</p>
                                 )}
+                                <p className="text-xs text-gray-400">
+                                  {botScopeText(member.scope)} · Owner: {botOwnerText(member)}
+                                </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -641,6 +654,9 @@ export default function ChannelMembersModal({
                           {bot.display_name || bot.username}
                         </p>
                         <p className="text-xs text-gray-500">@{bot.username}</p>
+                        <p className="text-xs text-gray-400">
+                          {botScopeText(bot.scope)} · Owner: {botOwnerText(bot)}
+                        </p>
                         <div className="mt-1">
                           <BotOnlinePill bot={bot} />
                         </div>
