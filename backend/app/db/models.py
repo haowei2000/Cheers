@@ -71,7 +71,6 @@ class BotAccount(Base):
     custom_system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 覆盖模板的 system_prompt
 
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online")  # online | offline | busy
-    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1", default=True)  # 公开/私有
     scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default="friend", default="friend")
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
     # 绑定类型：'http'=OpenAI 兼容 HTTP（默认，HttpBotAdapter）；

@@ -99,9 +99,8 @@ class BotCreate(BaseModel):
     template_id: str | None = Field(default=None, description="关联的提示词模板 ID（HTTP Bot 必填）")
     custom_system_prompt: str | None = Field(default=None, description="可选：覆盖模板的系统提示词")
     status: str = Field(default="online", pattern="^(online|offline|busy)$")
-    is_public: bool = Field(default=True, description="是否公开（False 则仅创建者和管理员可见）")
-    scope: Literal["private", "friend", "everyone"] | None = Field(
-        default=None,
+    scope: Literal["private", "friend", "everyone"] = Field(
+        default="friend",
         description="Bot 使用范围：private=仅自己，friend=自己和好友，everyone=所有登录用户",
     )
     intro: str | None = Field(default=None, description='JSON: {"capabilities": [...], "description": "..."}')
@@ -126,7 +125,6 @@ class BotUpdate(BaseModel):
     template_id: str | None = Field(default=None)
     custom_system_prompt: str | None = Field(default=None)
     status: str | None = Field(default=None, pattern="^(online|offline|busy)$")
-    is_public: bool | None = Field(default=None, description="是否公开")
     scope: Literal["private", "friend", "everyone"] | None = Field(default=None)
     intro: str | None = Field(default=None)
     avatar_url: str | None = Field(default=None)
@@ -150,7 +148,6 @@ class BotInResponse(BaseModel):
     description: str | None = None
     avatar_url: str | None = None
     status: str
-    is_public: bool = True
     scope: Literal["private", "friend", "everyone"] = "friend"
     intro: str | None = None
     custom_system_prompt: str | None = None
@@ -187,7 +184,6 @@ class BotSimpleInResponse(BaseModel):
     display_name: str | None = None
     description: str | None = None
     status: str
-    is_public: bool = True
     scope: Literal["private", "friend", "everyone"] = "friend"
     binding_type: str = "http"
     is_builtin: bool = False

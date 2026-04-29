@@ -1,4 +1,4 @@
-"""Shared permission helpers for bot/model visibility and friendship checks."""
+"""Shared permission helpers for model visibility and friendship checks."""
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,7 +35,7 @@ async def can_access(
     created_by: str | None,
     is_public: bool,
 ) -> bool:
-    """Return True if current_user may read this bot/model.
+    """Return True if current_user may read this model.
 
     Access rules:
     - Admin: always
