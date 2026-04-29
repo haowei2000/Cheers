@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import FriendsPanel from "./FriendsPanel";
 import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import MemoryPage from "./MemoryPage";
@@ -29,15 +28,12 @@ import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import { BotAvatar } from "./components/BotAvatar";
 import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
-import { ThinkingIndicator } from "./components/ThinkingIndicator";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { LoginModal } from "./components/LoginModal";
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
 import { CreateChannelModal } from "./components/CreateChannelModal";
 import { OpenClawQcModal } from "./components/OpenClawQcModal";
-import { KeychainModal } from "./components/KeychainModal";
-import { UserProfileModal } from "./components/UserProfileModal";
 import { ChannelProfileModal } from "./components/ChannelProfileModal";
 import { QaSummaryModal } from "./components/QaSummaryModal";
 import { ImageGenModal } from "./components/ImageGenModal";
@@ -422,11 +418,8 @@ export default function App() {
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
   const [manageMembersOpen, setManageMembersOpen] = useState(false);
-  const [friendsPanelOpen, setFriendsPanelOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
-  const [userProfileOpen, setUserProfileOpen] = useState(false);
-  const [keychainModalOpen, setKeychainModalOpen] = useState(false);
   const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
@@ -437,7 +430,6 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const [waitingForBotReply, setWaitingForBotReply] = useState(false);
   const [processingBots, setProcessingBots] = useState<Record<string, string>>(
     {},
   );
@@ -624,7 +616,6 @@ export default function App() {
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
-      setWaitingForBotReply(false);
       setProcessingBots({});
       setAutoAssist(false);
       setReplyingTo(null);
@@ -775,7 +766,24 @@ export default function App() {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.type === "message" && msg.data) {
+          if (msg.type === "bot_processing" && msg.data) {
+            const { bot_id, username } = msg.data;
+            if (bot_id) {
+              setProcessingBots((prev) => ({
+                ...prev,
+                [bot_id]: username || bot_id,
+              }));
+            }
+          } else if (msg.type === "message" && msg.data) {
+            // Bot placeholder arrived → clear the per-bot thinking indicator.
+            if (msg.data.sender_type === "bot" && msg.data.sender_id) {
+              setProcessingBots((prev) => {
+                if (!(msg.data.sender_id in prev)) return prev;
+                const next = { ...prev };
+                delete next[msg.data.sender_id];
+                return next;
+              });
+            }
             setMessages((prev) => {
               const id = msg.data.msg_id;
               if (id && prev.some((m) => m.msg_id === id)) {
@@ -1698,9 +1706,7 @@ export default function App() {
       );
       if (!picked || !String(picked.base_url || "").trim()) {
         setQaLlmReady(false);
-        setQaLlmHint(
-          "未配置问答总结 LLM，请到「管理」页绑定问答总结或系统 LLM。",
-        );
+        setQaLlmHint("未配置问答总结 LLM 或系统 LLM。");
         return false;
       }
       setQaLlmReady(true);
@@ -1759,7 +1765,7 @@ export default function App() {
     try {
       const ok = await refreshQaLlmStatus();
       if (!ok) {
-        toast.error("请先在管理页配置并绑定可用 LLM（问答总结或系统 LLM）。");
+        toast.error("请先配置并绑定可用 LLM（问答总结或系统 LLM）。");
         return;
       }
 
@@ -2141,14 +2147,6 @@ export default function App() {
           onNavigate={handleNotifNavigate}
         />
 
-        {/* 好友管理面板 */}
-        <FriendsPanel
-          currentUserId={currentUserId}
-          userToken={authToken ?? undefined}
-          isOpen={friendsPanelOpen}
-          onClose={() => setFriendsPanelOpen(false)}
-        />
-
         {/* 频道成员管理模态框 */}
         {selectedId && (
           <ChannelMembersModal
@@ -2158,32 +2156,6 @@ export default function App() {
             userToken={authToken ?? undefined}
             isOpen={manageMembersOpen}
             onClose={() => setManageMembersOpen(false)}
-          />
-        )}
-
-        {/* Keychain modal */}
-        {authToken && (
-          <KeychainModal
-            open={keychainModalOpen}
-            userToken={authToken}
-            onClose={() => setKeychainModalOpen(false)}
-          />
-        )}
-
-        {/* User profile modal */}
-        {currentUser && (
-          <UserProfileModal
-            open={userProfileOpen}
-            currentUser={currentUser}
-            userToken={authToken!}
-            onClose={() => setUserProfileOpen(false)}
-            onProfileUpdated={(data) => {
-              if (!currentUser) return;
-              setCurrentUser({
-                ...currentUser,
-                display_name: data.display_name,
-              });
-            }}
           />
         )}
 
@@ -4356,7 +4328,6 @@ export default function App() {
                       }
                       return out;
                       })()}
-                      {waitingForBotReply && <ThinkingIndicator />}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
                           <div key={botId} className="flex gap-3 px-3 py-2">

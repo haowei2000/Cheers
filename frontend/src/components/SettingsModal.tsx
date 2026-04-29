@@ -275,7 +275,7 @@ function AppearancePane({
   setDensity: (d: Density) => void;
 }) {
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">外观</div>
@@ -448,7 +448,7 @@ function ProfilePane({
   const initial = (displayName || currentUser.username || "?").slice(0, 1).toUpperCase();
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">编辑资料</div>
@@ -719,7 +719,7 @@ function KeychainPane({ authToken }: { authToken: string }) {
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">钥匙链</div>
@@ -921,7 +921,7 @@ function FriendsPane({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">好友</div>
@@ -1155,7 +1155,7 @@ function BulletinPane({
     !!authToken && (issue.creator_id === currentUserId || isAdmin);
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head" style={{ justifyContent: "space-between" }}>
         <div>
           <div className="an-pane-title">留言板</div>
@@ -1287,8 +1287,8 @@ function BulletinPane({
 
 /** BotPane — top-level Bot view, segmented into three sub-tabs:
  *  Bot (list+CRUD) / 消息模板 / LLM 模型. Each sub-tab is a self-contained
- *  pane that mirrors the management UI in /admin but uses our card style
- *  for layout consistency. */
+ *  pane that keeps Bot, template, and model setup inside the modal settings
+ *  flow. */
 type BotSubTab = "bots" | "templates" | "models";
 
 function BotPane({
@@ -1303,7 +1303,7 @@ function BotPane({
   const [tab, setTab] = useState<BotSubTab>("bots");
 
   return (
-    <div>
+    <div className="an-pane">
       <div
         className="an-seg"
         style={{ marginBottom: 16, display: "inline-flex" }}
@@ -1361,7 +1361,7 @@ function BotListSubPane({
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
         <BotNewPane
           authToken={authToken}
@@ -1378,7 +1378,7 @@ function BotListSubPane({
     const bot = bots.find((b) => b.bot_id === view.botId);
     if (!bot) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>
             该 Bot 已不存在
@@ -1387,7 +1387,7 @@ function BotListSubPane({
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
         <BotEditPane
           bot={bot}
@@ -1403,7 +1403,7 @@ function BotListSubPane({
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">Bot</div>
@@ -1514,7 +1514,7 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模板列表" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
@@ -1530,14 +1530,14 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
     const tpl = items.find((t) => t.template_id === view.id);
     if (!tpl) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回模板列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>该模板已不存在</div>
         </div>
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模板列表" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
@@ -1556,7 +1556,7 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">消息模板</div>
@@ -1724,7 +1724,7 @@ function TemplateForm({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "新建模板"}</div>
@@ -1895,7 +1895,7 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模型列表" onBack={() => setView("list")} />
         <ModelForm
           authToken={authToken}
@@ -1911,14 +1911,14 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
     const m = items.find((x) => x.model_id === view.id);
     if (!m) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回模型列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>该模型已不存在</div>
         </div>
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模型列表" onBack={() => setView("list")} />
         <ModelForm
           authToken={authToken}
@@ -1937,7 +1937,7 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">LLM 模型</div>
@@ -2124,7 +2124,7 @@ function ModelForm({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "新建模型"}</div>
@@ -2242,6 +2242,7 @@ function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
     <button
       type="button"
       onClick={onBack}
+      className="an-back"
       style={{
         background: "transparent",
         border: 0,
@@ -2251,6 +2252,8 @@ function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
         marginBottom: 8,
         cursor: "pointer",
         fontFamily: "inherit",
+        flexShrink: 0,
+        textAlign: "left",
       }}
     >
       ← {label}
@@ -2274,7 +2277,7 @@ function AccountPane({
 }) {
   if (!currentUser) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">账户</div>
@@ -2285,20 +2288,21 @@ function AccountPane({
     );
   }
   return (
-    <div>
+    <div className="an-pane">
       <ProfilePane
         currentUser={currentUser}
         authToken={authToken}
         onProfileUpdated={onProfileUpdated}
       />
-      <div className="an-list-table" style={{ marginTop: 12 }}>
-        <div className="an-row-card" style={{ justifyContent: "space-between" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title" style={{ color: "var(--red)" }}>退出登录</div>
-            <div className="an-rc-sub">清除本地令牌并返回登录界面。</div>
-          </div>
-          <DangerButton onClick={onLogout}>退出登录</DangerButton>
+      <div
+        className="an-row-card"
+        style={{ justifyContent: "space-between", marginTop: 12, flexShrink: 0 }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="an-rc-title" style={{ color: "var(--red)" }}>退出登录</div>
+          <div className="an-rc-sub">清除本地令牌并返回登录界面。</div>
         </div>
+        <DangerButton onClick={onLogout}>退出登录</DangerButton>
       </div>
     </div>
   );
@@ -2420,7 +2424,7 @@ function BotNewPane({
 
   if (issued) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">Bot 已创建 · 保存 OpenClaw Token</div>
@@ -2497,7 +2501,7 @@ function BotNewPane({
 
   if (step === 1) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">新建 Bot · 选择类型</div>
@@ -2528,7 +2532,7 @@ function BotNewPane({
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">
@@ -2592,7 +2596,7 @@ function BotNewPane({
                 className={inputCls}
               >
                 {models.length === 0 ? (
-                  <option value="">（无可用模型，请先到管理后台创建）</option>
+                  <option value="">（无可用模型，请先在设置的 LLM 模型中创建）</option>
                 ) : (
                   models.map((m) => (
                     <option key={m.model_id} value={m.model_id}>
@@ -2609,7 +2613,7 @@ function BotNewPane({
                 className={inputCls}
               >
                 {templates.length === 0 ? (
-                  <option value="">（无可用模板，请先到管理后台创建）</option>
+                  <option value="">（无可用模板，请先在设置的消息模板中创建）</option>
                 ) : (
                   templates.map((t) => (
                     <option key={t.template_id} value={t.template_id}>
@@ -2791,7 +2795,7 @@ function BotEditPane({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{bot.display_name || bot.username}</div>
@@ -2826,7 +2830,7 @@ function BotEditPane({
           </div>
         </div>
         <div className="an-row-card" style={{ color: "var(--fg-3)", fontSize: 12 }}>
-          高级配置（模型、提示词、Token）请在管理后台调整。
+          高级配置已收敛到设置弹窗；当前详情页仅开放基础信息编辑。
         </div>
       </div>
     </div>

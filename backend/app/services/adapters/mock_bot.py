@@ -1,5 +1,8 @@
 """Mock 适配器 —— 本地测试 + adapter_resolver 的兜底返回值."""
+from collections.abc import AsyncIterator
+
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.services.pipeline.adapter_events import AdapterEvent, Final
 
 
 class MockBotAdapter(OpenClawAdapter):
@@ -16,11 +19,10 @@ class MockBotAdapter(OpenClawAdapter):
         self.healthy = healthy
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return AgentResponse(
-            content=self.reply,
-            task_id=payload.task_id,
-            success=True,
-        )
+        return await self._drain_execute_iter(payload)
+
+    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+        yield Final(content=self.reply, success=True)
 
     async def health_check(self) -> bool:
         return self.healthy
