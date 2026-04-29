@@ -9,10 +9,55 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import BotAccount, User
 from app.repositories.bot_repo import AIModelRepository, BotRepository, PromptTemplateRepository
-from app.services.guide.constants import GUIDE_HELPER_BOT_ID
+from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 from app.utils.permissions import can_access, get_friend_ids
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
+_BUILTIN_BOT_IDS = {GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID}
+BOT_SCOPES = {"private", "friend", "everyone"}
+
+
+def is_builtin_bot(bot: BotAccount) -> bool:
+    return bot.bot_id in _BUILTIN_BOT_IDS
+
+
+def normalize_bot_scope(scope: str | None, is_public: bool | None = True) -> str:
+    """Return a valid bot scope, mapping legacy is_public when scope is absent."""
+    if scope in BOT_SCOPES:
+        return scope
+    return "friend" if is_public else "private"
+
+
+def bot_scope(bot: BotAccount) -> str:
+    return normalize_bot_scope(
+        getattr(bot, "scope", None),
+        getattr(bot, "is_public", True),
+    )
+
+
+def scope_to_is_public(scope: str) -> bool:
+    return scope != "private"
+
+
+def can_manage_bot(bot: BotAccount, current_user: User) -> bool:
+    from app.utils.permissions import is_admin
+
+    return bot.created_by == current_user.user_id or is_admin(current_user)
+
+
+def can_use_bot_with_friends(
+    bot: BotAccount,
+    current_user: User,
+    friend_ids: set[str],
+) -> bool:
+    if is_builtin_bot(bot) or can_manage_bot(bot, current_user):
+        return True
+    scope = bot_scope(bot)
+    if scope == "everyone":
+        return True
+    if scope == "friend" and bot.created_by:
+        return bot.created_by in friend_ids
+    return False
 
 
 def _validate_username(username: str) -> str:
@@ -53,18 +98,33 @@ class BotService:
         return bot
 
     async def list_visible(self, current_user: User) -> list[BotAccount]:
-        """返回当前用户可见的 bot：自己创建 + 好友公开的 + 智枢协作操作指引助手."""
+        """返回当前用户可发起 DM/邀请的 bot。"""
         all_bots = await self.repo.list_all()
+        if current_user.role == "system_admin":
+            return all_bots
         friend_ids = await get_friend_ids(self.session, current_user.user_id)
         return [
             b for b in all_bots
-            if b.bot_id == GUIDE_HELPER_BOT_ID
-            or b.created_by == current_user.user_id
-            or (b.is_public and b.created_by in friend_ids)
+            if can_use_bot_with_friends(b, current_user, friend_ids)
         ]
 
     async def list_all(self) -> list[BotAccount]:
         return await self.repo.list_all()
+
+    async def can_use(self, bot: BotAccount, current_user: User) -> bool:
+        if can_manage_bot(bot, current_user) or is_builtin_bot(bot):
+            return True
+        friend_ids = await get_friend_ids(self.session, current_user.user_id)
+        return can_use_bot_with_friends(bot, current_user, friend_ids)
+
+    async def assert_can_use(
+        self,
+        bot: BotAccount,
+        current_user: User,
+        message: str = "无权使用该 Bot",
+    ) -> None:
+        if not await self.can_use(bot, current_user):
+            raise ForbiddenError(message)
 
     async def _validate_model_and_template(
         self,
@@ -93,6 +153,7 @@ class BotService:
         custom_system_prompt: str | None = None,
         intro: str | None = None,
         is_public: bool = True,
+        scope: str | None = None,
         bot_id: str | None = None,
         binding_type: str = "http",
         binding_config: dict | None = None,
@@ -108,6 +169,7 @@ class BotService:
         """
         username = _validate_username(username)
         intro = _validate_intro(intro)
+        scope = normalize_bot_scope(scope, is_public)
 
         existing = await self.repo.get_by_username(username)
         if existing:
@@ -134,7 +196,8 @@ class BotService:
             template_id=template_id,
             custom_system_prompt=custom_system_prompt,
             intro=intro,
-            is_public=is_public,
+            is_public=scope_to_is_public(scope),
+            scope=scope,
             binding_type=binding_type,
             binding_config=binding_config,
             created_by=current_user.user_id,
@@ -160,10 +223,9 @@ class BotService:
         返回 (bot, plaintext_token)。权限：仅创建者或管理员。
         """
         from app.services.openclaw_bridge.tokens import apply_token_to_bot
-        from app.utils.permissions import is_admin
 
         bot = await self.get_or_404(bot_id)
-        if bot.created_by != current_user.user_id and not is_admin(current_user):
+        if not can_manage_bot(bot, current_user):
             raise ForbiddenError("无权轮换该 Bot 的 token")
         if (bot.binding_type or "http") != "websocket":
             raise BadRequestError("只有 WebSocket Bot 才有 token 可轮换")
@@ -179,9 +241,14 @@ class BotService:
         **kwargs,
     ) -> BotAccount:
         bot = await self.get_or_404(bot_id)
-        from app.utils.permissions import is_admin
-        if bot.created_by != current_user.user_id and not is_admin(current_user):
+        if not can_manage_bot(bot, current_user):
             raise ForbiddenError("无权修改该 Bot")
+
+        if "scope" not in kwargs and "is_public" in kwargs:
+            kwargs["scope"] = normalize_bot_scope(None, kwargs["is_public"])
+        if "scope" in kwargs:
+            kwargs["scope"] = normalize_bot_scope(kwargs["scope"], getattr(bot, "is_public", True))
+            kwargs["is_public"] = scope_to_is_public(kwargs["scope"])
 
         if "username" in kwargs and kwargs["username"]:
             kwargs["username"] = _validate_username(kwargs["username"])
@@ -192,16 +259,23 @@ class BotService:
         if "intro" in kwargs:
             kwargs["intro"] = _validate_intro(kwargs["intro"])
 
-        if "model_id" in kwargs and "template_id" in kwargs:
+        model_binding_changed = bool({"model_id", "template_id", "binding_type"} & kwargs.keys())
+        next_binding_type = kwargs.get("binding_type", getattr(bot, "binding_type", None) or "http")
+        if next_binding_type == "http" and model_binding_changed:
+            next_model_id = kwargs.get("model_id", bot.model_id)
+            next_template_id = kwargs.get("template_id", bot.template_id)
+            if not next_model_id or not next_template_id:
+                raise BadRequestError("HTTP Bot 必须指定 model_id 与 template_id")
             await self._validate_model_and_template(
-                kwargs["model_id"], kwargs["template_id"], current_user
+                next_model_id, next_template_id, current_user
             )
 
         return await self.repo.update(bot, **kwargs)
 
     async def delete(self, bot_id: str, current_user: User) -> None:
         bot = await self.get_or_404(bot_id)
-        from app.utils.permissions import is_admin
-        if bot.created_by != current_user.user_id and not is_admin(current_user):
+        if is_builtin_bot(bot):
+            raise BadRequestError("内置 Bot 不可删除")
+        if not can_manage_bot(bot, current_user):
             raise ForbiddenError("无权删除该 Bot")
         await self.repo.delete(bot)

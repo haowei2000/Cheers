@@ -190,91 +190,40 @@ def _make_tools(ctx: dict) -> list:
             username: Bot 用户名（不含 @ 符号）
             message: 发给该 Bot 的任务描述
         """
+        from app.services.pipeline.bot import Capabilities, dispatch_one
+
         username = username.strip().lstrip("@")
         message = message.strip()
         if not username or not message:
             return "错误：需要提供 username 和 message"
 
-        bot_id_by_username: dict = ctx.get("bot_id_by_username") or {}
-        adapter_factory = ctx.get("adapter_factory")
-        create_and_broadcast = ctx.get("create_and_broadcast")
-        pre_create_bot_msg = ctx.get("_pre_create_bot_msg")
-        finalize_bot_msg = ctx.get("_finalize_bot_msg")
-        make_stream_token_cb = ctx.get("_make_stream_token_cb")
+        run_ctx = ctx.get("_run_ctx")
+        if run_ctx is None:
+            return "错误：_run_ctx 未注入（内部错误）"
 
-        if username not in bot_id_by_username:
-            available = list(bot_id_by_username.keys())
-            return f"错误：频道内没有 @{username}，可用 Bot：{available}"
-        if not adapter_factory:
-            return "错误：adapter_factory 未注入（内部错误）"
+        bot_id = run_ctx.bot_id_by_username.get(username)
+        if bot_id is None:
+            return f"错误：频道内没有 @{username}，可用 Bot：{list(run_ctx.bot_id_by_username.keys())}"
 
-        bot_id = bot_id_by_username[username]
         logger.debug(
             "channel_bot[tool]: call_bot @%s message(%d chars):\n%s",
             username, len(message), message,
         )
         try:
-            adapter = await adapter_factory(bot_id)
-            if adapter is None:
-                logger.error(
-                    "channel_bot[tool]: call_bot @%s adapter_factory returned None channel=%s",
-                    username, ctx["channel_id"],
-                )
-                return f"@{username} 加载失败（adapter 为空）"
-            task_id = ctx.get("task_id", "")
-
-            # 构建子 Bot 的完整上下文（四层记忆 + 当前会话历史）
-            memory_context = ctx.get("memory") or {}
-
-            # 子 Bot 需要的上下文字段，确保模板变量能正确渲染
-            from datetime import datetime, timezone
-            sub_trigger = {
-                "user": ctx.get("sender_id", ""),
-                "sender_name": ctx.get("sender_name", ""),
-                "text": message,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            sub_process_config: dict = {
-                "_sender_name": ctx.get("sender_name", ""),
-                "_channel_name": ctx.get("channel_name", ""),
-                "_skip_system_prompt": True,
-            }
-
-            if pre_create_bot_msg and finalize_bot_msg and make_stream_token_cb:
-                # 流式路径：预先创建空消息气泡，边生成边推送 delta，完成后写入最终内容
-                bot_msg = await pre_create_bot_msg(bot_id, task_id)
-                sub_process_config["_stream_token"] = make_stream_token_cb(bot_msg.msg_id)
-                sub_payload = AgentPayload(
-                    task_id=task_id,
-                    channel_id=ctx["channel_id"],
-                    trigger_message=sub_trigger,
-                    memory_context=memory_context,
-                    attachments=ctx.get("attachments") or [],
-                    original_question_text=ctx.get("original_question_text"),
-                    process_config=sub_process_config,
-                )
-                resp: AgentResponse = await adapter.execute(sub_payload)
-                result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
-                await finalize_bot_msg(bot_msg, result)
-            else:
-                # 降级路径：非流式，执行完成后一次性广播
-                sub_payload = AgentPayload(
-                    task_id=task_id,
-                    channel_id=ctx["channel_id"],
-                    trigger_message=sub_trigger,
-                    memory_context=memory_context,
-                    attachments=ctx.get("attachments") or [],
-                    original_question_text=ctx.get("original_question_text"),
-                    process_config=sub_process_config,
-                )
-                resp = await adapter.execute(sub_payload)
-                result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
-                if create_and_broadcast:
-                    await create_and_broadcast(bot_id, result)
-
+            resp = await dispatch_one(
+                run_ctx,
+                bot_id,
+                capabilities=Capabilities.regular(),
+                trigger_text_override=message,
+                skip_system_prompt=True,
+                skip_attachment_error=True,
+            )
+            if resp is None:
+                return f"@{username} 调用失败（异步派发或错误）"
+            result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
             logger.info(
-                "channel_bot[tool]: call_bot @%s completed channel=%s memory_keys=%s",
-                username, ctx["channel_id"], list(memory_context.keys()),
+                "channel_bot[tool]: call_bot @%s completed channel=%s",
+                username, run_ctx.channel_id,
             )
             return f"@{username} 回复：\n{result}"
         except Exception as e:
@@ -429,7 +378,8 @@ def _make_tools(ctx: dict) -> list:
 
         from app.db.models import Message
         from app.services.image_gen.service import ImageGenError, ImageGenService
-        from app.services.ws_service import ws_manager
+        from app.services.pipeline.bus import WSEventBus
+        from app.services.pipeline.events import MessageCreated
 
         channel_id = ctx["channel_id"]
         sender_id = ctx.get("sender_id") or "system"
@@ -489,10 +439,8 @@ def _make_tools(ctx: dict) -> list:
         if img_msg.created_at:
             data["created_at"] = img_msg.created_at.isoformat()
         data["files"] = [{"file_id": result.file_id, "preview_url": result.preview_url, "content_type": result.content_type}]
-        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
-        stream_event = ctx.get("_stream_event")
-        if stream_event:
-            await stream_event("message", data)
+        event_bus = ctx.get("_event_bus") or WSEventBus(channel_id)
+        await event_bus.publish(MessageCreated(data=data))
         await db_session.commit()
 
         logger.info("channel_bot[tool]: generate_image ok file_id=%s", result.file_id)
@@ -510,7 +458,8 @@ def _make_tools(ctx: dict) -> list:
         """
         from app.db.models import Message
         from app.services.image_gen.service import ImageGenError, ImageGenService
-        from app.services.ws_service import ws_manager
+        from app.services.pipeline.bus import WSEventBus
+        from app.services.pipeline.events import MessageCreated
 
         channel_id = ctx["channel_id"]
         sender_id = ctx.get("sender_id") or "system"
@@ -579,10 +528,8 @@ def _make_tools(ctx: dict) -> list:
         if img_msg.created_at:
             data["created_at"] = img_msg.created_at.isoformat()
         data["files"] = [{"file_id": result.file_id, "preview_url": result.preview_url, "content_type": result.content_type}]
-        await ws_manager.broadcast_to_channel(channel_id, {"type": "message", "data": data})
-        stream_event = ctx.get("_stream_event")
-        if stream_event:
-            await stream_event("message", data)
+        event_bus = ctx.get("_event_bus") or WSEventBus(channel_id)
+        await event_bus.publish(MessageCreated(data=data))
         await db_session.commit()
 
         logger.info("channel_bot[tool]: edit_image ok file_id=%s", result.file_id)
@@ -1054,23 +1001,31 @@ async def _fetch_recent_history(
 
 # ─── Agent Loop ───────────────────────────────────────────────────────────────
 
-async def _run_agent(
+async def _run_agent_iter(
     system_prompt: str,
     user_content: str | list,
     ctx: dict,
-    stream_cb=None,
     history: list | None = None,
-) -> str:
-    """使用 LangChain bind_tools + 手动 agent loop 运行 Agent，支持流式输出。"""
+):
+    """使用 LangChain bind_tools + 手动 agent loop 运行 Agent，async-iterator 流式输出。
+
+    Yields ``Delta(text)`` per token chunk and tool-progress marker, then
+    a terminal ``Final(content)`` when the agent settles. Replaces the
+    legacy stream_cb callback path.
+    """
+    from app.services.pipeline.adapter_events import Delta, Final
+
     cfg = _get_llm_config()
     if not cfg:
-        return ""
+        yield Final(content="", success=True)
+        return
 
     try:
         llm = _make_llm(cfg)
     except Exception as e:
         logger.exception("channel_bot: failed to create LLM: %s", e)
-        return ""
+        yield Final(content="", success=True)
+        return
 
     tools = _make_tools(ctx)
     tool_map = {t.name: t for t in tools}
@@ -1108,47 +1063,39 @@ async def _run_agent(
 
     for iteration in range(MAX_LOOP_ITERATIONS):
         response: AIMessage | None = None
-
-        if stream_cb:
-            # Stream tokens, accumulate full response for tool call detection
-            accumulated = None
-            streaming_success = False
+        accumulated = None
+        streaming_success = False
+        try:
+            async for chunk in llm_with_tools.astream(messages):
+                streaming_success = True
+                accumulated = chunk if accumulated is None else accumulated + chunk
+                # Forward pure text tokens — skip tool-call argument chunks
+                if (
+                    chunk.content
+                    and isinstance(chunk.content, str)
+                    and not getattr(chunk, "tool_call_chunks", None)
+                ):
+                    yield Delta(text=chunk.content)
+        except Exception as e:
+            logger.warning(
+                "channel_bot: LLM stream error iteration=%d: %s, falling back to non-streaming",
+                iteration, e,
+            )
             try:
-                async for chunk in llm_with_tools.astream(messages):
-                    streaming_success = True
-                    # Accumulate chunks to reconstruct complete AIMessage
-                    accumulated = chunk if accumulated is None else accumulated + chunk
-                    # Forward pure text tokens — skip tool-call argument chunks
-                    if (
-                        chunk.content
-                        and isinstance(chunk.content, str)
-                        and not getattr(chunk, "tool_call_chunks", None)
-                    ):
-                        await stream_cb(chunk.content)
-            except Exception as e:
-                logger.warning("channel_bot: LLM stream error iteration=%d: %s, falling back to non-streaming", iteration, e)
-                # Fall back to non-streaming mode
-                try:
-                    response = await llm_with_tools.ainvoke(messages)
-                except Exception as e2:
-                    logger.exception("channel_bot: LLM invoke fallback also failed: %s", e2)
-                    break
-                continue
-            if not streaming_success or accumulated is None:
+                response = await llm_with_tools.ainvoke(messages)
+            except Exception as e2:
+                logger.exception("channel_bot: LLM invoke fallback also failed: %s", e2)
+                break
+        else:
+            if streaming_success and accumulated is not None:
+                response = accumulated
+            else:
                 # No chunks received, try non-streaming
                 try:
                     response = await llm_with_tools.ainvoke(messages)
                 except Exception as e:
                     logger.exception("channel_bot: LLM invoke fallback failed: %s", e)
                     break
-                continue
-            response = accumulated
-        else:
-            try:
-                response = await llm_with_tools.ainvoke(messages)
-            except Exception as e:
-                logger.exception("channel_bot: LLM invoke error iteration=%d: %s", iteration, e)
-                break
 
         if response is None:
             logger.warning("channel_bot: LLM returned None at iteration=%d", iteration)
@@ -1160,11 +1107,11 @@ async def _run_agent(
             # No tool calls → final answer
             content = response.content
             if isinstance(content, list):
-                # Multimodal content — extract text parts
                 content = " ".join(
                     part.get("text", "") for part in content if isinstance(part, dict)
                 )
-            return str(content or "").strip()
+            yield Final(content=str(content or "").strip(), success=True)
+            return
 
         # Append assistant turn to history
         messages.append(response)
@@ -1182,9 +1129,8 @@ async def _run_agent(
             tool_args = tc.get("args") or {}
             tool_call_id = tc.get("id") or tool_name
 
-            if stream_cb:
-                label = _tool_label(tool_name, tool_args if isinstance(tool_args, dict) else {})
-                await stream_cb(f"\n\n`🔧 {label}…`")
+            label = _tool_label(tool_name, tool_args if isinstance(tool_args, dict) else {})
+            yield Delta(text=f"\n\n`🔧 {label}…`")
 
             t = tool_map.get(tool_name)
             if t is None:
@@ -1196,14 +1142,15 @@ async def _run_agent(
                     logger.exception("channel_bot[tool]: %s failed: %s", tool_name, e)
                     result_str = f"工具执行出错：{e}"
 
-            if stream_cb and tool_name != "call_user":
-                await stream_cb(" ✓\n\n")
+            if tool_name != "call_user":
+                yield Delta(text=" ✓\n\n")
 
             messages.append(ToolMessage(content=result_str, tool_call_id=tool_call_id))
 
             # return_direct: stop immediately and return this tool's output
             if t is not None and getattr(t, "return_direct", False):
-                return result_str
+                yield Final(content=result_str, success=True)
+                return
 
     # Max iterations reached — return last assistant content
     logger.warning(
@@ -1220,8 +1167,9 @@ async def _run_agent(
             content = " ".join(
                 part.get("text", "") for part in content if isinstance(part, dict)
             )
-        return str(content or "").strip()
-    return ""
+        yield Final(content=str(content or "").strip(), success=True)
+        return
+    yield Final(content="", success=True)
 
 
 # ─── Adapter ──────────────────────────────────────────────────────────────────
@@ -1230,6 +1178,11 @@ class ChannelBotAdapter(OpenClawAdapter):
     """@channel bot 内置适配器：LangChain Agent 驱动，支持 call_bot / call_user / update_anchor / update_decision 等工具。"""
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
+        return await self._drain_execute_iter(payload)
+
+    async def execute_iter(self, payload: AgentPayload):
+        from app.services.pipeline.adapter_events import Delta, Final
+
         user_text = (payload.trigger_message or {}).get("text") or ""
         all_attachments = payload.attachments or []
 
@@ -1244,12 +1197,9 @@ class ChannelBotAdapter(OpenClawAdapter):
 
         memory = payload.memory_context or {}
         channel_id = payload.channel_id
-        pconfig = payload.process_config or {}
-        channel_bots: list[str] = pconfig.get("channel_bot_usernames") or []
-        bot_details: dict = pconfig.get("channel_bot_details") or {}
-        bot_id_by_username: dict = pconfig.get("bot_id_by_username") or {}
-        adapter_factory = pconfig.get("_adapter_factory")
-        create_and_broadcast = pconfig.get("_create_and_broadcast")
+        pconfig = payload.process_config
+        channel_bots: list[str] = pconfig.channel_bot_usernames
+        bot_details: dict = pconfig.channel_bot_details
         sender_id = (payload.trigger_message or {}).get("user") or ""
 
         # ── 1. 构建 System Prompt ──────────────────────────────────────────────
@@ -1327,32 +1277,27 @@ class ChannelBotAdapter(OpenClawAdapter):
                 logger.info("channel_bot: clarify answer saved to decisions channel=%s", channel_id)
 
         # ── 3. 工具上下文 ──────────────────────────────────────────────────────
+        # Tools mostly read run_ctx (see call_bot) or task-specific fields;
+        # the loose closures (_pre_create_bot_msg, _adapter_factory, etc.)
+        # that used to live here moved into BotMessageWriter / dispatch_one.
         tool_ctx: dict = {
             "channel_id": channel_id,
-            "bot_id_by_username": bot_id_by_username,
-            "adapter_factory": adapter_factory,
-            "create_and_broadcast": create_and_broadcast,
             "memory": memory,
             "task_id": payload.task_id,
             "sender_id": sender_id,
-            "sender_name": pconfig.get("_sender_name") or (payload.trigger_message or {}).get("sender_name") or "",
-            "channel_name": pconfig.get("_channel_name") or "",
+            "sender_name": pconfig.sender_name or (payload.trigger_message or {}).get("sender_name") or "",
+            "channel_name": pconfig.channel_name,
             "attachments": payload.attachments or [],
             "original_question_text": payload.original_question_text,
-            "_db_session": pconfig.get("_db_session"),
-            "_bot_id": pconfig.get("_bot_id"),
-            # Streaming hooks: call_bot uses these to pre-create the sub-bot's
-            # placeholder message and stream its tokens directly to the
-            # frontend (otherwise the sub-bot reply lands as a single
-            # non-streamed broadcast on completion).
-            "_pre_create_bot_msg": pconfig.get("_pre_create_bot_msg"),
-            "_finalize_bot_msg": pconfig.get("_finalize_bot_msg"),
-            "_make_stream_token_cb": pconfig.get("_make_stream_token_cb"),
+            "_db_session": pconfig.db_session,
+            "_bot_id": pconfig.bot_id,
+            "_event_bus": pconfig.event_bus,
+            "_run_ctx": pconfig.run_ctx,
         }
 
         # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────
         chat_history: list = []
-        db_session = pconfig.get("_db_session")
+        db_session = pconfig.db_session
         trigger_meta = payload.trigger_message or {}
         trigger_msg_id = trigger_meta.get("msg_id")
         in_reply_to_msg_id = trigger_meta.get("in_reply_to_msg_id")
@@ -1403,7 +1348,6 @@ class ChannelBotAdapter(OpenClawAdapter):
             user_text = f"[{current_user_name}]: {user_text}"
 
         # ── 5. Agent（支持 Vision 多模态）─────────────────────────────────────
-        stream_cb = pconfig.get("_stream_token")
         cfg = _get_llm_config()
         supports_vision = (cfg or {}).get("supports_vision", True) if cfg else True
 
@@ -1422,10 +1366,18 @@ class ChannelBotAdapter(OpenClawAdapter):
                 user_text += "\n\n（注：当前 LLM 未启用图片识别，已忽略图片附件。）"
             user_content = user_text
 
-        content = await _run_agent(
-            system_prompt, user_content, tool_ctx,
-            stream_cb=stream_cb, history=chat_history,
-        )
+        # Stream Delta tokens directly out; capture the agent's final content.
+        agent_final: Final | None = None
+        async for event in _run_agent_iter(
+            system_prompt, user_content, tool_ctx, history=chat_history,
+        ):
+            if isinstance(event, Delta):
+                yield event
+            elif isinstance(event, Final):
+                agent_final = event
+                break
+
+        content = agent_final.content if agent_final else ""
 
         # ── 5. 关键词兜底（LLM 不可用时） ─────────────────────────────────────
         if not content:
@@ -1441,7 +1393,7 @@ class ChannelBotAdapter(OpenClawAdapter):
             )
 
         created_file_ids = tool_ctx.get("_created_file_ids") or []
-        return AgentResponse(content=content, task_id=payload.task_id, success=True, file_ids=created_file_ids)
+        yield Final(content=content, success=True, file_ids=created_file_ids)
 
     async def health_check(self) -> bool:
         return _get_llm_config() is not None

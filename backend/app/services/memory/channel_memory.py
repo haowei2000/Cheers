@@ -56,35 +56,61 @@ class ChannelMemory:
 
     # ── 加载 ──────────────────────────────────────────────────────────────────
 
+    ALL_LAYERS = frozenset({
+        "anchor", "decisions", "progress", "files_index", "recent", "todos",
+    })
+
     @classmethod
     async def load(cls, channel_id: str, session: AsyncSession) -> ChannelMemory:
         """从 DB 加载频道全部记忆层。"""
+        return await cls.load_layers(channel_id, session, cls.ALL_LAYERS)
+
+    @classmethod
+    async def load_layers(
+        cls, channel_id: str, session: AsyncSession, layers: frozenset[str] | set[str],
+    ) -> ChannelMemory:
+        """加载指定的记忆层。``layers`` 是 ``ALL_LAYERS`` 的子集。
+
+        未在 ``layers`` 中的层在结果对象上保持空值（[] 或 ""），
+        ``to_context_dict()`` 会把它们渲染为空字符串——对调用方来说
+        等价于 "未配置"。
+        """
         mem = cls(channel_id=channel_id)
 
-        # 1) 结构化层 — memory_entries 表
-        result = await session.execute(
-            select(MemoryEntry)
-            .where(MemoryEntry.channel_id == channel_id)
-            .order_by(asc(MemoryEntry.sort_order), asc(MemoryEntry.created_at))
-        )
-        for entry in result.scalars().all():
-            item = MemoryItem.from_orm(entry)
-            layer_name = entry.layer.upper()
-            if layer_name == "ANCHOR":
-                mem.anchor.append(item)
-            elif layer_name == "DECISIONS":
-                mem.decisions.append(item)
-            elif layer_name == "PROGRESS":
-                mem.progress.append(item)
+        # 1) 结构化层 — memory_entries 表（按需筛选 layer 列）
+        wanted_entry_layers: list[str] = []
+        if "anchor" in layers:
+            wanted_entry_layers.append("ANCHOR")
+        if "decisions" in layers:
+            wanted_entry_layers.append("DECISIONS")
+        if "progress" in layers:
+            wanted_entry_layers.append("PROGRESS")
+        if wanted_entry_layers:
+            result = await session.execute(
+                select(MemoryEntry)
+                .where(
+                    MemoryEntry.channel_id == channel_id,
+                    MemoryEntry.layer.in_(wanted_entry_layers),
+                )
+                .order_by(asc(MemoryEntry.sort_order), asc(MemoryEntry.created_at))
+            )
+            for entry in result.scalars().all():
+                item = MemoryItem.from_orm(entry)
+                layer_name = entry.layer.upper()
+                if layer_name == "ANCHOR":
+                    mem.anchor.append(item)
+                elif layer_name == "DECISIONS":
+                    mem.decisions.append(item)
+                elif layer_name == "PROGRESS":
+                    mem.progress.append(item)
 
-        # 2) FILES_INDEX — 从 FileRecord 实时渲染
-        mem.files_index = await cls._render_files_index(channel_id, session)
-
-        # 3) RECENT — 从 HistoryPage 实时渲染
-        mem.recent = await cls._render_recent(channel_id, session)
-
-        # 4) TODOS — 从 TodoItem 实时渲染
-        mem.todos = await cls._render_todos(channel_id, session)
+        # 2) 派生层（按需）
+        if "files_index" in layers:
+            mem.files_index = await cls._render_files_index(channel_id, session)
+        if "recent" in layers:
+            mem.recent = await cls._render_recent(channel_id, session)
+        if "todos" in layers:
+            mem.todos = await cls._render_todos(channel_id, session)
 
         return mem
 

@@ -100,6 +100,10 @@ class BotCreate(BaseModel):
     custom_system_prompt: str | None = Field(default=None, description="可选：覆盖模板的系统提示词")
     status: str = Field(default="online", pattern="^(online|offline|busy)$")
     is_public: bool = Field(default=True, description="是否公开（False 则仅创建者和管理员可见）")
+    scope: Literal["private", "friend", "everyone"] | None = Field(
+        default=None,
+        description="Bot 使用范围：private=仅自己，friend=自己和好友，everyone=所有登录用户",
+    )
     intro: str | None = Field(default=None, description='JSON: {"capabilities": [...], "description": "..."}')
     avatar_url: str | None = Field(default=None)
     binding_type: str = Field(
@@ -123,10 +127,17 @@ class BotUpdate(BaseModel):
     custom_system_prompt: str | None = Field(default=None)
     status: str | None = Field(default=None, pattern="^(online|offline|busy)$")
     is_public: bool | None = Field(default=None, description="是否公开")
+    scope: Literal["private", "friend", "everyone"] | None = Field(default=None)
     intro: str | None = Field(default=None)
     avatar_url: str | None = Field(default=None)
     binding_type: str | None = Field(default=None, pattern="^(http|websocket)$")
     binding_config: dict | None = Field(default=None)
+
+
+class BotOwnerInResponse(BaseModel):
+    user_id: str
+    username: str
+    display_name: str | None = None
 
 
 class BotInResponse(BaseModel):
@@ -140,16 +151,22 @@ class BotInResponse(BaseModel):
     avatar_url: str | None = None
     status: str
     is_public: bool = True
+    scope: Literal["private", "friend", "everyone"] = "friend"
     intro: str | None = None
     custom_system_prompt: str | None = None
     created_at: datetime | None = None
     binding_type: str = "http"
     binding_config: dict | None = None
+    is_builtin: bool = False
     # WebSocket Bot token 元信息：常规响应只回前缀与轮换时间，明文 bot_token
     # 只在 create / rotate 接口一次性返回
     bot_token_prefix: str | None = None
     bot_token_rotated_at: datetime | None = None
     bot_token: str | None = None  # 仅 create / rotate 响应里有值；其它接口永远为 None
+    connection_status: str = "not_required"
+    is_online: bool = True
+    control_connected: bool | None = None
+    data_connected: bool | None = None
 
     # 关联信息（WebSocket Bot 可能没有）
     model_id: str | None = None
@@ -157,6 +174,8 @@ class BotInResponse(BaseModel):
     model_name: str | None = None  # AIModel.name
     template_name: str | None = None  # PromptTemplate.name
     created_by: str | None = None  # 创建者 user_id
+    owner: BotOwnerInResponse | None = None
+    can_manage: bool = False
 
 
 class BotSimpleInResponse(BaseModel):
@@ -169,9 +188,20 @@ class BotSimpleInResponse(BaseModel):
     description: str | None = None
     status: str
     is_public: bool = True
+    scope: Literal["private", "friend", "everyone"] = "friend"
+    binding_type: str = "http"
+    is_builtin: bool = False
+    connection_status: str = "not_required"
+    is_online: bool = True
+    control_connected: bool | None = None
+    data_connected: bool | None = None
+    model_id: str | None = None
+    template_id: str | None = None
     model_name: str | None = None
     template_name: str | None = None
     created_by: str | None = None
+    owner: BotOwnerInResponse | None = None
+    can_manage: bool = False
     created_at: datetime | None = None
 
 
@@ -185,6 +215,10 @@ class OpenClawQuickConnect(BaseModel):
     bot_username: str | None = Field(default=None, description="Bot 用户名（为空则自动生成）")
     display_name: str | None = Field(default=None, description="Bot 显示名称（为空则自动生成）")
     channel_id: str | None = Field(default=None, description="创建后自动加入该频道")
+    scope: Literal["private", "friend", "everyone"] | None = Field(
+        default=None,
+        description="Bot 使用范围；OpenClaw 快速接入默认 private",
+    )
 
 
 # ==================== Channel & Message Schemas ====================
@@ -257,6 +291,8 @@ class SearchBotHit(BaseModel):
     username: str
     display_name: str | None = None
     avatar_url: str | None = None
+    scope: Literal["private", "friend", "everyone"] = "friend"
+    owner: BotOwnerInResponse | None = None
 
 
 class SearchMessageHit(BaseModel):

@@ -98,11 +98,3 @@ class FriendshipService:
         if not friendship:
             raise NotFoundError("好友关系不存在")
         await self.repo.delete(friendship)
-
-    async def check_friendship(self, user_id: str, friend_id: str) -> dict:
-        """检查两个用户之间的好友状态."""
-        friendship = await self.repo.get_friendship(user_id, friend_id)
-        return {
-            "is_friend": friendship is not None and friendship.status == "accepted",
-            "status": friendship.status if friendship else None,
-        }

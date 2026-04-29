@@ -13,9 +13,11 @@ Slack / Discord 风格的异步流程（Phase C：per-bot data WS）：
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 
 from app.db.models import BotAccount
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.services.pipeline.adapter_events import AdapterEvent, DispatchedAsync, Final
 
 logger = logging.getLogger("app.services.adapters.websocket_bot")
 
@@ -39,6 +41,9 @@ class WebsocketBotAdapter(OpenClawAdapter):
         self.binding_config: dict = dict(bot.binding_config or {})
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
+        return await self._drain_execute_iter(payload)
+
+    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
         # 延迟导入以避免 import 时拉起 bridge 依赖
         from app.services.openclaw_bridge.pending import PendingReply, pending_replies
         from app.services.openclaw_bridge.registry import bot_session_registry
@@ -46,7 +51,7 @@ class WebsocketBotAdapter(OpenClawAdapter):
         from app.services.openclaw_bridge.streams import stream_registry
 
         # orchestrator 将占位 bot_msg.msg_id 放在 process_config 里传下来
-        placeholder_msg_id = (payload.process_config or {}).get("_placeholder_msg_id")
+        placeholder_msg_id = payload.process_config.placeholder_msg_id
 
         # 先把 pending 登记到内存（不附 timeout），确保 plugin 秒回时
         # `/ws/openclaw/data` 的 reply handler 能从 pending 里 peek 到 channel_id /
@@ -98,19 +103,14 @@ class WebsocketBotAdapter(OpenClawAdapter):
             if preregistered and placeholder_msg_id:
                 await pending_replies.pop_by_msg(placeholder_msg_id)
                 await stream_registry.pop(placeholder_msg_id)
-            return AgentResponse(
+            yield Final(
                 content=f"[{self.bot.display_name or self.bot.username}] 没有在线的 OpenClaw channel plugin",
-                task_id=payload.task_id,
                 success=False,
                 error_message="no_plugin_subscribers",
             )
+            return
 
-        return AgentResponse(
-            content="",
-            task_id=payload.task_id,
-            success=True,
-            dispatched_async=True,
-        )
+        yield DispatchedAsync()
 
     async def health_check(self) -> bool:
         from app.services.openclaw_bridge.registry import bot_session_registry

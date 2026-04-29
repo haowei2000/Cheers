@@ -26,6 +26,7 @@ ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
 TEMPLATE_GENERAL_ID = "template-general-001"
 TEMPLATE_CODE_REVIEW_ID = "template-codereview-001"
 TEMPLATE_CREATIVE_ID = "template-creative-001"
+BUILTIN_BOT_IDS = (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID)
 
 
 async def _seed_unified_bot(session: AsyncSession) -> bool:
@@ -36,7 +37,9 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
         # 迁移旧用户名 → 现在统一叫 Coordinator
         if existing.username in ("引导", "channel bot"):
             existing.username = "Coordinator"
-            await session.flush()
+        existing.scope = "everyone"
+        existing.is_public = True
+        await session.flush()
         return False
 
     session.add(
@@ -52,6 +55,8 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
             model_id=None,
             template_id=None,
             status="online",
+            is_public=True,
+            scope="everyone",
             intro=(
                 '{"capabilities":["系统引导","项目问答","记忆读写","澄清弹窗","Bot路由建议"],'
                 '"description":"内置协调者，@Coordinator 即可使用"}'
@@ -69,7 +74,9 @@ async def _seed_guide_helper_bot(session: AsyncSession) -> bool:
         # 迁移旧用户名 → 现在统一叫 Helper
         if existing.username == "guide-helper":
             existing.username = "Helper"
-            await session.flush()
+        existing.scope = "everyone"
+        existing.is_public = True
+        await session.flush()
         return False
 
     session.add(
@@ -82,6 +89,7 @@ async def _seed_guide_helper_bot(session: AsyncSession) -> bool:
             template_id=None,
             status="online",
             is_public=True,
+            scope="everyone",
             intro='{"capabilities":["使用说明","功能问答","操作指南"],"description":"输入 @Helper 即可获得操作指引"}',
         )
     )
@@ -233,7 +241,8 @@ async def _seed_memberships(session: AsyncSession) -> bool:
     # 否则会造成同一事务内重复插入 → UniqueViolation → 整个 seed 回滚
     await session.flush()
 
-    for member_id, member_type in ((GUIDE_BOT_ID, "bot"), (GUIDE_HELPER_BOT_ID, "bot"), (ADMIN_USER_ID, "user")):
+    default_members = [(bot_id, "bot") for bot_id in BUILTIN_BOT_IDS] + [(ADMIN_USER_ID, "user")]
+    for member_id, member_type in default_members:
         r = await session.execute(
             select(ChannelMembership).where(
                 ChannelMembership.channel_id == CHANNEL_ID,
@@ -251,6 +260,59 @@ async def _seed_memberships(session: AsyncSession) -> bool:
             did_write = True
 
     return did_write
+
+
+def _dm_name_members(channel_name: str | None) -> set[str]:
+    """解析 ChannelService.get_or_create_dm 写入频道名中的成员 ID。"""
+    if not channel_name or not channel_name.startswith("dm:"):
+        return set()
+    return {part for part in channel_name.split(":")[1:] if part}
+
+
+async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
+    """让内置 Bot 留在普通频道，并从无关 DM 中移除。"""
+    await session.flush()
+
+    dm_builtin_rows = (
+        await session.execute(
+            select(ChannelMembership, Channel)
+            .join(Channel, Channel.channel_id == ChannelMembership.channel_id)
+            .where(
+                Channel.type == "dm",
+                ChannelMembership.member_type == "bot",
+                ChannelMembership.member_id.in_(BUILTIN_BOT_IDS),
+            )
+        )
+    ).all()
+    for membership, channel in dm_builtin_rows:
+        # 保留用户主动创建的一对一 Bot DM，例如 user <-> Helper；
+        # 只移除自动注入到其他 DM 的内置 Bot。
+        if membership.member_id not in _dm_name_members(channel.name):
+            await session.delete(membership)
+
+    non_dm_channel_ids = (
+        await session.execute(
+            select(Channel.channel_id).where(Channel.type != "dm")
+        )
+    ).scalars().all()
+    for channel_id in non_dm_channel_ids:
+        for bot_id in BUILTIN_BOT_IDS:
+            existing = (
+                await session.execute(
+                    select(ChannelMembership).where(
+                        ChannelMembership.channel_id == channel_id,
+                        ChannelMembership.member_id == bot_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                session.add(
+                    ChannelMembership(
+                        channel_id=channel_id,
+                        member_id=bot_id,
+                        member_type="bot",
+                    )
+                )
 
 
 async def seed(session: AsyncSession) -> bool:
@@ -290,7 +352,7 @@ async def _sync_admin_credentials(session: AsyncSession) -> None:
 
 
 async def ensure_builtin_bot() -> None:
-    """每次启动时无条件确保内置 Bot 存在，并加入所有现有频道。
+    """每次启动时无条件确保内置 Bot 存在，并加入所有现有普通频道。
 
     不依赖 SEED_DATA 环境变量，保证升级后旧库也能自动补齐内置 Bot。
     """
@@ -300,23 +362,8 @@ async def ensure_builtin_bot() -> None:
             await _seed_guide_helper_bot(session)
             await _sync_admin_credentials(session)
 
-            # 确保内置 Bot 加入所有现有频道（补齐旧频道缺失的 membership）
-            await session.flush()
-            all_channel_ids = (
-                await session.execute(select(Channel.channel_id))
-            ).scalars().all()
-
-            if all_channel_ids:
-                from sqlalchemy.dialects.postgresql import insert as pg_insert
-                stmt = pg_insert(ChannelMembership).on_conflict_do_nothing(
-                    index_elements=["channel_id", "member_id"],
-                )
-                rows = [
-                    {"channel_id": ch_id, "member_id": bot_id, "member_type": "bot"}
-                    for bot_id in (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID)
-                    for ch_id in all_channel_ids
-                ]
-                await session.execute(stmt, rows)
+            # 确保内置 Bot 只补齐到普通频道；DM 私聊不自动添加 Coordinator / Helper。
+            await _ensure_builtin_bot_memberships(session)
 
             await session.commit()
         except Exception:

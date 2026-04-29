@@ -4,11 +4,10 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.log_context import bind_context
 from app.core.schemas import MessageCreate
-from app.db.session import async_session_factory
 from app.services.ws_service import ws_manager
 
 logger = logging.getLogger("app.ws")
@@ -34,27 +33,19 @@ async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
                 if obj.get("type") == "send_message":
                     data = obj.get("data") or {}
                     try:
-                        body = MessageCreate(**data)
+                        MessageCreate(**data)
                     except Exception as exc:
                         await websocket.send_json(
                             {"type": "error", "data": {"detail": f"invalid payload: {exc}"}}
                         )
                         continue
-                    try:
-                        from app.api.v1.messages.routes import _handle_send_message
-                        async with async_session_factory() as session:
-                            await _handle_send_message(
-                                session,
-                                channel_id=channel_id,
-                                body=body,
-                            )
-                    except HTTPException as exc:
-                        await websocket.send_json({"type": "error", "data": {"detail": exc.detail}})
-                    except Exception as exc:
-                        logger.exception("ws send_message failed channel_id=%s: %s", channel_id, exc)
-                        await websocket.send_json(
-                            {"type": "error", "data": {"detail": "internal server error"}}
-                        )
+                    await websocket.send_json({
+                        "type": "error",
+                        "data": {
+                            "detail": "WebSocket send_message requires authenticated REST API",
+                            "code": "unauthorized",
+                        },
+                    })
                 else:
                     await ws_manager.broadcast_to_channel(channel_id, {"type": "echo", "data": raw})
         except WebSocketDisconnect:
