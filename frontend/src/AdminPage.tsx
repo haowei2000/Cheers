@@ -61,7 +61,27 @@ type BotItem = {
   bot_token_prefix?: string | null;
   bot_token_rotated_at?: string | null;
   bot_token?: string | null;        // 仅在 create / rotate 响应里出现
+  connection_status?: string;
+  is_online?: boolean;
+  control_connected?: boolean | null;
+  data_connected?: boolean | null;
 };
+
+function botConnectionBadge(b: BotItem) {
+  const isWs = (b.binding_type || "http") === "websocket";
+  if (!isWs) {
+    return b.is_online === false || b.status === "offline"
+      ? { text: "已停用", cls: "bg-gray-200 text-gray-600" }
+      : { text: "HTTP 可用", cls: "bg-green-100 text-green-700" };
+  }
+  if (b.connection_status === "online" && b.is_online) {
+    return { text: "WS 在线", cls: "bg-green-100 text-green-700" };
+  }
+  if (b.connection_status === "partial") {
+    return { text: "WS 部分连接", cls: "bg-yellow-100 text-yellow-700" };
+  }
+  return { text: "WS 离线", cls: "bg-red-100 text-red-700" };
+}
 
 // ==================== Other Types ====================
 type TaskItem = { task_id: string; channel_id: string; bot_id?: string; bot_username?: string; latency_ms?: number; created_at?: string };
@@ -1111,6 +1131,7 @@ export default function AdminPage() {
                   <div className="space-y-2">
                     {botList.filter(b => b.bot_id !== GUIDE_BOT_ID).map((b) => {
                       const isWs = (b.binding_type || "http") === "websocket";
+                      const live = botConnectionBadge(b);
                       const canManage = b.created_by === currentUser?.user_id || userRole === "system_admin" || userRole === "space_admin";
                       return (
                         <div key={b.bot_id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg gap-2">
@@ -1120,6 +1141,7 @@ export default function AdminPage() {
                               {b.display_name && <span className="text-xs text-gray-500">({b.display_name})</span>}
                               <span className={`text-xs px-2 py-0.5 rounded ${isWs ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-700"}`}>{isWs ? "WS Bot" : "HTTP Bot"}</span>
                               <span className={`text-xs px-2 py-0.5 rounded ${b.status === "online" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"}`}>{b.status}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${live.cls}`}>{live.text}</span>
                               <span className={`text-xs px-2 py-0.5 rounded ${b.is_public ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{b.is_public ? "公开" : "私有"}</span>
                               {b.created_by === currentUser?.user_id && (
                                 <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-600">我的</span>
@@ -1132,6 +1154,9 @@ export default function AdminPage() {
                                   {b.bot_token_rotated_at && (
                                     <span className="ml-2 text-gray-400">（{new Date(b.bot_token_rotated_at).toLocaleString("zh-CN")} 轮换）</span>
                                   )}
+                                  <span className="ml-2 text-gray-400">
+                                    Control {b.control_connected ? "在线" : "离线"} · Data {b.data_connected ? "在线" : "离线"}
+                                  </span>
                                 </>
                               ) : (
                                 <>模型: {b.model_name || "未知"} | 模板: {b.template_name || "未知"}</>

@@ -35,7 +35,80 @@ type BotRow = {
   username: string;
   display_name?: string | null;
   description?: string | null;
+  status?: string;
+  binding_type?: "http" | "websocket" | string;
+  connection_status?: string;
+  is_online?: boolean;
+  control_connected?: boolean | null;
+  data_connected?: boolean | null;
 };
+
+function botOnlineMeta(bot: BotRow) {
+  const isWs = (bot.binding_type || "http") === "websocket";
+  if (!isWs) {
+    const online = bot.is_online !== false && bot.status !== "offline";
+    return {
+      label: online ? "HTTP 可用" : "已停用",
+      color: online ? "var(--green)" : "var(--fg-3)",
+      bg: online ? "var(--green-muted)" : "var(--surface-soft)",
+      title: online ? "HTTP Bot 无需长连接" : "Bot 状态为 offline",
+    };
+  }
+  if (bot.connection_status === "online" && bot.is_online) {
+    return {
+      label: "WS 在线",
+      color: "var(--green)",
+      bg: "var(--green-muted)",
+      title: "control/data 连接均在线",
+    };
+  }
+  if (bot.connection_status === "partial") {
+    return {
+      label: "WS 部分连接",
+      color: "var(--yellow)",
+      bg: "rgba(251, 191, 36, 0.16)",
+      title: `control: ${bot.control_connected ? "在线" : "离线"} · data: ${bot.data_connected ? "在线" : "离线"}`,
+    };
+  }
+  return {
+    label: "WS 离线",
+    color: "var(--red)",
+    bg: "var(--red-muted)",
+    title: "OpenClaw channel plugin 未连接",
+  };
+}
+
+function BotOnlineBadge({ bot }: { bot: BotRow }) {
+  const meta = botOnlineMeta(bot);
+  return (
+    <span
+      title={meta.title}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "3px 7px",
+        borderRadius: 999,
+        background: meta.bg,
+        color: meta.color,
+        fontSize: 11,
+        fontWeight: 650,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 999,
+          background: meta.color,
+          flexShrink: 0,
+        }}
+      />
+      {meta.label}
+    </span>
+  );
+}
 
 /** One pane per top-level category. Drill-down within a category (e.g.
  *  selecting a specific bot inside the Bot pane) is local state on that
@@ -1410,6 +1483,23 @@ function BotListSubPane({
             管理你的 Bot。点击卡片查看详情或编辑。
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onChanged}
+          style={{
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            color: "var(--fg-2)",
+            borderRadius: 6,
+            padding: "6px 10px",
+            fontSize: 12,
+            fontFamily: "inherit",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          刷新状态
+        </button>
       </div>
       <div className="an-list-table">
         <button
@@ -1470,8 +1560,11 @@ function BotListSubPane({
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="an-rc-title">{b.display_name || b.username}</div>
-                <div className="an-rc-sub">@{b.username}</div>
+                <div className="an-rc-sub">
+                  @{b.username} · {(b.binding_type || "http") === "websocket" ? "WebSocket" : "HTTP"}
+                </div>
               </div>
+              <BotOnlineBadge bot={b} />
               <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
             </button>
           ))
@@ -2687,8 +2780,22 @@ function BotEditPane({
           <div className="an-pane-title">{bot.display_name || bot.username}</div>
           <div className="an-pane-sub">@{bot.username} · {bot.bot_id}</div>
         </div>
+        <BotOnlineBadge bot={bot} />
       </div>
       <div className="an-list-table">
+        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+          <div className="an-rc-title">在线检测</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+            <div className="an-rc-sub">类型：{(bot.binding_type || "http") === "websocket" ? "WebSocket" : "HTTP"}</div>
+            <div className="an-rc-sub">状态：{bot.status || "online"}</div>
+            {(bot.binding_type || "http") === "websocket" && (
+              <>
+                <div className="an-rc-sub">Control：{bot.control_connected ? "在线" : "离线"}</div>
+                <div className="an-rc-sub">Data：{bot.data_connected ? "在线" : "离线"}</div>
+              </>
+            )}
+          </div>
+        </div>
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">基本信息</div>
           <Field label="显示名称">
