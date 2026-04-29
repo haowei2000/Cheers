@@ -75,6 +75,7 @@ import type {
   DM,
   Workspace,
   Message,
+  BotTraceEvent,
   QaPair,
   ContextData,
   ClarifySchema,
@@ -96,6 +97,42 @@ function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status"
   if (bot.connection_status === "online" && bot.is_online) return "WS 在线";
   if (bot.connection_status === "partial") return "WS 部分连接";
   return "WS 离线";
+}
+
+function botTraceStatusText(trace: BotTraceEvent): string {
+  const stream = trace.stream || "trace";
+  const phase = trace.phase || "";
+  const title = trace.title || "";
+  const message = trace.message || "";
+  if (stream === "agentnexus_plugin") {
+    const labels: Record<string, string> = {
+      received: "插件已收到消息",
+      hydrating_attachments: "正在读取附件",
+      attachments_ready: "附件已准备好",
+      loopback_start: "正在启动 OpenClaw",
+      loopback_accepted: "OpenClaw 已接收任务",
+      loopback_error: "OpenClaw 路由异常",
+      subagent_run_started: "OpenClaw run 已启动",
+      subagent_run_error: "OpenClaw run 启动失败",
+    };
+    return [labels[phase] || title || "插件处理中", message].filter(Boolean).join(" · ");
+  }
+  if (stream === "lifecycle") {
+    if (phase === "start") return "OpenClaw 开始执行";
+    if (phase === "end") return "OpenClaw 执行完成";
+    if (phase === "error") return message || "OpenClaw 执行异常";
+    return [title || "OpenClaw 生命周期", message].filter(Boolean).join(" · ");
+  }
+  if (stream === "assistant") return message ? `正在生成回复 · ${message}` : "正在生成回复";
+  if (stream === "thinking") return message ? `思考中 · ${message}` : "思考中";
+  if (stream === "plan") return title ? `更新计划 · ${title}` : "更新计划";
+  if (stream === "tool" || stream === "item") {
+    return [title || "正在调用工具", trace.status || message].filter(Boolean).join(" · ");
+  }
+  if (stream === "command_output") return [title || "命令执行中", message].filter(Boolean).join(" · ");
+  if (stream === "approval") return [title || "等待审批", trace.status || message].filter(Boolean).join(" · ");
+  if (stream === "error") return message || title || "OpenClaw 内部错误";
+  return [title || stream, message].filter(Boolean).join(" · ");
 }
 
 function botScopeText(scope?: BotItem["scope"]) {
@@ -850,7 +887,27 @@ export default function App() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.msg_id === msg_id
-                  ? { ...m, content: m.content + delta, _streaming: true }
+                  ? {
+                      ...m,
+                      content: m.content + delta,
+                      _streaming: true,
+                      _bot_status: undefined,
+                    }
+                  : m,
+              ),
+            );
+          } else if (msg.type === "bot_trace" && msg.data) {
+            const trace = msg.data as BotTraceEvent;
+            if (!trace.msg_id) return;
+            const status = botTraceStatusText(trace);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.msg_id === trace.msg_id
+                  ? {
+                      ...m,
+                      _bot_status: status,
+                      _bot_trace: [...(m._bot_trace || []), trace].slice(-24),
+                    }
                   : m,
               ),
             );
@@ -863,6 +920,7 @@ export default function App() {
                       ...m,
                       content,
                       _streaming: false,
+                      _bot_status: undefined,
                       ...(files ? { files } : {}),
                       ...(file_ids ? { file_ids } : {}),
                       ...(typeof is_partial === "boolean"
@@ -1385,6 +1443,24 @@ export default function App() {
       >
         已取消
       </span>
+    );
+  };
+
+  const renderBotTraceStatus = (m: Message) => {
+    if (!m._streaming || m.sender_type !== "bot" || !m._bot_status) return null;
+    return (
+      <div
+        className="mt-1 flex items-center gap-1.5 text-[11px] leading-snug"
+        style={{ color: "var(--fg-3)" }}
+      >
+        <span
+          className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+          style={{ background: "var(--fg-3)" }}
+        />
+        <span className="truncate max-w-[min(520px,70vw)]">
+          {m._bot_status}
+        </span>
+      </div>
     );
   };
 
@@ -3127,6 +3203,7 @@ export default function App() {
                                   {renderStopStreamButton(m)}
                                   {renderPartialBadge(m)}
                                 </div>
+                                {renderBotTraceStatus(m)}
                                 {clarifyStatus !== null && selectedId && (
                                   <ClarifyInlineBlock
                                     msgId={m.msg_id}
@@ -3457,6 +3534,7 @@ export default function App() {
                                 {!isSecretUnrevealed && renderStopStreamButton(m)}
                                 {!isSecretUnrevealed && renderPartialBadge(m)}
                               </div>
+                              {renderBotTraceStatus(m)}
                               {clarifyStatus !== null && selectedId && (
                                 <ClarifyInlineBlock
                                   msgId={m.msg_id}
@@ -3775,6 +3853,7 @@ export default function App() {
                                     {renderStopStreamButton(r)}
                                     {renderPartialBadge(r)}
                                   </div>
+                                  {renderBotTraceStatus(r)}
                                   {rClarifyStatus !== null && selectedId && (
                                     <ClarifyInlineBlock
                                       msgId={r.msg_id}
@@ -4292,6 +4371,7 @@ export default function App() {
                                             {renderStopStreamButton(r)}
                                             {renderPartialBadge(r)}
                                           </div>
+                                          {renderBotTraceStatus(r)}
                                           {rClarifyStatus !== null &&
                                             selectedId && (
                                               <ClarifyInlineBlock

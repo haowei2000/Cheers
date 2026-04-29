@@ -194,6 +194,65 @@ async def test_ws_bot_adapter_health_check_reflects_data_ws() -> None:
         await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
 
 
+@pytest.mark.asyncio
+async def test_bridge_apply_trace_broadcasts_registered_stream(monkeypatch) -> None:
+    from app.services.openclaw_bridge.service import apply_trace, register_stream
+    from app.services.openclaw_bridge.streams import stream_registry
+
+    sent: list[tuple[str, dict]] = []
+
+    async def fake_broadcast(channel_id: str, message: dict) -> None:
+        sent.append((channel_id, message))
+
+    monkeypatch.setattr(
+        "app.services.ws_service.ws_manager.broadcast_to_channel",
+        fake_broadcast,
+    )
+
+    await register_stream(
+        msg_id="placeholder-trace",
+        bot_id="bot-ws-001",
+        channel_id="c-001",
+        task_id="t-trace",
+    )
+    try:
+        ok = await apply_trace(
+            msg_id="placeholder-trace",
+            bot_id="bot-ws-001",
+            payload={
+                "msg_id": "placeholder-trace",
+                "task_id": "t-trace",
+                "stream": "tool",
+                "seq": 2,
+                "title": "read_file",
+                "message": "running",
+                "data": {"kind": "tool"},
+            },
+        )
+        assert ok is True
+        assert sent == [
+            (
+                "c-001",
+                {
+                    "type": "bot_trace",
+                    "data": {
+                        "msg_id": "placeholder-trace",
+                        "task_id": "t-trace",
+                        "channel_id": "c-001",
+                        "bot_id": "bot-ws-001",
+                        "stream": "tool",
+                        "seq": 2,
+                        "title": "read_file",
+                        "message": "running",
+                        "data": {"kind": "tool"},
+                    },
+                },
+            )
+        ]
+    finally:
+        await stream_registry.pop("placeholder-trace")
+
+
 # --------------------------- PendingReplyRegistry --------------------------
 
 @pytest.mark.asyncio
