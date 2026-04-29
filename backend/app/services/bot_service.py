@@ -192,9 +192,15 @@ class BotService:
         if "intro" in kwargs:
             kwargs["intro"] = _validate_intro(kwargs["intro"])
 
-        if "model_id" in kwargs and "template_id" in kwargs:
+        model_binding_changed = bool({"model_id", "template_id", "binding_type"} & kwargs.keys())
+        next_binding_type = kwargs.get("binding_type", getattr(bot, "binding_type", None) or "http")
+        if next_binding_type == "http" and model_binding_changed:
+            next_model_id = kwargs.get("model_id", bot.model_id)
+            next_template_id = kwargs.get("template_id", bot.template_id)
+            if not next_model_id or not next_template_id:
+                raise BadRequestError("HTTP Bot 必须指定 model_id 与 template_id")
             await self._validate_model_and_template(
-                kwargs["model_id"], kwargs["template_id"], current_user
+                next_model_id, next_template_id, current_user
             )
 
         return await self.repo.update(bot, **kwargs)
