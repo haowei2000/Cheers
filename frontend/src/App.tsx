@@ -91,7 +91,7 @@ const API_DOCS_URL = "/docs";
 
 function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status" | "is_online" | "status">) {
   if ((bot.binding_type || "http") !== "websocket") {
-    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 可用";
+    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 已启用";
   }
   if (bot.connection_status === "online" && bot.is_online) return "WS 在线";
   if (bot.connection_status === "partial") return "WS 部分连接";

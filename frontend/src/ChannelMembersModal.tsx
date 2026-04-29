@@ -22,7 +22,7 @@ interface ChannelMembersModalProps {
 
 function botOnlineText(bot: Pick<Bot, "binding_type" | "connection_status" | "is_online" | "status">) {
   if ((bot.binding_type || "http") !== "websocket") {
-    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 可用";
+    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 已启用";
   }
   if (bot.connection_status === "online" && bot.is_online) return "WS 在线";
   if (bot.connection_status === "partial") return "WS 部分连接";
@@ -31,7 +31,7 @@ function botOnlineText(bot: Pick<Bot, "binding_type" | "connection_status" | "is
 
 function BotOnlinePill({ bot }: { bot: Pick<Bot, "binding_type" | "connection_status" | "is_online" | "status"> }) {
   const text = botOnlineText(bot);
-  const isGood = text.includes("在线") || text.includes("可用");
+  const isGood = text.includes("在线") || text.includes("启用");
   const isPartial = text.includes("部分");
   return (
     <span
