@@ -178,6 +178,8 @@ class BotSimpleInResponse(BaseModel):
     is_online: bool = True
     control_connected: bool | None = None
     data_connected: bool | None = None
+    model_id: str | None = None
+    template_id: str | None = None
     model_name: str | None = None
     template_name: str | None = None
     created_by: str | None = None

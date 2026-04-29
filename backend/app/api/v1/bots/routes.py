@@ -166,6 +166,8 @@ def _to_simple(bot: BotAccount) -> dict:
         is_public=bot.is_public,
         binding_type=getattr(bot, "binding_type", None) or "http",
         **_connection_fields(bot),
+        model_id=bot.model_id,
+        template_id=bot.template_id,
         model_name=bot.ai_model.name if bot.ai_model else None,
         template_name=bot.prompt_template.name if bot.prompt_template else None,
         created_by=bot.created_by,
@@ -522,7 +524,15 @@ async def update_bot(
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     bot = await svc.update(bot_id, current_user, **updates)
     audit.info("action=bot.update actor=%s resource_id=%s fields=%s", current_user.user_id, bot_id, list(updates.keys()))
-    return APIResponse.ok(_to_full(bot))
+    model = await session.get(AIModel, bot.model_id) if bot.model_id else None
+    template = await session.get(PromptTemplate, bot.template_id) if bot.template_id else None
+    return APIResponse.ok(
+        _to_full(
+            bot,
+            model_name=model.name if model else None,
+            template_name=template.name if template else None,
+        )
+    )
 
 
 @router.delete("/{bot_id}", response_model=APIResponse[None])

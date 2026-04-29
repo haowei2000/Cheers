@@ -41,6 +41,10 @@ type BotRow = {
   is_online?: boolean;
   control_connected?: boolean | null;
   data_connected?: boolean | null;
+  model_id?: string | null;
+  template_id?: string | null;
+  model_name?: string | null;
+  template_name?: string | null;
   created_by?: string | null;
 };
 
@@ -2410,7 +2414,7 @@ function AccountPane({
 
 type BindingType = "http" | "websocket";
 
-type ModelItem = { model_id: string; name: string };
+type ModelItem = { model_id: string; name: string; model_name?: string; provider?: string; is_enabled?: boolean };
 type TemplateItem = { template_id: string; name: string };
 
 /** BotNewPane — two-step wizard.
@@ -2842,28 +2846,79 @@ function BotEditPane({
   const [deleting, setDeleting] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionTest, setConnectionTest] = useState<BotConnectionTestResult | null>(null);
+  const isHttpBot = (bot.binding_type || "http") === "http";
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [modelId, setModelId] = useState(bot.model_id || "");
+  const [templateId, setTemplateId] = useState(bot.template_id || "");
 
   // Reset form when switching between bots
   useEffect(() => {
     setDisplayName(bot.display_name || "");
     setDescription(bot.description || "");
+    setModelId(bot.model_id || "");
+    setTemplateId(bot.template_id || "");
     setConnectionTest(null);
-  }, [bot.bot_id, bot.description, bot.display_name]);
+  }, [bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.template_id]);
+
+  useEffect(() => {
+    if (!isHttpBot) {
+      setModels([]);
+      setTemplates([]);
+      return;
+    }
+    let active = true;
+    apiFetch("/admin/models?include_disabled=false", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!active) return;
+        const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
+        setModels(list);
+        if (!bot.model_id && list.length > 0) setModelId(list[0].model_id);
+      })
+      .catch(() => {
+        if (active) setModels([]);
+      });
+    apiFetch("/templates", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!active) return;
+        const list: TemplateItem[] = Array.isArray(d?.data) ? d.data : [];
+        setTemplates(list);
+        if (!bot.template_id && list.length > 0) setTemplateId(list[0].template_id);
+      })
+      .catch(() => {
+        if (active) setTemplates([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authToken, bot.bot_id, bot.model_id, bot.template_id, isHttpBot]);
 
   const save = async () => {
+    if (isHttpBot && (!modelId || !templateId)) {
+      toast.error("HTTP Bot 必须选择模型和模板");
+      return;
+    }
     setSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        display_name: displayName.trim() || bot.username,
+        description: description.trim() || null,
+      };
+      if (isHttpBot) {
+        body.model_id = modelId;
+        body.template_id = templateId;
+      }
       const res = await apiFetch(`/bots/${bot.bot_id}`, {
         method: "PUT",
         token: authToken,
-        body: {
-          display_name: displayName.trim() || bot.username,
-          description: description.trim() || null,
-        },
+        body,
       });
       const data = await res.json();
       if (data?.status === "success") {
         toast.success("已保存");
+        setConnectionTest(null);
         onUpdated();
       } else {
         toast.error(data?.message || data?.detail || "保存失败");
@@ -2925,6 +2980,13 @@ function BotEditPane({
     }
   };
 
+  const modelOptions = modelId && !models.some((m) => m.model_id === modelId)
+    ? [{ model_id: modelId, name: bot.model_name || "当前模型" }, ...models]
+    : models;
+  const templateOptions = templateId && !templates.some((t) => t.template_id === templateId)
+    ? [{ template_id: templateId, name: bot.template_name || "当前模板" }, ...templates]
+    : templates;
+
   return (
     <div className="an-pane">
       <div className="an-pane-head">
@@ -2975,6 +3037,51 @@ function BotEditPane({
             </div>
           )}
         </div>
+        {isHttpBot && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">LLM 绑定</div>
+            <Field label="AI 模型">
+              <select
+                value={modelId}
+                onChange={(e) => {
+                  setModelId(e.target.value);
+                  setConnectionTest(null);
+                }}
+                className={inputCls}
+              >
+                {modelOptions.length === 0 ? (
+                  <option value="">（无可用模型）</option>
+                ) : (
+                  modelOptions.map((m) => (
+                    <option key={m.model_id} value={m.model_id}>
+                      {m.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </Field>
+            <Field label="Prompt 模板">
+              <select
+                value={templateId}
+                onChange={(e) => {
+                  setTemplateId(e.target.value);
+                  setConnectionTest(null);
+                }}
+                className={inputCls}
+              >
+                {templateOptions.length === 0 ? (
+                  <option value="">（无可用模板）</option>
+                ) : (
+                  templateOptions.map((t) => (
+                    <option key={t.template_id} value={t.template_id}>
+                      {t.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </Field>
+          </div>
+        )}
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">基本信息</div>
           <Field label="显示名称">
@@ -3002,7 +3109,7 @@ function BotEditPane({
           </div>
         </div>
         <div className="an-row-card" style={{ color: "var(--fg-3)", fontSize: 12 }}>
-          高级配置已收敛到设置弹窗；当前详情页仅开放基础信息编辑。
+          高级配置已收敛到设置弹窗；HTTP Bot 可在此切换模型与模板，WebSocket Bot 由 plugin 配置接管。
         </div>
       </div>
     </div>
