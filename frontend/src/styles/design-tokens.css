@@ -103,44 +103,45 @@
 }
 
 :root[data-theme="light"] {
-  --bg-0: #f7f7f8;
+  /* ColorHunt palette: #F9F7F7 / #DBE2EF / #3F72AF / #112D4E */
+  --bg-0: #f9f7f7;
   --bg-1: #ffffff;
-  --bg-2: #f1f2f4;
-  --bg-3: #e5e7eb;
-  --bg-hover: #eaecef;
+  --bg-2: #dbe2ef;
+  --bg-3: #c9d3e5;
+  --bg-hover: #eef2f8;
   --bg-elevated: #ffffff;
 
-  --fg-1: #0f172a;
-  --fg-2: #334155;
-  --fg-3: #64748b;
+  --fg-1: #112d4e;
+  --fg-2: #2a4773;
+  --fg-3: #5a7aa0;
 
-  --accent: #6b5ae6;
-  --accent-hover: #5a4be0;
-  --accent-muted: #6b5ae61a;
-  --accent-ring: #6b5ae666;
+  --accent: #3f72af;
+  --accent-hover: #2f5c90;
+  --accent-muted: #3f72af1f;
+  --accent-ring: #3f72af66;
 
   --green: #10a26f;
   --red: #dc2b2b;
   --red-hover: #b91c1c;
   --orange: #d97706;
-  --blue: #2563eb;
+  --blue: #3f72af;
 
   --green-muted: #10a26f18;
   --red-muted: #dc2b2b18;
   --red-border: #dc2b2b33;
   --orange-muted: #d9770618;
-  --blue-muted: #2563eb18;
+  --blue-muted: #3f72af1a;
 
-  --border: #0f172a14;
-  --border-strong: #0f172a24;
-  --border-focus: #6b5ae699;
+  --border: #112d4e1f;
+  --border-strong: #112d4e33;
+  --border-focus: #3f72af99;
 
-  --surface-soft: #0f172a08;
-  --surface-hover: #0f172a12;
-  --surface-strong: #0f172a1f;
+  --surface-soft: #112d4e08;
+  --surface-hover: #112d4e12;
+  --surface-strong: #112d4e1f;
 
-  --overlay: #0f172a66;
-  --shadow: #0f172a22;
+  --overlay: #112d4e66;
+  --shadow: #112d4e22;
 }
 
 :root {
@@ -948,6 +949,9 @@
   display: grid;
   grid-template-columns: 200px 1fr;
   min-height: 0;
+  /* Fixed height keeps the settings modal stable across panes; the inner
+   * pane scrolls its list rather than resizing the dialog. */
+  height: min(560px, calc(100vh - 200px));
 }
 
 .an-settings-nav {
@@ -978,9 +982,36 @@
 .an-sn-sep { height: 1px; background: var(--border); margin: 12px 0; }
 
 .an-settings-pane {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Pane container — owns a fixed height inside the settings modal so that
+ * switching between sub-settings doesn't resize the modal. The pane's
+ * header and any tab strip stay pinned; the embedded list scrolls. */
+.an-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 20px 24px;
+  overflow: hidden;
+}
+.an-pane > .an-pane-head { flex-shrink: 0; }
+.an-pane > .an-seg { flex-shrink: 0; }
+.an-pane > .an-back { flex-shrink: 0; }
+.an-pane > .an-list-table {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
+/* Sub-pane nested inside another pane (e.g. BotPane's tab content) shares
+ * the parent's padding instead of stacking. */
+.an-pane > .an-pane { padding: 0; }
+
 .an-pane-head {
   display: flex;
   align-items: center;

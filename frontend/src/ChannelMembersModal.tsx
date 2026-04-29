@@ -623,7 +623,7 @@ export default function ChannelMembersModal({
                 <p className="text-gray-500 mb-1">
                   {allBots.length === 0 ? "暂无可用 Bot" : "所有 Bot 都已在频道中"}
                 </p>
-                <p className="text-xs text-gray-400">可前往管理页面创建新 Bot</p>
+                <p className="text-xs text-gray-400">可在左下角齿轮设置中创建新 Bot</p>
               </div>
             ) : (
               <div className="space-y-2">

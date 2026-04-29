@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -93,31 +92,6 @@ class AuthService:
         entry.used = True
         await self.session.flush()
 
-    async def register_with_code(
-        self,
-        username: str,
-        email: str,
-        password: str,
-        code: str,
-        display_name: Optional[str] = None,
-    ) -> User:
-        """邮箱验证码注册."""
-        _validate_password(password)
-        email = email.strip().lower()
-        if not email or "@" not in email:
-            raise BadRequestError("邮箱格式不正确")
-        await self._verify_code(email, "register", code)
-        if await self.user_repo.get_by_username(username):
-            raise ConflictError("用户名已存在")
-        if await self.user_repo.get_by_email(email):
-            raise ConflictError("该邮箱已被注册")
-        return await self.user_repo.create(
-            username=username,
-            password_hash=_hash_password(password),
-            display_name=display_name or username,
-            email=email,
-        )
-
     async def register(
         self,
         username: str,
@@ -202,31 +176,3 @@ class AuthService:
         if updates:
             return await self.user_repo.update(user, **updates)
         return user
-
-    # ---- User Management (admin) ----
-
-    async def list_users(self) -> list[User]:
-        return await self.user_repo.list_all()
-
-    async def update_role(self, user_id: str, role: str, valid_roles: list[str]) -> User:
-        if role not in valid_roles:
-            raise BadRequestError(f"无效的角色: {role}")
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise NotFoundError("用户不存在")
-        return await self.user_repo.update(user, role=role)
-
-    async def delete_user(self, user_id: str) -> None:
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise NotFoundError("用户不存在")
-        await self.user_repo.delete(user)
-
-    async def reset_password_admin(self, user_id: str) -> str:
-        """管理员重置用户密码，返回临时密码."""
-        user = await self.user_repo.get_by_id(user_id)
-        if not user:
-            raise NotFoundError("用户不存在")
-        temp_pw = secrets.token_urlsafe(12)
-        await self.user_repo.update(user, password_hash=_hash_password(temp_pw))
-        return temp_pw
