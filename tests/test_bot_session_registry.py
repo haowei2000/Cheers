@@ -55,6 +55,44 @@ async def test_dispatch_control_returns_false_when_unbound() -> None:
 
 
 @pytest.mark.asyncio
+async def test_connection_state_tracks_control_and_data_planes() -> None:
+    r = BotSessionRegistry()
+    control = FakeWS()
+    data = FakeWS()
+
+    assert r.connection_state("bot-1") == {
+        "connection_status": "offline",
+        "is_online": False,
+        "control_connected": False,
+        "data_connected": False,
+    }
+
+    await r.bind_control("bot-1", control)
+    assert r.connection_state("bot-1") == {
+        "connection_status": "partial",
+        "is_online": False,
+        "control_connected": True,
+        "data_connected": False,
+    }
+
+    await r.bind_data("bot-1", data)
+    assert r.connection_state("bot-1") == {
+        "connection_status": "online",
+        "is_online": True,
+        "control_connected": True,
+        "data_connected": True,
+    }
+
+    await r.unbind_control("bot-1", control)
+    assert r.connection_state("bot-1") == {
+        "connection_status": "partial",
+        "is_online": False,
+        "control_connected": False,
+        "data_connected": True,
+    }
+
+
+@pytest.mark.asyncio
 async def test_unbind_control_only_clears_matching_ws() -> None:
     """unbind 只在当前仍是此 ws 时生效，避免踢掉后到的新连接。"""
     r = BotSessionRegistry()

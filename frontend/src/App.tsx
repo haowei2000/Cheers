@@ -89,6 +89,15 @@ const API = "/api/v1";
 const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
 const API_DOCS_URL = "/docs";
 
+function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status" | "is_online" | "status">) {
+  if ((bot.binding_type || "http") !== "websocket") {
+    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 可用";
+  }
+  if (bot.connection_status === "online" && bot.is_online) return "WS 在线";
+  if (bot.connection_status === "partial") return "WS 部分连接";
+  return "WS 离线";
+}
+
 
 
 export default function App() {
@@ -2027,9 +2036,14 @@ export default function App() {
                           key={b.member_id}
                           className="flex items-center justify-between py-2 px-3 bg-[#F8F8F8] rounded-lg text-sm"
                         >
-                          <span className="font-medium text-gray-800">
-                            @{b.username}
-                          </span>
+                          <div className="min-w-0">
+                            <span className="font-medium text-gray-800">
+                              @{b.username}
+                            </span>
+                            <div className="text-[11px] text-gray-500">
+                              {botInlineStatus(b)}
+                            </div>
+                          </div>
                           <button
                             type="button"
                             onClick={() => removeBotFromChannel(b.member_id)}
@@ -2086,6 +2100,9 @@ export default function App() {
                               <div className="flex flex-col min-w-0">
                                 <span className="font-medium text-gray-800">
                                   @{b.username}
+                                </span>
+                                <span className="text-[11px] text-gray-500">
+                                  {botInlineStatus(b)}
                                 </span>
                                 {introSummary(b.intro) && (
                                   <span

@@ -20,6 +20,35 @@ interface ChannelMembersModalProps {
   onClose: () => void;
 }
 
+function botOnlineText(bot: Pick<Bot, "binding_type" | "connection_status" | "is_online" | "status">) {
+  if ((bot.binding_type || "http") !== "websocket") {
+    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 可用";
+  }
+  if (bot.connection_status === "online" && bot.is_online) return "WS 在线";
+  if (bot.connection_status === "partial") return "WS 部分连接";
+  return "WS 离线";
+}
+
+function BotOnlinePill({ bot }: { bot: Pick<Bot, "binding_type" | "connection_status" | "is_online" | "status"> }) {
+  const text = botOnlineText(bot);
+  const isGood = text.includes("在线") || text.includes("可用");
+  const isPartial = text.includes("部分");
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+        isGood
+          ? "bg-green-50 text-green-700"
+          : isPartial
+            ? "bg-yellow-50 text-yellow-700"
+            : "bg-red-50 text-red-600"
+      }`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${isGood ? "bg-green-500" : isPartial ? "bg-yellow-500" : "bg-red-500"}`} />
+      {text}
+    </span>
+  );
+}
+
 export default function ChannelMembersModal({
   channelId,
   channelName,
@@ -430,12 +459,15 @@ export default function ChannelMembersModal({
                                 )}
                               </div>
                             </div>
-                            <button
-                              onClick={() => removeMember(member.member_id, member.member_type)}
-                              className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
-                            >
-                              移除
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <BotOnlinePill bot={member} />
+                              <button
+                                onClick={() => removeMember(member.member_id, member.member_type)}
+                                className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
+                              >
+                                移除
+                              </button>
+                            </div>
                           </div>
                           {/* 提示词模板选择 */}
                           <div className="mt-2 ml-11 flex items-center gap-2">
@@ -609,6 +641,9 @@ export default function ChannelMembersModal({
                           {bot.display_name || bot.username}
                         </p>
                         <p className="text-xs text-gray-500">@{bot.username}</p>
+                        <div className="mt-1">
+                          <BotOnlinePill bot={bot} />
+                        </div>
                         {bot.intro && (
                           <p className="text-xs text-gray-400 truncate max-w-[200px]">{bot.intro}</p>
                         )}

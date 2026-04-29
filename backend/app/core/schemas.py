@@ -150,6 +150,10 @@ class BotInResponse(BaseModel):
     bot_token_prefix: str | None = None
     bot_token_rotated_at: datetime | None = None
     bot_token: str | None = None  # 仅 create / rotate 响应里有值；其它接口永远为 None
+    connection_status: str = "not_required"
+    is_online: bool = True
+    control_connected: bool | None = None
+    data_connected: bool | None = None
 
     # 关联信息（WebSocket Bot 可能没有）
     model_id: str | None = None
@@ -169,6 +173,11 @@ class BotSimpleInResponse(BaseModel):
     description: str | None = None
     status: str
     is_public: bool = True
+    binding_type: str = "http"
+    connection_status: str = "not_required"
+    is_online: bool = True
+    control_connected: bool | None = None
+    data_connected: bool | None = None
     model_name: str | None = None
     template_name: str | None = None
     created_by: str | None = None

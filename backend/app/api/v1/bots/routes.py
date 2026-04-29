@@ -24,6 +24,7 @@ from app.core.schemas import (
 )
 from app.db.models import AIModel, BotAccount, BotRegistrationRequest, PromptTemplate, User, gen_uuid
 from app.services.bot_service import BotService
+from app.services.openclaw_bridge.registry import bot_session_registry
 from app.utils.crypto import encrypt_value
 
 audit = logging.getLogger("app.audit")
@@ -57,6 +58,23 @@ def _validate_intro(intro: str | None) -> str | None:
         raise BadRequestError(str(e))
 
 
+def _connection_fields(bot: BotAccount) -> dict:
+    binding_type = getattr(bot, "binding_type", None) or "http"
+    configured_online = bot.status != "offline"
+    if binding_type == "websocket":
+        state = bot_session_registry.connection_state(bot.bot_id)
+        return {
+            **state,
+            "is_online": bool(configured_online and state["is_online"]),
+        }
+    return {
+        "connection_status": "not_required",
+        "is_online": configured_online,
+        "control_connected": None,
+        "data_connected": None,
+    }
+
+
 def _to_simple(bot: BotAccount) -> dict:
     d = BotSimpleInResponse(
         bot_id=bot.bot_id,
@@ -65,6 +83,8 @@ def _to_simple(bot: BotAccount) -> dict:
         description=bot.description,
         status=bot.status,
         is_public=bot.is_public,
+        binding_type=getattr(bot, "binding_type", None) or "http",
+        **_connection_fields(bot),
         model_name=bot.ai_model.name if bot.ai_model else None,
         template_name=bot.prompt_template.name if bot.prompt_template else None,
         created_by=bot.created_by,
@@ -110,6 +130,7 @@ def _to_full(
         bot_token_prefix=getattr(bot, "bot_token_prefix", None),
         bot_token_rotated_at=getattr(bot, "bot_token_rotated_at", None),
         bot_token=bot_token,
+        **_connection_fields(bot),
     ).model_dump()
     if bot.created_at:
         d["created_at"] = bot.created_at.isoformat()
@@ -226,6 +247,22 @@ async def submit_register_request(
     session.add(req)
     await session.flush()
     return APIResponse.ok({"request_id": req.request_id, "message": "注册申请已提交，等待管理员审核。"})
+
+
+@router.get("/{bot_id}/online-status", response_model=APIResponse[dict])
+async def get_bot_online_status(
+    bot_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = BotService(session)
+    bot = await svc.get_or_404(bot_id)
+    return APIResponse.ok({
+        "bot_id": bot.bot_id,
+        "status": bot.status,
+        "binding_type": getattr(bot, "binding_type", None) or "http",
+        **_connection_fields(bot),
+    })
 
 
 @router.post("/registration-requests/{request_id}/reject", response_model=APIResponse[None])

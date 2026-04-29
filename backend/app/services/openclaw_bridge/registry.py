@@ -109,6 +109,29 @@ class BotSessionRegistry:
     def get(self, bot_id: str) -> BotSession | None:
         return self._sessions.get(bot_id)
 
+    def connection_state(self, bot_id: str) -> dict[str, bool | str]:
+        """Return the in-memory live connection state for one WebSocket Bot.
+
+        ``online`` means both control and data planes are connected; ``partial``
+        means only one plane is present. The DB-level BotAccount.status remains
+        the separate configured availability switch.
+        """
+        sess = self._sessions.get(bot_id)
+        control_connected = bool(sess and sess.control_ws is not None)
+        data_connected = bool(sess and sess.data_ws is not None)
+        if control_connected and data_connected:
+            connection_status = "online"
+        elif control_connected or data_connected:
+            connection_status = "partial"
+        else:
+            connection_status = "offline"
+        return {
+            "connection_status": connection_status,
+            "is_online": connection_status == "online",
+            "control_connected": control_connected,
+            "data_connected": data_connected,
+        }
+
     async def dispatch_control(self, bot_id: str, event: dict[str, Any]) -> bool:
         """向目标 bot 的 control WS 推送事件；未连返回 False（事件被静默丢弃）。
 
