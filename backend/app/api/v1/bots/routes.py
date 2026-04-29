@@ -25,7 +25,7 @@ from app.core.schemas import (
 )
 from app.db.models import AIModel, BotAccount, BotRegistrationRequest, PromptTemplate, User, gen_uuid
 from app.services.adapters.http_bot import HttpBotAdapter
-from app.services.bot_service import BotService
+from app.services.bot_service import BotService, is_builtin_bot
 from app.services.openclaw_bridge.registry import bot_session_registry
 from app.utils.crypto import encrypt_value
 from app.utils.permissions import is_admin
@@ -165,6 +165,7 @@ def _to_simple(bot: BotAccount) -> dict:
         status=bot.status,
         is_public=bot.is_public,
         binding_type=getattr(bot, "binding_type", None) or "http",
+        is_builtin=is_builtin_bot(bot),
         **_connection_fields(bot),
         model_id=bot.model_id,
         template_id=bot.template_id,
@@ -203,6 +204,7 @@ def _to_full(
         intro=bot.intro,
         custom_system_prompt=bot.custom_system_prompt,
         created_at=bot.created_at,
+        is_builtin=is_builtin_bot(bot),
         model_id=bot.model_id,
         template_id=bot.template_id,
         model_name=mn,
