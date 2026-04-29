@@ -23,6 +23,7 @@ from app.core.schemas import (
     SearchUserHit,
 )
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, User
+from app.services.bot_service import BotService, bot_scope
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -81,20 +82,16 @@ async def global_search(
         )
     ).scalars().all()
 
-    # — Bots — no scoping, any bot the user can DM.
-    bot_rows = (
-        await session.execute(
-            select(BotAccount)
-            .where(
-                or_(
-                    BotAccount.username.ilike(pattern),
-                    BotAccount.display_name.ilike(pattern),
-                )
-            )
-            .order_by(BotAccount.display_name)
-            .limit(limit)
-        )
-    ).scalars().all()
+    # — Bots — only bots the caller can start using (DM / invite).
+    visible_bots = await BotService(session).list_visible(current_user)
+    q_lower = q.lower()
+    bot_rows = [
+        b for b in visible_bots
+        if q_lower in (b.username or "").lower()
+        or q_lower in (b.display_name or "").lower()
+    ]
+    bot_rows.sort(key=lambda b: (b.display_name or b.username or "").lower())
+    bot_rows = bot_rows[:limit]
 
     # — Messages — content ILIKE %q%, restricted to channels the caller is a
     # member of. Skip secret / placeholder-encrypted messages so the search
@@ -149,6 +146,23 @@ async def global_search(
             )
         ).scalars():
             bot_label[b.bot_id] = b.display_name or b.username or "Bot"
+
+    bot_owner_ids = {b.created_by for b in bot_rows if b.created_by}
+    bot_owner_by_id: dict[str, User] = {}
+    if bot_owner_ids:
+        for u in (
+            await session.execute(select(User).where(User.user_id.in_(bot_owner_ids)))
+        ).scalars():
+            bot_owner_by_id[u.user_id] = u
+
+    def _owner_payload(owner: User | None) -> dict | None:
+        if not owner:
+            return None
+        return {
+            "user_id": owner.user_id,
+            "username": owner.username,
+            "display_name": owner.display_name,
+        }
 
     def _snippet(text: str | None, needle: str, width: int = 80) -> str:
         if not text:
@@ -211,6 +225,8 @@ async def global_search(
                     username=b.username,
                     display_name=b.display_name,
                     avatar_url=b.avatar_url,
+                    scope=bot_scope(b),
+                    owner=_owner_payload(bot_owner_by_id.get(b.created_by or "")),
                 )
                 for b in bot_rows
             ],

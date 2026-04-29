@@ -30,6 +30,12 @@ type SearchResultsPayload = {
     username: string;
     display_name: string | null;
     avatar_url: string | null;
+    scope?: "private" | "friend" | "everyone";
+    owner?: {
+      user_id: string;
+      username: string;
+      display_name?: string | null;
+    } | null;
   }[];
   messages?: {
     msg_id: string;
@@ -80,6 +86,16 @@ const wsColor = (id: string) => {
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return WS_LETTER_COLORS[h % WS_LETTER_COLORS.length];
 };
+
+function botScopeText(scope?: "private" | "friend" | "everyone") {
+  if (scope === "private") return "Private";
+  if (scope === "everyone") return "Everyone";
+  return "Friend";
+}
+
+function botOwnerText(bot: SearchResultsPayload["bots"][number]) {
+  return bot.owner?.display_name || bot.owner?.username || "系统";
+}
 
 export function Sidebar({
   isMobile,
@@ -461,9 +477,9 @@ export function Sidebar({
                     <span className="an-search-name">
                       {b.display_name || b.username}
                     </span>
-                    {b.display_name && b.display_name !== b.username && (
-                      <span className="an-search-sub">@{b.username}</span>
-                    )}
+                    <span className="an-search-sub">
+                      @{b.username} · {botScopeText(b.scope)} · Owner: {botOwnerText(b)}
+                    </span>
                   </button>
                 ))}
               </>

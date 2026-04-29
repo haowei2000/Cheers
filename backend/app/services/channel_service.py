@@ -22,6 +22,7 @@ from app.repositories.bot_repo import BotRepository
 from app.repositories.channel_repo import ChannelRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
+from app.services.bot_service import BotService, bot_scope
 from app.utils.permissions import is_admin
 
 
@@ -100,6 +101,13 @@ class ChannelService:
         )).scalar_one_or_none()
         if existing:
             return existing
+
+        if other_type == "bot":
+            await BotService(self.session).assert_can_use(
+                other,
+                current_user,
+                "无权与该 Bot 发起私信",
+            )
 
         # Deterministic name for dedup debugging; display comes from counterparty.
         a, b = sorted([current_user.user_id, other_id])
@@ -303,6 +311,13 @@ class ChannelService:
                 select(User).where(User.user_id.in_(user_ids))
             )).scalars()
             users_by_id = {u.user_id: u for u in rows}
+        owner_ids = {b.created_by for b in bots_by_id.values() if b.created_by}
+        missing_owner_ids = owner_ids - set(users_by_id)
+        if missing_owner_ids:
+            rows = (await self.session.execute(
+                select(User).where(User.user_id.in_(missing_owner_ids))
+            )).scalars()
+            users_by_id.update({u.user_id: u for u in rows})
 
         result = []
         for m in memberships:
@@ -330,6 +345,17 @@ class ChannelService:
                         bot_entity.prompt_template.name if bot_entity.prompt_template else None
                     )
                 item["status"] = bot_entity.status
+                item["scope"] = bot_scope(bot_entity)
+                owner = users_by_id.get(bot_entity.created_by or "")
+                item["owner"] = (
+                    {
+                        "user_id": owner.user_id,
+                        "username": owner.username,
+                        "display_name": owner.display_name,
+                    }
+                    if owner
+                    else None
+                )
                 item["binding_type"] = getattr(bot_entity, "binding_type", None) or "http"
                 if item["binding_type"] == "websocket":
                     from app.services.openclaw_bridge.registry import bot_session_registry
@@ -357,17 +383,20 @@ class ChannelService:
         await self.get_or_404(channel_id)
         await self._require_channel_member(channel_id, current_user)
 
-        if member_type == "bot" and not is_admin(current_user):
-            from app.services.guide.constants import GUIDE_BOT_ID
-            bot = await self.bot_repo.get_by_id(member_id)
-            if not bot:
-                raise NotFoundError("Bot 不存在")
-            if bot.bot_id != GUIDE_BOT_ID and bot.created_by != current_user.user_id:
-                raise ForbiddenError("只能将内置助手或自己创建的 Bot 添加到频道")
-
         existing = await self.repo.get_membership(channel_id, member_id)
         if existing:
             return existing
+
+        if member_type == "bot":
+            bot = await self.bot_repo.get_by_id(member_id)
+            if not bot:
+                raise NotFoundError("Bot 不存在")
+            await BotService(self.session).assert_can_use(
+                bot,
+                current_user,
+                "无权邀请该 Bot 进入频道",
+            )
+
         m = await self.repo.add_member(channel_id, member_id, member_type, added_by=current_user.user_id)
         if member_type == "bot":
             from app.services.openclaw_bridge.membership import emit_channel_joined
