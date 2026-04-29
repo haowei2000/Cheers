@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, try_get_current_user
+from app.core.dependencies import get_current_user
 from app.core.responses import APIResponse
 from app.core.schemas import (
     MessageCreate,
@@ -20,6 +20,7 @@ from app.core.schemas import (
 )
 from app.db.models import Message, User
 from app.db.session import async_session_factory, get_session
+from app.services.channel_service import ChannelService
 from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
 from app.services.orchestrator.service import run_orchestrator
@@ -167,6 +168,7 @@ async def list_messages(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
+    await ChannelService(session).require_channel_member(channel_id, current_user)
     svc = MessageService(session)
     messages, file_map = await svc.list_messages(channel_id, limit=limit, before_id=before_id)
     return APIResponse.ok([_serialize(m, file_map) for m in messages])
@@ -177,8 +179,10 @@ async def _handle_send_message(
     *,
     channel_id: str,
     body: MessageCreate,
+    current_user: User,
 ) -> tuple[dict, str | None]:
     """持久化消息、广播、调度 orchestrator。返回 (payload_dict, secret_token)。"""
+    await ChannelService(session).require_channel_member(channel_id, current_user)
     raw_content_data = getattr(body, "content_data", None)
     if hasattr(raw_content_data, "model_dump"):
         raw_content_data = raw_content_data.model_dump(exclude_none=True) or None
@@ -187,8 +191,8 @@ async def _handle_send_message(
         channel_id=channel_id,
         bus=WSEventBus(channel_id),
         session=session,
-        sender_id=body.sender_id,
-        sender_type=body.sender_type,
+        sender_id=current_user.user_id,
+        sender_type="user",
         content=body.content,
         file_ids=_normalize_file_ids(body.file_ids),
         mention_bot_ids=body.mention_bot_ids or [],
@@ -214,10 +218,12 @@ async def _handle_send_message(
 async def send_message(
     channel_id: str,
     body: MessageCreate,
-    current_user: User | None = Depends(try_get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    d, secret_token = await _handle_send_message(session, channel_id=channel_id, body=body)
+    d, secret_token = await _handle_send_message(
+        session, channel_id=channel_id, body=body, current_user=current_user,
+    )
     response_data = dict(d)
     if secret_token:
         response_data["secret_token"] = secret_token
@@ -228,6 +234,7 @@ async def send_message(
 async def send_message_stream(
     channel_id: str,
     body: MessageStreamCreate,
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """发送消息，通过 SSE 返回 Bot 流式输出。"""
     from app.core.exceptions import AppError, BadRequestError, NotFoundError
@@ -243,12 +250,20 @@ async def send_message_stream(
         async with async_session_factory() as session:
             orchestrator_task = None
             try:
+                try:
+                    await ChannelService(session).require_channel_member(channel_id, current_user)
+                except NotFoundError as exc:
+                    yield _format_sse("error", {"detail": str(exc), "status_code": 404})
+                    return
+                except AppError as exc:
+                    yield _format_sse("error", {"detail": str(exc), "status_code": exc.status_code})
+                    return
                 ctx = IngestContext(
                     channel_id=channel_id,
                     bus=WSEventBus(channel_id),
                     session=session,
-                    sender_id=body.sender_id,
-                    sender_type=body.sender_type,
+                    sender_id=current_user.user_id,
+                    sender_type="user",
                     content=body.content,
                     file_ids=normalized_file_ids,
                     mention_bot_ids=body.mention_bot_ids or [],
@@ -472,5 +487,3 @@ async def reveal_secret_message(
         raise AppError("decryption failed")
     msg.secret_encrypted = None
     return APIResponse.ok({"content": plaintext})
-
-

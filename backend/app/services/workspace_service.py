@@ -28,6 +28,14 @@ class WorkspaceService:
         if not membership or membership.role not in allowed_roles:
             raise ForbiddenError("没有权限执行此操作（需要工作空间所有者或管理员权限）")
 
+    async def _check_workspace_member(self, workspace_id: str, current_user: User) -> None:
+        """检查用户是否可读取工作空间内成员/频道等基础信息."""
+        if is_admin(current_user):
+            return
+        membership = await self.repo.get_membership(workspace_id, current_user.user_id)
+        if not membership:
+            raise ForbiddenError("您不是该工作空间的成员")
+
     async def create(self, name: str, creator: User) -> Workspace:
         name = name.strip()
         if not name:
@@ -122,12 +130,16 @@ class WorkspaceService:
         await self.get_or_404(workspace_id)
         return await self.repo.list_members(workspace_id)
 
-    async def list_members_with_details(self, workspace_id: str) -> list[dict]:
+    async def list_members_with_details(self, workspace_id: str, current_user: User) -> list[dict]:
+        await self.get_or_404(workspace_id)
+        await self._check_workspace_member(workspace_id, current_user)
         rows = await self.repo.list_members_with_users(workspace_id)
         return [
             {"user_id": m.user_id, "username": u.username, "display_name": u.display_name, "role": m.role}
             for m, u in rows
         ]
 
-    async def list_channels(self, workspace_id: str) -> list:
+    async def list_channels(self, workspace_id: str, current_user: User) -> list:
+        await self.get_or_404(workspace_id)
+        await self._check_workspace_member(workspace_id, current_user)
         return await self.repo.list_channels(workspace_id)
