@@ -135,6 +135,16 @@ function botTraceStatusText(trace: BotTraceEvent): string {
   return [title || stream, message].filter(Boolean).join(" · ");
 }
 
+function botScopeText(scope?: BotItem["scope"]) {
+  if (scope === "private") return "Private";
+  if (scope === "everyone") return "Everyone";
+  return "Friend";
+}
+
+function botOwnerText(bot: Pick<BotItem, "owner">) {
+  return bot.owner?.display_name || bot.owner?.username || "系统";
+}
+
 
 
 export default function App() {
@@ -685,11 +695,15 @@ export default function App() {
                 username: string;
                 avatar_url?: string;
                 display_name?: string;
+                scope?: BotItem["scope"];
+                owner?: BotItem["owner"];
               }) => ({
                 member_id: m.member_id,
                 username: m.username,
                 avatar_url: m.avatar_url,
                 display_name: m.display_name,
+                scope: m.scope,
+                owner: m.owner,
               }),
             );
           setChannelBots(bots);
@@ -704,13 +718,17 @@ export default function App() {
                 username: string;
                 avatar_url?: string;
                 display_name?: string;
+                scope?: BotItem["scope"];
+                owner?: BotItem["owner"];
               }) => ({
                 member_id: m.member_id,
                 username: m.username,
                 avatar_url: m.avatar_url,
                 display_name: m.display_name,
+                scope: m.scope,
+                owner: m.owner,
               }),
-            );
+          );
           setChannelUsers(users);
         } else {
           setChannelBots([]);
@@ -1071,11 +1089,15 @@ export default function App() {
                   username: string;
                   avatar_url?: string;
                   display_name?: string;
+                  scope?: BotItem["scope"];
+                  owner?: BotItem["owner"];
                 }) => ({
                   member_id: m.member_id,
                   username: m.username,
                   avatar_url: m.avatar_url,
                   display_name: m.display_name,
+                  scope: m.scope,
+                  owner: m.owner,
                 }),
               ),
           );
@@ -1128,11 +1150,15 @@ export default function App() {
                       username: string;
                       avatar_url?: string;
                       display_name?: string;
+                      scope?: BotItem["scope"];
+                      owner?: BotItem["owner"];
                     }) => ({
                       member_id: m.member_id,
                       username: m.username,
                       avatar_url: m.avatar_url,
                       display_name: m.display_name,
+                      scope: m.scope,
+                      owner: m.owner,
                     }),
                   );
                 setChannelBots(bots);
@@ -2119,6 +2145,9 @@ export default function App() {
                             <div className="text-[11px] text-gray-500">
                               {botInlineStatus(b)}
                             </div>
+                            <div className="text-[11px] text-gray-500">
+                              {botScopeText(b.scope)} · Owner: {botOwnerText(b)}
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -2179,6 +2208,9 @@ export default function App() {
                                 </span>
                                 <span className="text-[11px] text-gray-500">
                                   {botInlineStatus(b)}
+                                </span>
+                                <span className="text-[11px] text-gray-500">
+                                  {botScopeText(b.scope)} · Owner: {botOwnerText(b)}
                                 </span>
                                 {introSummary(b.intro) && (
                                   <span

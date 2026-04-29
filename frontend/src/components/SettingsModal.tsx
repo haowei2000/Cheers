@@ -6,6 +6,7 @@ import { apiFetch } from "../api";
 import { Modal } from "./Modal";
 
 type Density = "comfy" | "compact";
+type BotScope = "private" | "friend" | "everyone";
 
 const DENSITY_KEY = "agentnexus-density";
 
@@ -47,7 +48,74 @@ type BotRow = {
   template_name?: string | null;
   is_builtin?: boolean;
   created_by?: string | null;
+  scope?: BotScope;
+  owner?: {
+    user_id: string;
+    username: string;
+    display_name?: string | null;
+  } | null;
+  can_manage?: boolean;
 };
+
+const BOT_SCOPE_OPTIONS: { value: BotScope; label: string; hint: string }[] = [
+  { value: "private", label: "Private", hint: "仅自己可发起私信或邀请" },
+  { value: "friend", label: "Friend", hint: "自己和好友可发起私信或邀请" },
+  { value: "everyone", label: "Everyone", hint: "所有用户可发起私信或邀请" },
+];
+
+function normalizeBotScope(scope?: string | null): BotScope {
+  if (scope === "private" || scope === "friend" || scope === "everyone") return scope;
+  return "friend";
+}
+
+function botScopeLabel(scope?: string | null) {
+  const normalized = normalizeBotScope(scope);
+  const found = BOT_SCOPE_OPTIONS.find((x) => x.value === normalized);
+  return found?.label || "Friend";
+}
+
+function botOwnerLabel(bot: Pick<BotRow, "owner" | "created_by">) {
+  return bot.owner?.display_name || bot.owner?.username || bot.created_by || "系统";
+}
+
+function BotScopeControl({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: BotScope;
+  onChange: (scope: BotScope) => void;
+  disabled?: boolean;
+}) {
+  const current = BOT_SCOPE_OPTIONS.find((opt) => opt.value === value) || BOT_SCOPE_OPTIONS[1];
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div
+        className="an-seg"
+        role="radiogroup"
+        aria-label="Bot 使用范围"
+        style={{ display: "inline-flex", justifySelf: "start" }}
+      >
+        {BOT_SCOPE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={value === opt.value ? "on" : ""}
+            onClick={() => onChange(opt.value)}
+            disabled={disabled}
+            role="radio"
+            aria-checked={value === opt.value}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <div className="an-rc-sub" style={{ marginTop: 0 }}>
+        {current.hint}
+      </div>
+    </div>
+  );
+}
 
 type BotConnectionTestResult = {
   reachable: boolean;
@@ -143,7 +211,10 @@ export function SettingsModal({
   const [bots, setBots] = useState<BotRow[]>([]);
   const canManageBuiltinBots = currentUser?.role === "system_admin";
   const visibleBots = bots.filter(
-    (b) => b.created_by === currentUser?.user_id || (canManageBuiltinBots && b.is_builtin),
+    (b) =>
+      b.can_manage ||
+      b.created_by === currentUser?.user_id ||
+      (canManageBuiltinBots && b.is_builtin),
   );
 
   useEffect(() => {
@@ -1579,6 +1650,10 @@ function BotListSubPane({
                 <div className="an-rc-title">{b.display_name || b.username}</div>
                 <div className="an-rc-sub">
                   @{b.username} · {(b.binding_type || "http") === "websocket" ? "WebSocket" : "HTTP"}
+                  {" · "}
+                  {botScopeLabel(b.scope)}
+                  {" · "}
+                  Owner: {botOwnerLabel(b)}
                   {b.is_builtin ? " · 内置" : ""}
                 </div>
               </div>
@@ -2442,6 +2517,7 @@ function BotNewPane({
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
+  const [scope, setScope] = useState<BotScope>("friend");
 
   // HTTP-only
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -2496,7 +2572,7 @@ function BotNewPane({
       description: description.trim() || null,
       binding_type: bindingType,
       status: "online",
-      is_public: true,
+      scope,
     };
     if (bindingType === "http") {
       body.model_id = modelId;
@@ -2694,6 +2770,9 @@ function BotNewPane({
               className={`${inputCls} resize-none`}
             />
           </Field>
+          <Field label="使用范围">
+            <BotScopeControl value={scope} onChange={setScope} disabled={creating} />
+          </Field>
         </div>
 
         {bindingType === "http" && (
@@ -2848,6 +2927,7 @@ function BotEditPane({
 }) {
   const [displayName, setDisplayName] = useState(bot.display_name || "");
   const [description, setDescription] = useState(bot.description || "");
+  const [scope, setScope] = useState<BotScope>(normalizeBotScope(bot.scope));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
@@ -2862,10 +2942,11 @@ function BotEditPane({
   useEffect(() => {
     setDisplayName(bot.display_name || "");
     setDescription(bot.description || "");
+    setScope(normalizeBotScope(bot.scope));
     setModelId(bot.model_id || "");
     setTemplateId(bot.template_id || "");
     setConnectionTest(null);
-  }, [bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.template_id]);
+  }, [bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.scope, bot.template_id]);
 
   useEffect(() => {
     if (!isHttpBot) {
@@ -2911,6 +2992,7 @@ function BotEditPane({
       const body: Record<string, unknown> = {
         display_name: displayName.trim() || bot.username,
         description: description.trim() || null,
+        scope,
       };
       if (isHttpBot) {
         body.model_id = modelId;
@@ -3001,6 +3083,9 @@ function BotEditPane({
           <div className="an-pane-sub">
             @{bot.username} · {bot.bot_id}
             {bot.is_builtin ? " · 内置" : ""}
+          </div>
+          <div className="an-pane-sub">
+            Owner: {botOwnerLabel(bot)} · {botScopeLabel(scope)}
           </div>
         </div>
         <BotOnlineBadge bot={bot} />
@@ -3107,6 +3192,9 @@ function BotEditPane({
               rows={3}
               className={`${inputCls} resize-none`}
             />
+          </Field>
+          <Field label="使用范围">
+            <BotScopeControl value={scope} onChange={setScope} disabled={saving} />
           </Field>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             {bot.is_builtin ? (
