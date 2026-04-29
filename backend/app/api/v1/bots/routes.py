@@ -4,14 +4,15 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
-from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.core.responses import APIResponse
 from app.core.schemas import (
     BotCreate,
@@ -23,11 +24,14 @@ from app.core.schemas import (
     OpenClawQuickConnect,
 )
 from app.db.models import AIModel, BotAccount, BotRegistrationRequest, PromptTemplate, User, gen_uuid
+from app.services.adapters.http_bot import HttpBotAdapter
 from app.services.bot_service import BotService
 from app.services.openclaw_bridge.registry import bot_session_registry
 from app.utils.crypto import encrypt_value
+from app.utils.permissions import is_admin
 
 audit = logging.getLogger("app.audit")
+logger = logging.getLogger("app.api.v1.bots")
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -72,6 +76,83 @@ def _connection_fields(bot: BotAccount) -> dict:
         "is_online": configured_online,
         "control_connected": None,
         "data_connected": None,
+    }
+
+
+def _assert_can_test_bot(bot: BotAccount, current_user: User) -> None:
+    if bot.created_by == current_user.user_id or is_admin(current_user):
+        return
+    raise ForbiddenError("无权测试该 Bot")
+
+
+async def _test_bot_connection(bot: BotAccount) -> dict:
+    binding_type = (getattr(bot, "binding_type", None) or "http").lower()
+    checked_at = datetime.now(timezone.utc).isoformat()
+    started = time.perf_counter()
+    base = {
+        "bot_id": bot.bot_id,
+        "status": bot.status,
+        "binding_type": binding_type,
+        "checked_at": checked_at,
+        **_connection_fields(bot),
+    }
+
+    if bot.status == "offline":
+        return {
+            **base,
+            "reachable": False,
+            "duration_ms": 0,
+            "message": "Bot 已停用，不会接收消息",
+        }
+
+    if binding_type == "websocket":
+        state = bot_session_registry.connection_state(bot.bot_id)
+        reachable = bool(state["is_online"])
+        return {
+            **base,
+            **state,
+            "is_online": bool(bot.status != "offline" and state["is_online"]),
+            "reachable": reachable,
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+            "message": "WebSocket control/data 均已连接" if reachable else "WebSocket Bot 未完整连接",
+        }
+
+    if not bot.ai_model:
+        return {
+            **base,
+            "reachable": False,
+            "duration_ms": 0,
+            "message": "HTTP Bot 未配置模型",
+        }
+    if bot.ai_model.is_enabled is False:
+        return {
+            **base,
+            "reachable": False,
+            "duration_ms": 0,
+            "message": "HTTP Bot 模型已禁用",
+        }
+    if not bot.prompt_template:
+        return {
+            **base,
+            "reachable": False,
+            "duration_ms": 0,
+            "message": "HTTP Bot 未配置提示词模板",
+        }
+
+    reachable = await HttpBotAdapter(bot).health_check()
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    logger.info(
+        "bot.connection_test bot_id=%s binding=%s reachable=%s duration_ms=%s",
+        bot.bot_id,
+        binding_type,
+        reachable,
+        duration_ms,
+    )
+    return {
+        **base,
+        "reachable": reachable,
+        "duration_ms": duration_ms,
+        "message": "HTTP 模型 API 连通测试成功" if reachable else "HTTP 模型 API 连通测试失败",
     }
 
 
@@ -263,6 +344,18 @@ async def get_bot_online_status(
         "binding_type": getattr(bot, "binding_type", None) or "http",
         **_connection_fields(bot),
     })
+
+
+@router.post("/{bot_id}/connection-test", response_model=APIResponse[dict])
+async def test_bot_connection(
+    bot_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = BotService(session)
+    bot = await svc.get_or_404(bot_id)
+    _assert_can_test_bot(bot, current_user)
+    return APIResponse.ok(await _test_bot_connection(bot))
 
 
 @router.post("/registration-requests/{request_id}/reject", response_model=APIResponse[None])

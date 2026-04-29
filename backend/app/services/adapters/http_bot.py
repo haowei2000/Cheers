@@ -150,6 +150,15 @@ class HttpBotAdapter(OpenClawAdapter):
             config.update(self.model.config)
         return config
 
+    def _build_headers(self, api_config: dict[str, Any]) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if api_config.get("api_key"):
+            headers["Authorization"] = f"Bearer {api_config['api_key']}"
+        extra_headers = api_config.get("extra_headers")
+        if isinstance(extra_headers, dict):
+            headers.update({str(key): str(value) for key, value in extra_headers.items()})
+        return headers
+
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         """Legacy single-result entry — drains ``execute_iter`` into AgentResponse."""
         return await self._drain_execute_iter(payload)
@@ -199,12 +208,7 @@ class HttpBotAdapter(OpenClawAdapter):
         api_config = self._get_api_config()
         url = f"{api_config['base_url']}/chat/completions"
 
-        headers = {"Content-Type": "application/json"}
-        if api_config.get("api_key"):
-            headers["Authorization"] = f"Bearer {api_config['api_key']}"
-        extra_headers = api_config.get("extra_headers")
-        if isinstance(extra_headers, dict):
-            headers.update({str(key): str(value) for key, value in extra_headers.items()})
+        headers = self._build_headers(api_config)
 
         pconfig = payload.process_config
         trigger_meta = payload.trigger_message or {}
@@ -400,4 +404,31 @@ class HttpBotAdapter(OpenClawAdapter):
             return
 
     async def health_check(self) -> bool:
-        return bool(self.model and self.model.model_name and self.model.base_url)
+        if not (self.model and self.model.model_name and self.model.base_url):
+            return False
+
+        api_config = self._get_api_config()
+        url = f"{api_config['base_url']}/chat/completions"
+        timeout = float(api_config.get("health_timeout", min(float(api_config.get("timeout", 15)), 15)))
+        body = {
+            "model": api_config["model_name"],
+            "messages": [{"role": "user", "content": "ping"}],
+            "temperature": 0,
+            "max_tokens": 1,
+            "stream": False,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(url, json=body, headers=self._build_headers(api_config))
+                response.raise_for_status()
+                data = response.json()
+            return bool(data.get("choices"))
+        except Exception as exc:
+            logger.info(
+                "http_bot.health_check.failed bot_id=%s model=%s base_url=%s error=%s",
+                self.bot.bot_id,
+                api_config.get("model_name"),
+                api_config.get("base_url"),
+                exc,
+            )
+            return False
