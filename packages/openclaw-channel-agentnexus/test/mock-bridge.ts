@@ -44,6 +44,7 @@ export class MockBridge {
 
   public receivedReplies: Array<Record<string, unknown>> = [];
   public receivedSends: Array<Record<string, unknown>> = [];
+  public receivedTraces: Array<Record<string, unknown>> = [];
   public receivedResumes: Array<Record<string, unknown>> = [];
   public receivedPings = 0;
 
@@ -124,6 +125,10 @@ export class MockBridge {
               message_id: `mock-send-${this.receivedSends.length}`,
             }));
           }
+          return;
+        }
+        if (frame.type === "trace") {
+          this.receivedTraces.push(frame);
           return;
         }
         if (frame.type === "resume") {

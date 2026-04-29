@@ -150,6 +150,35 @@ describe("BotSession with mock bridge", () => {
     await session.stop();
   });
 
+  it("trace() sends a fire-and-forget trace frame", async () => {
+    const session = await makeSession(bridge, {});
+    session.start();
+    await session.waitReady();
+
+    const ok = session.trace({
+      msg_id: "ph-1",
+      task_id: "task-1",
+      channel_id: "C1",
+      run_id: "run-1",
+      stream: "tool",
+      seq: 3,
+      title: "read_file",
+      message: "running",
+    });
+
+    expect(ok).toBe(true);
+    await waitFor(() => bridge.receivedTraces.length === 1);
+    expect(bridge.receivedTraces[0]).toMatchObject({
+      type: "trace",
+      msg_id: "ph-1",
+      task_id: "task-1",
+      stream: "tool",
+      title: "read_file",
+    });
+
+    await session.stop();
+  });
+
   it("reply times out when bridge swallows the frame", async () => {
     bridge.autoAckReply = false;
     const received: InboundMessage[] = [];
