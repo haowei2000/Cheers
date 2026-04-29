@@ -7,8 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.adapters.base import AgentPayload, AgentResponse
+from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.adapters.http_bot import HttpBotAdapter
+from app.services.pipeline.bot.context import BotRunContext
 from app.services.pipeline.process_config import ProcessConfig
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -43,6 +44,64 @@ def _make_bot(
         ai_model=model,
         prompt_template=template,
     )
+
+
+class _FakeWriter:
+    def __init__(self) -> None:
+        self.finalized: list[tuple[object, str]] = []
+
+    async def pre_create(self, bot_id: str, task_id: str):
+        return SimpleNamespace(msg_id=f"placeholder-{bot_id}")
+
+    async def finalize(self, msg, content: str, *, file_ids=None) -> None:
+        self.finalized.append((msg, content))
+
+    async def record_task(self, bot_id: str, msg_id: str) -> None:
+        pass
+
+
+def _make_call_bot_run_ctx(
+    *,
+    bot_id_by_username: dict[str, str],
+    adapter_factory,
+    memory: dict[str, str],
+    task_id: str,
+    channel_id: str,
+    sender_id: str,
+    sender_name: str,
+    channel_name: str,
+    attachments: list[dict[str, str]] | None = None,
+    original_question_text: str | None = None,
+) -> BotRunContext:
+    trigger_msg = SimpleNamespace(
+        msg_id=f"trigger-{task_id}",
+        sender_id=sender_id,
+        in_reply_to_msg_id=None,
+        msg_type="normal",
+        created_at=None,
+    )
+    ctx = BotRunContext(
+        channel_id=channel_id,
+        bus=SimpleNamespace(publish=lambda event: None),
+        session=SimpleNamespace(),
+        trigger_msg=trigger_msg,
+        adapter_factory=adapter_factory,
+        root_task_id=task_id,
+    )
+    ctx.writer = _FakeWriter()
+    ctx.channel_bot_usernames = list(bot_id_by_username.keys())
+    ctx.bot_id_by_username = dict(bot_id_by_username)
+    ctx.bot_details_by_username = {
+        username: {"display_name": username}
+        for username in bot_id_by_username
+    }
+    ctx.memory_context = dict(memory)
+    ctx.attachments = attachments or []
+    ctx.original_question = original_question_text
+    ctx.trigger_content = original_question_text or ""
+    ctx.sender_name = sender_name
+    ctx.channel_name = channel_name
+    return ctx
 
 
 # ── _apply_user_template 单元测试 ────────────────────────────────────────────
@@ -263,29 +322,30 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
 
     async def _fake_adapter_factory(bot_id: str):
         """返回一个捕获 payload 的假 adapter。"""
-        class _CapturingAdapter:
+        class _CapturingAdapter(OpenClawAdapter):
             async def execute(self, payload: AgentPayload) -> AgentResponse:
                 captured_payload.append(payload)
                 return AgentResponse(content="子bot回复", task_id=payload.task_id, success=True)
+
+            async def health_check(self) -> bool:
+                return True
         return _CapturingAdapter()
 
-    async def _fake_broadcast(bot_id: str, content: str) -> None:
-        pass
-
+    run_ctx = _make_call_bot_run_ctx(
+        channel_id="ch-call",
+        bot_id_by_username={"child_bot": "bot-child-001"},
+        adapter_factory=_fake_adapter_factory,
+        memory={"anchor": "锚点内容", "progress": "进度内容"},
+        task_id="task-parent",
+        sender_id="user-parent",
+        sender_name="赵六",
+        channel_name="协作频道",
+        original_question_text="原始问题",
+    )
     ctx = {
         "channel_id": "ch-call",
-        "bot_id_by_username": {"child_bot": "bot-child-001"},
-        "adapter_factory": _fake_adapter_factory,
-        "create_and_broadcast": _fake_broadcast,
         "memory": {"anchor": "锚点内容", "progress": "进度内容"},
-        "task_id": "task-parent",
-        "sender_id": "user-parent",
-        "sender_name": "赵六",
-        "channel_name": "协作频道",
-        "attachments": [],
-        "original_question_text": "原始问题",
-        "_db_session": None,
-        "_bot_id": "bot-parent",
+        "_run_ctx": run_ctx,
     }
 
     tools = _make_tools(ctx)
@@ -348,48 +408,55 @@ async def test_call_bot_end_to_end_renders_all_vars() -> None:
 
     captured_body: dict = {}
 
-    fake_resp = MagicMock()
-    fake_resp.raise_for_status = MagicMock()
-    fake_resp.headers = {"content-type": "application/json"}
-    fake_resp.json.return_value = {
-        "choices": [{"message": {"content": "子bot执行成功"}}],
-    }
+    class _FakeStreamResponse:
+        headers = {"content-type": "application/json"}
 
-    async def _fake_post(url, *, json, headers, timeout):
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aread(self) -> bytes:
+            return b'{"choices":[{"message":{"content":"\xe5\xad\x90bot\xe6\x89\xa7\xe8\xa1\x8c\xe6\x88\x90\xe5\x8a\x9f"}}]}'
+
+    class _FakeStreamCtx:
+        async def __aenter__(self) -> _FakeStreamResponse:
+            return _FakeStreamResponse()
+
+        async def __aexit__(self, *exc_info) -> None:
+            return None
+
+    def _fake_stream(method, url, *, json, headers, timeout):
         captured_body.update(json)
-        return fake_resp
+        return _FakeStreamCtx()
 
     mock_client = MagicMock()
-    mock_client.post = _fake_post
+    mock_client.stream = _fake_stream
 
     async def _fake_adapter_factory(bot_id: str):
         adapter = HttpBotAdapter(child_bot)  # type: ignore[arg-type]
         return adapter
 
-    async def _fake_broadcast(bot_id: str, content: str) -> None:
-        pass
-
+    memory = {
+        "anchor": "E2E锚点",
+        "progress": "E2E进度",
+        "decisions": "E2E决策",
+        "files_index": "E2E索引",
+        "recent": "E2E近况",
+        "todos": "E2E待办",
+    }
+    run_ctx = _make_call_bot_run_ctx(
+        channel_id="ch-e2e",
+        bot_id_by_username={"child_bot": "bot-child-e2e"},
+        adapter_factory=_fake_adapter_factory,
+        memory=memory,
+        task_id="task-e2e",
+        sender_id="user-e2e",
+        sender_name="端到端用户",
+        channel_name="端到端频道",
+    )
     ctx = {
         "channel_id": "ch-e2e",
-        "bot_id_by_username": {"child_bot": "bot-child-e2e"},
-        "adapter_factory": _fake_adapter_factory,
-        "create_and_broadcast": _fake_broadcast,
-        "memory": {
-            "anchor": "E2E锚点",
-            "progress": "E2E进度",
-            "decisions": "E2E决策",
-            "files_index": "E2E索引",
-            "recent": "E2E近况",
-            "todos": "E2E待办",
-        },
-        "task_id": "task-e2e",
-        "sender_id": "user-e2e",
-        "sender_name": "端到端用户",
-        "channel_name": "端到端频道",
-        "attachments": [],
-        "original_question_text": None,
-        "_db_session": None,
-        "_bot_id": "bot-parent-e2e",
+        "memory": memory,
+        "_run_ctx": run_ctx,
     }
 
     tools = _make_tools(ctx)
