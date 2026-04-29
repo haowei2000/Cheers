@@ -92,6 +92,92 @@ interface MermaidBlockProps {
   streaming?: boolean;
 }
 
+function stripTrailingSemicolon(value: string): string {
+  return value.trim().replace(/;\s*$/, "");
+}
+
+function parseJsonArrayLiteral(line: string): unknown[] | null {
+  const literal = stripTrailingSemicolon(line);
+  if (!literal.startsWith("[") || !literal.endsWith("]")) return null;
+  try {
+    const parsed = JSON.parse(literal);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isStringArrayLine(line: string): boolean {
+  const parsed = parseJsonArrayLiteral(line);
+  return Boolean(parsed?.length && parsed.every((item) => typeof item === "string"));
+}
+
+function numericSeriesValues(lines: string[]): number[] {
+  return lines.flatMap((line) => {
+    const match = /^\s*(?:bar|line)\s+(\[[^\]]+\])\s*;?\s*$/i.exec(line);
+    if (!match) return [];
+    const parsed = parseJsonArrayLiteral(match[1]);
+    if (!parsed) return [];
+    return parsed.filter((item): item is number => typeof item === "number" && Number.isFinite(item));
+  });
+}
+
+function axisLimit(value: number, direction: "min" | "max"): string {
+  if (direction === "min") return String(Math.floor(value));
+  const rounded = Math.ceil(value);
+  return String(rounded > 0 ? rounded : 1);
+}
+
+function normalizeXyChartBeta(code: string): string {
+  const lines = code.split(/\r?\n/);
+  const chartIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (chartIndex < 0 || !/^xychart-beta\b/i.test(lines[chartIndex].trim())) return code;
+
+  const hasXAxis = lines.some((line) => /^\s*x-axis\b/i.test(line));
+  const hasYAxis = lines.some((line) => /^\s*y-axis\b/i.test(line));
+  if (hasXAxis && hasYAxis) return code;
+
+  const labelLineIndex = hasXAxis
+    ? -1
+    : lines.findIndex((line, index) => index > chartIndex && isStringArrayLine(line));
+  if (!hasXAxis && labelLineIndex < 0) return code;
+
+  const labelLine = labelLineIndex >= 0 ? lines[labelLineIndex] : "";
+  const indent = labelLine.match(/^\s*/)?.[0] || "    ";
+  const nextLines = labelLineIndex >= 0
+    ? lines.filter((_, index) => index !== labelLineIndex)
+    : [...lines];
+  const insertLines: string[] = [];
+
+  if (!hasXAxis) {
+    insertLines.push(`${indent}x-axis ${stripTrailingSemicolon(labelLine)}`);
+  }
+
+  if (!hasYAxis) {
+    const values = numericSeriesValues(nextLines);
+    if (values.length > 0) {
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const yMin = min < 0 ? axisLimit(min * 1.1, "min") : "0";
+      const yMax = axisLimit(max * 1.1, "max");
+      insertLines.push(`${indent}y-axis "值" ${yMin} --> ${yMax}`);
+    }
+  }
+
+  if (insertLines.length === 0) return code;
+
+  let insertIndex = chartIndex + 1;
+  while (insertIndex < nextLines.length && /^\s*(title|acc_title|acc_descr)\b/i.test(nextLines[insertIndex].trim())) {
+    insertIndex += 1;
+  }
+  nextLines.splice(insertIndex, 0, ...insertLines);
+  return nextLines.join("\n");
+}
+
+function normalizeMermaidCode(code: string): string {
+  return normalizeXyChartBeta(code);
+}
+
 function MermaidBlock({ code, streaming }: MermaidBlockProps) {
   const uid = useId().replace(/:/g, "");
   const id = `mermaid-${uid}`;
@@ -99,6 +185,7 @@ function MermaidBlock({ code, streaming }: MermaidBlockProps) {
   const [error, setError] = useState<string | null>(null);
   const [svg, setSvg] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const renderCode = normalizeMermaidCode(code);
 
   useEffect(() => {
     if (streaming) {
@@ -112,7 +199,7 @@ function MermaidBlock({ code, streaming }: MermaidBlockProps) {
         const mermaid = (await import("mermaid")).default;
         const isDark = document.documentElement.classList.contains("dark");
         mermaid.initialize({ startOnLoad: false, theme: isDark ? "dark" : "default" });
-        const { svg: rendered } = await mermaid.render(id, code);
+        const { svg: rendered } = await mermaid.render(id, renderCode);
         setSvg(rendered);
         setError(null);
       } catch (e) {
@@ -123,7 +210,7 @@ function MermaidBlock({ code, streaming }: MermaidBlockProps) {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [code, streaming, id]);
+  }, [renderCode, streaming, id]);
 
   if (streaming || (!svg && !error)) {
     return (
