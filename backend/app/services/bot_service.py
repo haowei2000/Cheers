@@ -21,22 +21,15 @@ def is_builtin_bot(bot: BotAccount) -> bool:
     return bot.bot_id in _BUILTIN_BOT_IDS
 
 
-def normalize_bot_scope(scope: str | None, is_public: bool | None = True) -> str:
-    """Return a valid bot scope, mapping legacy is_public when scope is absent."""
+def normalize_bot_scope(scope: str | None) -> str:
+    """Return a valid bot scope; new Bot code treats scope as the source of truth."""
     if scope in BOT_SCOPES:
         return scope
-    return "friend" if is_public else "private"
+    return "friend"
 
 
 def bot_scope(bot: BotAccount) -> str:
-    return normalize_bot_scope(
-        getattr(bot, "scope", None),
-        getattr(bot, "is_public", True),
-    )
-
-
-def scope_to_is_public(scope: str) -> bool:
-    return scope != "private"
+    return normalize_bot_scope(getattr(bot, "scope", None))
 
 
 def can_manage_bot(bot: BotAccount, current_user: User) -> bool:
@@ -152,7 +145,6 @@ class BotService:
         *,
         custom_system_prompt: str | None = None,
         intro: str | None = None,
-        is_public: bool = True,
         scope: str | None = None,
         bot_id: str | None = None,
         binding_type: str = "http",
@@ -169,7 +161,7 @@ class BotService:
         """
         username = _validate_username(username)
         intro = _validate_intro(intro)
-        scope = normalize_bot_scope(scope, is_public)
+        scope = normalize_bot_scope(scope)
 
         existing = await self.repo.get_by_username(username)
         if existing:
@@ -196,7 +188,6 @@ class BotService:
             template_id=template_id,
             custom_system_prompt=custom_system_prompt,
             intro=intro,
-            is_public=scope_to_is_public(scope),
             scope=scope,
             binding_type=binding_type,
             binding_config=binding_config,
@@ -244,11 +235,8 @@ class BotService:
         if not can_manage_bot(bot, current_user):
             raise ForbiddenError("无权修改该 Bot")
 
-        if "scope" not in kwargs and "is_public" in kwargs:
-            kwargs["scope"] = normalize_bot_scope(None, kwargs["is_public"])
         if "scope" in kwargs:
-            kwargs["scope"] = normalize_bot_scope(kwargs["scope"], getattr(bot, "is_public", True))
-            kwargs["is_public"] = scope_to_is_public(kwargs["scope"])
+            kwargs["scope"] = normalize_bot_scope(kwargs["scope"])
 
         if "username" in kwargs and kwargs["username"]:
             kwargs["username"] = _validate_username(kwargs["username"])

@@ -32,15 +32,6 @@ class BotRepository:
         )
         return list(result.scalars().all())
 
-    async def list_public(self) -> list[BotAccount]:
-        result = await self.session.execute(
-            select(BotAccount)
-            .where(BotAccount.is_public.is_(True))
-            .order_by(BotAccount.created_at)
-            .options(*_BOT_OPTIONS)
-        )
-        return list(result.scalars().all())
-
     async def create(
         self,
         username: str,
@@ -49,7 +40,6 @@ class BotRepository:
         model_id: str | None = None,
         template_id: str | None = None,
         custom_system_prompt: str | None = None,
-        is_public: bool = True,
         scope: str = "friend",
         created_by: str | None = None,
     ) -> BotAccount:
@@ -60,7 +50,6 @@ class BotRepository:
             model_id=model_id,
             template_id=template_id,
             custom_system_prompt=custom_system_prompt,
-            is_public=is_public,
             scope=scope,
             created_by=created_by,
         )
