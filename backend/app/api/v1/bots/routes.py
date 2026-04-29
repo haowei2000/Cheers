@@ -31,7 +31,6 @@ from app.services.bot_service import (
     can_manage_bot,
     is_builtin_bot,
     normalize_bot_scope,
-    scope_to_is_public,
 )
 from app.services.openclaw_bridge.registry import bot_session_registry
 from app.utils.crypto import encrypt_value
@@ -192,7 +191,6 @@ def _to_simple(
         display_name=bot.display_name,
         description=bot.description,
         status=bot.status,
-        is_public=bot.is_public,
         scope=bot_scope(bot),
         binding_type=getattr(bot, "binding_type", None) or "http",
         is_builtin=is_builtin_bot(bot),
@@ -234,7 +232,6 @@ def _to_full(
         description=bot.description,
         avatar_url=bot.avatar_url,
         status=bot.status,
-        is_public=bot.is_public,
         scope=bot_scope(bot),
         intro=bot.intro,
         custom_system_prompt=bot.custom_system_prompt,
@@ -291,7 +288,6 @@ async def create_bot(
         template_id=body.template_id,
         custom_system_prompt=body.custom_system_prompt,
         intro=body.intro,
-        is_public=body.is_public,
         scope=body.scope,
         bot_id=body.bot_id,
         binding_type=body.binding_type,
@@ -516,7 +512,7 @@ async def quick_connect_openclaw(
         intro_dict["capabilities"] = skills
     intro_str = json.dumps(intro_dict, ensure_ascii=False)
 
-    scope = normalize_bot_scope(body.scope or "private", False)
+    scope = normalize_bot_scope(body.scope or "private")
     bot = BotAccount(
         bot_id=gen_uuid(),
         username=bot_username,
@@ -525,7 +521,6 @@ async def quick_connect_openclaw(
         model_id=ai_model.model_id,
         template_id=template.template_id,
         status="online",
-        is_public=scope_to_is_public(scope),
         scope=scope,
         intro=intro_str,
         created_by=current_user.user_id,

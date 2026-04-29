@@ -63,13 +63,58 @@ const BOT_SCOPE_OPTIONS: { value: BotScope; label: string; hint: string }[] = [
   { value: "everyone", label: "Everyone", hint: "所有用户可发起私信或邀请" },
 ];
 
-function botScopeLabel(scope?: string) {
-  const found = BOT_SCOPE_OPTIONS.find((x) => x.value === scope);
+function normalizeBotScope(scope?: string | null): BotScope {
+  if (scope === "private" || scope === "friend" || scope === "everyone") return scope;
+  return "friend";
+}
+
+function botScopeLabel(scope?: string | null) {
+  const normalized = normalizeBotScope(scope);
+  const found = BOT_SCOPE_OPTIONS.find((x) => x.value === normalized);
   return found?.label || "Friend";
 }
 
 function botOwnerLabel(bot: Pick<BotRow, "owner" | "created_by">) {
   return bot.owner?.display_name || bot.owner?.username || bot.created_by || "系统";
+}
+
+function BotScopeControl({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: BotScope;
+  onChange: (scope: BotScope) => void;
+  disabled?: boolean;
+}) {
+  const current = BOT_SCOPE_OPTIONS.find((opt) => opt.value === value) || BOT_SCOPE_OPTIONS[1];
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div
+        className="an-seg"
+        role="radiogroup"
+        aria-label="Bot 使用范围"
+        style={{ display: "inline-flex", justifySelf: "start" }}
+      >
+        {BOT_SCOPE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            className={value === opt.value ? "on" : ""}
+            onClick={() => onChange(opt.value)}
+            disabled={disabled}
+            role="radio"
+            aria-checked={value === opt.value}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <div className="an-rc-sub" style={{ marginTop: 0 }}>
+        {current.hint}
+      </div>
+    </div>
+  );
 }
 
 type BotConnectionTestResult = {
@@ -2726,17 +2771,7 @@ function BotNewPane({
             />
           </Field>
           <Field label="使用范围">
-            <select
-              value={scope}
-              onChange={(e) => setScope(e.target.value as BotScope)}
-              className={inputCls}
-            >
-              {BOT_SCOPE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label} · {opt.hint}
-                </option>
-              ))}
-            </select>
+            <BotScopeControl value={scope} onChange={setScope} disabled={creating} />
           </Field>
         </div>
 
@@ -2892,7 +2927,7 @@ function BotEditPane({
 }) {
   const [displayName, setDisplayName] = useState(bot.display_name || "");
   const [description, setDescription] = useState(bot.description || "");
-  const [scope, setScope] = useState<BotScope>(bot.scope || "friend");
+  const [scope, setScope] = useState<BotScope>(normalizeBotScope(bot.scope));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
@@ -2907,7 +2942,7 @@ function BotEditPane({
   useEffect(() => {
     setDisplayName(bot.display_name || "");
     setDescription(bot.description || "");
-    setScope(bot.scope || "friend");
+    setScope(normalizeBotScope(bot.scope));
     setModelId(bot.model_id || "");
     setTemplateId(bot.template_id || "");
     setConnectionTest(null);
@@ -3159,17 +3194,7 @@ function BotEditPane({
             />
           </Field>
           <Field label="使用范围">
-            <select
-              value={scope}
-              onChange={(e) => setScope(e.target.value as BotScope)}
-              className={inputCls}
-            >
-              {BOT_SCOPE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label} · {opt.hint}
-                </option>
-              ))}
-            </select>
+            <BotScopeControl value={scope} onChange={setScope} disabled={saving} />
           </Field>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             {bot.is_builtin ? (
