@@ -9,10 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import BotAccount, User
 from app.repositories.bot_repo import AIModelRepository, BotRepository, PromptTemplateRepository
-from app.services.guide.constants import GUIDE_HELPER_BOT_ID
+from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 from app.utils.permissions import can_access, get_friend_ids
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
+_BUILTIN_BOT_IDS = {GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID}
+
+
+def is_builtin_bot(bot: BotAccount) -> bool:
+    return bot.bot_id in _BUILTIN_BOT_IDS
 
 
 def _validate_username(username: str) -> str:
@@ -55,6 +60,8 @@ class BotService:
     async def list_visible(self, current_user: User) -> list[BotAccount]:
         """返回当前用户可见的 bot：自己创建 + 好友公开的 + 智枢协作操作指引助手."""
         all_bots = await self.repo.list_all()
+        if current_user.role == "system_admin":
+            return all_bots
         friend_ids = await get_friend_ids(self.session, current_user.user_id)
         return [
             b for b in all_bots
@@ -208,6 +215,8 @@ class BotService:
     async def delete(self, bot_id: str, current_user: User) -> None:
         bot = await self.get_or_404(bot_id)
         from app.utils.permissions import is_admin
+        if is_builtin_bot(bot):
+            raise BadRequestError("内置 Bot 不可删除")
         if bot.created_by != current_user.user_id and not is_admin(current_user):
             raise ForbiddenError("无权删除该 Bot")
         await self.repo.delete(bot)

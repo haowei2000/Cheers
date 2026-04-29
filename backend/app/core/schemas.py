@@ -145,6 +145,7 @@ class BotInResponse(BaseModel):
     created_at: datetime | None = None
     binding_type: str = "http"
     binding_config: dict | None = None
+    is_builtin: bool = False
     # WebSocket Bot token 元信息：常规响应只回前缀与轮换时间，明文 bot_token
     # 只在 create / rotate 接口一次性返回
     bot_token_prefix: str | None = None
@@ -174,6 +175,7 @@ class BotSimpleInResponse(BaseModel):
     status: str
     is_public: bool = True
     binding_type: str = "http"
+    is_builtin: bool = False
     connection_status: str = "not_required"
     is_online: bool = True
     control_connected: bool | None = None
