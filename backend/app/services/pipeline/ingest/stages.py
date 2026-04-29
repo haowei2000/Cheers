@@ -233,5 +233,6 @@ def make_ingest_pipeline() -> Pipeline[IngestContext]:
             CommitStage(),
             EmitStage(),
             FanoutUnreadStage(),
-        ]
+        ],
+        name="ingest",
     )
