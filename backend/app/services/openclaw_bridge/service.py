@@ -22,7 +22,7 @@ from app.services.openclaw_bridge.pending import PendingReply, pending_replies
 from app.services.openclaw_bridge.streams import StreamState, stream_registry
 from app.services.orchestrator.mention import resolve_user_mentions
 from app.services.pipeline.bus import WSEventBus
-from app.services.pipeline.events import MessageCreated, MessageDone, MessageStreamDelta
+from app.services.pipeline.events import BotTrace, MessageCreated, MessageDone, MessageStreamDelta
 
 logger = logging.getLogger("app.services.openclaw_bridge.service")
 
@@ -204,6 +204,43 @@ async def apply_delta(
     await WSEventBus(state.channel_id).publish(
         MessageStreamDelta(msg_id=msg_id, delta=delta)
     )
+    return True
+
+
+async def apply_trace(
+    *,
+    msg_id: str,
+    bot_id: str,
+    payload: dict,
+) -> bool:
+    """Validate and broadcast a transient OpenClaw runtime trace event."""
+    state = await stream_registry.get(msg_id)
+    if state is None or state.bot_id != bot_id:
+        return False
+    task_id = payload.get("task_id")
+    if isinstance(task_id, str) and state.task_id and task_id != state.task_id:
+        return False
+
+    allowed = {
+        "run_id",
+        "session_key",
+        "stream",
+        "seq",
+        "ts",
+        "phase",
+        "status",
+        "title",
+        "message",
+        "data",
+    }
+    out = {k: payload[k] for k in allowed if k in payload}
+    out.update({
+        "msg_id": state.msg_id,
+        "task_id": state.task_id,
+        "channel_id": state.channel_id,
+        "bot_id": state.bot_id,
+    })
+    await WSEventBus(state.channel_id).publish(BotTrace(data=out))
     return True
 
 
