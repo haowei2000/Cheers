@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import { ChatBubbleLeftIcon } from "@heroicons/react/24/solid";
 import type { CurrentUser, Friend, UserSearchResult } from "../types";
@@ -44,15 +44,22 @@ type BotRow = {
   created_by?: string | null;
 };
 
+type BotConnectionTestResult = {
+  reachable: boolean;
+  message?: string;
+  checked_at?: string;
+  duration_ms?: number;
+};
+
 function botOnlineMeta(bot: BotRow) {
   const isWs = (bot.binding_type || "http") === "websocket";
   if (!isWs) {
     const online = bot.is_online !== false && bot.status !== "offline";
     return {
-      label: online ? "HTTP 可用" : "已停用",
+      label: online ? "HTTP 已启用" : "已停用",
       color: online ? "var(--green)" : "var(--fg-3)",
       bg: online ? "var(--green-muted)" : "var(--surface-soft)",
-      title: online ? "HTTP Bot 无需长连接" : "Bot 状态为 offline",
+      title: online ? "HTTP Bot 无需长连接；可点击测试连通验证模型 API" : "Bot 状态为 offline",
     };
   }
   if (bot.connection_status === "online" && bot.is_online) {
@@ -2833,12 +2840,15 @@ function BotEditPane({
   const [description, setDescription] = useState(bot.description || "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTest, setConnectionTest] = useState<BotConnectionTestResult | null>(null);
 
   // Reset form when switching between bots
-  useMemo(() => {
+  useEffect(() => {
     setDisplayName(bot.display_name || "");
     setDescription(bot.description || "");
-  }, [bot.bot_id]);
+    setConnectionTest(null);
+  }, [bot.bot_id, bot.description, bot.display_name]);
 
   const save = async () => {
     setSaving(true);
@@ -2887,6 +2897,34 @@ function BotEditPane({
     }
   };
 
+  const testConnection = async () => {
+    setTestingConnection(true);
+    try {
+      const res = await apiFetch(`/bots/${bot.bot_id}/connection-test`, {
+        method: "POST",
+        token: authToken,
+      });
+      const data = await res.json();
+      if (data?.status !== "success") {
+        throw new Error(data?.message || data?.detail || "连通测试失败");
+      }
+      const result = data.data as BotConnectionTestResult;
+      setConnectionTest(result);
+      if (result.reachable) {
+        toast.success(result.message || "Bot 连通正常");
+      } else {
+        toast.error(result.message || "Bot 未连通");
+      }
+      onUpdated();
+    } catch (e: unknown) {
+      const message = (e as Error).message || "连通测试失败";
+      setConnectionTest({ reachable: false, message });
+      toast.error(message);
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   return (
     <div className="an-pane">
       <div className="an-pane-head">
@@ -2898,7 +2936,15 @@ function BotEditPane({
       </div>
       <div className="an-list-table">
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-          <div className="an-rc-title">在线检测</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div>
+              <div className="an-rc-title">在线检测</div>
+              <div className="an-rc-sub">实时连通测试</div>
+            </div>
+            <PrimaryButton onClick={testConnection} disabled={testingConnection}>
+              {testingConnection ? "测试中…" : "测试连通"}
+            </PrimaryButton>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
             <div className="an-rc-sub">类型：{(bot.binding_type || "http") === "websocket" ? "WebSocket" : "HTTP"}</div>
             <div className="an-rc-sub">状态：{bot.status || "online"}</div>
@@ -2909,6 +2955,25 @@ function BotEditPane({
               </>
             )}
           </div>
+          {connectionTest && (
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "8px 10px",
+                background: connectionTest.reachable ? "var(--green-muted)" : "var(--red-muted)",
+                color: connectionTest.reachable ? "var(--green)" : "var(--red)",
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ fontWeight: 650 }}>
+                {connectionTest.reachable ? "连通正常" : "未连通"}
+                {typeof connectionTest.duration_ms === "number" ? ` · ${connectionTest.duration_ms}ms` : ""}
+              </div>
+              {connectionTest.message && <div>{connectionTest.message}</div>}
+            </div>
+          )}
         </div>
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">基本信息</div>
