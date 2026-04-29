@@ -320,14 +320,29 @@ class ChannelService:
                 "avatar_url": entity.avatar_url,
             }
             if m.member_type == "bot":
+                bot_entity: BotAccount = entity
                 item["template_id"] = m.template_id
                 if m.prompt_template:
                     item["template_name"] = m.prompt_template.name
                 else:
-                    bot_entity: BotAccount = entity
                     item["template_name"] = (
                         bot_entity.prompt_template.name if bot_entity.prompt_template else None
                     )
+                item["status"] = bot_entity.status
+                item["binding_type"] = getattr(bot_entity, "binding_type", None) or "http"
+                if item["binding_type"] == "websocket":
+                    from app.services.openclaw_bridge.registry import bot_session_registry
+
+                    live_state = bot_session_registry.connection_state(bot_entity.bot_id)
+                    item.update(live_state)
+                    item["is_online"] = bool(bot_entity.status != "offline" and live_state["is_online"])
+                else:
+                    item.update({
+                        "connection_status": "not_required",
+                        "is_online": bot_entity.status != "offline",
+                        "control_connected": None,
+                        "data_connected": None,
+                    })
             result.append(item)
         return result
 

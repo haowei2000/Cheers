@@ -224,6 +224,7 @@ async def bridge_list_channel_ws_bots(
             "username": b.username,
             "display_name": b.display_name,
             "status": b.status,
+            **bot_session_registry.connection_state(b.bot_id),
         }
         for b in rows
     ])
