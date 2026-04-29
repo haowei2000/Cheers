@@ -64,7 +64,6 @@ async def _seed_scope_data(db_session: AsyncSession, suffix: str) -> dict[str, o
         username=f"scope_private_bot_{suffix}",
         display_name="Scope Private",
         created_by=owner.user_id,
-        is_public=False,
         scope="private",
     )
     friend_bot = BotAccount(
@@ -72,7 +71,6 @@ async def _seed_scope_data(db_session: AsyncSession, suffix: str) -> dict[str, o
         username=f"scope_friend_bot_{suffix}",
         display_name="Scope Friend",
         created_by=owner.user_id,
-        is_public=True,
         scope="friend",
     )
     everyone_bot = BotAccount(
@@ -80,7 +78,6 @@ async def _seed_scope_data(db_session: AsyncSession, suffix: str) -> dict[str, o
         username=f"scope_everyone_bot_{suffix}",
         display_name="Scope Everyone",
         created_by=owner.user_id,
-        is_public=True,
         scope="everyone",
     )
     db_session.add_all(
@@ -136,6 +133,7 @@ async def test_bot_scope_filters_bot_list_and_search(db_session: AsyncSession) -
 
     listed = next(item for item in owner_list.json()["data"] if item["bot_id"] == friend_bot.bot_id)
     assert listed["scope"] == "friend"
+    assert "is_public" not in listed
     assert listed["owner"]["user_id"] == owner.user_id
     assert listed["can_manage"] is True
 
@@ -184,7 +182,6 @@ async def test_bot_scope_guards_dm_and_channel_invites(db_session: AsyncSession)
     assert friend_dm.status_code == 200
     existing_channel_id = friend_dm.json()["data"]["channel_id"]
     friend_bot.scope = "private"
-    friend_bot.is_public = False
     await db_session.flush()
 
     existing_dm = await _request_as(
@@ -240,3 +237,23 @@ async def test_visible_non_owner_cannot_edit_bot(db_session: AsyncSession) -> No
     )
 
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_owner_can_update_bot_scope(db_session: AsyncSession) -> None:
+    data = await _seed_scope_data(db_session, "owner-update")
+    owner = data["owner"]
+    friend_bot = data["friend_bot"]
+
+    resp = await _request_as(
+        db_session,
+        owner,
+        "PUT",
+        f"/api/v1/bots/{friend_bot.bot_id}",
+        json={"scope": "everyone"},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()["data"]
+    assert payload["scope"] == "everyone"
+    assert "is_public" not in payload
