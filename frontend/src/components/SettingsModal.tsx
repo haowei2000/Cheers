@@ -45,6 +45,7 @@ type BotRow = {
   template_id?: string | null;
   model_name?: string | null;
   template_name?: string | null;
+  is_builtin?: boolean;
   created_by?: string | null;
 };
 
@@ -140,6 +141,10 @@ export function SettingsModal({
   const [pane, setPane] = useState<Pane>("bot");
   const [density, setDensityState] = useState<Density>(() => getStoredDensity());
   const [bots, setBots] = useState<BotRow[]>([]);
+  const canManageBuiltinBots = currentUser?.role === "system_admin";
+  const visibleBots = bots.filter(
+    (b) => b.created_by === currentUser?.user_id || (canManageBuiltinBots && b.is_builtin),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -206,7 +211,7 @@ export function SettingsModal({
           <div className="an-settings-pane">
             {pane === "bot" && (
               <BotPane
-                bots={bots.filter((b) => b.created_by === currentUser?.user_id)}
+                bots={visibleBots}
                 authToken={authToken}
                 onChanged={reloadBots}
               />
@@ -1574,6 +1579,7 @@ function BotListSubPane({
                 <div className="an-rc-title">{b.display_name || b.username}</div>
                 <div className="an-rc-sub">
                   @{b.username} · {(b.binding_type || "http") === "websocket" ? "WebSocket" : "HTTP"}
+                  {b.is_builtin ? " · 内置" : ""}
                 </div>
               </div>
               <BotOnlineBadge bot={b} />
@@ -2992,7 +2998,10 @@ function BotEditPane({
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{bot.display_name || bot.username}</div>
-          <div className="an-pane-sub">@{bot.username} · {bot.bot_id}</div>
+          <div className="an-pane-sub">
+            @{bot.username} · {bot.bot_id}
+            {bot.is_builtin ? " · 内置" : ""}
+          </div>
         </div>
         <BotOnlineBadge bot={bot} />
       </div>
@@ -3100,9 +3109,15 @@ function BotEditPane({
             />
           </Field>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <DangerButton onClick={remove} disabled={deleting}>
-              {deleting ? "删除中…" : "删除 Bot"}
-            </DangerButton>
+            {bot.is_builtin ? (
+              <span className="an-rc-sub" style={{ alignSelf: "center" }}>
+                内置 Bot 不可删除
+              </span>
+            ) : (
+              <DangerButton onClick={remove} disabled={deleting}>
+                {deleting ? "删除中…" : "删除 Bot"}
+              </DangerButton>
+            )}
             <PrimaryButton onClick={save} disabled={saving}>
               {saving ? "保存中…" : "保存"}
             </PrimaryButton>
