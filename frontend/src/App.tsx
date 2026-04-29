@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import FriendsPanel from "./FriendsPanel";
 import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
 import MemoryPage from "./MemoryPage";
@@ -29,15 +28,12 @@ import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import { BotAvatar } from "./components/BotAvatar";
 import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
-import { ThinkingIndicator } from "./components/ThinkingIndicator";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { LoginModal } from "./components/LoginModal";
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
 import { CreateChannelModal } from "./components/CreateChannelModal";
 import { OpenClawQcModal } from "./components/OpenClawQcModal";
-import { KeychainModal } from "./components/KeychainModal";
-import { UserProfileModal } from "./components/UserProfileModal";
 import { ChannelProfileModal } from "./components/ChannelProfileModal";
 import { QaSummaryModal } from "./components/QaSummaryModal";
 import { ImageGenModal } from "./components/ImageGenModal";
@@ -274,24 +270,25 @@ export default function App() {
     }
   };
 
-  const insertSecret = (name: string) => {
-    const snippet = `$secret{${name}}`;
+  const insertAtCursor = (snippet: string) => {
     const el = inputRef.current;
     if (!el) {
       setInput((v) => v + snippet);
-      setKeychainPopupOpen(false);
       return;
     }
     const start = el.selectionStart ?? input.length;
     const end = el.selectionEnd ?? input.length;
     const newVal = input.slice(0, start) + snippet + input.slice(end);
     setInput(newVal);
-    setKeychainPopupOpen(false);
-    // Restore cursor after snippet
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(start + snippet.length, start + snippet.length);
     });
+  };
+
+  const insertSecret = (name: string) => {
+    insertAtCursor(`$secret{${name}}`);
+    setKeychainPopupOpen(false);
   };
   const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>(
     {},
@@ -430,11 +427,8 @@ export default function App() {
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
   const [manageMembersOpen, setManageMembersOpen] = useState(false);
-  const [friendsPanelOpen, setFriendsPanelOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
-  const [userProfileOpen, setUserProfileOpen] = useState(false);
-  const [keychainModalOpen, setKeychainModalOpen] = useState(false);
   const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
@@ -445,7 +439,6 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const [waitingForBotReply, setWaitingForBotReply] = useState(false);
   const [processingBots, setProcessingBots] = useState<Record<string, string>>(
     {},
   );
@@ -632,7 +625,6 @@ export default function App() {
       setChannelBots([]);
       setSelectedQaIds({});
       setSummaryPreview("");
-      setWaitingForBotReply(false);
       setProcessingBots({});
       setAutoAssist(false);
       setReplyingTo(null);
@@ -783,7 +775,24 @@ export default function App() {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.type === "message" && msg.data) {
+          if (msg.type === "bot_processing" && msg.data) {
+            const { bot_id, username } = msg.data;
+            if (bot_id) {
+              setProcessingBots((prev) => ({
+                ...prev,
+                [bot_id]: username || bot_id,
+              }));
+            }
+          } else if (msg.type === "message" && msg.data) {
+            // Bot placeholder arrived → clear the per-bot thinking indicator.
+            if (msg.data.sender_type === "bot" && msg.data.sender_id) {
+              setProcessingBots((prev) => {
+                if (!(msg.data.sender_id in prev)) return prev;
+                const next = { ...prev };
+                delete next[msg.data.sender_id];
+                return next;
+              });
+            }
             setMessages((prev) => {
               const id = msg.data.msg_id;
               if (id && prev.some((m) => m.msg_id === id)) {
@@ -1168,21 +1177,11 @@ export default function App() {
   const send = () => {
     if (!selectedId || !input.trim()) return;
     const targetChannelId = selectedId;
-    let content = input.trim();
-    if (replyingTo) {
-      const refBot =
-        replyingTo.sender_type === "bot"
-          ? channelBots.find((b) => b.member_id === replyingTo.sender_id)
-          : null;
-      const refLabel =
-        replyingTo.sender_type === "bot"
-          ? refBot?.display_name || refBot?.username || "Bot"
-          : currentUser?.display_name || "用户";
-      const quotedRaw =
-        parseGuidePayload(replyingTo.content).text || replyingTo.content;
-      const quotedText = quotedRaw.replace(/\n+/g, " ").trim().slice(0, 400);
-      content = `> [${refLabel}]: ${quotedText}\n\n${content}`;
-    }
+    const content = input.trim();
+    // Reply context is conveyed by `in_reply_to_msg_id` (rendered as a chip).
+    // We intentionally do NOT prepend a markdown blockquote of the parent
+    // message: that would duplicate what the chip already shows AND pollute
+    // bot adapters' user-message text.
     const isSecretSend = secretMode;
     // Resolve msg_type: a pending reply-to always wins; otherwise use the
     // user's current msgKind pick from the composer switcher.
@@ -1716,9 +1715,7 @@ export default function App() {
       );
       if (!picked || !String(picked.base_url || "").trim()) {
         setQaLlmReady(false);
-        setQaLlmHint(
-          "未配置问答总结 LLM，请到「管理」页绑定问答总结或系统 LLM。",
-        );
+        setQaLlmHint("未配置问答总结 LLM 或系统 LLM。");
         return false;
       }
       setQaLlmReady(true);
@@ -1777,7 +1774,7 @@ export default function App() {
     try {
       const ok = await refreshQaLlmStatus();
       if (!ok) {
-        toast.error("请先在管理页配置并绑定可用 LLM（问答总结或系统 LLM）。");
+        toast.error("请先配置并绑定可用 LLM（问答总结或系统 LLM）。");
         return;
       }
 
@@ -2167,14 +2164,6 @@ export default function App() {
           onNavigate={handleNotifNavigate}
         />
 
-        {/* 好友管理面板 */}
-        <FriendsPanel
-          currentUserId={currentUserId}
-          userToken={authToken ?? undefined}
-          isOpen={friendsPanelOpen}
-          onClose={() => setFriendsPanelOpen(false)}
-        />
-
         {/* 频道成员管理模态框 */}
         {selectedId && (
           <ChannelMembersModal
@@ -2184,32 +2173,6 @@ export default function App() {
             userToken={authToken ?? undefined}
             isOpen={manageMembersOpen}
             onClose={() => setManageMembersOpen(false)}
-          />
-        )}
-
-        {/* Keychain modal */}
-        {authToken && (
-          <KeychainModal
-            open={keychainModalOpen}
-            userToken={authToken}
-            onClose={() => setKeychainModalOpen(false)}
-          />
-        )}
-
-        {/* User profile modal */}
-        {currentUser && (
-          <UserProfileModal
-            open={userProfileOpen}
-            currentUser={currentUser}
-            userToken={authToken!}
-            onClose={() => setUserProfileOpen(false)}
-            onProfileUpdated={(data) => {
-              if (!currentUser) return;
-              setCurrentUser({
-                ...currentUser,
-                display_name: data.display_name,
-              });
-            }}
           />
         )}
 
@@ -4382,7 +4345,6 @@ export default function App() {
                       }
                       return out;
                       })()}
-                      {waitingForBotReply && <ThinkingIndicator />}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
                           <div key={botId} className="flex gap-3 px-3 py-2">
@@ -4742,7 +4704,7 @@ export default function App() {
                       />
                       {/* Input toolbar */}
                       <div className="an-composer-bar">
-                        <div className="flex items-center gap-0.5">
+                        <div className="flex items-center gap-1">
                           {/* 上传文件和图片菜单 */}
                           <input
                             ref={fileImgInputRef}
@@ -4757,11 +4719,10 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={openKeychainPopup}
-                                className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
-                                style={{
-                                  color: keychainPopupOpen ? "var(--accent)" : "var(--fg-3)",
-                                  background: keychainPopupOpen ? "var(--accent-muted)" : "transparent",
-                                }}
+                                className={
+                                  "an-composer-iconbtn" +
+                                  (keychainPopupOpen ? " is-active" : "")
+                                }
                                 title="插入密钥链"
                               >
                                 <KeyIcon className="w-4 h-4" />
@@ -4801,7 +4762,10 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => setUploadMenuOpen((o) => !o)}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                              className={
+                                "an-composer-iconbtn" +
+                                (uploadMenuOpen ? " is-active" : "")
+                              }
                               title="上传文件和图片"
                             >
                               <PlusIcon className="w-[18px] h-[18px]" />
@@ -4824,14 +4788,32 @@ export default function App() {
                               </div>
                             )}
                           </div>
+                          {/* @ mention trigger */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              insertAtCursor("@");
+                              if (!secretMode) {
+                                setMentionFilter("");
+                                setMentionDropdownPlacement("top");
+                                setShowMentionDropdown(true);
+                              }
+                            }}
+                            className="an-composer-iconbtn"
+                            title="提及成员或 Bot"
+                          >
+                            <span className="text-[15px] font-semibold leading-none">@</span>
+                          </button>
+                          {/* Newline insert — label matches the keyboard shortcut */}
+                          <button
+                            type="button"
+                            onClick={() => insertAtCursor("\n")}
+                            className="an-composer-iconbtn is-kbd"
+                            title="插入换行（快捷键 Shift+Enter）"
+                          >
+                            <span className="an-kbd-glyph">⇧↵</span>
+                          </button>
                         </div>
-                        <span className="an-composer-hint hidden sm:inline-flex">
-                          <kbd>@</kbd> 提及
-                          <span style={{ opacity: 0.5 }}>·</span>
-                          <kbd>↵</kbd> 发送
-                          <span style={{ opacity: 0.5 }}>·</span>
-                          <kbd>⇧↵</kbd> 换行
-                        </span>
                         {/* 加密只对普通对话有意义；公告/主题是面向全频道的，
                             不允许加密发送。 */}
                         {(msgKind === "normal" || msgKind === "secret") && (
@@ -4847,13 +4829,9 @@ export default function App() {
                                 ? "取消加密模式"
                                 : "开启加密模式（仅 Bot 可读原文）"
                             }
-                            style={
-                              msgKind === "secret"
-                                ? {
-                                    color: "var(--orange)",
-                                    background: "var(--orange-muted)",
-                                  }
-                                : undefined
+                            className={
+                              "an-composer-iconbtn ml-auto" +
+                              (msgKind === "secret" ? " is-secret-on" : "")
                             }
                           >
                             <LockClosedIcon className="w-4 h-4" />

@@ -1,11 +1,10 @@
-"""配置应用日志：写入文件（含错误单独文件）、内存缓冲（面向 LLM 排查）。"""
+"""配置应用日志：写入控制台与文件（含错误单独文件）。"""
 import logging
 import sys
 from pathlib import Path
 
 from app.config import settings
 from app.core.log_context import LogContextFilter
-from app.services.admin.log_buffer import LLMFriendlyBufferHandler
 
 _CONTEXT_FIELDS = ("request_id", "channel_id", "bot_id", "user_id", "trace_id")
 
@@ -95,12 +94,6 @@ def setup_logging() -> None:
         console.setLevel(logging.DEBUG if settings.debug else logging.INFO)
         console.setFormatter(fmt)
         root.addHandler(console)
-
-    # 内存缓冲（管理端拉取、面向 LLM 的格式）
-    if not any(isinstance(h, LLMFriendlyBufferHandler) for h in root.handlers):
-        buf = LLMFriendlyBufferHandler()
-        buf.setLevel(logging.DEBUG)
-        root.addHandler(buf)
 
     # Attach context filter to all handlers (including pre-existing ones)
     for h in root.handlers:

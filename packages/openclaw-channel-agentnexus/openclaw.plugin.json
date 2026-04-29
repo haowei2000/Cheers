@@ -10,6 +10,53 @@
       "AGENTNEXUS_DATA_URL"
     ]
   },
+  "channelConfigs": {
+    "agentnexus": {
+      "label": "AgentNexus",
+      "description": "Connect to AgentNexus via per-bot WebSocket bridge. One account = one AgentNexus WebSocket Bot.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "accounts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["botToken", "controlUrl", "dataUrl"],
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": true },
+                "botToken": {
+                  "type": "string",
+                  "description": "Per-bot token issued by AgentNexus when the WebSocket Bot is created (ocw_...)."
+                },
+                "controlUrl": {
+                  "type": "string",
+                  "description": "AgentNexus control WS URL, e.g. ws://localhost:8002/ws/openclaw/control"
+                },
+                "dataUrl": {
+                  "type": "string",
+                  "description": "AgentNexus data WS URL, e.g. ws://localhost:8002/ws/openclaw/data"
+                },
+                "advanced": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "reconnectBaseMs": { "type": "integer", "default": 1000 },
+                    "reconnectMaxMs": { "type": "integer", "default": 30000 },
+                    "heartbeatIntervalMs": { "type": "integer", "default": 30000 },
+                    "sendAckTimeoutMs": { "type": "integer", "default": 10000 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

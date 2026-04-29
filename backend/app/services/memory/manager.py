@@ -20,6 +20,18 @@ async def load(channel_id: str, session: AsyncSession) -> dict[str, str]:
     return mem.to_context_dict()
 
 
+async def load_layers(
+    channel_id: str, session: AsyncSession, layers: frozenset[str] | set[str],
+) -> dict[str, str]:
+    """按需加载指定层，返回 ``to_context_dict`` 兼容字典。
+
+    ``layers`` 应为 ``ChannelMemory.ALL_LAYERS`` 的子集。未请求的层在
+    返回字典中是空字符串——对模板/adapter 是无害默认值。
+    """
+    mem = await ChannelMemory.load_layers(channel_id, session, layers)
+    return mem.to_context_dict()
+
+
 async def load_channel_memory(channel_id: str, session: AsyncSession) -> ChannelMemory:
     """加载频道记忆，返回完整 ChannelMemory 对象。"""
     return await ChannelMemory.load(channel_id, session)

@@ -1,30 +1,17 @@
-"""管理端 LLM 等参数持久化：一层 LLM 设定（增删改列表），二层功能绑定（按功能选 LLM）。"""
+"""兼容读取历史管理配置：LLM 功能绑定、助手运行参数和图像生成配置。"""
 import asyncio
 import concurrent.futures
 import json
-import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from app.config import settings
-from app.utils.crypto import decrypt_value, encrypt_value
-
-SCOPES = ("channel_bot", "system_llm", "log_analyze", "qa_summarize", "orchestrator")
-DEFAULT_CLARIFY_SETTINGS = {
-    "clarify_strict_mode": False,
-    "clarify_force_rule": True,
-    "clarify_threshold": 0.6,
-}
+from app.utils.crypto import decrypt_value
 
 DEFAULT_ORCHESTRATOR_SETTINGS = {
     "orchestrator_auto_takeover": False,
     "child_bot_inherit_context": True,
-}
-DEFAULT_IMAGE_GEN_SETTINGS: dict[str, Any] = {
-    "base_url": "",
-    "api_key": "",
-    "default_model": "qwen-image-edit-max",
 }
 
 AI_MODEL_PROVIDER_PREFIX = "ai-model:"
@@ -130,12 +117,6 @@ def _ensure_llm_structures(data: dict[str, Any]) -> None:
         data["llm_providers"] = []
     if "llm_bindings" not in data:
         data["llm_bindings"] = {}
-
-
-def _ensure_clarify_settings(data: dict[str, Any]) -> None:
-    for k, v in DEFAULT_CLARIFY_SETTINGS.items():
-        if k not in data:
-            data[k] = v
 
 
 def _ensure_orchestrator_settings(data: dict[str, Any]) -> None:
@@ -249,8 +230,6 @@ def _load_ai_model_providers() -> list[dict[str, Any]]:
     except Exception:
         return []
 
-
-
 def get_llm_providers_list() -> list[dict[str, Any]]:
     """返回 LLM 列表（不含 api_key 明文，仅 api_key_set）。"""
     data = load_admin_settings()
@@ -332,167 +311,6 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
     return None
 
 
-def create_llm_provider(
-    name: str,
-    base_url: str,
-    model: str,
-    api_key: str = "",
-    temperature: float = 0.7,
-    max_tokens: int = 1000,
-) -> str:
-    """新增一个 LLM 配置，返回 id。"""
-    data = load_admin_settings()
-    _ensure_llm_structures(data)
-    pid = str(uuid.uuid4())
-    plain_key = (api_key or "").strip()
-    data["llm_providers"].append({
-        "id": pid,
-        "name": (name or "").strip() or "未命名",
-        "base_url": (base_url or "").strip(),
-        "model": (model or "").strip(),
-        "api_key": encrypt_value(plain_key) if plain_key else "",
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    })
-    save_admin_settings(data)
-    return pid
-
-
-def update_llm_provider(
-    provider_id: str,
-    name: str | None = None,
-    base_url: str | None = None,
-    model: str | None = None,
-    api_key: str | None = None,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-) -> bool:
-    """更新指定 LLM；api_key 传空串表示不修改。返回是否找到并更新。"""
-    data = load_admin_settings()
-    _ensure_llm_structures(data)
-    for p in data["llm_providers"]:
-        if p.get("id") == provider_id:
-            if name is not None:
-                p["name"] = (name or "").strip() or "未命名"
-            if base_url is not None:
-                p["base_url"] = (base_url or "").strip()
-            if model is not None:
-                p["model"] = (model or "").strip()
-            if api_key is not None and (api_key or "").strip():
-                p["api_key"] = encrypt_value(api_key.strip())
-            if temperature is not None:
-                p["temperature"] = temperature
-            if max_tokens is not None:
-                p["max_tokens"] = max_tokens
-            save_admin_settings(data)
-            return True
-    return False
-
-
-def delete_llm_provider(provider_id: str) -> bool:
-    """删除指定 LLM；并清除使用该 id 的绑定。返回是否找到并删除。"""
-    data = load_admin_settings()
-    _ensure_llm_structures(data)
-    before = len(data["llm_providers"])
-    data["llm_providers"] = [p for p in data["llm_providers"] if p.get("id") != provider_id]
-    found = len(data["llm_providers"]) < before
-    if found:
-        bindings = data.get("llm_bindings") or {}
-        for k in list(bindings.keys()):
-            if bindings[k] == provider_id:
-                del bindings[k]
-        data["llm_bindings"] = bindings
-        save_admin_settings(data)
-        return True
-    return False
-
-
-def set_llm_bindings(
-    channel_bot: str | None = None,
-    system_llm: str | None = None,
-    log_analyze: str | None = None,
-    qa_summarize: str | None = None,
-    orchestrator: str | None = None,
-) -> None:
-    """更新功能绑定；传空串表示取消绑定。"""
-    data = load_admin_settings()
-    _ensure_llm_structures(data)
-    bindings = data.get("llm_bindings") or {}
-    if channel_bot is not None:
-        bindings["channel_bot"] = (channel_bot or "").strip() or ""
-    if system_llm is not None:
-        bindings["system_llm"] = (system_llm or "").strip() or ""
-    if log_analyze is not None:
-        bindings["log_analyze"] = (log_analyze or "").strip() or ""
-    if qa_summarize is not None:
-        bindings["qa_summarize"] = (qa_summarize or "").strip() or ""
-    if orchestrator is not None:
-        bindings["orchestrator"] = (orchestrator or "").strip() or ""
-    data["llm_bindings"] = {k: v for k, v in bindings.items() if v}
-    save_admin_settings(data)
-
-
-# ---------- 兼容旧版：无 provider 时仍可从扁平键读取 ----------
-
-
-def get_effective_llm_value(env_value: str, key: str) -> str:
-    """兼容旧版：获取单项 LLM 配置（admin 文件优先，否则 env）。"""
-    overrides = load_admin_settings()
-    if key in overrides and overrides[key] is not None:
-        return str(overrides[key]).strip()
-    return (env_value or "").strip()
-
-
-def get_effective_llm_number(env_value: float | int, key: str, default: float | int) -> float | int:
-    """兼容旧版：获取单项数值配置。"""
-    overrides = load_admin_settings()
-    if key in overrides and overrides[key] is not None:
-        try:
-            return float(overrides[key]) if isinstance(env_value, float) else int(overrides[key])
-        except (TypeError, ValueError):
-            pass
-    return env_value if env_value is not None else default
-
-
-def get_clarify_settings() -> dict[str, Any]:
-    """获取澄清策略配置（含默认值，且做范围兜底）。"""
-    data = load_admin_settings()
-    _ensure_clarify_settings(data)
-    threshold = data.get("clarify_threshold", DEFAULT_CLARIFY_SETTINGS["clarify_threshold"])
-    try:
-        threshold_f = float(threshold)
-    except (TypeError, ValueError):
-        threshold_f = float(DEFAULT_CLARIFY_SETTINGS["clarify_threshold"])
-    threshold_f = max(0.0, min(1.0, threshold_f))
-    return {
-        "clarify_strict_mode": bool(data.get("clarify_strict_mode", DEFAULT_CLARIFY_SETTINGS["clarify_strict_mode"])),
-        "clarify_force_rule": bool(data.get("clarify_force_rule", DEFAULT_CLARIFY_SETTINGS["clarify_force_rule"])),
-        "clarify_threshold": threshold_f,
-    }
-
-
-def set_clarify_settings(
-    clarify_strict_mode: bool | None = None,
-    clarify_force_rule: bool | None = None,
-    clarify_threshold: float | None = None,
-) -> dict[str, Any]:
-    """更新澄清策略配置并返回最新值。"""
-    data = load_admin_settings()
-    _ensure_clarify_settings(data)
-    if clarify_strict_mode is not None:
-        data["clarify_strict_mode"] = bool(clarify_strict_mode)
-    if clarify_force_rule is not None:
-        data["clarify_force_rule"] = bool(clarify_force_rule)
-    if clarify_threshold is not None:
-        try:
-            t = float(clarify_threshold)
-        except (TypeError, ValueError):
-            t = float(DEFAULT_CLARIFY_SETTINGS["clarify_threshold"])
-        data["clarify_threshold"] = max(0.0, min(1.0, t))
-    save_admin_settings(data)
-    return get_clarify_settings()
-
-
 def get_assist_settings() -> dict[str, Any]:
     """获取系统助手配置（LLM 绑定 + 自动接管）。"""
     data = load_admin_settings()
@@ -506,45 +324,8 @@ def get_assist_settings() -> dict[str, Any]:
     }
 
 
-def set_assist_settings(
-    llm_provider_id: str | None = None,
-    auto_takeover: bool | None = None,
-    child_bot_inherit_context: bool | None = None,
-) -> dict[str, Any]:
-    """更新系统助手配置并返回最新值。"""
-    data = load_admin_settings()
-    _ensure_orchestrator_settings(data)
-    _ensure_llm_structures(data)
-    if llm_provider_id is not None:
-        bindings = data.get("llm_bindings") or {}
-        bindings["channel_bot"] = (llm_provider_id or "").strip()
-        data["llm_bindings"] = bindings
-    if auto_takeover is not None:
-        data["orchestrator_auto_takeover"] = bool(auto_takeover)
-    if child_bot_inherit_context is not None:
-        data["child_bot_inherit_context"] = bool(child_bot_inherit_context)
-    save_admin_settings(data)
-    return get_assist_settings()
-
-
-# ---------- 图片 API 设置 ----------
-
-
-def get_image_gen_settings() -> dict[str, Any]:
-    """返回图片 API 设置（api_key 脱敏）。"""
-    data = load_admin_settings()
-    raw = data.get("image_gen", {})
-    plain_key = decrypt_value(raw.get("api_key") or "")
-    return {
-        "base_url": raw.get("base_url", ""),
-        "api_key_set": bool(plain_key),
-        "api_key_masked": ("****" + plain_key[-6:]) if plain_key and len(plain_key) > 6 else ("****" if plain_key else ""),
-        "default_model": raw.get("default_model", "qwen-image-edit-max"),
-    }
-
-
 def get_image_gen_effective_config() -> tuple[str, str, str]:
-    """返回生效的 (base_url, api_key, default_model)，admin 设置优先于 env。"""
+    """返回生效的 (base_url, api_key, default_model)，历史配置优先于 env。"""
     data = load_admin_settings()
     admin = data.get("image_gen", {})
     base_url = (admin.get("base_url") or "").strip() or settings.image_gen_base_url
@@ -552,24 +333,3 @@ def get_image_gen_effective_config() -> tuple[str, str, str]:
     api_key = stored_key or settings.image_gen_api_key
     default_model = (admin.get("default_model") or "").strip() or settings.image_gen_default_model
     return base_url, api_key, default_model
-
-
-def set_image_gen_settings(
-    *,
-    base_url: str | None = None,
-    api_key: str | None = None,
-    default_model: str | None = None,
-) -> dict[str, Any]:
-    """更新图片 API 设置并返回脱敏后的最新值。"""
-    data = load_admin_settings()
-    current = data.get("image_gen", {})
-    if base_url is not None:
-        current["base_url"] = base_url.strip()
-    if api_key is not None:
-        plain = api_key.strip()
-        current["api_key"] = encrypt_value(plain) if plain else ""
-    if default_model is not None:
-        current["default_model"] = default_model.strip()
-    data["image_gen"] = current
-    save_admin_settings(data)
-    return get_image_gen_settings()

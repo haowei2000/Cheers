@@ -37,7 +37,7 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
         style={{ color: "var(--fg-2)" }}
       >
         <li>
-          创建项目、Bot、性能监控、日志排查：左侧 <strong>管理</strong> 进入管理页面
+          Bot、模型与模板：左下角齿轮进入 <strong>设置</strong>
         </li>
         <li>
           上传文件：频道内输入框旁 <strong>上传</strong>
@@ -47,7 +47,7 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
           频道上下文：选中频道后点击 <strong>频道上下文</strong>
         </li>
         <li>
-          API 文档：管理页内「打开 API 文档」或{" "}
+          API 文档：打开{" "}
           <a
             href={apiDocsUrl}
             target="_blank"

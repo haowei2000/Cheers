@@ -7,14 +7,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_session, require_permission
+from app.core.dependencies import get_session
 from app.core.responses import APIResponse
-from app.db.models import User
-from app.services.admin_service import SettingsService
 from app.services.image_gen.service import (
-    IMAGE_EDIT_MODELS,
-    IMAGE_GEN_MODELS,
-    SUPPORTED_SIZES,
     ImageGenError,
     ImageGenService,
 )
@@ -40,12 +35,6 @@ class ImageEditBody(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     model: str = ""
     size: str = "1024*1024"
-
-
-class ImageSettingsBody(BaseModel):
-    base_url: str | None = None
-    api_key: str | None = None
-    default_model: str | None = None
 
 
 @router.post("/generate", response_model=APIResponse[dict])
@@ -101,26 +90,3 @@ async def edit_image(
         raise AppError(f"图片编辑失败: {exc}") from exc
     await session.commit()
     return APIResponse.ok({"file_id": result.file_id, "preview_url": result.preview_url, "content_type": result.content_type})
-
-
-@router.get("/models", response_model=APIResponse[dict])
-async def list_image_models() -> APIResponse:
-    return APIResponse.ok({"gen_models": IMAGE_GEN_MODELS, "edit_models": IMAGE_EDIT_MODELS, "sizes": SUPPORTED_SIZES})
-
-
-@router.get("/settings", response_model=APIResponse[dict])
-async def get_settings() -> APIResponse:
-    return APIResponse.ok(SettingsService.get_image_gen_settings())
-
-
-@router.put("/settings", response_model=APIResponse[dict])
-async def update_settings(
-    body: ImageSettingsBody,
-    _: User = Depends(require_permission("system_settings")),
-) -> APIResponse:
-    updated = SettingsService.set_image_gen_settings(
-        base_url=body.base_url,
-        api_key=body.api_key,
-        default_model=body.default_model
-    )
-    return APIResponse.ok(updated)

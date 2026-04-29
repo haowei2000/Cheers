@@ -69,12 +69,3 @@ async def remove_friend(
     return APIResponse.ok(None, message="已删除好友")
 
 
-@router.get("/check/{user_id}/{friend_id}", response_model=APIResponse[dict])
-async def check_friendship(
-    user_id: str,
-    friend_id: str,
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = FriendshipService(session)
-    status = await svc.check_friendship(user_id, friend_id)
-    return APIResponse.ok(status)

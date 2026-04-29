@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import { ChatBubbleLeftIcon } from "@heroicons/react/24/solid";
 import type { CurrentUser, Friend, UserSearchResult } from "../types";
@@ -41,6 +41,7 @@ type BotRow = {
   is_online?: boolean;
   control_connected?: boolean | null;
   data_connected?: boolean | null;
+  created_by?: string | null;
 };
 
 function botOnlineMeta(bot: BotRow) {
@@ -194,7 +195,7 @@ export function SettingsModal({
           <div className="an-settings-pane">
             {pane === "bot" && (
               <BotPane
-                bots={bots}
+                bots={bots.filter((b) => b.created_by === currentUser?.user_id)}
                 authToken={authToken}
                 onChanged={reloadBots}
               />
@@ -347,7 +348,7 @@ function AppearancePane({
   setDensity: (d: Density) => void;
 }) {
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">外观</div>
@@ -520,7 +521,7 @@ function ProfilePane({
   const initial = (displayName || currentUser.username || "?").slice(0, 1).toUpperCase();
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">编辑资料</div>
@@ -791,7 +792,7 @@ function KeychainPane({ authToken }: { authToken: string }) {
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">钥匙链</div>
@@ -993,7 +994,7 @@ function FriendsPane({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">好友</div>
@@ -1227,7 +1228,7 @@ function BulletinPane({
     !!authToken && (issue.creator_id === currentUserId || isAdmin);
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head" style={{ justifyContent: "space-between" }}>
         <div>
           <div className="an-pane-title">留言板</div>
@@ -1359,8 +1360,8 @@ function BulletinPane({
 
 /** BotPane — top-level Bot view, segmented into three sub-tabs:
  *  Bot (list+CRUD) / 消息模板 / LLM 模型. Each sub-tab is a self-contained
- *  pane that mirrors the management UI in /admin but uses our card style
- *  for layout consistency. */
+ *  pane that keeps Bot, template, and model setup inside the modal settings
+ *  flow. */
 type BotSubTab = "bots" | "templates" | "models";
 
 function BotPane({
@@ -1375,7 +1376,7 @@ function BotPane({
   const [tab, setTab] = useState<BotSubTab>("bots");
 
   return (
-    <div>
+    <div className="an-pane">
       <div
         className="an-seg"
         style={{ marginBottom: 16, display: "inline-flex" }}
@@ -1433,7 +1434,7 @@ function BotListSubPane({
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
         <BotNewPane
           authToken={authToken}
@@ -1450,7 +1451,7 @@ function BotListSubPane({
     const bot = bots.find((b) => b.bot_id === view.botId);
     if (!bot) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>
             该 Bot 已不存在
@@ -1459,7 +1460,7 @@ function BotListSubPane({
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
         <BotEditPane
           bot={bot}
@@ -1475,7 +1476,7 @@ function BotListSubPane({
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">Bot</div>
@@ -1606,7 +1607,7 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模板列表" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
@@ -1622,14 +1623,14 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
     const tpl = items.find((t) => t.template_id === view.id);
     if (!tpl) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回模板列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>该模板已不存在</div>
         </div>
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模板列表" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
@@ -1648,7 +1649,7 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">消息模板</div>
@@ -1711,6 +1712,28 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
   );
 }
 
+const TEMPLATE_VARS: { name: string; desc: string }[] = [
+  { name: "message", desc: "用户消息" },
+  { name: "sender_name", desc: "发送者名称" },
+  { name: "bot_name", desc: "当前 Bot 名称" },
+  { name: "channel_name", desc: "频道名称" },
+  { name: "channel_id", desc: "频道 ID" },
+  { name: "timestamp", desc: "消息时间" },
+  { name: "anchor", desc: "项目锚点" },
+  { name: "progress", desc: "项目进度" },
+  { name: "decisions", desc: "决策记录" },
+  { name: "recent", desc: "近期动态" },
+  { name: "todos", desc: "待办事项" },
+  { name: "files_index", desc: "文件索引" },
+];
+
+function extractTemplateVars(tpl: string): string[] {
+  const re = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+  const out = new Set<string>();
+  for (const m of tpl.matchAll(re)) out.add(m[1]);
+  return out.size === 0 ? ["message"] : Array.from(out);
+}
+
 function TemplateForm({
   authToken,
   existing,
@@ -1723,26 +1746,32 @@ function TemplateForm({
   onDeleted?: () => void;
 }) {
   const [name, setName] = useState(existing?.name || "");
-  const [description, setDescription] = useState(existing?.description || "");
-  const [systemPrompt, setSystemPrompt] = useState(existing?.system_prompt || "");
   const [userTemplate, setUserTemplate] = useState(existing?.user_template || "{{message}}");
-  const [variables, setVariables] = useState((existing?.variables || ["message"]).join(", "));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const isEdit = !!existing;
   const isBuiltin = !!existing?.is_builtin;
+  // Preserve the original system_prompt/description on edit so we don't wipe
+  // server-side data when the user can't see those fields anymore.
+  const preservedSystemPrompt = existing?.system_prompt || "";
+  const preservedDescription = existing?.description || "";
+  // Variable autocomplete on userTemplate (triggered by `{{`)
+  const userTplRef = useRef<HTMLTextAreaElement | null>(null);
+  const [varDropdownOpen, setVarDropdownOpen] = useState(false);
+  const [varFilter, setVarFilter] = useState("");
+  const [varDropdownStart, setVarDropdownStart] = useState(0);
 
   const save = async () => {
     if (!name.trim()) return toast.error("模板名称必填");
-    if (!systemPrompt.trim()) return toast.error("系统提示词必填");
     setSaving(true);
     try {
+      const tpl = userTemplate.trim() || "{{message}}";
       const body = {
         name: name.trim(),
-        description: description.trim() || null,
-        system_prompt: systemPrompt,
-        user_template: userTemplate,
-        variables: variables.split(",").map((v) => v.trim()).filter(Boolean),
+        description: preservedDescription || null,
+        system_prompt: preservedSystemPrompt.trim() || "You are a helpful assistant.",
+        user_template: tpl,
+        variables: extractTemplateVars(tpl),
       };
       const res = await apiFetch(
         isEdit ? `/templates/${existing!.template_id}` : "/templates",
@@ -1788,7 +1817,7 @@ function TemplateForm({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "新建模板"}</div>
@@ -1800,29 +1829,110 @@ function TemplateForm({
           <Field label="名称">
             <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
           </Field>
-          <Field label="描述">
-            <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} disabled={isBuiltin} />
-          </Field>
-          <Field label="System Prompt">
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              rows={5}
-              className={`${inputCls} resize-none`}
-              disabled={isBuiltin}
-            />
-          </Field>
-          <Field label="User Template（可使用 {{message}} 等变量）">
-            <textarea
-              value={userTemplate}
-              onChange={(e) => setUserTemplate(e.target.value)}
-              rows={3}
-              className={`${inputCls} resize-none`}
-              disabled={isBuiltin}
-            />
-          </Field>
-          <Field label="变量列表（逗号分隔）">
-            <input value={variables} onChange={(e) => setVariables(e.target.value)} className={inputCls} disabled={isBuiltin} />
+          <Field label="User Template（输入 {{ 弹出可用变量）">
+            <div style={{ position: "relative" }}>
+              <textarea
+                ref={userTplRef}
+                value={userTemplate}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const pos = e.target.selectionStart ?? v.length;
+                  setUserTemplate(v);
+                  const lastBraces = v.lastIndexOf("{{", pos - 1);
+                  const between = lastBraces !== -1 ? v.slice(lastBraces + 2, pos) : "";
+                  if (
+                    lastBraces !== -1 &&
+                    !between.includes("}}") &&
+                    !between.includes("\n") &&
+                    !between.includes(" ")
+                  ) {
+                    setVarFilter(between);
+                    setVarDropdownStart(lastBraces);
+                    setVarDropdownOpen(true);
+                  } else {
+                    setVarDropdownOpen(false);
+                  }
+                }}
+                onBlur={() => setTimeout(() => setVarDropdownOpen(false), 150)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && varDropdownOpen) {
+                    setVarDropdownOpen(false);
+                    e.stopPropagation();
+                  }
+                }}
+                rows={4}
+                className={`${inputCls} resize-none`}
+                disabled={isBuiltin}
+                style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)" }}
+              />
+              {varDropdownOpen && (() => {
+                const matched = TEMPLATE_VARS.filter((v) =>
+                  v.name.toLowerCase().includes(varFilter.toLowerCase()),
+                );
+                if (matched.length === 0) return null;
+                return (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      marginTop: 4,
+                      maxHeight: 240,
+                      overflowY: "auto",
+                      zIndex: 50,
+                      background: "var(--bg-1)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                      boxShadow: "0 8px 24px var(--shadow)",
+                    }}
+                  >
+                    {matched.map((v) => (
+                      <button
+                        key={v.name}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          const cur = userTemplate;
+                          const el = userTplRef.current;
+                          const pos = el?.selectionStart ?? cur.length;
+                          const insert = `{{${v.name}}}`;
+                          const next = cur.slice(0, varDropdownStart) + insert + cur.slice(pos);
+                          setUserTemplate(next);
+                          setVarDropdownOpen(false);
+                          requestAnimationFrame(() => {
+                            el?.focus();
+                            const cursor = varDropdownStart + insert.length;
+                            el?.setSelectionRange(cursor, cursor);
+                          });
+                        }}
+                        style={{
+                          display: "flex",
+                          width: "100%",
+                          alignItems: "center",
+                          gap: 12,
+                          padding: "8px 12px",
+                          textAlign: "left",
+                          background: "transparent",
+                          border: 0,
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.background = "var(--surface-soft)")
+                        }
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.background = "transparent")
+                        }
+                      >
+                        <code style={{ color: "var(--accent)", fontFamily: "var(--font-mono, ui-monospace, monospace)" }}>{`{{${v.name}}}`}</code>
+                        <span style={{ color: "var(--fg-3)" }}>{v.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
           </Field>
           {!isBuiltin && (
             <div style={{ display: "flex", justifyContent: isEdit ? "space-between" : "flex-end" }}>
@@ -1878,7 +1988,7 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模型列表" onBack={() => setView("list")} />
         <ModelForm
           authToken={authToken}
@@ -1894,14 +2004,14 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
     const m = items.find((x) => x.model_id === view.id);
     if (!m) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回模型列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>该模型已不存在</div>
         </div>
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模型列表" onBack={() => setView("list")} />
         <ModelForm
           authToken={authToken}
@@ -1920,7 +2030,7 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">LLM 模型</div>
@@ -2107,7 +2217,7 @@ function ModelForm({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "新建模型"}</div>
@@ -2225,6 +2335,7 @@ function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
     <button
       type="button"
       onClick={onBack}
+      className="an-back"
       style={{
         background: "transparent",
         border: 0,
@@ -2234,6 +2345,8 @@ function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
         marginBottom: 8,
         cursor: "pointer",
         fontFamily: "inherit",
+        flexShrink: 0,
+        textAlign: "left",
       }}
     >
       ← {label}
@@ -2257,7 +2370,7 @@ function AccountPane({
 }) {
   if (!currentUser) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">账户</div>
@@ -2268,20 +2381,21 @@ function AccountPane({
     );
   }
   return (
-    <div>
+    <div className="an-pane">
       <ProfilePane
         currentUser={currentUser}
         authToken={authToken}
         onProfileUpdated={onProfileUpdated}
       />
-      <div className="an-list-table" style={{ marginTop: 12 }}>
-        <div className="an-row-card" style={{ justifyContent: "space-between" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title" style={{ color: "var(--red)" }}>退出登录</div>
-            <div className="an-rc-sub">清除本地令牌并返回登录界面。</div>
-          </div>
-          <DangerButton onClick={onLogout}>退出登录</DangerButton>
+      <div
+        className="an-row-card"
+        style={{ justifyContent: "space-between", marginTop: 12, flexShrink: 0 }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="an-rc-title" style={{ color: "var(--red)" }}>退出登录</div>
+          <div className="an-rc-sub">清除本地令牌并返回登录界面。</div>
         </div>
+        <DangerButton onClick={onLogout}>退出登录</DangerButton>
       </div>
     </div>
   );
@@ -2403,7 +2517,7 @@ function BotNewPane({
 
   if (issued) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">Bot 已创建 · 保存 OpenClaw Token</div>
@@ -2480,7 +2594,7 @@ function BotNewPane({
 
   if (step === 1) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">新建 Bot · 选择类型</div>
@@ -2511,7 +2625,7 @@ function BotNewPane({
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">
@@ -2575,7 +2689,7 @@ function BotNewPane({
                 className={inputCls}
               >
                 {models.length === 0 ? (
-                  <option value="">（无可用模型，请先到管理后台创建）</option>
+                  <option value="">（无可用模型，请先在设置的 LLM 模型中创建）</option>
                 ) : (
                   models.map((m) => (
                     <option key={m.model_id} value={m.model_id}>
@@ -2592,7 +2706,7 @@ function BotNewPane({
                 className={inputCls}
               >
                 {templates.length === 0 ? (
-                  <option value="">（无可用模板，请先到管理后台创建）</option>
+                  <option value="">（无可用模板，请先在设置的消息模板中创建）</option>
                 ) : (
                   templates.map((t) => (
                     <option key={t.template_id} value={t.template_id}>
@@ -2774,7 +2888,7 @@ function BotEditPane({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{bot.display_name || bot.username}</div>
@@ -2823,7 +2937,7 @@ function BotEditPane({
           </div>
         </div>
         <div className="an-row-card" style={{ color: "var(--fg-3)", fontSize: 12 }}>
-          高级配置（模型、提示词、Token）请在管理后台调整。
+          高级配置已收敛到设置弹窗；当前详情页仅开放基础信息编辑。
         </div>
       </div>
     </div>
