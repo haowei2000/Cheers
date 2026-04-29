@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_session, try_get_current_user
+from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
 from app.db.models import User
 from app.services.workspace_service import WorkspaceService
@@ -77,21 +77,21 @@ async def invite_member(
 @router.get("/{workspace_id}/members", response_model=APIResponse[list[dict]])
 async def list_workspace_members(
     workspace_id: str,
-    _: User | None = Depends(try_get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = WorkspaceService(session)
-    return APIResponse.ok(await svc.list_members_with_details(workspace_id))
+    return APIResponse.ok(await svc.list_members_with_details(workspace_id, current_user))
 
 
 @router.get("/{workspace_id}/channels", response_model=APIResponse[list[dict]])
 async def list_workspace_channels(
     workspace_id: str,
-    _: User | None = Depends(try_get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = WorkspaceService(session)
-    channels = await svc.list_channels(workspace_id)
+    channels = await svc.list_channels(workspace_id, current_user)
     return APIResponse.ok([
         {"channel_id": c.channel_id, "name": c.name, "type": c.type, "purpose": c.purpose}
         for c in channels

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_session, try_get_current_user
+from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
 from app.core.schemas import ChannelInResponse
 from app.db.models import User
@@ -98,6 +98,9 @@ async def mark_channel_read(
     Idempotent — calling repeatedly just re-stamps the cursor."""
     svc = ChannelService(session)
     ts = await svc.mark_read(channel_id, current_user.user_id)
+    if ts is None:
+        from app.core.exceptions import ForbiddenError
+        raise ForbiddenError("您不是该频道的成员")
     await session.commit()
     return APIResponse.ok(
         MarkReadResponse(
@@ -111,7 +114,7 @@ async def mark_channel_read(
 async def create_channel(
     body: ChannelCreateBody,
     session: AsyncSession = Depends(get_session),
-    current_user: User | None = Depends(try_get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> APIResponse:
     svc = ChannelService(session)
     ch = await svc.create(
@@ -131,6 +134,7 @@ async def get_channel(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = ChannelService(session)
+    await svc.require_channel_member(channel_id, current_user)
     ch = await svc.get_or_404(channel_id)
     return APIResponse.ok(ChannelInResponse.model_validate(ch))
 
@@ -144,7 +148,7 @@ async def update_channel(
 ) -> APIResponse:
     svc = ChannelService(session)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
-    ch = await svc.update(channel_id, **updates)
+    ch = await svc.update(channel_id, current_user, **updates)
     return APIResponse.ok(ChannelInResponse.model_validate(ch))
 
 
@@ -167,6 +171,7 @@ async def list_members(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = ChannelService(session)
+    await svc.require_channel_member(channel_id, current_user)
     if with_username:
         members = await svc.list_members_with_details(channel_id)
         return APIResponse.ok(members)

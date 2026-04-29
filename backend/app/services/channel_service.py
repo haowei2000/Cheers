@@ -212,6 +212,11 @@ class ChannelService:
         ws = await self.ws_repo.get_by_id(workspace_id)
         if not ws:
             raise NotFoundError("workspace not found")
+        if creator is None:
+            raise ForbiddenError("未登录")
+        wm = await self.ws_repo.get_membership(workspace_id, creator.user_id)
+        if not wm and not is_admin(creator):
+            raise ForbiddenError("您不是该工作空间的成员")
 
         ch = await self.repo.create(workspace_id=workspace_id, name=name, type=type, purpose=purpose)
 
@@ -236,8 +241,9 @@ class ChannelService:
 
         return ch
 
-    async def update(self, channel_id: str, **kwargs) -> Channel:
+    async def update(self, channel_id: str, current_user: User, **kwargs) -> Channel:
         ch = await self.get_or_404(channel_id)
+        await self._require_workspace_admin(ch, current_user)
         return await self.repo.update(ch, **kwargs)
 
     async def delete(self, channel_id: str, current_user: User) -> None:
@@ -266,6 +272,18 @@ class ChannelService:
         m = await self.repo.get_membership(channel_id, user.user_id)
         if not m or m.member_type != "user":
             raise ForbiddenError("您不是该频道的成员")
+
+    async def require_channel_member(self, channel_id: str, user: User) -> None:
+        """Public access guard for routes that expose channel-scoped data."""
+        await self.get_or_404(channel_id)
+        await self._require_channel_member(channel_id, user)
+
+    async def _require_workspace_admin(self, channel: Channel, user: User) -> None:
+        if is_admin(user):
+            return
+        wm = await self.ws_repo.get_membership(channel.workspace_id, user.user_id)
+        if not wm or wm.role not in ("owner", "admin"):
+            raise ForbiddenError("只有工作空间管理员可以执行此操作")
 
     async def list_members_with_details(self, channel_id: str) -> list[dict]:
         memberships = await self.repo.list_memberships(channel_id)

@@ -8,9 +8,23 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, FileRecord, PromptTemplate, Workspace
+from app.db.models import (
+    AIModel,
+    BotAccount,
+    Channel,
+    ChannelMembership,
+    FileRecord,
+    PromptTemplate,
+    Workspace,
+)
 from app.services.file_processor.service import FilePipelineService
-from app.services.storage.base import PresignedUpload, StorageObject, StorageObjectHead, StorageObjectRef, StorageProvider
+from app.services.storage.base import (
+    PresignedUpload,
+    StorageObject,
+    StorageObjectHead,
+    StorageObjectRef,
+    StorageProvider,
+)
 
 
 def _make_disabled_model(model_id: str) -> AIModel:
@@ -175,6 +189,36 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
     assert resp2.status_code == 200
     assert len(resp2.json()["data"]) == 1
     assert resp2.json()["data"][0]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_create_message_uses_authenticated_user_identity(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """客户端传入的 sender_id/sender_type 不能伪造消息发送者。"""
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000021", name="W21")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000021",
+        workspace_id=ws.workspace_id,
+        name="identity-ch",
+        type="public",
+    )
+    db_session.add_all([ws, ch])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages",
+        json={
+            "content": "spoof attempt",
+            "sender_id": "b3000000-0000-0000-0000-000000000021",
+            "sender_type": "bot",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["sender_id"] == "a0000000-0000-0000-0000-000000000099"
+    assert data["sender_type"] == "user"
 
 
 @pytest.mark.asyncio

@@ -187,21 +187,38 @@ async def test_execute_renders_all_context_vars() -> None:
 
     captured_body: dict = {}
 
-    # 非流式路径：client.post() 返回普通 Response
-    # httpx Response 的 .json() / .raise_for_status() / .headers 均为同步
-    fake_resp = MagicMock()
-    fake_resp.raise_for_status = MagicMock()
-    fake_resp.headers = {"content-type": "application/json"}
-    fake_resp.json.return_value = {
-        "choices": [{"message": {"content": "ok"}}],
-    }
+    # http_bot now always streams via client.stream("POST", ...) used as
+    # an async context manager. Build a fake SSE response that yields a
+    # single chunk + [DONE].
+    class _FakeStreamResponse:
+        headers = {"content-type": "text/event-stream"}
 
-    async def _fake_post(url, *, json, headers, timeout):
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"ok"}}]}'
+            yield "data: [DONE]"
+
+        async def aread(self) -> bytes:
+            return b""
+
+    class _FakeStreamCtx:
+        def __init__(self, body: dict) -> None:
+            self._body = body
+
+        async def __aenter__(self) -> _FakeStreamResponse:
+            return _FakeStreamResponse()
+
+        async def __aexit__(self, *exc_info) -> None:
+            return None
+
+    def _fake_stream(method, url, *, json, headers, timeout):
         captured_body.update(json)
-        return fake_resp
+        return _FakeStreamCtx(json)
 
     mock_client = MagicMock()
-    mock_client.post = _fake_post
+    mock_client.stream = _fake_stream
 
     with patch("app.services.adapters.http_bot.get_http_client", return_value=mock_client):
         resp = await adapter.execute(payload)
