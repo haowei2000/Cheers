@@ -31,18 +31,6 @@ async def list_templates(
     return APIResponse.ok([_template_out(t) for t in templates])
 
 
-@router.get("/mine", response_model=APIResponse[list[dict]])
-async def list_my_templates(
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    """仅返回当前用户自己创建的模板。"""
-    svc = PromptTemplateService(session)
-    all_visible = await svc.list_visible(current_user)
-    mine = [t for t in all_visible if t.created_by == current_user.user_id]
-    return APIResponse.ok([_template_out(t) for t in mine])
-
-
 @router.get("/{template_id}", response_model=APIResponse[dict])
 async def get_template(
     template_id: str,

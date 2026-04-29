@@ -3,7 +3,7 @@
 Supported search engines (via WEB_SEARCH_ENGINE env):
   - bing_cn  : cn.bing.com (default, accessible in mainland China)
   - baidu    : www.baidu.com
-  - duckduckgo : DuckDuckGo (requires duckduckgo_search package)
+  - DuckDuckGo : DuckDuckGo (requires duckduckgo_search package)
 """
 
 import json
@@ -277,7 +277,7 @@ async def web_search(query: str, num_results: int = MAX_SEARCH_RESULTS) -> list[
     """Search the web using configured search engine.
 
     Engine is selected via WEB_SEARCH_ENGINE env (default: bing_cn).
-    Supports: bing_cn, baidu, duckduckgo.
+    Supports: bing_cn, baidu, DuckDuckGo.
     """
     try:
         num_results = int(num_results)

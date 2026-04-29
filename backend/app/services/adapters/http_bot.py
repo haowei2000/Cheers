@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -15,6 +15,7 @@ from app.db.models import AIModel, BotAccount, PromptTemplate
 from app.http_client import get_http_client
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.orchestrator.secrets import replace_secret_refs
+from app.services.pipeline.adapter_events import AdapterEvent, Delta, Final
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.adapters.http_bot")
@@ -149,8 +150,21 @@ class HttpBotAdapter(OpenClawAdapter):
             config.update(self.model.config)
         return config
 
+    def _build_headers(self, api_config: dict[str, Any]) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if api_config.get("api_key"):
+            headers["Authorization"] = f"Bearer {api_config['api_key']}"
+        extra_headers = api_config.get("extra_headers")
+        if isinstance(extra_headers, dict):
+            headers.update({str(key): str(value) for key, value in extra_headers.items()})
+        return headers
+
     async def execute(self, payload: AgentPayload) -> AgentResponse:
-        """执行 LLM 调用。
+        """Legacy single-result entry — drains ``execute_iter`` into AgentResponse."""
+        return await self._drain_execute_iter(payload)
+
+    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+        """执行 LLM 调用，流式 yield ``Delta`` per token + 最终 ``Final``.
 
         上下文注入机制：
         - payload.memory_context 包含四层记忆：anchor, decisions, files_index, recent
@@ -159,16 +173,17 @@ class HttpBotAdapter(OpenClawAdapter):
         - 例如："请基于以下项目锚点回答：{{anchor}}\n\n用户问题：{{message}}"
         """
         with bind_context(bot_id=self.bot.bot_id):
-            return await self._execute_inner(payload)
+            async for event in self._execute_inner(payload):
+                yield event
 
-    async def _execute_inner(self, payload: AgentPayload) -> AgentResponse:
+    async def _execute_inner(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
         user_text = (payload.trigger_message or {}).get("text", "")
         task_id = payload.task_id
         all_attachments = payload.attachments or []
 
         # 解密：将 $secret{name} 引用替换为实际密钥值，
         # 并将加密消息占位符替换为解密后的原文
-        user_secrets = (payload.process_config or {}).get("_user_secrets") or {}
+        user_secrets = payload.process_config.user_secrets
         if user_secrets:
             encrypted_msg = user_secrets.get("_encrypted_msg")
             if encrypted_msg and "🔒" in user_text:
@@ -187,29 +202,20 @@ class HttpBotAdapter(OpenClawAdapter):
         user_text = self._apply_topic_context(trigger_meta, user_text)
 
         if not self.model or not self.template:
-            return AgentResponse(
-                content="",
-                task_id=task_id,
-                success=False,
-                error_message="Bot 未配置模型或模板",
-            )
+            yield Final(content="", success=False, error_message="Bot 未配置模型或模板")
+            return
 
         api_config = self._get_api_config()
         url = f"{api_config['base_url']}/chat/completions"
 
-        headers = {"Content-Type": "application/json"}
-        if api_config.get("api_key"):
-            headers["Authorization"] = f"Bearer {api_config['api_key']}"
-        extra_headers = api_config.get("extra_headers")
-        if isinstance(extra_headers, dict):
-            headers.update({str(key): str(value) for key, value in extra_headers.items()})
+        headers = self._build_headers(api_config)
 
-        pconfig = payload.process_config or {}
+        pconfig = payload.process_config
         trigger_meta = payload.trigger_message or {}
 
         context_vars: dict[str, str] = {
-            "sender_name": trigger_meta.get("sender_name") or pconfig.get("_sender_name") or "",
-            "channel_name": pconfig.get("_channel_name") or "",
+            "sender_name": trigger_meta.get("sender_name") or pconfig.sender_name,
+            "channel_name": pconfig.channel_name,
             "channel_id": payload.channel_id,
             "bot_name": self.bot.display_name or self.bot.username,
             "timestamp": trigger_meta.get("timestamp", ""),
@@ -225,7 +231,7 @@ class HttpBotAdapter(OpenClawAdapter):
             })
 
         # 子 bot 调用（call_bot）时跳过 system prompt，父 bot 的 message 已包含任务描述
-        skip_system_prompt = bool(pconfig.get("_skip_system_prompt"))
+        skip_system_prompt = pconfig.skip_system_prompt
 
         # Vision 路径：模型支持且有图片时，构建多模态消息
         supports_vision = (self.model.config or {}).get("supports_vision", True)
@@ -285,55 +291,43 @@ class HttpBotAdapter(OpenClawAdapter):
                         idx, role, len(content), content,
                     )
 
-        stream_token_cb: Callable[[str], Awaitable[None]] | None = (payload.process_config or {}).get("_stream_token")
+        body["stream"] = True
         timeout = float(api_config.get("timeout", 600))
         t0 = time.perf_counter()
 
         try:
             client = get_http_client()
-            if stream_token_cb:
-                body["stream"] = True
-                full_content = ""
-                async with client.stream("POST", url, json=body, headers=headers, timeout=timeout) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-                        delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
-                        if not delta:
-                            continue
-                        full_content += delta
-                        await stream_token_cb(delta)
-                dur_ms = (time.perf_counter() - t0) * 1000
-                if not full_content:
-                    logger.warning("http_bot: empty stream response bot=%s duration_ms=%.0f", self.bot.username, dur_ms)
-                    return AgentResponse(
-                        content="",
-                        task_id=task_id,
-                        success=False,
-                        error_message="LLM 返回空内容",
+            full_content = ""
+            async with client.stream("POST", url, json=body, headers=headers, timeout=timeout) as response:
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "")
+                if "text/event-stream" not in content_type:
+                    # Server ignored stream=true; collect the JSON body and emit
+                    # a single Final without per-token Delta events.
+                    raw = await response.aread()
+                    try:
+                        data = json.loads(raw)
+                    except json.JSONDecodeError:
+                        yield Final(content="", success=False, error_message="LLM 返回非 JSON 响应")
+                        return
+                    choices = data.get("choices", [])
+                    if not choices:
+                        yield Final(content="", success=False, error_message="LLM 返回空响应 (no choices)")
+                        return
+                    content = (choices[0].get("message") or {}).get("content", "")
+                    dur_ms = (time.perf_counter() - t0) * 1000
+                    if not content:
+                        logger.warning("http_bot: empty response bot=%s duration_ms=%.0f", self.bot.username, dur_ms)
+                        yield Final(content="", success=False, error_message="LLM 返回空内容")
+                        return
+                    token_count = (data.get("usage") or {}).get("total_tokens")
+                    logger.info(
+                        "http_bot: complete bot=%s model=%s duration_ms=%.0f tokens=%s",
+                        self.bot.username, api_config["model_name"], dur_ms, token_count,
                     )
-                logger.info(
-                    "http_bot: stream complete bot=%s model=%s duration_ms=%.0f",
-                    self.bot.username, api_config["model_name"], dur_ms,
-                )
-                return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
+                    yield Final(content=content.strip(), success=True)
+                    return
 
-            response = await client.post(url, json=body, headers=headers, timeout=timeout)
-            response.raise_for_status()
-
-            # 检测：如果响应是流式 (text/event-stream)，即使没设置 stream=true 也要按流式处理
-            content_type = response.headers.get("content-type", "")
-            if "text/event-stream" in content_type:
-                logger.warning("http_bot: received streaming response unexpectedly, draining stream")
-                full_content = ""
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):
                         continue
@@ -345,43 +339,21 @@ class HttpBotAdapter(OpenClawAdapter):
                     except json.JSONDecodeError:
                         continue
                     delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+                    if not delta:
+                        continue
                     full_content += delta
-                if not full_content:
-                    return AgentResponse(
-                        content="",
-                        task_id=task_id,
-                        success=False,
-                        error_message="LLM 返回空内容",
-                    )
-                return AgentResponse(content=full_content.strip(), task_id=task_id, success=True)
-
-            data = response.json()
-
-            choices = data.get("choices", [])
-            if not choices:
-                return AgentResponse(
-                    content="",
-                    task_id=task_id,
-                    success=False,
-                    error_message="LLM 返回空响应 (no choices)",
-                )
-
-            content = (choices[0].get("message") or {}).get("content", "")
+                    yield Delta(text=delta)
             dur_ms = (time.perf_counter() - t0) * 1000
-            if not content:
-                logger.warning("http_bot: empty response bot=%s duration_ms=%.0f", self.bot.username, dur_ms)
-                return AgentResponse(
-                    content="",
-                    task_id=task_id,
-                    success=False,
-                    error_message="LLM 返回空内容",
-                )
-            token_count = (data.get("usage") or {}).get("total_tokens")
+            if not full_content:
+                logger.warning("http_bot: empty stream response bot=%s duration_ms=%.0f", self.bot.username, dur_ms)
+                yield Final(content="", success=False, error_message="LLM 返回空内容")
+                return
             logger.info(
-                "http_bot: complete bot=%s model=%s duration_ms=%.0f tokens=%s",
-                self.bot.username, api_config["model_name"], dur_ms, token_count,
+                "http_bot: stream complete bot=%s model=%s duration_ms=%.0f",
+                self.bot.username, api_config["model_name"], dur_ms,
             )
-            return AgentResponse(content=content.strip(), task_id=task_id, success=True)
+            yield Final(content=full_content.strip(), success=True)
+            return
 
         except httpx.TimeoutException as exc:
             dur_ms = (time.perf_counter() - t0) * 1000
@@ -389,12 +361,11 @@ class HttpBotAdapter(OpenClawAdapter):
                 "http_bot: timeout after %.0fs bot=%s: %s duration_ms=%.0f",
                 timeout, self.bot.username, type(exc).__name__, dur_ms,
             )
-            return AgentResponse(
-                content="",
-                task_id=task_id,
-                success=False,
+            yield Final(
+                content="", success=False,
                 error_message=f"LLM 响应超时（>{timeout:.0f}s），请检查模型服务或在模型配置中增大 timeout 值",
             )
+            return
         except httpx.HTTPStatusError as exc:
             dur_ms = (time.perf_counter() - t0) * 1000
             error_body = ""
@@ -404,42 +375,60 @@ class HttpBotAdapter(OpenClawAdapter):
                 pass
             logger.error(
                 "http_bot: HTTP error status=%s body=%s duration_ms=%.0f",
-                exc.response.status_code,
-                error_body,
-                dur_ms,
+                exc.response.status_code, error_body, dur_ms,
             )
-            return AgentResponse(
-                content="",
-                task_id=task_id,
-                success=False,
+            yield Final(
+                content="", success=False,
                 error_message=f"LLM API 错误 (HTTP {exc.response.status_code}): {error_body}",
             )
+            return
         except httpx.ConnectError as exc:
             dur_ms = (time.perf_counter() - t0) * 1000
             logger.error("http_bot: connection error %s duration_ms=%.0f", exc, dur_ms)
-            return AgentResponse(
-                content="",
-                task_id=task_id,
-                success=False,
+            yield Final(
+                content="", success=False,
                 error_message=f"无法连接到 LLM API: {api_config['base_url']}",
             )
+            return
         except httpx.RemoteProtocolError as exc:
             logger.error("http_bot: server disconnected without response %s", exc)
-            return AgentResponse(
-                content="",
-                task_id=task_id,
-                success=False,
+            yield Final(
+                content="", success=False,
                 error_message=f"LLM 服务断开连接（未返回响应），请检查模型服务是否正常: {api_config['base_url']}",
             )
+            return
         except Exception as exc:
             dur_ms = (time.perf_counter() - t0) * 1000
             logger.exception("http_bot: unexpected error duration_ms=%.0f", dur_ms)
-            return AgentResponse(
-                content="",
-                task_id=task_id,
-                success=False,
-                error_message=f"调用 LLM 时发生错误: {exc}",
-            )
+            yield Final(content="", success=False, error_message=f"调用 LLM 时发生错误: {exc}")
+            return
 
     async def health_check(self) -> bool:
-        return bool(self.model and self.model.model_name and self.model.base_url)
+        if not (self.model and self.model.model_name and self.model.base_url):
+            return False
+
+        api_config = self._get_api_config()
+        url = f"{api_config['base_url']}/chat/completions"
+        timeout = float(api_config.get("health_timeout", min(float(api_config.get("timeout", 15)), 15)))
+        body = {
+            "model": api_config["model_name"],
+            "messages": [{"role": "user", "content": "ping"}],
+            "temperature": 0,
+            "max_tokens": 1,
+            "stream": False,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(url, json=body, headers=self._build_headers(api_config))
+                response.raise_for_status()
+                data = response.json()
+            return bool(data.get("choices"))
+        except Exception as exc:
+            logger.info(
+                "http_bot.health_check.failed bot_id=%s model=%s base_url=%s error=%s",
+                self.bot.bot_id,
+                api_config.get("model_name"),
+                api_config.get("base_url"),
+                exc,
+            )
+            return False

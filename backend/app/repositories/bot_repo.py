@@ -50,6 +50,7 @@ class BotRepository:
         template_id: str | None = None,
         custom_system_prompt: str | None = None,
         is_public: bool = True,
+        scope: str = "friend",
         created_by: str | None = None,
     ) -> BotAccount:
         bot = BotAccount(
@@ -60,6 +61,7 @@ class BotRepository:
             template_id=template_id,
             custom_system_prompt=custom_system_prompt,
             is_public=is_public,
+            scope=scope,
             created_by=created_by,
         )
         self.session.add(bot)

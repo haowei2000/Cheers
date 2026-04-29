@@ -9,6 +9,14 @@ type QcResult = {
   probe: { who_am_i: string; skills: string; connected: boolean };
 };
 
+type BotScope = "private" | "friend" | "everyone";
+
+const BOT_SCOPE_OPTIONS: { value: BotScope; label: string; hint: string }[] = [
+  { value: "private", label: "Private", hint: "仅自己可发起私信或邀请" },
+  { value: "friend", label: "Friend", hint: "自己和好友可发起私信或邀请" },
+  { value: "everyone", label: "Everyone", hint: "所有用户可发起私信或邀请" },
+];
+
 interface OpenClawQcModalProps {
   open: boolean;
   onClose: () => void;
@@ -22,6 +30,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
   const [qcAgentId, setQcAgentId] = useState("main");
   const [qcBotName, setQcBotName] = useState("");
   const [qcDisplayName, setQcDisplayName] = useState("");
+  const [qcScope, setQcScope] = useState<BotScope>("private");
   const [qcAddToChannel, setQcAddToChannel] = useState(true);
   const [qcLoading, setQcLoading] = useState(false);
   const [qcResult, setQcResult] = useState<QcResult | null>(null);
@@ -40,6 +49,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
           agent_id: qcAgentId.trim() || "main",
           bot_username: qcBotName.trim() || null,
           display_name: qcDisplayName.trim() || null,
+          scope: qcScope,
           channel_id: qcAddToChannel && channelId ? channelId : null,
         },
       });
@@ -62,6 +72,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
     setQcAgentId("main");
     setQcBotName("");
     setQcDisplayName("");
+    setQcScope("private");
   };
 
   return (
@@ -159,6 +170,23 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#4A154B] focus:ring-1 focus:ring-[#4A154B]"
                   disabled={qcLoading}
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  使用范围
+                </label>
+                <select
+                  value={qcScope}
+                  onChange={(e) => setQcScope(e.target.value as BotScope)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#4A154B] focus:ring-1 focus:ring-[#4A154B]"
+                  disabled={qcLoading}
+                >
+                  {BOT_SCOPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label} · {opt.hint}
+                    </option>
+                  ))}
+                </select>
               </div>
               {channelId && (
                 <label className="flex items-center gap-2.5 cursor-pointer select-none">

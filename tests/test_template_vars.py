@@ -1,17 +1,16 @@
 """验证 HttpBotAdapter 模板变量在直接调用和 call_bot 子调用场景下均能正确渲染。"""
 from __future__ import annotations
 
-import ast
 import re
-import textwrap
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.adapters.base import AgentPayload, AgentResponse
+from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.adapters.http_bot import HttpBotAdapter
-
+from app.services.pipeline.bot.context import BotRunContext
+from app.services.pipeline.process_config import ProcessConfig
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +44,64 @@ def _make_bot(
         ai_model=model,
         prompt_template=template,
     )
+
+
+class _FakeWriter:
+    def __init__(self) -> None:
+        self.finalized: list[tuple[object, str]] = []
+
+    async def pre_create(self, bot_id: str, task_id: str):
+        return SimpleNamespace(msg_id=f"placeholder-{bot_id}")
+
+    async def finalize(self, msg, content: str, *, file_ids=None) -> None:
+        self.finalized.append((msg, content))
+
+    async def record_task(self, bot_id: str, msg_id: str) -> None:
+        pass
+
+
+def _make_call_bot_run_ctx(
+    *,
+    bot_id_by_username: dict[str, str],
+    adapter_factory,
+    memory: dict[str, str],
+    task_id: str,
+    channel_id: str,
+    sender_id: str,
+    sender_name: str,
+    channel_name: str,
+    attachments: list[dict[str, str]] | None = None,
+    original_question_text: str | None = None,
+) -> BotRunContext:
+    trigger_msg = SimpleNamespace(
+        msg_id=f"trigger-{task_id}",
+        sender_id=sender_id,
+        in_reply_to_msg_id=None,
+        msg_type="normal",
+        created_at=None,
+    )
+    ctx = BotRunContext(
+        channel_id=channel_id,
+        bus=SimpleNamespace(publish=lambda event: None),
+        session=SimpleNamespace(),
+        trigger_msg=trigger_msg,
+        adapter_factory=adapter_factory,
+        root_task_id=task_id,
+    )
+    ctx.writer = _FakeWriter()
+    ctx.channel_bot_usernames = list(bot_id_by_username.keys())
+    ctx.bot_id_by_username = dict(bot_id_by_username)
+    ctx.bot_details_by_username = {
+        username: {"display_name": username}
+        for username in bot_id_by_username
+    }
+    ctx.memory_context = dict(memory)
+    ctx.attachments = attachments or []
+    ctx.original_question = original_question_text
+    ctx.trigger_content = original_question_text or ""
+    ctx.sender_name = sender_name
+    ctx.channel_name = channel_name
+    return ctx
 
 
 # ── _apply_user_template 单元测试 ────────────────────────────────────────────
@@ -181,29 +238,46 @@ async def test_execute_renders_all_context_vars() -> None:
             "recent": "最近活动",
             "todos": "- TODO1",
         },
-        process_config={
-            "_sender_name": "王五",
-            "_channel_name": "测试频道",
-        },
+        process_config=ProcessConfig(
+            sender_name="王五",
+            channel_name="测试频道",
+        ),
     )
 
     captured_body: dict = {}
 
-    # 非流式路径：client.post() 返回普通 Response
-    # httpx Response 的 .json() / .raise_for_status() / .headers 均为同步
-    fake_resp = MagicMock()
-    fake_resp.raise_for_status = MagicMock()
-    fake_resp.headers = {"content-type": "application/json"}
-    fake_resp.json.return_value = {
-        "choices": [{"message": {"content": "ok"}}],
-    }
+    # http_bot now always streams via client.stream("POST", ...) used as
+    # an async context manager. Build a fake SSE response that yields a
+    # single chunk + [DONE].
+    class _FakeStreamResponse:
+        headers = {"content-type": "text/event-stream"}
 
-    async def _fake_post(url, *, json, headers, timeout):
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"ok"}}]}'
+            yield "data: [DONE]"
+
+        async def aread(self) -> bytes:
+            return b""
+
+    class _FakeStreamCtx:
+        def __init__(self, body: dict) -> None:
+            self._body = body
+
+        async def __aenter__(self) -> _FakeStreamResponse:
+            return _FakeStreamResponse()
+
+        async def __aexit__(self, *exc_info) -> None:
+            return None
+
+    def _fake_stream(method, url, *, json, headers, timeout):
         captured_body.update(json)
-        return fake_resp
+        return _FakeStreamCtx(json)
 
     mock_client = MagicMock()
-    mock_client.post = _fake_post
+    mock_client.stream = _fake_stream
 
     with patch("app.services.adapters.http_bot.get_http_client", return_value=mock_client):
         resp = await adapter.execute(payload)
@@ -248,29 +322,30 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
 
     async def _fake_adapter_factory(bot_id: str):
         """返回一个捕获 payload 的假 adapter。"""
-        class _CapturingAdapter:
+        class _CapturingAdapter(OpenClawAdapter):
             async def execute(self, payload: AgentPayload) -> AgentResponse:
                 captured_payload.append(payload)
                 return AgentResponse(content="子bot回复", task_id=payload.task_id, success=True)
+
+            async def health_check(self) -> bool:
+                return True
         return _CapturingAdapter()
 
-    async def _fake_broadcast(bot_id: str, content: str) -> None:
-        pass
-
+    run_ctx = _make_call_bot_run_ctx(
+        channel_id="ch-call",
+        bot_id_by_username={"child_bot": "bot-child-001"},
+        adapter_factory=_fake_adapter_factory,
+        memory={"anchor": "锚点内容", "progress": "进度内容"},
+        task_id="task-parent",
+        sender_id="user-parent",
+        sender_name="赵六",
+        channel_name="协作频道",
+        original_question_text="原始问题",
+    )
     ctx = {
         "channel_id": "ch-call",
-        "bot_id_by_username": {"child_bot": "bot-child-001"},
-        "adapter_factory": _fake_adapter_factory,
-        "create_and_broadcast": _fake_broadcast,
         "memory": {"anchor": "锚点内容", "progress": "进度内容"},
-        "task_id": "task-parent",
-        "sender_id": "user-parent",
-        "sender_name": "赵六",
-        "channel_name": "协作频道",
-        "attachments": [],
-        "original_question_text": "原始问题",
-        "_db_session": None,
-        "_bot_id": "bot-parent",
+        "_run_ctx": run_ctx,
     }
 
     tools = _make_tools(ctx)
@@ -283,11 +358,11 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
     assert len(captured_payload) == 1
     sub = captured_payload[0]
 
-    # process_config 应包含 _channel_name、_sender_name 和 _skip_system_prompt
-    pc = sub.process_config or {}
-    assert pc.get("_channel_name") == "协作频道", f"_channel_name 缺失或不正确: {pc}"
-    assert pc.get("_sender_name") == "赵六", f"_sender_name 缺失或不正确: {pc}"
-    assert pc.get("_skip_system_prompt") is True, f"_skip_system_prompt 应为 True: {pc}"
+    # process_config 应包含 channel_name、sender_name 和 skip_system_prompt
+    pc = sub.process_config
+    assert pc.channel_name == "协作频道", f"channel_name 缺失或不正确: {pc}"
+    assert pc.sender_name == "赵六", f"sender_name 缺失或不正确: {pc}"
+    assert pc.skip_system_prompt is True, f"skip_system_prompt 应为 True: {pc}"
 
     # trigger_message 应包含 sender_name 和非空 timestamp
     tm = sub.trigger_message or {}
@@ -300,55 +375,15 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
 
 
 # ── orchestrator process_config 一致性测试 ──────────────────────────────────
-
-# 必须出现在每条路径的 process_config 中的模板相关 key
-_REQUIRED_TEMPLATE_KEYS = {"_sender_name", "_channel_name"}
-
-
-def _extract_process_config_blocks(source: str) -> list[tuple[int, str]]:
-    """从 orchestrator/service.py 源码中提取所有 process_config={...} 字典字面量。
-
-    返回 [(行号, 源码片段), ...]。使用简单的大括号匹配而非 AST，
-    因为 process_config 值中包含运行时变量，无法用 ast.literal_eval 解析。
-    """
-    blocks: list[tuple[int, str]] = []
-    lines = source.splitlines()
-    i = 0
-    while i < len(lines):
-        stripped = lines[i].lstrip()
-        if stripped.startswith("process_config={") or stripped.startswith("process_config= {"):
-            start_line = i + 1  # 1-indexed
-            # 收集到匹配的 } 为止
-            depth = 0
-            buf: list[str] = []
-            for j in range(i, len(lines)):
-                buf.append(lines[j])
-                depth += lines[j].count("{") - lines[j].count("}")
-                if depth == 0:
-                    break
-            blocks.append((start_line, "\n".join(buf)))
-            i = j + 1
-        else:
-            i += 1
-    return blocks
-
-
-def test_orchestrator_process_config_has_template_keys() -> None:
-    """验证 orchestrator/service.py 中所有 process_config 都包含 _sender_name 和 _channel_name。"""
-    import pathlib
-    src = (
-        pathlib.Path(__file__).resolve().parent.parent
-        / "backend" / "app" / "services" / "orchestrator" / "service.py"
-    ).read_text()
-
-    blocks = _extract_process_config_blocks(src)
-    assert len(blocks) >= 3, f"预期至少 3 个 process_config 块，实际找到 {len(blocks)}"
-
-    for line_no, block_src in blocks:
-        for key in _REQUIRED_TEMPLATE_KEYS:
-            assert f'"{key}"' in block_src or f"'{key}'" in block_src, (
-                f"service.py 第 {line_no} 行附近的 process_config 缺少 {key}:\n{block_src}"
-            )
+#
+# Phase 5: process_config is now a typed ProcessConfig dataclass; the
+# legacy meta-test that grepped service.py for ``process_config={...}``
+# dict literals is obsolete because:
+#   1. service.py no longer constructs process_config — the construction
+#      moved to pipeline/bot/subagent.py:build_payload.
+#   2. ProcessConfig has typed fields, so a typo on sender_name /
+#      channel_name is a static type error rather than a runtime miss.
+# (Removed test_orchestrator_process_config_has_template_keys.)
 
 
 # ── call_bot → HttpBotAdapter 端到端模板渲染 ──────────────────────────────────
@@ -373,48 +408,55 @@ async def test_call_bot_end_to_end_renders_all_vars() -> None:
 
     captured_body: dict = {}
 
-    fake_resp = MagicMock()
-    fake_resp.raise_for_status = MagicMock()
-    fake_resp.headers = {"content-type": "application/json"}
-    fake_resp.json.return_value = {
-        "choices": [{"message": {"content": "子bot执行成功"}}],
-    }
+    class _FakeStreamResponse:
+        headers = {"content-type": "application/json"}
 
-    async def _fake_post(url, *, json, headers, timeout):
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aread(self) -> bytes:
+            return b'{"choices":[{"message":{"content":"\xe5\xad\x90bot\xe6\x89\xa7\xe8\xa1\x8c\xe6\x88\x90\xe5\x8a\x9f"}}]}'
+
+    class _FakeStreamCtx:
+        async def __aenter__(self) -> _FakeStreamResponse:
+            return _FakeStreamResponse()
+
+        async def __aexit__(self, *exc_info) -> None:
+            return None
+
+    def _fake_stream(method, url, *, json, headers, timeout):
         captured_body.update(json)
-        return fake_resp
+        return _FakeStreamCtx()
 
     mock_client = MagicMock()
-    mock_client.post = _fake_post
+    mock_client.stream = _fake_stream
 
     async def _fake_adapter_factory(bot_id: str):
         adapter = HttpBotAdapter(child_bot)  # type: ignore[arg-type]
         return adapter
 
-    async def _fake_broadcast(bot_id: str, content: str) -> None:
-        pass
-
+    memory = {
+        "anchor": "E2E锚点",
+        "progress": "E2E进度",
+        "decisions": "E2E决策",
+        "files_index": "E2E索引",
+        "recent": "E2E近况",
+        "todos": "E2E待办",
+    }
+    run_ctx = _make_call_bot_run_ctx(
+        channel_id="ch-e2e",
+        bot_id_by_username={"child_bot": "bot-child-e2e"},
+        adapter_factory=_fake_adapter_factory,
+        memory=memory,
+        task_id="task-e2e",
+        sender_id="user-e2e",
+        sender_name="端到端用户",
+        channel_name="端到端频道",
+    )
     ctx = {
         "channel_id": "ch-e2e",
-        "bot_id_by_username": {"child_bot": "bot-child-e2e"},
-        "adapter_factory": _fake_adapter_factory,
-        "create_and_broadcast": _fake_broadcast,
-        "memory": {
-            "anchor": "E2E锚点",
-            "progress": "E2E进度",
-            "decisions": "E2E决策",
-            "files_index": "E2E索引",
-            "recent": "E2E近况",
-            "todos": "E2E待办",
-        },
-        "task_id": "task-e2e",
-        "sender_id": "user-e2e",
-        "sender_name": "端到端用户",
-        "channel_name": "端到端频道",
-        "attachments": [],
-        "original_question_text": None,
-        "_db_session": None,
-        "_bot_id": "bot-parent-e2e",
+        "memory": memory,
+        "_run_ctx": run_ctx,
     }
 
     tools = _make_tools(ctx)

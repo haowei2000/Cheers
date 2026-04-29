@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import { ChatBubbleLeftIcon } from "@heroicons/react/24/solid";
 import type { CurrentUser, Friend, UserSearchResult } from "../types";
@@ -6,6 +6,7 @@ import { apiFetch } from "../api";
 import { Modal } from "./Modal";
 
 type Density = "comfy" | "compact";
+type BotScope = "private" | "friend" | "everyone";
 
 const DENSITY_KEY = "agentnexus-density";
 
@@ -35,7 +36,115 @@ type BotRow = {
   username: string;
   display_name?: string | null;
   description?: string | null;
+  status?: string;
+  binding_type?: "http" | "websocket" | string;
+  connection_status?: string;
+  is_online?: boolean;
+  control_connected?: boolean | null;
+  data_connected?: boolean | null;
+  model_id?: string | null;
+  template_id?: string | null;
+  model_name?: string | null;
+  template_name?: string | null;
+  is_builtin?: boolean;
+  created_by?: string | null;
+  scope?: BotScope;
+  owner?: {
+    user_id: string;
+    username: string;
+    display_name?: string | null;
+  } | null;
+  can_manage?: boolean;
 };
+
+const BOT_SCOPE_OPTIONS: { value: BotScope; label: string; hint: string }[] = [
+  { value: "private", label: "Private", hint: "仅自己可发起私信或邀请" },
+  { value: "friend", label: "Friend", hint: "自己和好友可发起私信或邀请" },
+  { value: "everyone", label: "Everyone", hint: "所有用户可发起私信或邀请" },
+];
+
+function botScopeLabel(scope?: string) {
+  const found = BOT_SCOPE_OPTIONS.find((x) => x.value === scope);
+  return found?.label || "Friend";
+}
+
+function botOwnerLabel(bot: Pick<BotRow, "owner" | "created_by">) {
+  return bot.owner?.display_name || bot.owner?.username || bot.created_by || "系统";
+}
+
+type BotConnectionTestResult = {
+  reachable: boolean;
+  message?: string;
+  checked_at?: string;
+  duration_ms?: number;
+};
+
+function botOnlineMeta(bot: BotRow) {
+  const isWs = (bot.binding_type || "http") === "websocket";
+  if (!isWs) {
+    const online = bot.is_online !== false && bot.status !== "offline";
+    return {
+      label: online ? "HTTP 已启用" : "已停用",
+      color: online ? "var(--green)" : "var(--fg-3)",
+      bg: online ? "var(--green-muted)" : "var(--surface-soft)",
+      title: online ? "HTTP Bot 无需长连接；可点击测试连通验证模型 API" : "Bot 状态为 offline",
+    };
+  }
+  if (bot.connection_status === "online" && bot.is_online) {
+    return {
+      label: "WS 在线",
+      color: "var(--green)",
+      bg: "var(--green-muted)",
+      title: "control/data 连接均在线",
+    };
+  }
+  if (bot.connection_status === "partial") {
+    return {
+      label: "WS 部分连接",
+      color: "var(--yellow)",
+      bg: "rgba(251, 191, 36, 0.16)",
+      title: `control: ${bot.control_connected ? "在线" : "离线"} · data: ${bot.data_connected ? "在线" : "离线"}`,
+    };
+  }
+  return {
+    label: "WS 离线",
+    color: "var(--red)",
+    bg: "var(--red-muted)",
+    title: "OpenClaw channel plugin 未连接",
+  };
+}
+
+function BotOnlineBadge({ bot }: { bot: BotRow }) {
+  const meta = botOnlineMeta(bot);
+  return (
+    <span
+      title={meta.title}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "3px 7px",
+        borderRadius: 999,
+        background: meta.bg,
+        color: meta.color,
+        fontSize: 11,
+        fontWeight: 650,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 999,
+          background: meta.color,
+          flexShrink: 0,
+        }}
+      />
+      {meta.label}
+    </span>
+  );
+}
 
 /** One pane per top-level category. Drill-down within a category (e.g.
  *  selecting a specific bot inside the Bot pane) is local state on that
@@ -55,6 +164,13 @@ export function SettingsModal({
   const [pane, setPane] = useState<Pane>("bot");
   const [density, setDensityState] = useState<Density>(() => getStoredDensity());
   const [bots, setBots] = useState<BotRow[]>([]);
+  const canManageBuiltinBots = currentUser?.role === "system_admin";
+  const visibleBots = bots.filter(
+    (b) =>
+      b.can_manage ||
+      b.created_by === currentUser?.user_id ||
+      (canManageBuiltinBots && b.is_builtin),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -121,7 +237,7 @@ export function SettingsModal({
           <div className="an-settings-pane">
             {pane === "bot" && (
               <BotPane
-                bots={bots}
+                bots={visibleBots}
                 authToken={authToken}
                 onChanged={reloadBots}
               />
@@ -274,7 +390,7 @@ function AppearancePane({
   setDensity: (d: Density) => void;
 }) {
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">外观</div>
@@ -447,7 +563,7 @@ function ProfilePane({
   const initial = (displayName || currentUser.username || "?").slice(0, 1).toUpperCase();
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">编辑资料</div>
@@ -718,7 +834,7 @@ function KeychainPane({ authToken }: { authToken: string }) {
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">钥匙链</div>
@@ -920,7 +1036,7 @@ function FriendsPane({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">好友</div>
@@ -1154,7 +1270,7 @@ function BulletinPane({
     !!authToken && (issue.creator_id === currentUserId || isAdmin);
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head" style={{ justifyContent: "space-between" }}>
         <div>
           <div className="an-pane-title">留言板</div>
@@ -1286,8 +1402,8 @@ function BulletinPane({
 
 /** BotPane — top-level Bot view, segmented into three sub-tabs:
  *  Bot (list+CRUD) / 消息模板 / LLM 模型. Each sub-tab is a self-contained
- *  pane that mirrors the management UI in /admin but uses our card style
- *  for layout consistency. */
+ *  pane that keeps Bot, template, and model setup inside the modal settings
+ *  flow. */
 type BotSubTab = "bots" | "templates" | "models";
 
 function BotPane({
@@ -1302,7 +1418,7 @@ function BotPane({
   const [tab, setTab] = useState<BotSubTab>("bots");
 
   return (
-    <div>
+    <div className="an-pane">
       <div
         className="an-seg"
         style={{ marginBottom: 16, display: "inline-flex" }}
@@ -1360,7 +1476,7 @@ function BotListSubPane({
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
         <BotNewPane
           authToken={authToken}
@@ -1377,7 +1493,7 @@ function BotListSubPane({
     const bot = bots.find((b) => b.bot_id === view.botId);
     if (!bot) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>
             该 Bot 已不存在
@@ -1386,7 +1502,7 @@ function BotListSubPane({
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
         <BotEditPane
           bot={bot}
@@ -1402,7 +1518,7 @@ function BotListSubPane({
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">Bot</div>
@@ -1410,6 +1526,23 @@ function BotListSubPane({
             管理你的 Bot。点击卡片查看详情或编辑。
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onChanged}
+          style={{
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            color: "var(--fg-2)",
+            borderRadius: 6,
+            padding: "6px 10px",
+            fontSize: 12,
+            fontFamily: "inherit",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          刷新状态
+        </button>
       </div>
       <div className="an-list-table">
         <button
@@ -1470,8 +1603,16 @@ function BotListSubPane({
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="an-rc-title">{b.display_name || b.username}</div>
-                <div className="an-rc-sub">@{b.username}</div>
+                <div className="an-rc-sub">
+                  @{b.username} · {(b.binding_type || "http") === "websocket" ? "WebSocket" : "HTTP"}
+                  {" · "}
+                  {botScopeLabel(b.scope)}
+                  {" · "}
+                  Owner: {botOwnerLabel(b)}
+                  {b.is_builtin ? " · 内置" : ""}
+                </div>
               </div>
+              <BotOnlineBadge bot={b} />
               <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
             </button>
           ))
@@ -1513,7 +1654,7 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模板列表" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
@@ -1529,14 +1670,14 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
     const tpl = items.find((t) => t.template_id === view.id);
     if (!tpl) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回模板列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>该模板已不存在</div>
         </div>
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模板列表" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
@@ -1555,7 +1696,7 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">消息模板</div>
@@ -1723,7 +1864,7 @@ function TemplateForm({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "新建模板"}</div>
@@ -1894,7 +2035,7 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
 
   if (view === "new") {
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模型列表" onBack={() => setView("list")} />
         <ModelForm
           authToken={authToken}
@@ -1910,14 +2051,14 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
     const m = items.find((x) => x.model_id === view.id);
     if (!m) {
       return (
-        <div>
+        <div className="an-pane">
           <BackBar label="返回模型列表" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>该模型已不存在</div>
         </div>
       );
     }
     return (
-      <div>
+      <div className="an-pane">
         <BackBar label="返回模型列表" onBack={() => setView("list")} />
         <ModelForm
           authToken={authToken}
@@ -1936,7 +2077,7 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">LLM 模型</div>
@@ -2123,7 +2264,7 @@ function ModelForm({
   };
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "新建模型"}</div>
@@ -2241,6 +2382,7 @@ function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
     <button
       type="button"
       onClick={onBack}
+      className="an-back"
       style={{
         background: "transparent",
         border: 0,
@@ -2250,6 +2392,8 @@ function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
         marginBottom: 8,
         cursor: "pointer",
         fontFamily: "inherit",
+        flexShrink: 0,
+        textAlign: "left",
       }}
     >
       ← {label}
@@ -2273,7 +2417,7 @@ function AccountPane({
 }) {
   if (!currentUser) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">账户</div>
@@ -2284,20 +2428,21 @@ function AccountPane({
     );
   }
   return (
-    <div>
+    <div className="an-pane">
       <ProfilePane
         currentUser={currentUser}
         authToken={authToken}
         onProfileUpdated={onProfileUpdated}
       />
-      <div className="an-list-table" style={{ marginTop: 12 }}>
-        <div className="an-row-card" style={{ justifyContent: "space-between" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title" style={{ color: "var(--red)" }}>退出登录</div>
-            <div className="an-rc-sub">清除本地令牌并返回登录界面。</div>
-          </div>
-          <DangerButton onClick={onLogout}>退出登录</DangerButton>
+      <div
+        className="an-row-card"
+        style={{ justifyContent: "space-between", marginTop: 12, flexShrink: 0 }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="an-rc-title" style={{ color: "var(--red)" }}>退出登录</div>
+          <div className="an-rc-sub">清除本地令牌并返回登录界面。</div>
         </div>
+        <DangerButton onClick={onLogout}>退出登录</DangerButton>
       </div>
     </div>
   );
@@ -2305,7 +2450,7 @@ function AccountPane({
 
 type BindingType = "http" | "websocket";
 
-type ModelItem = { model_id: string; name: string };
+type ModelItem = { model_id: string; name: string; model_name?: string; provider?: string; is_enabled?: boolean };
 type TemplateItem = { template_id: string; name: string };
 
 /** BotNewPane — two-step wizard.
@@ -2327,6 +2472,7 @@ function BotNewPane({
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
+  const [scope, setScope] = useState<BotScope>("friend");
 
   // HTTP-only
   const [models, setModels] = useState<ModelItem[]>([]);
@@ -2381,7 +2527,7 @@ function BotNewPane({
       description: description.trim() || null,
       binding_type: bindingType,
       status: "online",
-      is_public: true,
+      scope,
     };
     if (bindingType === "http") {
       body.model_id = modelId;
@@ -2419,7 +2565,7 @@ function BotNewPane({
 
   if (issued) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">Bot 已创建 · 保存 OpenClaw Token</div>
@@ -2496,7 +2642,7 @@ function BotNewPane({
 
   if (step === 1) {
     return (
-      <div>
+      <div className="an-pane">
         <div className="an-pane-head">
           <div>
             <div className="an-pane-title">新建 Bot · 选择类型</div>
@@ -2527,7 +2673,7 @@ function BotNewPane({
   }
 
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">
@@ -2579,6 +2725,19 @@ function BotNewPane({
               className={`${inputCls} resize-none`}
             />
           </Field>
+          <Field label="使用范围">
+            <select
+              value={scope}
+              onChange={(e) => setScope(e.target.value as BotScope)}
+              className={inputCls}
+            >
+              {BOT_SCOPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label} · {opt.hint}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
 
         {bindingType === "http" && (
@@ -2591,7 +2750,7 @@ function BotNewPane({
                 className={inputCls}
               >
                 {models.length === 0 ? (
-                  <option value="">（无可用模型，请先到管理后台创建）</option>
+                  <option value="">（无可用模型，请先在设置的 LLM 模型中创建）</option>
                 ) : (
                   models.map((m) => (
                     <option key={m.model_id} value={m.model_id}>
@@ -2608,7 +2767,7 @@ function BotNewPane({
                 className={inputCls}
               >
                 {templates.length === 0 ? (
-                  <option value="">（无可用模板，请先到管理后台创建）</option>
+                  <option value="">（无可用模板，请先在设置的消息模板中创建）</option>
                 ) : (
                   templates.map((t) => (
                     <option key={t.template_id} value={t.template_id}>
@@ -2733,29 +2892,86 @@ function BotEditPane({
 }) {
   const [displayName, setDisplayName] = useState(bot.display_name || "");
   const [description, setDescription] = useState(bot.description || "");
+  const [scope, setScope] = useState<BotScope>(bot.scope || "friend");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTest, setConnectionTest] = useState<BotConnectionTestResult | null>(null);
+  const isHttpBot = (bot.binding_type || "http") === "http";
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [modelId, setModelId] = useState(bot.model_id || "");
+  const [templateId, setTemplateId] = useState(bot.template_id || "");
 
   // Reset form when switching between bots
-  useMemo(() => {
+  useEffect(() => {
     setDisplayName(bot.display_name || "");
     setDescription(bot.description || "");
-  }, [bot.bot_id]);
+    setScope(bot.scope || "friend");
+    setModelId(bot.model_id || "");
+    setTemplateId(bot.template_id || "");
+    setConnectionTest(null);
+  }, [bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.scope, bot.template_id]);
+
+  useEffect(() => {
+    if (!isHttpBot) {
+      setModels([]);
+      setTemplates([]);
+      return;
+    }
+    let active = true;
+    apiFetch("/admin/models?include_disabled=false", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!active) return;
+        const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
+        setModels(list);
+        if (!bot.model_id && list.length > 0) setModelId(list[0].model_id);
+      })
+      .catch(() => {
+        if (active) setModels([]);
+      });
+    apiFetch("/templates", { token: authToken })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!active) return;
+        const list: TemplateItem[] = Array.isArray(d?.data) ? d.data : [];
+        setTemplates(list);
+        if (!bot.template_id && list.length > 0) setTemplateId(list[0].template_id);
+      })
+      .catch(() => {
+        if (active) setTemplates([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authToken, bot.bot_id, bot.model_id, bot.template_id, isHttpBot]);
 
   const save = async () => {
+    if (isHttpBot && (!modelId || !templateId)) {
+      toast.error("HTTP Bot 必须选择模型和模板");
+      return;
+    }
     setSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        display_name: displayName.trim() || bot.username,
+        description: description.trim() || null,
+        scope,
+      };
+      if (isHttpBot) {
+        body.model_id = modelId;
+        body.template_id = templateId;
+      }
       const res = await apiFetch(`/bots/${bot.bot_id}`, {
         method: "PUT",
         token: authToken,
-        body: {
-          display_name: displayName.trim() || bot.username,
-          description: description.trim() || null,
-        },
+        body,
       });
       const data = await res.json();
       if (data?.status === "success") {
         toast.success("已保存");
+        setConnectionTest(null);
         onUpdated();
       } else {
         toast.error(data?.message || data?.detail || "保存失败");
@@ -2789,15 +3005,142 @@ function BotEditPane({
     }
   };
 
+  const testConnection = async () => {
+    setTestingConnection(true);
+    try {
+      const res = await apiFetch(`/bots/${bot.bot_id}/connection-test`, {
+        method: "POST",
+        token: authToken,
+      });
+      const data = await res.json();
+      if (data?.status !== "success") {
+        throw new Error(data?.message || data?.detail || "连通测试失败");
+      }
+      const result = data.data as BotConnectionTestResult;
+      setConnectionTest(result);
+      if (result.reachable) {
+        toast.success(result.message || "Bot 连通正常");
+      } else {
+        toast.error(result.message || "Bot 未连通");
+      }
+      onUpdated();
+    } catch (e: unknown) {
+      const message = (e as Error).message || "连通测试失败";
+      setConnectionTest({ reachable: false, message });
+      toast.error(message);
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const modelOptions = modelId && !models.some((m) => m.model_id === modelId)
+    ? [{ model_id: modelId, name: bot.model_name || "当前模型" }, ...models]
+    : models;
+  const templateOptions = templateId && !templates.some((t) => t.template_id === templateId)
+    ? [{ template_id: templateId, name: bot.template_name || "当前模板" }, ...templates]
+    : templates;
+
   return (
-    <div>
+    <div className="an-pane">
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">{bot.display_name || bot.username}</div>
-          <div className="an-pane-sub">@{bot.username} · {bot.bot_id}</div>
+          <div className="an-pane-sub">
+            @{bot.username} · {bot.bot_id}
+            {bot.is_builtin ? " · 内置" : ""}
+          </div>
+          <div className="an-pane-sub">
+            Owner: {botOwnerLabel(bot)} · {botScopeLabel(scope)}
+          </div>
         </div>
+        <BotOnlineBadge bot={bot} />
       </div>
       <div className="an-list-table">
+        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div>
+              <div className="an-rc-title">在线检测</div>
+              <div className="an-rc-sub">实时连通测试</div>
+            </div>
+            <PrimaryButton onClick={testConnection} disabled={testingConnection}>
+              {testingConnection ? "测试中…" : "测试连通"}
+            </PrimaryButton>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+            <div className="an-rc-sub">类型：{(bot.binding_type || "http") === "websocket" ? "WebSocket" : "HTTP"}</div>
+            <div className="an-rc-sub">状态：{bot.status || "online"}</div>
+            {(bot.binding_type || "http") === "websocket" && (
+              <>
+                <div className="an-rc-sub">Control：{bot.control_connected ? "在线" : "离线"}</div>
+                <div className="an-rc-sub">Data：{bot.data_connected ? "在线" : "离线"}</div>
+              </>
+            )}
+          </div>
+          {connectionTest && (
+            <div
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "8px 10px",
+                background: connectionTest.reachable ? "var(--green-muted)" : "var(--red-muted)",
+                color: connectionTest.reachable ? "var(--green)" : "var(--red)",
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ fontWeight: 650 }}>
+                {connectionTest.reachable ? "连通正常" : "未连通"}
+                {typeof connectionTest.duration_ms === "number" ? ` · ${connectionTest.duration_ms}ms` : ""}
+              </div>
+              {connectionTest.message && <div>{connectionTest.message}</div>}
+            </div>
+          )}
+        </div>
+        {isHttpBot && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">LLM 绑定</div>
+            <Field label="AI 模型">
+              <select
+                value={modelId}
+                onChange={(e) => {
+                  setModelId(e.target.value);
+                  setConnectionTest(null);
+                }}
+                className={inputCls}
+              >
+                {modelOptions.length === 0 ? (
+                  <option value="">（无可用模型）</option>
+                ) : (
+                  modelOptions.map((m) => (
+                    <option key={m.model_id} value={m.model_id}>
+                      {m.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </Field>
+            <Field label="Prompt 模板">
+              <select
+                value={templateId}
+                onChange={(e) => {
+                  setTemplateId(e.target.value);
+                  setConnectionTest(null);
+                }}
+                className={inputCls}
+              >
+                {templateOptions.length === 0 ? (
+                  <option value="">（无可用模板）</option>
+                ) : (
+                  templateOptions.map((t) => (
+                    <option key={t.template_id} value={t.template_id}>
+                      {t.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </Field>
+          </div>
+        )}
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">基本信息</div>
           <Field label="显示名称">
@@ -2815,17 +3158,36 @@ function BotEditPane({
               className={`${inputCls} resize-none`}
             />
           </Field>
+          <Field label="使用范围">
+            <select
+              value={scope}
+              onChange={(e) => setScope(e.target.value as BotScope)}
+              className={inputCls}
+            >
+              {BOT_SCOPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label} · {opt.hint}
+                </option>
+              ))}
+            </select>
+          </Field>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <DangerButton onClick={remove} disabled={deleting}>
-              {deleting ? "删除中…" : "删除 Bot"}
-            </DangerButton>
+            {bot.is_builtin ? (
+              <span className="an-rc-sub" style={{ alignSelf: "center" }}>
+                内置 Bot 不可删除
+              </span>
+            ) : (
+              <DangerButton onClick={remove} disabled={deleting}>
+                {deleting ? "删除中…" : "删除 Bot"}
+              </DangerButton>
+            )}
             <PrimaryButton onClick={save} disabled={saving}>
               {saving ? "保存中…" : "保存"}
             </PrimaryButton>
           </div>
         </div>
         <div className="an-row-card" style={{ color: "var(--fg-3)", fontSize: 12 }}>
-          高级配置（模型、提示词、Token）请在管理后台调整。
+          高级配置已收敛到设置弹窗；HTTP Bot 可在此切换模型与模板，WebSocket Bot 由 plugin 配置接管。
         </div>
       </div>
     </div>

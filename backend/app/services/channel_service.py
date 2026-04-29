@@ -22,6 +22,7 @@ from app.repositories.bot_repo import BotRepository
 from app.repositories.channel_repo import ChannelRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
+from app.services.bot_service import BotService, bot_scope
 from app.utils.permissions import is_admin
 
 
@@ -100,6 +101,13 @@ class ChannelService:
         )).scalar_one_or_none()
         if existing:
             return existing
+
+        if other_type == "bot":
+            await BotService(self.session).assert_can_use(
+                other,
+                current_user,
+                "无权与该 Bot 发起私信",
+            )
 
         # Deterministic name for dedup debugging; display comes from counterparty.
         a, b = sorted([current_user.user_id, other_id])
@@ -212,22 +220,28 @@ class ChannelService:
         ws = await self.ws_repo.get_by_id(workspace_id)
         if not ws:
             raise NotFoundError("workspace not found")
+        if creator is None:
+            raise ForbiddenError("未登录")
+        wm = await self.ws_repo.get_membership(workspace_id, creator.user_id)
+        if not wm and not is_admin(creator):
+            raise ForbiddenError("您不是该工作空间的成员")
 
         ch = await self.repo.create(workspace_id=workspace_id, name=name, type=type, purpose=purpose)
 
-        # 内置 Bot 自动加入
-        from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
-        for bot_id in (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID):
-            if not await self.repo.get_membership(ch.channel_id, bot_id):
-                await self.repo.add_member(ch.channel_id, bot_id, "bot")
-
-        # 工作空间所有成员自动加入
-        ws_members = await self.ws_repo.list_members(workspace_id)
         added_user_ids = set()
-        for wm in ws_members:
-            if not await self.repo.get_membership(ch.channel_id, wm.user_id):
-                await self.repo.add_member(ch.channel_id, wm.user_id, "user")
-            added_user_ids.add(wm.user_id)
+        if type != "dm":
+            # 内置 Bot 自动加入普通频道；DM 保持一对一，不注入 Coordinator / Helper。
+            from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
+            for bot_id in (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID):
+                if not await self.repo.get_membership(ch.channel_id, bot_id):
+                    await self.repo.add_member(ch.channel_id, bot_id, "bot")
+
+            # 工作空间所有成员自动加入普通频道。
+            ws_members = await self.ws_repo.list_members(workspace_id)
+            for wm in ws_members:
+                if not await self.repo.get_membership(ch.channel_id, wm.user_id):
+                    await self.repo.add_member(ch.channel_id, wm.user_id, "user")
+                added_user_ids.add(wm.user_id)
 
         # 若创建者不在工作空间成员中
         if creator and creator.user_id not in added_user_ids:
@@ -236,8 +250,9 @@ class ChannelService:
 
         return ch
 
-    async def update(self, channel_id: str, **kwargs) -> Channel:
+    async def update(self, channel_id: str, current_user: User, **kwargs) -> Channel:
         ch = await self.get_or_404(channel_id)
+        await self._require_workspace_admin(ch, current_user)
         return await self.repo.update(ch, **kwargs)
 
     async def delete(self, channel_id: str, current_user: User) -> None:
@@ -267,6 +282,18 @@ class ChannelService:
         if not m or m.member_type != "user":
             raise ForbiddenError("您不是该频道的成员")
 
+    async def require_channel_member(self, channel_id: str, user: User) -> None:
+        """Public access guard for routes that expose channel-scoped data."""
+        await self.get_or_404(channel_id)
+        await self._require_channel_member(channel_id, user)
+
+    async def _require_workspace_admin(self, channel: Channel, user: User) -> None:
+        if is_admin(user):
+            return
+        wm = await self.ws_repo.get_membership(channel.workspace_id, user.user_id)
+        if not wm or wm.role not in ("owner", "admin"):
+            raise ForbiddenError("只有工作空间管理员可以执行此操作")
+
     async def list_members_with_details(self, channel_id: str) -> list[dict]:
         memberships = await self.repo.list_memberships(channel_id)
         bot_ids = {m.member_id for m in memberships if m.member_type == "bot"}
@@ -284,6 +311,13 @@ class ChannelService:
                 select(User).where(User.user_id.in_(user_ids))
             )).scalars()
             users_by_id = {u.user_id: u for u in rows}
+        owner_ids = {b.created_by for b in bots_by_id.values() if b.created_by}
+        missing_owner_ids = owner_ids - set(users_by_id)
+        if missing_owner_ids:
+            rows = (await self.session.execute(
+                select(User).where(User.user_id.in_(missing_owner_ids))
+            )).scalars()
+            users_by_id.update({u.user_id: u for u in rows})
 
         result = []
         for m in memberships:
@@ -302,14 +336,40 @@ class ChannelService:
                 "avatar_url": entity.avatar_url,
             }
             if m.member_type == "bot":
+                bot_entity: BotAccount = entity
                 item["template_id"] = m.template_id
                 if m.prompt_template:
                     item["template_name"] = m.prompt_template.name
                 else:
-                    bot_entity: BotAccount = entity
                     item["template_name"] = (
                         bot_entity.prompt_template.name if bot_entity.prompt_template else None
                     )
+                item["status"] = bot_entity.status
+                item["scope"] = bot_scope(bot_entity)
+                owner = users_by_id.get(bot_entity.created_by or "")
+                item["owner"] = (
+                    {
+                        "user_id": owner.user_id,
+                        "username": owner.username,
+                        "display_name": owner.display_name,
+                    }
+                    if owner
+                    else None
+                )
+                item["binding_type"] = getattr(bot_entity, "binding_type", None) or "http"
+                if item["binding_type"] == "websocket":
+                    from app.services.openclaw_bridge.registry import bot_session_registry
+
+                    live_state = bot_session_registry.connection_state(bot_entity.bot_id)
+                    item.update(live_state)
+                    item["is_online"] = bool(bot_entity.status != "offline" and live_state["is_online"])
+                else:
+                    item.update({
+                        "connection_status": "not_required",
+                        "is_online": bot_entity.status != "offline",
+                        "control_connected": None,
+                        "data_connected": None,
+                    })
             result.append(item)
         return result
 
@@ -323,17 +383,20 @@ class ChannelService:
         await self.get_or_404(channel_id)
         await self._require_channel_member(channel_id, current_user)
 
-        if member_type == "bot" and not is_admin(current_user):
-            from app.services.guide.constants import GUIDE_BOT_ID
-            bot = await self.bot_repo.get_by_id(member_id)
-            if not bot:
-                raise NotFoundError("Bot 不存在")
-            if bot.bot_id != GUIDE_BOT_ID and bot.created_by != current_user.user_id:
-                raise ForbiddenError("只能将内置助手或自己创建的 Bot 添加到频道")
-
         existing = await self.repo.get_membership(channel_id, member_id)
         if existing:
             return existing
+
+        if member_type == "bot":
+            bot = await self.bot_repo.get_by_id(member_id)
+            if not bot:
+                raise NotFoundError("Bot 不存在")
+            await BotService(self.session).assert_can_use(
+                bot,
+                current_user,
+                "无权邀请该 Bot 进入频道",
+            )
+
         m = await self.repo.add_member(channel_id, member_id, member_type, added_by=current_user.user_id)
         if member_type == "bot":
             from app.services.openclaw_bridge.membership import emit_channel_joined

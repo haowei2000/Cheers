@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_session, require_permission, try_get_current_user
+from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
 from app.db.models import User
 from app.services.workspace_service import WorkspaceService
@@ -23,11 +23,6 @@ class WorkspaceOut(BaseModel):
 
 class WorkspaceCreateBody(BaseModel):
     name: str
-
-
-class AddMemberBody(BaseModel):
-    user_id: str
-    role: str = "member"
 
 
 class InviteMemberBody(BaseModel):
@@ -56,16 +51,6 @@ async def create_workspace(
     return APIResponse.ok(WorkspaceOut.model_validate(ws))
 
 
-@router.get("/all", response_model=APIResponse[list[WorkspaceOut]])
-async def list_all_workspaces(
-    _: User = Depends(require_permission("space_management")),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = WorkspaceService(session)
-    workspaces = await svc.list_all()
-    return APIResponse.ok([WorkspaceOut.model_validate(w) for w in workspaces])
-
-
 @router.delete("/{workspace_id}", response_model=APIResponse[None])
 async def delete_workspace(
     workspace_id: str,
@@ -74,18 +59,6 @@ async def delete_workspace(
 ) -> APIResponse:
     svc = WorkspaceService(session)
     await svc.delete(workspace_id, current_user)
-    return APIResponse.ok(None)
-
-
-@router.post("/{workspace_id}/members", response_model=APIResponse[None])
-async def add_member(
-    workspace_id: str,
-    body: AddMemberBody,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    svc = WorkspaceService(session)
-    await svc.add_member(workspace_id, body.user_id, body.role, current_user)
     return APIResponse.ok(None)
 
 
@@ -104,21 +77,21 @@ async def invite_member(
 @router.get("/{workspace_id}/members", response_model=APIResponse[list[dict]])
 async def list_workspace_members(
     workspace_id: str,
-    _: User | None = Depends(try_get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = WorkspaceService(session)
-    return APIResponse.ok(await svc.list_members_with_details(workspace_id))
+    return APIResponse.ok(await svc.list_members_with_details(workspace_id, current_user))
 
 
 @router.get("/{workspace_id}/channels", response_model=APIResponse[list[dict]])
 async def list_workspace_channels(
     workspace_id: str,
-    _: User | None = Depends(try_get_current_user),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = WorkspaceService(session)
-    channels = await svc.list_channels(workspace_id)
+    channels = await svc.list_channels(workspace_id, current_user)
     return APIResponse.ok([
         {"channel_id": c.channel_id, "name": c.name, "type": c.type, "purpose": c.purpose}
         for c in channels
