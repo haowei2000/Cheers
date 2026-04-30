@@ -529,6 +529,7 @@ export function Sidebar({
                         </span>
                       )}
                     </button>
+                    {!isSystem && (
                     <button
                       type="button"
                       title="退出此私信"
@@ -564,6 +565,7 @@ export function Sidebar({
                     >
                       <MinusIcon className="w-3 h-3" />
                     </button>
+                    )}
                   </li>
                 );
               })}

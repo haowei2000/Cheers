@@ -31,6 +31,7 @@ interface SettingsModalProps {
   authToken: string | null;
   currentUser: CurrentUser;
   onProfileUpdated: (data: { display_name: string; bio?: string | null; avatar_url?: string | null }) => void;
+  onOpenDM?: (memberId: string, memberType: "user" | "bot") => void;
   onLogout: () => void;
 }
 
@@ -208,6 +209,7 @@ export function SettingsModal({
   authToken,
   currentUser,
   onProfileUpdated,
+  onOpenDM,
   onLogout,
 }: SettingsModalProps) {
   const [pane, setPane] = useState<Pane>("bot");
@@ -306,6 +308,7 @@ export function SettingsModal({
               <FriendsPane
                 currentUserId={currentUser?.user_id || ""}
                 authToken={authToken}
+                onOpenDM={onOpenDM}
               />
             )}
             {pane === "appearance" && (
@@ -1122,71 +1125,252 @@ function KeychainPane({ authToken }: { authToken: string }) {
 function FriendsPane({
   currentUserId,
   authToken,
+  onOpenDM,
 }: {
   currentUserId: string;
   authToken: string | null;
+  onOpenDM?: (memberId: string, memberType: "user" | "bot") => void;
 }) {
+  type FriendTab = "friends" | "incoming" | "outgoing" | "blocked";
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [incoming, setIncoming] = useState<Friend[]>([]);
+  const [outgoing, setOutgoing] = useState<Friend[]>([]);
+  const [blocked, setBlocked] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(false);
   const [directId, setDirectId] = useState("");
+  const [tab, setTab] = useState<FriendTab>("friends");
 
-  const loadFriends = async () => {
+  const loadAll = async () => {
     if (!currentUserId) return;
     setLoading(true);
     try {
-      const res = await apiFetch(`/friends/${currentUserId}`, { token: authToken });
-      const data = await res.json();
-      if (data?.status === "success") setFriends(data.data || []);
+      const [friendsRes, incomingRes, outgoingRes, blockedRes] = await Promise.all([
+        apiFetch("/friends", { token: authToken }),
+        apiFetch("/friends/requests?box=incoming", { token: authToken }),
+        apiFetch("/friends/requests?box=outgoing", { token: authToken }),
+        apiFetch("/friends/blocked/list", { token: authToken }),
+      ]);
+      const [friendsData, incomingData, outgoingData, blockedData] = await Promise.all([
+        friendsRes.json(),
+        incomingRes.json(),
+        outgoingRes.json(),
+        blockedRes.json(),
+      ]);
+      if (friendsData?.status === "success") setFriends(friendsData.data || []);
+      if (incomingData?.status === "success") setIncoming(incomingData.data || []);
+      if (outgoingData?.status === "success") setOutgoing(outgoingData.data || []);
+      if (blockedData?.status === "success") setBlocked(blockedData.data || []);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadFriends();
+    loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId]);
 
   const addByIdentifier = async (id: string) => {
     if (!id || !currentUserId) return;
     try {
-      const res = await apiFetch("/friends", {
+      const res = await apiFetch("/friends/requests", {
         method: "POST",
         token: authToken,
-        body: { user_id: currentUserId, friend_identifier: id },
+        body: { friend_identifier: id },
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success(data.message || "添加成功");
-        loadFriends();
+        toast.success(data.message || "好友申请已发送");
+        loadAll();
         setDirectId("");
       } else {
-        toast.error(data?.detail || "添加失败");
+        toast.error(data?.detail || data?.message || "添加失败");
       }
     } catch {
       toast.error("添加失败");
     }
   };
 
+  const resolveRequest = async (friendshipId: string, action: "accept" | "reject") => {
+    try {
+      const res = await apiFetch(`/friends/requests/${friendshipId}/${action}`, {
+        method: "POST",
+        token: authToken,
+      });
+      const data = await res.json();
+      if (data?.status === "success") {
+        toast.success(action === "accept" ? "已同意好友申请" : "已拒绝好友申请");
+        loadAll();
+      } else {
+        toast.error(data?.detail || data?.message || "操作失败");
+      }
+    } catch {
+      toast.error("操作失败");
+    }
+  };
+
+  const cancelRequest = async (friendshipId: string) => {
+    try {
+      const res = await apiFetch(`/friends/requests/${friendshipId}`, {
+        method: "DELETE",
+        token: authToken,
+      });
+      const data = await res.json();
+      if (data?.status === "success") {
+        toast.success("已撤回好友申请");
+        loadAll();
+      } else {
+        toast.error(data?.detail || data?.message || "撤回失败");
+      }
+    } catch {
+      toast.error("撤回失败");
+    }
+  };
+
   const removeFriend = async (friendId: string) => {
     if (!confirm("确定删除这个好友？")) return;
     try {
-      const res = await apiFetch("/friends", {
+      const res = await apiFetch(`/friends/${friendId}`, {
         method: "DELETE",
         token: authToken,
-        body: { user_id: currentUserId, friend_id: friendId },
       });
       const data = await res.json();
       if (data?.status === "success") {
         toast.success("已删除");
-        loadFriends();
+        loadAll();
       } else {
-        toast.error(data?.detail || "删除失败");
+        toast.error(data?.detail || data?.message || "删除失败");
       }
     } catch {
       toast.error("删除失败");
     }
   };
+
+  const blockFriend = async (friendId: string) => {
+    if (!confirm("确定拉黑这个用户？")) return;
+    try {
+      const res = await apiFetch("/friends/blocked", {
+        method: "POST",
+        token: authToken,
+        body: { friend_identifier: friendId },
+      });
+      const data = await res.json();
+      if (data?.status === "success") {
+        toast.success("已拉黑");
+        loadAll();
+      } else {
+        toast.error(data?.detail || data?.message || "拉黑失败");
+      }
+    } catch {
+      toast.error("拉黑失败");
+    }
+  };
+
+  const unblockFriend = async (friendId: string) => {
+    try {
+      const res = await apiFetch(`/friends/blocked/${friendId}`, {
+        method: "DELETE",
+        token: authToken,
+      });
+      const data = await res.json();
+      if (data?.status === "success") {
+        toast.success("已解除拉黑");
+        loadAll();
+      } else {
+        toast.error(data?.detail || data?.message || "解除失败");
+      }
+    } catch {
+      toast.error("解除失败");
+    }
+  };
+
+  const rowAvatar = (u: Pick<Friend, "display_name" | "username">, bg = "var(--accent)") => (
+    <span
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: 6,
+        background: bg,
+        color: "#fff",
+        fontWeight: 700,
+        display: "inline-grid",
+        placeItems: "center",
+        fontSize: 13,
+        flexShrink: 0,
+      }}
+    >
+      {(u.display_name || u.username || "?").slice(0, 1).toUpperCase()}
+    </span>
+  );
+
+  const smallButton = (label: string, onClick: () => void, danger = false, disabled = false) => (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: "5px 9px",
+        borderRadius: 6,
+        border: danger ? "1px solid var(--red)" : "1px solid var(--border)",
+        background: "transparent",
+        color: danger ? "var(--red)" : "var(--fg-2)",
+        fontSize: 11,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+        fontFamily: "inherit",
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  const renderPersonRow = (f: Friend, mode: FriendTab) => (
+    <div key={`${mode}-${f.friendship_id || f.user_id}`} className="an-row-card">
+      {rowAvatar(f)}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="an-rc-title">{f.display_name || f.username}</div>
+        <div className="an-rc-sub">@{f.username}</div>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+        {mode === "friends" && (
+          <>
+            {smallButton("私信", () => onOpenDM?.(f.user_id, "user"))}
+            {smallButton("拉黑", () => blockFriend(f.user_id), true)}
+            <DangerButton onClick={() => removeFriend(f.user_id)}>移除</DangerButton>
+          </>
+        )}
+        {mode === "incoming" && f.friendship_id && (
+          <>
+            {smallButton("拒绝", () => resolveRequest(f.friendship_id!, "reject"), true)}
+            {smallButton("同意", () => resolveRequest(f.friendship_id!, "accept"))}
+          </>
+        )}
+        {mode === "outgoing" && f.friendship_id && (
+          <DangerButton onClick={() => cancelRequest(f.friendship_id!)}>撤回</DangerButton>
+        )}
+        {mode === "blocked" && (
+          <PrimaryButton onClick={() => unblockFriend(f.user_id)}>解除</PrimaryButton>
+        )}
+      </div>
+    </div>
+  );
+
+  const searchAction = (u: UserSearchResult) => {
+    const status = u.relationship_status || "none";
+    if (status === "accepted") return smallButton("私信", () => onOpenDM?.(u.user_id, "user"));
+    if (status === "pending" && u.direction === "incoming" && u.friendship_id) {
+      return smallButton("同意申请", () => resolveRequest(u.friendship_id!, "accept"));
+    }
+    if (status === "pending") return smallButton("待同意", () => {}, false, true);
+    if (status === "blocked" && u.direction === "blocked_by_me") {
+      return smallButton("解除拉黑", () => unblockFriend(u.user_id));
+    }
+    if (status === "blocked") return smallButton("不可添加", () => {}, false, true);
+    return smallButton("添加好友", () => addByIdentifier(u.user_id));
+  };
+
+  const visibleRows =
+    tab === "friends" ? friends : tab === "incoming" ? incoming : tab === "outgoing" ? outgoing : blocked;
 
   return (
     <div className="an-pane">
@@ -1213,7 +1397,7 @@ function FriendsPane({
                 onKeyDown={(e) => e.key === "Enter" && addByIdentifier(directId.trim())}
               />
               <PrimaryButton onClick={() => addByIdentifier(directId.trim())} disabled={!directId.trim()}>
-                添加
+                发送申请
               </PrimaryButton>
             </div>
           </Field>
@@ -1231,36 +1415,34 @@ function FriendsPane({
           </Field>
         </div>
 
+        <div className="an-seg" style={{ alignSelf: "flex-start", margin: "2px 0" }}>
+          {[
+            ["friends", `好友 ${friends.length}`],
+            ["incoming", `收到 ${incoming.length}`],
+            ["outgoing", `已发送 ${outgoing.length}`],
+            ["blocked", `黑名单 ${blocked.length}`],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={tab === id ? "on" : ""}
+              onClick={() => setTab(id as FriendTab)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
             加载中…
           </div>
+        ) : visibleRows.length === 0 ? (
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
+            暂无内容
+          </div>
         ) : (
-          friends.map((f) => (
-            <div key={f.user_id} className="an-row-card">
-              <span
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 6,
-                  background: "var(--accent)",
-                  color: "#fff",
-                  fontWeight: 700,
-                  display: "inline-grid",
-                  placeItems: "center",
-                  fontSize: 13,
-                  flexShrink: 0,
-                }}
-              >
-                {(f.display_name || f.username || "?").slice(0, 1).toUpperCase()}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="an-rc-title">{f.display_name || f.username}</div>
-                <div className="an-rc-sub">@{f.username}</div>
-              </div>
-              <DangerButton onClick={() => removeFriend(f.user_id)}>移除</DangerButton>
-            </div>
-          ))
+          visibleRows.map((f) => renderPersonRow(f, tab))
         )}
       </div>
     </div>
