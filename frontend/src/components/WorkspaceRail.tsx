@@ -32,6 +32,7 @@ function Tile({
   label,
   initials,
   color,
+  avatarUrl,
   active,
   round,
   title,
@@ -40,6 +41,7 @@ function Tile({
   label: string;
   initials: string;
   color: string;
+  avatarUrl?: string | null;
   active: boolean;
   round?: boolean;
   title?: string;
@@ -61,7 +63,11 @@ function Tile({
         fontSize,
       }}
     >
-      {initials}
+      {avatarUrl ? (
+        <img src={avatarUrl} alt={label} className="an-wsr-img" />
+      ) : (
+        initials
+      )}
     </button>
   );
 }
@@ -83,6 +89,7 @@ export function WorkspaceRail({
             label={personal.name}
             initials="个"
             color="var(--accent)"
+            avatarUrl={personal.avatar_url}
             active={selectedWorkspaceId === personal.workspace_id}
             round
             title={`${personal.name} · 私信`}
@@ -102,6 +109,7 @@ export function WorkspaceRail({
             label={w.name}
             initials={initials || "?"}
             color={wsColor(w.workspace_id)}
+            avatarUrl={w.avatar_url}
             active={selectedWorkspaceId === w.workspace_id}
             title={w.name}
             onClick={() => onSelect(w.workspace_id)}
