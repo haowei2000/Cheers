@@ -3,11 +3,11 @@ name: Release plugin
 on:
   push:
     tags:
-      - "plugin-v*"
+      - "openclaw-channel-agentnexus-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re-)release, e.g. plugin-v0.2.0"
+        description: "Existing tag to (re-)release, e.g. openclaw-channel-agentnexus-v0.2.2"
         required: true
 
 permissions:
@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME:-$INPUT_TAG}"
           PKG_VER=$(node -p "require('./package.json').version")
-          EXPECTED="plugin-v${PKG_VER}"
+          EXPECTED="openclaw-channel-agentnexus-v${PKG_VER}"
           if [ "$TAG" != "$EXPECTED" ]; then
             echo "::error::Tag '$TAG' does not match package.json version (expected '$EXPECTED'). Bump version before tagging."
             exit 1
@@ -81,7 +81,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: Plugin v${{ steps.ver.outputs.version }}
+          name: openclaw-channel-agentnexus v${{ steps.ver.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true
