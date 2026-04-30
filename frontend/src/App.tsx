@@ -46,6 +46,7 @@ import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
 import { TopicPage } from "./components/TopicPage";
 import { TaskPage } from "./components/TaskPage";
+import { Modal } from "./components/Modal";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { apiFetch, buildWsUrl } from "./api";
 import {
@@ -75,6 +76,7 @@ import type {
   ChannelUser,
   BotItem,
   WebsocketTaskContentData,
+  MemoryLoadDetail,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
 
@@ -244,6 +246,7 @@ export default function App() {
     setPageTaskMsgId(null);
   }, [selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -1446,6 +1449,29 @@ export default function App() {
     }
   };
 
+  const getMemoryLoadDetail = (m: Message): MemoryLoadDetail | null => {
+    const value = m.content_data?.memory_load;
+    if (!value || typeof value !== "object") return null;
+    const detail = value as MemoryLoadDetail;
+    return detail.kind === "bot_memory_load" ? detail : null;
+  };
+
+  const renderMemoryLoadButton = (m: Message) => {
+    if (m.sender_type !== "bot" || !getMemoryLoadDetail(m)) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => setMemoryDetailMessage(m)}
+        className="mt-1 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] transition-colors hover:bg-[var(--surface-soft)]"
+        style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}
+        title="查看这条 Bot 回复加载了哪些记忆"
+      >
+        <QuestionMarkCircleIcon className="h-3.5 w-3.5" />
+        记忆详情
+      </button>
+    );
+  };
+
   const cancelStreamingMessage = async (m: Message) => {
     if (!selectedId) return;
     // Optimistic: stop the streaming pulse immediately so the user sees feedback;
@@ -2042,6 +2068,9 @@ export default function App() {
         replyMap.get(rootId) ?? [],
     };
   })();
+  const selectedMemoryLoadDetail = memoryDetailMessage
+    ? getMemoryLoadDetail(memoryDetailMessage)
+    : null;
 
   return (
     <>
@@ -2054,6 +2083,97 @@ export default function App() {
           setLoginModalOpen(false);
         }}
       />
+
+      <Modal
+        open={!!memoryDetailMessage}
+        onClose={() => setMemoryDetailMessage(null)}
+        title="记忆加载详情"
+        description={
+          selectedMemoryLoadDetail
+            ? `触发消息 ${selectedMemoryLoadDetail.trigger_msg_id || "-"} · ${selectedMemoryLoadDetail.trigger_msg_type || "normal"}`
+            : undefined
+        }
+        maxWidth="max-w-3xl"
+      >
+        {selectedMemoryLoadDetail ? (
+          <div className="space-y-4">
+            <div
+              className="grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-3"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <div>
+                <div style={{ color: "var(--fg-3)" }}>加载策略</div>
+                <div className="mt-0.5 font-mono break-all">
+                  {selectedMemoryLoadDetail.strategy || "-"}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "var(--fg-3)" }}>请求层</div>
+                <div className="mt-0.5">
+                  {(selectedMemoryLoadDetail.requested_layers || []).join(", ") || "-"}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "var(--fg-3)" }}>总字符数</div>
+                <div className="mt-0.5">
+                  {selectedMemoryLoadDetail.total_chars ?? 0}
+                </div>
+              </div>
+            </div>
+            <div className="max-h-[58vh] space-y-3 overflow-y-auto pr-1">
+              {(selectedMemoryLoadDetail.layers || []).map((layer) => (
+                <div
+                  key={layer.source}
+                  className="rounded-lg border p-3"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">
+                      {layer.label || layer.source}
+                    </span>
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[10px]"
+                      style={{
+                        background: layer.requested
+                          ? "var(--accent-muted)"
+                          : "var(--surface-soft)",
+                        color: layer.requested ? "var(--accent)" : "var(--fg-3)",
+                      }}
+                    >
+                      {layer.requested ? "已请求" : "未请求"}
+                    </span>
+                    <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
+                      {layer.chars || 0} chars
+                    </span>
+                    <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
+                      {layer.loader || layer.source}
+                    </span>
+                  </div>
+                  {layer.preview ? (
+                    <pre
+                      className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md p-2 text-[11px] leading-relaxed"
+                      style={{
+                        background: "var(--surface-soft)",
+                        color: "var(--fg-2)",
+                      }}
+                    >
+                      {layer.preview}
+                    </pre>
+                  ) : (
+                    <div className="mt-2 text-xs" style={{ color: "var(--fg-3)" }}>
+                      {layer.requested ? "这一层没有可用内容。" : "这一层未参与本次加载。"}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm" style={{ color: "var(--fg-3)" }}>
+            这条消息没有可展示的记忆加载信息。
+          </div>
+        )}
+      </Modal>
 
       <div className="flex h-dvh" style={{ background: "var(--bg-0)" }}>
         {isMobile && sidebarOpen && (
@@ -3334,6 +3454,7 @@ export default function App() {
                                   {renderPartialBadge(m)}
                                 </div>
                                 {renderBotTraceStatus(m)}
+                                {renderMemoryLoadButton(m)}
                                 {clarifyStatus !== null && selectedId && (
                                   <ClarifyInlineBlock
                                     msgId={m.msg_id}
@@ -3673,6 +3794,7 @@ export default function App() {
                                 {!isSecretUnrevealed && renderPartialBadge(m)}
                               </div>
                               {renderBotTraceStatus(m)}
+                              {renderMemoryLoadButton(m)}
                               {clarifyStatus !== null && selectedId && (
                                 <ClarifyInlineBlock
                                   msgId={m.msg_id}
@@ -3994,6 +4116,7 @@ export default function App() {
                                     {renderPartialBadge(r)}
                                   </div>
                                   {renderBotTraceStatus(r)}
+                                  {renderMemoryLoadButton(r)}
                                   {rClarifyStatus !== null && selectedId && (
                                     <ClarifyInlineBlock
                                       msgId={r.msg_id}
@@ -4514,6 +4637,7 @@ export default function App() {
                                             {renderPartialBadge(r)}
                                           </div>
                                           {renderBotTraceStatus(r)}
+                                          {renderMemoryLoadButton(r)}
                                           {rClarifyStatus !== null &&
                                             selectedId && (
                                               <ClarifyInlineBlock

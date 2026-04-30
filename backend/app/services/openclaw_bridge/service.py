@@ -50,6 +50,15 @@ def is_websocket_task_content_data(value: Any) -> bool:
     return isinstance(value, dict) and value.get("kind") == WEBSOCKET_TASK_KIND
 
 
+def _preserve_memory_load(content_data: Any) -> dict[str, Any] | None:
+    if not isinstance(content_data, dict):
+        return None
+    memory_load = content_data.get("memory_load")
+    if not isinstance(memory_load, dict):
+        return None
+    return {"memory_load": memory_load}
+
+
 async def finalize_bot_reply(
     session: AsyncSession,
     *,
@@ -91,8 +100,9 @@ async def finalize_bot_reply(
             pending = None
 
     if pending:
+        content_data = _preserve_memory_load(msg.content_data)
         msg.content = content
-        msg.content_data = None
+        msg.content_data = content_data
         msg.is_partial = False
         msg.mention_user_ids = await resolve_user_mentions(content, session, channel_id)
         if file_ids:
@@ -102,7 +112,8 @@ async def finalize_bot_reply(
             session,
             msg,
             file_ids=msg.file_ids or [],
-            clear_content_data=True,
+            content_data=content_data,
+            clear_content_data=content_data is None,
         )
         logger.info(
             "bridge.finalize: finalized placeholder msg_id=%s bot_id=%s task_id=%s",
@@ -165,6 +176,9 @@ async def mark_bot_reply_as_background_task(
         bot_id=bot_id,
         timeout_s=timeout_s,
     )
+    memory_load_data = _preserve_memory_load(msg.content_data)
+    if memory_load_data:
+        content_data.update(memory_load_data)
     msg.content = "OpenClaw 已转入后台任务，完成后会自动更新这条回复。"
     msg.content_data = content_data
     msg.is_partial = False
@@ -200,6 +214,7 @@ async def _broadcast_done(
     msg: Message,
     *,
     file_ids: list[str],
+    content_data: dict[str, Any] | None = None,
     clear_content_data: bool = False,
 ) -> None:
     out_files: list[dict] | None = None
@@ -229,6 +244,7 @@ async def _broadcast_done(
             content=msg.content,
             file_ids=out_file_ids,
             files=out_files,
+            content_data=content_data,
             clear_content_data=clear_content_data,
         )
     )
@@ -368,7 +384,8 @@ async def finalize_stream(
         return None
 
     msg.content = content
-    msg.content_data = None
+    content_data = _preserve_memory_load(msg.content_data)
+    msg.content_data = content_data
     msg.is_partial = bool(partial)
     msg.mention_user_ids = await resolve_user_mentions(content, session, state.channel_id)
     if file_ids:
@@ -404,7 +421,8 @@ async def finalize_stream(
             error=error,
             file_ids=out_file_ids,
             files=out_files,
-            clear_content_data=True,
+            content_data=content_data,
+            clear_content_data=content_data is None,
         )
     )
     logger.info(

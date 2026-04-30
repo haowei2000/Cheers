@@ -8,7 +8,10 @@ all-layers fallback for unknown types.
 from __future__ import annotations
 
 from app.services.memory.channel_memory import ChannelMemory
-from app.services.pipeline.bot.stages.context_load import select_memory_layers
+from app.services.pipeline.bot.stages.context_load import (
+    build_memory_load_detail,
+    select_memory_layers,
+)
 
 
 def test_normal_msg_loads_all_layers() -> None:
@@ -53,3 +56,27 @@ def test_all_layers_constant_covers_six_known_layers() -> None:
     assert ChannelMemory.ALL_LAYERS == frozenset({
         "anchor", "decisions", "progress", "files_index", "recent", "todos",
     })
+
+
+def test_memory_load_detail_records_requested_layers_and_previews() -> None:
+    detail = build_memory_load_detail(
+        trigger_msg_id="msg-1",
+        trigger_msg_type="routing",
+        requested_layers=frozenset({"anchor", "decisions"}),
+        memory_context={
+            "anchor": "项目目标",
+            "decisions": "重要决策",
+            "recent": "不应被请求但可见",
+        },
+    )
+
+    assert detail["kind"] == "bot_memory_load"
+    assert detail["trigger_msg_id"] == "msg-1"
+    assert detail["requested_layers"] == ["anchor", "decisions"]
+    anchor = next(layer for layer in detail["layers"] if layer["source"] == "anchor")
+    recent = next(layer for layer in detail["layers"] if layer["source"] == "recent")
+    assert anchor["requested"] is True
+    assert anchor["preview"] == "项目目标"
+    assert recent["requested"] is False
+    assert recent["chars"] == len("不应被请求但可见")
+    assert recent["loader"] == "current_page + message_page summaries"

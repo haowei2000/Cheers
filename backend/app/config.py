@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     system_llm_base_url: str = ""  # OpenAI 兼容
     system_llm_model: str = ""
 
+    # 后端记忆分页与近期上下文（不影响前端消息列表分页）
+    memory_history_page_max_chars: int = 50000
+    memory_recent_direct_message_count: int = 30
+    memory_recent_summary_max_chars: int = 1500
+
     # 文生图（DashScope 原生 API）
     image_gen_base_url: str = "https://dashscope.aliyuncs.com"
     image_gen_api_key: str = ""

@@ -54,6 +54,11 @@ class BotMessageWriter:
             sender_id=bot_id,
             sender_type="bot",
             content="",
+            content_data=(
+                {"memory_load": ctx.memory_load_detail}
+                if ctx.memory_load_detail
+                else None
+            ),
             task_id=task_id,
             in_reply_to_msg_id=ctx.trigger_msg.msg_id,
             msg_type=MSG_TYPE_REPLY,
@@ -110,6 +115,7 @@ class BotMessageWriter:
                 content=content,
                 file_ids=out_file_ids,
                 files=out_files,
+                content_data=msg.content_data,
             )
         )
 

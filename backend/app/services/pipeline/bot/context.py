@@ -48,6 +48,7 @@ class BotRunContext:
 
     # ── filled by ContextLoadStage (future commit) ──────────────────────
     memory_context: dict[str, str] = field(default_factory=dict)
+    memory_load_detail: dict[str, Any] = field(default_factory=dict)
     attachments: list[dict[str, str]] = field(default_factory=list)
     attachment_error: str | None = None
     topic_chain: list[Any] = field(default_factory=list)
