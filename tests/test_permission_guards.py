@@ -160,16 +160,23 @@ async def test_channel_settings_and_memory_writes_require_channel_admin(db_sessi
 
 
 @pytest.mark.asyncio
-async def test_member_management_requires_channel_admin(db_session: AsyncSession) -> None:
+async def test_member_invites_default_to_all_members_and_can_be_restricted(db_session: AsyncSession) -> None:
     admin = User(user_id="u-perm-member-admin", username="perm_member_admin", password_hash="x", role="member")
     member = User(user_id="u-perm-member-user", username="perm_member_user", password_hash="x", role="member")
     target = User(user_id="u-perm-member-target", username="perm_member_target", password_hash="x", role="member")
+    restricted_target = User(
+        user_id="u-perm-member-restricted-target",
+        username="perm_member_restricted_target",
+        password_hash="x",
+        role="member",
+    )
     ws = Workspace(workspace_id="w-perm-member", name="Perm Member WS")
     ch = Channel(channel_id="c-perm-member", workspace_id=ws.workspace_id, name="member-guarded", type="public")
     db_session.add_all([
         admin,
         member,
         target,
+        restricted_target,
         ws,
         ch,
         ChannelMembership(channel_id=ch.channel_id, member_id=admin.user_id, member_type="user", role="admin"),
@@ -177,12 +184,43 @@ async def test_member_management_requires_channel_admin(db_session: AsyncSession
     ])
     await db_session.commit()
 
-    denied = await _request_as(
+    settings = await _request_as(
+        db_session,
+        member,
+        "GET",
+        f"/api/v1/channels/{ch.channel_id}/settings",
+    )
+    assert settings.status_code == 200
+    assert settings.json()["data"]["permissions"]["can_invite_members"] is True
+
+    allowed_member = await _request_as(
         db_session,
         member,
         "POST",
         f"/api/v1/channels/{ch.channel_id}/members",
         json={"member_id": target.user_id, "member_type": "user"},
+    )
+    assert allowed_member.status_code == 200
+    assert allowed_member.json()["data"]["role"] == "member"
+
+    ch.allow_member_invites = False
+    await db_session.flush()
+
+    restricted_settings = await _request_as(
+        db_session,
+        member,
+        "GET",
+        f"/api/v1/channels/{ch.channel_id}/settings",
+    )
+    assert restricted_settings.status_code == 200
+    assert restricted_settings.json()["data"]["permissions"]["can_invite_members"] is False
+
+    denied = await _request_as(
+        db_session,
+        member,
+        "POST",
+        f"/api/v1/channels/{ch.channel_id}/members",
+        json={"member_id": restricted_target.user_id, "member_type": "user"},
     )
     assert denied.status_code == 403
 
@@ -191,10 +229,91 @@ async def test_member_management_requires_channel_admin(db_session: AsyncSession
         admin,
         "POST",
         f"/api/v1/channels/{ch.channel_id}/members",
-        json={"member_id": target.user_id, "member_type": "user"},
+        json={"member_id": restricted_target.user_id, "member_type": "user"},
     )
     assert allowed.status_code == 200
     assert allowed.json()["data"]["role"] == "member"
+
+
+@pytest.mark.asyncio
+async def test_bot_adds_default_to_all_members_and_can_be_restricted(db_session: AsyncSession) -> None:
+    admin = User(user_id="u-perm-bot-admin", username="perm_bot_admin", password_hash="x", role="member")
+    member = User(user_id="u-perm-bot-member", username="perm_bot_member", password_hash="x", role="member")
+    ws = Workspace(workspace_id="w-perm-bot-add", name="Perm Bot Add WS")
+    ch = Channel(channel_id="c-perm-bot-add", workspace_id=ws.workspace_id, name="bot-add", type="public")
+    allowed_bot = BotAccount(
+        bot_id="bot-perm-add-allowed",
+        username="perm_add_allowed_bot",
+        display_name="Allowed Bot",
+        created_by=admin.user_id,
+        scope="everyone",
+    )
+    restricted_bot = BotAccount(
+        bot_id="bot-perm-add-restricted",
+        username="perm_add_restricted_bot",
+        display_name="Restricted Bot",
+        created_by=admin.user_id,
+        scope="everyone",
+    )
+    db_session.add_all([
+        admin,
+        member,
+        ws,
+        ch,
+        allowed_bot,
+        restricted_bot,
+        ChannelMembership(channel_id=ch.channel_id, member_id=admin.user_id, member_type="user", role="admin"),
+        ChannelMembership(channel_id=ch.channel_id, member_id=member.user_id, member_type="user", role="member"),
+    ])
+    await db_session.commit()
+
+    settings = await _request_as(
+        db_session,
+        member,
+        "GET",
+        f"/api/v1/channels/{ch.channel_id}/settings",
+    )
+    assert settings.status_code == 200
+    assert settings.json()["data"]["permissions"]["can_add_bots"] is True
+
+    allowed_member = await _request_as(
+        db_session,
+        member,
+        "POST",
+        f"/api/v1/channels/{ch.channel_id}/members",
+        json={"member_id": allowed_bot.bot_id, "member_type": "bot"},
+    )
+    assert allowed_member.status_code == 200
+
+    ch.allow_bot_adds = False
+    await db_session.flush()
+
+    restricted_settings = await _request_as(
+        db_session,
+        member,
+        "GET",
+        f"/api/v1/channels/{ch.channel_id}/settings",
+    )
+    assert restricted_settings.status_code == 200
+    assert restricted_settings.json()["data"]["permissions"]["can_add_bots"] is False
+
+    denied = await _request_as(
+        db_session,
+        member,
+        "POST",
+        f"/api/v1/channels/{ch.channel_id}/members",
+        json={"member_id": restricted_bot.bot_id, "member_type": "bot"},
+    )
+    assert denied.status_code == 403
+
+    allowed_admin = await _request_as(
+        db_session,
+        admin,
+        "POST",
+        f"/api/v1/channels/{ch.channel_id}/members",
+        json={"member_id": restricted_bot.bot_id, "member_type": "bot"},
+    )
+    assert allowed_admin.status_code == 200
 
 
 @pytest.mark.asyncio
