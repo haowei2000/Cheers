@@ -40,19 +40,42 @@ class UpdateMemberTemplateBody(BaseModel):
     template_id: str | None = None
 
 
+class UpdateMemberRoleBody(BaseModel):
+    role: str
+
+
 class ChannelProfileUpdateBody(BaseModel):
     nickname: str | None = None
     bio: str | None = None
 
 
-def _with_unread(
-    channels: list, unread: dict[str, int]
+async def _channel_response(
+    svc: ChannelService,
+    channel,
+    current_user: User,
+    unread_count: int | None = None,
+) -> ChannelInResponse:
+    item = ChannelInResponse.model_validate(channel)
+    item.unread_count = unread_count
+    perms = await svc.channel_permission_summary(channel, current_user)
+    item.my_role = perms["my_role"]
+    item.can_manage = perms["can_manage"]
+    return item
+
+
+async def _with_unread(
+    svc: ChannelService,
+    channels: list,
+    unread: dict[str, int],
+    current_user: User,
 ) -> list[ChannelInResponse]:
     out: list[ChannelInResponse] = []
     for c in channels:
-        item = ChannelInResponse.model_validate(c)
-        item.unread_count = int(unread.get(c.channel_id, 0))
-        out.append(item)
+        out.append(
+            await _channel_response(
+                svc, c, current_user, int(unread.get(c.channel_id, 0))
+            )
+        )
     return out
 
 
@@ -66,7 +89,7 @@ async def list_channels(
     unread = await svc.unread_counts_for(
         current_user.user_id, [c.channel_id for c in channels]
     )
-    return APIResponse.ok(_with_unread(channels, unread))
+    return APIResponse.ok(await _with_unread(svc, channels, unread, current_user))
 
 
 @router.get("/by-workspace/{workspace_id}", response_model=APIResponse[list[ChannelInResponse]])
@@ -80,7 +103,7 @@ async def list_channels_by_workspace(
     unread = await svc.unread_counts_for(
         current_user.user_id, [c.channel_id for c in channels]
     )
-    return APIResponse.ok(_with_unread(channels, unread))
+    return APIResponse.ok(await _with_unread(svc, channels, unread, current_user))
 
 
 class MarkReadResponse(BaseModel):
@@ -124,7 +147,7 @@ async def create_channel(
         purpose=body.purpose,
         creator=current_user,
     )
-    return APIResponse.ok(ChannelInResponse.model_validate(ch))
+    return APIResponse.ok(await _channel_response(svc, ch, current_user))
 
 
 @router.get("/{channel_id}", response_model=APIResponse[ChannelInResponse])
@@ -136,7 +159,7 @@ async def get_channel(
     svc = ChannelService(session)
     await svc.require_channel_member(channel_id, current_user)
     ch = await svc.get_or_404(channel_id)
-    return APIResponse.ok(ChannelInResponse.model_validate(ch))
+    return APIResponse.ok(await _channel_response(svc, ch, current_user))
 
 
 @router.patch("/{channel_id}", response_model=APIResponse[ChannelInResponse])
@@ -149,7 +172,40 @@ async def update_channel(
     svc = ChannelService(session)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     ch = await svc.update(channel_id, current_user, **updates)
-    return APIResponse.ok(ChannelInResponse.model_validate(ch))
+    return APIResponse.ok(await _channel_response(svc, ch, current_user))
+
+
+@router.get("/{channel_id}/settings", response_model=APIResponse[dict])
+async def get_channel_settings(
+    channel_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    await svc.require_channel_member(channel_id, current_user)
+    ch = await svc.get_or_404(channel_id)
+    perms = await svc.channel_permission_summary(ch, current_user)
+    members = await svc.list_members_with_details(channel_id)
+    return APIResponse.ok(
+        {
+            "channel": (await _channel_response(svc, ch, current_user)).model_dump(),
+            "permissions": perms,
+            "members": members,
+        }
+    )
+
+
+@router.patch("/{channel_id}/settings", response_model=APIResponse[ChannelInResponse])
+async def update_channel_settings(
+    channel_id: str,
+    body: ChannelUpdateBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    ch = await svc.update(channel_id, current_user, **updates)
+    return APIResponse.ok(await _channel_response(svc, ch, current_user))
 
 
 @router.delete("/{channel_id}", response_model=APIResponse[None])
@@ -181,6 +237,7 @@ async def list_members(
             "channel_id": m.channel_id,
             "member_id": m.member_id,
             "member_type": m.member_type,
+            "role": m.role or "member",
             "joined_at": m.joined_at.isoformat() if m.joined_at else None,
         }
         for m in memberships
@@ -200,6 +257,7 @@ async def add_member(
         "channel_id": m.channel_id,
         "member_id": m.member_id,
         "member_type": m.member_type,
+        "role": m.role or "member",
     })
 
 
@@ -225,6 +283,19 @@ async def update_member_template(
 ) -> APIResponse:
     svc = ChannelService(session)
     result = await svc.update_member_template(channel_id, member_id, body.template_id, current_user)
+    return APIResponse.ok(result)
+
+
+@router.patch("/{channel_id}/members/{member_id}/role", response_model=APIResponse[dict])
+async def update_member_role(
+    channel_id: str,
+    member_id: str,
+    body: UpdateMemberRoleBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = ChannelService(session)
+    result = await svc.update_member_role(channel_id, member_id, body.role, current_user)
     return APIResponse.ok(result)
 
 
