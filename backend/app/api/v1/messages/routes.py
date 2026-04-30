@@ -182,7 +182,7 @@ async def _handle_send_message(
     current_user: User,
 ) -> tuple[dict, str | None]:
     """持久化消息、广播、调度 orchestrator。返回 (payload_dict, secret_token)。"""
-    await ChannelService(session).require_channel_member(channel_id, current_user)
+    await ChannelService(session).require_can_send_message(channel_id, current_user)
     raw_content_data = getattr(body, "content_data", None)
     if hasattr(raw_content_data, "model_dump"):
         raw_content_data = raw_content_data.model_dump(exclude_none=True) or None
@@ -251,7 +251,7 @@ async def send_message_stream(
             orchestrator_task = None
             try:
                 try:
-                    await ChannelService(session).require_channel_member(channel_id, current_user)
+                    await ChannelService(session).require_can_send_message(channel_id, current_user)
                 except NotFoundError as exc:
                     yield _format_sse("error", {"detail": str(exc), "status_code": 404})
                     return
