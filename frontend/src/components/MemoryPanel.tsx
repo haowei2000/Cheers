@@ -3,6 +3,7 @@ import {
   ArrowDownTrayIcon,
   ArrowsPointingOutIcon,
   CheckCircleIcon,
+  PencilSquareIcon,
   UsersIcon,
 } from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
@@ -32,6 +33,8 @@ export function MemoryPanel({
   onExpand,
   activeLayer: externalLayer,
   onLayerChange,
+  currentUserId,
+  onOpenChannelProfile,
 }: {
   channelId: string;
   channelName: string;
@@ -40,6 +43,8 @@ export function MemoryPanel({
   onExpand: () => void;
   activeLayer?: string;
   onLayerChange?: (layer: string) => void;
+  currentUserId?: string | null;
+  onOpenChannelProfile?: () => void;
 }) {
   const isControlled = externalLayer !== undefined;
   const [internalLayer, setInternalLayer] = useState<string>("ANCHOR");
@@ -849,9 +854,11 @@ export function MemoryPanel({
             <MembersView
               channelId={channelId}
               members={members}
+              currentUserId={currentUserId}
               canInviteMembers={memberPermissions.can_invite_members}
               canAddBots={memberPermissions.can_add_bots}
               onMembersChanged={loadMembersForPanel}
+              onOpenChannelProfile={onOpenChannelProfile}
             />
           )
         ) : activeLayer === "FILES_INDEX" ? (
@@ -1068,20 +1075,33 @@ function initialsFor(label: string): string {
 function MembersView({
   channelId,
   members,
+  currentUserId,
   canInviteMembers,
   canAddBots,
   onMembersChanged,
+  onOpenChannelProfile,
 }: {
   channelId: string;
   members: MemberItem[];
+  currentUserId?: string | null;
   canInviteMembers: boolean;
   canAddBots: boolean;
   onMembersChanged: () => void;
+  onOpenChannelProfile?: () => void;
 }) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
 
   const bots = members.filter((m) => m.member_type === "bot");
-  const users = members.filter((m) => m.member_type !== "bot");
+  const users = members
+    .map((member, index) => ({ member, index }))
+    .filter(({ member }) => member.member_type !== "bot")
+    .sort((a, b) => {
+      const aSelf = Boolean(currentUserId && a.member.member_id === currentUserId);
+      const bSelf = Boolean(currentUserId && b.member.member_id === currentUserId);
+      if (aSelf !== bSelf) return aSelf ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map(({ member }) => member);
   const canInvite = canInviteMembers || canAddBots;
 
   if (selected) {
@@ -1262,23 +1282,49 @@ function MembersView({
           {users.map((m) => {
             const label = m.display_name || m.username || "用户";
             const color = colorForMember(m.member_id);
+            const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
             return (
               <button
                 key={m.member_id}
                 type="button"
-                className="an-mem-row"
-                onClick={() => setSelected(m)}
+                className={`an-mem-row ${isSelf ? "self" : ""}`}
+                onClick={() => {
+                  if (isSelf && onOpenChannelProfile) {
+                    onOpenChannelProfile();
+                    return;
+                  }
+                  setSelected(m);
+                }}
+                title={isSelf ? "我的频道资料" : undefined}
+                aria-label={isSelf ? "我的频道资料" : label}
               >
                 <div className="an-av-wrap">
-                  <div
-                    className="an-av"
-                    style={{ background: color, borderRadius: 999 }}
-                  >
-                    {initialsFor(label)}
-                  </div>
+                  {m.avatar_url ? (
+                    <img
+                      src={m.avatar_url}
+                      alt={label}
+                      className="an-av"
+                      style={{ borderRadius: 999 }}
+                    />
+                  ) : (
+                    <div
+                      className="an-av"
+                      style={{ background: color, borderRadius: 999 }}
+                    >
+                      {initialsFor(label)}
+                    </div>
+                  )}
+                  {isSelf && (
+                    <span className="an-self-edit" aria-hidden="true">
+                      <PencilSquareIcon />
+                    </span>
+                  )}
                 </div>
                 <div className="an-r-main">
-                  <div className="an-r-name">{label}</div>
+                  <div className="an-r-name">
+                    {label}
+                    {isSelf && <span className="an-tag-pill self">我</span>}
+                  </div>
                   {m.username && m.username !== label && (
                     <div className="an-r-sub">@{m.username}</div>
                   )}
