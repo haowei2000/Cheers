@@ -104,6 +104,7 @@ def build_payload(
         sender_name=ctx.sender_name,
         channel_name=ctx.channel_name,
         event_bus=ctx.bus,
+        db_session=ctx.session,
         skip_system_prompt=skip_system_prompt,
     )
     if capabilities.can_call_bot:
@@ -115,7 +116,6 @@ def build_payload(
         process_config.channel_bot_details = {
             k: v for k, v in ctx.bot_details_by_username.items() if k != sub_username
         }
-        process_config.db_session = ctx.session
         process_config.run_ctx = ctx
 
     return AgentPayload(

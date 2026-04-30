@@ -1,7 +1,7 @@
 """complete friendship system
 
-Revision ID: 039
-Revises: 038
+Revision ID: 040
+Revises: 039
 Create Date: 2026-04-30 00:00:00.000000
 """
 from __future__ import annotations
@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "040"

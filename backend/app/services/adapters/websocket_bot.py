@@ -53,6 +53,29 @@ class WebsocketBotAdapter(OpenClawAdapter):
         # orchestrator 将占位 bot_msg.msg_id 放在 process_config 里传下来
         placeholder_msg_id = payload.process_config.placeholder_msg_id
 
+        sess = bot_session_registry.get(self.bot.bot_id)
+        if sess is None or sess.data_ws is None:
+            yield Final(
+                content=f"[{self.bot.display_name or self.bot.username}] 没有在线的 OpenClaw channel plugin",
+                success=False,
+                error_message="no_plugin_subscribers",
+            )
+            return
+
+        session_payload = None
+        db_session = payload.process_config.db_session
+        if db_session is not None:
+            from app.services.openclaw_bridge.session_map import resolve_dispatch_session
+
+            session_resolution = await resolve_dispatch_session(
+                db_session,
+                bot=self.bot,
+                channel_id=payload.channel_id,
+                trigger_message=payload.trigger_message,
+                task_id=payload.task_id,
+            )
+            session_payload = session_resolution.to_event_payload()
+
         # 先把 pending 登记到内存（不附 timeout），确保 plugin 秒回时
         # `/ws/openclaw/data` 的 reply handler 能从 pending 里 peek 到 channel_id /
         # finalize 正确的占位消息。timeout 由 orchestrator 在确认 dispatched_async
@@ -91,6 +114,9 @@ class WebsocketBotAdapter(OpenClawAdapter):
             "attachments": [_sanitize_attachment(a) for a in (payload.attachments or [])],
             "binding_config": self.binding_config,
         }
+        if session_payload is not None:
+            event["session"] = session_payload
+            event["openclaw_session_key"] = session_payload["openclaw_session_key"]
 
         delivered = await bot_session_registry.dispatch_data(self.bot.bot_id, event)
         logger.info(

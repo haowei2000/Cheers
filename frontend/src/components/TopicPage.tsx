@@ -3,6 +3,7 @@
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { MessageMarkdown } from "../MessageMarkdown";
+import { BotAvatar } from "./BotAvatar";
 import { TopicComposer } from "./TopicComposer";
 
 export interface TopicPageProps {
@@ -23,6 +24,7 @@ function resolveWho(
   users: ChannelUser[],
   currentUserId: string,
 ): string {
+  if (m.sender_name) return m.sender_name;
   if (m.sender_type === "bot") {
     const bot = bots.find((b) => b.member_id === m.sender_id);
     return bot?.display_name || bot?.username || "Bot";
@@ -60,6 +62,116 @@ export function TopicPage({
       .trim()
       .slice(0, 80) || "主题";
 
+  const renderTopicMessage = (m: Message) => {
+    const isBot = m.sender_type === "bot";
+    const isOwn = m.sender_type === "user" && m.sender_id === currentUserId;
+    const bot = isBot
+      ? channelBots.find((b) => b.member_id === m.sender_id)
+      : undefined;
+    const user = !isBot
+      ? channelUsers.find((u) => u.member_id === m.sender_id)
+      : undefined;
+    const label = resolveWho(m, channelBots, channelUsers, currentUserId);
+    const avatarUrl = isBot ? bot?.avatar_url : user?.avatar_url;
+    const initial = isOwn ? "我" : label.slice(0, 1).toUpperCase();
+    const msgTitle =
+      typeof m.content_data?.title === "string" ? m.content_data.title : null;
+
+    return (
+      <div
+        key={m.msg_id}
+        id={`msg-${m.msg_id}`}
+        className="an-chat-msg group relative px-4 transition-colors"
+        style={{ paddingTop: 8, paddingBottom: 2 }}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ background: "var(--surface-soft)" }}
+        />
+        <div className="relative flex gap-3">
+          <div className="w-9 flex-shrink-0">
+            {isBot ? (
+              <BotAvatar
+                label={label}
+                avatarUrl={avatarUrl}
+                size={36}
+                className="mt-0.5"
+              />
+            ) : avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={label}
+                className="w-9 h-9 rounded-xl object-cover select-none mt-0.5"
+              />
+            ) : (
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
+                style={{
+                  background: isOwn ? "var(--accent)" : "var(--fg-3)",
+                }}
+              >
+                {initial}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
+              <span
+                className="font-semibold"
+                style={{
+                  fontSize: "var(--fs-chat-name)",
+                  lineHeight: 1.2,
+                  color: "var(--fg-1)",
+                }}
+              >
+                {label}
+              </span>
+              {isBot && (
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: "0.6px",
+                    padding: "1px 5px",
+                    borderRadius: 3,
+                    background: "var(--surface-soft)",
+                    color: "var(--fg-3)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  BOT
+                </span>
+              )}
+              {m.created_at && (
+                <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
+                  {formatDateTime(m.created_at)}
+                </span>
+              )}
+            </div>
+            {msgTitle ? (
+              <div
+                className="text-[14px] font-semibold mb-1 leading-snug"
+                style={{ color: "var(--fg-1)" }}
+              >
+                {msgTitle}
+              </div>
+            ) : null}
+            <div
+              style={{
+                fontSize: "var(--fs-chat-body)",
+                lineHeight: "var(--lh-chat-body)",
+                color: "var(--fg-1)",
+                wordWrap: "break-word",
+              }}
+            >
+              <MessageMarkdown text={stripThinkTags(m.content || "")} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="an-topic-page">
       <div className="an-tpp-top">
@@ -96,20 +208,7 @@ export function TopicPage({
         </div>
       </div>
       <div className="an-tpp-body">
-        <div className="an-tpp-parent-card">
-          <div className="an-pw">原始消息</div>
-          <div className="an-pm-head">
-            <span className="an-pm-who">
-              {resolveWho(rootMsg, channelBots, channelUsers, currentUserId)}
-            </span>
-            {rootMsg.created_at && (
-              <span className="an-pm-t">{formatDateTime(rootMsg.created_at)}</span>
-            )}
-          </div>
-          <div className="an-pm-c">
-            <MessageMarkdown text={stripThinkTags(rootMsg.content || "")} />
-          </div>
-        </div>
+        {renderTopicMessage(rootMsg)}
 
         <div className="an-tpp-divider">
           {replies.length} 条回复
@@ -127,37 +226,7 @@ export function TopicPage({
             还没有回复。在下方发送第一条。
           </div>
         ) : (
-          replies.map((r) => (
-            <div key={r.msg_id} className="an-tpp-reply">
-              <div className="an-r-head">
-                <span className="an-r-who">
-                  {resolveWho(r, channelBots, channelUsers, currentUserId)}
-                </span>
-                {r.sender_type === "bot" && (
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      letterSpacing: "0.6px",
-                      padding: "1px 5px",
-                      borderRadius: 3,
-                      background: "var(--surface-soft)",
-                      color: "var(--fg-3)",
-                      border: "1px solid var(--border)",
-                    }}
-                  >
-                    BOT
-                  </span>
-                )}
-                {r.created_at && (
-                  <span className="an-r-t">{formatDateTime(r.created_at)}</span>
-                )}
-              </div>
-              <div className="an-r-c">
-                <MessageMarkdown text={stripThinkTags(r.content || "")} />
-              </div>
-            </div>
-          ))
+          replies.map((r) => renderTopicMessage(r))
         )}
       </div>
       <div className="an-tpp-foot">

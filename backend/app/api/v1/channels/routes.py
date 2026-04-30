@@ -1,6 +1,8 @@
 """Channel v1 路由."""
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,7 @@ class ChannelCreateBody(BaseModel):
 class ChannelUpdateBody(BaseModel):
     name: str | None = None
     purpose: str | None = None
+    type: Literal["public", "private"] | None = None
     auto_assist: bool | None = None
     allow_member_invites: bool | None = None
     allow_bot_adds: bool | None = None
@@ -193,7 +196,7 @@ async def get_channel_settings(
     await svc.require_channel_member(channel_id, current_user)
     ch = await svc.get_or_404(channel_id)
     perms = await svc.channel_permission_summary(ch, current_user)
-    members = await svc.list_members_with_details(channel_id)
+    members = await svc.list_members_with_details(channel_id, current_user)
     return APIResponse.ok(
         {
             "channel": (await _channel_response(svc, ch, current_user)).model_dump(),
@@ -237,7 +240,7 @@ async def list_members(
     svc = ChannelService(session)
     await svc.require_channel_member(channel_id, current_user)
     if with_username:
-        members = await svc.list_members_with_details(channel_id)
+        members = await svc.list_members_with_details(channel_id, current_user)
         return APIResponse.ok(members)
     memberships = await svc.repo.list_memberships(channel_id)
     return APIResponse.ok([
