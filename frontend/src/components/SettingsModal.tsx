@@ -3027,7 +3027,6 @@ function BotEditPane({
         if (!active) return;
         const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
         setModels(list);
-        if (!bot.model_id && list.length > 0) setModelId(list[0].model_id);
       })
       .catch(() => {
         if (active) setModels([]);
@@ -3038,7 +3037,6 @@ function BotEditPane({
         if (!active) return;
         const list: TemplateItem[] = Array.isArray(d?.data) ? d.data : [];
         setTemplates(list);
-        if (!bot.template_id && list.length > 0) setTemplateId(list[0].template_id);
       })
       .catch(() => {
         if (active) setTemplates([]);
@@ -3128,7 +3126,7 @@ function BotEditPane({
 
   const testConnection = async () => {
     if (isHttpBot && (!bot.model_id || !bot.template_id)) {
-      toast.error("HTTP Bot 尚未保存模型和模板配置");
+      toast.error("HTTP Bot 尚未保存模型和模板配置，请先保存后测试");
       return;
     }
     setTestingConnection(true);
@@ -3243,11 +3241,14 @@ function BotEditPane({
                 {modelOptions.length === 0 ? (
                   <option value="">（无可用模型）</option>
                 ) : (
-                  modelOptions.map((m) => (
-                    <option key={m.model_id} value={m.model_id}>
-                      {m.name}
-                    </option>
-                  ))
+                  <>
+                    <option value="">（未配置模型，请选择后保存）</option>
+                    {modelOptions.map((m) => (
+                      <option key={m.model_id} value={m.model_id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </>
                 )}
               </select>
             </Field>
@@ -3263,11 +3264,14 @@ function BotEditPane({
                 {templateOptions.length === 0 ? (
                   <option value="">（无可用模板）</option>
                 ) : (
-                  templateOptions.map((t) => (
-                    <option key={t.template_id} value={t.template_id}>
-                      {t.name}
-                    </option>
-                  ))
+                  <>
+                    <option value="">（未配置模板，请选择后保存）</option>
+                    {templateOptions.map((t) => (
+                      <option key={t.template_id} value={t.template_id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </>
                 )}
               </select>
             </Field>
