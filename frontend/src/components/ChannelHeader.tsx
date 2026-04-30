@@ -142,7 +142,11 @@ export function ChannelHeader({
           {activeDm ? (
             <>
               <span className="an-hash">
-                {activeDm.counterparty.member_type === "bot" ? "⦿" : "@"}
+                {activeDm.counterparty.member_type === "bot"
+                  ? "⦿"
+                  : activeDm.counterparty.member_type === "system"
+                    ? "◎"
+                    : "@"}
               </span>
               <span>
                 {activeDm.counterparty.display_name ||
