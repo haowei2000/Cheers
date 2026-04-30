@@ -92,6 +92,24 @@ interface MermaidBlockProps {
   streaming?: boolean;
 }
 
+type MermaidTheme = "dark" | "default";
+
+interface MermaidRenderCacheEntry {
+  templateId: string;
+  svg: string | null;
+  error: string | null;
+}
+
+interface MermaidDisplayState {
+  svg: string | null;
+  error: string | null;
+}
+
+const MERMAID_RENDER_CACHE_LIMIT = 100;
+const mermaidRenderCache = new Map<string, MermaidRenderCacheEntry>();
+const mermaidRenderPromises = new Map<string, Promise<MermaidRenderCacheEntry>>();
+const emptyMermaidDisplayState: MermaidDisplayState = { svg: null, error: null };
+
 function stripTrailingSemicolon(value: string): string {
   return value.trim().replace(/;\s*$/, "");
 }
@@ -195,41 +213,119 @@ function normalizeMermaidCode(code: string): string {
   return normalizeXyChartBeta(code);
 }
 
+function getMermaidTheme(): MermaidTheme {
+  if (typeof document === "undefined") return "default";
+  return document.documentElement.classList.contains("dark") ? "dark" : "default";
+}
+
+function mermaidCacheKey(renderCode: string, theme: MermaidTheme): string {
+  return `${theme}\n${renderCode}`;
+}
+
+function hashMermaidCacheKey(value: string): string {
+  let hash = 5381;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function rememberMermaidRender(key: string, entry: MermaidRenderCacheEntry) {
+  if (mermaidRenderCache.has(key)) mermaidRenderCache.delete(key);
+  mermaidRenderCache.set(key, entry);
+  while (mermaidRenderCache.size > MERMAID_RENDER_CACHE_LIMIT) {
+    const oldestKey = mermaidRenderCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    mermaidRenderCache.delete(oldestKey);
+  }
+}
+
+function getRememberedMermaidRender(key: string): MermaidRenderCacheEntry | null {
+  const entry = mermaidRenderCache.get(key);
+  if (!entry) return null;
+  mermaidRenderCache.delete(key);
+  mermaidRenderCache.set(key, entry);
+  return entry;
+}
+
+function displayStateFromMermaidEntry(entry: MermaidRenderCacheEntry, id: string): MermaidDisplayState {
+  return {
+    svg: entry.svg ? entry.svg.split(entry.templateId).join(id) : null,
+    error: entry.error,
+  };
+}
+
+function initialMermaidDisplayState(renderCode: string, id: string, streaming?: boolean): MermaidDisplayState {
+  if (streaming) return emptyMermaidDisplayState;
+  const cached = getRememberedMermaidRender(mermaidCacheKey(renderCode, getMermaidTheme()));
+  return cached ? displayStateFromMermaidEntry(cached, id) : emptyMermaidDisplayState;
+}
+
+async function renderMermaidWithCache(renderCode: string, theme: MermaidTheme): Promise<MermaidRenderCacheEntry> {
+  const key = mermaidCacheKey(renderCode, theme);
+  const cached = getRememberedMermaidRender(key);
+  if (cached) return cached;
+
+  const pending = mermaidRenderPromises.get(key);
+  if (pending) return pending;
+
+  const templateId = `mermaid-cache-${hashMermaidCacheKey(key)}`;
+  const promise = (async () => {
+    try {
+      const mermaid = (await import("mermaid")).default;
+      mermaid.initialize({ startOnLoad: false, theme });
+      const { svg: rendered } = await mermaid.render(templateId, renderCode);
+      const entry: MermaidRenderCacheEntry = { templateId, svg: rendered, error: null };
+      rememberMermaidRender(key, entry);
+      return entry;
+    } catch (e) {
+      const entry: MermaidRenderCacheEntry = { templateId, svg: null, error: String(e) };
+      rememberMermaidRender(key, entry);
+      return entry;
+    } finally {
+      mermaidRenderPromises.delete(key);
+    }
+  })();
+
+  mermaidRenderPromises.set(key, promise);
+  return promise;
+}
+
 const MermaidBlock = memo(function MermaidBlock({ code, streaming }: MermaidBlockProps) {
   const uid = useId().replace(/:/g, "");
   const id = `mermaid-${uid}`;
   const containerRef = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [svg, setSvg] = useState<string | null>(null);
+  const [renderState, setRenderState] = useState<MermaidDisplayState>(() =>
+    initialMermaidDisplayState(normalizeMermaidCode(code), id, streaming),
+  );
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const renderCode = useMemo(() => normalizeMermaidCode(code), [code]);
+  const { svg, error } = renderState;
 
   useEffect(() => {
     let cancelled = false;
     if (streaming) {
-      setSvg(null);
-      setError(null);
+      setRenderState(emptyMermaidDisplayState);
       return () => {
         cancelled = true;
       };
     }
+
+    const theme = getMermaidTheme();
+    const cached = getRememberedMermaidRender(mermaidCacheKey(renderCode, theme));
+    if (cached) {
+      setRenderState(displayStateFromMermaidEntry(cached, id));
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
-      try {
-        const mermaid = (await import("mermaid")).default;
-        if (cancelled) return;
-        const isDark = document.documentElement.classList.contains("dark");
-        mermaid.initialize({ startOnLoad: false, theme: isDark ? "dark" : "default" });
-        const { svg: rendered } = await mermaid.render(id, renderCode);
-        if (cancelled) return;
-        setSvg(rendered);
-        setError(null);
-      } catch (e) {
-        if (cancelled) return;
-        setError(String(e));
-        setSvg(null);
-      }
-    }, 300);
+      const entry = await renderMermaidWithCache(renderCode, theme);
+      if (cancelled) return;
+      setRenderState(displayStateFromMermaidEntry(entry, id));
+    }, 0);
     return () => {
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
