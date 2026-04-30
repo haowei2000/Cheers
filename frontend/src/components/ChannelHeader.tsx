@@ -5,6 +5,7 @@ import {
   CheckCircleIcon,
   ChatBubbleLeftEllipsisIcon,
   ChatBubbleLeftRightIcon,
+  ClipboardDocumentListIcon,
   DocumentTextIcon,
   MegaphoneIcon,
   UserIcon,
@@ -95,6 +96,8 @@ interface ChannelHeaderProps {
    *  full-page TopicPage (replacing the channel stream) instead of
    *  scrolling the main stream. */
   onOpenTopic?: (rootMsgId: string) => void;
+  taskCount?: number;
+  onOpenTasks?: () => void;
 }
 
 export function ChannelHeader({
@@ -118,6 +121,8 @@ export function ChannelHeader({
   topics = [],
   onJumpToMessage,
   onOpenTopic,
+  taskCount = 0,
+  onOpenTasks,
 }: ChannelHeaderProps) {
   const subtitle = autoAssist ? "自动接管已开启" : "";
   const [topicsOpen, setTopicsOpen] = useState(false);
@@ -279,6 +284,19 @@ export function ChannelHeader({
             </div>
           )}
         </div>
+      )}
+
+      {taskCount > 0 && onOpenTasks && (
+        <button
+          type="button"
+          className="an-topics-btn"
+          onClick={onOpenTasks}
+          title="频道任务"
+        >
+          <ClipboardDocumentListIcon className="w-4 h-4" />
+          <span className="hidden sm:inline">Tasks</span>
+          <span className="an-tb-n">{taskCount}</span>
+        </button>
       )}
 
       {/* Memory cluster — 4 memory tabs: Project / Files / Members / Todos */}

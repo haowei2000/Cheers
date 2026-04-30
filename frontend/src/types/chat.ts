@@ -57,8 +57,19 @@ export type BotTraceEvent = {
   data?: Record<string, unknown>;
 };
 
+export type WebsocketTaskContentData = {
+  kind: "websocket_background_task";
+  status?: string;
+  title?: string;
+  message?: string;
+  task_id?: string | null;
+  bot_id?: string | null;
+  timeout_seconds?: number;
+};
+
 export type Message = {
   msg_id: string;
+  task_id?: string | null;
   sender_id: string;
   sender_type: string;
   sender_name?: string;
