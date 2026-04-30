@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     # ===== OpenClaw channel plugin bridge =====
     openclaw_bridge_enabled: bool = True
     openclaw_bridge_token: str = ""  # 空 = 未配置，bridge 路由返回 503
-    openclaw_bridge_timeout_seconds: int = 60  # 异步 Bot 回复超时（超时后占位消息被标记超时）
+    openclaw_bridge_timeout_seconds: int = 300  # 异步 Bot 慢回复阈值（超时后占位消息转后台任务）
 
     model_config = {
         "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],

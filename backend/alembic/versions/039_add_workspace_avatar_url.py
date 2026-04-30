@@ -1,7 +1,7 @@
 """add avatar_url to workspaces
 
-Revision ID: 038
-Revises: 037
+Revision ID: 039
+Revises: 038
 Create Date: 2026-04-30 00:00:00.000000
 """
 from typing import Sequence, Union
@@ -9,8 +9,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "038"
-down_revision: Union[str, Sequence[str], None] = "037"
+revision: str = "039"
+down_revision: Union[str, Sequence[str], None] = "038"
 branch_labels = None
 depends_on = None
 

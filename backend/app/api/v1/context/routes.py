@@ -9,10 +9,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_session
+from app.core.dependencies import get_current_user, get_session
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.responses import APIResponse
+from app.db.models import User
 from app.repositories.channel_repo import ChannelRepository
+from app.services.channel_service import ChannelService
 from app.services.memory.channel_memory import ChannelMemory
 
 router = APIRouter(prefix="/channels", tags=["context"])
@@ -29,8 +31,10 @@ class ContextUpdate(BaseModel):
 @router.get("/{channel_id}/context", response_model=APIResponse[dict])
 async def get_context(
     channel_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
+    await ChannelService(session).require_channel_member(channel_id, current_user)
     channel_repo = ChannelRepository(session)
     channel = await channel_repo.get_by_id(channel_id)
     if not channel:
@@ -43,6 +47,7 @@ async def get_context(
 async def update_context(
     channel_id: str,
     body: ContextUpdate,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     """更新派生层内容。结构化层 (ANCHOR/DECISIONS/PROGRESS) 请使用 /memory/ CRUD 路由。"""
@@ -56,6 +61,7 @@ async def update_context(
     channel = await channel_repo.get_by_id(channel_id)
     if not channel:
         raise NotFoundError("channel not found")
+    await ChannelService(session).require_channel_admin(channel_id, current_user)
     from app.services.memory.context_store import init_context_db, set_layer
     await init_context_db()
     await set_layer(channel_id, layer_upper, body.content)
