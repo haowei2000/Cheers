@@ -226,6 +226,8 @@ class ChannelCreate(BaseModel):
     name: str
     type: str = "public"
     purpose: str | None = None
+    allow_member_invites: bool | None = None
+    allow_bot_adds: bool | None = None
 
 
 class ChannelInResponse(BaseModel):
@@ -237,8 +239,12 @@ class ChannelInResponse(BaseModel):
     type: str
     purpose: str | None = None
     auto_assist: bool = False
+    allow_member_invites: bool = True
+    allow_bot_adds: bool = True
     my_role: str | None = None
     can_manage: bool = False
+    can_invite_members: bool = False
+    can_add_bots: bool = False
     # 用户在该频道未读的消息数（由 channel_memberships.last_read_at 派生）。
     # 未登录或非成员时保持 None。
     unread_count: int | None = None
