@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import {
   ArrowDownTrayIcon,
   CheckCircleIcon,
+  PencilSquareIcon,
   UsersIcon,
 } from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
@@ -31,6 +32,7 @@ export function MemoryPanel({
   onClose,
   activeLayer: externalLayer,
   onLayerChange,
+  currentUserId,
 }: {
   channelId: string;
   channelName: string;
@@ -38,6 +40,7 @@ export function MemoryPanel({
   onClose: () => void;
   activeLayer?: string;
   onLayerChange?: (layer: string) => void;
+  currentUserId?: string | null;
 }) {
   const isControlled = externalLayer !== undefined;
   const [internalLayer, setInternalLayer] = useState<string>("ANCHOR");
@@ -899,44 +902,8 @@ export function MemoryPanel({
   const renderMembersHub = () => {
     return (
       <div className="flex-1 overflow-y-auto">
-        <div className="px-3 py-3 space-y-3 border-b border-gray-100">
-          <div className="rounded-md border border-gray-200 p-2.5">
-            <div className="text-xs font-semibold text-gray-700 mb-2">
-              我的频道资料
-            </div>
-            {profileLoading ? (
-              <div className="text-xs text-gray-400 py-3">加载中…</div>
-            ) : (
-              <div className="space-y-2">
-                <input
-                  value={profileNickname}
-                  onChange={(e) => setProfileNickname(e.target.value)}
-                  placeholder="频道昵称"
-                  maxLength={64}
-                  className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
-                />
-                <textarea
-                  value={profileBio}
-                  onChange={(e) => setProfileBio(e.target.value)}
-                  placeholder="在本频道的身份介绍…"
-                  rows={2}
-                  className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
-                />
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={saveMyProfile}
-                    disabled={profileSaving}
-                    className="text-[11px] px-2.5 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94] disabled:opacity-50"
-                  >
-                    {profileSaving ? "保存中…" : "保存资料"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {canInviteFromMembers && (
+        {canInviteFromMembers && (
+          <div className="px-3 py-3 border-b border-gray-100">
             <div className="rounded-md border border-gray-200 p-2.5">
               <div className="text-xs font-semibold text-gray-700 mb-2">
                 邀请成员
@@ -949,8 +916,8 @@ export function MemoryPanel({
                 onInvited={loadMembers}
               />
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {membersLoading ? (
           <div className="flex items-center justify-center h-20 text-gray-400 text-xs">
@@ -962,7 +929,17 @@ export function MemoryPanel({
             <p className="text-xs text-gray-500">暂无成员</p>
           </div>
         ) : (
-          <MembersView members={members} />
+          <MembersView
+            members={members}
+            currentUserId={currentUserId}
+            profileLoading={profileLoading}
+            profileNickname={profileNickname}
+            profileBio={profileBio}
+            profileSaving={profileSaving}
+            onProfileNicknameChange={setProfileNickname}
+            onProfileBioChange={setProfileBio}
+            onSaveMyProfile={saveMyProfile}
+          />
         )}
       </div>
     );
@@ -1451,14 +1428,44 @@ function initialsFor(label: string): string {
   return (first + second).toUpperCase() || label.slice(0, 1).toUpperCase();
 }
 
-function MembersView({ members }: { members: MemberItem[] }) {
+function MembersView({
+  members,
+  currentUserId,
+  profileLoading,
+  profileNickname,
+  profileBio,
+  profileSaving,
+  onProfileNicknameChange,
+  onProfileBioChange,
+  onSaveMyProfile,
+}: {
+  members: MemberItem[];
+  currentUserId?: string | null;
+  profileLoading: boolean;
+  profileNickname: string;
+  profileBio: string;
+  profileSaving: boolean;
+  onProfileNicknameChange: (value: string) => void;
+  onProfileBioChange: (value: string) => void;
+  onSaveMyProfile: () => void;
+}) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
 
   const bots = members.filter((m) => m.member_type === "bot");
-  const users = members.filter((m) => m.member_type !== "bot");
+  const users = members
+    .map((member, index) => ({ member, index }))
+    .filter(({ member }) => member.member_type !== "bot")
+    .sort((a, b) => {
+      const aSelf = Boolean(currentUserId && a.member.member_id === currentUserId);
+      const bSelf = Boolean(currentUserId && b.member.member_id === currentUserId);
+      if (aSelf !== bSelf) return aSelf ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map(({ member }) => member);
 
   if (selected) {
     const isBot = selected.member_type === "bot";
+    const isSelf = Boolean(currentUserId && selected.member_id === currentUserId && !isBot);
     const label =
       selected.display_name ||
       selected.username ||
@@ -1517,20 +1524,56 @@ function MembersView({ members }: { members: MemberItem[] }) {
             </div>
           </div>
 
-          <div className="an-md-section">
-            <div className="an-lbl">简介 · About</div>
-            <div
-              style={{
-                fontSize: 12,
-                color: "var(--fg-2)",
-                lineHeight: 1.5,
-              }}
-            >
-              {isBot
-                ? "本频道的智能体，协同其他成员完成任务。"
-                : "本频道的用户成员。"}
+          {isSelf ? (
+            <div className="an-md-section">
+              <div className="an-lbl">我的频道资料</div>
+              {profileLoading ? (
+                <div className="text-xs text-gray-400 py-3">加载中…</div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    value={profileNickname}
+                    onChange={(e) => onProfileNicknameChange(e.target.value)}
+                    placeholder="频道昵称"
+                    maxLength={64}
+                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                  />
+                  <textarea
+                    value={profileBio}
+                    onChange={(e) => onProfileBioChange(e.target.value)}
+                    placeholder="在本频道的身份介绍…"
+                    rows={3}
+                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={onSaveMyProfile}
+                      disabled={profileSaving}
+                      className="text-[11px] px-2.5 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94] disabled:opacity-50"
+                    >
+                      {profileSaving ? "保存中…" : "保存资料"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="an-md-section">
+              <div className="an-lbl">简介 · About</div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--fg-2)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {isBot
+                  ? "本频道的智能体，协同其他成员完成任务。"
+                  : "本频道的用户成员。"}
+              </div>
+            </div>
+          )}
 
           <div className="an-md-section">
             <div className="an-lbl">资料 · Profile</div>
@@ -1620,23 +1663,43 @@ function MembersView({ members }: { members: MemberItem[] }) {
           {users.map((m) => {
             const label = m.display_name || m.username || "用户";
             const color = colorForMember(m.member_id);
+            const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
             return (
               <button
                 key={m.member_id}
                 type="button"
-                className="an-mem-row"
+                className={`an-mem-row ${isSelf ? "self" : ""}`}
                 onClick={() => setSelected(m)}
+                title={isSelf ? "我的频道资料" : undefined}
+                aria-label={isSelf ? "我的频道资料" : label}
               >
                 <div className="an-av-wrap">
-                  <div
-                    className="an-av"
-                    style={{ background: color, borderRadius: 999 }}
-                  >
-                    {initialsFor(label)}
-                  </div>
+                  {m.avatar_url ? (
+                    <img
+                      src={m.avatar_url}
+                      alt={label}
+                      className="an-av"
+                      style={{ borderRadius: 999 }}
+                    />
+                  ) : (
+                    <div
+                      className="an-av"
+                      style={{ background: color, borderRadius: 999 }}
+                    >
+                      {initialsFor(label)}
+                    </div>
+                  )}
+                  {isSelf && (
+                    <span className="an-self-edit" aria-hidden="true">
+                      <PencilSquareIcon />
+                    </span>
+                  )}
                 </div>
                 <div className="an-r-main">
-                  <div className="an-r-name">{label}</div>
+                  <div className="an-r-name">
+                    {label}
+                    {isSelf && <span className="an-tag-pill self">我</span>}
+                  </div>
                   {m.username && m.username !== label && (
                     <div className="an-r-sub">@{m.username}</div>
                   )}
