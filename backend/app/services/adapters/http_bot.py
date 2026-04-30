@@ -16,6 +16,7 @@ from app.http_client import get_http_client
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.orchestrator.secrets import replace_secret_refs
 from app.services.pipeline.adapter_events import AdapterEvent, Delta, Final
+from app.services.secret_messages import replace_secret_placeholder
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.services.adapters.http_bot")
@@ -187,7 +188,7 @@ class HttpBotAdapter(OpenClawAdapter):
         if user_secrets:
             encrypted_msg = user_secrets.get("_encrypted_msg")
             if encrypted_msg and "🔒" in user_text:
-                user_text = user_text.replace("🔒 [加密消息]", encrypted_msg)
+                user_text = replace_secret_placeholder(user_text, encrypted_msg)
             user_text = replace_secret_refs(user_text, user_secrets)
 
         # 分离图片与文档附件
