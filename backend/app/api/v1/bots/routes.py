@@ -90,8 +90,15 @@ def _assert_can_test_bot(bot: BotAccount, current_user: User) -> None:
     raise ForbiddenError("无权测试该 Bot")
 
 
-async def _test_bot_connection(bot: BotAccount) -> dict:
+async def _test_bot_connection(
+    bot: BotAccount,
+    *,
+    model_override: AIModel | None = None,
+    template_override: PromptTemplate | None = None,
+) -> dict:
     binding_type = (getattr(bot, "binding_type", None) or "http").lower()
+    model = model_override or bot.ai_model
+    template = template_override or bot.prompt_template
     checked_at = datetime.now(timezone.utc).isoformat()
     started = time.perf_counter()
     base = {
@@ -122,21 +129,21 @@ async def _test_bot_connection(bot: BotAccount) -> dict:
             "message": "WebSocket control/data 均已连接" if reachable else "WebSocket Bot 未完整连接",
         }
 
-    if not bot.ai_model:
+    if not model:
         return {
             **base,
             "reachable": False,
             "duration_ms": 0,
             "message": "HTTP Bot 未配置模型",
         }
-    if bot.ai_model.is_enabled is False:
+    if model.is_enabled is False:
         return {
             **base,
             "reachable": False,
             "duration_ms": 0,
             "message": "HTTP Bot 模型已禁用",
         }
-    if not bot.prompt_template:
+    if not template:
         return {
             **base,
             "reachable": False,
@@ -144,8 +151,13 @@ async def _test_bot_connection(bot: BotAccount) -> dict:
             "message": "HTTP Bot 未配置提示词模板",
         }
 
-    reachable = await HttpBotAdapter(bot).health_check()
+    reachable = await HttpBotAdapter(
+        bot,
+        model_override=model_override,
+        template_override=template_override,
+    ).health_check()
     duration_ms = int((time.perf_counter() - started) * 1000)
+    live_connection_status = "online" if reachable else "offline"
     logger.info(
         "bot.connection_test bot_id=%s binding=%s reachable=%s duration_ms=%s",
         bot.bot_id,
@@ -155,6 +167,8 @@ async def _test_bot_connection(bot: BotAccount) -> dict:
     )
     return {
         **base,
+        "connection_status": live_connection_status,
+        "is_online": reachable,
         "reachable": reachable,
         "duration_ms": duration_ms,
         "message": "HTTP 模型 API 连通测试成功" if reachable else "HTTP 模型 API 连通测试失败",
@@ -385,11 +399,48 @@ async def get_bot_online_status(
     svc = BotService(session)
     bot = await svc.get_or_404(bot_id)
     await svc.assert_can_use(bot, current_user)
-    return APIResponse.ok({
+    binding_type = (getattr(bot, "binding_type", None) or "http").lower()
+    base = {
         "bot_id": bot.bot_id,
         "status": bot.status,
         "scope": bot_scope(bot),
-        "binding_type": getattr(bot, "binding_type", None) or "http",
+        "binding_type": binding_type,
+    }
+    if bot.status == "offline":
+        return APIResponse.ok({
+            **base,
+            "connection_status": "offline",
+            "is_online": False,
+            "reachable": False,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "control_connected": None if binding_type == "http" else False,
+            "data_connected": None if binding_type == "http" else False,
+        })
+    if binding_type == "http":
+        model = bot.ai_model or (await session.get(AIModel, bot.model_id) if bot.model_id else None)
+        template = bot.prompt_template or (
+            await session.get(PromptTemplate, bot.template_id) if bot.template_id else None
+        )
+        configured = bool(model and model.is_enabled is not False and template)
+        reachable = bool(
+            configured
+            and await HttpBotAdapter(
+                bot,
+                model_override=model,
+                template_override=template,
+            ).health_check()
+        )
+        return APIResponse.ok({
+            **base,
+            "connection_status": "online" if reachable else "offline",
+            "is_online": reachable,
+            "reachable": reachable,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "control_connected": None,
+            "data_connected": None,
+        })
+    return APIResponse.ok({
+        **base,
         **_connection_fields(bot),
     })
 
@@ -403,7 +454,17 @@ async def test_bot_connection(
     svc = BotService(session)
     bot = await svc.get_or_404(bot_id)
     _assert_can_test_bot(bot, current_user)
-    return APIResponse.ok(await _test_bot_connection(bot))
+    model = bot.ai_model or (await session.get(AIModel, bot.model_id) if bot.model_id else None)
+    template = bot.prompt_template or (
+        await session.get(PromptTemplate, bot.template_id) if bot.template_id else None
+    )
+    return APIResponse.ok(
+        await _test_bot_connection(
+            bot,
+            model_override=model,
+            template_override=template,
+        )
+    )
 
 
 @router.post("/registration-requests/{request_id}/reject", response_model=APIResponse[None])

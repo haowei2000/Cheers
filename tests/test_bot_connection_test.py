@@ -57,6 +57,54 @@ async def test_http_bot_connection_test_calls_real_health_check(
 
 
 @pytest.mark.asyncio
+async def test_http_bot_online_status_uses_live_health_check(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    model = AIModel(
+        model_id="status-model-0001",
+        name="Status Model",
+        provider="openai",
+        model_name="gpt-test",
+        base_url="http://llm.test/v1",
+        is_enabled=True,
+        is_builtin=False,
+        config={},
+    )
+    template = PromptTemplate(
+        template_id="status-template-0001",
+        name="Status Template",
+        system_prompt="test",
+        user_template="{{message}}",
+        variables=["message"],
+        is_builtin=False,
+    )
+    bot = BotAccount(
+        bot_id="status-bot-0001",
+        username="status_bot_http",
+        model_id=model.model_id,
+        template_id=template.template_id,
+        status="online",
+        created_by="someone-else",
+    )
+    db_session.add_all([model, template, bot])
+    await db_session.commit()
+
+    health = AsyncMock(return_value=False)
+    with patch("app.api.v1.bots.routes.HttpBotAdapter.health_check", health):
+        resp = await client.get(f"/api/v1/bots/{bot.bot_id}/online-status")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["binding_type"] == "http"
+    assert data["connection_status"] == "offline"
+    assert data["is_online"] is False
+    assert data["reachable"] is False
+    assert data["checked_at"]
+    health.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_websocket_bot_connection_test_reports_registry_state(
     client: AsyncClient,
     db_session: AsyncSession,
