@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.adapters.http_bot import HttpBotAdapter
 from app.services.pipeline.bot.context import BotRunContext
@@ -20,7 +21,7 @@ def _make_bot(
     display_name: str = "测试Bot",
     custom_system_prompt: str | None = None,
     system_prompt: str = "你是助手",
-    user_template: str = "{{message}}",
+    user_template: str = DEFAULT_USER_TEMPLATE,
     model_name: str = "test-model",
     base_url: str = "http://fake:1234/v1",
 ) -> SimpleNamespace:
@@ -208,14 +209,50 @@ class TestApplyUserTemplate:
 UNRENDERED_VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
 
+async def _execute_and_capture_body(adapter: HttpBotAdapter, payload: AgentPayload) -> dict:
+    captured_body: dict = {}
+
+    class _FakeStreamResponse:
+        headers = {"content-type": "text/event-stream"}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"ok"}}]}'
+            yield "data: [DONE]"
+
+        async def aread(self) -> bytes:
+            return b""
+
+    class _FakeStreamCtx:
+        async def __aenter__(self) -> _FakeStreamResponse:
+            return _FakeStreamResponse()
+
+        async def __aexit__(self, *exc_info) -> None:
+            return None
+
+    def _fake_stream(method, url, *, json, headers, timeout):
+        captured_body.update(json)
+        return _FakeStreamCtx()
+
+    mock_client = MagicMock()
+    mock_client.stream = _fake_stream
+
+    with patch("app.services.adapters.http_bot.get_http_client", return_value=mock_client):
+        resp = await adapter.execute(payload)
+
+    assert resp.success is True
+    return captured_body
+
+
 @pytest.mark.asyncio
 async def test_execute_renders_all_context_vars() -> None:
     """验证 execute() 构建的 messages 中模板变量全部被渲染。"""
     user_template = (
         "频道={{channel_name}} 发送者={{sender_name}} Bot={{bot_name}} "
         "频道ID={{channel_id}} 时间={{timestamp}} "
-        "锚点={{anchor}} 进度={{progress}} 决策={{decisions}} "
-        "索引={{files_index}} 近况={{recent}} 待办={{todos}} "
+        "记忆={{memory}} "
         "消息={{message}}"
     )
     bot = _make_bot(user_template=user_template)
@@ -244,45 +281,7 @@ async def test_execute_renders_all_context_vars() -> None:
         ),
     )
 
-    captured_body: dict = {}
-
-    # http_bot now always streams via client.stream("POST", ...) used as
-    # an async context manager. Build a fake SSE response that yields a
-    # single chunk + [DONE].
-    class _FakeStreamResponse:
-        headers = {"content-type": "text/event-stream"}
-
-        def raise_for_status(self) -> None:
-            return None
-
-        async def aiter_lines(self):
-            yield 'data: {"choices":[{"delta":{"content":"ok"}}]}'
-            yield "data: [DONE]"
-
-        async def aread(self) -> bytes:
-            return b""
-
-    class _FakeStreamCtx:
-        def __init__(self, body: dict) -> None:
-            self._body = body
-
-        async def __aenter__(self) -> _FakeStreamResponse:
-            return _FakeStreamResponse()
-
-        async def __aexit__(self, *exc_info) -> None:
-            return None
-
-    def _fake_stream(method, url, *, json, headers, timeout):
-        captured_body.update(json)
-        return _FakeStreamCtx(json)
-
-    mock_client = MagicMock()
-    mock_client.stream = _fake_stream
-
-    with patch("app.services.adapters.http_bot.get_http_client", return_value=mock_client):
-        resp = await adapter.execute(payload)
-
-    assert resp.success is True
+    captured_body = await _execute_and_capture_body(adapter, payload)
 
     # 直接调用（非子 bot）应包含 system prompt
     messages = captured_body.get("messages", [])
@@ -303,13 +302,170 @@ async def test_execute_renders_all_context_vars() -> None:
     assert "测试Bot" in user_content, "bot_name 未渲染"
     assert "ch-tmpl" in user_content, "channel_id 未渲染"
     assert "2026-04-14T10:00:00Z" in user_content, "timestamp 未渲染"
-    assert "项目锚点" in user_content, "anchor 未渲染"
+    assert "项目锚点" in user_content, "memory 未渲染 anchor"
     assert "进行中" in user_content, "progress 未渲染"
     assert "决策A" in user_content, "decisions 未渲染"
     assert "file1.md" in user_content, "files_index 未渲染"
     assert "最近活动" in user_content, "recent 未渲染"
     assert "TODO1" in user_content, "todos 未渲染"
     assert "模板测试消息" in user_content, "message 未渲染"
+
+
+@pytest.mark.asyncio
+async def test_execute_renders_memory_when_default_template_requests_it() -> None:
+    """默认模板包含 {{memory}} 和 {{message}}，因此会渲染记忆。"""
+    bot = _make_bot()
+    adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
+    payload = AgentPayload(
+        task_id="task-memory-block",
+        channel_id="ch-memory-block",
+        trigger_message={
+            "user": "user-001",
+            "sender_name": "王五",
+            "text": "默认模板问题",
+            "timestamp": "2026-04-14T10:00:00Z",
+        },
+        memory_context={
+            "anchor": "默认模板锚点",
+            "progress": "默认模板进度",
+            "decisions": "默认模板决策",
+            "files_index": "默认模板索引",
+            "recent": "默认模板近况",
+            "todos": "- 默认模板待办",
+        },
+        process_config=ProcessConfig(
+            sender_name="王五",
+            channel_name="测试频道",
+        ),
+    )
+
+    captured_body = await _execute_and_capture_body(adapter, payload)
+
+    messages = captured_body.get("messages", [])
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    user_content = messages[1]["content"]
+    assert "=== 频道记忆上下文" in user_content
+    assert "## 项目锚点" in user_content
+    assert "默认模板锚点" in user_content
+    assert "默认模板决策" in user_content
+    assert "默认模板索引" in user_content
+    assert "默认模板近况" in user_content
+    assert user_content.index("默认模板锚点") < user_content.index("默认模板问题")
+
+
+@pytest.mark.asyncio
+async def test_execute_renders_default_template_without_memory_content() -> None:
+    """没有记忆内容时，{{memory}} 渲染为空，但 {{message}} 仍进入 LLM。"""
+    bot = _make_bot()
+    adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
+    payload = AgentPayload(
+        task_id="task-empty-memory-block",
+        channel_id="ch-empty-memory-block",
+        trigger_message={
+            "user": "user-001",
+            "sender_name": "王五",
+            "text": "没有记忆也要回答",
+            "timestamp": "2026-04-14T10:00:00Z",
+        },
+        memory_context={},
+        process_config=ProcessConfig(
+            sender_name="王五",
+            channel_name="测试频道",
+        ),
+    )
+
+    captured_body = await _execute_and_capture_body(adapter, payload)
+
+    messages = captured_body.get("messages", [])
+    user_content = messages[1]["content"]
+    assert "{{memory}}" not in user_content
+    assert "{{message}}" not in user_content
+    assert "=== 频道记忆上下文" not in user_content
+    assert "没有记忆也要回答" in user_content
+
+
+@pytest.mark.asyncio
+async def test_skip_system_prompt_still_renders_memory_template() -> None:
+    """call_bot 子调用跳过 system prompt 时，唯一 user message 仍按模板渲染。"""
+    bot = _make_bot()
+    adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
+    payload = AgentPayload(
+        task_id="task-sub-memory-block",
+        channel_id="ch-sub-memory-block",
+        trigger_message={
+            "user": "user-001",
+            "sender_name": "王五",
+            "text": "请处理最终问题",
+            "timestamp": "2026-04-14T10:00:00Z",
+        },
+        memory_context={
+            "anchor": "子任务锚点",
+            "progress": "子任务进度",
+            "decisions": "子任务决策",
+            "files_index": "子任务索引",
+            "recent": "子任务近况",
+            "todos": "- 子任务待办",
+        },
+        process_config=ProcessConfig(
+            sender_name="王五",
+            channel_name="测试频道",
+            skip_system_prompt=True,
+        ),
+    )
+
+    captured_body = await _execute_and_capture_body(adapter, payload)
+
+    messages = captured_body.get("messages", [])
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    user_content = messages[0]["content"]
+    assert "=== 频道记忆上下文" in user_content
+    assert "子任务锚点" in user_content
+    assert "子任务近况" in user_content
+    assert user_content.index("子任务锚点") < user_content.index("请处理最终问题")
+
+
+@pytest.mark.asyncio
+async def test_vision_request_renders_memory_template_in_text_part() -> None:
+    """图片请求走多模态 content 数组时，也必须按模板渲染 text part。"""
+    bot = _make_bot()
+    adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
+    payload = AgentPayload(
+        task_id="task-vision-memory-block",
+        channel_id="ch-vision-memory-block",
+        trigger_message={
+            "user": "user-001",
+            "sender_name": "王五",
+            "text": "看一下这张图",
+            "timestamp": "2026-04-14T10:00:00Z",
+        },
+        memory_context={
+            "anchor": "图片请求锚点",
+            "recent": "图片请求近况",
+        },
+        attachments=[{
+            "is_image": "true",
+            "image_b64": "ZmFrZQ==",
+            "content_type": "image/png",
+        }],
+        process_config=ProcessConfig(
+            sender_name="王五",
+            channel_name="测试频道",
+        ),
+    )
+
+    captured_body = await _execute_and_capture_body(adapter, payload)
+
+    messages = captured_body.get("messages", [])
+    assert len(messages) == 2
+    user_content = messages[1]["content"]
+    assert isinstance(user_content, list)
+    text_part = user_content[0]
+    assert text_part["type"] == "text"
+    assert "=== 频道记忆上下文" in text_part["text"]
+    assert "图片请求锚点" in text_part["text"]
+    assert any(part["type"] == "image_url" for part in user_content)
 
 
 @pytest.mark.asyncio
@@ -396,8 +552,7 @@ async def test_call_bot_end_to_end_renders_all_vars() -> None:
     all_vars_template = (
         "频道={{channel_name}} 发送者={{sender_name}} Bot={{bot_name}} "
         "频道ID={{channel_id}} 时间={{timestamp}} "
-        "锚点={{anchor}} 进度={{progress}} 决策={{decisions}} "
-        "索引={{files_index}} 近况={{recent}} 待办={{todos}} "
+        "记忆={{memory}} "
         "消息={{message}}"
     )
     child_bot = _make_bot(
@@ -480,7 +635,7 @@ async def test_call_bot_end_to_end_renders_all_vars() -> None:
     assert "端到端用户" in user_content, "sender_name 未渲染"
     assert "子Bot" in user_content, "bot_name 未渲染"
     assert "ch-e2e" in user_content, "channel_id 未渲染"
-    assert "E2E锚点" in user_content, "anchor 未渲染"
+    assert "E2E锚点" in user_content, "memory 未渲染 anchor"
     assert "E2E进度" in user_content, "progress 未渲染"
     assert "E2E决策" in user_content, "decisions 未渲染"
     assert "E2E索引" in user_content, "files_index 未渲染"

@@ -164,8 +164,8 @@ async def test_http_bot_receives_memory_as_template_vars():
         template_id="template-test",
         name="Test Template",
         system_prompt="你是一个专业的助手",
-        user_template="项目锚点：{{anchor}}\n\n决策记录：{{decisions}}\n\n文件索引：{{files_index}}\n\n近期动态：{{recent}}\n\n用户问题：{{message}}",
-        variables=["message"],
+        user_template="{{memory}}\n\n用户问题：{{message}}",
+        variables=["memory", "message"],
     )
 
     bot = BotAccount(
@@ -185,16 +185,18 @@ async def test_http_bot_receives_memory_as_template_vars():
         "recent": "近期动态内容",
     }
 
-    # 验证_build_messages 会正确注入记忆变量
-    messages = adapter._build_messages("你好", memory_context)
+    # 验证_build_messages 会通过 {{memory}} 渲染记忆
+    from app.services.adapters.prompt_template import render_memory_context
+
+    messages = adapter._build_messages("你好", {"memory": render_memory_context(memory_context)})
 
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
     assert messages[0]["content"].endswith("你是一个专业的助手")
 
     user_content = messages[1]["content"]
-    assert "项目锚点：锚点内容" in user_content
-    assert "决策记录：决策内容" in user_content
-    assert "文件索引：文件索引内容" in user_content
-    assert "近期动态：近期动态内容" in user_content
+    assert "锚点内容" in user_content
+    assert "决策内容" in user_content
+    assert "文件索引内容" in user_content
+    assert "近期动态内容" in user_content
     assert "用户问题：你好" in user_content

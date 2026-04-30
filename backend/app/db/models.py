@@ -7,6 +7,8 @@ from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
+from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
+
 
 def gen_uuid() -> str:
     return str(uuid.uuid4())
@@ -50,7 +52,7 @@ class PromptTemplate(Base):
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # 模板名称，如 "代码审查"
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 描述
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)  # 系统提示词
-    user_template: Mapped[str] = mapped_column(Text, nullable=False, default="{{message}}")  # 用户消息模板
+    user_template: Mapped[str] = mapped_column(Text, nullable=False, default=DEFAULT_USER_TEMPLATE)  # 用户消息模板
     variables: Mapped[list] = mapped_column(JSON, nullable=True, default=list)  # 变量列表，如 ["message"]
     is_builtin: Mapped[bool] = mapped_column(default=False)  # 是否内置模板（不可删除）
     created_by: Mapped[Optional[str]] = mapped_column(
