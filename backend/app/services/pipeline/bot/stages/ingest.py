@@ -99,16 +99,18 @@ class IngestStage(Stage[BotRunContext]):
 
     @staticmethod
     async def _unwrap_secret_content(ctx: BotRunContext) -> None:
-        """analysis_content = decrypted plaintext; trigger_content = LLM-visible.
+        """Expose decrypted trigger text inside the BotPipeline only.
 
-        For encrypted messages the LLM sees the placeholder in trigger_content
-        and the plaintext appears only as the named secret ``_encrypted_msg``,
-        consumed by adapters via process_config.
+        IngestPipeline has already persisted/broadcast the placeholder, so
+        channel members only see the sealed envelope. BotPipeline needs the
+        plaintext for both routing (``analysis_content``) and target-adapter
+        payloads (``trigger_content``); otherwise RouteStage and DispatchStage
+        disagree about what the trigger message actually says.
         """
         msg = ctx.trigger_msg
         ctx.analysis_content = _get_trigger_content(msg)
         is_encrypted = bool(msg.is_secret) and bool(msg.secret_encrypted)
-        ctx.trigger_content = msg.content if is_encrypted else ctx.analysis_content
+        ctx.trigger_content = ctx.analysis_content
 
         secret_refs = extract_secret_refs(ctx.analysis_content)
         if secret_refs and msg.sender_type == "user":

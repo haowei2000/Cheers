@@ -4723,30 +4723,28 @@ export default function App() {
                           const v = e.target.value;
                           const pos = e.target.selectionStart ?? v.length;
                           setInput(v);
-                          if (!secretMode) {
-                            const lastAt = v.lastIndexOf("@", pos - 1);
-                            if (lastAt !== -1) {
-                              const after = v.slice(lastAt + 1, pos);
+                          const lastAt = v.lastIndexOf("@", pos - 1);
+                          if (lastAt !== -1) {
+                            const after = v.slice(lastAt + 1, pos);
+                            if (
+                              !after.includes(" ") &&
+                              !after.includes("\n")
+                            ) {
+                              const rect = e.target.getBoundingClientRect();
+                              const spaceBelow =
+                                window.innerHeight - rect.bottom;
+                              const spaceAbove = rect.top;
                               if (
-                                !after.includes(" ") &&
-                                !after.includes("\n")
+                                spaceBelow < 180 &&
+                                spaceAbove > spaceBelow
                               ) {
-                                const rect = e.target.getBoundingClientRect();
-                                const spaceBelow =
-                                  window.innerHeight - rect.bottom;
-                                const spaceAbove = rect.top;
-                                if (
-                                  spaceBelow < 180 &&
-                                  spaceAbove > spaceBelow
-                                ) {
-                                  setMentionDropdownPlacement("top");
-                                } else {
-                                  setMentionDropdownPlacement("bottom");
-                                }
-                                setShowMentionDropdown(true);
-                                setMentionFilter(after);
-                                return;
+                                setMentionDropdownPlacement("top");
+                              } else {
+                                setMentionDropdownPlacement("bottom");
                               }
+                              setShowMentionDropdown(true);
+                              setMentionFilter(after);
+                              return;
                             }
                           }
                           setShowMentionDropdown(false);
@@ -4893,11 +4891,9 @@ export default function App() {
                             type="button"
                             onClick={() => {
                               insertAtCursor("@");
-                              if (!secretMode) {
-                                setMentionFilter("");
-                                setMentionDropdownPlacement("top");
-                                setShowMentionDropdown(true);
-                              }
+                              setMentionFilter("");
+                              setMentionDropdownPlacement("top");
+                              setShowMentionDropdown(true);
                             }}
                             className="an-composer-iconbtn"
                             title="提及成员或 Bot"

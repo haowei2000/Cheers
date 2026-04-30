@@ -108,6 +108,43 @@ async def test_call_bot_passes_memory_context():
 
 
 @pytest.mark.asyncio
+async def test_call_bot_sub_bot_receives_decrypted_secret_parent_text():
+    """加密父消息解密后，Coordinator 通过 call_bot 委托子 Bot 时，
+    子 Bot payload 中应是明文任务，而不是入库占位符。"""
+    memory_context = {
+        "anchor": "",
+        "decisions": "",
+        "files_index": "",
+        "recent": "",
+    }
+    sub_adapter = _CapturingAdapter()
+    run_ctx = _make_run_ctx(memory_context=memory_context, adapter=sub_adapter)
+    plaintext = "@Coordinator 请让 @codebot 处理这条加密任务"
+    run_ctx.trigger_content = plaintext
+    run_ctx.trigger_msg.content = "🔒 [加密消息]"
+    run_ctx.trigger_msg.is_secret = True
+    run_ctx.trigger_msg.secret_encrypted = "enc:test-ciphertext"
+
+    tool_ctx = {
+        "channel_id": "test-channel-001",
+        "memory": memory_context,
+        "_run_ctx": run_ctx,
+    }
+
+    from app.services.adapters.channel_bot import _make_tools
+
+    tools = _make_tools(tool_ctx)
+    call_bot_tool = next(t for t in tools if t.name == "call_bot")
+
+    await call_bot_tool.ainvoke({"username": "codebot", "message": plaintext})
+
+    assert len(sub_adapter.payloads) == 1
+    trigger_message = sub_adapter.payloads[0].trigger_message
+    assert trigger_message["text"] == plaintext
+    assert trigger_message["text"] != "🔒 [加密消息]"
+
+
+@pytest.mark.asyncio
 async def test_http_bot_receives_memory_as_template_vars():
     """验证 HTTP Bot 将记忆上下文注入为模板变量。"""
     from app.db.models import AIModel, BotAccount, PromptTemplate
