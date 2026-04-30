@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace
 from app.services.pipeline.bot import BotRunContext, IngestStage, RouteStage
 from app.services.pipeline.bus import NullEventBus
+from app.services.pipeline.ingest.stages import SECRET_PLACEHOLDER
 
 
 async def _unused_adapter_factory(bot_id: str):  # pragma: no cover - route-only tests
@@ -167,3 +168,57 @@ async def test_route_stage_respects_explicit_mention_bot_ids(db_session: AsyncSe
     ctx = await _run_route(db_session, ch, msg)
 
     assert ctx.target_usernames == ["dm_route_bot_b_0003"]
+
+
+@pytest.mark.asyncio
+async def test_encrypted_message_routes_and_dispatches_with_plaintext(
+    db_session: AsyncSession,
+) -> None:
+    ws = Workspace(workspace_id="dm-route-ws-0004", name="Secret Bot Mentions")
+    user = User(
+        user_id="dm-route-user-0005",
+        username="dm_route_user_0005",
+        password_hash="x",
+    )
+    ch = Channel(
+        channel_id="dm-route-ch-0004",
+        workspace_id=ws.workspace_id,
+        name="secret-route",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="dm-route-bot-0004",
+        username="secret_bot_0004",
+        status="online",
+    )
+    plaintext = "@secret_bot_0004 请读取这条加密任务"
+    msg = Message(
+        msg_id="dm-route-msg-0004",
+        channel_id=ch.channel_id,
+        sender_id=user.user_id,
+        sender_type="user",
+        content=SECRET_PLACEHOLDER,
+        mention_bot_ids=[],
+        is_secret=True,
+        # decrypt_value accepts legacy plaintext values without the enc:
+        # prefix, which keeps this unit test free of filesystem key writes.
+        secret_encrypted=plaintext,
+    )
+    db_session.add_all(
+        [
+            ws,
+            user,
+            ch,
+            bot,
+            ChannelMembership(channel_id=ch.channel_id, member_id=user.user_id, member_type="user"),
+            ChannelMembership(channel_id=ch.channel_id, member_id=bot.bot_id, member_type="bot"),
+            msg,
+        ]
+    )
+    await db_session.flush()
+
+    ctx = await _run_route(db_session, ch, msg)
+
+    assert ctx.analysis_content == plaintext
+    assert ctx.trigger_content == plaintext
+    assert ctx.target_usernames == ["secret_bot_0004"]
