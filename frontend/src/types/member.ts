@@ -11,9 +11,15 @@ export type MemberItem = {
 export type ChannelMember = MemberItem & {
   template_id?: string | null;
   template_name?: string | null;
+  can_manage_template?: boolean;
   status?: string;
   scope?: "private" | "friend" | "everyone";
   owner?: {
+    user_id: string;
+    username: string;
+    display_name?: string | null;
+  } | null;
+  inviter?: {
     user_id: string;
     username: string;
     display_name?: string | null;

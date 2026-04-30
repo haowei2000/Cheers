@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import {
   Cog6ToothIcon,
+  CpuChipIcon,
   ShieldCheckIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
@@ -9,13 +10,18 @@ import { apiFetch } from "../api";
 import type { Channel, ChannelMember } from "../types";
 import { Modal, ModalFooter } from "./Modal";
 
-type TabId = "channel" | "admins";
+type TabId = "channel" | "admins" | "bots";
 type ChannelScope = "public" | "private";
 type ApiEnvelope<T> = {
   status?: string;
   data?: T;
   detail?: string;
   message?: string;
+};
+type PromptTemplateItem = {
+  template_id: string;
+  name: string;
+  description?: string | null;
 };
 
 function roleText(role?: string | null): string {
@@ -74,6 +80,7 @@ export function ChannelSettingsModal({
     normalizeScope(channel?.type),
   );
   const [members, setMembers] = useState<ChannelMember[]>([]);
+  const [templates, setTemplates] = useState<PromptTemplateItem[]>([]);
 
   const loadSettings = useCallback(async () => {
     if (!channelId || !open) return;
@@ -107,11 +114,24 @@ export function ChannelSettingsModal({
     }
   }, [channelId, open, userToken]);
 
+  const loadTemplates = useCallback(async () => {
+    if (!open) return;
+    try {
+      const data = await parseEnvelope<PromptTemplateItem[]>(
+        await apiFetch("/templates", { token: userToken }),
+      );
+      setTemplates(data || []);
+    } catch {
+      setTemplates([]);
+    }
+  }, [open, userToken]);
+
   useEffect(() => {
     if (!open || !channel) return;
     setActiveTab("channel");
     loadSettings();
-  }, [channel, loadSettings, open]);
+    loadTemplates();
+  }, [channel, loadSettings, loadTemplates, open]);
 
   const saveChannelControls = async () => {
     if (!channelId || !canManage) return;
@@ -158,9 +178,29 @@ export function ChannelSettingsModal({
     }
   };
 
+  const updateBotTemplate = async (member: ChannelMember, templateId: string | null) => {
+    try {
+      await parseEnvelope<unknown>(
+        await apiFetch(
+          `/channels/${channelId}/members/${encodeURIComponent(member.member_id)}/template`,
+          {
+            method: "PATCH",
+            token: userToken,
+            body: { template_id: templateId },
+          },
+        ),
+      );
+      toast.success("Bot 频道模板已更新");
+      loadSettings();
+    } catch (err) {
+      toast.error((err as Error).message || "更新失败");
+    }
+  };
+
   const tabs: { id: TabId; label: string; icon: JSX.Element }[] = [
     { id: "channel", label: "频道", icon: <Cog6ToothIcon /> },
     { id: "admins", label: "管理员", icon: <UsersIcon /> },
+    { id: "bots", label: "Bot 模板", icon: <CpuChipIcon /> },
   ];
   const userMembers = members
     .map((member, index) => ({ member, index }))
@@ -171,6 +211,11 @@ export function ChannelSettingsModal({
       if (aSelf !== bSelf) return aSelf ? -1 : 1;
       return a.index - b.index;
     })
+    .map(({ member }) => member);
+  const botMembers = members
+    .map((member, index) => ({ member, index }))
+    .filter(({ member }) => member.member_type === "bot")
+    .sort((a, b) => a.index - b.index)
     .map(({ member }) => member);
 
   if (!channel) return null;
@@ -348,7 +393,7 @@ export function ChannelSettingsModal({
                 </button>
               </ModalFooter>
             </div>
-          ) : (
+          ) : activeTab === "admins" ? (
             <div className="space-y-3">
               <div className="text-sm font-semibold text-gray-900">
                 管理员设置
@@ -389,6 +434,68 @@ export function ChannelSettingsModal({
                           <option value="member">成员</option>
                           <option value="admin">管理员</option>
                           <option value="owner">所有者</option>
+                        </select>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-gray-900">
+                Bot 频道模板
+              </div>
+              <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
+                {botMembers.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-gray-400">
+                    暂无 Bot 成员
+                  </div>
+                ) : (
+                  botMembers.map((member) => {
+                    const label =
+                      member.display_name || member.username || member.member_id;
+                    const canEditTemplate =
+                      member.can_manage_template ??
+                      (member.added_by === currentUserId || myRole === "system_admin");
+                    return (
+                      <div
+                        key={member.member_id}
+                        className="flex items-center gap-3 px-3 py-2.5"
+                      >
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#2EB67D] text-sm font-semibold text-white">
+                          {initials(label)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-gray-900">
+                            {label}
+                          </div>
+                          <div className="truncate text-xs text-gray-500">
+                            {member.username
+                              ? `@${member.username}`
+                              : member.member_id}
+                          </div>
+                        </div>
+                        <select
+                          value={member.template_id || ""}
+                          disabled={!canEditTemplate}
+                          onChange={(e) => updateBotTemplate(member, e.target.value || null)}
+                          title={
+                            canEditTemplate
+                              ? "Bot 频道模板覆盖"
+                              : "只有邀请该 Bot 入频道的人可修改频道模板"
+                          }
+                          className="w-44 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:bg-gray-50 disabled:text-gray-400"
+                        >
+                          <option value="">默认模板</option>
+                          {templates.map((template) => (
+                            <option
+                              key={template.template_id}
+                              value={template.template_id}
+                            >
+                              {template.name}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     );
