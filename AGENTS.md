@@ -17,6 +17,12 @@ Project-specific instructions for AI coding agents working on AgentNexus.
   - **Agent 框架**: 内置 HttpBotAdapter（直接调用 LLM）
   - **部署**: Docker Compose
 
+## Branch Strategy
+
+- 所有工作分支的 PR 只能合并到 `develop` 分支。
+- `main` 分支只接受来自 `develop` 分支的合并。
+- 禁止将功能分支、修复分支或其他工作分支的 PR 直接合并到 `main`。
+
 ## Architecture
 
 ### 六层架构
