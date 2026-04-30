@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import {
   BookOpenIcon,
   Cog6ToothIcon,
   ShieldCheckIcon,
   TrashIcon,
-  UserPlusIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
 import { apiFetch } from "../api";
-import type { BotItem, Channel, ChannelMember, MemoryEntryItem } from "../types";
+import type { Channel, ChannelMember, MemoryEntryItem } from "../types";
+import { InviteMemberSearch } from "./InviteMemberSearch";
 import { Modal, ModalFooter } from "./Modal";
 
 type TabId = "general" | "members" | "memory";
@@ -66,29 +66,26 @@ export function ChannelSettingsModal({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const [canInviteMembers, setCanInviteMembers] = useState(false);
+  const [canAddBots, setCanAddBots] = useState(false);
   const [myRole, setMyRole] = useState<string | null>(null);
 
   const [name, setName] = useState(channel?.name ?? "");
   const [purpose, setPurpose] = useState(channel?.purpose ?? "");
   const [autoAssist, setAutoAssist] = useState(Boolean(channel?.auto_assist));
+  const [allowMemberInvites, setAllowMemberInvites] = useState(
+    channel?.allow_member_invites !== false,
+  );
+  const [allowBotAdds, setAllowBotAdds] = useState(channel?.allow_bot_adds !== false);
 
   const [members, setMembers] = useState<ChannelMember[]>([]);
-  const [bots, setBots] = useState<BotItem[]>([]);
   const [templates, setTemplates] = useState<PromptTemplateItem[]>([]);
-  const [inviteIdentifier, setInviteIdentifier] = useState("");
-  const [addingBotId, setAddingBotId] = useState("");
 
   const [memoryLayer, setMemoryLayer] = useState<(typeof MEMORY_LAYERS)[number]["id"]>("ANCHOR");
   const [entries, setEntries] = useState<MemoryEntryItem[]>([]);
   const [entryTitle, setEntryTitle] = useState("");
   const [entryContent, setEntryContent] = useState("");
   const [editingEntry, setEditingEntry] = useState<MemoryEntryItem | null>(null);
-
-  const memberIds = useMemo(() => new Set(members.map((m) => m.member_id)), [members]);
-  const availableBots = useMemo(
-    () => bots.filter((bot) => !memberIds.has(bot.bot_id)),
-    [bots, memberIds],
-  );
 
   const loadMemory = useCallback(
     async (layer = memoryLayer) => {
@@ -108,7 +105,12 @@ export function ChannelSettingsModal({
     try {
       const data = await parseEnvelope<{
         channel: Channel;
-        permissions: { can_manage: boolean; my_role: string | null };
+        permissions: {
+          can_manage: boolean;
+          can_invite_members?: boolean;
+          can_add_bots?: boolean;
+          my_role: string | null;
+        };
         members: ChannelMember[];
       }>(
         await apiFetch(`/channels/${channelId}/settings`, { token: userToken }),
@@ -116,7 +118,11 @@ export function ChannelSettingsModal({
       setName(data.channel.name);
       setPurpose(data.channel.purpose ?? "");
       setAutoAssist(Boolean(data.channel.auto_assist));
+      setAllowMemberInvites(data.channel.allow_member_invites !== false);
+      setAllowBotAdds(data.channel.allow_bot_adds !== false);
       setCanManage(Boolean(data.permissions.can_manage));
+      setCanInviteMembers(Boolean(data.permissions.can_invite_members));
+      setCanAddBots(Boolean(data.permissions.can_add_bots));
       setMyRole(data.permissions.my_role);
       setMembers(data.members || []);
     } catch (err) {
@@ -125,18 +131,6 @@ export function ChannelSettingsModal({
       setLoading(false);
     }
   }, [channelId, open, userToken]);
-
-  const loadBots = useCallback(async () => {
-    if (!open) return;
-    try {
-      const data = await parseEnvelope<BotItem[]>(
-        await apiFetch("/bots", { token: userToken }),
-      );
-      setBots(data || []);
-    } catch {
-      setBots([]);
-    }
-  }, [open, userToken]);
 
   const loadTemplates = useCallback(async () => {
     if (!open) return;
@@ -154,10 +148,9 @@ export function ChannelSettingsModal({
     if (!open || !channel) return;
     setActiveTab("general");
     loadSettings();
-    loadBots();
     loadTemplates();
     loadMemory("ANCHOR");
-  }, [channel, loadBots, loadMemory, loadSettings, loadTemplates, open]);
+  }, [channel, loadMemory, loadSettings, loadTemplates, open]);
 
   useEffect(() => {
     if (open) loadMemory(memoryLayer);
@@ -175,6 +168,8 @@ export function ChannelSettingsModal({
             name: name.trim(),
             purpose: purpose.trim() || null,
             auto_assist: autoAssist,
+            allow_member_invites: allowMemberInvites,
+            allow_bot_adds: allowBotAdds,
           },
         }),
       );
@@ -184,44 +179,6 @@ export function ChannelSettingsModal({
       toast.error((err as Error).message || "保存失败");
     } finally {
       setSaving(false);
-    }
-  };
-
-  const inviteUser = async () => {
-    if (!inviteIdentifier.trim() || !canManage) return;
-    try {
-      await parseEnvelope<unknown>(
-        await apiFetch(`/channels/${channelId}/invite`, {
-          method: "POST",
-          token: userToken,
-          body: { identifier: inviteIdentifier.trim() },
-        }),
-      );
-      setInviteIdentifier("");
-      toast.success("成员已邀请");
-      loadSettings();
-    } catch (err) {
-      toast.error((err as Error).message || "邀请失败");
-    }
-  };
-
-  const addBot = async (botId: string) => {
-    if (!botId || !canManage) return;
-    setAddingBotId(botId);
-    try {
-      await parseEnvelope<unknown>(
-        await apiFetch(`/channels/${channelId}/members`, {
-          method: "POST",
-          token: userToken,
-          body: { member_id: botId, member_type: "bot" },
-        }),
-      );
-      toast.success("Bot 已加入频道");
-      loadSettings();
-    } catch (err) {
-      toast.error((err as Error).message || "添加失败");
-    } finally {
-      setAddingBotId("");
     }
   };
 
@@ -365,9 +322,9 @@ export function ChannelSettingsModal({
           <div className="mt-4 rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-500">
             <div className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
               <ShieldCheckIcon className="h-4 w-4" />
-              {canManage ? "可管理" : "只读"}
+              {canManage ? "可管理" : canInviteMembers || canAddBots ? "可邀请" : "只读"}
             </div>
-            管理操作需要频道管理员权限。
+            邀请成员和添加 Bot 可在常规中配置。
           </div>
         </nav>
 
@@ -418,6 +375,50 @@ export function ChannelSettingsModal({
                   />
                 </button>
               </div>
+              <div className="space-y-2 rounded-md border border-gray-200 px-3 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">成员邀请</div>
+                    <div className="text-xs text-gray-500">允许普通成员邀请人类成员加入频道。</div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={allowMemberInvites}
+                    disabled={!canManage}
+                    onClick={() => setAllowMemberInvites((v) => !v)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      allowMemberInvites ? "bg-[#1264A3]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                      style={{ transform: allowMemberInvites ? "translateX(22px)" : "translateX(4px)" }}
+                    />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">添加 Bot</div>
+                    <div className="text-xs text-gray-500">允许普通成员添加自己可见的 Bot。</div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={allowBotAdds}
+                    disabled={!canManage}
+                    onClick={() => setAllowBotAdds((v) => !v)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      allowBotAdds ? "bg-[#1264A3]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                      style={{ transform: allowBotAdds ? "translateX(22px)" : "translateX(4px)" }}
+                    />
+                  </button>
+                </div>
+              </div>
               <ModalFooter>
                 <button
                   type="button"
@@ -438,39 +439,14 @@ export function ChannelSettingsModal({
             </div>
           ) : activeTab === "members" ? (
             <div className="space-y-5">
-              <div className="grid gap-3 md:grid-cols-[1fr_220px]">
-                <div className="flex gap-2">
-                  <input
-                    value={inviteIdentifier}
-                    onChange={(e) => setInviteIdentifier(e.target.value)}
-                    disabled={!canManage}
-                    placeholder="用户 ID 或用户名"
-                    className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1264A3] focus:outline-none disabled:bg-gray-50"
-                  />
-                  <button
-                    type="button"
-                    onClick={inviteUser}
-                    disabled={!canManage || !inviteIdentifier.trim()}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-[#1264A3] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                  >
-                    <UserPlusIcon className="h-4 w-4" />
-                    邀请
-                  </button>
-                </div>
-                <select
-                  disabled={!canManage || availableBots.length === 0 || Boolean(addingBotId)}
-                  value=""
-                  onChange={(e) => addBot(e.target.value)}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-600 focus:border-[#1264A3] focus:outline-none disabled:bg-gray-50"
-                >
-                  <option value="">添加 Bot</option>
-                  {availableBots.map((bot) => (
-                    <option key={bot.bot_id} value={bot.bot_id}>
-                      {bot.display_name || bot.username}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <InviteMemberSearch
+                channelId={channelId}
+                userToken={userToken}
+                members={members}
+                canInviteMembers={canInviteMembers}
+                canAddBots={canAddBots}
+                onInvited={loadSettings}
+              />
 
               <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
                 {members.map((member) => {

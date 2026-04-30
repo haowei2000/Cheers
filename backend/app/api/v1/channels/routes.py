@@ -19,12 +19,16 @@ class ChannelCreateBody(BaseModel):
     name: str
     type: str = "public"
     purpose: str | None = None
+    allow_member_invites: bool | None = None
+    allow_bot_adds: bool | None = None
 
 
 class ChannelUpdateBody(BaseModel):
     name: str | None = None
     purpose: str | None = None
     auto_assist: bool | None = None
+    allow_member_invites: bool | None = None
+    allow_bot_adds: bool | None = None
 
 
 class AddMemberBody(BaseModel):
@@ -60,6 +64,8 @@ async def _channel_response(
     perms = await svc.channel_permission_summary(channel, current_user)
     item.my_role = perms["my_role"]
     item.can_manage = perms["can_manage"]
+    item.can_invite_members = perms["can_invite_members"]
+    item.can_add_bots = perms["can_add_bots"]
     return item
 
 
@@ -145,6 +151,8 @@ async def create_channel(
         name=body.name,
         type=body.type,
         purpose=body.purpose,
+        allow_member_invites=body.allow_member_invites,
+        allow_bot_adds=body.allow_bot_adds,
         creator=current_user,
     )
     return APIResponse.ok(await _channel_response(svc, ch, current_user))
