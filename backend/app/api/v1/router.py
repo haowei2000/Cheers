@@ -3,6 +3,7 @@ from fastapi import APIRouter
 
 from app.api.v1.admin.routes import router as admin_router
 from app.api.v1.auth.routes import router as auth_router
+from app.api.v1.avatars.routes import router as avatars_router
 from app.api.v1.bots.routes import router as bots_router
 from app.api.v1.bulletin.routes import router as bulletin_router
 from app.api.v1.channels.routes import router as channels_router
@@ -29,6 +30,7 @@ v1_router.include_router(dms_router)
 v1_router.include_router(search_router)
 v1_router.include_router(messages_router)
 v1_router.include_router(bots_router)
+v1_router.include_router(avatars_router)
 v1_router.include_router(auth_router)
 v1_router.include_router(admin_router)
 v1_router.include_router(files_router)

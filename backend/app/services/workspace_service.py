@@ -36,11 +36,15 @@ class WorkspaceService:
         if not membership:
             raise ForbiddenError("您不是该工作空间的成员")
 
-    async def create(self, name: str, creator: User) -> Workspace:
+    async def create(self, name: str, creator: User, avatar_url: str | None = None) -> Workspace:
         name = name.strip()
         if not name:
             raise BadRequestError("name 不能为空")
         ws = await self.repo.create(name)
+        if avatar_url:
+            ws.avatar_url = avatar_url.strip() or None
+            self.session.add(ws)
+            await self.session.flush()
         await self.repo.add_member(ws.workspace_id, creator.user_id, role="owner")
         return ws
 
@@ -84,13 +88,36 @@ class WorkspaceService:
         await self.session.flush()
         return ws
 
-    async def update(self, workspace_id: str, name: str, current_user: User) -> Workspace:
+    async def ensure_can_manage(
+        self,
+        workspace_id: str,
+        current_user: User,
+        allowed_roles=("owner", "admin"),
+    ) -> None:
+        await self._check_workspace_permission(workspace_id, current_user, allowed_roles=allowed_roles)
+
+    async def update(
+        self,
+        workspace_id: str,
+        current_user: User,
+        *,
+        name: str | None = None,
+        avatar_url: str | None = None,
+        avatar_url_provided: bool = False,
+    ) -> Workspace:
         ws = await self.get_or_404(workspace_id)
-        await self._check_workspace_permission(workspace_id, current_user)
-        name = name.strip()
-        if not name:
-            raise BadRequestError("name 不能为空")
-        return await self.repo.update(ws, name=name)
+        await self.ensure_can_manage(workspace_id, current_user)
+        updates: dict[str, str | None] = {}
+        if name is not None:
+            name = name.strip()
+            if not name:
+                raise BadRequestError("name 不能为空")
+            updates["name"] = name
+        if avatar_url_provided:
+            updates["avatar_url"] = avatar_url.strip() if avatar_url else None
+        if not updates:
+            return ws
+        return await self.repo.update(ws, **updates)
 
     async def delete(self, workspace_id: str, current_user: User) -> None:
         ws = await self.get_or_404(workspace_id)

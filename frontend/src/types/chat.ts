@@ -4,6 +4,7 @@ export type Workspace = {
   /** "team" (shared workspace with channels) or "personal" (per-user,
    *  auto-provisioned, hosts DMs only). Defaults to "team" server-side. */
   kind?: "team" | "personal";
+  avatar_url?: string | null;
 };
 
 export type Channel = {
@@ -43,8 +44,36 @@ export type FileInfo = {
   status?: string;
 };
 
+export type BotTraceEvent = {
+  msg_id: string;
+  task_id?: string | null;
+  channel_id?: string;
+  bot_id?: string;
+  run_id?: string;
+  session_key?: string;
+  stream?: string;
+  seq?: number;
+  ts?: number;
+  phase?: string;
+  status?: string;
+  title?: string;
+  message?: string;
+  data?: Record<string, unknown>;
+};
+
+export type WebsocketTaskContentData = {
+  kind: "websocket_background_task";
+  status?: string;
+  title?: string;
+  message?: string;
+  task_id?: string | null;
+  bot_id?: string | null;
+  timeout_seconds?: number;
+};
+
 export type Message = {
   msg_id: string;
+  task_id?: string | null;
   sender_id: string;
   sender_type: string;
   sender_name?: string;
@@ -68,8 +97,8 @@ export type Message = {
   /** True when the bot reply was finalized mid-stream (cancel/error).
    *  Renders a "已取消" / "已中断" badge. */
   is_partial?: boolean;
+  _bot_status?: string;
+  _bot_trace?: BotTraceEvent[];
 };
-
-export type QaPair = { question: Message; answer: Message };
 
 export type ContextData = Record<string, string>;

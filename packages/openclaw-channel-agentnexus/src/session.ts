@@ -27,6 +27,7 @@ import type {
   ReplyFrame,
   SendAck,
   SendFrame,
+  TraceFrame,
   TriggerMessage,
 } from "./types.js";
 
@@ -408,6 +409,13 @@ export class BotSession {
       msg_id: args.msgId,
       message: args.message,
     };
+    return this.data.send(frame);
+  }
+
+  /** Best-effort runtime trace/progress event for a bot reply placeholder. */
+  trace(args: Omit<TraceFrame, "type">): boolean {
+    if (!this.data.isOpen) return false;
+    const frame: TraceFrame = { type: "trace", ...args };
     return this.data.send(frame);
   }
 
