@@ -1,7 +1,7 @@
 """add AgentNexus session mappings for OpenClaw
 
-Revision ID: 038
-Revises: 037
+Revision ID: 042
+Revises: 041
 Create Date: 2026-04-30 00:00:00.000000
 
 AgentNexus owns the durable session id. Channel / DM / topic / task scopes are
@@ -12,8 +12,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "038"
-down_revision: Union[str, Sequence[str], None] = "037"
+revision: str = "042"
+down_revision: Union[str, Sequence[str], None] = "041"
 branch_labels = None
 depends_on = None
 
