@@ -183,6 +183,7 @@ class BotSimpleInResponse(BaseModel):
     username: str
     display_name: str | None = None
     description: str | None = None
+    avatar_url: str | None = None
     status: str
     scope: Literal["private", "friend", "everyone"] = "friend"
     binding_type: str = "http"

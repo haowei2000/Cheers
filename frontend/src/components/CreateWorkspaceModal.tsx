@@ -4,6 +4,8 @@ interface CreateWorkspaceModalProps {
   open: boolean;
   value: string;
   onChange: (value: string) => void;
+  avatarUrl?: string;
+  onAvatarUrlChange?: (value: string) => void;
   onSubmit: () => void;
   onClose: () => void;
 }
@@ -12,6 +14,8 @@ export function CreateWorkspaceModal({
   open,
   value,
   onChange,
+  avatarUrl = "",
+  onAvatarUrlChange,
   onSubmit,
   onClose,
 }: CreateWorkspaceModalProps) {
@@ -35,6 +39,23 @@ export function CreateWorkspaceModal({
             autoFocus
           />
         </div>
+        {onAvatarUrlChange && (
+          <div>
+            <label
+              className="block text-sm font-medium mb-1"
+              style={{ color: "var(--fg-2)" }}
+            >
+              头像 URL
+            </label>
+            <input
+              type="url"
+              value={avatarUrl}
+              onChange={(e) => onAvatarUrlChange(e.target.value)}
+              placeholder="https://example.com/workspace.png"
+              className="an-input"
+            />
+          </div>
+        )}
         <ModalFooter>
           <button
             type="button"
