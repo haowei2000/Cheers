@@ -1355,20 +1355,6 @@ function FriendsPane({
     </div>
   );
 
-  const searchAction = (u: UserSearchResult) => {
-    const status = u.relationship_status || "none";
-    if (status === "accepted") return smallButton("私信", () => onOpenDM?.(u.user_id, "user"));
-    if (status === "pending" && u.direction === "incoming" && u.friendship_id) {
-      return smallButton("同意申请", () => resolveRequest(u.friendship_id!, "accept"));
-    }
-    if (status === "pending") return smallButton("待同意", () => {}, false, true);
-    if (status === "blocked" && u.direction === "blocked_by_me") {
-      return smallButton("解除拉黑", () => unblockFriend(u.user_id));
-    }
-    if (status === "blocked") return smallButton("不可添加", () => {}, false, true);
-    return smallButton("添加好友", () => addByIdentifier(u.user_id));
-  };
-
   const visibleRows =
     tab === "friends" ? friends : tab === "incoming" ? incoming : tab === "outgoing" ? outgoing : blocked;
 
