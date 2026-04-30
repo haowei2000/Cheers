@@ -286,12 +286,13 @@ export function ChannelHeader({
         </div>
       )}
 
-      {taskCount > 0 && onOpenTasks && (
+      {onOpenTasks && (
         <button
           type="button"
           className="an-topics-btn"
           onClick={onOpenTasks}
           title="频道任务"
+          aria-label={`频道任务，${taskCount} 个后台任务`}
         >
           <ClipboardDocumentListIcon className="w-4 h-4" />
           <span className="hidden sm:inline">Tasks</span>
