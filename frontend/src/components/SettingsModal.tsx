@@ -130,6 +130,15 @@ type BotConnectionTestResult = {
 };
 
 function botOnlineMeta(bot: BotRow) {
+  if (bot.is_builtin) {
+    const online = bot.is_online !== false && bot.status !== "offline";
+    return {
+      label: online ? "内置已启用" : "已停用",
+      color: online ? "var(--green)" : "var(--fg-3)",
+      bg: online ? "var(--green-muted)" : "var(--surface-soft)",
+      title: online ? "内置 Bot 使用专用 adapter，不依赖 Bot 的 LLM 绑定" : "Bot 状态为 offline",
+    };
+  }
   const isWs = (bot.binding_type || "http") === "websocket";
   if (!isWs) {
     const online = bot.is_online !== false && bot.status !== "offline";
@@ -3195,7 +3204,6 @@ function BotEditPane({
         if (!active) return;
         const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
         setModels(list);
-        if (!bot.model_id && list.length > 0) setModelId(list[0].model_id);
       })
       .catch(() => {
         if (active) setModels([]);
@@ -3206,7 +3214,6 @@ function BotEditPane({
         if (!active) return;
         const list: TemplateItem[] = Array.isArray(d?.data) ? d.data : [];
         setTemplates(list);
-        if (!bot.template_id && list.length > 0) setTemplateId(list[0].template_id);
       })
       .catch(() => {
         if (active) setTemplates([]);
@@ -3296,7 +3303,7 @@ function BotEditPane({
 
   const testConnection = async () => {
     if (isHttpBot && (!bot.model_id || !bot.template_id)) {
-      toast.error("HTTP Bot 尚未保存模型和模板配置");
+      toast.error("HTTP Bot 尚未保存模型和模板配置，请先保存后测试");
       return;
     }
     setTestingConnection(true);
@@ -3399,6 +3406,11 @@ function BotEditPane({
         {isHttpBot && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
             <div className="an-rc-title">LLM 绑定</div>
+            {bot.is_builtin && (
+              <div className="an-rc-sub">
+                内置 Bot 私聊使用专用 adapter；连通测试不会读取这里的模型绑定。
+              </div>
+            )}
             <Field label="AI 模型">
               <select
                 value={modelId}
@@ -3411,11 +3423,14 @@ function BotEditPane({
                 {modelOptions.length === 0 ? (
                   <option value="">（无可用模型）</option>
                 ) : (
-                  modelOptions.map((m) => (
-                    <option key={m.model_id} value={m.model_id}>
-                      {m.name}
-                    </option>
-                  ))
+                  <>
+                    <option value="">（未配置模型，请选择后保存）</option>
+                    {modelOptions.map((m) => (
+                      <option key={m.model_id} value={m.model_id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </>
                 )}
               </select>
             </Field>
@@ -3431,11 +3446,14 @@ function BotEditPane({
                 {templateOptions.length === 0 ? (
                   <option value="">（无可用模板）</option>
                 ) : (
-                  templateOptions.map((t) => (
-                    <option key={t.template_id} value={t.template_id}>
-                      {t.name}
-                    </option>
-                  ))
+                  <>
+                    <option value="">（未配置模板，请选择后保存）</option>
+                    {templateOptions.map((t) => (
+                      <option key={t.template_id} value={t.template_id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </>
                 )}
               </select>
             </Field>

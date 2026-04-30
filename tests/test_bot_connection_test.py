@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AIModel, BotAccount, PromptTemplate
+from app.services.guide.constants import GUIDE_BOT_ID
 
 
 @pytest.mark.asyncio
@@ -102,6 +103,37 @@ async def test_http_bot_online_status_uses_live_health_check(
     assert data["reachable"] is False
     assert data["checked_at"]
     health.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_builtin_bot_connection_test_uses_builtin_adapter(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot = BotAccount(
+        bot_id=GUIDE_BOT_ID,
+        username="Coordinator",
+        status="online",
+        binding_type="http",
+        created_by="someone-else",
+    )
+    db_session.add(bot)
+    await db_session.flush()
+
+    class FakeBuiltinAdapter:
+        async def health_check(self) -> bool:
+            return False
+
+    with patch("app.api.v1.bots.routes.get_builtin_adapter", return_value=FakeBuiltinAdapter()):
+        resp = await client.post(f"/api/v1/bots/{bot.bot_id}/connection-test")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["reachable"] is True
+    assert data["connection_status"] == "online"
+    assert data["dependency_ready"] is False
+    assert data["adapter"] == "FakeBuiltinAdapter"
+    assert "内置 Bot 可接收消息" in data["message"]
 
 
 @pytest.mark.asyncio
