@@ -129,6 +129,21 @@ def test_message_done_wire_format_partial_with_files() -> None:
     assert e.to_sse() == ("done", payload)
 
 
+def test_message_done_wire_format_with_content_data() -> None:
+    content_data = {"kind": "websocket_background_task", "status": "running"}
+    e = MessageDone(msg_id="m7", content="", content_data=content_data)
+    payload = {"msg_id": "m7", "content": "", "content_data": content_data}
+    assert e.to_ws_frame() == {"type": "message_done", "data": payload}
+    assert e.to_sse() == ("done", payload)
+
+
+def test_message_done_wire_format_clears_content_data() -> None:
+    e = MessageDone(msg_id="m8", content="done", clear_content_data=True)
+    payload = {"msg_id": "m8", "content": "done", "content_data": None}
+    assert e.to_ws_frame() == {"type": "message_done", "data": payload}
+    assert e.to_sse() == ("done", payload)
+
+
 def test_make_event_bus_returns_null_when_no_sinks() -> None:
     bus = make_event_bus("ch", stream_to_ws=False, stream_event=None)
     assert isinstance(bus, NullEventBus)

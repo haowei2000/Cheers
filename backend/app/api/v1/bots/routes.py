@@ -190,6 +190,7 @@ def _to_simple(
         username=bot.username,
         display_name=bot.display_name,
         description=bot.description,
+        avatar_url=bot.avatar_url,
         status=bot.status,
         scope=bot_scope(bot),
         binding_type=getattr(bot, "binding_type", None) or "http",
@@ -288,6 +289,7 @@ async def create_bot(
         template_id=body.template_id,
         custom_system_prompt=body.custom_system_prompt,
         intro=body.intro,
+        avatar_url=body.avatar_url,
         scope=body.scope,
         bot_id=body.bot_id,
         binding_type=body.binding_type,
@@ -569,6 +571,8 @@ async def update_bot(
 ) -> APIResponse:
     svc = BotService(session)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "avatar_url" in body.model_fields_set:
+        updates["avatar_url"] = body.avatar_url
     bot = await svc.update(bot_id, current_user, **updates)
     audit.info("action=bot.update actor=%s resource_id=%s fields=%s", current_user.user_id, bot_id, list(updates.keys()))
     model = await session.get(AIModel, bot.model_id) if bot.model_id else None

@@ -19,10 +19,17 @@ class WorkspaceOut(BaseModel):
     workspace_id: str
     name: str
     kind: str = "team"  # "team" | "personal"
+    avatar_url: str | None = None
 
 
 class WorkspaceCreateBody(BaseModel):
     name: str
+    avatar_url: str | None = None
+
+
+class WorkspaceUpdateBody(BaseModel):
+    name: str | None = None
+    avatar_url: str | None = None
 
 
 class InviteMemberBody(BaseModel):
@@ -47,7 +54,25 @@ async def create_workspace(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = WorkspaceService(session)
-    ws = await svc.create(body.name, creator=current_user)
+    ws = await svc.create(body.name, creator=current_user, avatar_url=body.avatar_url)
+    return APIResponse.ok(WorkspaceOut.model_validate(ws))
+
+
+@router.put("/{workspace_id}", response_model=APIResponse[WorkspaceOut])
+async def update_workspace(
+    workspace_id: str,
+    body: WorkspaceUpdateBody,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = WorkspaceService(session)
+    ws = await svc.update(
+        workspace_id,
+        current_user,
+        name=body.name,
+        avatar_url=body.avatar_url,
+        avatar_url_provided="avatar_url" in body.model_fields_set,
+    )
     return APIResponse.ok(WorkspaceOut.model_validate(ws))
 
 

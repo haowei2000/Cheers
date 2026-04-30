@@ -4,14 +4,14 @@ import {
   BriefcaseIcon,
   CheckCircleIcon,
   ChatBubbleLeftEllipsisIcon,
-  ChatBubbleLeftRightIcon,
+  ClipboardDocumentListIcon,
   Cog6ToothIcon,
   DocumentTextIcon,
   MegaphoneIcon,
   UserIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
-import type { Channel, CurrentUser, DM, QaPair } from "../types";
+import type { Channel, CurrentUser, DM } from "../types";
 
 export type TopicSummary = {
   rootId: string;
@@ -68,9 +68,6 @@ interface ChannelHeaderProps {
   autoAssist: boolean;
   onOpenChannelSettings: () => void;
 
-  blockPairsForExport: QaPair[];
-  onOpenQaSummary: () => void;
-
   memoryTab: MemoryTab | null;
   onSetMemoryTab: (tab: MemoryTab | null) => void;
 
@@ -89,6 +86,8 @@ interface ChannelHeaderProps {
    *  full-page TopicPage (replacing the channel stream) instead of
    *  scrolling the main stream. */
   onOpenTopic?: (rootMsgId: string) => void;
+  taskCount?: number;
+  onOpenTasks?: () => void;
 }
 
 export function ChannelHeader({
@@ -98,8 +97,6 @@ export function ChannelHeader({
   onOpenSidebar,
   autoAssist,
   onOpenChannelSettings,
-  blockPairsForExport,
-  onOpenQaSummary,
   memoryTab,
   onSetMemoryTab,
   currentUser,
@@ -108,6 +105,8 @@ export function ChannelHeader({
   topics = [],
   onJumpToMessage,
   onOpenTopic,
+  taskCount = 0,
+  onOpenTasks,
 }: ChannelHeaderProps) {
   const subtitle = autoAssist ? "自动接管已开启" : "";
   const [topicsOpen, setTopicsOpen] = useState(false);
@@ -218,6 +217,20 @@ export function ChannelHeader({
         </div>
       )}
 
+      {onOpenTasks && (
+        <button
+          type="button"
+          className="an-topics-btn"
+          onClick={onOpenTasks}
+          title="频道任务"
+          aria-label={`频道任务，${taskCount} 个后台任务`}
+        >
+          <ClipboardDocumentListIcon className="w-4 h-4" />
+          <span className="hidden sm:inline">Tasks</span>
+          <span className="an-tb-n">{taskCount}</span>
+        </button>
+      )}
+
       {/* Memory cluster — 4 memory tabs: Project / Files / Members / Todos */}
       <div className="an-mem-cluster" role="group" aria-label="频道记忆">
         {MEMORY_TABS.map((t) => {
@@ -238,7 +251,7 @@ export function ChannelHeader({
         })}
       </div>
 
-      {/* Auxiliary icon buttons — Announce / QA / Manage members / Channel profile */}
+      {/* Auxiliary icon buttons — Announce / Manage members / Channel profile */}
       {onOpenAnnouncementComposer && (
         <button
           type="button"
@@ -249,17 +262,6 @@ export function ChannelHeader({
           style={{ color: "var(--fg-3)" }}
         >
           <MegaphoneIcon className="w-4 h-4" />
-        </button>
-      )}
-      {blockPairsForExport.length > 0 && (
-        <button
-          type="button"
-          onClick={onOpenQaSummary}
-          title="生成问答总结"
-          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
-          style={{ color: "var(--fg-3)" }}
-        >
-          <ChatBubbleLeftRightIcon className="w-4 h-4" />
         </button>
       )}
       {!activeDm && channel && (
