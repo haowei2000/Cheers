@@ -107,8 +107,12 @@ export function TaskPage({
 
         <div className="overflow-auto">
           {!selected ? (
-            <div className="h-full flex items-center justify-center text-sm" style={{ color: "var(--fg-3)" }}>
-              选择一个任务查看详情。
+            <div
+              className="h-full flex flex-col items-center justify-center gap-2 text-sm"
+              style={{ color: "var(--fg-3)" }}
+            >
+              <ClipboardDocumentListIcon className="w-6 h-6" />
+              <span>当前频道没有后台任务。</span>
             </div>
           ) : (
             <div className="max-w-3xl p-5">
