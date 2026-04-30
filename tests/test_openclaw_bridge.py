@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.adapters.base import AgentPayload
+from app.db.models import Channel, Message, Workspace
 from app.services.adapters.websocket_bot import WebsocketBotAdapter
 from app.services.openclaw_bridge.dispatcher import BridgeDispatcher
 from app.services.openclaw_bridge.pending import PendingReply, PendingReplyRegistry
@@ -194,6 +195,65 @@ async def test_ws_bot_adapter_health_check_reflects_data_ws() -> None:
         await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
 
 
+@pytest.mark.asyncio
+async def test_bridge_apply_trace_broadcasts_registered_stream(monkeypatch) -> None:
+    from app.services.openclaw_bridge.service import apply_trace, register_stream
+    from app.services.openclaw_bridge.streams import stream_registry
+
+    sent: list[tuple[str, dict]] = []
+
+    async def fake_broadcast(channel_id: str, message: dict) -> None:
+        sent.append((channel_id, message))
+
+    monkeypatch.setattr(
+        "app.services.ws_service.ws_manager.broadcast_to_channel",
+        fake_broadcast,
+    )
+
+    await register_stream(
+        msg_id="placeholder-trace",
+        bot_id="bot-ws-001",
+        channel_id="c-001",
+        task_id="t-trace",
+    )
+    try:
+        ok = await apply_trace(
+            msg_id="placeholder-trace",
+            bot_id="bot-ws-001",
+            payload={
+                "msg_id": "placeholder-trace",
+                "task_id": "t-trace",
+                "stream": "tool",
+                "seq": 2,
+                "title": "read_file",
+                "message": "running",
+                "data": {"kind": "tool"},
+            },
+        )
+        assert ok is True
+        assert sent == [
+            (
+                "c-001",
+                {
+                    "type": "bot_trace",
+                    "data": {
+                        "msg_id": "placeholder-trace",
+                        "task_id": "t-trace",
+                        "channel_id": "c-001",
+                        "bot_id": "bot-ws-001",
+                        "stream": "tool",
+                        "seq": 2,
+                        "title": "read_file",
+                        "message": "running",
+                        "data": {"kind": "tool"},
+                    },
+                },
+            )
+        ]
+    finally:
+        await stream_registry.pop("placeholder-trace")
+
+
 # --------------------------- PendingReplyRegistry --------------------------
 
 @pytest.mark.asyncio
@@ -252,3 +312,119 @@ async def test_pending_registry_cancels_timeout_on_resolve() -> None:
     assert got is p
     assert p.timeout_handle is not None
     assert p.timeout_handle.cancelled() or not fired.is_set()
+
+
+@pytest.mark.asyncio
+async def test_websocket_timeout_pipeline_converts_placeholder_to_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.db.models import Base
+    from app.services.openclaw_bridge.pending import pending_replies
+    from app.services.openclaw_bridge.service import finalize_bot_reply
+    from app.services.pipeline.bot.task_timeout import (
+        WebsocketTaskTimeoutContext,
+        make_websocket_task_timeout_pipeline,
+    )
+
+    sent: list[tuple[str, dict]] = []
+
+    async def fake_broadcast(channel_id: str, message: dict) -> None:
+        sent.append((channel_id, message))
+
+    monkeypatch.setattr(
+        "app.services.ws_service.ws_manager.broadcast_to_channel",
+        fake_broadcast,
+    )
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as db_session:
+            workspace = Workspace(workspace_id="ws-timeout-task", name="Workspace")
+            channel = Channel(
+                channel_id="ch-timeout-task",
+                workspace_id=workspace.workspace_id,
+                name="timeout-task",
+            )
+            msg = Message(
+                msg_id="msg-timeout-task",
+                channel_id=channel.channel_id,
+                sender_id="bot-ws-001",
+                sender_type="bot",
+                content="",
+                task_id="task-timeout",
+                in_reply_to_msg_id="trigger-timeout",
+                msg_type="reply",
+            )
+            db_session.add_all([workspace, channel, msg])
+            await db_session.flush()
+
+            await pending_replies.register(
+                PendingReply(
+                    task_id="task-timeout",
+                    bot_id="bot-ws-001",
+                    channel_id=channel.channel_id,
+                    msg_id=msg.msg_id,
+                )
+            )
+            try:
+                timeout_ctx = WebsocketTaskTimeoutContext(
+                    session=db_session,
+                    bot_id="bot-ws-001",
+                    channel_id=channel.channel_id,
+                    task_id="task-timeout",
+                    msg_id=msg.msg_id,
+                    timeout_s=60,
+                )
+                await make_websocket_task_timeout_pipeline().run(timeout_ctx)
+
+                await db_session.refresh(msg)
+                assert timeout_ctx.converted is True
+                assert msg.content_data is not None
+                assert msg.content_data["kind"] == "websocket_background_task"
+                assert await pending_replies.peek_by_msg(msg.msg_id) is not None
+                assert sent[-1] == (
+                    channel.channel_id,
+                    {
+                        "type": "message_done",
+                        "data": {
+                            "msg_id": msg.msg_id,
+                            "content": "OpenClaw 已转入后台任务，完成后会自动更新这条回复。",
+                            "content_data": msg.content_data,
+                        },
+                    },
+                )
+
+                await finalize_bot_reply(
+                    db_session,
+                    bot_id="bot-ws-001",
+                    channel_id=channel.channel_id,
+                    content="最终回复",
+                    task_id="task-timeout",
+                    reply_to_msg_id=msg.msg_id,
+                )
+                await db_session.flush()
+                await db_session.refresh(msg)
+
+                assert msg.content == "最终回复"
+                assert msg.content_data is None
+                assert await pending_replies.peek_by_msg(msg.msg_id) is None
+                assert sent[-1] == (
+                    channel.channel_id,
+                    {
+                        "type": "message_done",
+                        "data": {
+                            "msg_id": msg.msg_id,
+                            "content": "最终回复",
+                            "content_data": None,
+                        },
+                    },
+                )
+            finally:
+                await pending_replies.pop_by_msg(msg.msg_id)
+    finally:
+        await engine.dispose()

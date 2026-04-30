@@ -52,6 +52,9 @@ from app.services.openclaw_bridge.service import (
     apply_delta as bridge_apply_delta,
 )
 from app.services.openclaw_bridge.service import (
+    apply_trace as bridge_apply_trace,
+)
+from app.services.openclaw_bridge.service import (
     finalize_bot_reply,
 )
 from app.services.openclaw_bridge.service import (
@@ -877,6 +880,36 @@ async def _handle_data_delta(
         )
 
 
+async def _handle_data_trace(
+    websocket: WebSocket, bot: BotAccount, frame: dict,
+) -> None:
+    """Plugin reports OpenClaw runtime progress/trace for a placeholder."""
+    msg_id = frame.get("msg_id") or frame.get("reply_to_msg_id")
+    if not isinstance(msg_id, str) or not msg_id:
+        await websocket.send_json({"type": "error", "detail": "trace missing msg_id"})
+        return
+    stream = frame.get("stream")
+    if not isinstance(stream, str) or not stream:
+        await websocket.send_json({"type": "error", "detail": "trace missing stream"})
+        return
+    seq = frame.get("seq")
+    if seq is not None and not isinstance(seq, int):
+        await websocket.send_json({"type": "error", "detail": "trace seq must be int"})
+        return
+    ts = frame.get("ts")
+    if ts is not None and not isinstance(ts, (int, float)):
+        await websocket.send_json({"type": "error", "detail": "trace ts must be number"})
+        return
+    data = frame.get("data")
+    if data is not None and not isinstance(data, dict):
+        await websocket.send_json({"type": "error", "detail": "trace data must be object"})
+        return
+
+    accepted = await bridge_apply_trace(msg_id=msg_id, bot_id=bot.bot_id, payload=frame)
+    if not accepted:
+        logger.debug("data_ws.trace: dropped msg_id=%s bot_id=%s stream=%s", msg_id, bot.bot_id, stream)
+
+
 async def _handle_data_done(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
@@ -1206,6 +1239,8 @@ async def data_websocket(websocket: WebSocket) -> None:
                 await _handle_data_send(websocket, bot, frame)
             elif ftype == "delta":
                 await _handle_data_delta(websocket, bot, frame)
+            elif ftype == "trace":
+                await _handle_data_trace(websocket, bot, frame)
             elif ftype == "done":
                 await _handle_data_done(websocket, bot, frame)
             elif ftype == "error":

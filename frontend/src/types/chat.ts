@@ -12,7 +12,10 @@ export type Channel = {
   name: string;
   type: string;
   workspace_id?: string;
+  purpose?: string | null;
   auto_assist?: boolean;
+  my_role?: string | null;
+  can_manage?: boolean;
   /** Count of messages in this channel that the caller has not yet read.
    *  Populated by the channel list endpoints; updated locally on select. */
   unread_count?: number;
@@ -41,8 +44,36 @@ export type FileInfo = {
   status?: string;
 };
 
+export type BotTraceEvent = {
+  msg_id: string;
+  task_id?: string | null;
+  channel_id?: string;
+  bot_id?: string;
+  run_id?: string;
+  session_key?: string;
+  stream?: string;
+  seq?: number;
+  ts?: number;
+  phase?: string;
+  status?: string;
+  title?: string;
+  message?: string;
+  data?: Record<string, unknown>;
+};
+
+export type WebsocketTaskContentData = {
+  kind: "websocket_background_task";
+  status?: string;
+  title?: string;
+  message?: string;
+  task_id?: string | null;
+  bot_id?: string | null;
+  timeout_seconds?: number;
+};
+
 export type Message = {
   msg_id: string;
+  task_id?: string | null;
   sender_id: string;
   sender_type: string;
   sender_name?: string;
@@ -65,8 +96,8 @@ export type Message = {
   /** True when the bot reply was finalized mid-stream (cancel/error).
    *  Renders a "已取消" / "已中断" badge. */
   is_partial?: boolean;
+  _bot_status?: string;
+  _bot_trace?: BotTraceEvent[];
 };
-
-export type QaPair = { question: Message; answer: Message };
 
 export type ContextData = Record<string, string>;

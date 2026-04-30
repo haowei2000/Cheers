@@ -15,6 +15,16 @@ declare module "openclaw/plugin-sdk/channel-core" {
 
   /** PluginRuntime：权限按 gateway request scope 分级。 */
   export interface PluginRuntime {
+    events?: {
+      onAgentEvent?: (listener: (evt: {
+        runId: string;
+        seq: number;
+        stream: string;
+        ts: number;
+        data: Record<string, unknown>;
+        sessionKey?: string;
+      }) => void) => () => void;
+    };
     subagent: {
       run(p: {
         sessionKey: string;
