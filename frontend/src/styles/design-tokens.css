@@ -2211,6 +2211,13 @@ kbd {
   background: var(--surface-hover);
   border-color: var(--border);
 }
+.an-mem-row.self {
+  background: var(--accent-muted);
+  border-color: color-mix(in oklab, var(--accent) 26%, var(--border));
+}
+.an-mem-row.self:hover {
+  background: color-mix(in oklab, var(--accent-muted) 82%, var(--surface-hover));
+}
 .an-mem-row .an-av-wrap { position: relative; flex-shrink: 0; }
 .an-mem-row .an-av-wrap .an-av {
   width: 32px;
@@ -2223,7 +2230,26 @@ kbd {
   font-size: 12px;
   letter-spacing: -0.01em;
 }
+.an-mem-row .an-av-wrap img.an-av { object-fit: cover; }
 .an-mem-row .an-av-wrap .an-av.bot { border-radius: 9px; }
+.an-mem-row .an-av-wrap .an-self-edit {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: var(--bg-1);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16);
+}
+.an-mem-row .an-av-wrap .an-self-edit svg {
+  width: 10px;
+  height: 10px;
+}
 .an-mem-row .an-av-wrap .an-dot-on {
   position: absolute;
   right: -1px;
@@ -2258,6 +2284,11 @@ kbd {
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
   background: var(--accent-muted);
+}
+.an-mem-row .an-r-name .an-tag-pill.self {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  background: var(--bg-1);
 }
 .an-mem-row .an-r-sub {
   font-size: 10.5px;

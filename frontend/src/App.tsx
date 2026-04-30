@@ -5108,6 +5108,7 @@ export default function App() {
                     l as "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO",
                   )
                 }
+                currentUserId={currentUserId}
                 onClose={() => setMemoryTab(null)}
               />
             </div>
