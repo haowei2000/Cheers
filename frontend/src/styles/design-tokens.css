@@ -492,13 +492,9 @@
   border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
 }
 
-/* All non-DM message rows share one width so the stream reads as a
- * single column. 70% of the chat container, centered. Topic cards
- * already use this via Tailwind; keep them consistent with this token
- * so future tweaks update everyone.
- *
- * DMs intentionally opt out: bubbles + self-right alignment need the
- * bubble to float against the edge, not the middle. */
+/* All chat message rows share one width so every stream reads as a
+ * single column. 70% of the chat container, centered. DM bubbles keep
+ * their own inner left/right alignment inside this shared column. */
 .an-chat-msg {
   width: 70%;
   max-width: 70%;
@@ -1666,47 +1662,7 @@
   flex: 1;
   overflow-y: auto;
   padding: 24px 28px 20px;
-  max-width: 920px;
   width: 100%;
-  margin: 0 auto;
-  align-self: center;
-}
-.an-topic-page .an-tpp-parent-card {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 22px;
-}
-.an-topic-page .an-tpp-parent-card .an-pw {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-.an-topic-page .an-tpp-parent-card .an-pm-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.an-topic-page .an-tpp-parent-card .an-pm-who {
-  font-weight: 600;
-  color: var(--fg-1);
-  font-size: 13px;
-}
-.an-topic-page .an-tpp-parent-card .an-pm-t {
-  font-size: 11px;
-  color: var(--fg-3);
-}
-.an-topic-page .an-tpp-parent-card .an-pm-c {
-  font-size: 13px;
-  color: var(--fg-2);
-  white-space: pre-wrap;
-  line-height: 1.55;
 }
 .an-topic-page .an-tpp-divider {
   display: flex;
@@ -1734,32 +1690,6 @@
 .an-topic-page .an-tpp-foot .an-wrap {
   max-width: 920px;
   margin: 0 auto;
-}
-.an-topic-page .an-tpp-reply {
-  padding: 10px 0;
-  border-bottom: 1px dashed var(--border);
-}
-.an-topic-page .an-tpp-reply:last-child { border-bottom: 0; }
-.an-topic-page .an-tpp-reply .an-r-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.an-topic-page .an-tpp-reply .an-r-who {
-  font-weight: 600;
-  color: var(--fg-1);
-  font-size: 13px;
-}
-.an-topic-page .an-tpp-reply .an-r-t {
-  font-size: 11px;
-  color: var(--fg-3);
-}
-.an-topic-page .an-tpp-reply .an-r-c {
-  font-size: 13px;
-  color: var(--fg-2);
-  white-space: pre-wrap;
-  line-height: 1.55;
 }
 
 /* Composer chrome (.an-composer*, .an-msgkind*) lives in styles/composer.css. */

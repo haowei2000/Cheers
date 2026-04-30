@@ -3204,7 +3204,7 @@ export default function App() {
                         ) : isOwn ? (
                           <div
                             id={`msg-${m.msg_id}`}
-                            className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
+                            className="an-chat-msg group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
                           >
                             <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">
                               我
@@ -3340,7 +3340,7 @@ export default function App() {
                         ) : (
                           <div
                             id={`msg-${m.msg_id}`}
-                            className="group flex items-start gap-2.5 px-4 py-1 transition-all"
+                            className="an-chat-msg group flex items-start gap-2.5 px-4 py-1 transition-all"
                           >
                             <div className="flex-shrink-0 mt-0.5">
                               {m.sender_type === "bot" ? (
@@ -3636,7 +3636,7 @@ export default function App() {
                               className={
                                 rFlat
                                   ? "an-chat-msg group flex gap-3 px-4 py-1 items-start transition-colors"
-                                  : `group flex gap-2.5 px-4 py-1 transition-all ${
+                                  : `an-chat-msg group flex gap-2.5 px-4 py-1 transition-all ${
                                       rIsOwn
                                         ? "flex-row-reverse items-end"
                                         : "items-start"
@@ -4417,7 +4417,7 @@ export default function App() {
                       })()}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
-                          <div key={botId} className="flex gap-3 px-3 py-2">
+                          <div key={botId} className="an-chat-msg flex gap-3 px-3 py-2">
                             <div className="w-9 h-9 rounded-xl bg-[#2EB67D]/20 flex items-center justify-center text-[#2EB67D] text-sm font-bold flex-shrink-0">
                               {username.slice(0, 1).toUpperCase()}
                             </div>
