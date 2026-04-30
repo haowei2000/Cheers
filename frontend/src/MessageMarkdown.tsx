@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js";
@@ -195,36 +195,43 @@ function normalizeMermaidCode(code: string): string {
   return normalizeXyChartBeta(code);
 }
 
-function MermaidBlock({ code, streaming }: MermaidBlockProps) {
+const MermaidBlock = memo(function MermaidBlock({ code, streaming }: MermaidBlockProps) {
   const uid = useId().replace(/:/g, "");
   const id = `mermaid-${uid}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [svg, setSvg] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const renderCode = normalizeMermaidCode(code);
+  const renderCode = useMemo(() => normalizeMermaidCode(code), [code]);
 
   useEffect(() => {
+    let cancelled = false;
     if (streaming) {
       setSvg(null);
       setError(null);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
       try {
         const mermaid = (await import("mermaid")).default;
+        if (cancelled) return;
         const isDark = document.documentElement.classList.contains("dark");
         mermaid.initialize({ startOnLoad: false, theme: isDark ? "dark" : "default" });
         const { svg: rendered } = await mermaid.render(id, renderCode);
+        if (cancelled) return;
         setSvg(rendered);
         setError(null);
       } catch (e) {
+        if (cancelled) return;
         setError(String(e));
         setSvg(null);
       }
     }, 300);
     return () => {
+      cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [renderCode, streaming, id]);
@@ -255,7 +262,7 @@ function MermaidBlock({ code, streaming }: MermaidBlockProps) {
       dangerouslySetInnerHTML={{ __html: svg! }}
     />
   );
-}
+});
 
 // ── MessageMarkdown ───────────────────────────────────────────────────────────
 
