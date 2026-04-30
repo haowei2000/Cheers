@@ -162,7 +162,16 @@ export function ChannelSettingsModal({
     { id: "channel", label: "频道", icon: <Cog6ToothIcon /> },
     { id: "admins", label: "管理员", icon: <UsersIcon /> },
   ];
-  const userMembers = members.filter((member) => member.member_type === "user");
+  const userMembers = members
+    .map((member, index) => ({ member, index }))
+    .filter(({ member }) => member.member_type === "user")
+    .sort((a, b) => {
+      const aSelf = a.member.member_id === currentUserId;
+      const bSelf = b.member.member_id === currentUserId;
+      if (aSelf !== bSelf) return aSelf ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map(({ member }) => member);
 
   if (!channel) return null;
 
