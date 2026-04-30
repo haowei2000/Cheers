@@ -69,9 +69,8 @@ async def create_friend_request(
 ) -> APIResponse:
     svc = FriendshipService(session)
     result = await svc.request_friend(current_user, body.friend_identifier)
-    action = result.pop("action", "requested")
-    message = "已接受好友请求" if action == "accepted_existing" else "好友申请已发送"
-    return APIResponse.ok(result, message=message)
+    result.pop("action", None)
+    return APIResponse.ok(result, message="好友申请已发送")
 
 
 @router.post("/requests/{friendship_id}/accept", response_model=APIResponse[dict])
@@ -170,9 +169,8 @@ async def add_friend_legacy(
         raise ForbiddenError("只能以当前登录用户发起好友申请")
     svc = FriendshipService(session)
     result = await svc.request_friend(current_user, body.friend_identifier)
-    action = result.pop("action", "requested")
-    message = "已接受好友请求" if action == "accepted_existing" else "好友申请已发送"
-    return APIResponse.ok(result, message=message)
+    result.pop("action", None)
+    return APIResponse.ok(result, message="好友申请已发送")
 
 
 @router.delete("", response_model=APIResponse[None])
