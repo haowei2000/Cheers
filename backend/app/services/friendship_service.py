@@ -126,7 +126,13 @@ class FriendshipService:
         else:
             friendship = await self.repo.create(current_user.user_id, target.user_id, status="pending")
 
-        await self._create_request_notice(friendship, current_user, target)
+        _, notice_msg = await self._create_request_notice(friendship, current_user, target)
+        await self.session.commit()
+        await self._broadcast_notice_message(notice_msg)
+        await self._notify_user(target.user_id, "friend_request_created", {
+            "friendship_id": friendship.friendship_id,
+            "channel_id": notice_msg.channel_id,
+        })
         await self._notify_friendship_changed(friendship, "pending")
         return self._request_payload(current_user.user_id, friendship, target) | {"action": "requested"}
 
@@ -138,7 +144,10 @@ class FriendshipService:
         requester = await self.user_repo.get_by_id(friendship.user_id)
         if not requester:
             raise NotFoundError("申请人不存在")
-        await self._update_notice_message(friendship, "accepted", resolved_by=current_user.user_id)
+        notice_msg = await self._update_notice_message(friendship, "accepted", resolved_by=current_user.user_id)
+        await self.session.commit()
+        if notice_msg:
+            await self._broadcast_notice_message(notice_msg)
         await self._notify_friendship_changed(friendship, "accepted")
         return self._friend_payload(current_user.user_id, friendship, requester)
 
@@ -150,7 +159,10 @@ class FriendshipService:
         requester = await self.user_repo.get_by_id(friendship.user_id)
         if not requester:
             raise NotFoundError("申请人不存在")
-        await self._update_notice_message(friendship, "rejected", resolved_by=current_user.user_id)
+        notice_msg = await self._update_notice_message(friendship, "rejected", resolved_by=current_user.user_id)
+        await self.session.commit()
+        if notice_msg:
+            await self._broadcast_notice_message(notice_msg)
         await self._notify_friendship_changed(friendship, "rejected")
         return self._request_payload(current_user.user_id, friendship, requester)
 
@@ -158,26 +170,39 @@ class FriendshipService:
         friendship = await self.repo.get_by_id(friendship_id)
         if not friendship or friendship.status != "pending" or friendship.user_id != current_user.user_id:
             raise NotFoundError("好友申请不存在")
-        await self._update_notice_message(friendship, "cancelled", resolved_by=current_user.user_id)
-        await self._notify_friendship_changed(friendship, "cancelled")
+        notice_msg = await self._update_notice_message(friendship, "cancelled", resolved_by=current_user.user_id)
         await self.repo.delete(friendship)
+        await self.session.commit()
+        if notice_msg:
+            await self._broadcast_notice_message(notice_msg)
+        await self._notify_friendship_changed(friendship, "cancelled")
 
     async def remove_friend(self, current_user: User, friend_id: str) -> None:
         friendship = await self.repo.get_by_pair(current_user.user_id, friend_id)
         if not friendship or friendship.status != "accepted":
             raise NotFoundError("好友关系不存在")
         await self.repo.delete(friendship)
-        await self._notify_user(current_user.user_id, "friendship_changed", {"friend_id": friend_id, "status": "removed"})
-        await self._notify_user(friend_id, "friendship_changed", {"friend_id": current_user.user_id, "status": "removed"})
+        await self.session.commit()
+        await self._notify_user(
+            current_user.user_id,
+            "friendship_changed",
+            {"friend_id": friend_id, "status": "removed"},
+        )
+        await self._notify_user(
+            friend_id,
+            "friendship_changed",
+            {"friend_id": current_user.user_id, "status": "removed"},
+        )
 
     async def block_user(self, current_user: User, friend_identifier: str) -> dict:
         target = await self._resolve_target(friend_identifier)
         self._ensure_not_self(current_user.user_id, target.user_id)
         existing = await self.repo.get_by_pair(current_user.user_id, target.user_id)
         now = datetime.now(timezone.utc)
+        notice_msg = None
         if existing:
             if existing.status == "pending":
-                await self._update_notice_message(existing, "blocked", resolved_by=current_user.user_id)
+                notice_msg = await self._update_notice_message(existing, "blocked", resolved_by=current_user.user_id)
             await self.repo.update(
                 existing,
                 user_id=current_user.user_id,
@@ -190,6 +215,9 @@ class FriendshipService:
             friendship = await self.repo.create(current_user.user_id, target.user_id, status="blocked")
             friendship.responded_at = now
             await self.session.flush()
+        await self.session.commit()
+        if notice_msg:
+            await self._broadcast_notice_message(notice_msg)
         await self._notify_friendship_changed(friendship, "blocked")
         return self._request_payload(current_user.user_id, friendship, target)
 
@@ -198,7 +226,12 @@ class FriendshipService:
         if not friendship or friendship.status != "blocked" or friendship.user_id != current_user.user_id:
             raise NotFoundError("拉黑关系不存在")
         await self.repo.delete(friendship)
-        await self._notify_user(current_user.user_id, "friendship_changed", {"friend_id": friend_id, "status": "unblocked"})
+        await self.session.commit()
+        await self._notify_user(
+            current_user.user_id,
+            "friendship_changed",
+            {"friend_id": friend_id, "status": "unblocked"},
+        )
 
     # ---- Personal friend-notice channel --------------------------------
 
@@ -235,7 +268,12 @@ class FriendshipService:
         await self.channel_repo.add_member(ch.channel_id, FRIEND_NOTICE_SYSTEM_ID, "system")
         return ch
 
-    async def _create_request_notice(self, friendship: Friendship, requester: User, receiver: User) -> None:
+    async def _create_request_notice(
+        self,
+        friendship: Friendship,
+        requester: User,
+        receiver: User,
+    ) -> tuple[Channel, Message]:
         ch = await self.ensure_friend_notice_channel(receiver)
         msg = Message(
             channel_id=ch.channel_id,
@@ -249,12 +287,7 @@ class FriendshipService:
         await self.session.flush()
         friendship.notice_msg_id = msg.msg_id
         await self.session.flush()
-        payload = self._message_payload(msg)
-        await ws_manager.broadcast_to_channel(ch.channel_id, {"type": "message", "data": payload})
-        await self._notify_user(receiver.user_id, "friend_request_created", {
-            "friendship_id": friendship.friendship_id,
-            "channel_id": ch.channel_id,
-        })
+        return ch, msg
 
     async def _update_notice_message(
         self,
@@ -262,22 +295,28 @@ class FriendshipService:
         status: str,
         *,
         resolved_by: str | None,
-    ) -> None:
+    ) -> Message | None:
         if not friendship.notice_msg_id:
-            return
+            return None
         msg = await self.session.get(Message, friendship.notice_msg_id)
         if not msg:
-            return
+            return None
         requester = await self.user_repo.get_by_id(friendship.user_id)
         receiver = await self.user_repo.get_by_id(friendship.friend_id)
         if not requester or not receiver:
-            return
+            return None
         msg.content_data = self._notice_content_data(
             friendship, requester, receiver, status, resolved_by=resolved_by,
         )
         msg.content = self._notice_content(requester, status)
         await self.session.flush()
-        await ws_manager.broadcast_to_channel(msg.channel_id, {"type": "message", "data": self._message_payload(msg)})
+        return msg
+
+    async def _broadcast_notice_message(self, msg: Message) -> None:
+        await ws_manager.broadcast_to_channel(
+            msg.channel_id,
+            {"type": "message", "data": self._message_payload(msg)},
+        )
 
     async def _notify_friendship_changed(self, friendship: Friendship, status: str) -> None:
         payload = {

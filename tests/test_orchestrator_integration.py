@@ -33,6 +33,28 @@ def _make_template(template_id: str) -> PromptTemplate:
     )
 
 
+async def _wait_for_bot_messages(
+    client: AsyncClient,
+    channel_id: str,
+    *,
+    min_count: int,
+    timeout: float = 2.0,
+) -> list[dict]:
+    deadline = asyncio.get_running_loop().time() + timeout
+    last_messages: list[dict] = []
+
+    while True:
+        list_resp = await client.get(f"/api/v1/channels/{channel_id}/messages")
+        assert list_resp.status_code == 200
+        last_messages = list_resp.json()["data"]
+        bot_messages = [m for m in last_messages if m["sender_type"] == "bot"]
+        if len(bot_messages) >= min_count:
+            return last_messages
+        if asyncio.get_running_loop().time() >= deadline:
+            return last_messages
+        await asyncio.sleep(0.05)
+
+
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Test isolation issue - passes when run alone, fails when run with other tests")
 async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: AsyncSession) -> None:
@@ -133,10 +155,7 @@ async def test_message_at_multiple_bots_serial_replies(
         },
     )
     assert resp.status_code == 200
-    await asyncio.sleep(0.2)
 
-    list_resp = await client.get(f"/api/v1/channels/{ch.channel_id}/messages")
-    assert list_resp.status_code == 200
-    messages = list_resp.json()["data"]
+    messages = await _wait_for_bot_messages(client, ch.channel_id, min_count=2)
     bot_messages = [m for m in messages if m["sender_type"] == "bot"]
     assert len(bot_messages) >= 2

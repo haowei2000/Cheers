@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -446,4 +446,95 @@ class OpenClawPluginEvent(Base):
 
     __table_args__ = (
         UniqueConstraint("bot_id", "stream", "seq", name="uq_openclaw_event_bot_stream_seq"),
+    )
+
+
+class AgentNexusSession(Base):
+    """AgentNexus-owned stable session mapped to an OpenClaw sessionKey.
+
+    OpenClaw's sessionId is an implementation detail of the current
+    transcript. This row is the durable product-level session identity.
+    """
+    __tablename__ = "agentnexus_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bot_accounts.bot_id"), nullable=False, index=True)
+    openclaw_account_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    openclaw_agent_id: Mapped[str] = mapped_column(String(128), nullable=False, server_default="main", default="main")
+    openclaw_session_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    openclaw_session_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    current_scope_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    current_scope_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="active", default="active")
+    session_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    bot: Mapped["BotAccount"] = relationship("BotAccount", lazy="joined")
+    bindings: Mapped[list["AgentNexusSessionBinding"]] = relationship(
+        "AgentNexusSessionBinding",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_agentnexus_sessions_bot_agent_account",
+            "bot_id",
+            "openclaw_agent_id",
+            "openclaw_account_id",
+        ),
+    )
+
+
+class AgentNexusSessionBinding(Base):
+    """Maps channel / dm / topic / task scopes to a stable AgentNexus session."""
+    __tablename__ = "agentnexus_session_bindings"
+
+    binding_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("agentnexus_sessions.session_id"), nullable=False, index=True
+    )
+    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bot_accounts.bot_id"), nullable=False, index=True)
+    openclaw_account_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    openclaw_agent_id: Mapped[str] = mapped_column(String(128), nullable=False, server_default="main", default="main")
+    scope_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    channel_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("channels.channel_id"), nullable=True)
+    topic_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    dm_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    task_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, server_default="primary", default="primary")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    detached_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    session: Mapped["AgentNexusSession"] = relationship("AgentNexusSession", back_populates="bindings")
+    bot: Mapped["BotAccount"] = relationship("BotAccount", lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "bot_id",
+            "openclaw_agent_id",
+            "openclaw_account_id",
+            "scope_type",
+            "scope_id",
+            name="uq_agentnexus_session_binding_scope",
+        ),
+        UniqueConstraint(
+            "session_id",
+            "scope_type",
+            "scope_id",
+            name="uq_agentnexus_session_binding_session_scope",
+        ),
+        Index(
+            "ix_agentnexus_session_bindings_lookup",
+            "bot_id",
+            "openclaw_agent_id",
+            "openclaw_account_id",
+            "scope_type",
+            "scope_id",
+        ),
     )

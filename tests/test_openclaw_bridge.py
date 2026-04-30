@@ -5,7 +5,10 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import AgentNexusSession
 from app.services.adapters.base import AgentPayload
 from app.db.models import Channel, Message, Workspace
 from app.services.adapters.websocket_bot import WebsocketBotAdapter
@@ -162,6 +165,24 @@ async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
     assert "Alpha" in resp.content
     # 失败路径应回滚预登记
     assert await pending_replies.peek_by_msg("placeholder-fail-001") is None
+
+
+@pytest.mark.asyncio
+async def test_ws_bot_adapter_does_not_create_session_when_no_data_ws(
+    db_session: AsyncSession,
+) -> None:
+    adapter = WebsocketBotAdapter(_fake_bot())
+    payload = _payload()
+    payload.process_config.placeholder_msg_id = "placeholder-no-ws-session"
+    payload.process_config.db_session = db_session
+
+    resp = await adapter.execute(payload)
+
+    assert resp.success is False
+    count = (
+        await db_session.execute(select(func.count()).select_from(AgentNexusSession))
+    ).scalar_one()
+    assert count == 0
 
 
 @pytest.mark.asyncio

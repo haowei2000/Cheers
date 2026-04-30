@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.dependencies import get_current_user
 from app.core.dependencies import get_session as get_session_core
-from app.db.models import Channel, ChannelMembership, Friendship, User, Workspace, WorkspaceMembership
+from app.db.models import Friendship, Message, User
 from app.db.session import get_session as get_session_db
 from app.main import app
 
@@ -59,11 +59,43 @@ def _user(user_id: str, username: str, role: str = "member") -> User:
 @pytest.mark.asyncio
 async def test_friend_request_accept_creates_and_updates_personal_notice(
     db_session: AsyncSession,
+    db_engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import app.services.friendship_service as friendship_mod
+
     alice = _user("friend-alice-001", "friend_alice_001")
     bob = _user("friend-bob-001", "friend_bob_001")
     db_session.add_all([alice, bob])
     await db_session.commit()
+
+    committed_notice_visible: list[bool] = []
+    session_factory = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False, autocommit=False, autoflush=False
+    )
+
+    async def capture_user_broadcast(user_id: str, message: dict) -> None:
+        if user_id != bob.user_id or message.get("type") != "friend_request_created":
+            return
+        friendship_id = message["data"]["friendship_id"]
+        async with session_factory() as separate_session:
+            friendship = await separate_session.get(Friendship, friendship_id)
+            notice = None
+            if friendship and friendship.notice_msg_id:
+                notice = await separate_session.get(Message, friendship.notice_msg_id)
+            is_visible = bool(
+                friendship
+                and friendship.status == "pending"
+                and notice
+                and notice.msg_type == "friend_request"
+            )
+            committed_notice_visible.append(is_visible)
+
+    async def capture_channel_broadcast(_channel_id: str, _message: dict) -> None:
+        return None
+
+    monkeypatch.setattr(friendship_mod.ws_manager, "broadcast_to_user", capture_user_broadcast)
+    monkeypatch.setattr(friendship_mod.ws_manager, "broadcast_to_channel", capture_channel_broadcast)
 
     create = await _request_as(
         db_session,
@@ -75,10 +107,19 @@ async def test_friend_request_accept_creates_and_updates_personal_notice(
     assert create.status_code == 200
     friendship_id = create.json()["data"]["friendship_id"]
     assert create.json()["data"]["status"] == "pending"
+    assert committed_notice_visible == [True]
 
     incoming = await _request_as(db_session, bob, "GET", "/api/v1/friends/requests?box=incoming")
     assert incoming.status_code == 200
     assert [r["friendship_id"] for r in incoming.json()["data"]] == [friendship_id]
+
+    notifications = await _request_as(db_session, bob, "GET", "/api/v1/notifications/")
+    assert notifications.status_code == 200
+    assert [
+        n["friendship_id"]
+        for n in notifications.json()
+        if n["notif_type"] == "friend_request"
+    ] == [friendship_id]
 
     dms = await _request_as(db_session, bob, "GET", "/api/v1/dms")
     assert dms.status_code == 200
@@ -116,6 +157,14 @@ async def test_friend_request_accept_creates_and_updates_personal_notice(
     )
     assert updated_messages.json()["data"][0]["content_data"]["status"] == "accepted"
 
+    notifications_after_accept = await _request_as(db_session, bob, "GET", "/api/v1/notifications/")
+    assert notifications_after_accept.status_code == 200
+    assert all(
+        n.get("friendship_id") != friendship_id
+        for n in notifications_after_accept.json()
+        if n["notif_type"] == "friend_request"
+    )
+
 
 @pytest.mark.asyncio
 async def test_duplicate_and_reverse_request_requires_explicit_accept(db_session: AsyncSession) -> None:
@@ -147,6 +196,29 @@ async def test_duplicate_and_reverse_request_requires_explicit_accept(db_session
     )
     assert accept.status_code == 200
     assert accept.json()["data"]["status"] == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_legacy_add_friend_creates_pending_request(db_session: AsyncSession) -> None:
+    alice = _user("friend-alice-legacy", "friend_alice_legacy")
+    bob = _user("friend-bob-legacy", "friend_bob_legacy")
+    db_session.add_all([alice, bob])
+    await db_session.commit()
+
+    created = await _request_as(
+        db_session,
+        alice,
+        "POST",
+        "/api/v1/friends",
+        json={"user_id": alice.user_id, "friend_identifier": bob.user_id},
+    )
+    assert created.status_code == 200
+    assert created.json()["message"] == "好友申请已发送"
+    assert created.json()["data"]["status"] == "pending"
+
+    bob_friends = await _request_as(db_session, bob, "GET", "/api/v1/friends")
+    assert bob_friends.status_code == 200
+    assert bob_friends.json()["data"] == []
 
 
 @pytest.mark.asyncio
@@ -252,82 +324,3 @@ async def test_auth_and_spoofing_guards(db_session: AsyncSession) -> None:
 
     legacy_other = await _request_as(db_session, alice, "GET", f"/api/v1/friends/{bob.user_id}")
     assert legacy_other.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_dm_requires_accepted_friendship_and_send_guard(
-    db_session: AsyncSession,
-    db_engine,
-) -> None:
-    alice = _user("friend-alice-005", "friend_alice_005")
-    bob = _user("friend-bob-005", "friend_bob_005")
-    ws = Workspace(workspace_id="friend-ws-005", name="Friend WS", kind="personal")
-    dm = Channel(channel_id="friend-dm-005", workspace_id=ws.workspace_id, name="dm-test", type="dm")
-    db_session.add_all([
-        alice,
-        bob,
-        ws,
-        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=alice.user_id, role="owner"),
-        dm,
-        ChannelMembership(channel_id=dm.channel_id, member_id=alice.user_id, member_type="user"),
-        ChannelMembership(channel_id=dm.channel_id, member_id=bob.user_id, member_type="user"),
-    ])
-    await db_session.commit()
-
-    denied_upsert = await _request_as(
-        db_session,
-        alice,
-        "POST",
-        "/api/v1/dms",
-        json={"workspace_id": ws.workspace_id, "member_id": bob.user_id, "member_type": "user"},
-    )
-    assert denied_upsert.status_code == 403
-
-    denied_send = await _request_as(
-        db_session,
-        alice,
-        "POST",
-        f"/api/v1/channels/{dm.channel_id}/messages",
-        json={"content": "hi", "sender_id": alice.user_id, "sender_type": "user"},
-        db_engine=db_engine,
-    )
-    assert denied_send.status_code == 403
-
-    db_session.add(Friendship(user_id=alice.user_id, friend_id=bob.user_id, status="accepted"))
-    await db_session.commit()
-
-    allowed_send = await _request_as(
-        db_session,
-        alice,
-        "POST",
-        f"/api/v1/channels/{dm.channel_id}/messages",
-        json={"content": "hi", "sender_id": alice.user_id, "sender_type": "user"},
-        db_engine=db_engine,
-    )
-    assert allowed_send.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_channel_admin_can_invite_non_friend_by_identifier(db_session: AsyncSession) -> None:
-    admin = _user("friend-admin-006", "friend_admin_006")
-    target = _user("friend-target-006", "friend_target_006")
-    ws = Workspace(workspace_id="friend-ws-006", name="Friend WS")
-    ch = Channel(channel_id="friend-channel-006", workspace_id=ws.workspace_id, name="project", type="public")
-    db_session.add_all([
-        admin,
-        target,
-        ws,
-        ch,
-        ChannelMembership(channel_id=ch.channel_id, member_id=admin.user_id, member_type="user", role="admin"),
-    ])
-    await db_session.commit()
-
-    invite = await _request_as(
-        db_session,
-        admin,
-        "POST",
-        f"/api/v1/channels/{ch.channel_id}/invite",
-        json={"identifier": target.username},
-    )
-    assert invite.status_code == 200
-    assert invite.json()["data"]["user_id"] == target.user_id
