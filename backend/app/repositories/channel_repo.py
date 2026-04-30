@@ -141,14 +141,12 @@ class ChannelRepository:
         member_id: str,
         member_type: str,
         added_by: str | None = None,
-        role: str = "member",
     ) -> ChannelMembership:
         membership = ChannelMembership(
             channel_id=channel_id,
             member_id=member_id,
             member_type=member_type,
             added_by=added_by,
-            role=role,
         )
         self.session.add(membership)
         await self.session.flush()

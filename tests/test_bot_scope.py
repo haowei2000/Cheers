@@ -88,12 +88,7 @@ async def _seed_scope_data(db_session: AsyncSession, suffix: str) -> dict[str, o
             ws,
             ch,
             Friendship(user_id=owner.user_id, friend_id=friend.user_id, status="accepted"),
-            ChannelMembership(
-                channel_id=ch.channel_id,
-                member_id=stranger.user_id,
-                member_type="user",
-                role="admin",
-            ),
+            ChannelMembership(channel_id=ch.channel_id, member_id=stranger.user_id, member_type="user"),
             private_bot,
             friend_bot,
             everyone_bot,
