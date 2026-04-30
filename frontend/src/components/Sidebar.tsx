@@ -10,43 +10,9 @@ import {
 import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
+import { SearchPicker, type SearchPickerHandle } from "./SearchPicker";
+import type { SearchSelection } from "../types";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
-
-type SearchResultsPayload = {
-  q: string;
-  channels: {
-    channel_id: string;
-    name: string;
-    workspace_id: string;
-    type: string;
-  }[];
-  users: {
-    user_id: string;
-    username: string;
-    display_name: string | null;
-    avatar_url: string | null;
-  }[];
-  bots: {
-    bot_id: string;
-    username: string;
-    display_name: string | null;
-    avatar_url: string | null;
-    scope?: "private" | "friend" | "everyone";
-    owner?: {
-      user_id: string;
-      username: string;
-      display_name?: string | null;
-    } | null;
-  }[];
-  messages?: {
-    msg_id: string;
-    channel_id: string;
-    channel_name: string;
-    sender_label: string;
-    snippet: string;
-    created_at: string | null;
-  }[];
-};
 
 interface SidebarProps {
   isMobile: boolean;
@@ -87,16 +53,6 @@ const wsColor = (id: string) => {
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return WS_LETTER_COLORS[h % WS_LETTER_COLORS.length];
 };
-
-function botScopeText(scope?: "private" | "friend" | "everyone") {
-  if (scope === "private") return "Private";
-  if (scope === "everyone") return "Everyone";
-  return "Friend";
-}
-
-function botOwnerText(bot: SearchResultsPayload["bots"][number]) {
-  return bot.owner?.display_name || bot.owner?.username || "系统";
-}
 
 export function Sidebar({
   isMobile,
@@ -149,73 +105,7 @@ export function Sidebar({
     ? wsColor(currentUser.user_id || currentUser.display_name || "u")
     : "var(--accent)";
 
-  // ── ⌘K global search ────────────────────────────────────────────────────
-  const [searchQ, setSearchQ] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResultsPayload | null>(
-    null,
-  );
-  const [searchBusy, setSearchBusy] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const searchWrapRef = useRef<HTMLDivElement | null>(null);
-
-  // ⌘K / Ctrl-K focus; Esc closes
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      } else if (e.key === "Escape" && searchOpen) {
-        setSearchOpen(false);
-        searchInputRef.current?.blur();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [searchOpen]);
-
-  // Click-outside closes popover
-  useEffect(() => {
-    if (!searchOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        searchWrapRef.current &&
-        !searchWrapRef.current.contains(e.target as Node)
-      ) {
-        setSearchOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [searchOpen]);
-
-  // Debounced query
-  useEffect(() => {
-    const q = searchQ.trim();
-    if (!q) {
-      setSearchResults(null);
-      setSearchBusy(false);
-      return;
-    }
-    setSearchBusy(true);
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams({ q, limit: "5" });
-      // When a workspace is active, restrict channel + message hits to it.
-      // Users and bots stay global since DMs cross workspaces.
-      if (selectedWorkspaceId) params.set("workspace_id", selectedWorkspaceId);
-      apiFetch(`search?${params.toString()}`, {
-        token: authToken ?? undefined,
-      })
-        .then((r) => r.json())
-        .then((d) => {
-          if (d?.data) setSearchResults(d.data as SearchResultsPayload);
-        })
-        .catch(() => {})
-        .finally(() => setSearchBusy(false));
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [searchQ, authToken, selectedWorkspaceId]);
+  const searchPickerRef = useRef<SearchPickerHandle | null>(null);
 
   const dmWorkspaceId = useMemo(
     () => selectedWorkspaceId || workspaces[0]?.workspace_id || "",
@@ -223,9 +113,7 @@ export function Sidebar({
   );
 
   const resetSearch = () => {
-    setSearchQ("");
-    setSearchResults(null);
-    setSearchOpen(false);
+    searchPickerRef.current?.clear();
   };
 
   const openChannelHit = (channelId: string) => {
@@ -271,13 +159,6 @@ export function Sidebar({
     }
   };
 
-  const hasHits =
-    !!searchResults &&
-    (searchResults.channels.length > 0 ||
-      searchResults.users.length > 0 ||
-      searchResults.bots.length > 0 ||
-      (searchResults.messages?.length ?? 0) > 0);
-
   const openMessageHit = (channelId: string, msgId: string) => {
     setSelectedId(channelId);
     resetSearch();
@@ -296,6 +177,39 @@ export function Sidebar({
         el.style.transition = orig;
       }, 1200);
     }, 400);
+  };
+
+  const handleSearchSelect = (selection: SearchSelection) => {
+    if (selection.type === "workspace") {
+      setSelectedWorkspaceId(selection.item.workspace_id);
+      resetSearch();
+      if (isMobile) setSidebarOpen(false);
+      return;
+    }
+    if (selection.type === "channel") {
+      openChannelHit(selection.item.channel_id);
+      return;
+    }
+    if (selection.type === "user") {
+      openDmWith(selection.item.user_id, "user");
+      return;
+    }
+    if (selection.type === "bot") {
+      openDmWith(selection.item.bot_id, "bot");
+      return;
+    }
+    if (selection.type === "message") {
+      openMessageHit(selection.item.channel_id, selection.item.msg_id);
+      return;
+    }
+    if (selection.type === "task") {
+      const msgId = selection.item.response_msg_id || selection.item.trigger_msg_id;
+      openMessageHit(selection.item.channel_id, msgId);
+      return;
+    }
+    if (selection.type === "todo") {
+      openChannelHit(selection.item.channel_id);
+    }
   };
 
   return (
@@ -431,146 +345,16 @@ export function Sidebar({
       </div>
 
       {/* ⌘K global search */}
-      <div className="an-search" ref={searchWrapRef}>
-        <span className="an-search-ico">⌕</span>
-        <input
-          ref={searchInputRef}
-          value={searchQ}
-          onChange={(e) => {
-            setSearchQ(e.target.value);
-            setSearchOpen(true);
-          }}
-          onFocus={() => setSearchOpen(true)}
-          placeholder="搜索频道 / 成员 / Bot"
-          aria-label="全局搜索"
-        />
-        <kbd className="an-search-kbd">⌘K</kbd>
-        {searchOpen && searchQ.trim() && (
-          <div className="an-search-pop" role="listbox">
-            {!searchResults && searchBusy && (
-              <div className="an-search-empty">搜索中…</div>
-            )}
-            {searchResults && !hasHits && !searchBusy && (
-              <div className="an-search-empty">没有匹配项</div>
-            )}
-            {searchResults && searchResults.channels.length > 0 && (
-              <>
-                <div className="an-search-group">频道</div>
-                {searchResults.channels.map((c) => (
-                  <button
-                    key={c.channel_id}
-                    type="button"
-                    className="an-search-hit"
-                    onClick={() => openChannelHit(c.channel_id)}
-                  >
-                    <span className="an-search-sigil">#</span>
-                    <span className="an-search-name">{c.name}</span>
-                  </button>
-                ))}
-              </>
-            )}
-            {searchResults && searchResults.users.length > 0 && (
-              <>
-                <div className="an-search-group">成员</div>
-                {searchResults.users.map((u) => (
-                  <button
-                    key={u.user_id}
-                    type="button"
-                    className="an-search-hit"
-                    onClick={() => openDmWith(u.user_id, "user")}
-                  >
-                    <span className="an-search-sigil">@</span>
-                    <span className="an-search-name">
-                      {u.display_name || u.username}
-                    </span>
-                    {u.display_name && u.display_name !== u.username && (
-                      <span className="an-search-sub">@{u.username}</span>
-                    )}
-                  </button>
-                ))}
-              </>
-            )}
-            {searchResults && searchResults.bots.length > 0 && (
-              <>
-                <div className="an-search-group">Bot</div>
-                {searchResults.bots.map((b) => (
-                  <button
-                    key={b.bot_id}
-                    type="button"
-                    className="an-search-hit"
-                    onClick={() => openDmWith(b.bot_id, "bot")}
-                  >
-                    <span className="an-search-sigil">⦿</span>
-                    <span className="an-search-name">
-                      {b.display_name || b.username}
-                    </span>
-                    <span className="an-search-sub">
-                      @{b.username} · {botScopeText(b.scope)} · Owner: {botOwnerText(b)}
-                    </span>
-                  </button>
-                ))}
-              </>
-            )}
-            {searchResults && (searchResults.messages?.length ?? 0) > 0 && (
-              <>
-                <div className="an-search-group">消息</div>
-                {searchResults.messages!.map((m) => (
-                  <button
-                    key={m.msg_id}
-                    type="button"
-                    className="an-search-hit"
-                    onClick={() =>
-                      openMessageHit(m.channel_id, m.msg_id)
-                    }
-                    style={{ alignItems: "flex-start" }}
-                  >
-                    <span
-                      className="an-search-sigil"
-                      style={{
-                        alignSelf: "flex-start",
-                        marginTop: 2,
-                        lineHeight: 1,
-                      }}
-                    >
-                      #
-                    </span>
-                    <span
-                      className="an-search-name"
-                      style={{
-                        whiteSpace: "normal",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 2,
-                        lineHeight: 1.35,
-                      }}
-                    >
-                      <span style={{ fontSize: 12 }}>
-                        <span
-                          style={{ color: "var(--fg-2)", fontWeight: 500 }}
-                        >
-                          {m.channel_name || "频道"}
-                        </span>
-                        <span style={{ color: "var(--fg-3)" }}> · </span>
-                        <span style={{ color: "var(--fg-3)", fontSize: 11 }}>
-                          {m.sender_label}
-                        </span>
-                      </span>
-                      <span
-                        style={{
-                          color: "var(--fg-2)",
-                          fontSize: 11.5,
-                        }}
-                      >
-                        {m.snippet}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-      </div>
+      <SearchPicker
+        ref={searchPickerRef}
+        context="global_nav"
+        token={authToken}
+        workspaceId={selectedWorkspaceId || undefined}
+        placeholder="搜索频道 / 成员 / Bot"
+        keyboardHint="⌘K"
+        enableShortcut
+        onSelect={handleSearchSelect}
+      />
 
       {/* Channels + Direct sections share a single scroller */}
       <div className="overflow-auto flex-1">
@@ -669,11 +453,9 @@ export function Sidebar({
           className="an-add"
           title="搜索用户/Bot 开始私信"
           onClick={() => {
-            setSearchOpen(true);
-            setSearchQ("");
             setTimeout(() => {
-              searchInputRef.current?.focus();
-              searchInputRef.current?.select();
+              searchPickerRef.current?.clear();
+              searchPickerRef.current?.focus(false);
             }, 0);
           }}
         >

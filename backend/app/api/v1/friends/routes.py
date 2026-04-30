@@ -6,8 +6,11 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_session
+from app.core.exceptions import NotFoundError
 from app.core.responses import APIResponse
+from app.db.models import User
 from app.services.friendship_service import FriendshipService
+from app.services.search_service import SearchService
 
 router = APIRouter(prefix="/friends", tags=["friends"])
 
@@ -28,11 +31,18 @@ async def search_users(
     current_user_id: str = Query(...),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    svc = FriendshipService(session)
-    users = await svc.search_users(query, current_user_id)
+    current_user = await session.get(User, current_user_id)
+    if not current_user:
+        raise NotFoundError("用户不存在")
+    results = await SearchService(session).search(
+        q=query,
+        context="add_friend",
+        current_user=current_user,
+        limit=20,
+    )
     return APIResponse.ok([
         {"user_id": u.user_id, "username": u.username, "display_name": u.display_name, "avatar_url": u.avatar_url}
-        for u in users
+        for u in results.users
     ])
 
 
@@ -67,5 +77,3 @@ async def remove_friend(
     svc = FriendshipService(session)
     await svc.remove_friend(body.user_id, body.friend_id)
     return APIResponse.ok(None, message="已删除好友")
-
-

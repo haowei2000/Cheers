@@ -5,3 +5,4 @@ export * from "./memory";
 export * from "./todo";
 export * from "./guide";
 export * from "./bot";
+export * from "./search";

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
 import { ChatBubbleLeftIcon } from "@heroicons/react/24/solid";
-import type { CurrentUser, Friend, UserSearchResult } from "../types";
+import type { CurrentUser, Friend } from "../types";
 import { apiFetch } from "../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
 import { BotAvatar } from "./BotAvatar";
 import { Modal } from "./Modal";
+import { SearchPicker } from "./SearchPicker";
 
 type Density = "comfy" | "compact";
 type BotScope = "private" | "friend" | "everyone";
@@ -1127,9 +1128,6 @@ function FriendsPane({
 }) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<UserSearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
   const [directId, setDirectId] = useState("");
 
   const loadFriends = async () => {
@@ -1149,25 +1147,6 @@ function FriendsPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId]);
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (searchQuery.trim()) {
-        setSearching(true);
-        apiFetch(
-          `/friends/search?query=${encodeURIComponent(searchQuery)}&current_user_id=${encodeURIComponent(currentUserId)}`,
-          { token: authToken },
-        )
-          .then((r) => r.json())
-          .then((d) => setSearchResults(d?.data || []))
-          .catch(() => {})
-          .finally(() => setSearching(false));
-      } else {
-        setSearchResults([]);
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [searchQuery, currentUserId, authToken]);
-
   const addByIdentifier = async (id: string) => {
     if (!id || !currentUserId) return;
     try {
@@ -1181,8 +1160,6 @@ function FriendsPane({
         toast.success(data.message || "添加成功");
         loadFriends();
         setDirectId("");
-        setSearchQuery("");
-        setSearchResults([]);
       } else {
         toast.error(data?.detail || "添加失败");
       }
@@ -1241,70 +1218,17 @@ function FriendsPane({
             </div>
           </Field>
           <Field label="或通过用户名搜索">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+            <SearchPicker
+              context="add_friend"
+              token={authToken}
+              modal
               placeholder="输入用户名"
-              className={inputCls}
+              actionLabel="添加"
+              onSelect={(selection) => {
+                if (selection.type === "user") addByIdentifier(selection.item.user_id);
+              }}
             />
           </Field>
-          {searching && (
-            <div style={{ fontSize: 11, color: "var(--fg-3)" }}>搜索中…</div>
-          )}
-          {searchResults.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {searchResults.map((u) => (
-                <div
-                  key={u.user_id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "6px 8px",
-                    background: "var(--surface-soft)",
-                    borderRadius: 6,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 6,
-                      background: "var(--green)",
-                      color: "#fff",
-                      fontWeight: 700,
-                      display: "inline-grid",
-                      placeItems: "center",
-                      fontSize: 12,
-                    }}
-                  >
-                    {(u.display_name || u.username || "?").slice(0, 1).toUpperCase()}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: "var(--fg-1)" }}>{u.display_name || u.username}</div>
-                    <div style={{ fontSize: 10, color: "var(--fg-3)" }}>@{u.username}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => addByIdentifier(u.user_id)}
-                    style={{
-                      padding: "4px 10px",
-                      fontSize: 11,
-                      background: "var(--accent)",
-                      color: "#fff",
-                      border: 0,
-                      borderRadius: 5,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    添加
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {loading ? (
