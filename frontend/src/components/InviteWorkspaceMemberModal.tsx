@@ -1,18 +1,25 @@
 import { Modal, ModalFooter } from "./Modal";
+import { SearchPicker } from "./SearchPicker";
 
 interface InviteWorkspaceMemberModalProps {
   open: boolean;
   value: string;
+  authToken?: string | null;
+  workspaceId?: string | null;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onPickUser: (userId: string) => void;
   onClose: () => void;
 }
 
 export function InviteWorkspaceMemberModal({
   open,
   value,
+  authToken,
+  workspaceId,
   onChange,
   onSubmit,
+  onPickUser,
   onClose,
 }: InviteWorkspaceMemberModalProps) {
   return (
@@ -39,6 +46,19 @@ export function InviteWorkspaceMemberModal({
             onKeyDown={(e) => e.key === "Enter" && onSubmit()}
             autoFocus
           />
+          <div style={{ marginTop: 10 }}>
+            <SearchPicker
+              context="workspace_invite"
+              token={authToken}
+              workspaceId={workspaceId || undefined}
+              modal
+              placeholder="搜索用户"
+              actionLabel="邀请"
+              onSelect={(selection) => {
+                if (selection.type === "user") onPickUser(selection.item.user_id);
+              }}
+            />
+          </div>
         </div>
         <ModalFooter>
           <button type="button" onClick={onClose} className="an-btn an-btn-ghost">

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import NotificationPanel from "./NotificationPanel";
-import MemoryPage from "./MemoryPage";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
@@ -33,7 +32,6 @@ import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
 import { CreateChannelModal } from "./components/CreateChannelModal";
 import { OpenClawQcModal } from "./components/OpenClawQcModal";
-import { ChannelProfileModal } from "./components/ChannelProfileModal";
 import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
 import { ImageGenModal } from "./components/ImageGenModal";
 import { Sidebar } from "./components/Sidebar";
@@ -49,7 +47,6 @@ import { ChannelHeader } from "./components/ChannelHeader";
 import { TopicPage } from "./components/TopicPage";
 import { TaskPage } from "./components/TaskPage";
 import { Modal } from "./components/Modal";
-import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { apiFetch, buildWsUrl } from "./api";
 import {
@@ -201,7 +198,6 @@ export default function App() {
   // Topic viewer: pageTopicId — root msg_id for the full-page view,
   // mirrored to URL hash. There is no side-dock panel; opening a topic
   // always replaces the channel stream with the dedicated page.
-  const [announcementOpen, setAnnouncementOpen] = useState(false);
   // Composer send-kind: 4 unified types — 普通 / 加密 / 公告 / 主题.
   // Switchable via Tab / Shift-Tab and the ‹ › buttons flanking the composer.
   // Always resets to "normal" after each send. "reply" is orthogonal —
@@ -265,7 +261,6 @@ export default function App() {
     "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO" | null
   >(null);
   const memoryPanelOpen = memoryTab !== null;
-  const [memoryPageOpen, setMemoryPageOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
@@ -479,7 +474,6 @@ export default function App() {
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
-  const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
   );
@@ -544,8 +538,9 @@ export default function App() {
   };
 
   // 邀请成员加入工作空间
-  const handleInviteWsMember = () => {
-    if (!inviteWsIdentifier.trim()) {
+  const inviteWorkspaceMember = (identifier: string) => {
+    const cleaned = identifier.trim();
+    if (!cleaned) {
       toast.error("请输入用户名");
       return;
     }
@@ -555,7 +550,7 @@ export default function App() {
     }
     authFetch(`${API}/workspaces/${selectedWorkspaceId}/invite`, {
       method: "POST",
-      body: JSON.stringify({ identifier: inviteWsIdentifier.trim() }),
+      body: JSON.stringify({ identifier: cleaned }),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -568,6 +563,10 @@ export default function App() {
         }
       })
       .catch(() => toast.error("邀请失败"));
+  };
+
+  const handleInviteWsMember = () => {
+    inviteWorkspaceMember(inviteWsIdentifier);
   };
 
   // 创建频道（项目）
@@ -1086,7 +1085,9 @@ export default function App() {
           ) {
             refreshDMs(setDMs, authToken ?? undefined);
             refreshChannels(setChannels, authToken ?? undefined);
-            if (msg.type === "friendship_changed") {
+            if (msg.type === "friend_request_created") {
+              toast.success("收到新的好友申请");
+            } else if (msg.type === "friendship_changed") {
               toast.success("好友状态已更新");
             }
           }
@@ -1115,13 +1116,13 @@ export default function App() {
   }, [authToken, currentUserId, selectedId]);
 
   useEffect(() => {
-    if ((memoryPanelOpen || memoryPageOpen) && selectedId) {
+    if (memoryPanelOpen && selectedId) {
       authFetch(`${API}/channels/${selectedId}/context`)
         .then((r) => r.json())
         .then((d) => d.data && setContextData(d.data))
         .catch(console.error);
     }
-  }, [authFetch, memoryPanelOpen, memoryPageOpen, selectedId]);
+  }, [authFetch, memoryPanelOpen, selectedId]);
 
   useEffect(() => {
     if (addBotOpen) {
@@ -2221,16 +2222,6 @@ export default function App() {
           apiDocsUrl={API_DOCS_URL}
         />
 
-        <AnnouncementComposerModal
-          open={announcementOpen}
-          channelId={selectedId}
-          channelName={selectedChannel?.name}
-          currentUserId={currentUserId}
-          authToken={authToken}
-          onClose={() => setAnnouncementOpen(false)}
-          onPublished={() => toast.success("公告已发布")}
-        />
-
         <SettingsModal
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -2271,8 +2262,11 @@ export default function App() {
         <InviteWorkspaceMemberModal
           open={inviteWsMemberOpen}
           value={inviteWsIdentifier}
+          authToken={authToken}
+          workspaceId={selectedWorkspaceId}
           onChange={setInviteWsIdentifier}
           onSubmit={handleInviteWsMember}
+          onPickUser={inviteWorkspaceMember}
           onClose={() => setInviteWsMemberOpen(false)}
         />
 
@@ -2478,17 +2472,6 @@ export default function App() {
           />
         )}
 
-        {/* Channel profile modal */}
-        {currentUser && selectedId && (
-          <ChannelProfileModal
-            open={channelProfileOpen}
-            channelId={selectedId}
-            channelName={selectedChannel?.name || ""}
-            userToken={authToken!}
-            onClose={() => setChannelProfileOpen(false)}
-          />
-        )}
-
         <div className="flex-1 flex min-w-0">
           <main
             className="flex-1 flex flex-col min-w-0 relative"
@@ -2618,16 +2601,11 @@ export default function App() {
                   autoAssist={autoAssist}
                   onOpenChannelSettings={() => setChannelSettingsOpen(true)}
                   memoryTab={memoryTab}
-                  onSetMemoryTab={setMemoryTab}
-                  currentUser={currentUser}
-                  onOpenChannelProfile={() => setChannelProfileOpen(true)}
-                  onOpenAnnouncementComposer={
-                    // DMs don't get announcements — the megaphone would make
-                    // no sense in a 1:1 conversation.
-                    selectedChannel?.type === "dm"
-                      ? undefined
-                      : () => setAnnouncementOpen(true)
-                  }
+                  onSetMemoryTab={(tab) => {
+                    setTaskPageOpen(false);
+                    setPageTaskMsgId(null);
+                    setMemoryTab(tab);
+                  }}
                   topics={topicRoots
                     .map((r) => {
                       const replies = topicRepliesOf(r.msg_id);
@@ -2662,7 +2640,9 @@ export default function App() {
                   }}
                   onJumpToMessage={jumpToMessage}
                   taskCount={websocketTaskMessages.length}
+                  taskActive={taskPageOpen}
                   onOpenTasks={() => {
+                    setMemoryTab(null);
                     setPageTopicId(null);
                     setPageTaskMsgId(websocketTaskMessages[0]?.msg_id ?? null);
                     setTaskPageOpen(true);
@@ -3529,7 +3509,7 @@ export default function App() {
                         ) : isOwn ? (
                           <div
                             id={`msg-${m.msg_id}`}
-                            className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
+                            className="an-chat-msg group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
                           >
                             <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">
                               我
@@ -3665,7 +3645,7 @@ export default function App() {
                         ) : (
                           <div
                             id={`msg-${m.msg_id}`}
-                            className="group flex items-start gap-2.5 px-4 py-1 transition-all"
+                            className="an-chat-msg group flex items-start gap-2.5 px-4 py-1 transition-all"
                           >
                             <div className="flex-shrink-0 mt-0.5">
                               {m.sender_type === "bot" ? (
@@ -3962,7 +3942,7 @@ export default function App() {
                               className={
                                 rFlat
                                   ? "an-chat-msg group flex gap-3 px-4 py-1 items-start transition-colors"
-                                  : `group flex gap-2.5 px-4 py-1 transition-all ${
+                                  : `an-chat-msg group flex gap-2.5 px-4 py-1 transition-all ${
                                       rIsOwn
                                         ? "flex-row-reverse items-end"
                                         : "items-start"
@@ -4745,7 +4725,7 @@ export default function App() {
                       })()}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
-                          <div key={botId} className="flex gap-3 px-3 py-2">
+                          <div key={botId} className="an-chat-msg flex gap-3 px-3 py-2">
                             <div className="w-9 h-9 rounded-xl bg-[#2EB67D]/20 flex items-center justify-center text-[#2EB67D] text-sm font-bold flex-shrink-0">
                               {username.slice(0, 1).toUpperCase()}
                             </div>
@@ -5022,30 +5002,28 @@ export default function App() {
                           const v = e.target.value;
                           const pos = e.target.selectionStart ?? v.length;
                           setInput(v);
-                          if (!secretMode) {
-                            const lastAt = v.lastIndexOf("@", pos - 1);
-                            if (lastAt !== -1) {
-                              const after = v.slice(lastAt + 1, pos);
+                          const lastAt = v.lastIndexOf("@", pos - 1);
+                          if (lastAt !== -1) {
+                            const after = v.slice(lastAt + 1, pos);
+                            if (
+                              !after.includes(" ") &&
+                              !after.includes("\n")
+                            ) {
+                              const rect = e.target.getBoundingClientRect();
+                              const spaceBelow =
+                                window.innerHeight - rect.bottom;
+                              const spaceAbove = rect.top;
                               if (
-                                !after.includes(" ") &&
-                                !after.includes("\n")
+                                spaceBelow < 180 &&
+                                spaceAbove > spaceBelow
                               ) {
-                                const rect = e.target.getBoundingClientRect();
-                                const spaceBelow =
-                                  window.innerHeight - rect.bottom;
-                                const spaceAbove = rect.top;
-                                if (
-                                  spaceBelow < 180 &&
-                                  spaceAbove > spaceBelow
-                                ) {
-                                  setMentionDropdownPlacement("top");
-                                } else {
-                                  setMentionDropdownPlacement("bottom");
-                                }
-                                setShowMentionDropdown(true);
-                                setMentionFilter(after);
-                                return;
+                                setMentionDropdownPlacement("top");
+                              } else {
+                                setMentionDropdownPlacement("bottom");
                               }
+                              setShowMentionDropdown(true);
+                              setMentionFilter(after);
+                              return;
                             }
                           }
                           setShowMentionDropdown(false);
@@ -5194,11 +5172,9 @@ export default function App() {
                             type="button"
                             onClick={() => {
                               insertAtCursor("@");
-                              if (!secretMode) {
-                                setMentionFilter("");
-                                setMentionDropdownPlacement("top");
-                                setShowMentionDropdown(true);
-                              }
+                              setMentionFilter("");
+                              setMentionDropdownPlacement("top");
+                              setShowMentionDropdown(true);
                             }}
                             className="an-composer-iconbtn"
                             title="提及成员或 Bot"
@@ -5443,11 +5419,8 @@ export default function App() {
                     l as "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO",
                   )
                 }
+                currentUserId={currentUserId}
                 onClose={() => setMemoryTab(null)}
-                onExpand={() => {
-                  setMemoryPageOpen(true);
-                  setMemoryTab(null);
-                }}
               />
             </div>
           )}
@@ -5476,16 +5449,6 @@ export default function App() {
           )}
         </div>
       </div>
-
-      {/* Memory full-page overlay */}
-      {memoryPageOpen && selectedId && (
-        <MemoryPage
-          channelId={selectedId}
-          channelName={selectedChannel?.name ?? ""}
-          contextData={contextData}
-          onClose={() => setMemoryPageOpen(false)}
-        />
-      )}
 
       <ImageLightbox
         src={lightboxSrc}

@@ -7,11 +7,9 @@ import {
   ClipboardDocumentListIcon,
   Cog6ToothIcon,
   DocumentTextIcon,
-  MegaphoneIcon,
-  UserIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
-import type { Channel, CurrentUser, DM } from "../types";
+import type { Channel, DM } from "../types";
 
 export type TopicSummary = {
   rootId: string;
@@ -71,13 +69,6 @@ interface ChannelHeaderProps {
   memoryTab: MemoryTab | null;
   onSetMemoryTab: (tab: MemoryTab | null) => void;
 
-  currentUser: CurrentUser;
-  onOpenChannelProfile: () => void;
-
-  /** Open the announcement-composer modal. Omitted → the megaphone button
-   *  doesn't render (e.g. on DM headers where announcements don't apply). */
-  onOpenAnnouncementComposer?: () => void;
-
   topics?: TopicSummary[];
   /** Scroll the main stream to the given message id — fallback used when
    *  no onOpenTopic handler is wired. */
@@ -87,6 +78,7 @@ interface ChannelHeaderProps {
    *  scrolling the main stream. */
   onOpenTopic?: (rootMsgId: string) => void;
   taskCount?: number;
+  taskActive?: boolean;
   onOpenTasks?: () => void;
 }
 
@@ -99,13 +91,11 @@ export function ChannelHeader({
   onOpenChannelSettings,
   memoryTab,
   onSetMemoryTab,
-  currentUser,
-  onOpenChannelProfile,
-  onOpenAnnouncementComposer,
   topics = [],
   onJumpToMessage,
   onOpenTopic,
   taskCount = 0,
+  taskActive = false,
   onOpenTasks,
 }: ChannelHeaderProps) {
   const subtitle = autoAssist ? "自动接管已开启" : "";
@@ -166,8 +156,42 @@ export function ChannelHeader({
         )}
       </div>
 
+      {/* Tasks + memory button group */}
+      <div className="an-mem-cluster" role="group" aria-label="频道工具">
+        {onOpenTasks && (
+          <button
+            type="button"
+            className={`an-mc-btn ${taskActive ? "on" : ""}`}
+            onClick={onOpenTasks}
+            title="频道后台任务"
+            aria-label={`频道后台任务，${taskCount} 个`}
+            aria-pressed={taskActive}
+          >
+            <ClipboardDocumentListIcon />
+            <span className="an-mc-label hidden sm:inline">Tasks</span>
+            <span className="an-mc-n">{taskCount}</span>
+          </button>
+        )}
+        {MEMORY_TABS.map((t) => {
+          const on = memoryTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              className={`an-mc-btn ${on ? "on" : ""}`}
+              onClick={() => onSetMemoryTab(on ? null : t.id)}
+              title={`频道记忆 · ${t.label}`}
+              aria-pressed={on}
+            >
+              {t.icon}
+              <span className="an-mc-label hidden sm:inline">{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Topics pill */}
-      {topics.length > 0 && (
+      {!activeDm && channel && (
         <div className="relative" ref={popRef}>
           <button
             type="button"
@@ -189,80 +213,36 @@ export function ChannelHeader({
               }}
             >
               <div className="an-hd">频道内的主题</div>
-              {topics.map((t) => (
-                <button
-                  key={t.rootId}
-                  type="button"
-                  className="an-it"
-                  onClick={() => {
-                    setTopicsOpen(false);
-                    if (onOpenTopic) onOpenTopic(t.rootId);
-                    else onJumpToMessage?.(t.rootId);
-                  }}
-                >
-                  <div className="an-it-t">{t.title || "(无标题)"}</div>
-                  <div className="an-it-s">
-                    <span>{t.count} 条回复</span>
-                    {t.lastTime && (
-                      <>
-                        <span className="an-d" />
-                        <span>最近 {t.lastTime}</span>
-                      </>
-                    )}
-                  </div>
-                </button>
-              ))}
+              {topics.length === 0 ? (
+                <div className="an-menu-empty">暂无主题</div>
+              ) : (
+                topics.map((t) => (
+                  <button
+                    key={t.rootId}
+                    type="button"
+                    className="an-it"
+                    onClick={() => {
+                      setTopicsOpen(false);
+                      if (onOpenTopic) onOpenTopic(t.rootId);
+                      else onJumpToMessage?.(t.rootId);
+                    }}
+                  >
+                    <div className="an-it-t">{t.title || "(无标题)"}</div>
+                    <div className="an-it-s">
+                      <span>{t.count} 条回复</span>
+                      {t.lastTime && (
+                        <>
+                          <span className="an-d" />
+                          <span>最近 {t.lastTime}</span>
+                        </>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
           )}
         </div>
-      )}
-
-      {onOpenTasks && (
-        <button
-          type="button"
-          className="an-topics-btn"
-          onClick={onOpenTasks}
-          title="频道任务"
-          aria-label={`频道任务，${taskCount} 个后台任务`}
-        >
-          <ClipboardDocumentListIcon className="w-4 h-4" />
-          <span className="hidden sm:inline">Tasks</span>
-          <span className="an-tb-n">{taskCount}</span>
-        </button>
-      )}
-
-      {/* Memory cluster — 4 memory tabs: Project / Files / Members / Todos */}
-      <div className="an-mem-cluster" role="group" aria-label="频道记忆">
-        {MEMORY_TABS.map((t) => {
-          const on = memoryTab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              className={`an-mc-btn ${on ? "on" : ""}`}
-              onClick={() => onSetMemoryTab(on ? null : t.id)}
-              title={`频道记忆 · ${t.label}`}
-              aria-pressed={on}
-            >
-              {t.icon}
-              <span className="an-mc-label hidden sm:inline">{t.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Auxiliary icon buttons — Announce / Manage members / Channel profile */}
-      {onOpenAnnouncementComposer && (
-        <button
-          type="button"
-          onClick={onOpenAnnouncementComposer}
-          title="发布公告"
-          aria-label="发布公告"
-          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
-          style={{ color: "var(--fg-3)" }}
-        >
-          <MegaphoneIcon className="w-4 h-4" />
-        </button>
       )}
       {!activeDm && channel && (
         <button
@@ -273,17 +253,6 @@ export function ChannelHeader({
           style={{ color: "var(--fg-3)" }}
         >
           <Cog6ToothIcon className="w-4 h-4" />
-        </button>
-      )}
-      {currentUser && (
-        <button
-          type="button"
-          onClick={onOpenChannelProfile}
-          title="我的频道资料"
-          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
-          style={{ color: "var(--fg-3)" }}
-        >
-          <UserIcon className="w-4 h-4" />
         </button>
       )}
     </div>
