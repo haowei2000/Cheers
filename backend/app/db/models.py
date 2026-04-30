@@ -12,6 +12,12 @@ def gen_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def friendship_pair_key_default(context) -> str:
+    params = context.get_current_parameters()
+    left, right = sorted([params.get("user_id") or "", params.get("friend_id") or ""])
+    return f"{left}:{right}"
+
+
 class Base(DeclarativeBase):
     """声明式基类."""
     pass
@@ -317,18 +323,36 @@ class ChannelProfile(Base):
 
 
 class Friendship(Base):
-    """好友关系表：记录用户之间的好友关系."""
+    """好友关系表：记录用户之间的好友申请与关系状态.
+
+    user_id 是关系的发起/控制方：
+    - pending / rejected: user_id 为申请人，friend_id 为接收人
+    - accepted: user_id 保留最初申请人，friend_id 为同意人
+    - blocked: user_id 为拉黑人，friend_id 为被拉黑人
+
+    pair_key 是两个用户 ID 排序后的稳定键，用来保证任意两人之间只有一条关系记录。
+    """
     __tablename__ = "friendships"
 
     friendship_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False)
     friend_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="accepted")  # pending, accepted, blocked
+    pair_key: Mapped[str] = mapped_column(String(80), nullable=False, default=friendship_pair_key_default)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")  # pending, accepted, rejected, blocked
+    notice_msg_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id], lazy="joined")
     friend: Mapped["User"] = relationship("User", foreign_keys=[friend_id], lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("pair_key", name="uq_friendships_pair_key"),
+    )
 
 
 class SystemSetting(Base):

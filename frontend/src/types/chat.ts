@@ -27,7 +27,7 @@ export type Channel = {
 
 export type DMCounterparty = {
   member_id: string;
-  member_type: "user" | "bot";
+  member_type: "user" | "bot" | "system";
   username?: string | null;
   display_name?: string | null;
   avatar_url?: string | null;
@@ -91,7 +91,8 @@ export type Message = {
     | "reply"
     | "announcement"
     | "routing"
-    | "permission";
+    | "permission"
+    | "friend_request";
   content_data?: Record<string, unknown> | null;
   file_ids?: string[];
   files?: FileInfo[];

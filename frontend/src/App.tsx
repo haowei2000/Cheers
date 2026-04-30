@@ -1015,26 +1015,38 @@ export default function App() {
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.type !== "channel_new_message" || !msg.data) return;
-          const chId = msg.data.channel_id as string | undefined;
-          if (!chId) return;
-          // Ignore the channel the user is actively viewing — they'll get the
-          // message on the channel WS and we'll mark-read on scroll/select.
-          if (chId === selectedId) return;
-          setChannels((prev) =>
-            prev.map((c) =>
-              c.channel_id === chId
-                ? { ...c, unread_count: (c.unread_count ?? 0) + 1 }
-                : c,
-            ),
-          );
-          setDMs((prev) =>
-            prev.map((d) =>
-              d.channel_id === chId
-                ? { ...d, unread_count: (d.unread_count ?? 0) + 1 }
-                : d,
-            ),
-          );
+          if (msg.type === "channel_new_message" && msg.data) {
+            const chId = msg.data.channel_id as string | undefined;
+            if (!chId) return;
+            // Ignore the channel the user is actively viewing — they'll get the
+            // message on the channel WS and we'll mark-read on scroll/select.
+            if (chId === selectedId) return;
+            setChannels((prev) =>
+              prev.map((c) =>
+                c.channel_id === chId
+                  ? { ...c, unread_count: (c.unread_count ?? 0) + 1 }
+                  : c,
+              ),
+            );
+            setDMs((prev) =>
+              prev.map((d) =>
+                d.channel_id === chId
+                  ? { ...d, unread_count: (d.unread_count ?? 0) + 1 }
+                  : d,
+              ),
+            );
+          } else if (
+            msg.type === "friend_request_created" ||
+            msg.type === "friendship_changed"
+          ) {
+            refreshDMs(setDMs, authToken ?? undefined);
+            refreshChannels(setChannels, authToken ?? undefined);
+            if (msg.type === "friend_request_created") {
+              toast.success("收到新的好友申请");
+            } else if (msg.type === "friendship_changed") {
+              toast.success("好友状态已更新");
+            }
+          }
         } catch {
           /* ignore malformed payloads */
         }
@@ -2645,6 +2657,128 @@ export default function App() {
                                   <div className="an-plan">
                                     <b>计划:</b> {plan}
                                   </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // ── friend request card: Personal system notice ──────
+                        if (m.msg_type === "friend_request") {
+                          const cd = (m.content_data ?? {}) as Record<string, unknown>;
+                          const requester =
+                            cd.requester && typeof cd.requester === "object"
+                              ? (cd.requester as Record<string, unknown>)
+                              : {};
+                          const receiver =
+                            cd.receiver && typeof cd.receiver === "object"
+                              ? (cd.receiver as Record<string, unknown>)
+                              : {};
+                          const friendshipId =
+                            typeof cd.friendship_id === "string"
+                              ? cd.friendship_id
+                              : "";
+                          const status =
+                            typeof cd.status === "string" ? cd.status : "pending";
+                          const requesterName =
+                            (requester.display_name as string | undefined) ||
+                            (requester.username as string | undefined) ||
+                            "用户";
+                          const requesterUsername =
+                            requester.username as string | undefined;
+                          const canResolve =
+                            status === "pending" &&
+                            friendshipId &&
+                            (receiver.user_id as string | undefined) === currentUserId;
+                          const submitFriendRequest = async (
+                            action: "accept" | "reject",
+                          ) => {
+                            try {
+                              const r = await apiFetch(
+                                `/friends/requests/${friendshipId}/${action}`,
+                                { method: "POST", token: authToken },
+                              );
+                              const data = await r.json();
+                              if (data?.status !== "success") {
+                                toast.error(data?.detail || data?.message || "操作失败");
+                                return;
+                              }
+                              const nextStatus =
+                                action === "accept" ? "accepted" : "rejected";
+                              setMessages((prev) =>
+                                prev.map((x) =>
+                                  x.msg_id === m.msg_id
+                                    ? {
+                                        ...x,
+                                        content_data: {
+                                          ...(x.content_data || {}),
+                                          status: nextStatus,
+                                          resolved_by: currentUserId,
+                                        },
+                                      }
+                                    : x,
+                                ),
+                              );
+                              refreshDMs(setDMs, authToken ?? undefined);
+                              toast.success(action === "accept" ? "已同意好友申请" : "已拒绝好友申请");
+                            } catch {
+                              toast.error("操作失败");
+                            }
+                          };
+                          const friendTime = m.created_at ? formatTs(m.created_at) : "";
+                          return (
+                            <div
+                              key={m.msg_id}
+                              id={`msg-${m.msg_id}`}
+                              className="an-chat-msg pl-16 pr-4 pt-2"
+                            >
+                              <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+                                <span className="text-[13px] font-semibold text-gray-900">
+                                  好友通知
+                                </span>
+                                {friendTime && (
+                                  <span className="text-[11px] text-gray-400">
+                                    {friendTime}
+                                  </span>
+                                )}
+                              </div>
+                              <div className={"an-approval" + (status !== "pending" ? " resolved" : "")}>
+                                <div className="an-body">
+                                  <b>{requesterName}</b>
+                                  {requesterUsername && (
+                                    <span style={{ color: "var(--fg-3)", marginLeft: 6 }}>
+                                      @{requesterUsername}
+                                    </span>
+                                  )}
+                                  <span style={{ marginLeft: 6 }}>
+                                    {status === "pending"
+                                      ? "请求添加你为好友"
+                                      : status === "accepted"
+                                        ? "已成为你的好友"
+                                        : status === "rejected"
+                                          ? "好友申请已拒绝"
+                                          : status === "cancelled"
+                                            ? "已撤回好友申请"
+                                            : "好友申请已处理"}
+                                  </span>
+                                </div>
+                                {canResolve && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="deny"
+                                      onClick={() => submitFriendRequest("reject")}
+                                    >
+                                      拒绝
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="allow"
+                                      onClick={() => submitFriendRequest("accept")}
+                                    >
+                                      同意
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </div>
