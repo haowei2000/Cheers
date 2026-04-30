@@ -2704,37 +2704,12 @@ export default function App() {
                           </div>
                         )}
                       {(() => {
-                      const renderedRows = topicRoots.map((m, idx) => {
+                      const renderedRows = topicRoots.map((m) => {
                         // isDM gates the "intimate" bubble + self-right
                         // treatment; channel rendering is Discord-style
-                        // flat, all-left, with sender grouping.
+                        // flat, all-left, always with sender identity.
                         const isDMRender =
                           selectedChannel?.type === "dm";
-                        // Stack against the previous root if same sender
-                        // within 2 minutes — hide avatar/header row.
-                        const prevRoot =
-                          idx > 0 ? topicRoots[idx - 1] : null;
-                        const prevTs = prevRoot?.created_at
-                          ? new Date(prevRoot.created_at).getTime()
-                          : 0;
-                        const curTs = m.created_at
-                          ? new Date(m.created_at).getTime()
-                          : 0;
-                        const isStacked =
-                          !isDMRender &&
-                          !!prevRoot &&
-                          prevRoot.sender_id === m.sender_id &&
-                          prevRoot.sender_type === m.sender_type &&
-                          prevRoot.msg_type !== "announcement" &&
-                          prevRoot.msg_type !== "routing" &&
-                          prevRoot.msg_type !== "permission" &&
-                          m.msg_type !== "announcement" &&
-                          m.msg_type !== "routing" &&
-                          m.msg_type !== "permission" &&
-                          m.msg_type !== "topic" &&
-                          prevTs > 0 &&
-                          curTs > 0 &&
-                          curTs - prevTs < 2 * 60 * 1000;
                         // ── routing card: coordinator picks + plan ──────────
                         if (m.msg_type === "routing") {
                           const cd = (m.content_data ?? {}) as Record<
@@ -3168,13 +3143,12 @@ export default function App() {
                           m.is_secret && !revealedContent && !isSecretExpired;
                         const rootBubble = !isDMRender ? (
                           // ── Channel flat render — Discord style ────────
-                          // All-left alignment, no bubble, sender grouping
-                          // (stacked messages hide their avatar + header).
+                          // All-left alignment, no bubble, always with avatar.
                           <div
                             id={`msg-${m.msg_id}`}
                             className="an-chat-msg group relative px-4 transition-colors"
                             style={{
-                              paddingTop: isStacked ? 2 : 8,
+                              paddingTop: 8,
                               paddingBottom: 2,
                             }}
                           >
@@ -3185,69 +3159,49 @@ export default function App() {
                             />
                             <div className="relative flex gap-3">
                               <div className="w-9 flex-shrink-0">
-                                {!isStacked ? (
-                                  m.sender_type === "bot" ? (
-                                    <BotAvatar
-                                      label={botLabel}
-                                      avatarUrl={senderBot?.avatar_url}
-                                      size={36}
-                                      className="mt-0.5"
-                                    />
-                                  ) : (
-                                    <div
-                                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
-                                      style={{
-                                        background: isOwn
-                                          ? "var(--accent)"
-                                          : "var(--fg-3)",
-                                      }}
-                                    >
-                                      {isOwn ? "我" : userInitials}
-                                    </div>
-                                  )
+                                {m.sender_type === "bot" ? (
+                                  <BotAvatar
+                                    label={botLabel}
+                                    avatarUrl={senderBot?.avatar_url}
+                                    size={36}
+                                    className="mt-0.5"
+                                  />
                                 ) : (
-                                  // stacked: show the timestamp in the
-                                  // gutter on hover so time is still
-                                  // discoverable without the header row
                                   <div
-                                    className="text-right pr-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1"
+                                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
                                     style={{
-                                      fontSize: 10,
-                                      color: "var(--fg-3)",
-                                      fontVariantNumeric: "tabular-nums",
+                                      background: isOwn
+                                        ? "var(--accent)"
+                                        : "var(--fg-3)",
                                     }}
                                   >
-                                    {msgTime
-                                      ? msgTime.split(",").pop()?.trim()
-                                      : ""}
+                                    {isOwn ? "我" : userInitials}
                                   </div>
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                {!isStacked && (
-                                  <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
-                                    <span
-                                      className="font-semibold"
-                                      style={{
-                                        fontSize: "var(--fs-chat-name)",
-                                        lineHeight: 1.2,
-                                        color: "var(--fg-1)",
-                                      }}
-                                    >
-                                      {isOwn
-                                        ? "我"
-                                        : m.sender_type === "bot"
-                                          ? botLabel
-                                          : userLabel}
-                                    </span>
-                                    <span
-                                      className="text-[11px]"
-                                      style={{ color: "var(--fg-3)" }}
-                                    >
-                                      {msgTime}
-                                    </span>
-                                  </div>
-                                )}
+                                <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
+                                  <span
+                                    className="font-semibold"
+                                    style={{
+                                      fontSize: "var(--fs-chat-name)",
+                                      lineHeight: 1.2,
+                                      color: "var(--fg-1)",
+                                    }}
+                                  >
+                                    {isOwn
+                                      ? "我"
+                                      : m.sender_type === "bot"
+                                        ? botLabel
+                                        : userLabel}
+                                  </span>
+                                  <span
+                                    className="text-[11px]"
+                                    style={{ color: "var(--fg-3)" }}
+                                  >
+                                    {msgTime}
+                                  </span>
+                                </div>
                                 {m.content_data?.title ? (
                                   <div
                                     className="text-[14px] font-semibold mb-1 leading-snug"
