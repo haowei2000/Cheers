@@ -62,8 +62,14 @@ export function ChannelSettingsModal({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const [canInviteMembers, setCanInviteMembers] = useState(false);
+  const [canAddBots, setCanAddBots] = useState(false);
   const [myRole, setMyRole] = useState<string | null>(null);
   const [autoAssist, setAutoAssist] = useState(Boolean(channel?.auto_assist));
+  const [allowMemberInvites, setAllowMemberInvites] = useState(
+    channel?.allow_member_invites !== false,
+  );
+  const [allowBotAdds, setAllowBotAdds] = useState(channel?.allow_bot_adds !== false);
   const [channelScope, setChannelScope] = useState<ChannelScope>(
     normalizeScope(channel?.type),
   );
@@ -75,14 +81,23 @@ export function ChannelSettingsModal({
     try {
       const data = await parseEnvelope<{
         channel: Channel;
-        permissions: { can_manage: boolean; my_role: string | null };
+        permissions: {
+          can_manage: boolean;
+          can_invite_members?: boolean;
+          can_add_bots?: boolean;
+          my_role: string | null;
+        };
         members: ChannelMember[];
       }>(
         await apiFetch(`/channels/${channelId}/settings`, { token: userToken }),
       );
       setAutoAssist(Boolean(data.channel.auto_assist));
+      setAllowMemberInvites(data.channel.allow_member_invites !== false);
+      setAllowBotAdds(data.channel.allow_bot_adds !== false);
       setChannelScope(normalizeScope(data.channel.type));
       setCanManage(Boolean(data.permissions.can_manage));
+      setCanInviteMembers(Boolean(data.permissions.can_invite_members));
+      setCanAddBots(Boolean(data.permissions.can_add_bots));
       setMyRole(data.permissions.my_role);
       setMembers(data.members || []);
     } catch (err) {
@@ -109,6 +124,8 @@ export function ChannelSettingsModal({
           body: {
             auto_assist: autoAssist,
             type: channelScope,
+            allow_member_invites: allowMemberInvites,
+            allow_bot_adds: allowBotAdds,
           },
         }),
       );
@@ -178,9 +195,9 @@ export function ChannelSettingsModal({
           <div className="mt-4 rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-500">
             <div className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
               <ShieldCheckIcon className="h-4 w-4" />
-              {canManage ? "可管理" : "只读"}
+              {canManage ? "可管理" : canInviteMembers || canAddBots ? "可邀请" : "只读"}
             </div>
-            管理操作需要频道管理员权限。
+            邀请成员和添加 Bot 可在频道中配置。
           </div>
         </nav>
 
@@ -248,6 +265,59 @@ export function ChannelSettingsModal({
                       </div>
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-md border border-gray-200 px-3 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">成员邀请</div>
+                    <div className="text-xs text-gray-500">允许普通成员邀请人类成员加入频道。</div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={allowMemberInvites}
+                    disabled={!canManage}
+                    onClick={() => setAllowMemberInvites((v) => !v)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      allowMemberInvites ? "bg-[#1264A3]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                      style={{
+                        transform: allowMemberInvites
+                          ? "translateX(22px)"
+                          : "translateX(4px)",
+                      }}
+                    />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-gray-800">添加 Bot</div>
+                    <div className="text-xs text-gray-500">允许普通成员添加自己可见的 Bot。</div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={allowBotAdds}
+                    disabled={!canManage}
+                    onClick={() => setAllowBotAdds((v) => !v)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      allowBotAdds ? "bg-[#1264A3]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                      style={{
+                        transform: allowBotAdds
+                          ? "translateX(22px)"
+                          : "translateX(4px)",
+                      }}
+                    />
+                  </button>
                 </div>
               </div>
 

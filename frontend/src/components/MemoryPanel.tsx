@@ -6,10 +6,11 @@ import {
   UsersIcon,
 } from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
-import type { BotItem, MemberItem, TodoItem, MemoryEntryItem } from "../types";
+import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
+import { InviteMemberSearch } from "./InviteMemberSearch";
 
 const API = "/api/v1";
 
@@ -48,6 +49,10 @@ export function MemoryPanel({
 
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [memberPermissions, setMemberPermissions] = useState({
+    can_invite_members: false,
+    can_add_bots: false,
+  });
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [todosLoading, setTodosLoading] = useState(false);
   const [todoNewContent, setTodoNewContent] = useState("");
@@ -88,10 +93,6 @@ export function MemoryPanel({
     "ANCHOR" | "PROGRESS" | "DECISIONS"
   >("ANCHOR");
 
-  const [allBots, setAllBots] = useState<BotItem[]>([]);
-  const [inviteIdentifier, setInviteIdentifier] = useState("");
-  const [inviteBusy, setInviteBusy] = useState(false);
-  const [addingBotId, setAddingBotId] = useState("");
   const [profileNickname, setProfileNickname] = useState("");
   const [profileBio, setProfileBio] = useState("");
   const [profileLoading, setProfileLoading] = useState(false);
@@ -109,6 +110,9 @@ export function MemoryPanel({
   const meta = isProject ? PROJECT_META : LAYER_META[activeLayer];
   const isReadonly = !!meta.readonly;
   const isEntryBased = !!meta.entryBased;
+  const canInviteFromMembers =
+    activeLayer === "MEMBERS" &&
+    (memberPermissions.can_invite_members || memberPermissions.can_add_bots);
   const rawContent = isProject
     ? ""
     : contextData[activeLayer.toLowerCase()] ?? "";
@@ -167,24 +171,24 @@ export function MemoryPanel({
 
   const loadMembers = () => {
     const token = getStoredToken();
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
     setMembersLoading(true);
-    fetch(`${API}/channels/${channelId}/members?with_username=1`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
+    fetch(`${API}/channels/${channelId}/settings`, { headers })
       .then((r) => r.json())
-      .then((d) => setMembers(d.data || []))
-      .catch(() => {})
+      .then((d) => {
+        setMembers(d.data?.members || []);
+        setMemberPermissions({
+          can_invite_members: Boolean(d.data?.permissions?.can_invite_members),
+          can_add_bots: Boolean(d.data?.permissions?.can_add_bots),
+        });
+      })
+      .catch(() => {
+        setMembers([]);
+        setMemberPermissions({ can_invite_members: false, can_add_bots: false });
+      })
       .finally(() => setMembersLoading(false));
-  };
-
-  const loadBots = () => {
-    const token = getStoredToken();
-    fetch(`${API}/bots`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((r) => r.json())
-      .then((d) => setAllBots(d.data || []))
-      .catch(() => setAllBots([]));
   };
 
   const loadMyProfile = () => {
@@ -201,7 +205,6 @@ export function MemoryPanel({
       .catch(() => {})
       .finally(() => setProfileLoading(false));
   };
-
   const switchLayer = (layer: string) => {
     setActiveLayer(layer);
     setEditingEntryId(null);
@@ -215,7 +218,6 @@ export function MemoryPanel({
     }
     if (layer === "MEMBERS") {
       loadMembers();
-      loadBots();
       loadMyProfile();
     }
     if (layer === "TODO") {
@@ -440,59 +442,6 @@ export function MemoryPanel({
       toast.error("保存频道资料失败");
     } finally {
       setProfileSaving(false);
-    }
-  };
-
-  const inviteMember = async () => {
-    if (!inviteIdentifier.trim()) return;
-    const token = getStoredToken();
-    setInviteBusy(true);
-    try {
-      const res = await fetch(`${API}/channels/${channelId}/invite`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ identifier: inviteIdentifier.trim() }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.status === "error") {
-        throw new Error(data.detail || data.message || "邀请失败");
-      }
-      setInviteIdentifier("");
-      toast.success("成员已邀请");
-      loadMembers();
-    } catch (err) {
-      toast.error((err as Error).message || "邀请失败");
-    } finally {
-      setInviteBusy(false);
-    }
-  };
-
-  const addBotToChannel = async (botId: string) => {
-    if (!botId) return;
-    const token = getStoredToken();
-    setAddingBotId(botId);
-    try {
-      const res = await fetch(`${API}/channels/${channelId}/members`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ member_id: botId, member_type: "bot" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.status === "error") {
-        throw new Error(data.detail || data.message || "添加失败");
-      }
-      toast.success("Bot 已加入频道");
-      loadMembers();
-    } catch (err) {
-      toast.error((err as Error).message || "添加失败");
-    } finally {
-      setAddingBotId("");
     }
   };
 
@@ -948,9 +897,6 @@ export function MemoryPanel({
   };
 
   const renderMembersHub = () => {
-    const memberIds = new Set(members.map((m) => m.member_id));
-    const availableBots = allBots.filter((bot) => !memberIds.has(bot.bot_id));
-
     return (
       <div className="flex-1 overflow-y-auto">
         <div className="px-3 py-3 space-y-3 border-b border-gray-100">
@@ -990,45 +936,20 @@ export function MemoryPanel({
             )}
           </div>
 
-          <div className="rounded-md border border-gray-200 p-2.5">
-            <div className="text-xs font-semibold text-gray-700 mb-2">
-              邀请成员
-            </div>
-            <div className="flex gap-1.5">
-              <input
-                value={inviteIdentifier}
-                onChange={(e) => setInviteIdentifier(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") inviteMember();
-                }}
-                placeholder="用户 ID 或用户名"
-                className="min-w-0 flex-1 text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
+          {canInviteFromMembers && (
+            <div className="rounded-md border border-gray-200 p-2.5">
+              <div className="text-xs font-semibold text-gray-700 mb-2">
+                邀请成员
+              </div>
+              <InviteMemberSearch
+                channelId={channelId}
+                members={members}
+                canInviteMembers={memberPermissions.can_invite_members}
+                canAddBots={memberPermissions.can_add_bots}
+                onInvited={loadMembers}
               />
-              <button
-                type="button"
-                onClick={inviteMember}
-                disabled={inviteBusy || !inviteIdentifier.trim()}
-                className="px-2.5 py-1 text-xs bg-[#1264A3] text-white rounded hover:bg-[#0f5a94] disabled:opacity-50 flex-shrink-0"
-              >
-                邀请
-              </button>
             </div>
-            <select
-              disabled={availableBots.length === 0 || Boolean(addingBotId)}
-              value=""
-              onChange={(e) => addBotToChannel(e.target.value)}
-              className="mt-2 w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400 text-gray-500 disabled:bg-gray-50"
-            >
-              <option value="">
-                {availableBots.length === 0 ? "暂无可添加 Bot" : "添加 Bot…"}
-              </option>
-              {availableBots.map((bot) => (
-                <option key={bot.bot_id} value={bot.bot_id}>
-                  {bot.display_name || bot.username}
-                </option>
-              ))}
-            </select>
-          </div>
+          )}
         </div>
 
         {membersLoading ? (
@@ -1124,7 +1045,7 @@ export function MemoryPanel({
               {entries.length} 条
             </span>
           )}
-          {isReadonly && activeLayer !== "TODO" && (
+          {isReadonly && activeLayer !== "TODO" && !canInviteFromMembers && (
             <span
               className="text-[10px] flex-shrink-0"
               style={{ color: "var(--fg-3)" }}

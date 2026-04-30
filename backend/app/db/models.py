@@ -134,6 +134,12 @@ class Channel(Base):
     type: Mapped[str] = mapped_column(String(32), nullable=False, default="public")
     purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     auto_assist: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
+    allow_member_invites: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", default=True
+    )
+    allow_bot_adds: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", default=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="channels")
