@@ -25,6 +25,9 @@ from app.repositories.workspace_repo import WorkspaceRepository
 from app.services.bot_service import BotService, bot_scope
 from app.utils.permissions import is_admin
 
+CHANNEL_ADMIN_ROLES = {"owner", "admin"}
+CHANNEL_MEMBER_ROLES = CHANNEL_ADMIN_ROLES | {"member"}
+
 
 class ChannelService:
     def __init__(self, session: AsyncSession) -> None:
@@ -215,6 +218,8 @@ class ChannelService:
         name: str,
         type: str = "public",
         purpose: str | None = None,
+        allow_member_invites: bool | None = None,
+        allow_bot_adds: bool | None = None,
         creator: User | None = None,
     ) -> Channel:
         ws = await self.ws_repo.get_by_id(workspace_id)
@@ -226,7 +231,14 @@ class ChannelService:
         if not wm and not is_admin(creator):
             raise ForbiddenError("您不是该工作空间的成员")
 
-        ch = await self.repo.create(workspace_id=workspace_id, name=name, type=type, purpose=purpose)
+        ch = await self.repo.create(
+            workspace_id=workspace_id,
+            name=name,
+            type=type,
+            purpose=purpose,
+            allow_member_invites=allow_member_invites,
+            allow_bot_adds=allow_bot_adds,
+        )
 
         added_user_ids = set()
         if type != "dm":
@@ -240,19 +252,31 @@ class ChannelService:
             ws_members = await self.ws_repo.list_members(workspace_id)
             for wm in ws_members:
                 if not await self.repo.get_membership(ch.channel_id, wm.user_id):
-                    await self.repo.add_member(ch.channel_id, wm.user_id, "user")
+                    role = (
+                        "owner"
+                        if wm.user_id == creator.user_id
+                        else "admin"
+                        if wm.role in ("owner", "admin")
+                        else "member"
+                    )
+                    await self.repo.add_member(ch.channel_id, wm.user_id, "user", role=role)
                 added_user_ids.add(wm.user_id)
 
         # 若创建者不在工作空间成员中
         if creator and creator.user_id not in added_user_ids:
             if not await self.repo.get_membership(ch.channel_id, creator.user_id):
-                await self.repo.add_member(ch.channel_id, creator.user_id, "user")
+                role = "owner" if type != "dm" else "member"
+                await self.repo.add_member(ch.channel_id, creator.user_id, "user", role=role)
+        elif creator and type != "dm":
+            creator_membership = await self.repo.get_membership(ch.channel_id, creator.user_id)
+            if creator_membership and creator_membership.member_type == "user":
+                creator_membership.role = "owner"
 
         return ch
 
     async def update(self, channel_id: str, current_user: User, **kwargs) -> Channel:
         ch = await self.get_or_404(channel_id)
-        await self._require_workspace_admin(ch, current_user)
+        await self._require_channel_admin(ch, current_user)
         return await self.repo.update(ch, **kwargs)
 
     async def delete(self, channel_id: str, current_user: User) -> None:
@@ -287,12 +311,94 @@ class ChannelService:
         await self.get_or_404(channel_id)
         await self._require_channel_member(channel_id, user)
 
+    async def _is_workspace_admin(self, channel: Channel, user: User) -> bool:
+        wm = await self.ws_repo.get_membership(channel.workspace_id, user.user_id)
+        return bool(wm and wm.role in ("owner", "admin"))
+
     async def _require_workspace_admin(self, channel: Channel, user: User) -> None:
         if is_admin(user):
             return
-        wm = await self.ws_repo.get_membership(channel.workspace_id, user.user_id)
-        if not wm or wm.role not in ("owner", "admin"):
+        if not await self._is_workspace_admin(channel, user):
             raise ForbiddenError("只有工作空间管理员可以执行此操作")
+
+    async def _is_channel_admin(self, channel: Channel, user: User) -> bool:
+        if is_admin(user):
+            return True
+        m = await self.repo.get_membership(channel.channel_id, user.user_id)
+        if m and m.member_type == "user" and (m.role or "member") in CHANNEL_ADMIN_ROLES:
+            return True
+        return await self._is_workspace_admin(channel, user)
+
+    async def _is_channel_member(self, channel: Channel, user: User) -> bool:
+        if is_admin(user):
+            return True
+        m = await self.repo.get_membership(channel.channel_id, user.user_id)
+        return bool(m and m.member_type == "user")
+
+    async def _require_channel_admin(self, channel: Channel, user: User) -> None:
+        if not await self._is_channel_admin(channel, user):
+            raise ForbiddenError("只有频道管理员可以执行此操作")
+
+    async def require_channel_admin(self, channel_id: str, user: User) -> Channel:
+        channel = await self.get_or_404(channel_id)
+        await self._require_channel_admin(channel, user)
+        return channel
+
+    async def _can_invite_members(self, channel: Channel, user: User) -> bool:
+        if await self._is_channel_admin(channel, user):
+            return True
+        return bool(channel.allow_member_invites and await self._is_channel_member(channel, user))
+
+    async def _can_add_bots(self, channel: Channel, user: User) -> bool:
+        if await self._is_channel_admin(channel, user):
+            return True
+        return bool(channel.allow_bot_adds and await self._is_channel_member(channel, user))
+
+    async def _require_can_invite_members(self, channel: Channel, user: User) -> None:
+        if not await self._can_invite_members(channel, user):
+            raise ForbiddenError("当前频道仅管理员可以邀请成员")
+
+    async def _require_can_add_bots(self, channel: Channel, user: User) -> None:
+        if not await self._can_add_bots(channel, user):
+            raise ForbiddenError("当前频道仅管理员可以添加 Bot")
+
+    async def channel_permission_summary(self, channel: Channel, user: User) -> dict:
+        """Return caller's channel role and channel-scoped capabilities."""
+        if is_admin(user):
+            return {
+                "my_role": "system_admin",
+                "can_manage": True,
+                "can_invite_members": True,
+                "can_add_bots": True,
+            }
+        membership = await self.repo.get_membership(channel.channel_id, user.user_id)
+        role = None
+        if membership and membership.member_type == "user":
+            role = membership.role or "member"
+        workspace_admin = await self._is_workspace_admin(channel, user)
+        can_manage = bool(role in CHANNEL_ADMIN_ROLES or workspace_admin)
+        is_member = bool(role)
+        can_invite_members = can_manage or bool(channel.allow_member_invites and is_member)
+        can_add_bots = can_manage or bool(channel.allow_bot_adds and is_member)
+        if workspace_admin and role not in CHANNEL_ADMIN_ROLES:
+            role = "workspace_admin"
+        return {
+            "my_role": role,
+            "can_manage": can_manage,
+            "can_invite_members": can_invite_members,
+            "can_add_bots": can_add_bots,
+        }
+
+    async def _ensure_another_channel_admin(self, channel_id: str, member_id: str) -> None:
+        memberships = await self.repo.list_memberships(channel_id)
+        has_other_admin = any(
+            m.member_type == "user"
+            and m.member_id != member_id
+            and (m.role or "member") in CHANNEL_ADMIN_ROLES
+            for m in memberships
+        )
+        if not has_other_admin:
+            raise ForbiddenError("频道至少需要保留一位管理员")
 
     async def list_members_with_details(self, channel_id: str) -> list[dict]:
         memberships = await self.repo.list_memberships(channel_id)
@@ -331,6 +437,8 @@ class ChannelService:
                 "channel_id": m.channel_id,
                 "member_id": m.member_id,
                 "member_type": m.member_type,
+                "role": m.role or "member",
+                "added_by": m.added_by,
                 "username": entity.username,
                 "display_name": entity.display_name,
                 "avatar_url": entity.avatar_url,
@@ -380,8 +488,13 @@ class ChannelService:
         member_type: str,
         current_user: User,
     ) -> ChannelMembership:
-        await self.get_or_404(channel_id)
-        await self._require_channel_member(channel_id, current_user)
+        channel = await self.get_or_404(channel_id)
+        if member_type == "user":
+            await self._require_can_invite_members(channel, current_user)
+        elif member_type == "bot":
+            await self._require_can_add_bots(channel, current_user)
+        else:
+            raise BadRequestError("member_type must be 'user' or 'bot'")
 
         existing = await self.repo.get_membership(channel_id, member_id)
         if existing:
@@ -412,8 +525,8 @@ class ChannelService:
         identifier: str,
         current_user: User,
     ) -> dict:
-        await self.get_or_404(channel_id)
-        await self._require_channel_member(channel_id, current_user)
+        channel = await self.get_or_404(channel_id)
+        await self._require_can_invite_members(channel, current_user)
 
         user = await self.user_repo.get_by_id(identifier)
         if not user:
@@ -433,7 +546,8 @@ class ChannelService:
         }
 
     async def remove_member(self, channel_id: str, member_id: str, current_user: User) -> None:
-        await self.get_or_404(channel_id)
+        channel = await self.get_or_404(channel_id)
+        await self._require_channel_admin(channel, current_user)
         m = await self.repo.get_membership(channel_id, member_id)
         if not m:
             raise NotFoundError("membership not found")
@@ -442,12 +556,9 @@ class ChannelService:
             from app.services.guide.constants import GUIDE_BOT_ID
             if member_id == GUIDE_BOT_ID:
                 raise ForbiddenError("内置助手只能由管理员移除")
-            if m.member_type == "user" and member_id != current_user.user_id:
-                raise ForbiddenError("只能移除自己")
-            if m.member_type == "bot":
-                bot = await self.bot_repo.get_by_id(member_id)
-                if not bot or bot.created_by != current_user.user_id:
-                    raise ForbiddenError("只能移除自己创建的 Bot")
+
+        if m.member_type == "user" and (m.role or "member") in CHANNEL_ADMIN_ROLES:
+            await self._ensure_another_channel_admin(channel_id, member_id)
 
         await self.repo.remove_member(m)
         if m.member_type == "bot":
@@ -464,9 +575,8 @@ class ChannelService:
         template_id: str | None,
         current_user: User,
     ) -> dict:
-        """设置频道内某个 Bot 成员的提示词模板覆盖。仅 Bot 创建者或管理员可操作。"""
+        """设置频道内某个 Bot 成员的提示词模板覆盖。权限归 Bot 所有者。"""
         await self.get_or_404(channel_id)
-        await self._require_channel_member(channel_id, current_user)
 
         m = await self.repo.get_membership(channel_id, member_id)
         if not m:
@@ -474,10 +584,11 @@ class ChannelService:
         if m.member_type != "bot":
             raise BadRequestError("只能为 Bot 成员设置提示词模板")
 
-        if not is_admin(current_user):
-            bot = await self.bot_repo.get_by_id(member_id)
-            if not bot or bot.created_by != current_user.user_id:
-                raise ForbiddenError("只有 Bot 的创建者才能修改其提示词模板")
+        bot = await self.bot_repo.get_by_id(member_id)
+        if not bot:
+            raise NotFoundError("Bot 不存在")
+        if not is_admin(current_user) and bot.created_by != current_user.user_id:
+            raise ForbiddenError("只有 Bot 所有者可以修改其频道提示词模板")
 
         if template_id:
             tmpl = (await self.session.execute(
@@ -485,6 +596,13 @@ class ChannelService:
             )).scalar_one_or_none()
             if not tmpl:
                 raise NotFoundError("提示词模板不存在")
+            if (
+                not is_admin(current_user)
+                and not tmpl.is_builtin
+                and tmpl.created_by is not None
+                and tmpl.created_by != current_user.user_id
+            ):
+                raise ForbiddenError("只能使用自己可见的提示词模板")
 
         m.template_id = template_id
         await self.session.flush()
@@ -497,8 +615,42 @@ class ChannelService:
             "template_name": m.prompt_template.name if m.prompt_template else None,
         }
 
+    async def update_member_role(
+        self,
+        channel_id: str,
+        member_id: str,
+        role: str,
+        current_user: User,
+    ) -> dict:
+        """更新频道内用户成员的频道角色。"""
+        channel = await self.get_or_404(channel_id)
+        await self._require_channel_admin(channel, current_user)
+        if role not in CHANNEL_MEMBER_ROLES:
+            raise BadRequestError("role must be one of: owner, admin, member")
+
+        m = await self.repo.get_membership(channel_id, member_id)
+        if not m:
+            raise NotFoundError("membership not found")
+        if m.member_type != "user":
+            raise BadRequestError("只能调整用户成员的频道角色")
+
+        old_role = m.role or "member"
+        if old_role in CHANNEL_ADMIN_ROLES and role not in CHANNEL_ADMIN_ROLES:
+            await self._ensure_another_channel_admin(channel_id, member_id)
+
+        m.role = role
+        await self.session.flush()
+        return {
+            "channel_id": m.channel_id,
+            "member_id": m.member_id,
+            "member_type": m.member_type,
+            "role": m.role,
+        }
+
     async def get_friends_to_invite(self, channel_id: str, current_user: User) -> list[dict]:
         """返回当前用户的好友中尚未加入频道的列表."""
+        channel = await self.get_or_404(channel_id)
+        await self._require_can_invite_members(channel, current_user)
         user_id = current_user.user_id
         existing = await self.session.execute(
             select(ChannelMembership.member_id).where(ChannelMembership.channel_id == channel_id)

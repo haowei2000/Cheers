@@ -165,14 +165,16 @@ class AuthService:
         display_name: Optional[str] = None,
         bio: Optional[str] = None,
         avatar_url: Optional[str] = None,
+        avatar_url_provided: bool = False,
     ) -> User:
         updates: dict = {}
         if display_name is not None:
             updates["display_name"] = display_name.strip()
         if bio is not None:
             updates["bio"] = bio
-        if avatar_url is not None:
+        if avatar_url_provided:
             updates["avatar_url"] = avatar_url
         if updates:
-            return await self.user_repo.update(user, **updates)
+            target = await self.user_repo.get_by_id(user.user_id) or user
+            return await self.user_repo.update(target, **updates)
         return user

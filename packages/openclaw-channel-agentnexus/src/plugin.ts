@@ -25,6 +25,7 @@ import {
 } from "openclaw/plugin-sdk/conversation-runtime";
 
 import { BotSession, type InboundMessage } from "./session.js";
+import type { TraceFrame } from "./types.js";
 
 const PLUGIN_ID = "agentnexus";
 const INBOUND_CACHE_MAX = 1000;
@@ -286,6 +287,230 @@ function forgetInboundBySessionKey(
 }
 
 // ============================================================================
+// OpenClaw agent event forwarding —— runtime.events.onAgentEvent → bridge trace
+// ============================================================================
+
+type OpenClawAgentEvent = {
+  runId: string;
+  seq: number;
+  stream: string;
+  ts: number;
+  data: Record<string, unknown>;
+  sessionKey?: string;
+};
+
+type RunTraceTarget = {
+  accountId: string;
+  sessionKey: string;
+  channelId: string;
+  taskId: string;
+  placeholderMsgId: string | null;
+  registeredAt: number;
+};
+
+const RUN_TRACE_TTL_MS = 2 * 60 * 60 * 1000;
+const runTraceByRunId = new Map<string, RunTraceTarget>();
+let agentEventUnsubscribe: (() => void) | null = null;
+
+function truncateTraceText(value: string, limit = 240): string {
+  return value.length > limit ? `${value.slice(0, limit)}...` : value;
+}
+
+function readTraceString(data: Record<string, unknown>, key: string): string | undefined {
+  const value = data[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function sanitizeTraceData(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const keys = [
+    "phase",
+    "status",
+    "kind",
+    "title",
+    "name",
+    "summary",
+    "progressText",
+    "message",
+    "error",
+    "toolCallId",
+    "approvalId",
+    "approvalSlug",
+    "command",
+    "cwd",
+    "exitCode",
+    "durationMs",
+    "provider",
+    "model",
+  ];
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === "string") out[key] = truncateTraceText(value);
+    else if (typeof value === "number" || typeof value === "boolean" || value === null) out[key] = value;
+  }
+  const text = readTraceString(data, "text") ?? readTraceString(data, "output");
+  if (text) out.preview = truncateTraceText(text, 160);
+  return out;
+}
+
+function summarizeTraceEvent(stream: string, data: Record<string, unknown>): {
+  phase?: string;
+  status?: string;
+  title?: string;
+  message?: string;
+} {
+  const phase = readTraceString(data, "phase");
+  const status = readTraceString(data, "status");
+  const title = readTraceString(data, "title")
+    ?? readTraceString(data, "name")
+    ?? readTraceString(data, "toolName");
+  const message = readTraceString(data, "progressText")
+    ?? readTraceString(data, "summary")
+    ?? readTraceString(data, "message")
+    ?? readTraceString(data, "error")
+    ?? readTraceString(data, "command")
+    ?? readTraceString(data, "text")
+    ?? readTraceString(data, "output");
+  return {
+    phase,
+    status,
+    title: title ? truncateTraceText(title, 120) : stream,
+    message: message ? truncateTraceText(message, 180) : undefined,
+  };
+}
+
+function isTerminalAgentEvent(evt: OpenClawAgentEvent): boolean {
+  if (evt.stream === "lifecycle") {
+    const phase = readTraceString(evt.data, "phase");
+    const status = readTraceString(evt.data, "status");
+    return phase === "end" || phase === "error" || status === "completed" || status === "failed";
+  }
+  return evt.stream === "error";
+}
+
+function sweepRunTraceTargets(): void {
+  const cutoff = Date.now() - RUN_TRACE_TTL_MS;
+  for (const [runId, target] of runTraceByRunId) {
+    if (target.registeredAt < cutoff) runTraceByRunId.delete(runId);
+  }
+}
+
+function clearRunTraceTargetsForAccount(accountId: string): void {
+  for (const [runId, target] of runTraceByRunId) {
+    if (target.accountId === accountId) runTraceByRunId.delete(runId);
+  }
+}
+
+export function registerOpenClawRunTrace(target: Omit<RunTraceTarget, "registeredAt"> & { runId: string }): void {
+  sweepRunTraceTargets();
+  runTraceByRunId.set(target.runId, {
+    accountId: target.accountId,
+    sessionKey: target.sessionKey,
+    channelId: target.channelId,
+    taskId: target.taskId,
+    placeholderMsgId: target.placeholderMsgId,
+    registeredAt: Date.now(),
+  });
+}
+
+export function emitRunTrace(runId: string, trace: {
+  stream: string;
+  seq?: number;
+  ts?: number;
+  phase?: string;
+  status?: string;
+  title?: string;
+  message?: string;
+  data?: Record<string, unknown>;
+}): boolean {
+  const target = runTraceByRunId.get(runId);
+  if (!target?.placeholderMsgId) return false;
+  const entry = sessionRegistry.get(target.accountId);
+  if (!entry) return false;
+  const frame: Omit<TraceFrame, "type"> = {
+    msg_id: target.placeholderMsgId,
+    task_id: target.taskId,
+    channel_id: target.channelId,
+    run_id: runId,
+    session_key: target.sessionKey,
+    stream: trace.stream,
+    ...(trace.seq !== undefined ? { seq: trace.seq } : {}),
+    ...(trace.ts !== undefined ? { ts: trace.ts } : {}),
+    ...(trace.phase ? { phase: trace.phase } : {}),
+    ...(trace.status ? { status: trace.status } : {}),
+    ...(trace.title ? { title: trace.title } : {}),
+    ...(trace.message ? { message: trace.message } : {}),
+    ...(trace.data ? { data: trace.data } : {}),
+  };
+  return entry.session.trace(frame);
+}
+
+function forwardOpenClawAgentEvent(evt: OpenClawAgentEvent): void {
+  if (!evt || typeof evt.runId !== "string" || !evt.runId) return;
+  const target = runTraceByRunId.get(evt.runId);
+  if (!target) return;
+  const summary = summarizeTraceEvent(evt.stream, evt.data);
+  emitRunTrace(evt.runId, {
+    stream: evt.stream,
+    seq: typeof evt.seq === "number" ? evt.seq : undefined,
+    ts: typeof evt.ts === "number" ? evt.ts : Date.now(),
+    ...summary,
+    data: sanitizeTraceData(evt.data),
+  });
+  if (isTerminalAgentEvent(evt)) runTraceByRunId.delete(evt.runId);
+}
+
+export function installAgentEventForwarder(api: OpenClawPluginApi): void {
+  if (agentEventUnsubscribe) {
+    agentEventUnsubscribe();
+    agentEventUnsubscribe = null;
+  }
+  const onAgentEvent = api.runtime?.events?.onAgentEvent;
+  if (typeof onAgentEvent !== "function") {
+    api.logger.warn("agentnexus: OpenClaw runtime.events.onAgentEvent is unavailable; trace forwarding disabled");
+    return;
+  }
+  agentEventUnsubscribe = onAgentEvent((evt) => {
+    forwardOpenClawAgentEvent(evt as OpenClawAgentEvent);
+  });
+  api.logger.info("agentnexus: OpenClaw agent event forwarding enabled");
+}
+
+function emitInboundTrace(
+  session: BotSession,
+  accountId: string,
+  sessionKey: string,
+  m: InboundMessage,
+  trace: {
+    phase: string;
+    title: string;
+    message?: string;
+    status?: string;
+    data?: Record<string, unknown>;
+  },
+): boolean {
+  const msgId = m.event.placeholder_msg_id;
+  if (!msgId) return false;
+  return session.trace({
+    msg_id: msgId,
+    task_id: m.event.task_id,
+    channel_id: m.channelId,
+    run_id: m.event.task_id,
+    session_key: sessionKey,
+    stream: "agentnexus_plugin",
+    ts: Date.now(),
+    phase: trace.phase,
+    title: trace.title,
+    ...(trace.status ? { status: trace.status } : {}),
+    ...(trace.message ? { message: trace.message } : {}),
+    data: {
+      accountId,
+      ...trace.data,
+    },
+  });
+}
+
+// ============================================================================
 // Plugin API 共享 —— registerFull 里把 api 存到这里，onMessage 里通过 fetch
 // 把消息 bounce 到 api.registerHttpRoute 注册的路由，从而进入 request scope
 // ============================================================================
@@ -444,6 +669,12 @@ async function startAccount(rawCtx: unknown): Promise<void> {
         log.info?.(
           `agentnexus: ${accountId} inbound channel=${m.channelId} task=${m.event.task_id} attachments=${m.attachments.length} text=${JSON.stringify(m.text).slice(0, 80)}`,
         );
+        emitInboundTrace(session, accountId, sk, m, {
+          phase: "received",
+          title: "AgentNexus plugin received message",
+          message: m.attachments.length > 0 ? `attachments=${m.attachments.length}` : undefined,
+          data: { attachments: m.attachments.length },
+        });
 
         // 自 loopback 到 api.registerHttpRoute 的路由：那个 handler 运行在
         // gateway-request-scope，可以合法调 api.runtime.subagent.run
@@ -461,10 +692,30 @@ async function startAccount(rawCtx: unknown): Promise<void> {
 
         // 附件正文 hydration：在进入 subagent.run 前把每个文档正文拼进 message
         const httpBase = deriveHttpBase(account.dataUrl);
+        if (m.attachments.length > 0) {
+          emitInboundTrace(session, accountId, sk, m, {
+            phase: "hydrating_attachments",
+            title: "Reading attachments",
+            message: `${m.attachments.length} attachment(s)`,
+            data: { attachments: m.attachments.length },
+          });
+        }
         const hydratedText = await buildMessageWithAttachments(httpBase, account.botToken, m, log);
+        if (m.attachments.length > 0) {
+          emitInboundTrace(session, accountId, sk, m, {
+            phase: "attachments_ready",
+            title: "Attachments ready",
+            message: `prompt chars=${hydratedText.length}`,
+            data: { promptChars: hydratedText.length },
+          });
+        }
 
         const url = `http://127.0.0.1:${ref.gatewayPort}/plugins/agentnexus/inbound`;
         try {
+          emitInboundTrace(session, accountId, sk, m, {
+            phase: "loopback_start",
+            title: "Starting OpenClaw run",
+          });
           const headers: Record<string, string> = {
             "Content-Type": "application/json",
             "X-Agentnexus-Internal-Token": ref.internalToken,
@@ -487,13 +738,31 @@ async function startAccount(rawCtx: unknown): Promise<void> {
           if (!resp.ok) {
             const body = await resp.text().catch(() => "<unreadable>");
             log.warn?.(`agentnexus: ${accountId} inbound loopback failed HTTP ${resp.status}: ${body.slice(0, 200)}`);
+            emitInboundTrace(session, accountId, sk, m, {
+              phase: "loopback_error",
+              status: "failed",
+              title: "OpenClaw route failed",
+              message: `HTTP ${resp.status}`,
+            });
             await session.reply({
               source: m,
               text: `[agentnexus plugin] 内部路由 HTTP ${resp.status}: ${body.slice(0, 120)}`,
             }).catch(() => { /* ignore */ });
+          } else {
+            emitInboundTrace(session, accountId, sk, m, {
+              phase: "loopback_accepted",
+              status: "running",
+              title: "OpenClaw run accepted",
+            });
           }
         } catch (err) {
           log.error?.(`agentnexus: ${accountId} inbound loopback error: ${String(err)}`);
+          emitInboundTrace(session, accountId, sk, m, {
+            phase: "loopback_error",
+            status: "failed",
+            title: "OpenClaw route error",
+            message: String(err),
+          });
           await session.reply({
             source: m,
             text: `[agentnexus plugin] 内部路由错误: ${String(err)}`,
@@ -556,6 +825,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
       log.info?.(`agentnexus: ${accountId} abortSignal; stopping`);
       void session.stop();
       sessionRegistry.delete(accountId);
+      clearRunTraceTargetsForAccount(accountId);
       resolve();
     };
     if (ctx.abortSignal?.aborted) {
@@ -572,6 +842,7 @@ async function stopAccount(rawCtx: unknown): Promise<void> {
   const entry = sessionRegistry.get(ctx.accountId);
   if (!entry) return;
   sessionRegistry.delete(ctx.accountId);
+  clearRunTraceTargetsForAccount(ctx.accountId);
   try {
     unregisterSessionBindingAdapter({
       channel: PLUGIN_ID,

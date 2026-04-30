@@ -11,9 +11,8 @@ from app.db.models import Message
 from app.repositories.channel_repo import ChannelRepository
 from app.repositories.file_repo import FileRepository
 from app.repositories.message_repo import MessageRepository
+from app.services.secret_messages import SECRET_PLACEHOLDER, secret_placeholder_for
 from app.utils.crypto import encrypt_value
-
-_SECRET_PLACEHOLDER = "🔒 [加密消息]"
 
 
 class MessageService:
@@ -82,7 +81,7 @@ class MessageService:
         # 加密消息处理
         if is_secret:
             encrypted = encrypt_value(content)
-            stored_content = _SECRET_PLACEHOLDER
+            stored_content = SECRET_PLACEHOLDER
             token = _secrets.token_urlsafe(32)
         else:
             encrypted = None
@@ -101,6 +100,9 @@ class MessageService:
             secret_encrypted=encrypted,
             secret_token=token,
         )
+        if is_secret:
+            msg.content = secret_placeholder_for(msg.msg_id)
+            await self.session.flush()
 
         records = await self.file_repo.get_many_by_ids(file_ids)
         file_map = {

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
 from app.db.models import MemoryEntry, User
+from app.services.channel_service import ChannelService
 from app.services.memory.channel_memory import ENTRY_LAYERS
 
 router = APIRouter(prefix="/channels/{channel_id}/memory", tags=["memory"])
@@ -51,9 +52,11 @@ class EntryResponse(BaseModel):
 async def list_entries(
     channel_id: str,
     layer: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
     """列出频道的记忆条目，可按层筛选。"""
+    await ChannelService(db).require_channel_member(channel_id, current_user)
     q = select(MemoryEntry).where(MemoryEntry.channel_id == channel_id)
     if layer:
         layer_upper = layer.upper()
@@ -73,6 +76,7 @@ async def create_entry(
     db: AsyncSession = Depends(get_session),
 ):
     """创建一条记忆条目。"""
+    await ChannelService(db).require_channel_admin(channel_id, current_user)
     layer_upper = body.layer.upper()
     if layer_upper not in _VALID_LAYERS:
         raise HTTPException(400, f"invalid layer, must be one of: {', '.join(sorted(_VALID_LAYERS))}")
@@ -108,6 +112,7 @@ async def update_entry(
     db: AsyncSession = Depends(get_session),
 ):
     """更新一条记忆条目。"""
+    await ChannelService(db).require_channel_admin(channel_id, current_user)
     entry = await db.get(MemoryEntry, entry_id)
     if not entry or entry.channel_id != channel_id:
         raise HTTPException(404, "entry not found")
@@ -132,6 +137,7 @@ async def delete_entry(
     db: AsyncSession = Depends(get_session),
 ):
     """删除一条记忆条目。"""
+    await ChannelService(db).require_channel_admin(channel_id, current_user)
     entry = await db.get(MemoryEntry, entry_id)
     if not entry or entry.channel_id != channel_id:
         raise HTTPException(404, "entry not found")

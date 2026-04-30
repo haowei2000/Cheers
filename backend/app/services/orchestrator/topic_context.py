@@ -20,6 +20,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, Message, User
+from app.services.secret_messages import secret_placeholder_for
 
 logger = logging.getLogger("app.services.orchestrator.topic_context")
 
@@ -177,7 +178,7 @@ async def _batch_sender_names(msgs: list[Message], session: AsyncSession) -> dic
 
 
 def _to_dict(msg: Message, name: str) -> dict[str, Any]:
-    text = "[加密消息]" if msg.is_secret else (msg.content or "")
+    text = secret_placeholder_for(msg.msg_id) if msg.is_secret else (msg.content or "")
     return {
         "msg_id": msg.msg_id,
         "sender_name": name,

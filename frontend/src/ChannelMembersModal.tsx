@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { UsersIcon } from "@heroicons/react/24/solid";
 import type { ChannelMember as Member, Friend, BotItem as Bot } from "./types";
+import { SearchPicker } from "./components/SearchPicker";
 
 const API = "/api/v1";
 
@@ -74,12 +75,10 @@ export default function ChannelMembersModal({
   const [activeTab, setActiveTab] = useState<"members" | "invite" | "invite_by_id" | "invite_bot">("members");
 
   // 邀请相关状态
-  const [inviteQuery, setInviteQuery] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
 
   // Bot 邀请状态
-  const [allBots, setAllBots] = useState<Bot[]>([]);
   const [addingBotId, setAddingBotId] = useState<string | null>(null);
 
   // 提示词模板
@@ -193,38 +192,6 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 通过ID/用户名邀请
-  const inviteByIdentifier = async () => {
-    if (!inviteQuery.trim()) {
-      toast.error("请输入用户ID或用户名");
-      return;
-    }
-    
-    setInviteLoading(true);
-    try {
-      const res = await fetch(`${API}/channels/${channelId}/invite`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({
-          identifier: inviteQuery.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (data.status === "success") {
-        toast.success(data.message || "邀请成功");
-        setInviteQuery("");
-        loadMembers();
-        loadFriendsToInvite();
-      } else {
-        toast.error(data.detail || "邀请失败");
-      }
-    } catch (err) {
-      toast.error("邀请失败");
-    } finally {
-      setInviteLoading(false);
-    }
-  };
-
   // 移除成员
   const removeMember = async (memberId: string, memberType: string) => {
     if (memberType === "bot") {
@@ -288,19 +255,6 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 加载所有 Bot
-  const loadAllBots = async () => {
-    try {
-      const res = await fetch(`${API}/bots`, { headers: authHeaders });
-      const data = await res.json();
-      if (data.status === "success") {
-        setAllBots(data.data || []);
-      }
-    } catch {
-      setAllBots([]);
-    }
-  };
-
   // 添加 Bot 到频道
   const addBot = async (botId: string) => {
     setAddingBotId(botId);
@@ -328,7 +282,6 @@ export default function ChannelMembersModal({
     if (isOpen) {
       loadMembers();
       loadFriendsToInvite();
-      loadAllBots();
       loadTemplates();
     }
   }, [isOpen, channelId]);
@@ -337,9 +290,6 @@ export default function ChannelMembersModal({
   const userMembers = members.filter((m) => m.member_type === "user");
 
   if (!isOpen) return null;
-
-  const botMemberIds = new Set(botMembers.map((m) => m.member_id));
-  const availableBots = allBots.filter((b) => !botMemberIds.has(b.bot_id));
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -382,7 +332,7 @@ export default function ChannelMembersModal({
             onClick={() => setActiveTab("invite_by_id")}
             className={`an-tab ${activeTab === "invite_by_id" ? "on" : ""}`}
           >
-            通过ID邀请
+            搜索用户
           </button>
           <button
             type="button"
@@ -598,84 +548,41 @@ export default function ChannelMembersModal({
           )}
 
           {activeTab === "invite_by_id" && (
-            // 通过ID/用户名邀请
             <div>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  用户ID 或 用户名
+                  用户
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={inviteQuery}
-                    onChange={(e) => setInviteQuery(e.target.value)}
-                    placeholder="输入用户ID或用户名"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
-                    onKeyDown={(e) => e.key === "Enter" && inviteByIdentifier()}
-                  />
-                  <button
-                    onClick={inviteByIdentifier}
-                    disabled={inviteLoading || !inviteQuery.trim()}
-                    className="px-4 py-2 bg-[#007a5a] text-white rounded-lg text-sm font-medium hover:bg-[#006a4d] disabled:opacity-50"
-                  >
-                    {inviteLoading ? "邀请中..." : "邀请"}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  提示：可以直接输入用户的ID或用户名来邀请，即使不是你的好友也可以邀请。
-                </p>
+                <SearchPicker
+                  context="channel_invite_user"
+                  token={userToken}
+                  channelId={channelId}
+                  modal
+                  placeholder="搜索用户"
+                  actionLabel={inviteLoading ? "邀请中" : "邀请"}
+                  onSelect={(selection) => {
+                    if (selection.type === "user") inviteFriend(selection.item.user_id);
+                  }}
+                />
               </div>
             </div>
           )}
 
           {activeTab === "invite_bot" && (
-            // 邀请 Bot
-            availableBots.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-4xl mb-2">🤖</div>
-                <p className="text-gray-500 mb-1">
-                  {allBots.length === 0 ? "暂无可用 Bot" : "所有 Bot 都已在频道中"}
-                </p>
-                <p className="text-xs text-gray-400">可在左下角齿轮设置中创建新 Bot</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {availableBots.map((bot) => (
-                  <div
-                    key={bot.bot_id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded bg-[#2EB67D] flex items-center justify-center text-white text-sm font-bold">
-                        {(bot.display_name || bot.username).charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm text-gray-900">
-                          {bot.display_name || bot.username}
-                        </p>
-                        <p className="text-xs text-gray-500">@{bot.username}</p>
-                        <p className="text-xs text-gray-400">
-                          {botScopeText(bot.scope)} · Owner: {botOwnerText(bot)}
-                        </p>
-                        <div className="mt-1">
-                          <BotOnlinePill bot={bot} />
-                        </div>
-                        {bot.intro && (
-                          <p className="text-xs text-gray-400 truncate max-w-[200px]">{bot.intro}</p>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => addBot(bot.bot_id)}
-                      disabled={addingBotId === bot.bot_id}
-                      className="px-3 py-1.5 text-xs bg-[#2EB67D] text-white rounded hover:bg-[#27a36e] disabled:opacity-50 whitespace-nowrap"
-                    >
-                      {addingBotId === bot.bot_id ? "添加中..." : "添加"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )
+            <SearchPicker
+              context="channel_invite_bot"
+              token={userToken}
+              channelId={channelId}
+              modal
+              placeholder="搜索 Bot"
+              actionLabel={(selection) => {
+                if (selection.type !== "bot") return null;
+                return addingBotId === selection.item.bot_id ? "添加中" : "添加";
+              }}
+              onSelect={(selection) => {
+                if (selection.type === "bot") addBot(selection.item.bot_id);
+              }}
+            />
           )}
         </div>
       </div>

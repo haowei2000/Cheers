@@ -10,7 +10,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { defineChannelPluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/channel-core";
 import { getSessionBindingService } from "openclaw/plugin-sdk/conversation-runtime";
 
-import { agentnexusPlugin, setSharedApi, getSharedApi, type ResolvedAccount } from "./plugin.js";
+import {
+  agentnexusPlugin,
+  emitRunTrace,
+  getSharedApi,
+  installAgentEventForwarder,
+  registerOpenClawRunTrace,
+  setSharedApi,
+  type ResolvedAccount,
+} from "./plugin.js";
 
 const INBOUND_PATH = "/plugins/agentnexus/inbound";
 
@@ -57,6 +65,7 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
     const port = resolveGatewayPort(api);
     const gatewayToken = resolveGatewayToken(api);
     setSharedApi(api, port, internalToken, gatewayToken);
+    installAgentEventForwarder(api);
 
     api.logger.info(
       `agentnexus: registerFull registered HTTP route ${INBOUND_PATH} port=${port} gatewayTokenConfigured=${Boolean(gatewayToken)}`,
@@ -102,6 +111,17 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
 
         // 此 handler 运行在 gateway-request-scope —— subagent.run + session-binding 合法
         try {
+          // runId normally equals idempotencyKey (= taskId). Register before
+          // subagent.run so early lifecycle events have a target to forward to.
+          registerOpenClawRunTrace({
+            runId: body.taskId,
+            accountId: body.accountId,
+            sessionKey: body.sessionKey,
+            channelId: body.channelId,
+            taskId: body.taskId,
+            placeholderMsgId: body.placeholderMsgId ?? null,
+          });
+
           // Step 1: session binding（承诺 sessionKey → conversation）
           await getSessionBindingService().bind({
             targetSessionKey: body.sessionKey,
@@ -140,6 +160,25 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
             deliver: true,
             idempotencyKey: body.taskId,
           });
+          if (runId !== body.taskId) {
+            registerOpenClawRunTrace({
+              runId,
+              accountId: body.accountId,
+              sessionKey: body.sessionKey,
+              channelId: body.channelId,
+              taskId: body.taskId,
+              placeholderMsgId: body.placeholderMsgId ?? null,
+            });
+          }
+          emitRunTrace(runId, {
+            stream: "agentnexus_plugin",
+            ts: Date.now(),
+            phase: "subagent_run_started",
+            status: "running",
+            title: "OpenClaw run started",
+            message: `runId=${runId}`,
+            data: { runId },
+          });
           api.logger.info(
             `agentnexus: inbound→subagent.run runId=${runId} sk=${body.sessionKey} task=${body.taskId}`,
           );
@@ -147,6 +186,14 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ ok: true, runId }));
         } catch (err) {
+          emitRunTrace(body.taskId, {
+            stream: "agentnexus_plugin",
+            ts: Date.now(),
+            phase: "subagent_run_error",
+            status: "failed",
+            title: "OpenClaw run failed",
+            message: String(err),
+          });
           api.logger.error(`agentnexus: subagent.run failed: ${String(err)}`);
           res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");
@@ -174,6 +221,7 @@ export type {
   SendAckErr,
   TriggerMessage,
   AttachmentInfo,
+  TraceFrame,
   ResumeFrame,
   ResumeAck,
 } from "./types.js";

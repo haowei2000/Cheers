@@ -51,6 +51,7 @@ async def test_bot_list_and_update_exposes_http_model_template_binding(
         bot_id="binding-bot-0001",
         username="binding_bot",
         display_name="Binding Bot",
+        avatar_url="https://cdn.example.test/binding.png",
         model_id=model_one.model_id,
         template_id=template_one.template_id,
         status="online",
@@ -65,11 +66,13 @@ async def test_bot_list_and_update_exposes_http_model_template_binding(
     listed = next(item for item in list_resp.json()["data"] if item["bot_id"] == bot.bot_id)
     assert listed["model_id"] == model_one.model_id
     assert listed["template_id"] == template_one.template_id
+    assert listed["avatar_url"] == "https://cdn.example.test/binding.png"
 
     update_resp = await client.put(
         f"/api/v1/bots/{bot.bot_id}",
         json={
             "display_name": "Binding Bot Updated",
+            "avatar_url": "https://cdn.example.test/binding-updated.png",
             "model_id": model_two.model_id,
             "template_id": template_two.template_id,
         },
@@ -78,10 +81,18 @@ async def test_bot_list_and_update_exposes_http_model_template_binding(
     assert update_resp.status_code == 200
     updated = update_resp.json()["data"]
     assert updated["display_name"] == "Binding Bot Updated"
+    assert updated["avatar_url"] == "https://cdn.example.test/binding-updated.png"
     assert updated["model_id"] == model_two.model_id
     assert updated["template_id"] == template_two.template_id
     assert updated["model_name"] == model_two.name
     assert updated["template_name"] == template_two.name
+
+    clear_resp = await client.put(
+        f"/api/v1/bots/{bot.bot_id}",
+        json={"avatar_url": None},
+    )
+    assert clear_resp.status_code == 200
+    assert clear_resp.json()["data"]["avatar_url"] is None
 
 
 @pytest.mark.asyncio
@@ -131,3 +142,35 @@ async def test_system_admin_can_list_and_rebind_builtin_bot(
 
     delete_resp = await client.delete(f"/api/v1/bots/{GUIDE_BOT_ID}")
     assert delete_resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_bot_persists_avatar_url(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    model = _model("avatar-model-0001", "Avatar Model")
+    template = _template("avatar-template-0001", "Avatar Template")
+    db_session.add_all([model, template])
+    await db_session.flush()
+
+    create_resp = await client.post(
+        "/api/v1/bots",
+        json={
+            "username": "avatar_bot",
+            "display_name": "Avatar Bot",
+            "model_id": model.model_id,
+            "template_id": template.template_id,
+            "avatar_url": "https://cdn.example.test/avatar-bot.png",
+            "binding_type": "http",
+        },
+    )
+
+    assert create_resp.status_code == 200
+    created = create_resp.json()["data"]
+    assert created["avatar_url"] == "https://cdn.example.test/avatar-bot.png"
+
+    list_resp = await client.get("/api/v1/bots")
+    assert list_resp.status_code == 200
+    listed = next(item for item in list_resp.json()["data"] if item["bot_id"] == created["bot_id"])
+    assert listed["avatar_url"] == "https://cdn.example.test/avatar-bot.png"

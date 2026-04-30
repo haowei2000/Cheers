@@ -192,6 +192,45 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_secret_message_content_stores_msg_id_reference(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """加密消息正文入库为带 msg_id 的引用，便于后续定位解密对象。"""
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000022", name="W22")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000022",
+        workspace_id=ws.workspace_id,
+        name="secret-ref-ch",
+        type="public",
+    )
+    db_session.add_all([ws, ch])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages",
+        json={
+            "content": "@bot 这是一条加密消息",
+            "sender_id": "ignored",
+            "sender_type": "user",
+            "is_secret": True,
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    expected = f"🔒 [加密消息:{data['msg_id']}]"
+    assert data["content"] == expected
+    assert data["secret_token"]
+
+    resp2 = await client.get(f"/api/v1/channels/{ch.channel_id}/messages")
+    assert resp2.status_code == 200
+    listed = resp2.json()["data"][0]
+    assert listed["msg_id"] == data["msg_id"]
+    assert listed["content"] == expected
+
+
+@pytest.mark.asyncio
 async def test_create_message_uses_authenticated_user_identity(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
