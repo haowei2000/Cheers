@@ -23,7 +23,7 @@ from app.repositories.channel_repo import ChannelRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
 from app.services.bot_service import BotService, bot_scope
-from app.utils.permissions import is_admin
+from app.utils.permissions import are_accepted_friends, is_admin, is_blocked_between
 
 CHANNEL_ADMIN_ROLES = {"owner", "admin"}
 CHANNEL_MEMBER_ROLES = CHANNEL_ADMIN_ROLES | {"member"}
@@ -82,6 +82,14 @@ class ChannelService:
             other = await self.bot_repo.get_by_id(other_id)
         if not other:
             raise NotFoundError("DM counterparty not found")
+
+        if other_type == "user":
+            if await is_blocked_between(self.session, current_user.user_id, other_id):
+                raise ForbiddenError("无法与该用户发起私信")
+            if not is_admin(current_user) and not await are_accepted_friends(
+                self.session, current_user.user_id, other_id
+            ):
+                raise ForbiddenError("只能与好友发起私信")
 
         # Look for an existing DM channel with exactly these two members.
         from sqlalchemy.orm import aliased
@@ -325,6 +333,35 @@ class ChannelService:
         """Public access guard for routes that expose channel-scoped data."""
         await self.get_or_404(channel_id)
         await self._require_channel_member(channel_id, user)
+
+    async def require_can_send_message(self, channel_id: str, user: User) -> None:
+        """Guard message sends, adding DM-specific friendship/privacy rules."""
+        channel = await self.get_or_404(channel_id)
+        if channel.type != "dm":
+            await self._require_channel_member(channel_id, user)
+            return
+
+        membership = await self.repo.get_membership(channel_id, user.user_id)
+        if not membership or membership.member_type != "user":
+            raise ForbiddenError("您不是该私信成员")
+
+        members = await self.repo.list_memberships(channel_id)
+        other = next(
+            (
+                m for m in members
+                if not (m.member_id == user.user_id and m.member_type == "user")
+            ),
+            None,
+        )
+        if not other:
+            raise ForbiddenError("私信成员异常")
+        if other.member_type == "system":
+            raise ForbiddenError("系统通知会话不能直接发送消息")
+        if other.member_type == "user":
+            if await is_blocked_between(self.session, user.user_id, other.member_id):
+                raise ForbiddenError("无法向该用户发送私信")
+            if not is_admin(user) and not await are_accepted_friends(self.session, user.user_id, other.member_id):
+                raise ForbiddenError("只能与好友发送私信")
 
     async def _is_workspace_admin(self, channel: Channel, user: User) -> bool:
         wm = await self.ws_repo.get_membership(channel.workspace_id, user.user_id)

@@ -3,6 +3,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Friendship, User
+from app.repositories.friendship_repo import friendship_pair_key
 
 
 def is_admin(user: User) -> bool:
@@ -27,6 +28,23 @@ async def get_friend_ids(session: AsyncSession, user_id: str) -> set[str]:
         else:
             ids.add(f.user_id)
     return ids
+
+
+async def get_friendship_between(session: AsyncSession, user_id1: str, user_id2: str) -> Friendship | None:
+    result = await session.execute(
+        select(Friendship).where(Friendship.pair_key == friendship_pair_key(user_id1, user_id2))
+    )
+    return result.scalar_one_or_none()
+
+
+async def are_accepted_friends(session: AsyncSession, user_id1: str, user_id2: str) -> bool:
+    friendship = await get_friendship_between(session, user_id1, user_id2)
+    return bool(friendship and friendship.status == "accepted")
+
+
+async def is_blocked_between(session: AsyncSession, user_id1: str, user_id2: str) -> bool:
+    friendship = await get_friendship_between(session, user_id1, user_id2)
+    return bool(friendship and friendship.status == "blocked")
 
 
 async def can_access(

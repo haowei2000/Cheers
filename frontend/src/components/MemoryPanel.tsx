@@ -1612,7 +1612,22 @@ function MembersView({
   }
 
   return (
-    <div className="an-members-list overflow-y-auto">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {canInvite && (
+        <div
+          className="px-3 py-2"
+          style={{ borderBottom: "1px solid var(--border)" }}
+        >
+          <InviteMemberSearch
+            channelId={channelId}
+            members={members}
+            canInviteMembers={canInviteMembers}
+            canAddBots={canAddBots}
+            onInvited={onMembersChanged}
+          />
+        </div>
+      )}
+      <div className="an-members-list min-h-0 flex-1 overflow-y-auto">
       {bots.length > 0 && (
         <>
           <div className="an-mem-group">
@@ -1712,6 +1727,7 @@ function MembersView({
           })}
         </>
       )}
+      </div>
     </div>
   );
 }
