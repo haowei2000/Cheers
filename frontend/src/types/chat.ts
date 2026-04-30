@@ -4,6 +4,7 @@ export type Workspace = {
   /** "team" (shared workspace with channels) or "personal" (per-user,
    *  auto-provisioned, hosts DMs only). Defaults to "team" server-side. */
   kind?: "team" | "personal";
+  avatar_url?: string | null;
 };
 
 export type Channel = {

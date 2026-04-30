@@ -10,6 +10,7 @@ import {
 import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
+import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
 
 type SearchResultsPayload = {
   q: string;
@@ -58,7 +59,7 @@ interface SidebarProps {
   onLoginClick: () => void;
 
   workspaces: Workspace[];
-  setWorkspaces: (w: Workspace[]) => void;
+  setWorkspaces: React.Dispatch<React.SetStateAction<Workspace[]>>;
   selectedWorkspaceId: string;
   setSelectedWorkspaceId: (id: string) => void;
   /** True iff the active workspace is the Personal workspace — hides the
@@ -126,8 +127,10 @@ export function Sidebar({
   const currentWsLabel = currentWs ? currentWs.name : "全部工作空间";
   const currentWsLetter = currentWs ? currentWs.name.slice(0, 1).toUpperCase() : "∗";
   const currentWsAccent = currentWs ? wsColor(currentWs.workspace_id) : "var(--accent)";
+  const currentWsAvatarUrl = currentWs?.avatar_url || "";
 
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const wsMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!wsMenuOpen) return;
@@ -140,7 +143,8 @@ export function Sidebar({
     return () => document.removeEventListener("mousedown", handler);
   }, [wsMenuOpen]);
 
-  const userInitial = currentUser?.display_name?.slice(0, 1)?.toUpperCase() || "?";
+  const userInitial =
+    (currentUser?.display_name || currentUser?.username || "?").slice(0, 1).toUpperCase();
   const userColor = currentUser
     ? wsColor(currentUser.user_id || currentUser.display_name || "u")
     : "var(--accent)";
@@ -295,6 +299,7 @@ export function Sidebar({
   };
 
   return (
+    <>
     <aside
       className={`an-rail flex flex-col flex-shrink-0 ${isMobile ? "fixed inset-y-0 left-0 z-[60] shadow-2xl transition-transform duration-300 ease-in-out" : "relative"}`}
       style={{
@@ -312,12 +317,21 @@ export function Sidebar({
           className="flex items-center gap-2 flex-1 min-w-0 relative"
           ref={wsMenuRef}
         >
-          <span
-            className="an-ws-letter"
-            style={{ background: currentWsAccent }}
-          >
-            {currentWsLetter}
-          </span>
+          {currentWsAvatarUrl ? (
+            <img
+              src={currentWsAvatarUrl}
+              alt={currentWsLabel}
+              className="an-ws-letter"
+              style={{ objectFit: "cover", background: "var(--surface-soft)" }}
+            />
+          ) : (
+            <span
+              className="an-ws-letter"
+              style={{ background: currentWsAccent }}
+            >
+              {currentWsLetter}
+            </span>
+          )}
           <span
             className="truncate flex-1"
             style={{
@@ -348,6 +362,19 @@ export function Sidebar({
               style={{ right: 0, top: "calc(100% + 4px)", minWidth: 180 }}
               role="menu"
             >
+              <button
+                type="button"
+                className="an-menu-item"
+                onClick={() => {
+                  setWsMenuOpen(false);
+                  setWorkspaceSettingsOpen(true);
+                }}
+              >
+                <span className="an-mi-ico inline-flex w-4 h-4">
+                  <Cog6ToothIcon className="w-full h-full" />
+                </span>
+                <span>编辑工作空间</span>
+              </button>
               <button
                 type="button"
                 className="an-menu-item"
@@ -760,9 +787,18 @@ export function Sidebar({
       <div className="an-rail-foot">
         {currentUser ? (
           <>
-            <div className="an-av" style={{ background: userColor }}>
-              {userInitial}
-            </div>
+            {currentUser.avatar_url ? (
+              <img
+                src={currentUser.avatar_url}
+                alt={currentUser.display_name || currentUser.username}
+                className="an-av"
+                style={{ objectFit: "cover", background: "var(--surface-soft)" }}
+              />
+            ) : (
+              <div className="an-av" style={{ background: userColor }}>
+                {userInitial}
+              </div>
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="an-n truncate">{currentUser.display_name}</div>
               <div className="an-s">online</div>
@@ -797,5 +833,17 @@ export function Sidebar({
         />
       )}
     </aside>
+    <WorkspaceSettingsModal
+      open={workspaceSettingsOpen}
+      workspace={currentWs ?? null}
+      authToken={authToken}
+      onClose={() => setWorkspaceSettingsOpen(false)}
+      onSaved={(updated) =>
+        setWorkspaces((prev) =>
+          prev.map((w) => (w.workspace_id === updated.workspace_id ? updated : w)),
+        )
+      }
+    />
+    </>
   );
 }
