@@ -464,6 +464,7 @@ export default function App() {
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [newWorkspaceAvatarUrl, setNewWorkspaceAvatarUrl] = useState("");
   const [inviteWsMemberOpen, setInviteWsMemberOpen] = useState(false);
   const [inviteWsIdentifier, setInviteWsIdentifier] = useState("");
   const [newChannelName, setNewChannelName] = useState("");
@@ -516,13 +517,17 @@ export default function App() {
     }
     authFetch(`${API}/workspaces`, {
       method: "POST",
-      body: JSON.stringify({ name: newWorkspaceName.trim() }),
+      body: JSON.stringify({
+        name: newWorkspaceName.trim(),
+        avatar_url: newWorkspaceAvatarUrl.trim() || null,
+      }),
     })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
           toast.success("工作空间创建成功");
           setNewWorkspaceName("");
+          setNewWorkspaceAvatarUrl("");
           setCreateWsOpen(false);
           refreshWorkspaces(setWorkspaces, authToken ?? undefined);
           setSelectedWorkspaceId(d.data.workspace_id);
@@ -2059,6 +2064,8 @@ export default function App() {
             setCurrentUser({
               ...currentUser,
               display_name: data.display_name,
+              bio: data.bio ?? currentUser.bio,
+              avatar_url: data.avatar_url ?? null,
             });
           }}
           onLogout={handleLogout}
@@ -2075,6 +2082,8 @@ export default function App() {
           open={createWsOpen}
           value={newWorkspaceName}
           onChange={setNewWorkspaceName}
+          avatarUrl={newWorkspaceAvatarUrl}
+          onAvatarUrlChange={setNewWorkspaceAvatarUrl}
           onSubmit={handleCreateWorkspace}
           onClose={() => setCreateWsOpen(false)}
         />
@@ -2943,9 +2952,13 @@ export default function App() {
                             : undefined;
                         const userLabel =
                           m.sender_name ||
-                          senderUser?.display_name ||
-                          senderUser?.username ||
+                          (isOwn
+                            ? currentUser?.display_name || currentUser?.username
+                            : senderUser?.display_name || senderUser?.username) ||
                           "用户";
+                        const userAvatarUrl = isOwn
+                          ? currentUser?.avatar_url
+                          : senderUser?.avatar_url;
                         const userInitials = userLabel
                           .slice(0, 1)
                           .toUpperCase();
@@ -2998,6 +3011,12 @@ export default function App() {
                                     avatarUrl={senderBot?.avatar_url}
                                     size={36}
                                     className="mt-0.5"
+                                  />
+                                ) : userAvatarUrl ? (
+                                  <img
+                                    src={userAvatarUrl}
+                                    alt={userLabel}
+                                    className="w-9 h-9 rounded-xl object-cover select-none mt-0.5"
                                   />
                                 ) : (
                                   <div
@@ -3351,6 +3370,12 @@ export default function App() {
                                   label={botLabel}
                                   avatarUrl={senderBot?.avatar_url}
                                   size={32}
+                                />
+                              ) : userAvatarUrl ? (
+                                <img
+                                  src={userAvatarUrl}
+                                  alt={userLabel}
+                                  className="w-8 h-8 rounded-xl object-cover select-none"
                                 />
                               ) : (
                                 <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">
@@ -3928,7 +3953,9 @@ export default function App() {
                                 color: isSelf
                                   ? "var(--accent)"
                                   : "var(--fg-3)",
-                                avatarUrl: u?.avatar_url,
+                                avatarUrl: isSelf
+                                  ? currentUser?.avatar_url || undefined
+                                  : u?.avatar_url || undefined,
                                 initial: isSelf
                                   ? "我"
                                   : label.slice(0, 1).toUpperCase(),

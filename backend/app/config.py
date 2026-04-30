@@ -42,6 +42,8 @@ class Settings(BaseSettings):
         "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000
+    avatar_upload_max_bytes: int = 2 * 1024 * 1024
+    avatar_upload_allowed_types: str = "image/png,image/jpeg,image/webp,image/gif"
 
     # JWT 认证
     jwt_secret_key: str = ""  # 留空则启动时自动生成（非持久化），建议在 .env 中配置

@@ -46,7 +46,10 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         user_id: userInfo.user_id,
         username: userInfo.username,
         display_name: userInfo.display_name || userInfo.username,
+        email: userInfo.email ?? null,
         role: userInfo.role,
+        avatar_url: userInfo.avatar_url ?? null,
+        bio: userInfo.bio ?? null,
       };
       const token: string =
         payload.access_token || payload.token || userInfo.user_id;
@@ -122,7 +125,10 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         user_id: userInfo.user_id,
         username: userInfo.username,
         display_name: userInfo.display_name || userInfo.username,
+        email: userInfo.email ?? null,
         role: userInfo.role,
+        avatar_url: userInfo.avatar_url ?? null,
+        bio: userInfo.bio ?? null,
       };
       const token: string =
         loginPayload.access_token || loginPayload.token || userInfo.user_id;
