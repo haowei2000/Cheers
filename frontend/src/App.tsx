@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import NotificationPanel from "./NotificationPanel";
+import ChannelMembersModal from "./ChannelMembersModal";
 import MemoryPage from "./MemoryPage";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
@@ -34,7 +35,6 @@ import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberMo
 import { CreateChannelModal } from "./components/CreateChannelModal";
 import { OpenClawQcModal } from "./components/OpenClawQcModal";
 import { ChannelProfileModal } from "./components/ChannelProfileModal";
-import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
 import { QaSummaryModal } from "./components/QaSummaryModal";
 import { ImageGenModal } from "./components/ImageGenModal";
 import { Sidebar } from "./components/Sidebar";
@@ -436,7 +436,7 @@ export default function App() {
   const [allBots, setAllBots] = useState<BotItem[]>([]);
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
-  const [channelSettingsOpen, setChannelSettingsOpen] = useState(false);
+  const [manageMembersOpen, setManageMembersOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
   const [channelProfileOpen, setChannelProfileOpen] = useState(false);
@@ -840,7 +840,7 @@ export default function App() {
               typeof msg.data.content === "string" &&
               msg.data.content.includes("已更新记忆层")
             ) {
-              authFetch(`${API}/channels/${selectedId}/context`)
+              fetch(`${API}/channels/${selectedId}/context`)
                 .then((r) => r.json())
                 .then((d) => d.data && setContextData(d.data))
                 .catch(() => {});
@@ -876,7 +876,7 @@ export default function App() {
               typeof content === "string" &&
               content.includes("已更新记忆层")
             ) {
-              authFetch(`${API}/channels/${selectedId}/context`)
+              fetch(`${API}/channels/${selectedId}/context`)
                 .then((r) => r.json())
                 .then((d) => d.data && setContextData(d.data))
                 .catch(() => {});
@@ -984,12 +984,12 @@ export default function App() {
 
   useEffect(() => {
     if ((memoryPanelOpen || memoryPageOpen) && selectedId) {
-      authFetch(`${API}/channels/${selectedId}/context`)
+      fetch(`${API}/channels/${selectedId}/context`)
         .then((r) => r.json())
         .then((d) => d.data && setContextData(d.data))
         .catch(console.error);
     }
-  }, [authFetch, memoryPanelOpen, memoryPageOpen, selectedId]);
+  }, [memoryPanelOpen, memoryPageOpen, selectedId]);
 
   useEffect(() => {
     if (addBotOpen) {
@@ -2196,22 +2196,15 @@ export default function App() {
           onNavigate={handleNotifNavigate}
         />
 
-        {/* 频道设置 */}
+        {/* 频道成员管理模态框 */}
         {selectedId && (
-          <ChannelSettingsModal
-            open={channelSettingsOpen}
-            channel={selectedChannel}
+          <ChannelMembersModal
+            channelId={selectedId}
+            channelName={selectedChannel?.name || ""}
             currentUserId={currentUserId}
-            userToken={authToken}
-            onClose={() => setChannelSettingsOpen(false)}
-            onSaved={(updated) => {
-              setChannels((prev) =>
-                prev.map((c) =>
-                  c.channel_id === updated.channel_id ? { ...c, ...updated } : c,
-                ),
-              );
-              setAutoAssist(Boolean(updated.auto_assist));
-            }}
+            userToken={authToken ?? undefined}
+            isOpen={manageMembersOpen}
+            onClose={() => setManageMembersOpen(false)}
           />
         )}
 
@@ -2336,6 +2329,7 @@ export default function App() {
               <>
                 <ChannelHeader
                   channel={selectedChannel}
+                  selectedId={selectedId}
                   activeDm={
                     selectedId
                       ? dms.find((d) => d.channel_id === selectedId) ?? null
@@ -2344,7 +2338,9 @@ export default function App() {
                   isMobile={isMobile}
                   onOpenSidebar={() => setSidebarOpen(true)}
                   autoAssist={autoAssist}
-                  onOpenChannelSettings={() => setChannelSettingsOpen(true)}
+                  setAutoAssist={setAutoAssist}
+                  authToken={authToken}
+                  setChannels={setChannels}
                   blockPairsForExport={blockPairsForExport}
                   onOpenQaSummary={() => {
                     setSelectedQaIds(
@@ -2360,6 +2356,7 @@ export default function App() {
                   }}
                   memoryTab={memoryTab}
                   onSetMemoryTab={setMemoryTab}
+                  onOpenManageMembers={() => setManageMembersOpen(true)}
                   currentUser={currentUser}
                   onOpenChannelProfile={() => setChannelProfileOpen(true)}
                   onOpenAnnouncementComposer={

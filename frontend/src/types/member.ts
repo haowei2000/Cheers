@@ -1,8 +1,6 @@
 export type MemberItem = {
   member_id: string;
   member_type: string;
-  role?: "owner" | "admin" | "member" | string;
-  added_by?: string | null;
   username?: string;
   display_name?: string;
   avatar_url?: string;

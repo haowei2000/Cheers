@@ -5,13 +5,14 @@ import {
   CheckCircleIcon,
   ChatBubbleLeftEllipsisIcon,
   ChatBubbleLeftRightIcon,
-  Cog6ToothIcon,
   DocumentTextIcon,
   MegaphoneIcon,
   UserIcon,
+  UserPlusIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
 import type { Channel, CurrentUser, DM, QaPair } from "../types";
+import { apiFetch } from "../api";
 
 export type TopicSummary = {
   rootId: string;
@@ -59,6 +60,7 @@ export const MEMORY_TABS: {
 
 interface ChannelHeaderProps {
   channel: Channel | undefined | null;
+  selectedId: string | null;
   /** When the active channel is a DM, this carries the counterparty info so
    *  the header can render "@display_name" instead of the raw dm:uuid:uuid. */
   activeDm?: DM | null;
@@ -66,13 +68,17 @@ interface ChannelHeaderProps {
   onOpenSidebar: () => void;
 
   autoAssist: boolean;
-  onOpenChannelSettings: () => void;
+  setAutoAssist: (v: boolean) => void;
+  authToken: string | null;
+  setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
 
   blockPairsForExport: QaPair[];
   onOpenQaSummary: () => void;
 
   memoryTab: MemoryTab | null;
   onSetMemoryTab: (tab: MemoryTab | null) => void;
+
+  onOpenManageMembers: () => void;
 
   currentUser: CurrentUser;
   onOpenChannelProfile: () => void;
@@ -93,15 +99,19 @@ interface ChannelHeaderProps {
 
 export function ChannelHeader({
   channel,
+  selectedId,
   activeDm,
   isMobile,
   onOpenSidebar,
   autoAssist,
-  onOpenChannelSettings,
+  setAutoAssist,
+  authToken,
+  setChannels,
   blockPairsForExport,
   onOpenQaSummary,
   memoryTab,
   onSetMemoryTab,
+  onOpenManageMembers,
   currentUser,
   onOpenChannelProfile,
   onOpenAnnouncementComposer,
@@ -162,6 +172,63 @@ export function ChannelHeader({
           <span className="an-sub truncate hidden sm:inline">{subtitle}</span>
         )}
       </div>
+
+      {/* Auto-assist toggle — h-7 reserves the same 28px row height as the
+          threads pill / memory cluster / icon buttons so the header sits on
+          one visual baseline. */}
+      <label
+        className="flex items-center gap-1.5 cursor-pointer select-none flex-shrink-0 h-7"
+        title={
+          autoAssist ? "自动调用内置助手（开启中）" : "自动调用内置助手（关闭）"
+        }
+      >
+        <span
+          className="text-[11px] whitespace-nowrap hidden sm:inline"
+          style={{ color: "var(--fg-3)" }}
+        >
+          自动接管
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={autoAssist}
+          onClick={() => {
+            const next = !autoAssist;
+            setAutoAssist(next);
+            apiFetch(`/channels/${selectedId}`, {
+              method: "PATCH",
+              body: { auto_assist: next },
+              token: authToken,
+            })
+              .then((r) => r.json())
+              .then((d) => {
+                if (d.data) {
+                  setChannels((prev) =>
+                    prev.map((c) =>
+                      c.channel_id === selectedId
+                        ? { ...c, auto_assist: d.data.auto_assist }
+                        : c,
+                    ),
+                  );
+                }
+              })
+              .catch(() => setAutoAssist(!next));
+          }}
+          className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none"
+          style={{
+            background: autoAssist
+              ? "var(--accent)"
+              : "var(--surface-strong)",
+          }}
+        >
+          <span
+            className="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+            style={{
+              transform: autoAssist ? "translateX(18px)" : "translateX(3px)",
+            }}
+          />
+        </button>
+      </label>
 
       {/* Topics pill */}
       {topics.length > 0 && (
@@ -258,17 +325,15 @@ export function ChannelHeader({
           <ChatBubbleLeftRightIcon className="w-4 h-4" />
         </button>
       )}
-      {!activeDm && channel && (
-        <button
-          type="button"
-          onClick={onOpenChannelSettings}
-          title="频道设置"
-          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
-          style={{ color: "var(--fg-3)" }}
-        >
-          <Cog6ToothIcon className="w-4 h-4" />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={onOpenManageMembers}
+        title="成员管理"
+        className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+        style={{ color: "var(--fg-3)" }}
+      >
+        <UserPlusIcon className="w-4 h-4" />
+      </button>
       {currentUser && (
         <button
           type="button"
