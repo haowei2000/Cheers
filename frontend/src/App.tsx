@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import NotificationPanel from "./NotificationPanel";
-import MemoryPage from "./MemoryPage";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
@@ -33,7 +32,6 @@ import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
 import { CreateChannelModal } from "./components/CreateChannelModal";
 import { OpenClawQcModal } from "./components/OpenClawQcModal";
-import { ChannelProfileModal } from "./components/ChannelProfileModal";
 import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
 import { ImageGenModal } from "./components/ImageGenModal";
 import { Sidebar } from "./components/Sidebar";
@@ -48,7 +46,6 @@ import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
 import { TopicPage } from "./components/TopicPage";
 import { TaskPage } from "./components/TaskPage";
-import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { apiFetch, buildWsUrl } from "./api";
 import {
@@ -199,7 +196,6 @@ export default function App() {
   // Topic viewer: pageTopicId — root msg_id for the full-page view,
   // mirrored to URL hash. There is no side-dock panel; opening a topic
   // always replaces the channel stream with the dedicated page.
-  const [announcementOpen, setAnnouncementOpen] = useState(false);
   // Composer send-kind: 4 unified types — 普通 / 加密 / 公告 / 主题.
   // Switchable via Tab / Shift-Tab and the ‹ › buttons flanking the composer.
   // Always resets to "normal" after each send. "reply" is orthogonal —
@@ -260,7 +256,6 @@ export default function App() {
     "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO" | null
   >(null);
   const memoryPanelOpen = memoryTab !== null;
-  const [memoryPageOpen, setMemoryPageOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
@@ -474,7 +469,6 @@ export default function App() {
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
-  const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
   );
@@ -1066,13 +1060,13 @@ export default function App() {
   }, [currentUserId, selectedId]);
 
   useEffect(() => {
-    if ((memoryPanelOpen || memoryPageOpen) && selectedId) {
+    if (memoryPanelOpen && selectedId) {
       authFetch(`${API}/channels/${selectedId}/context`)
         .then((r) => r.json())
         .then((d) => d.data && setContextData(d.data))
         .catch(console.error);
     }
-  }, [authFetch, memoryPanelOpen, memoryPageOpen, selectedId]);
+  }, [authFetch, memoryPanelOpen, selectedId]);
 
   useEffect(() => {
     if (addBotOpen) {
@@ -2047,16 +2041,6 @@ export default function App() {
           apiDocsUrl={API_DOCS_URL}
         />
 
-        <AnnouncementComposerModal
-          open={announcementOpen}
-          channelId={selectedId}
-          channelName={selectedChannel?.name}
-          currentUserId={currentUserId}
-          authToken={authToken}
-          onClose={() => setAnnouncementOpen(false)}
-          onPublished={() => toast.success("公告已发布")}
-        />
-
         <SettingsModal
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -2306,17 +2290,6 @@ export default function App() {
           />
         )}
 
-        {/* Channel profile modal */}
-        {currentUser && selectedId && (
-          <ChannelProfileModal
-            open={channelProfileOpen}
-            channelId={selectedId}
-            channelName={selectedChannel?.name || ""}
-            userToken={authToken!}
-            onClose={() => setChannelProfileOpen(false)}
-          />
-        )}
-
         <div className="flex-1 flex min-w-0">
           <main
             className="flex-1 flex flex-col min-w-0 relative"
@@ -2446,16 +2419,11 @@ export default function App() {
                   autoAssist={autoAssist}
                   onOpenChannelSettings={() => setChannelSettingsOpen(true)}
                   memoryTab={memoryTab}
-                  onSetMemoryTab={setMemoryTab}
-                  currentUser={currentUser}
-                  onOpenChannelProfile={() => setChannelProfileOpen(true)}
-                  onOpenAnnouncementComposer={
-                    // DMs don't get announcements — the megaphone would make
-                    // no sense in a 1:1 conversation.
-                    selectedChannel?.type === "dm"
-                      ? undefined
-                      : () => setAnnouncementOpen(true)
-                  }
+                  onSetMemoryTab={(tab) => {
+                    setTaskPageOpen(false);
+                    setPageTaskMsgId(null);
+                    setMemoryTab(tab);
+                  }}
                   topics={topicRoots
                     .map((r) => {
                       const replies = topicRepliesOf(r.msg_id);
@@ -2490,7 +2458,9 @@ export default function App() {
                   }}
                   onJumpToMessage={jumpToMessage}
                   taskCount={websocketTaskMessages.length}
+                  taskActive={taskPageOpen}
                   onOpenTasks={() => {
+                    setMemoryTab(null);
                     setPageTopicId(null);
                     setPageTaskMsgId(websocketTaskMessages[0]?.msg_id ?? null);
                     setTaskPageOpen(true);
@@ -5139,10 +5109,6 @@ export default function App() {
                   )
                 }
                 onClose={() => setMemoryTab(null)}
-                onExpand={() => {
-                  setMemoryPageOpen(true);
-                  setMemoryTab(null);
-                }}
               />
             </div>
           )}
@@ -5171,16 +5137,6 @@ export default function App() {
           )}
         </div>
       </div>
-
-      {/* Memory full-page overlay */}
-      {memoryPageOpen && selectedId && (
-        <MemoryPage
-          channelId={selectedId}
-          channelName={selectedChannel?.name ?? ""}
-          contextData={contextData}
-          onClose={() => setMemoryPageOpen(false)}
-        />
-      )}
 
       <ImageLightbox
         src={lightboxSrc}

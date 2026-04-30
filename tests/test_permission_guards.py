@@ -124,7 +124,7 @@ async def test_channel_settings_and_memory_writes_require_channel_admin(db_sessi
         member,
         "PATCH",
         f"/api/v1/channels/{ch.channel_id}/settings",
-        json={"auto_assist": True},
+        json={"auto_assist": True, "type": "private"},
     )
     assert denied_settings.status_code == 403
 
@@ -133,10 +133,12 @@ async def test_channel_settings_and_memory_writes_require_channel_admin(db_sessi
         admin,
         "PATCH",
         f"/api/v1/channels/{ch.channel_id}/settings",
-        json={"auto_assist": True},
+        json={"auto_assist": True, "type": "private"},
     )
     assert allowed_settings.status_code == 200
-    assert allowed_settings.json()["data"]["auto_assist"] is True
+    allowed_channel = allowed_settings.json()["data"]
+    assert allowed_channel["auto_assist"] is True
+    assert allowed_channel["type"] == "private"
 
     denied_memory = await _request_as(
         db_session,
