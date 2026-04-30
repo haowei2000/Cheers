@@ -196,7 +196,7 @@ async def get_channel_settings(
     await svc.require_channel_member(channel_id, current_user)
     ch = await svc.get_or_404(channel_id)
     perms = await svc.channel_permission_summary(ch, current_user)
-    members = await svc.list_members_with_details(channel_id)
+    members = await svc.list_members_with_details(channel_id, current_user)
     return APIResponse.ok(
         {
             "channel": (await _channel_response(svc, ch, current_user)).model_dump(),
@@ -240,7 +240,7 @@ async def list_members(
     svc = ChannelService(session)
     await svc.require_channel_member(channel_id, current_user)
     if with_username:
-        members = await svc.list_members_with_details(channel_id)
+        members = await svc.list_members_with_details(channel_id, current_user)
         return APIResponse.ok(members)
     memberships = await svc.repo.list_memberships(channel_id)
     return APIResponse.ok([
