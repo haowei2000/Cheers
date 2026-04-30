@@ -10,6 +10,7 @@ import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
+import { InviteMemberSearch } from "./InviteMemberSearch";
 
 const API = "/api/v1";
 
@@ -50,6 +51,10 @@ export function MemoryPanel({
 
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [memberPermissions, setMemberPermissions] = useState({
+    can_invite_members: false,
+    can_add_bots: false,
+  });
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [todosLoading, setTodosLoading] = useState(false);
   const [todoNewContent, setTodoNewContent] = useState("");
@@ -98,6 +103,9 @@ export function MemoryPanel({
   const meta = isProject ? PROJECT_META : LAYER_META[activeLayer];
   const isReadonly = !!meta.readonly;
   const isEntryBased = !!meta.entryBased;
+  const canInviteFromMembers =
+    activeLayer === "MEMBERS" &&
+    (memberPermissions.can_invite_members || memberPermissions.can_add_bots);
   const rawContent = isProject
     ? ""
     : contextData[activeLayer.toLowerCase()] ?? "";
@@ -154,6 +162,28 @@ export function MemoryPanel({
       .finally(() => setTodosLoading(false));
   };
 
+  const loadMembersForPanel = () => {
+    const token = getStoredToken();
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
+    setMembersLoading(true);
+    fetch(`${API}/channels/${channelId}/settings`, { headers })
+      .then((r) => r.json())
+      .then((d) => {
+        setMembers(d.data?.members || []);
+        setMemberPermissions({
+          can_invite_members: Boolean(d.data?.permissions?.can_invite_members),
+          can_add_bots: Boolean(d.data?.permissions?.can_add_bots),
+        });
+      })
+      .catch(() => {
+        setMembers([]);
+        setMemberPermissions({ can_invite_members: false, can_add_bots: false });
+      })
+      .finally(() => setMembersLoading(false));
+  };
+
   const switchLayer = (layer: string) => {
     setActiveLayer(layer);
     setEditingEntryId(null);
@@ -166,15 +196,7 @@ export function MemoryPanel({
       loadEntries(layer);
     }
     if (layer === "MEMBERS") {
-      const token = getStoredToken();
-      setMembersLoading(true);
-      fetch(`${API}/channels/${channelId}/members?with_username=1`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((r) => r.json())
-        .then((d) => setMembers(d.data || []))
-        .catch(() => {})
-        .finally(() => setMembersLoading(false));
+      loadMembersForPanel();
     }
     if (layer === "TODO") {
       loadTodos();
@@ -656,7 +678,7 @@ export function MemoryPanel({
               {entries.length} 条
             </span>
           )}
-          {isReadonly && activeLayer !== "TODO" && (
+          {isReadonly && activeLayer !== "TODO" && !canInviteFromMembers && (
             <span
               className="text-[10px] flex-shrink-0"
               style={{ color: "var(--fg-3)" }}
@@ -824,7 +846,13 @@ export function MemoryPanel({
               <p className="text-xs text-gray-500">暂无成员</p>
             </div>
           ) : (
-            <MembersView members={members} />
+            <MembersView
+              channelId={channelId}
+              members={members}
+              canInviteMembers={memberPermissions.can_invite_members}
+              canAddBots={memberPermissions.can_add_bots}
+              onMembersChanged={loadMembersForPanel}
+            />
           )
         ) : activeLayer === "FILES_INDEX" ? (
           channelFilesLoading ? (
@@ -1037,11 +1065,24 @@ function initialsFor(label: string): string {
   return (first + second).toUpperCase() || label.slice(0, 1).toUpperCase();
 }
 
-function MembersView({ members }: { members: MemberItem[] }) {
+function MembersView({
+  channelId,
+  members,
+  canInviteMembers,
+  canAddBots,
+  onMembersChanged,
+}: {
+  channelId: string;
+  members: MemberItem[];
+  canInviteMembers: boolean;
+  canAddBots: boolean;
+  onMembersChanged: () => void;
+}) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
 
   const bots = members.filter((m) => m.member_type === "bot");
   const users = members.filter((m) => m.member_type !== "bot");
+  const canInvite = canInviteMembers || canAddBots;
 
   if (selected) {
     const isBot = selected.member_type === "bot";
@@ -1155,7 +1196,22 @@ function MembersView({ members }: { members: MemberItem[] }) {
   }
 
   return (
-    <div className="an-members-list overflow-y-auto">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {canInvite && (
+        <div
+          className="px-3 py-2"
+          style={{ borderBottom: "1px solid var(--border)" }}
+        >
+          <InviteMemberSearch
+            channelId={channelId}
+            members={members}
+            canInviteMembers={canInviteMembers}
+            canAddBots={canAddBots}
+            onInvited={onMembersChanged}
+          />
+        </div>
+      )}
+      <div className="an-members-list min-h-0 flex-1 overflow-y-auto">
       {bots.length > 0 && (
         <>
           <div className="an-mem-group">
@@ -1235,6 +1291,7 @@ function MembersView({ members }: { members: MemberItem[] }) {
           })}
         </>
       )}
+      </div>
     </div>
   );
 }

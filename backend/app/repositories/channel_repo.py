@@ -77,8 +77,20 @@ class ChannelRepository:
         name: str,
         type: str = "public",
         purpose: str | None = None,
+        allow_member_invites: bool | None = None,
+        allow_bot_adds: bool | None = None,
     ) -> Channel:
-        ch = Channel(workspace_id=workspace_id, name=name, type=type, purpose=purpose)
+        kwargs = {
+            "workspace_id": workspace_id,
+            "name": name,
+            "type": type,
+            "purpose": purpose,
+        }
+        if allow_member_invites is not None:
+            kwargs["allow_member_invites"] = allow_member_invites
+        if allow_bot_adds is not None:
+            kwargs["allow_bot_adds"] = allow_bot_adds
+        ch = Channel(**kwargs)
         self.session.add(ch)
         await self.session.flush()
         return ch

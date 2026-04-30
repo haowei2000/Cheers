@@ -14,8 +14,12 @@ export type Channel = {
   workspace_id?: string;
   purpose?: string | null;
   auto_assist?: boolean;
+  allow_member_invites?: boolean;
+  allow_bot_adds?: boolean;
   my_role?: string | null;
   can_manage?: boolean;
+  can_invite_members?: boolean;
+  can_add_bots?: boolean;
   /** Count of messages in this channel that the caller has not yet read.
    *  Populated by the channel list endpoints; updated locally on select. */
   unread_count?: number;
