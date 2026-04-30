@@ -24,6 +24,7 @@ from app.core.schemas import (
     OpenClawQuickConnect,
 )
 from app.db.models import AIModel, BotAccount, BotRegistrationRequest, PromptTemplate, User, gen_uuid
+from app.services.adapters.builtin_registry import get_builtin_adapter
 from app.services.adapters.http_bot import HttpBotAdapter
 from app.services.bot_service import (
     BotService,
@@ -115,6 +116,25 @@ async def _test_bot_connection(
             "reachable": False,
             "duration_ms": 0,
             "message": "Bot 已停用，不会接收消息",
+        }
+
+    builtin_adapter = get_builtin_adapter(bot.bot_id)
+    if builtin_adapter is not None:
+        dependency_ready = await builtin_adapter.health_check()
+        reachable = True
+        return {
+            **base,
+            "adapter": type(builtin_adapter).__name__,
+            "connection_status": "online",
+            "is_online": True,
+            "reachable": reachable,
+            "dependency_ready": dependency_ready,
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+            "message": (
+                "内置 Bot 可接收消息，依赖配置正常"
+                if dependency_ready
+                else "内置 Bot 可接收消息；LLM 依赖未配置或不可用，回答能力可能受限"
+            ),
         }
 
     if binding_type == "websocket":
@@ -417,6 +437,20 @@ async def get_bot_online_status(
             "data_connected": None if binding_type == "http" else False,
         })
     if binding_type == "http":
+        builtin_adapter = get_builtin_adapter(bot.bot_id)
+        if builtin_adapter is not None:
+            dependency_ready = await builtin_adapter.health_check()
+            return APIResponse.ok({
+                **base,
+                "adapter": type(builtin_adapter).__name__,
+                "connection_status": "online",
+                "is_online": True,
+                "reachable": True,
+                "dependency_ready": dependency_ready,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "control_connected": None,
+                "data_connected": None,
+            })
         model = bot.ai_model or (await session.get(AIModel, bot.model_id) if bot.model_id else None)
         template = bot.prompt_template or (
             await session.get(PromptTemplate, bot.template_id) if bot.template_id else None
