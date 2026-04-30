@@ -2499,8 +2499,6 @@ export default function App() {
                   onOpenChannelSettings={() => setChannelSettingsOpen(true)}
                   memoryTab={memoryTab}
                   onSetMemoryTab={setMemoryTab}
-                  currentUser={currentUser}
-                  onOpenChannelProfile={() => setChannelProfileOpen(true)}
                   onOpenAnnouncementComposer={
                     // DMs don't get announcements — the megaphone would make
                     // no sense in a 1:1 conversation.
@@ -5319,6 +5317,8 @@ export default function App() {
                     l as "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO",
                   )
                 }
+                currentUserId={currentUserId}
+                onOpenChannelProfile={() => setChannelProfileOpen(true)}
                 onClose={() => setMemoryTab(null)}
                 onExpand={() => {
                   setMemoryPageOpen(true);
@@ -5359,6 +5359,7 @@ export default function App() {
           channelId={selectedId}
           channelName={selectedChannel?.name ?? ""}
           contextData={contextData}
+          currentUserId={currentUserId}
           onClose={() => setMemoryPageOpen(false)}
         />
       )}

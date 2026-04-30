@@ -156,6 +156,16 @@ export function ChannelSettingsModal({
     if (open) loadMemory(memoryLayer);
   }, [loadMemory, memoryLayer, open]);
 
+  const sortedMembers = members
+    .map((member, index) => ({ member, index }))
+    .sort((a, b) => {
+      const aSelf = a.member.member_id === currentUserId;
+      const bSelf = b.member.member_id === currentUserId;
+      if (aSelf !== bSelf) return aSelf ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map(({ member }) => member);
+
   const saveGeneral = async () => {
     if (!channelId || !canManage) return;
     setSaving(true);
@@ -449,7 +459,7 @@ export function ChannelSettingsModal({
               />
 
               <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
-                {members.map((member) => {
+                {sortedMembers.map((member) => {
                   const label = member.display_name || member.username || member.member_id;
                   const isUser = member.member_type === "user";
                   const canEditBotTemplate =
