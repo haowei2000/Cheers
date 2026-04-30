@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
 from app.db.models import TodoItem, User
+from app.services.channel_service import ChannelService
 
 router = APIRouter(prefix="/channels/{channel_id}/todos", tags=["todos"])
 
@@ -39,8 +40,10 @@ class TodoResponse(BaseModel):
 @router.get("/", response_model=List[TodoResponse])
 async def list_todos(
     channel_id: str,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
+    await ChannelService(db).require_channel_member(channel_id, current_user)
     stmt = select(TodoItem).where(TodoItem.channel_id == channel_id).order_by(TodoItem.created_at.desc())
     result = await db.execute(stmt)
     todos = result.scalars().all()
@@ -54,6 +57,7 @@ async def create_todo(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
+    await ChannelService(db).require_channel_member(channel_id, current_user)
     todo = TodoItem(
         channel_id=channel_id,
         creator_id=current_user.user_id,
@@ -76,6 +80,7 @@ async def update_todo(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
+    await ChannelService(db).require_channel_member(channel_id, current_user)
     todo = await db.get(TodoItem, todo_id)
     if not todo or todo.channel_id != channel_id:
         raise HTTPException(status_code=404, detail="Todo not found")
@@ -100,6 +105,7 @@ async def delete_todo(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
+    await ChannelService(db).require_channel_member(channel_id, current_user)
     todo = await db.get(TodoItem, todo_id)
     if not todo or todo.channel_id != channel_id:
         raise HTTPException(status_code=404, detail="Todo not found")
