@@ -659,15 +659,23 @@
   color: #fff;
   font-weight: 700;
   font-size: 14px;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   cursor: pointer;
   transition:
     border-radius var(--motion-fast),
     transform var(--motion-fast),
     box-shadow var(--motion-fast);
   position: relative;
+  overflow: hidden;
   flex-shrink: 0;
   font-family: inherit;
+}
+.an-wsr-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
 }
 .an-wsr-tile:hover {
   border-radius: 12px !important;

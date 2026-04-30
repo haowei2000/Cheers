@@ -59,6 +59,19 @@ class MessageStreamDelta(Event):
 
 
 @dataclass(slots=True)
+class BotTrace(Event):
+    """Transient bot progress/trace event; never persisted."""
+
+    data: dict
+
+    def to_ws_frame(self) -> dict:
+        return {"type": "bot_trace", "data": self.data}
+
+    def to_sse(self) -> tuple[str, dict]:
+        return "bot_trace", self.data
+
+
+@dataclass(slots=True)
 class BotProcessing(Event):
     """A bot has been picked and is about to start producing a reply."""
 
@@ -83,6 +96,8 @@ class MessageDone(Event):
     files: list[dict] | None = None
     is_partial: bool | None = None
     error: str | None = None
+    content_data: dict | None = None
+    clear_content_data: bool = False
 
     def _payload(self) -> dict:
         d: dict = {"msg_id": self.msg_id, "content": self.content}
@@ -90,6 +105,10 @@ class MessageDone(Event):
             d["is_partial"] = self.is_partial
         if self.error is not None:
             d["error"] = self.error
+        if self.content_data is not None:
+            d["content_data"] = self.content_data
+        elif self.clear_content_data:
+            d["content_data"] = None
         if self.file_ids is not None:
             d["file_ids"] = self.file_ids
         if self.files is not None:
