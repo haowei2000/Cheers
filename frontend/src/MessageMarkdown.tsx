@@ -128,14 +128,31 @@ function axisLimit(value: number, direction: "min" | "max"): string {
   return String(rounded > 0 ? rounded : 1);
 }
 
+function normalizeXyChartAxisRangeLine(line: string): string {
+  const number = "-?\\d+(?:\\.\\d+)?";
+  const axis = "\\s*(?:x-axis|y-axis)\\b";
+  const trailing = "(\\s*;?\\s*)$";
+  const noLabel = new RegExp(`^(${axis})\\s+(${number})\\s+(${number})${trailing}`, "i");
+  const withLabel = new RegExp(
+    `^(${axis}\\s+(?:"[^"]*"|'[^']*'|[^\\s]+))\\s+(${number})\\s+(${number})${trailing}`,
+    "i",
+  );
+  const match = noLabel.exec(line) || withLabel.exec(line);
+  if (!match) return line;
+  return `${match[1]} ${match[2]} --> ${match[3]}${match[4]}`;
+}
+
 function normalizeXyChartBeta(code: string): string {
-  const lines = code.split(/\r?\n/);
+  let lines = code.split(/\r?\n/);
   const chartIndex = lines.findIndex((line) => line.trim().length > 0);
   if (chartIndex < 0 || !/^xychart-beta\b/i.test(lines[chartIndex].trim())) return code;
+  const normalizedLines = lines.map(normalizeXyChartAxisRangeLine);
+  const axisRangeChanged = normalizedLines.some((line, index) => line !== lines[index]);
+  lines = normalizedLines;
 
   const hasXAxis = lines.some((line) => /^\s*x-axis\b/i.test(line));
   const hasYAxis = lines.some((line) => /^\s*y-axis\b/i.test(line));
-  if (hasXAxis && hasYAxis) return code;
+  if (hasXAxis && hasYAxis) return axisRangeChanged ? lines.join("\n") : code;
 
   const labelLineIndex = hasXAxis
     ? -1
@@ -164,7 +181,7 @@ function normalizeXyChartBeta(code: string): string {
     }
   }
 
-  if (insertLines.length === 0) return code;
+  if (insertLines.length === 0) return axisRangeChanged ? lines.join("\n") : code;
 
   let insertIndex = chartIndex + 1;
   while (insertIndex < nextLines.length && /^\s*(title|acc_title|acc_descr)\b/i.test(nextLines[insertIndex].trim())) {
