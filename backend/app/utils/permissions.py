@@ -38,15 +38,13 @@ async def can_access(
     """Return True if current_user may read this model.
 
     Access rules:
-    - Admin: always
+    - Ownerless/system model: always
     - Creator: always
-    - Others: only if is_public AND the creator is an accepted friend
+    - Others: never, even if legacy rows still have is_public=True
     """
-    if is_admin(current_user):
+    _ = session, is_public
+    if created_by is None:
         return True
     if created_by == current_user.user_id:
         return True
-    if is_public and created_by:
-        friend_ids = await get_friend_ids(session, current_user.user_id)
-        return created_by in friend_ids
     return False
