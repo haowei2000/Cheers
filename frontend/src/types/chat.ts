@@ -11,7 +11,10 @@ export type Channel = {
   name: string;
   type: string;
   workspace_id?: string;
+  purpose?: string | null;
   auto_assist?: boolean;
+  my_role?: string | null;
+  can_manage?: boolean;
   /** Count of messages in this channel that the caller has not yet read.
    *  Populated by the channel list endpoints; updated locally on select. */
   unread_count?: number;
