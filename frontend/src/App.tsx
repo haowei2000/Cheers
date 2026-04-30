@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import NotificationPanel from "./NotificationPanel";
 import ChannelMembersModal from "./ChannelMembersModal";
@@ -48,6 +48,7 @@ import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
 import { TopicPage } from "./components/TopicPage";
+import { TaskPage } from "./components/TaskPage";
 import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { apiFetch, buildWsUrl } from "./api";
@@ -83,11 +84,16 @@ import type {
   ChannelBot,
   ChannelUser,
   BotItem,
+  WebsocketTaskContentData,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
 
 const API = "/api/v1";
 const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
+const WEBSOCKET_TASK_KIND = "websocket_background_task";
+type WebsocketTaskMessage = Message & {
+  content_data: WebsocketTaskContentData;
+};
 const API_DOCS_URL = "/docs";
 
 function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status" | "is_online" | "status">) {
@@ -234,11 +240,17 @@ export default function App() {
     const m = /#topic=([^&]+)/.exec(location.hash || "");
     return m ? decodeURIComponent(m[1]) : null;
   });
+  const [taskPageOpen, setTaskPageOpen] = useState(false);
+  const [pageTaskMsgId, setPageTaskMsgId] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   useEffect(() => {
     selectedIdRef.current = selectedId;
+  }, [selectedId]);
+  useEffect(() => {
+    setTaskPageOpen(false);
+    setPageTaskMsgId(null);
   }, [selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -889,7 +901,14 @@ export default function App() {
                 m.msg_id === msg_id
                   ? {
                       ...m,
-                      content: m.content + delta,
+                      content:
+                        m.content_data?.kind === WEBSOCKET_TASK_KIND
+                          ? delta
+                          : m.content + delta,
+                      content_data:
+                        m.content_data?.kind === WEBSOCKET_TASK_KIND
+                          ? null
+                          : m.content_data,
                       _streaming: true,
                       _bot_status: undefined,
                     }
@@ -913,12 +932,25 @@ export default function App() {
             );
           } else if (msg.type === "message_done" && msg.data) {
             const { msg_id, content, files, file_ids, is_partial } = msg.data;
+            const hasContentData = Object.prototype.hasOwnProperty.call(
+              msg.data,
+              "content_data",
+            );
+            const nextContentData = hasContentData
+              ? msg.data.content_data
+              : undefined;
             setMessages((prev) =>
               prev.map((m) =>
                 m.msg_id === msg_id
                   ? {
                       ...m,
                       content,
+                      content_data:
+                        nextContentData !== undefined
+                          ? nextContentData
+                          : m.content_data?.kind === WEBSOCKET_TASK_KIND
+                            ? null
+                            : m.content_data,
                       _streaming: false,
                       _bot_status: undefined,
                       ...(files ? { files } : {}),
@@ -1461,6 +1493,104 @@ export default function App() {
           {m._bot_status}
         </span>
       </div>
+    );
+  };
+
+  const websocketTaskData = (m: Message): WebsocketTaskContentData | null => {
+    const data = m.content_data;
+    return data?.kind === WEBSOCKET_TASK_KIND
+      ? (data as WebsocketTaskContentData)
+      : null;
+  };
+
+  const websocketTaskMessages = useMemo(
+    () =>
+      messages.filter(
+        (m): m is WebsocketTaskMessage => websocketTaskData(m) !== null,
+      ),
+    [messages],
+  );
+
+  const jumpToMessage = useCallback((id: string) => {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const orig = el.style.transition;
+    el.style.transition = "background 200ms";
+    const prev = el.style.background;
+    el.style.background = "var(--accent-muted)";
+    setTimeout(() => {
+      el.style.background = prev;
+      el.style.transition = orig;
+    }, 1200);
+  }, []);
+
+  const renderWebsocketTaskCard = (m: Message) => {
+    const task = websocketTaskData(m);
+    if (!task) return null;
+    const title =
+      typeof task.title === "string" ? task.title : "后台任务进行中";
+    const message =
+      typeof task.message === "string"
+        ? task.message
+        : "OpenClaw 已接收任务，完成后会自动更新这条回复。";
+    const taskId =
+      typeof task.task_id === "string" ? task.task_id : m.task_id || null;
+    const timeout =
+      typeof task.timeout_seconds === "number"
+        ? Math.round(task.timeout_seconds)
+        : null;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setPageTopicId(null);
+          setPageTaskMsgId(m.msg_id);
+          setTaskPageOpen(true);
+        }}
+        className="my-1.5 block w-full max-w-[min(560px,100%)] rounded-md border px-3 py-2 text-left transition-colors hover:bg-[var(--surface-strong)]"
+        style={{
+          borderColor: "var(--border)",
+          background: "var(--surface-soft)",
+          color: "var(--fg-1)",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex w-5 h-5 items-center justify-center rounded"
+            style={{
+              background: "var(--accent-muted)",
+              color: "var(--accent)",
+            }}
+          >
+            <DocumentIcon className="w-3.5 h-3.5" />
+          </span>
+          <span className="text-[13px] font-semibold">{title}</span>
+          <span
+            className="inline-flex items-center gap-1 text-[11px]"
+            style={{ color: "var(--fg-3)" }}
+          >
+            <span
+              className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+              style={{ background: "var(--accent)" }}
+            />
+            running
+          </span>
+        </div>
+        <div
+          className="mt-1 text-[12px] leading-relaxed"
+          style={{ color: "var(--fg-2)" }}
+        >
+          {message}
+        </div>
+        <div
+          className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px]"
+          style={{ color: "var(--fg-3)" }}
+        >
+          {timeout !== null && <span>等待超过 {timeout}s</span>}
+          {taskId && <span>task {taskId.slice(0, 8)}</span>}
+        </div>
+      </button>
     );
   };
 
@@ -2359,7 +2489,41 @@ export default function App() {
               isDark={isDark}
             />
 
-            {pageTopicId &&
+            {taskPageOpen &&
+              selectedId &&
+              (() => (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: "var(--bg-0)",
+                    zIndex: 20,
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 0,
+                  }}
+                >
+                  <TaskPage
+                    tasks={websocketTaskMessages}
+                    selectedMsgId={pageTaskMsgId}
+                    channel={selectedChannel}
+                    channelBots={channelBots}
+                    onSelectTask={setPageTaskMsgId}
+                    onBack={() => {
+                      setTaskPageOpen(false);
+                      setPageTaskMsgId(null);
+                    }}
+                    onJumpToMessage={(msgId) => {
+                      setTaskPageOpen(false);
+                      setPageTaskMsgId(null);
+                      setTimeout(() => jumpToMessage(msgId), 0);
+                    }}
+                  />
+                </div>
+              ))()}
+
+            {!taskPageOpen &&
+              pageTopicId &&
               selectedId &&
               (() => {
                 const rootMsg = messages.find(
@@ -2470,20 +2634,16 @@ export default function App() {
                     })
                     .filter((x): x is NonNullable<typeof x> => x !== null)}
                   onOpenTopic={(rootId) => {
+                    setTaskPageOpen(false);
+                    setPageTaskMsgId(null);
                     setPageTopicId(rootId);
                   }}
-                  onJumpToMessage={(id) => {
-                    const el = document.getElementById(`msg-${id}`);
-                    if (!el) return;
-                    el.scrollIntoView({ block: "center", behavior: "smooth" });
-                    const orig = el.style.transition;
-                    el.style.transition = "background 200ms";
-                    const prev = el.style.background;
-                    el.style.background = "var(--accent-muted)";
-                    setTimeout(() => {
-                      el.style.background = prev;
-                      el.style.transition = orig;
-                    }, 1200);
+                  onJumpToMessage={jumpToMessage}
+                  taskCount={websocketTaskMessages.length}
+                  onOpenTasks={() => {
+                    setPageTopicId(null);
+                    setPageTaskMsgId(websocketTaskMessages[0]?.msg_id ?? null);
+                    setTaskPageOpen(true);
                   }}
                 />
 
@@ -3167,6 +3327,8 @@ export default function App() {
                                         </button>
                                       )}
                                     </div>
+                                  ) : websocketTaskData(m) ? (
+                                    renderWebsocketTaskCard(m)
                                   ) : (
                                     renderWithThinkFolding(
                                       // Strip the `> [Author]: …\n\n` prefix
@@ -3505,6 +3667,8 @@ export default function App() {
                                       </button>
                                     )}
                                   </div>
+                                ) : websocketTaskData(m) ? (
+                                  renderWebsocketTaskCard(m)
                                 ) : m._streaming && !text ? (
                                   <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                 ) : (
@@ -3822,7 +3986,9 @@ export default function App() {
                                             }
                                     }
                                   >
-                                    {r._streaming && !rTextRaw ? (
+                                    {websocketTaskData(r) ? (
+                                      renderWebsocketTaskCard(r)
+                                    ) : r._streaming && !rTextRaw ? (
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                     ) : (
                                       renderWithThinkFolding(

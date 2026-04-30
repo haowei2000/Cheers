@@ -7,7 +7,7 @@
   3. 合并 file_ids；
   4. 广播 WebSocket `message_done` 事件。
 
-若找不到占位消息（超时被回收或 task_id 不匹配），则创建一条新的 Bot 消息写入频道。
+若找不到占位消息（task_id 不匹配或服务重启后 registry 丢失），则创建一条新的 Bot 消息写入频道。
 """
 from __future__ import annotations
 
@@ -25,6 +25,29 @@ from app.services.pipeline.bus import WSEventBus
 from app.services.pipeline.events import BotTrace, MessageCreated, MessageDone, MessageStreamDelta
 
 logger = logging.getLogger("app.services.openclaw_bridge.service")
+
+WEBSOCKET_TASK_KIND = "websocket_background_task"
+
+
+def websocket_task_content_data(
+    *,
+    task_id: str | None,
+    bot_id: str,
+    timeout_s: int,
+) -> dict[str, Any]:
+    return {
+        "kind": WEBSOCKET_TASK_KIND,
+        "status": "running",
+        "title": "后台任务进行中",
+        "message": "OpenClaw 已接收任务，完成后会自动更新这条回复。",
+        "task_id": task_id,
+        "bot_id": bot_id,
+        "timeout_seconds": timeout_s,
+    }
+
+
+def is_websocket_task_content_data(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("kind") == WEBSOCKET_TASK_KIND
 
 
 async def finalize_bot_reply(
@@ -69,11 +92,18 @@ async def finalize_bot_reply(
 
     if pending:
         msg.content = content
+        msg.content_data = None
+        msg.is_partial = False
         msg.mention_user_ids = await resolve_user_mentions(content, session, channel_id)
         if file_ids:
             msg.file_ids = list(dict.fromkeys([*(msg.file_ids or []), *file_ids]))
         await session.flush()
-        await _broadcast_done(session, msg, file_ids=msg.file_ids or [])
+        await _broadcast_done(
+            session,
+            msg,
+            file_ids=msg.file_ids or [],
+            clear_content_data=True,
+        )
         logger.info(
             "bridge.finalize: finalized placeholder msg_id=%s bot_id=%s task_id=%s",
             msg.msg_id, bot_id, task_id,
@@ -103,6 +133,52 @@ async def finalize_bot_reply(
     return msg, False
 
 
+async def mark_bot_reply_as_background_task(
+    session: AsyncSession,
+    *,
+    bot_id: str,
+    channel_id: str,
+    task_id: str,
+    msg_id: str,
+    timeout_s: int,
+) -> Message | None:
+    """Convert a slow WebSocket Bot placeholder into a visible background task.
+
+    Unlike the old timeout path this deliberately keeps ``pending_replies`` in
+    memory, so a late OpenClaw reply can still finalize the same placeholder.
+    """
+    pending = await pending_replies.peek_by_msg(msg_id)
+    if pending is None or pending.bot_id != bot_id or pending.task_id != task_id:
+        return None
+
+    msg = await session.get(Message, msg_id)
+    if msg is None or msg.channel_id != channel_id or msg.sender_id != bot_id:
+        return None
+
+    # If a reply won the race and already wrote content, do not overwrite it
+    # with a task card.
+    if (msg.content or "").strip() and not is_websocket_task_content_data(msg.content_data):
+        return None
+
+    content_data = websocket_task_content_data(
+        task_id=task_id,
+        bot_id=bot_id,
+        timeout_s=timeout_s,
+    )
+    msg.content = "OpenClaw 已转入后台任务，完成后会自动更新这条回复。"
+    msg.content_data = content_data
+    msg.is_partial = False
+    await session.flush()
+    await WSEventBus(channel_id).publish(
+        MessageDone(
+            msg_id=msg.msg_id,
+            content=msg.content,
+            content_data=content_data,
+        )
+    )
+    return msg
+
+
 async def _broadcast_new(session: AsyncSession, msg: Message) -> None:
     from app.core.schemas import MessageInResponse
 
@@ -119,7 +195,13 @@ async def _broadcast_new(session: AsyncSession, msg: Message) -> None:
     await WSEventBus(msg.channel_id).publish(MessageCreated(data=data))
 
 
-async def _broadcast_done(session: AsyncSession, msg: Message, *, file_ids: list[str]) -> None:
+async def _broadcast_done(
+    session: AsyncSession,
+    msg: Message,
+    *,
+    file_ids: list[str],
+    clear_content_data: bool = False,
+) -> None:
     out_files: list[dict] | None = None
     out_file_ids: list[str] | None = None
     if file_ids:
@@ -147,6 +229,7 @@ async def _broadcast_done(session: AsyncSession, msg: Message, *, file_ids: list
             content=msg.content,
             file_ids=out_file_ids,
             files=out_files,
+            clear_content_data=clear_content_data,
         )
     )
 
@@ -285,6 +368,7 @@ async def finalize_stream(
         return None
 
     msg.content = content
+    msg.content_data = None
     msg.is_partial = bool(partial)
     msg.mention_user_ids = await resolve_user_mentions(content, session, state.channel_id)
     if file_ids:
@@ -320,6 +404,7 @@ async def finalize_stream(
             error=error,
             file_ids=out_file_ids,
             files=out_files,
+            clear_content_data=True,
         )
     )
     logger.info(

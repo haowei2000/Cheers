@@ -202,7 +202,7 @@ class BotMessageWriter:
     async def register_async_pending(
         self, bot_msg: Message, task_id: str, bot_id: str,
     ) -> None:
-        """WebSocket Bot 异步派发：占位消息不立即 finalize，为超时兜底武装 timer。
+        """WebSocket Bot 异步派发：占位消息不立即 finalize，为后台任务兜底武装 timer。
 
         PendingReply 已由 WebsocketBotAdapter.execute() 在 dispatch 之前预登记
         （避免 plugin 秒回时 pending 未登记的竞态）；这里只 arm timer。
@@ -210,30 +210,30 @@ class BotMessageWriter:
         from app.config import settings as _settings
         from app.db.session import async_session_factory
         from app.services.openclaw_bridge.pending import pending_replies
-        from app.services.openclaw_bridge.service import finalize_bot_reply
+        from app.services.pipeline.bot.task_timeout import (
+            WebsocketTaskTimeoutContext,
+            make_websocket_task_timeout_pipeline,
+        )
 
         ctx = self.ctx
-        timeout_s = max(5, int(_settings.openclaw_bridge_timeout_seconds or 60))
+        timeout_s = max(5, int(_settings.openclaw_bridge_timeout_seconds or 300))
 
         async def _on_timeout() -> None:
-            popped = await pending_replies.pop_by_msg(bot_msg.msg_id)
-            if popped is None:
-                return  # already finalized via plugin reply
             logger.warning(
-                "websocket_bot_timeout: bot_id=%s task_id=%s msg_id=%s after %ds",
+                "websocket_bot_slow_reply: bot_id=%s task_id=%s msg_id=%s after %ds",
                 bot_id, task_id, bot_msg.msg_id, timeout_s,
             )
             async with async_session_factory() as s2:
                 try:
-                    await finalize_bot_reply(
-                        s2,
+                    timeout_ctx = WebsocketTaskTimeoutContext(
+                        session=s2,
                         bot_id=bot_id,
                         channel_id=ctx.channel_id,
-                        content=f"[WebSocket Bot] 等待 OpenClaw channel plugin 回推超时（>{timeout_s}s）",
                         task_id=task_id,
-                        reply_to_msg_id=bot_msg.msg_id,
+                        msg_id=bot_msg.msg_id,
+                        timeout_s=timeout_s,
                     )
-                    await s2.commit()
+                    await make_websocket_task_timeout_pipeline().run(timeout_ctx)
                 except Exception:
                     await s2.rollback()
                     raise
