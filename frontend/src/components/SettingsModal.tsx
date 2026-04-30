@@ -3,6 +3,8 @@ import toast from "react-hot-toast";
 import { ChatBubbleLeftIcon } from "@heroicons/react/24/solid";
 import type { CurrentUser, Friend } from "../types";
 import { apiFetch } from "../api";
+import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
+import { BotAvatar } from "./BotAvatar";
 import { Modal } from "./Modal";
 import { SearchPicker } from "./SearchPicker";
 
@@ -28,7 +30,7 @@ interface SettingsModalProps {
   setTheme: (t: "light" | "dark") => void;
   authToken: string | null;
   currentUser: CurrentUser;
-  onProfileUpdated: (data: { display_name: string; bio?: string }) => void;
+  onProfileUpdated: (data: { display_name: string; bio?: string | null; avatar_url?: string | null }) => void;
   onLogout: () => void;
 }
 
@@ -37,6 +39,7 @@ type BotRow = {
   username: string;
   display_name?: string | null;
   description?: string | null;
+  avatar_url?: string | null;
   status?: string;
   binding_type?: "http" | "websocket" | string;
   connection_status?: string;
@@ -422,6 +425,56 @@ function DangerButton({
   );
 }
 
+function AvatarPreview({
+  label,
+  avatarUrl,
+  fallback,
+  size = 44,
+}: {
+  label: string;
+  avatarUrl?: string | null;
+  fallback: string;
+  size?: number;
+}) {
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={label}
+        title={label}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: 8,
+          objectFit: "cover",
+          flexShrink: 0,
+          border: "1px solid var(--border)",
+          background: "var(--surface-soft)",
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      title={label}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 8,
+        background: "var(--accent)",
+        color: "#fff",
+        fontWeight: 700,
+        fontSize: Math.max(12, Math.round(size * 0.42)),
+        display: "inline-grid",
+        placeItems: "center",
+        flexShrink: 0,
+      }}
+    >
+      {fallback}
+    </span>
+  );
+}
+
 // ── Appearance pane ───────────────────────────────────────────────────────
 
 function AppearancePane({
@@ -502,11 +555,14 @@ function ProfilePane({
 }: {
   currentUser: NonNullable<CurrentUser>;
   authToken: string | null;
-  onProfileUpdated: (data: { display_name: string; bio?: string }) => void;
+  onProfileUpdated: (data: { display_name: string; bio?: string | null; avatar_url?: string | null }) => void;
 }) {
   const [displayName, setDisplayName] = useState(currentUser.display_name || "");
   const [bio, setBio] = useState("");
   const [email, setEmail] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar_url || "");
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -522,9 +578,11 @@ function ProfilePane({
     apiFetch("/auth/users/me", { token: authToken })
       .then((r) => r.json())
       .then((d) => {
-        if (typeof d?.display_name === "string") setDisplayName(d.display_name || "");
-        if (typeof d?.bio === "string") setBio(d.bio || "");
-        if (typeof d?.email === "string") setEmail(d.email || "");
+        const user = d?.data || d;
+        if (typeof user?.display_name === "string") setDisplayName(user.display_name || "");
+        if (typeof user?.bio === "string") setBio(user.bio || "");
+        if (typeof user?.email === "string") setEmail(user.email || "");
+        if (user && "avatar_url" in user) setAvatarUrl(user.avatar_url || "");
       })
       .catch(() => {});
   }, [authToken]);
@@ -535,19 +593,46 @@ function ProfilePane({
       const res = await apiFetch("/auth/users/me", {
         method: "PUT",
         token: authToken,
-        body: { display_name: displayName, bio },
+        body: {
+          display_name: displayName,
+          bio,
+          avatar_url: avatarUrl.trim() || null,
+        },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || "保存失败");
+      const user = data?.data || data;
       onProfileUpdated({
-        display_name: data.display_name || displayName,
-        bio: data.bio,
+        display_name: user?.display_name || displayName,
+        bio: user?.bio ?? bio,
+        avatar_url: user?.avatar_url ?? (avatarUrl.trim() || null),
       });
+      setAvatarUrl(user?.avatar_url || avatarUrl.trim());
       toast.success("个人资料已更新");
     } catch (e: unknown) {
       toast.error((e as Error).message || "保存失败");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const uploadProfileAvatar = async (file: File | null | undefined) => {
+    if (!file) return;
+    setAvatarUploading(true);
+    try {
+      const uploaded = await uploadAvatarImage("/avatars/users/me", file, authToken);
+      setAvatarUrl(uploaded.avatar_url);
+      onProfileUpdated({
+        display_name: displayName || currentUser.display_name,
+        bio,
+        avatar_url: uploaded.avatar_url,
+      });
+      toast.success("头像已上传");
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "头像上传失败");
+    } finally {
+      setAvatarUploading(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
     }
   };
 
@@ -619,22 +704,11 @@ function ProfilePane({
       <div className="an-list-table">
         <div className="an-row-card" style={{ alignItems: "flex-start", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
-            <span
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 8,
-                background: "var(--accent)",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 18,
-                display: "inline-grid",
-                placeItems: "center",
-                flexShrink: 0,
-              }}
-            >
-              {initial}
-            </span>
+            <AvatarPreview
+              label={displayName || currentUser.username}
+              avatarUrl={avatarUrl}
+              fallback={initial}
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="an-rc-title">{displayName || currentUser.username}</div>
               <div className="an-rc-sub">@{currentUser.username} · {currentUser.role}</div>
@@ -692,6 +766,63 @@ function ProfilePane({
               onChange={(e) => setDisplayName(e.target.value)}
               className={inputCls}
             />
+          </Field>
+          <Field label="头像">
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="url"
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                placeholder="https://example.com/avatar.png"
+                className={inputCls}
+                style={{ flex: 1 }}
+              />
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept={AVATAR_ACCEPT}
+                onChange={(e) => uploadProfileAvatar(e.target.files?.[0])}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                style={{
+                  padding: "8px 10px",
+                  background: "var(--surface-soft)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  color: "var(--fg-2)",
+                  cursor: avatarUploading ? "not-allowed" : "pointer",
+                  opacity: avatarUploading ? 0.6 : 1,
+                  fontFamily: "inherit",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {avatarUploading ? "上传中…" : "上传"}
+              </button>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() => setAvatarUrl("")}
+                  style={{
+                    padding: "8px 10px",
+                    background: "var(--surface-soft)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "var(--fg-2)",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  清除
+                </button>
+              )}
+            </div>
           </Field>
           <Field label="个人简介">
             <textarea
@@ -1554,22 +1685,11 @@ function BotListSubPane({
               style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}
               onClick={() => setView({ botId: b.bot_id })}
             >
-              <span
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 6,
-                  background: "var(--accent)",
-                  color: "#fff",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  display: "inline-grid",
-                  placeItems: "center",
-                  flexShrink: 0,
-                }}
-              >
-                {(b.display_name || b.username || "?").slice(0, 1).toUpperCase()}
-              </span>
+              <BotAvatar
+                label={b.display_name || b.username || "Bot"}
+                avatarUrl={b.avatar_url}
+                size={32}
+              />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="an-rc-title">{b.display_name || b.username}</div>
                 <div className="an-rc-sub">
@@ -2381,7 +2501,7 @@ function AccountPane({
 }: {
   currentUser: CurrentUser;
   authToken: string | null;
-  onProfileUpdated: (data: { display_name: string; bio?: string }) => void;
+  onProfileUpdated: (data: { display_name: string; bio?: string | null; avatar_url?: string | null }) => void;
   onLogout: () => void;
 }) {
   if (!currentUser) {
@@ -2441,6 +2561,7 @@ function BotNewPane({
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [scope, setScope] = useState<BotScope>("friend");
 
   // HTTP-only
@@ -2494,6 +2615,7 @@ function BotNewPane({
       username: username.trim(),
       display_name: displayName.trim() || username.trim(),
       description: description.trim() || null,
+      avatar_url: avatarUrl.trim() || null,
       binding_type: bindingType,
       status: "online",
       scope,
@@ -2686,6 +2808,22 @@ function BotNewPane({
               placeholder="如 频道助手"
             />
           </Field>
+          <Field label="头像 URL">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <BotAvatar
+                label={displayName || username || "Bot"}
+                avatarUrl={avatarUrl}
+                size={36}
+              />
+              <input
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                className={inputCls}
+                placeholder="https://example.com/bot.png"
+                style={{ flex: 1 }}
+              />
+            </div>
+          </Field>
           <Field label="描述（可选）">
             <textarea
               value={description}
@@ -2851,6 +2989,9 @@ function BotEditPane({
 }) {
   const [displayName, setDisplayName] = useState(bot.display_name || "");
   const [description, setDescription] = useState(bot.description || "");
+  const [avatarUrl, setAvatarUrl] = useState(bot.avatar_url || "");
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [scope, setScope] = useState<BotScope>(normalizeBotScope(bot.scope));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -2866,11 +3007,12 @@ function BotEditPane({
   useEffect(() => {
     setDisplayName(bot.display_name || "");
     setDescription(bot.description || "");
+    setAvatarUrl(bot.avatar_url || "");
     setScope(normalizeBotScope(bot.scope));
     setModelId(bot.model_id || "");
     setTemplateId(bot.template_id || "");
     setConnectionTest(null);
-  }, [bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.scope, bot.template_id]);
+  }, [bot.avatar_url, bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.scope, bot.template_id]);
 
   useEffect(() => {
     if (!isHttpBot) {
@@ -2916,6 +3058,7 @@ function BotEditPane({
       const body: Record<string, unknown> = {
         display_name: displayName.trim() || bot.username,
         description: description.trim() || null,
+        avatar_url: avatarUrl.trim() || null,
         scope,
       };
       if (isHttpBot) {
@@ -2939,6 +3082,22 @@ function BotEditPane({
       toast.error((e as Error).message || "保存失败");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const uploadBotAvatar = async (file: File | null | undefined) => {
+    if (!file) return;
+    setAvatarUploading(true);
+    try {
+      const uploaded = await uploadAvatarImage(`/avatars/bots/${bot.bot_id}`, file, authToken);
+      setAvatarUrl(uploaded.avatar_url);
+      toast.success("Bot 头像已上传");
+      onUpdated();
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "头像上传失败");
+    } finally {
+      setAvatarUploading(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
     }
   };
 
@@ -3002,7 +3161,13 @@ function BotEditPane({
   return (
     <div className="an-pane">
       <div className="an-pane-head">
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <BotAvatar
+            label={displayName || bot.username}
+            avatarUrl={avatarUrl}
+            size={42}
+          />
+          <div style={{ minWidth: 0 }}>
           <div className="an-pane-title">{bot.display_name || bot.username}</div>
           <div className="an-pane-sub">
             @{bot.username} · {bot.bot_id}
@@ -3010,6 +3175,7 @@ function BotEditPane({
           </div>
           <div className="an-pane-sub">
             Owner: {botOwnerLabel(bot)} · {botScopeLabel(scope)}
+          </div>
           </div>
         </div>
         <BotOnlineBadge bot={bot} />
@@ -3108,6 +3274,67 @@ function BotEditPane({
               onChange={(e) => setDisplayName(e.target.value)}
               className={inputCls}
             />
+          </Field>
+          <Field label="头像">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <BotAvatar
+                label={displayName || bot.username}
+                avatarUrl={avatarUrl}
+                size={36}
+              />
+              <input
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                className={inputCls}
+                placeholder="https://example.com/bot.png"
+                style={{ flex: 1 }}
+              />
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept={AVATAR_ACCEPT}
+                onChange={(e) => uploadBotAvatar(e.target.files?.[0])}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                style={{
+                  padding: "8px 10px",
+                  background: "var(--surface-soft)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  color: "var(--fg-2)",
+                  cursor: avatarUploading ? "not-allowed" : "pointer",
+                  opacity: avatarUploading ? 0.6 : 1,
+                  fontFamily: "inherit",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {avatarUploading ? "上传中…" : "上传"}
+              </button>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={() => setAvatarUrl("")}
+                  style={{
+                    padding: "8px 10px",
+                    background: "var(--surface-soft)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "var(--fg-2)",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  清除
+                </button>
+              )}
+            </div>
           </Field>
           <Field label="描述">
             <textarea

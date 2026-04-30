@@ -19,6 +19,12 @@ from app.services.pipeline.bot.subagent import (
     dispatch_many,
     dispatch_one,
 )
+from app.services.pipeline.bot.task_timeout import (
+    ConvertToTaskStage,
+    ValidatePendingStage,
+    WebsocketTaskTimeoutContext,
+    make_websocket_task_timeout_pipeline,
+)
 from app.services.pipeline.bot.writer import BotMessageWriter
 
 __all__ = [
@@ -30,8 +36,12 @@ __all__ = [
     "DispatchStage",
     "IngestStage",
     "RouteStage",
+    "ConvertToTaskStage",
+    "ValidatePendingStage",
+    "WebsocketTaskTimeoutContext",
     "build_payload",
     "dispatch_many",
     "dispatch_one",
+    "make_websocket_task_timeout_pipeline",
     "trigger_sub_bots_from_mentions",
 ]

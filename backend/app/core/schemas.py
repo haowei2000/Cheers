@@ -15,7 +15,7 @@ class AIModelCreate(BaseModel):
     api_key: str | None = Field(default=None, description="API Key")
     description: str | None = Field(default=None, description="模型描述")
     is_enabled: bool = Field(default=True)
-    is_public: bool = Field(default=True, description="是否公开（False 则仅管理员可见）")
+    is_public: bool = Field(default=False, description="保留字段；用户创建的模型始终仅创建者可见")
     config: dict[str, Any] | None = Field(default=None, description="额外配置如 temperature, max_tokens")
 
 
@@ -28,7 +28,7 @@ class AIModelUpdate(BaseModel):
     api_key: str | None = Field(default=None)
     description: str | None = Field(default=None)
     is_enabled: bool | None = Field(default=None)
-    is_public: bool | None = Field(default=None, description="是否公开")
+    is_public: bool | None = Field(default=None, description="保留字段；用户创建的模型始终仅创建者可见")
     config: dict[str, Any] | None = Field(default=None)
 
 
@@ -183,6 +183,7 @@ class BotSimpleInResponse(BaseModel):
     username: str
     display_name: str | None = None
     description: str | None = None
+    avatar_url: str | None = None
     status: str
     scope: Literal["private", "friend", "everyone"] = "friend"
     binding_type: str = "http"
@@ -236,6 +237,8 @@ class ChannelInResponse(BaseModel):
     type: str
     purpose: str | None = None
     auto_assist: bool = False
+    my_role: str | None = None
+    can_manage: bool = False
     # 用户在该频道未读的消息数（由 channel_memberships.last_read_at 派生）。
     # 未登录或非成员时保持 None。
     unread_count: int | None = None

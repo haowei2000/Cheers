@@ -159,6 +159,7 @@ async def update_profile(
         display_name=body.display_name,
         bio=body.bio,
         avatar_url=body.avatar_url,
+        avatar_url_provided="avatar_url" in body.model_fields_set,
     )
     return APIResponse.ok(UserOut.from_user(user))
 
@@ -177,7 +178,6 @@ async def change_password(
         email_code=body.email_code,
     )
     return APIResponse.ok(None, message="密码已更新")
-
 
 
 
