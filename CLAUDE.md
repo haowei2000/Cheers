@@ -8,8 +8,9 @@ AgentNexus (智枢协作平台) is a Slack-like multi-agent + human collaboratio
 
 ## Branch Strategy
 
-- Feature branches must create PRs targeting `develop` only.
-- Only the `develop` branch can create PRs targeting `main`.
+- All work branch PRs must be merged into `develop` first.
+- The `main` branch must only receive merges from `develop`.
+- Do not merge feature, fix, hotfix, or other work branch PRs directly into `main`.
 
 ## Commands
 
