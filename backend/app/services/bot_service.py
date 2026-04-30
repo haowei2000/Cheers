@@ -135,6 +135,11 @@ class BotService:
             raise BadRequestError("指定的提示词模板不存在")
         return model, template
 
+    async def _validate_template(self, template_id: str) -> None:
+        template = await self.template_repo.get_by_id(template_id)
+        if not template:
+            raise BadRequestError("指定的提示词模板不存在")
+
     async def create(
         self,
         username: str,
@@ -175,9 +180,11 @@ class BotService:
                 raise BadRequestError("HTTP Bot 必须指定 model_id 与 template_id")
             await self._validate_model_and_template(model_id, template_id, current_user)
         elif binding_type == "websocket":
-            # WebSocket Bot 由 OpenClaw channel plugin 提供能力，不依赖内置 AIModel/PromptTemplate
+            # WebSocket Bot 由 OpenClaw channel plugin 提供能力，不依赖内置 AIModel，
+            # 但仍可通过 PromptTemplate 渲染发送给 plugin 的任务文本。
             model_id = None
-            template_id = None
+            if template_id:
+                await self._validate_template(template_id)
         else:
             raise BadRequestError(f"未知的 binding_type: {binding_type}")
 
@@ -259,6 +266,8 @@ class BotService:
             await self._validate_model_and_template(
                 next_model_id, next_template_id, current_user
             )
+        elif next_binding_type == "websocket" and "template_id" in kwargs and kwargs["template_id"]:
+            await self._validate_template(kwargs["template_id"])
 
         return await self.repo.update(bot, **kwargs)
 

@@ -4,6 +4,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.prompt_templates import DEFAULT_TEMPLATE_VARIABLES, DEFAULT_USER_TEMPLATE
+
 # ==================== AI Model Schemas ====================
 
 class AIModelCreate(BaseModel):
@@ -58,8 +60,8 @@ class PromptTemplateCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64, description="模板名称，如 代码审查")
     description: str | None = Field(default=None, description="模板描述")
     system_prompt: str = Field(..., min_length=1, description="系统提示词")
-    user_template: str = Field(default="{{message}}", description="用户消息模板，使用 {{变量}} 占位")
-    variables: list[str] = Field(default=["message"], description="模板变量列表")
+    user_template: str = Field(default=DEFAULT_USER_TEMPLATE, description="用户消息模板，使用 {{变量}} 占位")
+    variables: list[str] = Field(default=DEFAULT_TEMPLATE_VARIABLES, description="模板变量列表")
 
 
 class PromptTemplateUpdate(BaseModel):
@@ -94,9 +96,9 @@ class BotCreate(BaseModel):
     username: str = Field(..., min_length=1, max_length=64, description="@ 用的名字")
     display_name: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, description="Bot 描述")
-    # HTTP Bot 必填；WebSocket Bot 可省略
+    # HTTP Bot 必填；WebSocket Bot 不使用 model，但可使用 template 渲染发送给 plugin 的任务
     model_id: str | None = Field(default=None, description="关联的 AI 模型 ID（HTTP Bot 必填）")
-    template_id: str | None = Field(default=None, description="关联的提示词模板 ID（HTTP Bot 必填）")
+    template_id: str | None = Field(default=None, description="关联的提示词模板 ID")
     custom_system_prompt: str | None = Field(default=None, description="可选：覆盖模板的系统提示词")
     status: str = Field(default="online", pattern="^(online|offline|busy)$")
     scope: Literal["private", "friend", "everyone"] = Field(

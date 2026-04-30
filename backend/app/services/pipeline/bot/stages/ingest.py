@@ -11,6 +11,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
 from app.db.models import BotAccount, Channel, ChannelMembership, PromptTemplate, User
 from app.services.adapters.base import OpenClawAdapter
 from app.services.orchestrator.secrets import extract_secret_refs, load_user_secrets
@@ -40,6 +41,7 @@ class IngestStage(Stage[BotRunContext]):
         rows, overrides = await self._load_channel_bots(ctx)
         self._wrap_adapter_factory(ctx, overrides)
         self._build_bot_details(ctx, rows)
+        self._build_bot_templates(ctx, rows)
         await self._unwrap_secret_content(ctx)
         await self._lookup_sender_and_channel(ctx)
 
@@ -96,6 +98,17 @@ class IngestStage(Stage[BotRunContext]):
             }
             for row in rows
         }
+
+    @staticmethod
+    def _build_bot_templates(ctx: BotRunContext, rows: list) -> None:
+        ctx.bot_user_templates_by_username = {}
+        for membership, bot in rows:
+            effective_template = membership.prompt_template or bot.prompt_template
+            ctx.bot_user_templates_by_username[bot.username] = (
+                effective_template.user_template
+                if effective_template
+                else DEFAULT_USER_TEMPLATE
+            )
 
     @staticmethod
     async def _unwrap_secret_content(ctx: BotRunContext) -> None:

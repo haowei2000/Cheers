@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -14,6 +13,10 @@ from app.core.log_context import bind_context
 from app.db.models import AIModel, BotAccount, PromptTemplate
 from app.http_client import get_http_client
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.services.adapters.prompt_template import (
+    build_template_context,
+    render_user_template,
+)
 from app.services.orchestrator.secrets import replace_secret_refs
 from app.services.pipeline.adapter_events import AdapterEvent, Delta, Final
 from app.services.secret_messages import replace_secret_placeholder
@@ -45,18 +48,17 @@ class HttpBotAdapter(OpenClawAdapter):
         return f"你在当前频道中的名称是「{bot_name}」。\n\n{base}"
 
     def _apply_user_template(self, user_message: str, context: dict[str, Any] | None = None) -> str:
-        template = self.template.user_template
-        variables: dict[str, Any] = {"message": user_message}
-        if context:
-            variables.update(context)
+        return render_user_template(
+            self.template.user_template,
+            message=user_message,
+            context=context,
+        )
 
-        def replace_var(match: re.Match[str]) -> str:
-            var_name = match.group(1)
-            return str(variables.get(var_name, f"{{{{{var_name}}}}}"))
-
-        return re.sub(r"\{\{(\w+)\}\}", replace_var, template)
-
-    def _build_messages(self, user_message: str, context: dict[str, Any] | None = None) -> list[dict[str, str]]:
+    def _build_messages(
+        self,
+        user_message: str,
+        context: dict[str, Any] | None = None,
+    ) -> list[dict[str, str]]:
         return [
             {"role": "system", "content": self._get_system_prompt()},
             {"role": "user", "content": self._apply_user_template(user_message, context)},
@@ -276,10 +278,9 @@ class HttpBotAdapter(OpenClawAdapter):
         """执行 LLM 调用，流式 yield ``Delta`` per token + 最终 ``Final``.
 
         上下文注入机制：
-        - payload.memory_context 包含四层记忆：anchor, decisions, files_index, recent
-        - 这些记忆会被注入为模板变量 {{anchor}}, {{decisions}}, {{files_index}}, {{recent}}
-        - 可以在 PromptTemplate 的 user_template 中使用这些变量来访问项目上下文
-        - 例如："请基于以下项目锚点回答：{{anchor}}\n\n用户问题：{{message}}"
+        - payload.memory_context 由 ContextLoadStage 在模板包含 {{memory}}
+          时加载并渲染为模板变量
+        - 是否发送记忆完全由 PromptTemplate.user_template 决定
         """
         with bind_context(bot_id=self.bot.bot_id):
             async for event in self._execute_inner(payload):
@@ -322,22 +323,14 @@ class HttpBotAdapter(OpenClawAdapter):
         pconfig = payload.process_config
         trigger_meta = payload.trigger_message or {}
 
-        context_vars: dict[str, str] = {
-            "sender_name": trigger_meta.get("sender_name") or pconfig.sender_name,
-            "channel_name": pconfig.channel_name,
-            "channel_id": payload.channel_id,
-            "bot_name": self.bot.display_name or self.bot.username,
-            "timestamp": trigger_meta.get("timestamp", ""),
-        }
-        if payload.memory_context:
-            context_vars.update({
-                "anchor": f"<anchor>{payload.memory_context.get('anchor', '')}</anchor>",
-                "progress": f"<progress>{payload.memory_context.get('progress', '')}</progress>",
-                "decisions": f"<decisions>{payload.memory_context.get('decisions', '')}</decisions>",
-                "files_index": f"<files_index>{payload.memory_context.get('files_index', '')}</files_index>",
-                "recent": f"<recent>{payload.memory_context.get('recent', '')}</recent>",
-                "todos": payload.memory_context.get("todos", ""),
-            })
+        context_vars = build_template_context(
+            bot_name=self.bot.display_name or self.bot.username,
+            channel_id=payload.channel_id,
+            channel_name=pconfig.channel_name,
+            sender_name=trigger_meta.get("sender_name") or pconfig.sender_name,
+            timestamp=trigger_meta.get("timestamp", ""),
+            memory_context=payload.memory_context,
+        )
 
         # 子 bot 调用（call_bot）时跳过 system prompt，父 bot 的 message 已包含任务描述
         skip_system_prompt = pconfig.skip_system_prompt
