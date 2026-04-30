@@ -1,6 +1,8 @@
 """Channel v1 路由."""
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +26,7 @@ class ChannelCreateBody(BaseModel):
 class ChannelUpdateBody(BaseModel):
     name: str | None = None
     purpose: str | None = None
+    type: Literal["public", "private"] | None = None
     auto_assist: bool | None = None
 
 
