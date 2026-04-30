@@ -1,7 +1,7 @@
 """complete friendship system
 
-Revision ID: 042
-Revises: 041
+Revision ID: 040
+Revises: 039
 Create Date: 2026-04-30 00:00:00.000000
 """
 from __future__ import annotations
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "042"
-down_revision: str | Sequence[str] | None = "041"
+revision: str = "040"
+down_revision: str | Sequence[str] | None = "039"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
