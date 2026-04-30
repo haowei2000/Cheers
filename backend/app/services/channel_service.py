@@ -415,7 +415,11 @@ class ChannelService:
         if not has_other_admin:
             raise ForbiddenError("频道至少需要保留一位管理员")
 
-    async def list_members_with_details(self, channel_id: str) -> list[dict]:
+    async def list_members_with_details(
+        self,
+        channel_id: str,
+        current_user: User | None = None,
+    ) -> list[dict]:
         memberships = await self.repo.list_memberships(channel_id)
         bot_ids = {m.member_id for m in memberships if m.member_type == "bot"}
         user_ids = {m.member_id for m in memberships if m.member_type == "user"}
@@ -433,10 +437,11 @@ class ChannelService:
             )).scalars()
             users_by_id = {u.user_id: u for u in rows}
         owner_ids = {b.created_by for b in bots_by_id.values() if b.created_by}
-        missing_owner_ids = owner_ids - set(users_by_id)
-        if missing_owner_ids:
+        inviter_ids = {m.added_by for m in memberships if m.added_by}
+        missing_user_ids = (owner_ids | inviter_ids) - set(users_by_id)
+        if missing_user_ids:
             rows = (await self.session.execute(
-                select(User).where(User.user_id.in_(missing_owner_ids))
+                select(User).where(User.user_id.in_(missing_user_ids))
             )).scalars()
             users_by_id.update({u.user_id: u for u in rows})
 
@@ -458,9 +463,26 @@ class ChannelService:
                 "display_name": entity.display_name,
                 "avatar_url": entity.avatar_url,
             }
+            inviter = users_by_id.get(m.added_by or "")
+            item["inviter"] = (
+                {
+                    "user_id": inviter.user_id,
+                    "username": inviter.username,
+                    "display_name": inviter.display_name,
+                }
+                if inviter
+                else None
+            )
             if m.member_type == "bot":
                 bot_entity: BotAccount = entity
                 item["template_id"] = m.template_id
+                item["can_manage_template"] = bool(
+                    current_user
+                    and (
+                        is_admin(current_user)
+                        or (m.added_by is not None and m.added_by == current_user.user_id)
+                    )
+                )
                 if m.prompt_template:
                     item["template_name"] = m.prompt_template.name
                 else:
@@ -590,7 +612,7 @@ class ChannelService:
         template_id: str | None,
         current_user: User,
     ) -> dict:
-        """设置频道内某个 Bot 成员的提示词模板覆盖。权限归 Bot 所有者。"""
+        """设置频道内某个 Bot 成员的提示词模板覆盖。权限归邀请该 Bot 入频道的人。"""
         await self.get_or_404(channel_id)
 
         m = await self.repo.get_membership(channel_id, member_id)
@@ -602,8 +624,8 @@ class ChannelService:
         bot = await self.bot_repo.get_by_id(member_id)
         if not bot:
             raise NotFoundError("Bot 不存在")
-        if not is_admin(current_user) and bot.created_by != current_user.user_id:
-            raise ForbiddenError("只有 Bot 所有者可以修改其频道提示词模板")
+        if not is_admin(current_user) and m.added_by != current_user.user_id:
+            raise ForbiddenError("只有邀请该 Bot 入频道的人可以修改其频道提示词模板")
 
         if template_id:
             tmpl = (await self.session.execute(

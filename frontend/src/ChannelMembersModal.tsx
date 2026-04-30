@@ -400,7 +400,10 @@ export default function ChannelMembersModal({
                       Bot ({botMembers.length})
                     </h3>
                     <div className="space-y-1">
-                      {botMembers.map((member) => (
+                      {botMembers.map((member) => {
+                        const canEditTemplate =
+                          member.can_manage_template ?? member.added_by === currentUserId;
+                        return (
                         <div
                           key={member.member_id}
                           className="p-2 bg-green-50 rounded-lg"
@@ -438,7 +441,9 @@ export default function ChannelMembersModal({
                             <select
                               value={member.template_id || ""}
                               onChange={(e) => updateBotTemplate(member.member_id, e.target.value || null)}
-                              className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded bg-white text-gray-700 focus:outline-none focus:border-[#2EB67D] focus:ring-1 focus:ring-[#2EB67D]"
+                              disabled={!canEditTemplate}
+                              title={canEditTemplate ? "Bot 频道模板覆盖" : "只有邀请该 Bot 入频道的人可修改频道模板"}
+                              className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded bg-white text-gray-700 focus:outline-none focus:border-[#2EB67D] focus:ring-1 focus:ring-[#2EB67D] disabled:bg-gray-50 disabled:text-gray-400"
                             >
                               <option value="">默认 (Bot 自带)</option>
                               {allTemplates.map((t) => (
@@ -449,7 +454,8 @@ export default function ChannelMembersModal({
                             </select>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
