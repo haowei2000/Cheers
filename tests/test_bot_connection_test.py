@@ -118,7 +118,7 @@ async def test_builtin_bot_connection_test_uses_builtin_adapter(
         created_by="someone-else",
     )
     db_session.add(bot)
-    await db_session.commit()
+    await db_session.flush()
 
     class FakeBuiltinAdapter:
         async def health_check(self) -> bool:
