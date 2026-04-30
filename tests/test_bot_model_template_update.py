@@ -104,17 +104,22 @@ async def test_system_admin_can_list_and_rebind_builtin_bot(
     model_two = _model("builtin-model-0002", "Builtin Model Two")
     template_one = _template("builtin-template-0001", "Builtin Template One")
     template_two = _template("builtin-template-0002", "Builtin Template Two")
-    bot = BotAccount(
-        bot_id=GUIDE_BOT_ID,
-        username="Coordinator",
-        display_name="协调者",
-        model_id=model_one.model_id,
-        template_id=template_one.template_id,
-        status="online",
-        binding_type="http",
-        created_by=None,
-    )
-    db_session.add_all([model_one, model_two, template_one, template_two, bot])
+    db_session.add_all([model_one, model_two, template_one, template_two])
+    bot = await db_session.get(BotAccount, GUIDE_BOT_ID)
+    if bot is None:
+        bot = BotAccount(
+            bot_id=GUIDE_BOT_ID,
+            username="Coordinator",
+            display_name="协调者",
+            created_by=None,
+        )
+        db_session.add(bot)
+    bot.username = "Coordinator"
+    bot.display_name = "协调者"
+    bot.model_id = model_one.model_id
+    bot.template_id = template_one.template_id
+    bot.status = "online"
+    bot.binding_type = "http"
     await db_session.flush()
 
     list_resp = await client.get("/api/v1/bots")
