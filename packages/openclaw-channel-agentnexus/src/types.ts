@@ -104,6 +104,17 @@ export interface DataHello {
   last_event_seq: number;
 }
 
+export interface AgentNexusSessionRef {
+  id?: string;
+  openclaw_session_key?: string;
+  openclaw_account_id?: string;
+  openclaw_agent_id?: string;
+  primary_scope_type?: string;
+  primary_scope_id?: string;
+  task_scope_id?: string;
+  [k: string]: unknown;
+}
+
 export interface MessageEvent {
   type: "message";
   seq: number;
@@ -117,6 +128,8 @@ export interface MessageEvent {
   memory_context: Record<string, string>;
   attachments: AttachmentInfo[];
   binding_config?: Record<string, unknown>;
+  session?: AgentNexusSessionRef;
+  openclaw_session_key?: string;
 }
 
 export interface SendAckOk {

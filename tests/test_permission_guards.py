@@ -124,7 +124,7 @@ async def test_channel_settings_and_memory_writes_require_channel_admin(db_sessi
         member,
         "PATCH",
         f"/api/v1/channels/{ch.channel_id}/settings",
-        json={"auto_assist": True},
+        json={"auto_assist": True, "type": "private"},
     )
     assert denied_settings.status_code == 403
 
@@ -133,10 +133,12 @@ async def test_channel_settings_and_memory_writes_require_channel_admin(db_sessi
         admin,
         "PATCH",
         f"/api/v1/channels/{ch.channel_id}/settings",
-        json={"auto_assist": True},
+        json={"auto_assist": True, "type": "private"},
     )
     assert allowed_settings.status_code == 200
-    assert allowed_settings.json()["data"]["auto_assist"] is True
+    allowed_channel = allowed_settings.json()["data"]
+    assert allowed_channel["auto_assist"] is True
+    assert allowed_channel["type"] == "private"
 
     denied_memory = await _request_as(
         db_session,
@@ -315,8 +317,9 @@ async def test_bot_adds_default_to_all_members_and_can_be_restricted(db_session:
 
 
 @pytest.mark.asyncio
-async def test_bot_channel_template_override_belongs_to_bot_owner(db_session: AsyncSession) -> None:
+async def test_bot_channel_template_override_belongs_to_inviter(db_session: AsyncSession) -> None:
     bot_owner = User(user_id="u-perm-bot-owner", username="perm_bot_owner", password_hash="x", role="member")
+    inviter = User(user_id="u-perm-bot-inviter", username="perm_bot_inviter", password_hash="x", role="member")
     channel_admin = User(
         user_id="u-perm-channel-admin",
         username="perm_channel_admin",
@@ -337,25 +340,57 @@ async def test_bot_channel_template_override_belongs_to_bot_owner(db_session: As
         created_by=bot_owner.user_id,
     )
     template = PromptTemplate(
-        template_id="tpl-perm-bot-owner",
-        name="perm-bot-owner-template",
-        system_prompt="owner system",
+        template_id="tpl-perm-bot-inviter",
+        name="perm-bot-inviter-template",
+        system_prompt="inviter system",
         user_template="{{message}}",
-        created_by=bot_owner.user_id,
+        created_by=inviter.user_id,
     )
     db_session.add_all([
         bot_owner,
+        inviter,
         channel_admin,
         ws,
         ch,
         bot,
         ChannelMembership(channel_id=ch.channel_id, member_id=bot_owner.user_id, member_type="user", role="member"),
+        ChannelMembership(channel_id=ch.channel_id, member_id=inviter.user_id, member_type="user", role="member"),
         ChannelMembership(channel_id=ch.channel_id, member_id=channel_admin.user_id, member_type="user", role="admin"),
-        ChannelMembership(channel_id=ch.channel_id, member_id=bot.bot_id, member_type="bot"),
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            added_by=inviter.user_id,
+        ),
     ])
     await db_session.flush()
     db_session.add(template)
     await db_session.commit()
+
+    owner_settings = await _request_as(
+        db_session,
+        bot_owner,
+        "GET",
+        f"/api/v1/channels/{ch.channel_id}/settings",
+    )
+    assert owner_settings.status_code == 200
+    owner_bot_member = next(
+        item for item in owner_settings.json()["data"]["members"] if item["member_id"] == bot.bot_id
+    )
+    assert owner_bot_member["can_manage_template"] is False
+
+    inviter_settings = await _request_as(
+        db_session,
+        inviter,
+        "GET",
+        f"/api/v1/channels/{ch.channel_id}/settings",
+    )
+    assert inviter_settings.status_code == 200
+    inviter_bot_member = next(
+        item for item in inviter_settings.json()["data"]["members"] if item["member_id"] == bot.bot_id
+    )
+    assert inviter_bot_member["can_manage_template"] is True
+    assert inviter_bot_member["inviter"]["user_id"] == inviter.user_id
 
     denied = await _request_as(
         db_session,
@@ -366,9 +401,18 @@ async def test_bot_channel_template_override_belongs_to_bot_owner(db_session: As
     )
     assert denied.status_code == 403
 
-    allowed = await _request_as(
+    denied_owner = await _request_as(
         db_session,
         bot_owner,
+        "PATCH",
+        f"/api/v1/channels/{ch.channel_id}/members/{bot.bot_id}/template",
+        json={"template_id": template.template_id},
+    )
+    assert denied_owner.status_code == 403
+
+    allowed = await _request_as(
+        db_session,
+        inviter,
         "PATCH",
         f"/api/v1/channels/{ch.channel_id}/members/{bot.bot_id}/template",
         json={"template_id": template.template_id},
