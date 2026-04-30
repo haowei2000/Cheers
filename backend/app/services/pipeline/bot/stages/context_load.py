@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.services.adapters.prompt_template import template_uses_memory
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.memory.channel_memory import ChannelMemory
 from app.services.memory.manager import load_layers as memory_load_layers
@@ -67,12 +68,24 @@ def select_memory_layers(msg_type: str | None) -> frozenset[str]:
     return _LAYERS_BY_MSG_TYPE.get(msg_type, ChannelMemory.ALL_LAYERS)
 
 
+def should_build_memory(ctx: BotRunContext) -> bool:
+    """Memory is loaded only for targets whose effective template asks for it."""
+    for username in ctx.target_usernames:
+        user_template = ctx.bot_user_templates_by_username.get(username)
+        if user_template is None:
+            return True
+        if template_uses_memory(user_template):
+            return True
+    return False
+
+
 def build_memory_load_detail(
     *,
     trigger_msg_id: str,
     trigger_msg_type: str | None,
     requested_layers: frozenset[str] | set[str],
     memory_context: dict[str, str],
+    memory_requested: bool = True,
 ) -> dict:
     """Build the compact memory-load snapshot stored on bot replies."""
     requested = set(requested_layers)
@@ -98,7 +111,8 @@ def build_memory_load_detail(
         )
     return {
         "kind": "bot_memory_load",
-        "strategy": "ContextLoadStage.select_memory_layers",
+        "strategy": "ContextLoadStage.template_memory_gate",
+        "memory_requested": memory_requested,
         "trigger_msg_id": trigger_msg_id,
         "trigger_msg_type": trigger_msg_type or "normal",
         "requested_layers": [layer for layer in _LAYER_ORDER if layer in requested],
@@ -110,8 +124,14 @@ def build_memory_load_detail(
 class ContextLoadStage(Stage[BotRunContext]):
     async def run(self, ctx: BotRunContext) -> None:
         layers = select_memory_layers(ctx.trigger_msg.msg_type)
+        memory_requested = should_build_memory(ctx)
+        memory_loader = (
+            memory_load_layers(ctx.channel_id, ctx.session, layers)
+            if memory_requested
+            else self._skip_memory_load()
+        )
         memory_context, _, topic_result = await asyncio.gather(
-            memory_load_layers(ctx.channel_id, ctx.session, layers),
+            memory_loader,
             self._load_attachments(ctx),
             gather_topic_context(ctx.trigger_msg, ctx.session),
         )
@@ -119,10 +139,15 @@ class ContextLoadStage(Stage[BotRunContext]):
         ctx.memory_load_detail = build_memory_load_detail(
             trigger_msg_id=ctx.trigger_msg.msg_id,
             trigger_msg_type=ctx.trigger_msg.msg_type,
-            requested_layers=layers,
+            requested_layers=layers if memory_requested else frozenset(),
             memory_context=memory_context,
+            memory_requested=memory_requested,
         )
         ctx.topic_chain, ctx.child_replies = topic_result
+
+    @staticmethod
+    async def _skip_memory_load() -> dict[str, str]:
+        return {}
 
     @staticmethod
     async def _load_attachments(ctx: BotRunContext) -> None:

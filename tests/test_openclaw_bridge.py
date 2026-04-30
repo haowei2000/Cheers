@@ -8,9 +8,8 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentNexusSession
+from app.db.models import AgentNexusSession, Channel, Message, Workspace
 from app.services.adapters.base import AgentPayload
-from app.db.models import Channel, Message, Workspace
 from app.services.adapters.websocket_bot import WebsocketBotAdapter
 from app.services.openclaw_bridge.dispatcher import BridgeDispatcher
 from app.services.openclaw_bridge.pending import PendingReply, PendingReplyRegistry
@@ -29,6 +28,13 @@ def _fake_bot(**kwargs):
     )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
+
+
+def _fake_template(user_template: str = "{{memory}}\n\n任务：{{message}}"):
+    return SimpleNamespace(
+        system_prompt="WebSocket 系统提示",
+        user_template=user_template,
+    )
 
 
 def _payload(task_id: str = "t-ws-001", channel_id: str = "c-001") -> AgentPayload:
@@ -113,11 +119,24 @@ class _FakeWS:
         self.sent.append(data)
 
 
+def _patch_record_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_record_event(bot_id: str, stream: str, event: dict) -> int:
+        return 1
+
+    monkeypatch.setattr(
+        "app.services.openclaw_bridge.event_log.record_event",
+        fake_record_event,
+    )
+
+
 @pytest.mark.asyncio
-async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound() -> None:
+async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from app.services.openclaw_bridge.pending import pending_replies
     from app.services.openclaw_bridge.registry import bot_session_registry
 
+    _patch_record_event(monkeypatch)
     ws = _FakeWS()
     await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
     try:
@@ -149,6 +168,38 @@ async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound() -> No
         await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
         # 清理：pop 掉预登记的 pending
         await pending_replies.pop_by_msg("placeholder-123")
+
+
+@pytest.mark.asyncio
+async def test_ws_bot_adapter_renders_prompt_template_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.openclaw_bridge.pending import pending_replies
+    from app.services.openclaw_bridge.registry import bot_session_registry
+
+    _patch_record_event(monkeypatch)
+    ws = _FakeWS()
+    await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+    try:
+        adapter = WebsocketBotAdapter(_fake_bot(prompt_template=_fake_template()))
+        payload = _payload("t-ws-template")
+        payload.process_config.placeholder_msg_id = "placeholder-template"
+        payload.memory_context = {"anchor": "WebSocket 锚点"}
+
+        resp = await adapter.execute(payload)
+
+        assert resp.success is True
+        event = ws.sent[0]
+        rendered_text = event["trigger_message"]["text"]
+        assert "=== 频道记忆上下文" in rendered_text
+        assert "WebSocket 锚点" in rendered_text
+        assert "任务：@ws-bot hi" in rendered_text
+        assert event["raw_trigger_message"]["text"] == "@ws-bot hi"
+        assert event["prompt"]["user"] == rendered_text
+        assert "WebSocket 系统提示" in event["prompt"]["system"]
+    finally:
+        await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+        await pending_replies.pop_by_msg("placeholder-template")
 
 
 @pytest.mark.asyncio

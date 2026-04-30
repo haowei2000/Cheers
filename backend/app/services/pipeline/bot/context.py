@@ -35,6 +35,7 @@ class BotRunContext:
     channel_bot_usernames: list[str] = field(default_factory=list)
     bot_id_by_username: dict[str, str] = field(default_factory=dict)
     bot_details_by_username: dict[str, dict] = field(default_factory=dict)
+    bot_user_templates_by_username: dict[str, str] = field(default_factory=dict)
     analysis_content: str = ""
     trigger_content: str = ""
     user_secrets: dict[str, str] = field(default_factory=dict)

@@ -49,7 +49,7 @@ async def get_adapter_for_bot(
     if not bot:
         return MockBotAdapter(reply="[未知 Bot] 已收到消息。")
 
-    # WebSocket Bot：经 OpenClaw channel plugin 异步回推，无需 AIModel/PromptTemplate
+    # WebSocket Bot：经 OpenClaw channel plugin 异步回推；同样使用 PromptTemplate 渲染入站消息
     binding_type = (getattr(bot, "binding_type", None) or "http").lower()
     if binding_type == "websocket":
         if bot.status != "online":
@@ -64,7 +64,7 @@ async def get_adapter_for_bot(
             "adapter_resolver: bot_id=%s username=%s -> WebsocketBotAdapter",
             bot_id, bot.username,
         )
-        return WebsocketBotAdapter(bot)
+        return WebsocketBotAdapter(bot, template_override=template_override or bot.prompt_template)
 
     if not bot.ai_model:
         logger.warning("adapter_resolver: bot_id=%s has no model configured", bot_id)

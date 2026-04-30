@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.prompt_templates import DEFAULT_TEMPLATE_VARIABLES, DEFAULT_USER_TEMPLATE
 from app.db.models import (
     BotAccount,
     Channel,
@@ -115,18 +116,23 @@ async def _seed_templates(session: AsyncSession) -> bool:
     did_write = False
 
     r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_GENERAL_ID))
-    if r.scalar_one_or_none() is None:
+    general_template = r.scalar_one_or_none()
+    if general_template is None:
         session.add(
             PromptTemplate(
                 template_id=TEMPLATE_GENERAL_ID,
                 name="通用助手",
                 description="通用的 AI 助手，适合回答各种问题",
                 system_prompt="你是一个有用的 AI 助手。请简洁、专业地回答用户问题。",
-                user_template="{{message}}",
-                variables=["message"],
+                user_template=DEFAULT_USER_TEMPLATE,
+                variables=DEFAULT_TEMPLATE_VARIABLES,
                 is_builtin=True,
             )
         )
+        did_write = True
+    elif general_template.is_builtin and general_template.user_template == "{{message}}":
+        general_template.user_template = DEFAULT_USER_TEMPLATE
+        general_template.variables = DEFAULT_TEMPLATE_VARIABLES
         did_write = True
 
     r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_CODE_REVIEW_ID))

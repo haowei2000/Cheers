@@ -5,6 +5,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
 from app.db.models import AIModel, BotAccount, PromptTemplate, User
 from app.repositories.bot_repo import AIModelRepository, PromptTemplateRepository
 from app.utils.permissions import is_admin
@@ -127,7 +128,7 @@ class PromptTemplateService:
         self,
         name: str,
         system_prompt: str,
-        user_template: str = "{{message}}",
+        user_template: str = DEFAULT_USER_TEMPLATE,
         description: str | None = None,
         variables: list | None = None,
         created_by: str | None = None,

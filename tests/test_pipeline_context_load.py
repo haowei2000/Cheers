@@ -11,6 +11,7 @@ from app.services.memory.channel_memory import ChannelMemory
 from app.services.pipeline.bot.stages.context_load import (
     build_memory_load_detail,
     select_memory_layers,
+    should_build_memory,
 )
 
 
@@ -80,3 +81,37 @@ def test_memory_load_detail_records_requested_layers_and_previews() -> None:
     assert recent["requested"] is False
     assert recent["chars"] == len("不应被请求但可见")
     assert recent["loader"] == "current_page + message_page summaries"
+
+
+class _Ctx:
+    def __init__(self, templates: dict[str, str], targets: list[str] | None = None) -> None:
+        self.target_usernames = targets or list(templates.keys())
+        self.bot_user_templates_by_username = templates
+
+
+def test_template_with_memory_triggers_memory_build() -> None:
+    ctx = _Ctx({"bot": "{{memory}}\n\n{{message}}"})
+    assert should_build_memory(ctx) is True
+
+
+def test_template_without_memory_skips_memory_build() -> None:
+    ctx = _Ctx({"bot": "{{message}}"})
+    assert should_build_memory(ctx) is False
+
+
+def test_missing_template_uses_conservative_memory_build() -> None:
+    ctx = _Ctx({}, targets=["builtin"])
+    assert should_build_memory(ctx) is True
+
+
+def test_memory_load_detail_records_skipped_memory() -> None:
+    detail = build_memory_load_detail(
+        trigger_msg_id="msg-2",
+        trigger_msg_type="normal",
+        requested_layers=frozenset(),
+        memory_context={},
+        memory_requested=False,
+    )
+
+    assert detail["memory_requested"] is False
+    assert detail["requested_layers"] == []

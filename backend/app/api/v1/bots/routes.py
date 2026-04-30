@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.core.prompt_templates import DEFAULT_TEMPLATE_VARIABLES, DEFAULT_USER_TEMPLATE
 from app.core.responses import APIResponse
 from app.core.schemas import (
     BotCreate,
@@ -581,11 +582,15 @@ async def quick_connect_openclaw(
             name=_PASSTHROUGH_TEMPLATE_NAME,
             description="OpenClaw 直通模板（自动创建，勿删）",
             system_prompt="你是一个通过 OpenClaw 接入的 AI 助手，请直接响应用户请求。",
-            user_template="{{message}}",
-            variables=["message"],
+            user_template=DEFAULT_USER_TEMPLATE,
+            variables=DEFAULT_TEMPLATE_VARIABLES,
             is_builtin=True,
         )
         session.add(template)
+        await session.flush()
+    elif template.user_template == "{{message}}":
+        template.user_template = DEFAULT_USER_TEMPLATE
+        template.variables = DEFAULT_TEMPLATE_VARIABLES
         await session.flush()
 
     ai_model = AIModel(

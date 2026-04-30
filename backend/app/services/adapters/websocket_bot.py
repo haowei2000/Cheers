@@ -15,8 +15,13 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 
-from app.db.models import BotAccount
+from app.db.models import BotAccount, PromptTemplate
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
+from app.services.adapters.prompt_template import (
+    DEFAULT_USER_TEMPLATE,
+    build_template_context,
+    render_user_template,
+)
 from app.services.pipeline.adapter_events import AdapterEvent, DispatchedAsync, Final
 
 logger = logging.getLogger("app.services.adapters.websocket_bot")
@@ -36,9 +41,43 @@ def _sanitize_attachment(a: dict) -> dict:
 class WebsocketBotAdapter(OpenClawAdapter):
     """WebSocket Bot：通过 per-bot data WS 派发消息，plugin 异步回推回复."""
 
-    def __init__(self, bot: BotAccount) -> None:
+    def __init__(
+        self,
+        bot: BotAccount,
+        *,
+        template_override: PromptTemplate | None = None,
+    ) -> None:
         self.bot = bot
+        self.template: PromptTemplate | None = template_override or bot.prompt_template
         self.binding_config: dict = dict(bot.binding_config or {})
+
+    def _get_system_prompt(self) -> str:
+        base = ""
+        if self.template:
+            base = getattr(self.bot, "custom_system_prompt", None) or self.template.system_prompt
+        bot_name = self.bot.display_name or self.bot.username
+        if not base:
+            return f"你在当前频道中的名称是「{bot_name}」。"
+        return f"你在当前频道中的名称是「{bot_name}」。\n\n{base}"
+
+    def _render_trigger_message(self, payload: AgentPayload) -> dict:
+        trigger_meta = dict(payload.trigger_message or {})
+        pconfig = payload.process_config
+        context_vars = build_template_context(
+            bot_name=self.bot.display_name or self.bot.username,
+            channel_id=payload.channel_id,
+            channel_name=pconfig.channel_name,
+            sender_name=trigger_meta.get("sender_name") or pconfig.sender_name,
+            timestamp=trigger_meta.get("timestamp", ""),
+            memory_context=payload.memory_context,
+        )
+        template = self.template.user_template if self.template else DEFAULT_USER_TEMPLATE
+        trigger_meta["text"] = render_user_template(
+            template,
+            message=trigger_meta.get("text", ""),
+            context=context_vars,
+        )
+        return trigger_meta
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         return await self._drain_execute_iter(payload)
@@ -101,6 +140,7 @@ class WebsocketBotAdapter(OpenClawAdapter):
                 task_id=payload.task_id,
             )
 
+        rendered_trigger_message = self._render_trigger_message(payload)
         event = {
             "type": "message",
             "bot_id": self.bot.bot_id,
@@ -109,7 +149,12 @@ class WebsocketBotAdapter(OpenClawAdapter):
             "channel_id": payload.channel_id,
             "task_id": payload.task_id,
             "placeholder_msg_id": placeholder_msg_id,
-            "trigger_message": payload.trigger_message,
+            "trigger_message": rendered_trigger_message,
+            "raw_trigger_message": payload.trigger_message,
+            "prompt": {
+                "system": self._get_system_prompt(),
+                "user": rendered_trigger_message.get("text", ""),
+            },
             "memory_context": payload.memory_context,
             "attachments": [_sanitize_attachment(a) for a in (payload.attachments or [])],
             "binding_config": self.binding_config,

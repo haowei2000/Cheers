@@ -48,6 +48,18 @@ async def test_resolver_routes_websocket_binding_to_ws_adapter() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolver_passes_template_override_to_websocket_adapter() -> None:
+    template = SimpleNamespace(user_template="任务：{{message}}", system_prompt="系统")
+    bot = _fake_bot(binding_type="websocket", prompt_template=None)
+    session = _mock_session_returning_bot(bot)
+
+    adapter = await get_adapter_for_bot(bot.bot_id, session, template_override=template)
+
+    assert isinstance(adapter, WebsocketBotAdapter)
+    assert adapter.template is template
+
+
+@pytest.mark.asyncio
 async def test_resolver_ws_bot_offline_returns_mock() -> None:
     bot = _fake_bot(binding_type="websocket", status="offline")
     session = _mock_session_returning_bot(bot)

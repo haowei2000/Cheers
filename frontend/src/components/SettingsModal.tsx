@@ -2026,25 +2026,22 @@ function TemplateListSubPane({ authToken }: { authToken: string | null }) {
 }
 
 const TEMPLATE_VARS: { name: string; desc: string }[] = [
+  { name: "memory", desc: "频道记忆上下文" },
   { name: "message", desc: "用户消息" },
   { name: "sender_name", desc: "发送者名称" },
   { name: "bot_name", desc: "当前 Bot 名称" },
   { name: "channel_name", desc: "频道名称" },
   { name: "channel_id", desc: "频道 ID" },
   { name: "timestamp", desc: "消息时间" },
-  { name: "anchor", desc: "项目锚点" },
-  { name: "progress", desc: "项目进度" },
-  { name: "decisions", desc: "决策记录" },
-  { name: "recent", desc: "近期动态" },
-  { name: "todos", desc: "待办事项" },
-  { name: "files_index", desc: "文件索引" },
 ];
+
+const DEFAULT_USER_TEMPLATE = "{{memory}}\n\n{{message}}";
 
 function extractTemplateVars(tpl: string): string[] {
   const re = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
   const out = new Set<string>();
   for (const m of tpl.matchAll(re)) out.add(m[1]);
-  return out.size === 0 ? ["message"] : Array.from(out);
+  return out.size === 0 ? ["memory", "message"] : Array.from(out);
 }
 
 function TemplateForm({
@@ -2059,7 +2056,7 @@ function TemplateForm({
   onDeleted?: () => void;
 }) {
   const [name, setName] = useState(existing?.name || "");
-  const [userTemplate, setUserTemplate] = useState(existing?.user_template || "{{message}}");
+  const [userTemplate, setUserTemplate] = useState(existing?.user_template || DEFAULT_USER_TEMPLATE);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const isEdit = !!existing;
@@ -2078,7 +2075,7 @@ function TemplateForm({
     if (!name.trim()) return toast.error("模板名称必填");
     setSaving(true);
     try {
-      const tpl = userTemplate.trim() || "{{message}}";
+      const tpl = userTemplate.trim() || DEFAULT_USER_TEMPLATE;
       const body = {
         name: name.trim(),
         description: preservedDescription || null,
@@ -2721,9 +2718,8 @@ type TemplateItem = { template_id: string; name: string };
 
 /** BotNewPane — two-step wizard.
  *  Step 1: pick the binding type (HTTP / WebSocket).
- *  Step 2: render type-specific fields. HTTP needs a model + template
- *  (fetched lazily when step 2 mounts); WebSocket only needs an optional
- *  agent_id which gets shipped as binding_config. */
+ *  Step 2: render type-specific fields. HTTP needs a model; both HTTP and
+ *  WebSocket can pick a prompt template. */
 function BotNewPane({
   authToken,
   onCreated,
@@ -2741,7 +2737,7 @@ function BotNewPane({
   const [avatarUrl, setAvatarUrl] = useState("");
   const [scope, setScope] = useState<BotScope>("friend");
 
-  // HTTP-only
+  // HTTP-only model binding + shared prompt template selection
   const [models, setModels] = useState<ModelItem[]>([]);
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [modelId, setModelId] = useState("");
@@ -2757,17 +2753,21 @@ function BotNewPane({
   // their OpenClaw plugin config before we navigate away.
   const [issued, setIssued] = useState<{ token: string; bot: BotRow } | null>(null);
 
-  // Lazy-load models/templates when entering step 2 with HTTP selected.
+  // Lazy-load models/templates when entering step 2.
   useEffect(() => {
-    if (step !== 2 || bindingType !== "http") return;
-    apiFetch("/admin/models?include_disabled=false", { token: authToken })
-      .then((r) => r.json())
-      .then((d) => {
-        const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
-        setModels(list);
-        if (!modelId && list.length > 0) setModelId(list[0].model_id);
-      })
-      .catch(() => setModels([]));
+    if (step !== 2) return;
+    if (bindingType === "http") {
+      apiFetch("/admin/models?include_disabled=false", { token: authToken })
+        .then((r) => r.json())
+        .then((d) => {
+          const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
+          setModels(list);
+          if (!modelId && list.length > 0) setModelId(list[0].model_id);
+        })
+        .catch(() => setModels([]));
+    } else {
+      setModels([]);
+    }
     apiFetch("/templates", { token: authToken })
       .then((r) => r.json())
       .then((d) => {
@@ -2801,6 +2801,7 @@ function BotNewPane({
       body.model_id = modelId;
       body.template_id = templateId;
     } else {
+      if (templateId) body.template_id = templateId;
       const cfg: Record<string, string> = {};
       if (agentId.trim()) cfg.agent_id = agentId.trim();
       body.binding_config = Object.keys(cfg).length > 0 ? cfg : null;
@@ -2929,7 +2930,7 @@ function BotNewPane({
             id="websocket"
             active={bindingType === "websocket"}
             title="WebSocket Bot"
-            sub="由 OpenClaw plugin 反向连接，能力由 plugin 提供，无需绑定模型。"
+            sub="由 OpenClaw plugin 反向连接，能力由 plugin 提供，可绑定 Prompt 模板。"
             onClick={() => setBindingType("websocket")}
           />
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -3014,9 +3015,9 @@ function BotNewPane({
           </Field>
         </div>
 
-        {bindingType === "http" && (
-          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">LLM 绑定</div>
+	        {bindingType === "http" && (
+	          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+	            <div className="an-rc-title">LLM 模型</div>
             <Field label="AI 模型">
               <select
                 value={modelId}
@@ -3034,25 +3035,34 @@ function BotNewPane({
                 )}
               </select>
             </Field>
-            <Field label="Prompt 模板">
-              <select
-                value={templateId}
-                onChange={(e) => setTemplateId(e.target.value)}
-                className={inputCls}
-              >
-                {templates.length === 0 ? (
-                  <option value="">（无可用模板，请先在设置的消息模板中创建）</option>
-                ) : (
-                  templates.map((t) => (
-                    <option key={t.template_id} value={t.template_id}>
-                      {t.name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </Field>
-          </div>
-        )}
+	          </div>
+	        )}
+
+        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+          <div className="an-rc-title">Prompt 模板</div>
+          <Field label={bindingType === "websocket" ? "发送给 plugin 的任务模板" : "Prompt 模板"}>
+            <select
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              className={inputCls}
+            >
+              {templates.length === 0 ? (
+                <option value="">（无可用模板，请先在设置的消息模板中创建）</option>
+              ) : (
+                templates.map((t) => (
+                  <option key={t.template_id} value={t.template_id}>
+                    {t.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </Field>
+          {bindingType === "websocket" && (
+            <div className="an-rc-sub" style={{ marginTop: 0 }}>
+              模板会在后端渲染成最终任务文本，再通过 WebSocket 下发给 OpenClaw plugin。
+            </div>
+          )}
+        </div>
 
         {bindingType === "websocket" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
@@ -3192,22 +3202,21 @@ function BotEditPane({
   }, [bot.avatar_url, bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.scope, bot.template_id]);
 
   useEffect(() => {
-    if (!isHttpBot) {
-      setModels([]);
-      setTemplates([]);
-      return;
-    }
     let active = true;
-    apiFetch("/admin/models?include_disabled=false", { token: authToken })
-      .then((r) => r.json())
-      .then((d) => {
-        if (!active) return;
-        const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
-        setModels(list);
-      })
-      .catch(() => {
-        if (active) setModels([]);
-      });
+    if (isHttpBot) {
+      apiFetch("/admin/models?include_disabled=false", { token: authToken })
+        .then((r) => r.json())
+        .then((d) => {
+          if (!active) return;
+          const list: ModelItem[] = Array.isArray(d?.data) ? d.data : [];
+          setModels(list);
+        })
+        .catch(() => {
+          if (active) setModels([]);
+        });
+    } else {
+      setModels([]);
+    }
     apiFetch("/templates", { token: authToken })
       .then((r) => r.json())
       .then((d) => {
@@ -3235,10 +3244,10 @@ function BotEditPane({
         description: description.trim() || null,
         avatar_url: avatarUrl.trim() || null,
         scope,
+        template_id: templateId || null,
       };
       if (isHttpBot) {
         body.model_id = modelId;
-        body.template_id = templateId;
       }
       const res = await apiFetch(`/bots/${bot.bot_id}`, {
         method: "PUT",
@@ -3405,7 +3414,7 @@ function BotEditPane({
         </div>
         {isHttpBot && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">LLM 绑定</div>
+            <div className="an-rc-title">LLM 模型</div>
             {bot.is_builtin && (
               <div className="an-rc-sub">
                 内置 Bot 私聊使用专用 adapter；连通测试不会读取这里的模型绑定。
@@ -3434,31 +3443,40 @@ function BotEditPane({
                 )}
               </select>
             </Field>
-            <Field label="Prompt 模板">
-              <select
-                value={templateId}
-                onChange={(e) => {
-                  setTemplateId(e.target.value);
-                  setConnectionTest(null);
-                }}
-                className={inputCls}
-              >
-                {templateOptions.length === 0 ? (
-                  <option value="">（无可用模板）</option>
-                ) : (
-                  <>
-                    <option value="">（未配置模板，请选择后保存）</option>
-                    {templateOptions.map((t) => (
-                      <option key={t.template_id} value={t.template_id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </>
-                )}
-              </select>
-            </Field>
           </div>
         )}
+        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+          <div className="an-rc-title">Prompt 模板</div>
+          <Field label={isHttpBot ? "Prompt 模板" : "发送给 plugin 的任务模板"}>
+            <select
+              value={templateId}
+              onChange={(e) => {
+                setTemplateId(e.target.value);
+                setConnectionTest(null);
+              }}
+              className={inputCls}
+            >
+              {templateOptions.length === 0 ? (
+                <option value="">（无可用模板）</option>
+              ) : (
+                <>
+                  {isHttpBot && <option value="">（未配置模板，请选择后保存）</option>}
+                  {!isHttpBot && <option value="">（使用系统默认模板）</option>}
+                  {templateOptions.map((t) => (
+                    <option key={t.template_id} value={t.template_id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
+          </Field>
+          {!isHttpBot && (
+            <div className="an-rc-sub" style={{ marginTop: 0 }}>
+              模板会在后端渲染成最终任务文本，再通过 WebSocket 下发给 OpenClaw plugin。
+            </div>
+          )}
+        </div>
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">基本信息</div>
           <Field label="显示名称">
@@ -3556,7 +3574,7 @@ function BotEditPane({
           </div>
         </div>
         <div className="an-row-card" style={{ color: "var(--fg-3)", fontSize: 12 }}>
-          高级配置已收敛到设置弹窗；HTTP Bot 可在此切换模型与模板，WebSocket Bot 由 plugin 配置接管。
+          高级配置已收敛到设置弹窗；HTTP Bot 可在此切换模型与模板，WebSocket Bot 可切换任务模板。
         </div>
       </div>
     </div>
