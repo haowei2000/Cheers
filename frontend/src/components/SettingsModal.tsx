@@ -3048,10 +3048,10 @@ function BotEditPane({
     };
   }, [authToken, bot.bot_id, bot.model_id, bot.template_id, isHttpBot]);
 
-  const save = async () => {
+  const save = async (opts?: { silent?: boolean }) => {
     if (isHttpBot && (!modelId || !templateId)) {
       toast.error("HTTP Bot 必须选择模型和模板");
-      return;
+      return false;
     }
     setSaving(true);
     try {
@@ -3072,14 +3072,17 @@ function BotEditPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("已保存");
+        if (!opts?.silent) toast.success("已保存");
         setConnectionTest(null);
         onUpdated();
+        return true;
       } else {
         toast.error(data?.message || data?.detail || "保存失败");
+        return false;
       }
     } catch (e: unknown) {
       toast.error((e as Error).message || "保存失败");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -3124,6 +3127,10 @@ function BotEditPane({
   };
 
   const testConnection = async () => {
+    if (isHttpBot && (!bot.model_id || !bot.template_id)) {
+      toast.error("HTTP Bot 尚未保存模型和模板配置");
+      return;
+    }
     setTestingConnection(true);
     try {
       const res = await apiFetch(`/bots/${bot.bot_id}/connection-test`, {
@@ -3187,7 +3194,7 @@ function BotEditPane({
               <div className="an-rc-title">在线检测</div>
               <div className="an-rc-sub">实时连通测试</div>
             </div>
-            <PrimaryButton onClick={testConnection} disabled={testingConnection}>
+            <PrimaryButton onClick={testConnection} disabled={testingConnection || saving}>
               {testingConnection ? "测试中…" : "测试连通"}
             </PrimaryButton>
           </div>
@@ -3357,7 +3364,7 @@ function BotEditPane({
                 {deleting ? "删除中…" : "删除 Bot"}
               </DangerButton>
             )}
-            <PrimaryButton onClick={save} disabled={saving}>
+            <PrimaryButton onClick={() => void save()} disabled={saving}>
               {saving ? "保存中…" : "保存"}
             </PrimaryButton>
           </div>

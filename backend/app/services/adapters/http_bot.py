@@ -27,9 +27,15 @@ DEFAULT_MAX_TOKENS = 2000
 class HttpBotAdapter(OpenClawAdapter):
     """根据 Bot 的 model + template 配置调用 OpenAI-compatible LLM。"""
 
-    def __init__(self, bot: BotAccount, *, template_override: PromptTemplate | None = None) -> None:
+    def __init__(
+        self,
+        bot: BotAccount,
+        *,
+        model_override: AIModel | None = None,
+        template_override: PromptTemplate | None = None,
+    ) -> None:
         self.bot = bot
-        self.model: AIModel = bot.ai_model
+        self.model: AIModel = model_override or bot.ai_model
         self.template: PromptTemplate = template_override or bot.prompt_template
 
     def _get_system_prompt(self) -> str:
@@ -158,6 +164,108 @@ class HttpBotAdapter(OpenClawAdapter):
         if isinstance(extra_headers, dict):
             headers.update({str(key): str(value) for key, value in extra_headers.items()})
         return headers
+
+    @staticmethod
+    def _ollama_root_url(base_url: str) -> str | None:
+        base = (base_url or "").strip().rstrip("/")
+        if not base or "11434" not in base:
+            return None
+        if base.endswith("/v1"):
+            return base[:-3].rstrip("/")
+        return base
+
+    @staticmethod
+    def _model_name_matches(configured: str, available: str) -> bool:
+        configured = (configured or "").strip()
+        available = (available or "").strip()
+        if not configured or not available:
+            return False
+        return available == configured or (":" not in configured and available.startswith(f"{configured}:"))
+
+    @staticmethod
+    def _extract_model_names(data: Any) -> list[str]:
+        if not isinstance(data, dict):
+            return []
+        names: list[str] = []
+        for key in ("data", "models"):
+            items = data.get(key)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, str):
+                    names.append(item)
+                    continue
+                if not isinstance(item, dict):
+                    continue
+                for field in ("id", "name", "model"):
+                    value = item.get(field)
+                    if isinstance(value, str) and value:
+                        names.append(value)
+        return names
+
+    async def _probe_models_endpoint(
+        self,
+        client: httpx.AsyncClient,
+        api_config: dict[str, Any],
+        headers: dict[str, str],
+    ) -> bool | None:
+        """Return None when the service does not expose a usable model-list endpoint."""
+        base_url = api_config["base_url"]
+        probe_urls: list[str] = []
+        if (api_config.get("provider") or "").lower() == "ollama":
+            ollama_root = self._ollama_root_url(base_url)
+            if ollama_root:
+                probe_urls.append(f"{ollama_root}/api/tags")
+        probe_urls.append(f"{base_url}/models")
+
+        seen: set[str] = set()
+        for url in probe_urls:
+            if url in seen:
+                continue
+            seen.add(url)
+            try:
+                response = await client.get(url, headers=headers)
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
+                raise
+            except Exception:
+                continue
+            if response.status_code == 503:
+                # Busy but reachable: treat the backing service as online.
+                return True
+            if response.status_code in (404, 405):
+                continue
+            response.raise_for_status()
+            try:
+                data = response.json()
+            except ValueError:
+                return True
+            model_names = self._extract_model_names(data)
+            if not model_names:
+                return True
+            configured_model = api_config["model_name"]
+            return any(self._model_name_matches(configured_model, name) for name in model_names)
+        return None
+
+    async def _probe_chat_completion(
+        self,
+        client: httpx.AsyncClient,
+        api_config: dict[str, Any],
+        headers: dict[str, str],
+    ) -> bool:
+        url = f"{api_config['base_url']}/chat/completions"
+        body = {
+            "model": api_config["model_name"],
+            "messages": [{"role": "user", "content": "ping"}],
+            "temperature": 0,
+            "max_tokens": 1,
+            "stream": False,
+        }
+        response = await client.post(url, json=body, headers=headers)
+        if response.status_code == 503:
+            return True
+        response.raise_for_status()
+        data = response.json()
+        return bool(data.get("choices"))
 
     async def execute(self, payload: AgentPayload) -> AgentResponse:
         """Legacy single-result entry — drains ``execute_iter`` into AgentResponse."""
@@ -408,21 +516,14 @@ class HttpBotAdapter(OpenClawAdapter):
             return False
 
         api_config = self._get_api_config()
-        url = f"{api_config['base_url']}/chat/completions"
         timeout = float(api_config.get("health_timeout", min(float(api_config.get("timeout", 15)), 15)))
-        body = {
-            "model": api_config["model_name"],
-            "messages": [{"role": "user", "content": "ping"}],
-            "temperature": 0,
-            "max_tokens": 1,
-            "stream": False,
-        }
+        headers = self._build_headers(api_config)
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(url, json=body, headers=self._build_headers(api_config))
-                response.raise_for_status()
-                data = response.json()
-            return bool(data.get("choices"))
+                models_probe = await self._probe_models_endpoint(client, api_config, headers)
+                if models_probe is not None:
+                    return models_probe
+                return await self._probe_chat_completion(client, api_config, headers)
         except Exception as exc:
             logger.info(
                 "http_bot.health_check.failed bot_id=%s model=%s base_url=%s error=%s",
