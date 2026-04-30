@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { MagnifyingGlassIcon } from "@heroicons/react/24/solid";
 import { apiFetch } from "../api";
 import type {
   SearchBotHit,
@@ -33,6 +34,8 @@ type SearchPickerProps = {
   autoFocus?: boolean;
   emptyText?: string;
   actionLabel?: string | ((selection: SearchSelection) => string | null);
+  scopeLabel?: string;
+  scopeTitle?: string;
   onSelect: (selection: SearchSelection) => void;
 };
 
@@ -130,6 +133,8 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       autoFocus = false,
       emptyText = "没有匹配项",
       actionLabel,
+      scopeLabel,
+      scopeTitle,
       onSelect,
     },
     ref,
@@ -241,30 +246,59 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       return typeof actionLabel === "function" ? actionLabel(selection) : actionLabel;
     };
 
+    const searchClasses = [
+      "an-search",
+      modal ? "in-modal" : "",
+      scopeLabel ? "an-search-global" : "",
+      scopeLabel && open ? "is-open" : "",
+      className,
+    ].filter(Boolean).join(" ");
+    const scopeDescription = scopeTitle || scopeLabel || "";
+    const input = (
+      <input
+        ref={inputRef}
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && firstHit) {
+            e.preventDefault();
+            choose(firstHit);
+          }
+        }}
+        placeholder={placeholder}
+        aria-label={scopeLabel ? `${placeholder}，当前范围：${scopeLabel}` : placeholder}
+      />
+    );
+
     return (
-      <div
-        className={`an-search ${modal ? "in-modal" : ""} ${className}`}
-        ref={wrapRef}
-      >
-        <span className="an-search-ico">⌕</span>
-        <input
-          ref={inputRef}
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && firstHit) {
-              e.preventDefault();
-              choose(firstHit);
-            }
-          }}
-          placeholder={placeholder}
-          aria-label={placeholder}
-        />
-        {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
+      <div className={searchClasses} ref={wrapRef}>
+        {scopeLabel ? (
+          <div className="an-search-shell">
+            <span className="an-search-ico" aria-hidden="true">
+              <MagnifyingGlassIcon />
+            </span>
+            <span
+              className="an-search-scope"
+              title={scopeDescription}
+              aria-label={scopeDescription}
+            >
+              <span className="an-search-scope-label">Scope</span>
+              <span className="an-search-scope-value">{scopeLabel}</span>
+            </span>
+            {input}
+            {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
+          </div>
+        ) : (
+          <>
+            <span className="an-search-ico">⌕</span>
+            {input}
+            {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
+          </>
+        )}
         {open && q.trim() && (
           <div className="an-search-pop" role="listbox">
             {!results && busy && <div className="an-search-empty">搜索中...</div>}

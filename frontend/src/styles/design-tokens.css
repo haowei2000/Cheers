@@ -1901,6 +1901,117 @@ kbd {
   font-size: 10px;
 }
 
+.an-search-global {
+  margin: 6px 12px 10px;
+}
+.an-search-global .an-search-shell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 5px 6px;
+  border: 1px solid color-mix(in oklab, var(--border) 88%, var(--accent));
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--surface-soft) 72%, transparent), transparent),
+    var(--bg-2);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 6%, transparent);
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    box-shadow var(--motion-fast);
+}
+.an-search-global.is-open .an-search-shell,
+.an-search-global:focus-within .an-search-shell {
+  border-color: var(--border-focus);
+  background: var(--bg-elevated);
+  box-shadow:
+    0 0 0 2px var(--accent-ring),
+    inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+}
+.an-search-global .an-search-shell .an-search-ico {
+  position: static;
+  transform: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.an-search-global .an-search-shell .an-search-ico svg {
+  width: 15px;
+  height: 15px;
+}
+.an-search-global .an-search-shell input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.an-search-global .an-search-shell input:focus {
+  border-color: transparent;
+}
+.an-search-global .an-search-shell input::placeholder {
+  color: var(--fg-3);
+}
+.an-search-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 48%;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--border));
+  border-radius: 6px;
+  background: var(--accent-muted);
+  color: var(--fg-2);
+  flex: 0 1 auto;
+}
+.an-search-scope-label {
+  color: var(--accent);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+.an-search-scope-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+.an-search-global .an-search-shell kbd.an-search-kbd {
+  position: static;
+  transform: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-soft);
+  color: var(--fg-3);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
 .an-search-pop {
   position: absolute;
   left: 0;

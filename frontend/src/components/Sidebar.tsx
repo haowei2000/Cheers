@@ -84,6 +84,13 @@ export function Sidebar({
   const currentWsLetter = currentWs ? currentWs.name.slice(0, 1).toUpperCase() : "∗";
   const currentWsAccent = currentWs ? wsColor(currentWs.workspace_id) : "var(--accent)";
   const currentWsAvatarUrl = currentWs?.avatar_url || "";
+  const searchScopeName = selectedWorkspaceId
+    ? currentWs?.name || "当前工作空间"
+    : "全部工作空间";
+  const searchScopeLabel = selectedWorkspaceId ? searchScopeName : "全部空间";
+  const searchScopeTitle = selectedWorkspaceId
+    ? `频道与消息范围：${searchScopeName}；成员和 Bot 全局搜索`
+    : "频道、消息、成员和 Bot 全局搜索";
 
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
@@ -350,9 +357,11 @@ export function Sidebar({
         context="global_nav"
         token={authToken}
         workspaceId={selectedWorkspaceId || undefined}
-        placeholder="搜索频道 / 成员 / Bot"
+        placeholder="搜索消息 / 频道 / 成员 / Bot"
         keyboardHint="⌘K"
         enableShortcut
+        scopeLabel={searchScopeLabel}
+        scopeTitle={searchScopeTitle}
         onSelect={handleSearchSelect}
       />
 
