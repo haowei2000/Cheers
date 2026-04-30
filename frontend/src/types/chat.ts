@@ -96,6 +96,4 @@ export type Message = {
   _bot_trace?: BotTraceEvent[];
 };
 
-export type QaPair = { question: Message; answer: Message };
-
 export type ContextData = Record<string, string>;
