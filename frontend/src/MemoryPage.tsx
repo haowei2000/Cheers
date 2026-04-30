@@ -354,11 +354,13 @@ export default function MemoryPage({
   channelId,
   channelName,
   contextData,
+  currentUserId,
   onClose,
 }: {
   channelId: string;
   channelName: string;
   contextData: Record<string, string>;
+  currentUserId?: string | null;
   onClose: () => void;
 }) {
   const [activeLayer, setActiveLayer] = useState<string>("ANCHOR");
@@ -788,10 +790,18 @@ export default function MemoryPage({
         </div>
       );
     }
-    const sorted = [...members].sort(
-      (a, b) =>
-        (a.member_type === "bot" ? -1 : 1) - (b.member_type === "bot" ? -1 : 1),
-    );
+    const sorted = members
+      .map((member, index) => ({ member, index }))
+      .sort((a, b) => {
+        const aSelf = Boolean(currentUserId && a.member.member_id === currentUserId);
+        const bSelf = Boolean(currentUserId && b.member.member_id === currentUserId);
+        if (aSelf !== bSelf) return aSelf ? -1 : 1;
+        const aRank = a.member.member_type === "bot" ? 0 : 1;
+        const bRank = b.member.member_type === "bot" ? 0 : 1;
+        if (aRank !== bRank) return aRank - bRank;
+        return a.index - b.index;
+      })
+      .map(({ member }) => member);
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {sorted.map((m) => {

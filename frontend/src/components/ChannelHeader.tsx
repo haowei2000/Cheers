@@ -8,10 +8,9 @@ import {
   Cog6ToothIcon,
   DocumentTextIcon,
   MegaphoneIcon,
-  UserIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
-import type { Channel, CurrentUser, DM } from "../types";
+import type { Channel, DM } from "../types";
 
 export type TopicSummary = {
   rootId: string;
@@ -71,9 +70,6 @@ interface ChannelHeaderProps {
   memoryTab: MemoryTab | null;
   onSetMemoryTab: (tab: MemoryTab | null) => void;
 
-  currentUser: CurrentUser;
-  onOpenChannelProfile: () => void;
-
   /** Open the announcement-composer modal. Omitted → the megaphone button
    *  doesn't render (e.g. on DM headers where announcements don't apply). */
   onOpenAnnouncementComposer?: () => void;
@@ -99,8 +95,6 @@ export function ChannelHeader({
   onOpenChannelSettings,
   memoryTab,
   onSetMemoryTab,
-  currentUser,
-  onOpenChannelProfile,
   onOpenAnnouncementComposer,
   topics = [],
   onJumpToMessage,
@@ -251,7 +245,7 @@ export function ChannelHeader({
         })}
       </div>
 
-      {/* Auxiliary icon buttons — Announce / Manage members / Channel profile */}
+      {/* Auxiliary icon buttons — Announce / Manage channel */}
       {onOpenAnnouncementComposer && (
         <button
           type="button"
@@ -273,17 +267,6 @@ export function ChannelHeader({
           style={{ color: "var(--fg-3)" }}
         >
           <Cog6ToothIcon className="w-4 h-4" />
-        </button>
-      )}
-      {currentUser && (
-        <button
-          type="button"
-          onClick={onOpenChannelProfile}
-          title="我的频道资料"
-          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
-          style={{ color: "var(--fg-3)" }}
-        >
-          <UserIcon className="w-4 h-4" />
         </button>
       )}
     </div>
