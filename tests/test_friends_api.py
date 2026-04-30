@@ -118,7 +118,7 @@ async def test_friend_request_accept_creates_and_updates_personal_notice(
 
 
 @pytest.mark.asyncio
-async def test_duplicate_and_reverse_request_auto_accept(db_session: AsyncSession) -> None:
+async def test_duplicate_and_reverse_request_requires_explicit_accept(db_session: AsyncSession) -> None:
     alice = _user("friend-alice-002", "friend_alice_002")
     bob = _user("friend-bob-002", "friend_bob_002")
     db_session.add_all([alice, bob])
@@ -137,8 +137,16 @@ async def test_duplicate_and_reverse_request_auto_accept(db_session: AsyncSessio
     reverse = await _request_as(
         db_session, bob, "POST", "/api/v1/friends/requests", json={"friend_identifier": alice.user_id}
     )
-    assert reverse.status_code == 200
-    assert reverse.json()["data"]["status"] == "accepted"
+    assert reverse.status_code == 400
+
+    accept = await _request_as(
+        db_session,
+        bob,
+        "POST",
+        f"/api/v1/friends/requests/{first.json()['data']['friendship_id']}/accept",
+    )
+    assert accept.status_code == 200
+    assert accept.json()["data"]["status"] == "accepted"
 
 
 @pytest.mark.asyncio

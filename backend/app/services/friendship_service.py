@@ -100,7 +100,6 @@ class FriendshipService:
         self._ensure_not_self(current_user.user_id, target.user_id)
 
         existing = await self.repo.get_by_pair(current_user.user_id, target.user_id)
-        now = datetime.now(timezone.utc)
         if existing:
             if existing.status == "blocked":
                 if existing.user_id == current_user.user_id:
@@ -111,13 +110,7 @@ class FriendshipService:
             if existing.status == "pending":
                 if existing.user_id == current_user.user_id:
                     raise BadRequestError("好友申请已发送")
-                await self.repo.update(existing, status="accepted", responded_at=now)
-                await self._update_notice_message(existing, "accepted", resolved_by=current_user.user_id)
-                await self._notify_friendship_changed(existing, "accepted")
-                other = await self.user_repo.get_by_id(existing.user_id)
-                return self._friend_payload(current_user.user_id, existing, other or target) | {
-                    "action": "accepted_existing"
-                }
+                raise BadRequestError("对方已发送好友申请，请在收到申请中同意或拒绝")
 
             # rejected 关系允许重新发起，方向以最新申请为准。
             await self.repo.update(
