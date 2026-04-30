@@ -210,6 +210,26 @@ export interface TypingFrame {
   channel_id: string;
 }
 
+/** Lightweight progress/trace event from the OpenClaw runtime. These frames
+ *  are intentionally small and best-effort: the bridge validates msg_id/bot_id
+ *  and broadcasts them to browsers, but does not persist them. */
+export interface TraceFrame {
+  type: "trace";
+  msg_id: string;
+  task_id?: string;
+  channel_id?: string;
+  run_id?: string;
+  session_key?: string;
+  stream: string;
+  seq?: number;
+  ts?: number;
+  phase?: string;
+  status?: string;
+  title?: string;
+  message?: string;
+  data?: Record<string, unknown>;
+}
+
 export interface ResumeFrame {
   type: "resume";
   last_event_seq: number;

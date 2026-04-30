@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import {
   ArrowDownTrayIcon,
-  ArrowsPointingOutIcon,
   CheckCircleIcon,
   UsersIcon,
 } from "@heroicons/react/24/solid";
@@ -10,6 +10,7 @@ import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
+import { InviteMemberSearch } from "./InviteMemberSearch";
 
 const API = "/api/v1";
 
@@ -28,7 +29,6 @@ export function MemoryPanel({
   channelName,
   contextData,
   onClose,
-  onExpand,
   activeLayer: externalLayer,
   onLayerChange,
 }: {
@@ -36,7 +36,6 @@ export function MemoryPanel({
   channelName: string;
   contextData: Record<string, string>;
   onClose: () => void;
-  onExpand: () => void;
   activeLayer?: string;
   onLayerChange?: (layer: string) => void;
 }) {
@@ -50,6 +49,10 @@ export function MemoryPanel({
 
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [memberPermissions, setMemberPermissions] = useState({
+    can_invite_members: false,
+    can_add_bots: false,
+  });
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [todosLoading, setTodosLoading] = useState(false);
   const [todoNewContent, setTodoNewContent] = useState("");
@@ -85,6 +88,15 @@ export function MemoryPanel({
   const [newTitle, setNewTitle] = useState("");
   const [newContent, setNewContent] = useState("");
   const [timelineMode, setTimelineMode] = useState(false);
+  const [projectEditing, setProjectEditing] = useState(false);
+  const [projectEditLayer, setProjectEditLayer] = useState<
+    "ANCHOR" | "PROGRESS" | "DECISIONS"
+  >("ANCHOR");
+
+  const [profileNickname, setProfileNickname] = useState("");
+  const [profileBio, setProfileBio] = useState("");
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const isProject = activeLayer === "PROJECT";
   const PROJECT_META = {
@@ -98,6 +110,9 @@ export function MemoryPanel({
   const meta = isProject ? PROJECT_META : LAYER_META[activeLayer];
   const isReadonly = !!meta.readonly;
   const isEntryBased = !!meta.entryBased;
+  const canInviteFromMembers =
+    activeLayer === "MEMBERS" &&
+    (memberPermissions.can_invite_members || memberPermissions.can_add_bots);
   const rawContent = isProject
     ? ""
     : contextData[activeLayer.toLowerCase()] ?? "";
@@ -154,6 +169,42 @@ export function MemoryPanel({
       .finally(() => setTodosLoading(false));
   };
 
+  const loadMembers = () => {
+    const token = getStoredToken();
+    const headers: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
+    setMembersLoading(true);
+    fetch(`${API}/channels/${channelId}/settings`, { headers })
+      .then((r) => r.json())
+      .then((d) => {
+        setMembers(d.data?.members || []);
+        setMemberPermissions({
+          can_invite_members: Boolean(d.data?.permissions?.can_invite_members),
+          can_add_bots: Boolean(d.data?.permissions?.can_add_bots),
+        });
+      })
+      .catch(() => {
+        setMembers([]);
+        setMemberPermissions({ can_invite_members: false, can_add_bots: false });
+      })
+      .finally(() => setMembersLoading(false));
+  };
+
+  const loadMyProfile = () => {
+    const token = getStoredToken();
+    setProfileLoading(true);
+    fetch(`${API}/channels/${channelId}/my-profile`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        setProfileNickname(d.data?.nickname || "");
+        setProfileBio(d.data?.bio || "");
+      })
+      .catch(() => {})
+      .finally(() => setProfileLoading(false));
+  };
   const switchLayer = (layer: string) => {
     setActiveLayer(layer);
     setEditingEntryId(null);
@@ -166,26 +217,13 @@ export function MemoryPanel({
       loadEntries(layer);
     }
     if (layer === "MEMBERS") {
-      const token = getStoredToken();
-      setMembersLoading(true);
-      fetch(`${API}/channels/${channelId}/members?with_username=1`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((r) => r.json())
-        .then((d) => setMembers(d.data || []))
-        .catch(() => {})
-        .finally(() => setMembersLoading(false));
+      loadMembers();
+      loadMyProfile();
     }
     if (layer === "TODO") {
       loadTodos();
       if (members.length === 0) {
-        const token = getStoredToken();
-        fetch(`${API}/channels/${channelId}/members?with_username=1`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-          .then((r) => r.json())
-          .then((d) => setMembers(d.data || []))
-          .catch(() => {});
+        loadMembers();
       }
     }
     if (layer === "FILES_INDEX") {
@@ -333,6 +371,78 @@ export function MemoryPanel({
   const getMemberName = (id: string, type: string) => {
     const m = members.find((x) => x.member_id === id && x.member_type === type);
     return m ? m.display_name || m.username || "Unknown" : null;
+  };
+
+  const handleProjectCreateEntry = async () => {
+    if (!newContent.trim()) return;
+    const token = getStoredToken();
+    const res = await fetch(`${API}/channels/${channelId}/memory/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        layer: projectEditLayer,
+        title: newTitle || null,
+        content: newContent,
+      }),
+    }).catch(() => null);
+    if (res?.ok) {
+      setNewTitle("");
+      setNewContent("");
+      setAddingNew(false);
+      loadProject();
+    }
+  };
+
+  const handleProjectUpdateEntry = async (entryId: string) => {
+    const token = getStoredToken();
+    const res = await fetch(`${API}/channels/${channelId}/memory/${entryId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ title: editTitle || null, content: editContent }),
+    }).catch(() => null);
+    if (res?.ok) {
+      setEditingEntryId(null);
+      loadProject();
+    }
+  };
+
+  const handleProjectDeleteEntry = async (entryId: string) => {
+    const token = getStoredToken();
+    const res = await fetch(`${API}/channels/${channelId}/memory/${entryId}`, {
+      method: "DELETE",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).catch(() => null);
+    if (res?.ok) loadProject();
+  };
+
+  const saveMyProfile = async () => {
+    const token = getStoredToken();
+    setProfileSaving(true);
+    try {
+      const res = await fetch(`${API}/channels/${channelId}/my-profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          nickname: profileNickname || null,
+          bio: profileBio || null,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("频道资料已更新");
+    } catch {
+      toast.error("保存频道资料失败");
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   // ── Entry-based layer content renderer ──
@@ -570,6 +680,294 @@ export function MemoryPanel({
     );
   };
 
+  const renderProjectEditor = () => {
+    const projectEntries =
+      projectEditLayer === "ANCHOR"
+        ? projectAnchors
+        : projectEditLayer === "PROGRESS"
+          ? entries
+          : projectDecisions;
+    const labels: Record<typeof projectEditLayer, string> = {
+      ANCHOR: "Anchor",
+      PROGRESS: "Progress",
+      DECISIONS: "Decisions",
+    };
+
+    if (entriesLoading) {
+      return (
+        <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
+          加载中…
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-3 py-2 border-b border-gray-100">
+          <div className="an-seg w-full" style={{ height: 28 }}>
+            {(["ANCHOR", "PROGRESS", "DECISIONS"] as const).map((layer) => (
+              <button
+                key={layer}
+                type="button"
+                className={projectEditLayer === layer ? "on" : ""}
+                onClick={() => {
+                  setProjectEditLayer(layer);
+                  setEditingEntryId(null);
+                  setAddingNew(false);
+                  setNewTitle("");
+                  setNewContent("");
+                }}
+              >
+                {labels[layer]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {projectEntries.length === 0 && !addingNew ? (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-400 gap-2 px-4 text-center">
+            <p className="text-xs font-medium text-gray-500">
+              暂无 {labels[projectEditLayer]} 内容
+            </p>
+            <button
+              type="button"
+              onClick={() => setAddingNew(true)}
+              className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+            >
+              添加条目
+            </button>
+          </div>
+        ) : (
+          <div className="px-3 py-2">
+            {projectEntries.map((entry) => {
+              if (editingEntryId === entry.entry_id) {
+                return (
+                  <div
+                    key={entry.entry_id}
+                    className="px-1 py-2 space-y-1.5"
+                    style={{
+                      background: "var(--accent-muted)",
+                      borderRadius: 6,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <input
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="标题（可选）"
+                      className="w-full text-xs rounded px-2 py-1 focus:outline-none"
+                      style={{
+                        background: "var(--bg-0)",
+                        border: "1px solid var(--border)",
+                        color: "var(--fg-1)",
+                      }}
+                    />
+                    <textarea
+                      rows={3}
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="w-full text-xs rounded px-2 py-1.5 resize-none focus:outline-none font-mono"
+                      style={{
+                        background: "var(--bg-0)",
+                        border: "1px solid var(--border)",
+                        color: "var(--fg-1)",
+                      }}
+                    />
+                    <div className="flex gap-1 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setEditingEntryId(null)}
+                        className="text-[11px] px-2 py-0.5 rounded"
+                        style={{
+                          border: "1px solid var(--border)",
+                          color: "var(--fg-2)",
+                          background: "transparent",
+                        }}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleProjectUpdateEntry(entry.entry_id)}
+                        className="text-[11px] px-2 py-0.5 rounded"
+                        style={{
+                          background: "var(--accent)",
+                          color: "#fff",
+                          border: 0,
+                        }}
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={entry.entry_id} className="an-mem-item anchor group">
+                  <div className="an-tick" />
+                  <div className="an-b">
+                    {entry.title && (
+                      <div
+                        className="an-tx"
+                        style={{ fontWeight: 600, marginBottom: 2 }}
+                      >
+                        {entry.title}
+                      </div>
+                    )}
+                    <div className="an-tx">
+                      <MessageMarkdown text={entry.content} />
+                    </div>
+                    {entry.updated_at && (
+                      <div className="an-mt">
+                        {new Date(entry.updated_at).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity self-start">
+                    <button
+                      type="button"
+                      onClick={() => startEditEntry(entry)}
+                      className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
+                      style={{ color: "var(--fg-3)" }}
+                      title="编辑"
+                    >
+                      &#9998;
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleProjectDeleteEntry(entry.entry_id)}
+                      className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
+                      style={{ color: "var(--fg-3)" }}
+                      title="删除"
+                    >
+                      &#10005;
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {addingNew && (
+          <div className="px-3 py-2 border-t border-gray-100 space-y-1.5 bg-green-50/20">
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="标题（可选）"
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+            />
+            <textarea
+              rows={3}
+              value={newContent}
+              onChange={(e) => setNewContent(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                  handleProjectCreateEntry();
+              }}
+              placeholder="内容…"
+              className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
+              autoFocus
+            />
+            <div className="flex gap-1 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddingNew(false);
+                  setNewTitle("");
+                  setNewContent("");
+                }}
+                className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleProjectCreateEntry}
+                className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
+              >
+                添加
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderMembersHub = () => {
+    return (
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-3 py-3 space-y-3 border-b border-gray-100">
+          <div className="rounded-md border border-gray-200 p-2.5">
+            <div className="text-xs font-semibold text-gray-700 mb-2">
+              我的频道资料
+            </div>
+            {profileLoading ? (
+              <div className="text-xs text-gray-400 py-3">加载中…</div>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  value={profileNickname}
+                  onChange={(e) => setProfileNickname(e.target.value)}
+                  placeholder="频道昵称"
+                  maxLength={64}
+                  className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                />
+                <textarea
+                  value={profileBio}
+                  onChange={(e) => setProfileBio(e.target.value)}
+                  placeholder="在本频道的身份介绍…"
+                  rows={2}
+                  className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={saveMyProfile}
+                    disabled={profileSaving}
+                    className="text-[11px] px-2.5 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94] disabled:opacity-50"
+                  >
+                    {profileSaving ? "保存中…" : "保存资料"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {canInviteFromMembers && (
+            <div className="rounded-md border border-gray-200 p-2.5">
+              <div className="text-xs font-semibold text-gray-700 mb-2">
+                邀请成员
+              </div>
+              <InviteMemberSearch
+                channelId={channelId}
+                members={members}
+                canInviteMembers={memberPermissions.can_invite_members}
+                canAddBots={memberPermissions.can_add_bots}
+                onInvited={loadMembers}
+              />
+            </div>
+          )}
+        </div>
+
+        {membersLoading ? (
+          <div className="flex items-center justify-center h-20 text-gray-400 text-xs">
+            加载中…
+          </div>
+        ) : members.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-28 text-gray-400 gap-2 text-center px-4">
+            <UsersIcon className="w-8 h-8 opacity-30" />
+            <p className="text-xs text-gray-500">暂无成员</p>
+          </div>
+        ) : (
+          <MembersView members={members} />
+        )}
+      </div>
+    );
+  };
+
   return (
     <aside className="an-memory w-full flex flex-col" style={{ minHeight: 0 }}>
       {/* Panel header */}
@@ -579,15 +977,6 @@ export function MemoryPanel({
           {channelName && <div className="an-sub">#{channelName}</div>}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-          <button
-            type="button"
-            onClick={onExpand}
-            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--surface-soft)] transition-colors"
-            style={{ color: "var(--fg-3)" }}
-            title="全屏查看"
-          >
-            <ArrowsPointingOutIcon className="w-3.5 h-3.5" />
-          </button>
           <button
             type="button"
             onClick={onClose}
@@ -656,7 +1045,7 @@ export function MemoryPanel({
               {entries.length} 条
             </span>
           )}
-          {isReadonly && activeLayer !== "TODO" && (
+          {isReadonly && activeLayer !== "TODO" && !canInviteFromMembers && (
             <span
               className="text-[10px] flex-shrink-0"
               style={{ color: "var(--fg-3)" }}
@@ -666,6 +1055,38 @@ export function MemoryPanel({
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          {isProject && (
+            <button
+              type="button"
+              onClick={() => {
+                setProjectEditing((v) => !v);
+                setEditingEntryId(null);
+                setAddingNew(false);
+              }}
+              className="text-[11px] px-2 py-1 rounded"
+              style={{
+                border: "1px solid var(--border)",
+                color: projectEditing ? "var(--accent)" : "var(--fg-2)",
+                background: projectEditing ? "var(--accent-muted)" : "transparent",
+              }}
+            >
+              {projectEditing ? "完成" : "编辑"}
+            </button>
+          )}
+          {isProject && projectEditing && !addingNew && (
+            <button
+              type="button"
+              onClick={() => setAddingNew(true)}
+              className="text-[11px] px-2 py-1 rounded"
+              style={{
+                border: "1px solid var(--border)",
+                color: "var(--fg-2)",
+                background: "transparent",
+              }}
+            >
+              + 添加
+            </button>
+          )}
           {isEntryBased &&
             (activeLayer === "PROGRESS" || activeLayer === "DECISIONS") &&
             entries.length > 0 && (
@@ -805,27 +1226,20 @@ export function MemoryPanel({
             </div>
           </>
         ) : isProject ? (
-          <ProjectView
-            anchors={projectAnchors}
-            progress={entries}
-            decisions={projectDecisions}
-            loading={entriesLoading}
-          />
+          projectEditing ? (
+            renderProjectEditor()
+          ) : (
+            <ProjectView
+              anchors={projectAnchors}
+              progress={entries}
+              decisions={projectDecisions}
+              loading={entriesLoading}
+            />
+          )
         ) : isEntryBased ? (
           renderEntryLayer()
         ) : activeLayer === "MEMBERS" ? (
-          membersLoading ? (
-            <div className="flex items-center justify-center h-full text-gray-400 text-xs">
-              加载中…
-            </div>
-          ) : members.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 text-center px-4">
-              <UsersIcon className="w-8 h-8 opacity-30" />
-              <p className="text-xs text-gray-500">暂无成员</p>
-            </div>
-          ) : (
-            <MembersView members={members} />
-          )
+          renderMembersHub()
         ) : activeLayer === "FILES_INDEX" ? (
           channelFilesLoading ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-xs">
@@ -1309,7 +1723,7 @@ function ProjectView({
         >
           暂无项目锚点与进度。
           <br />
-          在独立页面添加 Anchor / Progress 后会显示在这里。
+          点击右上角“编辑”添加 Anchor / Progress 后会显示在这里。
         </div>
       </div>
     );

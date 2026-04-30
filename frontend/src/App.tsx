@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import NotificationPanel from "./NotificationPanel";
-import ChannelMembersModal from "./ChannelMembersModal";
-import MemoryPage from "./MemoryPage";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
@@ -34,8 +32,7 @@ import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
 import { CreateChannelModal } from "./components/CreateChannelModal";
 import { OpenClawQcModal } from "./components/OpenClawQcModal";
-import { ChannelProfileModal } from "./components/ChannelProfileModal";
-import { QaSummaryModal } from "./components/QaSummaryModal";
+import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
 import { ImageGenModal } from "./components/ImageGenModal";
 import { Sidebar } from "./components/Sidebar";
 import { HelpModal } from "./components/HelpModal";
@@ -48,7 +45,7 @@ import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
 import { TopicPage } from "./components/TopicPage";
-import { AnnouncementComposerModal } from "./components/AnnouncementComposerModal";
+import { TaskPage } from "./components/TaskPage";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { apiFetch, buildWsUrl } from "./api";
 import {
@@ -63,30 +60,30 @@ import {
   formatDayLabel,
   TOPIC_DISPLAY_THRESHOLD,
 } from "./lib/message";
-import {
-  buildLogicalQaBlocks,
-  buildQaMarkdown,
-  downloadText,
-} from "./lib/qa";
-import { renderWithThinkFolding, stripThinkTags } from "./lib/think";
+import { renderWithThinkFolding } from "./lib/think";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
 import type {
   Channel,
   DM,
   Workspace,
   Message,
-  QaPair,
+  BotTraceEvent,
   ContextData,
   ClarifySchema,
   ClarifyAnswers,
   ChannelBot,
   ChannelUser,
   BotItem,
+  WebsocketTaskContentData,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
 
 const API = "/api/v1";
 const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
+const WEBSOCKET_TASK_KIND = "websocket_background_task";
+type WebsocketTaskMessage = Message & {
+  content_data: WebsocketTaskContentData;
+};
 const API_DOCS_URL = "/docs";
 
 function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status" | "is_online" | "status">) {
@@ -96,6 +93,42 @@ function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status"
   if (bot.connection_status === "online" && bot.is_online) return "WS 在线";
   if (bot.connection_status === "partial") return "WS 部分连接";
   return "WS 离线";
+}
+
+function botTraceStatusText(trace: BotTraceEvent): string {
+  const stream = trace.stream || "trace";
+  const phase = trace.phase || "";
+  const title = trace.title || "";
+  const message = trace.message || "";
+  if (stream === "agentnexus_plugin") {
+    const labels: Record<string, string> = {
+      received: "插件已收到消息",
+      hydrating_attachments: "正在读取附件",
+      attachments_ready: "附件已准备好",
+      loopback_start: "正在启动 OpenClaw",
+      loopback_accepted: "OpenClaw 已接收任务",
+      loopback_error: "OpenClaw 路由异常",
+      subagent_run_started: "OpenClaw run 已启动",
+      subagent_run_error: "OpenClaw run 启动失败",
+    };
+    return [labels[phase] || title || "插件处理中", message].filter(Boolean).join(" · ");
+  }
+  if (stream === "lifecycle") {
+    if (phase === "start") return "OpenClaw 开始执行";
+    if (phase === "end") return "OpenClaw 执行完成";
+    if (phase === "error") return message || "OpenClaw 执行异常";
+    return [title || "OpenClaw 生命周期", message].filter(Boolean).join(" · ");
+  }
+  if (stream === "assistant") return message ? `正在生成回复 · ${message}` : "正在生成回复";
+  if (stream === "thinking") return message ? `思考中 · ${message}` : "思考中";
+  if (stream === "plan") return title ? `更新计划 · ${title}` : "更新计划";
+  if (stream === "tool" || stream === "item") {
+    return [title || "正在调用工具", trace.status || message].filter(Boolean).join(" · ");
+  }
+  if (stream === "command_output") return [title || "命令执行中", message].filter(Boolean).join(" · ");
+  if (stream === "approval") return [title || "等待审批", trace.status || message].filter(Boolean).join(" · ");
+  if (stream === "error") return message || title || "OpenClaw 内部错误";
+  return [title || stream, message].filter(Boolean).join(" · ");
 }
 
 function botScopeText(scope?: BotItem["scope"]) {
@@ -163,7 +196,6 @@ export default function App() {
   // Topic viewer: pageTopicId — root msg_id for the full-page view,
   // mirrored to URL hash. There is no side-dock panel; opening a topic
   // always replaces the channel stream with the dedicated page.
-  const [announcementOpen, setAnnouncementOpen] = useState(false);
   // Composer send-kind: 4 unified types — 普通 / 加密 / 公告 / 主题.
   // Switchable via Tab / Shift-Tab and the ‹ › buttons flanking the composer.
   // Always resets to "normal" after each send. "reply" is orthogonal —
@@ -197,11 +229,17 @@ export default function App() {
     const m = /#topic=([^&]+)/.exec(location.hash || "");
     return m ? decodeURIComponent(m[1]) : null;
   });
+  const [taskPageOpen, setTaskPageOpen] = useState(false);
+  const [pageTaskMsgId, setPageTaskMsgId] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   useEffect(() => {
     selectedIdRef.current = selectedId;
+  }, [selectedId]);
+  useEffect(() => {
+    setTaskPageOpen(false);
+    setPageTaskMsgId(null);
   }, [selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -218,7 +256,6 @@ export default function App() {
     "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO" | null
   >(null);
   const memoryPanelOpen = memoryTab !== null;
-  const [memoryPageOpen, setMemoryPageOpen] = useState(false);
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
@@ -300,14 +337,6 @@ export default function App() {
     insertAtCursor(`$secret{${name}}`);
     setKeychainPopupOpen(false);
   };
-  const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>(
-    {},
-  );
-  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
-  const [summaryBusy, setSummaryBusy] = useState(false);
-  const [summaryPreview, setSummaryPreview] = useState("");
-  const [qaLlmReady, setQaLlmReady] = useState(false);
-  const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<
     string | null
   >(null);
@@ -430,16 +459,16 @@ export default function App() {
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [newWorkspaceAvatarUrl, setNewWorkspaceAvatarUrl] = useState("");
   const [inviteWsMemberOpen, setInviteWsMemberOpen] = useState(false);
   const [inviteWsIdentifier, setInviteWsIdentifier] = useState("");
   const [newChannelName, setNewChannelName] = useState("");
   const [allBots, setAllBots] = useState<BotItem[]>([]);
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
-  const [manageMembersOpen, setManageMembersOpen] = useState(false);
+  const [channelSettingsOpen, setChannelSettingsOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
-  const [channelProfileOpen, setChannelProfileOpen] = useState(false);
   const [_expandedOlderIds, _setExpandedOlderIds] = useState<Set<string>>(
     new Set(),
   );
@@ -482,13 +511,17 @@ export default function App() {
     }
     authFetch(`${API}/workspaces`, {
       method: "POST",
-      body: JSON.stringify({ name: newWorkspaceName.trim() }),
+      body: JSON.stringify({
+        name: newWorkspaceName.trim(),
+        avatar_url: newWorkspaceAvatarUrl.trim() || null,
+      }),
     })
       .then((r) => r.json())
       .then((d) => {
         if (d.status === "success") {
           toast.success("工作空间创建成功");
           setNewWorkspaceName("");
+          setNewWorkspaceAvatarUrl("");
           setCreateWsOpen(false);
           refreshWorkspaces(setWorkspaces, authToken ?? undefined);
           setSelectedWorkspaceId(d.data.workspace_id);
@@ -500,8 +533,9 @@ export default function App() {
   };
 
   // 邀请成员加入工作空间
-  const handleInviteWsMember = () => {
-    if (!inviteWsIdentifier.trim()) {
+  const inviteWorkspaceMember = (identifier: string) => {
+    const cleaned = identifier.trim();
+    if (!cleaned) {
       toast.error("请输入用户名");
       return;
     }
@@ -511,7 +545,7 @@ export default function App() {
     }
     authFetch(`${API}/workspaces/${selectedWorkspaceId}/invite`, {
       method: "POST",
-      body: JSON.stringify({ identifier: inviteWsIdentifier.trim() }),
+      body: JSON.stringify({ identifier: cleaned }),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -524,6 +558,10 @@ export default function App() {
         }
       })
       .catch(() => toast.error("邀请失败"));
+  };
+
+  const handleInviteWsMember = () => {
+    inviteWorkspaceMember(inviteWsIdentifier);
   };
 
   // 创建频道（项目）
@@ -633,8 +671,6 @@ export default function App() {
       setMessages([]);
       setHasMore(true);
       setChannelBots([]);
-      setSelectedQaIds({});
-      setSummaryPreview("");
       setProcessingBots({});
       setAutoAssist(false);
       setReplyingTo(null);
@@ -840,7 +876,7 @@ export default function App() {
               typeof msg.data.content === "string" &&
               msg.data.content.includes("已更新记忆层")
             ) {
-              fetch(`${API}/channels/${selectedId}/context`)
+              authFetch(`${API}/channels/${selectedId}/context`)
                 .then((r) => r.json())
                 .then((d) => d.data && setContextData(d.data))
                 .catch(() => {});
@@ -850,19 +886,60 @@ export default function App() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.msg_id === msg_id
-                  ? { ...m, content: m.content + delta, _streaming: true }
+                  ? {
+                      ...m,
+                      content:
+                        m.content_data?.kind === WEBSOCKET_TASK_KIND
+                          ? delta
+                          : m.content + delta,
+                      content_data:
+                        m.content_data?.kind === WEBSOCKET_TASK_KIND
+                          ? null
+                          : m.content_data,
+                      _streaming: true,
+                      _bot_status: undefined,
+                    }
+                  : m,
+              ),
+            );
+          } else if (msg.type === "bot_trace" && msg.data) {
+            const trace = msg.data as BotTraceEvent;
+            if (!trace.msg_id) return;
+            const status = botTraceStatusText(trace);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.msg_id === trace.msg_id
+                  ? {
+                      ...m,
+                      _bot_status: status,
+                      _bot_trace: [...(m._bot_trace || []), trace].slice(-24),
+                    }
                   : m,
               ),
             );
           } else if (msg.type === "message_done" && msg.data) {
             const { msg_id, content, files, file_ids, is_partial } = msg.data;
+            const hasContentData = Object.prototype.hasOwnProperty.call(
+              msg.data,
+              "content_data",
+            );
+            const nextContentData = hasContentData
+              ? msg.data.content_data
+              : undefined;
             setMessages((prev) =>
               prev.map((m) =>
                 m.msg_id === msg_id
                   ? {
                       ...m,
                       content,
+                      content_data:
+                        nextContentData !== undefined
+                          ? nextContentData
+                          : m.content_data?.kind === WEBSOCKET_TASK_KIND
+                            ? null
+                            : m.content_data,
                       _streaming: false,
+                      _bot_status: undefined,
                       ...(files ? { files } : {}),
                       ...(file_ids ? { file_ids } : {}),
                       ...(typeof is_partial === "boolean"
@@ -876,7 +953,7 @@ export default function App() {
               typeof content === "string" &&
               content.includes("已更新记忆层")
             ) {
-              fetch(`${API}/channels/${selectedId}/context`)
+              authFetch(`${API}/channels/${selectedId}/context`)
                 .then((r) => r.json())
                 .then((d) => d.data && setContextData(d.data))
                 .catch(() => {});
@@ -983,13 +1060,13 @@ export default function App() {
   }, [currentUserId, selectedId]);
 
   useEffect(() => {
-    if ((memoryPanelOpen || memoryPageOpen) && selectedId) {
-      fetch(`${API}/channels/${selectedId}/context`)
+    if (memoryPanelOpen && selectedId) {
+      authFetch(`${API}/channels/${selectedId}/context`)
         .then((r) => r.json())
         .then((d) => d.data && setContextData(d.data))
         .catch(console.error);
     }
-  }, [memoryPanelOpen, memoryPageOpen, selectedId]);
+  }, [authFetch, memoryPanelOpen, selectedId]);
 
   useEffect(() => {
     if (addBotOpen) {
@@ -1388,6 +1465,122 @@ export default function App() {
     );
   };
 
+  const renderBotTraceStatus = (m: Message) => {
+    if (!m._streaming || m.sender_type !== "bot" || !m._bot_status) return null;
+    return (
+      <div
+        className="mt-1 flex items-center gap-1.5 text-[11px] leading-snug"
+        style={{ color: "var(--fg-3)" }}
+      >
+        <span
+          className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+          style={{ background: "var(--fg-3)" }}
+        />
+        <span className="truncate max-w-[min(520px,70vw)]">
+          {m._bot_status}
+        </span>
+      </div>
+    );
+  };
+
+  const websocketTaskData = (m: Message): WebsocketTaskContentData | null => {
+    const data = m.content_data;
+    return data?.kind === WEBSOCKET_TASK_KIND
+      ? (data as WebsocketTaskContentData)
+      : null;
+  };
+
+  const websocketTaskMessages = useMemo(
+    () =>
+      messages.filter(
+        (m): m is WebsocketTaskMessage => websocketTaskData(m) !== null,
+      ),
+    [messages],
+  );
+
+  const jumpToMessage = useCallback((id: string) => {
+    const el = document.getElementById(`msg-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const orig = el.style.transition;
+    el.style.transition = "background 200ms";
+    const prev = el.style.background;
+    el.style.background = "var(--accent-muted)";
+    setTimeout(() => {
+      el.style.background = prev;
+      el.style.transition = orig;
+    }, 1200);
+  }, []);
+
+  const renderWebsocketTaskCard = (m: Message) => {
+    const task = websocketTaskData(m);
+    if (!task) return null;
+    const title =
+      typeof task.title === "string" ? task.title : "后台任务进行中";
+    const message =
+      typeof task.message === "string"
+        ? task.message
+        : "OpenClaw 已接收任务，完成后会自动更新这条回复。";
+    const taskId =
+      typeof task.task_id === "string" ? task.task_id : m.task_id || null;
+    const timeout =
+      typeof task.timeout_seconds === "number"
+        ? Math.round(task.timeout_seconds)
+        : null;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setPageTopicId(null);
+          setPageTaskMsgId(m.msg_id);
+          setTaskPageOpen(true);
+        }}
+        className="my-1.5 block w-full max-w-[min(560px,100%)] rounded-md border px-3 py-2 text-left transition-colors hover:bg-[var(--surface-strong)]"
+        style={{
+          borderColor: "var(--border)",
+          background: "var(--surface-soft)",
+          color: "var(--fg-1)",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex w-5 h-5 items-center justify-center rounded"
+            style={{
+              background: "var(--accent-muted)",
+              color: "var(--accent)",
+            }}
+          >
+            <DocumentIcon className="w-3.5 h-3.5" />
+          </span>
+          <span className="text-[13px] font-semibold">{title}</span>
+          <span
+            className="inline-flex items-center gap-1 text-[11px]"
+            style={{ color: "var(--fg-3)" }}
+          >
+            <span
+              className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+              style={{ background: "var(--accent)" }}
+            />
+            running
+          </span>
+        </div>
+        <div
+          className="mt-1 text-[12px] leading-relaxed"
+          style={{ color: "var(--fg-2)" }}
+        >
+          {message}
+        </div>
+        <div
+          className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px]"
+          style={{ color: "var(--fg-3)" }}
+        >
+          {timeout !== null && <span>等待超过 {timeout}s</span>}
+          {taskId && <span>task {taskId.slice(0, 8)}</span>}
+        </div>
+      </button>
+    );
+  };
+
   const sendTopicReply = async (
     channelId: string,
     rootMsgId: string,
@@ -1691,68 +1884,6 @@ export default function App() {
       unread_count: dm.unread_count ?? 0,
     };
   })();
-  const blocks = buildLogicalQaBlocks(messages);
-  const blockPairsForExport: QaPair[] = blocks.map((b) => {
-    const lastBot = [...b.messages]
-      .reverse()
-      .find((m) => m.sender_type === "bot");
-    const answer: Message = lastBot || {
-      msg_id: `${b.question.msg_id}-no-reply`,
-      sender_id: "",
-      sender_type: "bot",
-      content: "(无回复)",
-      created_at: b.question.created_at,
-    };
-    return { question: b.question, answer };
-  });
-  const selectedPairs = blockPairsForExport.filter(
-    (p) => selectedQaIds[p.question.msg_id],
-  );
-
-  const exportMdFilename = () => {
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const ch = (selectedChannel?.name || "channel").replace(/\s+/g, "_");
-    return `qa-export-${ch}-${stamp}.md`;
-  };
-
-  const downloadQaMarkdown = () => {
-    if (selectedPairs.length === 0) {
-      toast.error("请勾选至少一组问答");
-      return;
-    }
-    const md = buildQaMarkdown(selectedChannel?.name || "频道", selectedPairs);
-    downloadText(exportMdFilename(), md);
-  };
-
-  const refreshQaLlmStatus = async () => {
-    try {
-      const llmRes = await authFetch(`${API}/admin/settings/llm`);
-      const llmData = await llmRes.json();
-      if (!llmRes.ok) {
-        setQaLlmReady(false);
-        setQaLlmHint("无法读取 LLM 配置，请稍后重试。");
-        return false;
-      }
-      const bindings = llmData?.data?.bindings || {};
-      const providers = llmData?.data?.providers || [];
-      const pickedId = bindings.qa_summarize || bindings.system_llm;
-      const picked = providers.find(
-        (p: { id: string; base_url?: string }) => p.id === pickedId,
-      );
-      if (!picked || !String(picked.base_url || "").trim()) {
-        setQaLlmReady(false);
-        setQaLlmHint("未配置问答总结 LLM 或系统 LLM。");
-        return false;
-      }
-      setQaLlmReady(true);
-      setQaLlmHint("LLM 已配置，可生成总结。");
-      return true;
-    } catch {
-      setQaLlmReady(false);
-      setQaLlmHint("检查 LLM 配置失败，请稍后重试。");
-      return false;
-    }
-  };
 
   // 进入频道或收到新消息时，聊天区域滚动到最新消息（加载旧消息时跳过）
   useEffect(() => {
@@ -1790,59 +1921,6 @@ export default function App() {
       /* ignore — rail badge stays cleared locally; next list refresh re-syncs */
     });
   }, [selectedId, authToken]);
-
-  const generateQaSummary = async (pairsToSummarize: QaPair[]) => {
-    if (pairsToSummarize.length === 0) {
-      toast.error("请勾选至少一组问答");
-      return;
-    }
-    setSummaryBusy(true);
-    try {
-      const ok = await refreshQaLlmStatus();
-      if (!ok) {
-        toast.error("请先配置并绑定可用 LLM（问答总结或系统 LLM）。");
-        return;
-      }
-
-      const pairs = pairsToSummarize.map((p) => ({
-        question: stripThinkTags(
-          parseGuidePayload(p.question.content).text || p.question.content,
-        ),
-        answer: stripThinkTags(
-          parseGuidePayload(p.answer.content).text || p.answer.content,
-        ),
-        question_time: formatTs(p.question.created_at),
-        answer_time: formatTs(p.answer.created_at),
-      }));
-      const res = await authFetch(`${API}/admin/qa/summarize`, {
-        method: "POST",
-        body: JSON.stringify({
-          channel_name: selectedChannel?.name || "频道",
-          pairs,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          data?.detail || data?.message || `总结失败 (${res.status})`,
-        );
-      }
-      const md = data?.data?.summary_markdown || "";
-      if (!md.trim()) {
-        throw new Error("未获得总结结果");
-      }
-      setSummaryPreview(md);
-    } catch (e) {
-      toast.error((e as Error).message || "生成总结失败");
-    } finally {
-      setSummaryBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!selectedId) return;
-    refreshQaLlmStatus();
-  }, [selectedId]);
 
   // Auto-expand topics that contain streaming (incoming) messages
   useEffect(() => {
@@ -1963,16 +2041,6 @@ export default function App() {
           apiDocsUrl={API_DOCS_URL}
         />
 
-        <AnnouncementComposerModal
-          open={announcementOpen}
-          channelId={selectedId}
-          channelName={selectedChannel?.name}
-          currentUserId={currentUserId}
-          authToken={authToken}
-          onClose={() => setAnnouncementOpen(false)}
-          onPublished={() => toast.success("公告已发布")}
-        />
-
         <SettingsModal
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
@@ -1985,6 +2053,8 @@ export default function App() {
             setCurrentUser({
               ...currentUser,
               display_name: data.display_name,
+              bio: data.bio ?? currentUser.bio,
+              avatar_url: data.avatar_url ?? null,
             });
           }}
           onLogout={handleLogout}
@@ -2001,6 +2071,8 @@ export default function App() {
           open={createWsOpen}
           value={newWorkspaceName}
           onChange={setNewWorkspaceName}
+          avatarUrl={newWorkspaceAvatarUrl}
+          onAvatarUrlChange={setNewWorkspaceAvatarUrl}
           onSubmit={handleCreateWorkspace}
           onClose={() => setCreateWsOpen(false)}
         />
@@ -2008,8 +2080,11 @@ export default function App() {
         <InviteWorkspaceMemberModal
           open={inviteWsMemberOpen}
           value={inviteWsIdentifier}
+          authToken={authToken}
+          workspaceId={selectedWorkspaceId}
           onChange={setInviteWsIdentifier}
           onSubmit={handleInviteWsMember}
+          onPickUser={inviteWorkspaceMember}
           onClose={() => setInviteWsMemberOpen(false)}
         />
 
@@ -2196,53 +2271,24 @@ export default function App() {
           onNavigate={handleNotifNavigate}
         />
 
-        {/* 频道成员管理模态框 */}
+        {/* 频道设置 */}
         {selectedId && (
-          <ChannelMembersModal
-            channelId={selectedId}
-            channelName={selectedChannel?.name || ""}
+          <ChannelSettingsModal
+            open={channelSettingsOpen}
+            channel={selectedChannel}
             currentUserId={currentUserId}
-            userToken={authToken ?? undefined}
-            isOpen={manageMembersOpen}
-            onClose={() => setManageMembersOpen(false)}
+            userToken={authToken}
+            onClose={() => setChannelSettingsOpen(false)}
+            onSaved={(updated) => {
+              setChannels((prev) =>
+                prev.map((c) =>
+                  c.channel_id === updated.channel_id ? { ...c, ...updated } : c,
+                ),
+              );
+              setAutoAssist(Boolean(updated.auto_assist));
+            }}
           />
         )}
-
-        {/* Channel profile modal */}
-        {currentUser && selectedId && (
-          <ChannelProfileModal
-            open={channelProfileOpen}
-            channelId={selectedId}
-            channelName={selectedChannel?.name || ""}
-            userToken={authToken!}
-            onClose={() => setChannelProfileOpen(false)}
-          />
-        )}
-
-        <QaSummaryModal
-          open={summaryModalOpen}
-          onClose={() => setSummaryModalOpen(false)}
-          pairs={blockPairsForExport}
-          selectedIds={selectedQaIds}
-          onToggle={(id) =>
-            setSelectedQaIds((prev) => ({ ...prev, [id]: !prev[id] }))
-          }
-          onSelectAll={() =>
-            setSelectedQaIds(
-              Object.fromEntries(
-                blockPairsForExport.map((p) => [p.question.msg_id, true]),
-              ),
-            )
-          }
-          onDeselectAll={() => setSelectedQaIds({})}
-          channelBots={channelBots}
-          summaryPreview={summaryPreview}
-          summaryBusy={summaryBusy}
-          qaLlmReady={qaLlmReady}
-          qaLlmHint={qaLlmHint}
-          onGenerate={() => generateQaSummary(selectedPairs)}
-          onDownload={downloadQaMarkdown}
-        />
 
         <div className="flex-1 flex min-w-0">
           <main
@@ -2283,7 +2329,41 @@ export default function App() {
               isDark={isDark}
             />
 
-            {pageTopicId &&
+            {taskPageOpen &&
+              selectedId &&
+              (() => (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: "var(--bg-0)",
+                    zIndex: 20,
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 0,
+                  }}
+                >
+                  <TaskPage
+                    tasks={websocketTaskMessages}
+                    selectedMsgId={pageTaskMsgId}
+                    channel={selectedChannel}
+                    channelBots={channelBots}
+                    onSelectTask={setPageTaskMsgId}
+                    onBack={() => {
+                      setTaskPageOpen(false);
+                      setPageTaskMsgId(null);
+                    }}
+                    onJumpToMessage={(msgId) => {
+                      setTaskPageOpen(false);
+                      setPageTaskMsgId(null);
+                      setTimeout(() => jumpToMessage(msgId), 0);
+                    }}
+                  />
+                </div>
+              ))()}
+
+            {!taskPageOpen &&
+              pageTopicId &&
               selectedId &&
               (() => {
                 const rootMsg = messages.find(
@@ -2329,7 +2409,6 @@ export default function App() {
               <>
                 <ChannelHeader
                   channel={selectedChannel}
-                  selectedId={selectedId}
                   activeDm={
                     selectedId
                       ? dms.find((d) => d.channel_id === selectedId) ?? null
@@ -2338,34 +2417,13 @@ export default function App() {
                   isMobile={isMobile}
                   onOpenSidebar={() => setSidebarOpen(true)}
                   autoAssist={autoAssist}
-                  setAutoAssist={setAutoAssist}
-                  authToken={authToken}
-                  setChannels={setChannels}
-                  blockPairsForExport={blockPairsForExport}
-                  onOpenQaSummary={() => {
-                    setSelectedQaIds(
-                      Object.fromEntries(
-                        blockPairsForExport.map((p) => [
-                          p.question.msg_id,
-                          true,
-                        ]),
-                      ),
-                    );
-                    setSummaryPreview("");
-                    setSummaryModalOpen(true);
-                  }}
+                  onOpenChannelSettings={() => setChannelSettingsOpen(true)}
                   memoryTab={memoryTab}
-                  onSetMemoryTab={setMemoryTab}
-                  onOpenManageMembers={() => setManageMembersOpen(true)}
-                  currentUser={currentUser}
-                  onOpenChannelProfile={() => setChannelProfileOpen(true)}
-                  onOpenAnnouncementComposer={
-                    // DMs don't get announcements — the megaphone would make
-                    // no sense in a 1:1 conversation.
-                    selectedChannel?.type === "dm"
-                      ? undefined
-                      : () => setAnnouncementOpen(true)
-                  }
+                  onSetMemoryTab={(tab) => {
+                    setTaskPageOpen(false);
+                    setPageTaskMsgId(null);
+                    setMemoryTab(tab);
+                  }}
                   topics={topicRoots
                     .map((r) => {
                       const replies = topicRepliesOf(r.msg_id);
@@ -2394,20 +2452,18 @@ export default function App() {
                     })
                     .filter((x): x is NonNullable<typeof x> => x !== null)}
                   onOpenTopic={(rootId) => {
+                    setTaskPageOpen(false);
+                    setPageTaskMsgId(null);
                     setPageTopicId(rootId);
                   }}
-                  onJumpToMessage={(id) => {
-                    const el = document.getElementById(`msg-${id}`);
-                    if (!el) return;
-                    el.scrollIntoView({ block: "center", behavior: "smooth" });
-                    const orig = el.style.transition;
-                    el.style.transition = "background 200ms";
-                    const prev = el.style.background;
-                    el.style.background = "var(--accent-muted)";
-                    setTimeout(() => {
-                      el.style.background = prev;
-                      el.style.transition = orig;
-                    }, 1200);
+                  onJumpToMessage={jumpToMessage}
+                  taskCount={websocketTaskMessages.length}
+                  taskActive={taskPageOpen}
+                  onOpenTasks={() => {
+                    setMemoryTab(null);
+                    setPageTopicId(null);
+                    setPageTaskMsgId(websocketTaskMessages[0]?.msg_id ?? null);
+                    setTaskPageOpen(true);
                   }}
                 />
 
@@ -2468,37 +2524,12 @@ export default function App() {
                           </div>
                         )}
                       {(() => {
-                      const renderedRows = topicRoots.map((m, idx) => {
+                      const renderedRows = topicRoots.map((m) => {
                         // isDM gates the "intimate" bubble + self-right
                         // treatment; channel rendering is Discord-style
-                        // flat, all-left, with sender grouping.
+                        // flat, all-left, always with sender identity.
                         const isDMRender =
                           selectedChannel?.type === "dm";
-                        // Stack against the previous root if same sender
-                        // within 2 minutes — hide avatar/header row.
-                        const prevRoot =
-                          idx > 0 ? topicRoots[idx - 1] : null;
-                        const prevTs = prevRoot?.created_at
-                          ? new Date(prevRoot.created_at).getTime()
-                          : 0;
-                        const curTs = m.created_at
-                          ? new Date(m.created_at).getTime()
-                          : 0;
-                        const isStacked =
-                          !isDMRender &&
-                          !!prevRoot &&
-                          prevRoot.sender_id === m.sender_id &&
-                          prevRoot.sender_type === m.sender_type &&
-                          prevRoot.msg_type !== "announcement" &&
-                          prevRoot.msg_type !== "routing" &&
-                          prevRoot.msg_type !== "permission" &&
-                          m.msg_type !== "announcement" &&
-                          m.msg_type !== "routing" &&
-                          m.msg_type !== "permission" &&
-                          m.msg_type !== "topic" &&
-                          prevTs > 0 &&
-                          curTs > 0 &&
-                          curTs - prevTs < 2 * 60 * 1000;
                         // ── routing card: coordinator picks + plan ──────────
                         if (m.msg_type === "routing") {
                           const cd = (m.content_data ?? {}) as Record<
@@ -2899,9 +2930,13 @@ export default function App() {
                             : undefined;
                         const userLabel =
                           m.sender_name ||
-                          senderUser?.display_name ||
-                          senderUser?.username ||
+                          (isOwn
+                            ? currentUser?.display_name || currentUser?.username
+                            : senderUser?.display_name || senderUser?.username) ||
                           "用户";
+                        const userAvatarUrl = isOwn
+                          ? currentUser?.avatar_url
+                          : senderUser?.avatar_url;
                         const userInitials = userLabel
                           .slice(0, 1)
                           .toUpperCase();
@@ -2932,13 +2967,12 @@ export default function App() {
                           m.is_secret && !revealedContent && !isSecretExpired;
                         const rootBubble = !isDMRender ? (
                           // ── Channel flat render — Discord style ────────
-                          // All-left alignment, no bubble, sender grouping
-                          // (stacked messages hide their avatar + header).
+                          // All-left alignment, no bubble, always with avatar.
                           <div
                             id={`msg-${m.msg_id}`}
                             className="an-chat-msg group relative px-4 transition-colors"
                             style={{
-                              paddingTop: isStacked ? 2 : 8,
+                              paddingTop: 8,
                               paddingBottom: 2,
                             }}
                           >
@@ -2949,69 +2983,55 @@ export default function App() {
                             />
                             <div className="relative flex gap-3">
                               <div className="w-9 flex-shrink-0">
-                                {!isStacked ? (
-                                  m.sender_type === "bot" ? (
-                                    <BotAvatar
-                                      label={botLabel}
-                                      avatarUrl={senderBot?.avatar_url}
-                                      size={36}
-                                      className="mt-0.5"
-                                    />
-                                  ) : (
-                                    <div
-                                      className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
-                                      style={{
-                                        background: isOwn
-                                          ? "var(--accent)"
-                                          : "var(--fg-3)",
-                                      }}
-                                    >
-                                      {isOwn ? "我" : userInitials}
-                                    </div>
-                                  )
+                                {m.sender_type === "bot" ? (
+                                  <BotAvatar
+                                    label={botLabel}
+                                    avatarUrl={senderBot?.avatar_url}
+                                    size={36}
+                                    className="mt-0.5"
+                                  />
+                                ) : userAvatarUrl ? (
+                                  <img
+                                    src={userAvatarUrl}
+                                    alt={userLabel}
+                                    className="w-9 h-9 rounded-xl object-cover select-none mt-0.5"
+                                  />
                                 ) : (
-                                  // stacked: show the timestamp in the
-                                  // gutter on hover so time is still
-                                  // discoverable without the header row
                                   <div
-                                    className="text-right pr-1 opacity-0 group-hover:opacity-100 transition-opacity mt-1"
+                                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
                                     style={{
-                                      fontSize: 10,
-                                      color: "var(--fg-3)",
-                                      fontVariantNumeric: "tabular-nums",
+                                      background: isOwn
+                                        ? "var(--accent)"
+                                        : "var(--fg-3)",
                                     }}
                                   >
-                                    {msgTime
-                                      ? msgTime.split(",").pop()?.trim()
-                                      : ""}
+                                    {isOwn ? "我" : userInitials}
                                   </div>
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                {!isStacked && (
-                                  <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
-                                    <span
-                                      className="font-semibold"
-                                      style={{
-                                        fontSize: "var(--fs-chat-name)",
-                                        lineHeight: 1.2,
-                                        color: "var(--fg-1)",
-                                      }}
-                                    >
-                                      {isOwn
-                                        ? "我"
-                                        : m.sender_type === "bot"
-                                          ? botLabel
-                                          : userLabel}
-                                    </span>
-                                    <span
-                                      className="text-[11px]"
-                                      style={{ color: "var(--fg-3)" }}
-                                    >
-                                      {msgTime}
-                                    </span>
-                                  </div>
-                                )}
+                                <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
+                                  <span
+                                    className="font-semibold"
+                                    style={{
+                                      fontSize: "var(--fs-chat-name)",
+                                      lineHeight: 1.2,
+                                      color: "var(--fg-1)",
+                                    }}
+                                  >
+                                    {isOwn
+                                      ? "我"
+                                      : m.sender_type === "bot"
+                                        ? botLabel
+                                        : userLabel}
+                                  </span>
+                                  <span
+                                    className="text-[11px]"
+                                    style={{ color: "var(--fg-3)" }}
+                                  >
+                                    {msgTime}
+                                  </span>
+                                </div>
                                 {m.content_data?.title ? (
                                   <div
                                     className="text-[14px] font-semibold mb-1 leading-snug"
@@ -3091,6 +3111,8 @@ export default function App() {
                                         </button>
                                       )}
                                     </div>
+                                  ) : websocketTaskData(m) ? (
+                                    renderWebsocketTaskCard(m)
                                   ) : (
                                     renderWithThinkFolding(
                                       // Strip the `> [Author]: …\n\n` prefix
@@ -3127,6 +3149,7 @@ export default function App() {
                                   {renderStopStreamButton(m)}
                                   {renderPartialBadge(m)}
                                 </div>
+                                {renderBotTraceStatus(m)}
                                 {clarifyStatus !== null && selectedId && (
                                   <ClarifyInlineBlock
                                     msgId={m.msg_id}
@@ -3181,7 +3204,7 @@ export default function App() {
                         ) : isOwn ? (
                           <div
                             id={`msg-${m.msg_id}`}
-                            className="group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
+                            className="an-chat-msg group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
                           >
                             <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">
                               我
@@ -3317,7 +3340,7 @@ export default function App() {
                         ) : (
                           <div
                             id={`msg-${m.msg_id}`}
-                            className="group flex items-start gap-2.5 px-4 py-1 transition-all"
+                            className="an-chat-msg group flex items-start gap-2.5 px-4 py-1 transition-all"
                           >
                             <div className="flex-shrink-0 mt-0.5">
                               {m.sender_type === "bot" ? (
@@ -3325,6 +3348,12 @@ export default function App() {
                                   label={botLabel}
                                   avatarUrl={senderBot?.avatar_url}
                                   size={32}
+                                />
+                              ) : userAvatarUrl ? (
+                                <img
+                                  src={userAvatarUrl}
+                                  alt={userLabel}
+                                  className="w-8 h-8 rounded-xl object-cover select-none"
                                 />
                               ) : (
                                 <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">
@@ -3428,6 +3457,8 @@ export default function App() {
                                       </button>
                                     )}
                                   </div>
+                                ) : websocketTaskData(m) ? (
+                                  renderWebsocketTaskCard(m)
                                 ) : m._streaming && !text ? (
                                   <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                 ) : (
@@ -3457,6 +3488,7 @@ export default function App() {
                                 {!isSecretUnrevealed && renderStopStreamButton(m)}
                                 {!isSecretUnrevealed && renderPartialBadge(m)}
                               </div>
+                              {renderBotTraceStatus(m)}
                               {clarifyStatus !== null && selectedId && (
                                 <ClarifyInlineBlock
                                   msgId={m.msg_id}
@@ -3604,7 +3636,7 @@ export default function App() {
                               className={
                                 rFlat
                                   ? "an-chat-msg group flex gap-3 px-4 py-1 items-start transition-colors"
-                                  : `group flex gap-2.5 px-4 py-1 transition-all ${
+                                  : `an-chat-msg group flex gap-2.5 px-4 py-1 transition-all ${
                                       rIsOwn
                                         ? "flex-row-reverse items-end"
                                         : "items-start"
@@ -3744,7 +3776,9 @@ export default function App() {
                                             }
                                     }
                                   >
-                                    {r._streaming && !rTextRaw ? (
+                                    {websocketTaskData(r) ? (
+                                      renderWebsocketTaskCard(r)
+                                    ) : r._streaming && !rTextRaw ? (
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                     ) : (
                                       renderWithThinkFolding(
@@ -3775,6 +3809,7 @@ export default function App() {
                                     {renderStopStreamButton(r)}
                                     {renderPartialBadge(r)}
                                   </div>
+                                  {renderBotTraceStatus(r)}
                                   {rClarifyStatus !== null && selectedId && (
                                     <ClarifyInlineBlock
                                       msgId={r.msg_id}
@@ -3896,7 +3931,9 @@ export default function App() {
                                 color: isSelf
                                   ? "var(--accent)"
                                   : "var(--fg-3)",
-                                avatarUrl: u?.avatar_url,
+                                avatarUrl: isSelf
+                                  ? currentUser?.avatar_url || undefined
+                                  : u?.avatar_url || undefined,
                                 initial: isSelf
                                   ? "我"
                                   : label.slice(0, 1).toUpperCase(),
@@ -4292,6 +4329,7 @@ export default function App() {
                                             {renderStopStreamButton(r)}
                                             {renderPartialBadge(r)}
                                           </div>
+                                          {renderBotTraceStatus(r)}
                                           {rClarifyStatus !== null &&
                                             selectedId && (
                                               <ClarifyInlineBlock
@@ -4379,7 +4417,7 @@ export default function App() {
                       })()}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
-                          <div key={botId} className="flex gap-3 px-3 py-2">
+                          <div key={botId} className="an-chat-msg flex gap-3 px-3 py-2">
                             <div className="w-9 h-9 rounded-xl bg-[#2EB67D]/20 flex items-center justify-center text-[#2EB67D] text-sm font-bold flex-shrink-0">
                               {username.slice(0, 1).toUpperCase()}
                             </div>
@@ -4655,30 +4693,28 @@ export default function App() {
                           const v = e.target.value;
                           const pos = e.target.selectionStart ?? v.length;
                           setInput(v);
-                          if (!secretMode) {
-                            const lastAt = v.lastIndexOf("@", pos - 1);
-                            if (lastAt !== -1) {
-                              const after = v.slice(lastAt + 1, pos);
+                          const lastAt = v.lastIndexOf("@", pos - 1);
+                          if (lastAt !== -1) {
+                            const after = v.slice(lastAt + 1, pos);
+                            if (
+                              !after.includes(" ") &&
+                              !after.includes("\n")
+                            ) {
+                              const rect = e.target.getBoundingClientRect();
+                              const spaceBelow =
+                                window.innerHeight - rect.bottom;
+                              const spaceAbove = rect.top;
                               if (
-                                !after.includes(" ") &&
-                                !after.includes("\n")
+                                spaceBelow < 180 &&
+                                spaceAbove > spaceBelow
                               ) {
-                                const rect = e.target.getBoundingClientRect();
-                                const spaceBelow =
-                                  window.innerHeight - rect.bottom;
-                                const spaceAbove = rect.top;
-                                if (
-                                  spaceBelow < 180 &&
-                                  spaceAbove > spaceBelow
-                                ) {
-                                  setMentionDropdownPlacement("top");
-                                } else {
-                                  setMentionDropdownPlacement("bottom");
-                                }
-                                setShowMentionDropdown(true);
-                                setMentionFilter(after);
-                                return;
+                                setMentionDropdownPlacement("top");
+                              } else {
+                                setMentionDropdownPlacement("bottom");
                               }
+                              setShowMentionDropdown(true);
+                              setMentionFilter(after);
+                              return;
                             }
                           }
                           setShowMentionDropdown(false);
@@ -4825,11 +4861,9 @@ export default function App() {
                             type="button"
                             onClick={() => {
                               insertAtCursor("@");
-                              if (!secretMode) {
-                                setMentionFilter("");
-                                setMentionDropdownPlacement("top");
-                                setShowMentionDropdown(true);
-                              }
+                              setMentionFilter("");
+                              setMentionDropdownPlacement("top");
+                              setShowMentionDropdown(true);
                             }}
                             className="an-composer-iconbtn"
                             title="提及成员或 Bot"
@@ -5075,10 +5109,6 @@ export default function App() {
                   )
                 }
                 onClose={() => setMemoryTab(null)}
-                onExpand={() => {
-                  setMemoryPageOpen(true);
-                  setMemoryTab(null);
-                }}
               />
             </div>
           )}
@@ -5107,16 +5137,6 @@ export default function App() {
           )}
         </div>
       </div>
-
-      {/* Memory full-page overlay */}
-      {memoryPageOpen && selectedId && (
-        <MemoryPage
-          channelId={selectedId}
-          channelName={selectedChannel?.name ?? ""}
-          contextData={contextData}
-          onClose={() => setMemoryPageOpen(false)}
-        />
-      )}
 
       <ImageLightbox
         src={lightboxSrc}

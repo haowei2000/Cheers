@@ -32,13 +32,12 @@ from app.services.pipeline.events import MessageCreated
 from app.services.pipeline.ingest.context import IngestContext
 from app.services.pipeline.runner import Pipeline
 from app.services.pipeline.stage import Stage
+from app.services.secret_messages import SECRET_PLACEHOLDER, secret_placeholder_for
 from app.services.storage.base import StorageError
 from app.services.ws_service import ws_manager
 from app.utils.crypto import encrypt_value
 
 logger = logging.getLogger("app.services.pipeline.ingest")
-
-SECRET_PLACEHOLDER = "🔒 [加密消息]"
 
 
 class ValidateStage(Stage[IngestContext]):
@@ -100,6 +99,11 @@ class PersistStage(Stage[IngestContext]):
         )
         ctx.session.add(msg)
         await ctx.session.flush()
+        needs_ref_flush = False
+        if ctx.is_secret:
+            msg.content = secret_placeholder_for(msg.msg_id)
+            ctx.stored_content = msg.content
+            needs_ref_flush = True
 
         # The after_insert listener already promoted the parent row in DB;
         # do an explicit in-memory promote on the loaded instance (if any)
@@ -107,6 +111,8 @@ class PersistStage(Stage[IngestContext]):
         # without a refresh.
         if ctx.in_reply_to_msg_id:
             await ensure_topic_root(ctx.session, ctx.in_reply_to_msg_id)
+            needs_ref_flush = True
+        if needs_ref_flush:
             await ctx.session.flush()
 
         ctx.msg = msg

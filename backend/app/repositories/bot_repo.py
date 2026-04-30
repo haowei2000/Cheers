@@ -1,7 +1,7 @@
 """BotAccount / AIModel / PromptTemplate 数据访问层."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -79,6 +79,20 @@ class AIModelRepository:
 
     async def list_all(self) -> list[AIModel]:
         result = await self.session.execute(select(AIModel).order_by(AIModel.created_at))
+        return list(result.scalars().all())
+
+    async def list_visible(self, user_id: str) -> list[AIModel]:
+        result = await self.session.execute(
+            select(AIModel)
+            .where(
+                or_(
+                    AIModel.is_builtin.is_(True),
+                    AIModel.created_by.is_(None),
+                    AIModel.created_by == user_id,
+                )
+            )
+            .order_by(AIModel.created_at)
+        )
         return list(result.scalars().all())
 
     async def create(self, **kwargs) -> AIModel:

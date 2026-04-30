@@ -15,7 +15,7 @@ class AIModelCreate(BaseModel):
     api_key: str | None = Field(default=None, description="API Key")
     description: str | None = Field(default=None, description="模型描述")
     is_enabled: bool = Field(default=True)
-    is_public: bool = Field(default=True, description="是否公开（False 则仅管理员可见）")
+    is_public: bool = Field(default=False, description="保留字段；用户创建的模型始终仅创建者可见")
     config: dict[str, Any] | None = Field(default=None, description="额外配置如 temperature, max_tokens")
 
 
@@ -28,7 +28,7 @@ class AIModelUpdate(BaseModel):
     api_key: str | None = Field(default=None)
     description: str | None = Field(default=None)
     is_enabled: bool | None = Field(default=None)
-    is_public: bool | None = Field(default=None, description="是否公开")
+    is_public: bool | None = Field(default=None, description="保留字段；用户创建的模型始终仅创建者可见")
     config: dict[str, Any] | None = Field(default=None)
 
 
@@ -183,6 +183,7 @@ class BotSimpleInResponse(BaseModel):
     username: str
     display_name: str | None = None
     description: str | None = None
+    avatar_url: str | None = None
     status: str
     scope: Literal["private", "friend", "everyone"] = "friend"
     binding_type: str = "http"
@@ -225,6 +226,8 @@ class ChannelCreate(BaseModel):
     name: str
     type: str = "public"
     purpose: str | None = None
+    allow_member_invites: bool | None = None
+    allow_bot_adds: bool | None = None
 
 
 class ChannelInResponse(BaseModel):
@@ -236,6 +239,12 @@ class ChannelInResponse(BaseModel):
     type: str
     purpose: str | None = None
     auto_assist: bool = False
+    allow_member_invites: bool = True
+    allow_bot_adds: bool = True
+    my_role: str | None = None
+    can_manage: bool = False
+    can_invite_members: bool = False
+    can_add_bots: bool = False
     # 用户在该频道未读的消息数（由 channel_memberships.last_read_at 派生）。
     # 未登录或非成员时保持 None。
     unread_count: int | None = None
@@ -275,6 +284,12 @@ class SearchChannelHit(BaseModel):
     type: str  # 实际值排除了 "dm"（dm 单独通过 people/bot 搜索进入）
 
 
+class SearchWorkspaceHit(BaseModel):
+    workspace_id: str
+    name: str
+    kind: str = "team"
+
+
 class SearchUserHit(BaseModel):
     user_id: str
     username: str
@@ -300,11 +315,41 @@ class SearchMessageHit(BaseModel):
     created_at: datetime | None = None
 
 
+class SearchTodoHit(BaseModel):
+    todo_id: str
+    channel_id: str
+    channel_name: str
+    content: str
+    status: str
+    assignee_id: str | None = None
+    assignee_type: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SearchTaskHit(BaseModel):
+    task_id: str
+    channel_id: str
+    channel_name: str
+    bot_id: str
+    bot_name: str | None = None
+    trigger_msg_id: str
+    response_msg_id: str | None = None
+    latency_ms: int | None = None
+    feedback: str | None = None
+    snippet: str = ""
+    created_at: datetime | None = None
+
+
 class SearchResults(BaseModel):
     q: str
+    context: str = "global_nav"
+    workspaces: list[SearchWorkspaceHit] = Field(default_factory=list)
     channels: list[SearchChannelHit] = Field(default_factory=list)
     users: list[SearchUserHit] = Field(default_factory=list)
     bots: list[SearchBotHit] = Field(default_factory=list)
+    todos: list[SearchTodoHit] = Field(default_factory=list)
+    tasks: list[SearchTaskHit] = Field(default_factory=list)
     messages: list[SearchMessageHit] = Field(default_factory=list)
 
 

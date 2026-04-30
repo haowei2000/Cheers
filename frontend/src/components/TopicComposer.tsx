@@ -157,10 +157,7 @@ export function TopicComposer({
 
   return (
     <div style={{ position: "relative" }}>
-      <div
-        className="an-composer"
-        style={{ borderRadius: 10, padding: 0 }}
-      >
+      <div className="an-composer">
         <textarea
           ref={ref}
           value={v}
@@ -171,11 +168,6 @@ export function TopicComposer({
           className="an-composer-textarea"
           style={{
             height: measuredH,
-            minHeight: minH,
-            paddingTop: 10,
-            paddingBottom: 6,
-            fontSize: 13,
-            lineHeight: 1.5,
           }}
           disabled={busy}
         />

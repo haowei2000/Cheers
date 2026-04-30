@@ -110,6 +110,7 @@ class Workspace(Base):
 
     workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     # "team" (default, shared workspace with channels) or "personal" (auto-
     # provisioned per user; hosts their DMs).
     kind: Mapped[str] = mapped_column(
@@ -133,6 +134,12 @@ class Channel(Base):
     type: Mapped[str] = mapped_column(String(32), nullable=False, default="public")
     purpose: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     auto_assist: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
+    allow_member_invites: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", default=True
+    )
+    allow_bot_adds: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", default=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="channels")
@@ -181,6 +188,9 @@ class ChannelMembership(Base):
     )
     member_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     member_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="member", default="member"
+    )  # "owner" | "admin" | "member"；仅用户成员参与频道管理权限
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     added_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     # 频道级提示词模板覆盖（仅 bot 成员有效，为空时使用 BotAccount 默认模板）

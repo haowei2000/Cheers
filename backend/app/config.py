@@ -42,6 +42,8 @@ class Settings(BaseSettings):
         "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000
+    avatar_upload_max_bytes: int = 2 * 1024 * 1024
+    avatar_upload_allowed_types: str = "image/png,image/jpeg,image/webp,image/gif"
 
     # JWT 认证
     jwt_secret_key: str = ""  # 留空则启动时自动生成（非持久化），建议在 .env 中配置
@@ -107,7 +109,7 @@ class Settings(BaseSettings):
     # ===== OpenClaw channel plugin bridge =====
     openclaw_bridge_enabled: bool = True
     openclaw_bridge_token: str = ""  # 空 = 未配置，bridge 路由返回 503
-    openclaw_bridge_timeout_seconds: int = 60  # 异步 Bot 回复超时（超时后占位消息被标记超时）
+    openclaw_bridge_timeout_seconds: int = 300  # 异步 Bot 慢回复阈值（超时后占位消息转后台任务）
 
     model_config = {
         "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],
