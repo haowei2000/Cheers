@@ -35,7 +35,6 @@ import { CreateChannelModal } from "./components/CreateChannelModal";
 import { OpenClawQcModal } from "./components/OpenClawQcModal";
 import { ChannelProfileModal } from "./components/ChannelProfileModal";
 import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
-import { QaSummaryModal } from "./components/QaSummaryModal";
 import { ImageGenModal } from "./components/ImageGenModal";
 import { Sidebar } from "./components/Sidebar";
 import { HelpModal } from "./components/HelpModal";
@@ -64,12 +63,7 @@ import {
   formatDayLabel,
   TOPIC_DISPLAY_THRESHOLD,
 } from "./lib/message";
-import {
-  buildLogicalQaBlocks,
-  buildQaMarkdown,
-  downloadText,
-} from "./lib/qa";
-import { renderWithThinkFolding, stripThinkTags } from "./lib/think";
+import { renderWithThinkFolding } from "./lib/think";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
 import type {
   Channel,
@@ -77,7 +71,6 @@ import type {
   Workspace,
   Message,
   BotTraceEvent,
-  QaPair,
   ContextData,
   ClarifySchema,
   ClarifyAnswers,
@@ -349,14 +342,6 @@ export default function App() {
     insertAtCursor(`$secret{${name}}`);
     setKeychainPopupOpen(false);
   };
-  const [selectedQaIds, setSelectedQaIds] = useState<Record<string, boolean>>(
-    {},
-  );
-  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
-  const [summaryBusy, setSummaryBusy] = useState(false);
-  const [summaryPreview, setSummaryPreview] = useState("");
-  const [qaLlmReady, setQaLlmReady] = useState(false);
-  const [qaLlmHint, setQaLlmHint] = useState("正在检查 LLM 配置...");
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<
     string | null
   >(null);
@@ -682,8 +667,6 @@ export default function App() {
       setMessages([]);
       setHasMore(true);
       setChannelBots([]);
-      setSelectedQaIds({});
-      setSummaryPreview("");
       setProcessingBots({});
       setAutoAssist(false);
       setReplyingTo(null);
@@ -1897,68 +1880,6 @@ export default function App() {
       unread_count: dm.unread_count ?? 0,
     };
   })();
-  const blocks = buildLogicalQaBlocks(messages);
-  const blockPairsForExport: QaPair[] = blocks.map((b) => {
-    const lastBot = [...b.messages]
-      .reverse()
-      .find((m) => m.sender_type === "bot");
-    const answer: Message = lastBot || {
-      msg_id: `${b.question.msg_id}-no-reply`,
-      sender_id: "",
-      sender_type: "bot",
-      content: "(无回复)",
-      created_at: b.question.created_at,
-    };
-    return { question: b.question, answer };
-  });
-  const selectedPairs = blockPairsForExport.filter(
-    (p) => selectedQaIds[p.question.msg_id],
-  );
-
-  const exportMdFilename = () => {
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const ch = (selectedChannel?.name || "channel").replace(/\s+/g, "_");
-    return `qa-export-${ch}-${stamp}.md`;
-  };
-
-  const downloadQaMarkdown = () => {
-    if (selectedPairs.length === 0) {
-      toast.error("请勾选至少一组问答");
-      return;
-    }
-    const md = buildQaMarkdown(selectedChannel?.name || "频道", selectedPairs);
-    downloadText(exportMdFilename(), md);
-  };
-
-  const refreshQaLlmStatus = async () => {
-    try {
-      const llmRes = await authFetch(`${API}/admin/settings/llm`);
-      const llmData = await llmRes.json();
-      if (!llmRes.ok) {
-        setQaLlmReady(false);
-        setQaLlmHint("无法读取 LLM 配置，请稍后重试。");
-        return false;
-      }
-      const bindings = llmData?.data?.bindings || {};
-      const providers = llmData?.data?.providers || [];
-      const pickedId = bindings.qa_summarize || bindings.system_llm;
-      const picked = providers.find(
-        (p: { id: string; base_url?: string }) => p.id === pickedId,
-      );
-      if (!picked || !String(picked.base_url || "").trim()) {
-        setQaLlmReady(false);
-        setQaLlmHint("未配置问答总结 LLM 或系统 LLM。");
-        return false;
-      }
-      setQaLlmReady(true);
-      setQaLlmHint("LLM 已配置，可生成总结。");
-      return true;
-    } catch {
-      setQaLlmReady(false);
-      setQaLlmHint("检查 LLM 配置失败，请稍后重试。");
-      return false;
-    }
-  };
 
   // 进入频道或收到新消息时，聊天区域滚动到最新消息（加载旧消息时跳过）
   useEffect(() => {
@@ -1996,59 +1917,6 @@ export default function App() {
       /* ignore — rail badge stays cleared locally; next list refresh re-syncs */
     });
   }, [selectedId, authToken]);
-
-  const generateQaSummary = async (pairsToSummarize: QaPair[]) => {
-    if (pairsToSummarize.length === 0) {
-      toast.error("请勾选至少一组问答");
-      return;
-    }
-    setSummaryBusy(true);
-    try {
-      const ok = await refreshQaLlmStatus();
-      if (!ok) {
-        toast.error("请先配置并绑定可用 LLM（问答总结或系统 LLM）。");
-        return;
-      }
-
-      const pairs = pairsToSummarize.map((p) => ({
-        question: stripThinkTags(
-          parseGuidePayload(p.question.content).text || p.question.content,
-        ),
-        answer: stripThinkTags(
-          parseGuidePayload(p.answer.content).text || p.answer.content,
-        ),
-        question_time: formatTs(p.question.created_at),
-        answer_time: formatTs(p.answer.created_at),
-      }));
-      const res = await authFetch(`${API}/admin/qa/summarize`, {
-        method: "POST",
-        body: JSON.stringify({
-          channel_name: selectedChannel?.name || "频道",
-          pairs,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          data?.detail || data?.message || `总结失败 (${res.status})`,
-        );
-      }
-      const md = data?.data?.summary_markdown || "";
-      if (!md.trim()) {
-        throw new Error("未获得总结结果");
-      }
-      setSummaryPreview(md);
-    } catch (e) {
-      toast.error((e as Error).message || "生成总结失败");
-    } finally {
-      setSummaryBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!selectedId) return;
-    refreshQaLlmStatus();
-  }, [selectedId]);
 
   // Auto-expand topics that contain streaming (incoming) messages
   useEffect(() => {
@@ -2432,31 +2300,6 @@ export default function App() {
           />
         )}
 
-        <QaSummaryModal
-          open={summaryModalOpen}
-          onClose={() => setSummaryModalOpen(false)}
-          pairs={blockPairsForExport}
-          selectedIds={selectedQaIds}
-          onToggle={(id) =>
-            setSelectedQaIds((prev) => ({ ...prev, [id]: !prev[id] }))
-          }
-          onSelectAll={() =>
-            setSelectedQaIds(
-              Object.fromEntries(
-                blockPairsForExport.map((p) => [p.question.msg_id, true]),
-              ),
-            )
-          }
-          onDeselectAll={() => setSelectedQaIds({})}
-          channelBots={channelBots}
-          summaryPreview={summaryPreview}
-          summaryBusy={summaryBusy}
-          qaLlmReady={qaLlmReady}
-          qaLlmHint={qaLlmHint}
-          onGenerate={() => generateQaSummary(selectedPairs)}
-          onDownload={downloadQaMarkdown}
-        />
-
         <div className="flex-1 flex min-w-0">
           <main
             className="flex-1 flex flex-col min-w-0 relative"
@@ -2585,19 +2428,6 @@ export default function App() {
                   onOpenSidebar={() => setSidebarOpen(true)}
                   autoAssist={autoAssist}
                   onOpenChannelSettings={() => setChannelSettingsOpen(true)}
-                  blockPairsForExport={blockPairsForExport}
-                  onOpenQaSummary={() => {
-                    setSelectedQaIds(
-                      Object.fromEntries(
-                        blockPairsForExport.map((p) => [
-                          p.question.msg_id,
-                          true,
-                        ]),
-                      ),
-                    );
-                    setSummaryPreview("");
-                    setSummaryModalOpen(true);
-                  }}
                   memoryTab={memoryTab}
                   onSetMemoryTab={setMemoryTab}
                   currentUser={currentUser}

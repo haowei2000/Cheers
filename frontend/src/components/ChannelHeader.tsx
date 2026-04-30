@@ -4,7 +4,6 @@ import {
   BriefcaseIcon,
   CheckCircleIcon,
   ChatBubbleLeftEllipsisIcon,
-  ChatBubbleLeftRightIcon,
   ClipboardDocumentListIcon,
   Cog6ToothIcon,
   DocumentTextIcon,
@@ -12,7 +11,7 @@ import {
   UserIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
-import type { Channel, CurrentUser, DM, QaPair } from "../types";
+import type { Channel, CurrentUser, DM } from "../types";
 
 export type TopicSummary = {
   rootId: string;
@@ -69,9 +68,6 @@ interface ChannelHeaderProps {
   autoAssist: boolean;
   onOpenChannelSettings: () => void;
 
-  blockPairsForExport: QaPair[];
-  onOpenQaSummary: () => void;
-
   memoryTab: MemoryTab | null;
   onSetMemoryTab: (tab: MemoryTab | null) => void;
 
@@ -101,8 +97,6 @@ export function ChannelHeader({
   onOpenSidebar,
   autoAssist,
   onOpenChannelSettings,
-  blockPairsForExport,
-  onOpenQaSummary,
   memoryTab,
   onSetMemoryTab,
   currentUser,
@@ -253,7 +247,7 @@ export function ChannelHeader({
         })}
       </div>
 
-      {/* Auxiliary icon buttons — Announce / QA / Manage members / Channel profile */}
+      {/* Auxiliary icon buttons — Announce / Manage members / Channel profile */}
       {onOpenAnnouncementComposer && (
         <button
           type="button"
@@ -264,17 +258,6 @@ export function ChannelHeader({
           style={{ color: "var(--fg-3)" }}
         >
           <MegaphoneIcon className="w-4 h-4" />
-        </button>
-      )}
-      {blockPairsForExport.length > 0 && (
-        <button
-          type="button"
-          onClick={onOpenQaSummary}
-          title="生成问答总结"
-          className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
-          style={{ color: "var(--fg-3)" }}
-        >
-          <ChatBubbleLeftRightIcon className="w-4 h-4" />
         </button>
       )}
       {!activeDm && channel && (
