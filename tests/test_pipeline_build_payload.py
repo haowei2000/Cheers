@@ -79,7 +79,7 @@ def test_leaf_payload_omits_run_ctx() -> None:
         capabilities=Capabilities.leaf(),
     )
     assert payload.process_config.run_ctx is None
-    assert payload.process_config.db_session is None
+    assert payload.process_config.db_session is ctx.session
     assert payload.process_config.channel_bot_usernames == []
 
 
