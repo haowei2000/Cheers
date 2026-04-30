@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import {
   ChatBubbleLeftIcon,
   CheckCircleIcon,
+  UserPlusIcon,
 } from "@heroicons/react/24/solid";
 import { Square2StackIcon } from "@heroicons/react/24/outline";
 
 const API = "/api/v1";
 
 type NotificationItem = {
-  notif_type: "mention" | "todo";
+  notif_type: "mention" | "todo" | "friend_request";
   id: string;
   channel_id: string;
   channel_name: string;
@@ -17,6 +18,8 @@ type NotificationItem = {
   sender_id?: string | null;
   sender_type?: string | null;
   todo_status?: string | null;
+  friendship_id?: string | null;
+  friend_request_status?: string | null;
 };
 
 type Props = {
@@ -53,6 +56,7 @@ export default function NotificationPanel({ isOpen, onClose, userToken, onNaviga
 
   const mentions = items.filter((n) => n.notif_type === "mention");
   const todos = items.filter((n) => n.notif_type === "todo");
+  const friendRequests = items.filter((n) => n.notif_type === "friend_request");
 
   return (
     <div className="fixed inset-0 z-[80] flex">
@@ -82,6 +86,13 @@ export default function NotificationPanel({ isOpen, onClose, userToken, onNaviga
             </div>
           ) : (
             <>
+              {friendRequests.length > 0 && (
+                <Section
+                  title={`好友申请 (${friendRequests.length})`}
+                  items={friendRequests}
+                  onNavigate={(n) => { onNavigate(n.channel_id, n.id); onClose(); }}
+                />
+              )}
               {mentions.length > 0 && (
                 <Section
                   title={`@提及 (${mentions.length})`}
@@ -129,6 +140,8 @@ function Section({
                 <span className="flex-shrink-0 mt-0.5">
                   {n.notif_type === "mention" ? (
                     <ChatBubbleLeftIcon className="w-5 h-5 text-[#1264A3]" />
+                  ) : n.notif_type === "friend_request" ? (
+                    <UserPlusIcon className="w-5 h-5 text-[#2EB67D]" />
                   ) : n.todo_status === "completed" ? (
                     <CheckCircleIcon className="w-5 h-5 text-[#2EB67D]" />
                   ) : (
@@ -137,7 +150,9 @@ function Section({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-xs font-medium text-[#1264A3]">#{n.channel_name}</span>
+                    <span className="text-xs font-medium text-[#1264A3]">
+                      {n.notif_type === "friend_request" ? "好友通知" : `#${n.channel_name}`}
+                    </span>
                     <span className="text-[10px] text-gray-400">{timeAgo(n.created_at)}</span>
                   </div>
                   <p className="text-xs text-gray-700 line-clamp-2 leading-relaxed">{n.content}</p>

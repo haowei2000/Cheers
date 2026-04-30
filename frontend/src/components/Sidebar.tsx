@@ -496,8 +496,9 @@ export function Sidebar({
                 const label =
                   cp.display_name ||
                   cp.username ||
-                  (cp.member_type === "bot" ? "Bot" : "用户");
+                  (cp.member_type === "bot" ? "Bot" : cp.member_type === "system" ? "系统" : "用户");
                 const isBot = cp.member_type === "bot";
+                const isSystem = cp.member_type === "system";
                 return (
                   <li
                     key={d.channel_id}
@@ -515,7 +516,7 @@ export function Sidebar({
                       }
                     >
                       <span className="an-sigil">
-                        {isBot ? "⦿" : "@"}
+                        {isBot ? "⦿" : isSystem ? "◎" : "@"}
                       </span>
                       <span className="an-name">{label}</span>
                       {!isActive && (d.unread_count ?? 0) > 0 && (

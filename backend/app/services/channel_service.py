@@ -153,6 +153,21 @@ class ChannelService:
                     "display_name": bot.display_name,
                     "avatar_url": bot.avatar_url,
                 }
+            elif other.member_type == "system":
+                from app.services.friendship_service import (
+                    FRIEND_NOTICE_DISPLAY_NAME,
+                    FRIEND_NOTICE_SYSTEM_ID,
+                    FRIEND_NOTICE_USERNAME,
+                )
+                if other.member_id != FRIEND_NOTICE_SYSTEM_ID:
+                    continue
+                cp = {
+                    "member_id": FRIEND_NOTICE_SYSTEM_ID,
+                    "member_type": "system",
+                    "username": FRIEND_NOTICE_USERNAME,
+                    "display_name": FRIEND_NOTICE_DISPLAY_NAME,
+                    "avatar_url": None,
+                }
             else:
                 u = await self.user_repo.get_by_id(other.member_id)
                 if not u:
