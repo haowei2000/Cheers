@@ -275,6 +275,12 @@ class SearchChannelHit(BaseModel):
     type: str  # 实际值排除了 "dm"（dm 单独通过 people/bot 搜索进入）
 
 
+class SearchWorkspaceHit(BaseModel):
+    workspace_id: str
+    name: str
+    kind: str = "team"
+
+
 class SearchUserHit(BaseModel):
     user_id: str
     username: str
@@ -300,11 +306,41 @@ class SearchMessageHit(BaseModel):
     created_at: datetime | None = None
 
 
+class SearchTodoHit(BaseModel):
+    todo_id: str
+    channel_id: str
+    channel_name: str
+    content: str
+    status: str
+    assignee_id: str | None = None
+    assignee_type: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class SearchTaskHit(BaseModel):
+    task_id: str
+    channel_id: str
+    channel_name: str
+    bot_id: str
+    bot_name: str | None = None
+    trigger_msg_id: str
+    response_msg_id: str | None = None
+    latency_ms: int | None = None
+    feedback: str | None = None
+    snippet: str = ""
+    created_at: datetime | None = None
+
+
 class SearchResults(BaseModel):
     q: str
+    context: str = "global_nav"
+    workspaces: list[SearchWorkspaceHit] = Field(default_factory=list)
     channels: list[SearchChannelHit] = Field(default_factory=list)
     users: list[SearchUserHit] = Field(default_factory=list)
     bots: list[SearchBotHit] = Field(default_factory=list)
+    todos: list[SearchTodoHit] = Field(default_factory=list)
+    tasks: list[SearchTaskHit] = Field(default_factory=list)
     messages: list[SearchMessageHit] = Field(default_factory=list)
 
 

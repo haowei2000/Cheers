@@ -500,8 +500,9 @@ export default function App() {
   };
 
   // 邀请成员加入工作空间
-  const handleInviteWsMember = () => {
-    if (!inviteWsIdentifier.trim()) {
+  const inviteWorkspaceMember = (identifier: string) => {
+    const cleaned = identifier.trim();
+    if (!cleaned) {
       toast.error("请输入用户名");
       return;
     }
@@ -511,7 +512,7 @@ export default function App() {
     }
     authFetch(`${API}/workspaces/${selectedWorkspaceId}/invite`, {
       method: "POST",
-      body: JSON.stringify({ identifier: inviteWsIdentifier.trim() }),
+      body: JSON.stringify({ identifier: cleaned }),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -524,6 +525,10 @@ export default function App() {
         }
       })
       .catch(() => toast.error("邀请失败"));
+  };
+
+  const handleInviteWsMember = () => {
+    inviteWorkspaceMember(inviteWsIdentifier);
   };
 
   // 创建频道（项目）
@@ -2008,8 +2013,11 @@ export default function App() {
         <InviteWorkspaceMemberModal
           open={inviteWsMemberOpen}
           value={inviteWsIdentifier}
+          authToken={authToken}
+          workspaceId={selectedWorkspaceId}
           onChange={setInviteWsIdentifier}
           onSubmit={handleInviteWsMember}
+          onPickUser={inviteWorkspaceMember}
           onClose={() => setInviteWsMemberOpen(false)}
         />
 
