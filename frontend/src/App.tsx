@@ -1462,12 +1462,10 @@ export default function App() {
       <button
         type="button"
         onClick={() => setMemoryDetailMessage(m)}
-        className="mt-1 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] transition-colors hover:bg-[var(--surface-soft)]"
-        style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}
         title="查看这条 Bot 回复加载了哪些记忆"
+        className="an-chat-action"
       >
         <QuestionMarkCircleIcon className="h-3.5 w-3.5" />
-        记忆详情
       </button>
     );
   };
@@ -3454,7 +3452,6 @@ export default function App() {
                                   {renderPartialBadge(m)}
                                 </div>
                                 {renderBotTraceStatus(m)}
-                                {renderMemoryLoadButton(m)}
                                 {clarifyStatus !== null && selectedId && (
                                   <ClarifyInlineBlock
                                     msgId={m.msg_id}
@@ -3483,6 +3480,7 @@ export default function App() {
                                 >
                                   <DocumentDuplicateIcon className="w-3.5 h-3.5" />
                                 </button>
+                                {renderMemoryLoadButton(m)}
                                 <button
                                   type="button"
                                   title="回复"
@@ -3794,7 +3792,6 @@ export default function App() {
                                 {!isSecretUnrevealed && renderPartialBadge(m)}
                               </div>
                               {renderBotTraceStatus(m)}
-                              {renderMemoryLoadButton(m)}
                               {clarifyStatus !== null && selectedId && (
                                 <ClarifyInlineBlock
                                   msgId={m.msg_id}
@@ -3812,25 +3809,28 @@ export default function App() {
                                 />
                               )}
                             </div>
-                            <button
-                              type="button"
-                              title="回复"
-                              onClick={() => {
-                                setReplyingTo(m);
-                                const mention =
-                                  m.sender_type === "bot" && senderBot?.username
-                                    ? `@${senderBot.username} `
-                                    : "";
-                                if (mention) setInput(mention);
-                                (secretMode
-                                  ? secretInputRef.current
-                                  : inputRef.current
-                                )?.focus();
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                            >
-                              {replyIcon}
-                            </button>
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
+                              {renderMemoryLoadButton(m)}
+                              <button
+                                type="button"
+                                title="回复"
+                                onClick={() => {
+                                  setReplyingTo(m);
+                                  const mention =
+                                    m.sender_type === "bot" && senderBot?.username
+                                      ? `@${senderBot.username} `
+                                      : "";
+                                  if (mention) setInput(mention);
+                                  (secretMode
+                                    ? secretInputRef.current
+                                    : inputRef.current
+                                  )?.focus();
+                                }}
+                                className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                              >
+                                {replyIcon}
+                              </button>
+                            </div>
                           </div>
                         );
 
@@ -4116,7 +4116,6 @@ export default function App() {
                                     {renderPartialBadge(r)}
                                   </div>
                                   {renderBotTraceStatus(r)}
-                                  {renderMemoryLoadButton(r)}
                                   {rClarifyStatus !== null && selectedId && (
                                     <ClarifyInlineBlock
                                       msgId={r.msg_id}
@@ -4143,6 +4142,7 @@ export default function App() {
                                   >
                                     <DocumentDuplicateIcon className="w-3.5 h-3.5" />
                                   </button>
+                                  {renderMemoryLoadButton(r)}
                                   <button
                                     type="button"
                                     title="回复"
@@ -4637,7 +4637,6 @@ export default function App() {
                                             {renderPartialBadge(r)}
                                           </div>
                                           {renderBotTraceStatus(r)}
-                                          {renderMemoryLoadButton(r)}
                                           {rClarifyStatus !== null &&
                                             selectedId && (
                                               <ClarifyInlineBlock
@@ -4660,26 +4659,29 @@ export default function App() {
                                         </>
                                       )}
                                     </div>
-                                    <button
-                                      type="button"
-                                      title="回复"
-                                      onClick={() => {
-                                        setReplyingTo(r);
-                                        const mention =
-                                          r.sender_type === "bot" &&
-                                          rBot?.username
-                                            ? `@${rBot.username} `
-                                            : "";
-                                        if (mention) setInput(mention);
-                                        (secretMode
-                                          ? secretInputRef.current
-                                          : inputRef.current
-                                        )?.focus();
-                                      }}
-                                      className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                    >
-                                      <ArrowUturnLeftIcon className="w-3 h-3" />
-                                    </button>
+                                    <div className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
+                                      {renderMemoryLoadButton(r)}
+                                      <button
+                                        type="button"
+                                        title="回复"
+                                        onClick={() => {
+                                          setReplyingTo(r);
+                                          const mention =
+                                            r.sender_type === "bot" &&
+                                            rBot?.username
+                                              ? `@${rBot.username} `
+                                              : "";
+                                          if (mention) setInput(mention);
+                                          (secretMode
+                                            ? secretInputRef.current
+                                            : inputRef.current
+                                          )?.focus();
+                                        }}
+                                        className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                      >
+                                        <ArrowUturnLeftIcon className="w-3 h-3" />
+                                      </button>
+                                    </div>
                                   </div>
                                 );
                               })}
