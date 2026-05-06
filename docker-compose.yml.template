@@ -32,9 +32,12 @@ services:
       - OPENCLAW_BRIDGE_ENABLED=${OPENCLAW_BRIDGE_ENABLED:-true}
       - OPENCLAW_BRIDGE_TOKEN=${OPENCLAW_BRIDGE_TOKEN:-}
       - OPENCLAW_BRIDGE_TIMEOUT_SECONDS=${OPENCLAW_BRIDGE_TIMEOUT_SECONDS:-300}
+      - OPENCLAW_PLUGIN_RELEASE_DIR=${OPENCLAW_PLUGIN_RELEASE_DIR:-/app/release}
+      - OPENCLAW_PLUGIN_FILE=${OPENCLAW_PLUGIN_FILE:-openclaw-channel-agentnexus.tgz}
       - SEED_DATA=${SEED_DATA:-1}
     volumes:
       - ./data/backend:/app/data
+      - ./release:/app/release:ro
     depends_on:
       postgres:
         condition: service_healthy

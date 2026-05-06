@@ -15,6 +15,7 @@ from app.core.exceptions import AppError
 from app.core.middleware import AccessLogMiddleware, RequestIDMiddleware
 from app.logging_config import setup_logging
 from app.manual_routes import router as manual_router
+from app.openclaw_docs_routes import router as openclaw_docs_router
 from app.public_routes import router as public_router
 from app.services.storage.bootstrap import initialize_storage, is_storage_enabled
 
@@ -117,6 +118,7 @@ app.include_router(openclaw_bridge_ws_router)
 # 静态功能路由（不含业务逻辑，保持不变）
 app.include_router(manual_router)
 app.include_router(public_router)
+app.include_router(openclaw_docs_router)
 
 
 @app.get("/health")

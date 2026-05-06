@@ -60,13 +60,29 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
         "详见 [系统管理说明书 §四](/manual/系统管理说明书#四如何让-openclaw-接入注册-bot-并加入项目)。",
     ),
     HelpEntry(
-        ("发现", "自动注册", "openclaw 发现", "让openclaw发现", "机器可读", "注册指南"),
+        (
+            "openclaw 自动注册",
+            "openclaw 发现",
+            "让openclaw发现",
+            "发现",
+            "自动注册",
+            "机器可读",
+            "注册指南",
+        ),
         "如何让外部 OpenClaw 发现并自动注册",
-        "外部 OpenClaw 可通过「发现接口」获取本系统提供的注册指南（机器可读 JSON），并自动提交注册申请；"
-        "管理员在「管理」→「待审核 Bot 申请」中审核通过后，该 Bot 才会被创建并可被加入项目 @。\n\n"
-        "• 发现与注册指南（GET）：后端地址/api/public/agentnexus-discovery（如 http://localhost:8000/api/public/agentnexus-discovery）\n"
-        "• 提交注册申请（POST）：后端地址/api/bots/register-request，body 含 username、openclaw_endpoint、intro（必填，JSON 格式自我介绍），及选填 display_name。\n"
-        "• 管理员入口：左侧「管理」→「待审核 Bot 申请」→ 通过/拒绝。\n\n"
+        "外部 OpenClaw 可通过 `/docs/openclaw/discovery` 获取机器可读入口清单，"
+        "并根据用户输入的账号密码或已有 token 选择接入方式。\n\n"
+        "• 推荐发现接口（GET）：后端地址/docs/openclaw/discovery"
+        "（如 http://localhost:8000/docs/openclaw/discovery）\n"
+        "• 帮助问答接口（GET/POST）：后端地址/docs/openclaw/help，可用 `?q=...` "
+        "或 body `{ \"question\": \"...\" }` 提问。\n"
+        "• 插件下载地址：/docs/openclaw/discovery 响应里的 `plugin.download_url`，"
+        "默认从 AgentNexus 项目根目录的 release/openclaw-channel-agentnexus.tgz 提供下载。\n"
+        "• 登录用户直接注册（POST）：后端地址/docs/openclaw/register，请求体可直接带 "
+        "`account_username` / `account_password`，也可用 Header "
+        "`Authorization: Bearer <access_token>`；成功后一次性返回 WebSocket Bot 的 `bot_token`。\n"
+        "• 兼容旧流程：/api/public/agentnexus-discovery 与 /api/v1/bots/register-request "
+        "仍可用于提交待管理员审核的注册申请。\n\n"
         "详见 [系统管理说明书 §五](/manual/系统管理说明书#五如何让外部-openclaw-发现并自动注册需管理员审核)。",
     ),
     HelpEntry(
