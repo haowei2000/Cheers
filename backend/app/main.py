@@ -37,6 +37,13 @@ async def lifespan(app: FastAPI):
     from app.http_client import init_http_client
     await init_http_client()
 
+    from app.services.realtime_broker import init_realtime_broker
+    await init_realtime_broker()
+
+    from app.services.orchestrator.jobs import run_orchestrator_job
+    from app.services.orchestrator.queue import start_orchestrator_workers
+    await start_orchestrator_workers(run_orchestrator_job)
+
     if is_storage_enabled():
         app.state.storage = await initialize_storage()
     else:
@@ -56,6 +63,12 @@ async def lifespan(app: FastAPI):
         logger.exception("ensure builtin bot failed: %s", e)
 
     yield
+
+    from app.services.orchestrator.queue import stop_orchestrator_workers
+    await stop_orchestrator_workers()
+
+    from app.services.realtime_broker import close_realtime_broker
+    await close_realtime_broker()
 
     from app.http_client import close_http_client
     await close_http_client()

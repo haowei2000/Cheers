@@ -192,6 +192,52 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_create_message_survives_orchestrator_enqueue_failure(
+    monkeypatch,
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Bot 调度失败不能让已发送用户消息回滚或让 REST 失败。"""
+    import app.api.v1.messages.routes as message_routes
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000032", name="W32")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000032",
+        workspace_id=ws.workspace_id,
+        name="enqueue-failure-ch",
+        type="public",
+    )
+    db_session.add_all([ws, ch])
+    await db_session.commit()
+
+    async def fail_enqueue(channel_id: str, msg_id: str) -> str:
+        raise RuntimeError("queue down")
+
+    class FailingBroker:
+        async def publish_channel(self, channel_id: str, message: dict) -> None:
+            raise RuntimeError("broker down")
+
+    monkeypatch.setattr(message_routes, "enqueue_orchestrator_job", fail_enqueue)
+    monkeypatch.setattr(message_routes, "get_realtime_broker", lambda: FailingBroker())
+
+    resp = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages",
+        json={
+            "content": "still saved",
+            "sender_id": "ignored",
+            "sender_type": "user",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["content"] == "still saved"
+
+    rows = (await db_session.execute(select(message_routes.Message))).scalars().all()
+    assert any(row.msg_id == data["msg_id"] for row in rows)
+
+
+@pytest.mark.asyncio
 async def test_secret_message_content_stores_msg_id_reference(
     client: AsyncClient,
     db_session: AsyncSession,

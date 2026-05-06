@@ -19,6 +19,15 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
+    # 高并发控制
+    orchestrator_queue_backend: str = "redis"  # redis | memory
+    orchestrator_worker_concurrency: int = 4
+    orchestrator_bot_concurrency_per_message: int = 3
+    realtime_broker_backend: str = "redis"  # redis | memory
+    ws_outbound_queue_size: int = 256
+    ws_send_timeout_seconds: float = 5.0
+    recent_debounce_seconds: float = 5.0
+
     # 数据目录（相对项目根或绝对路径）
     data_dir: str = "data"
 

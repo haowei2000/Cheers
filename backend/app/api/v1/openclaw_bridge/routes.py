@@ -60,6 +60,7 @@ from app.services.openclaw_bridge.service import (
 from app.services.openclaw_bridge.service import (
     finalize_stream as bridge_finalize_stream,
 )
+from app.services.openclaw_bridge.state_repository import get_openclaw_state_repository
 from app.services.openclaw_bridge.tokens import resolve_bot_by_token
 
 logger = logging.getLogger("app.api.v1.openclaw_bridge")
@@ -105,11 +106,13 @@ class BridgeReplyIn(BaseModel):
 
 @router.get("/status", response_model=APIResponse[dict])
 async def bridge_status(_: None = Depends(verify_bridge_token)) -> APIResponse:
+    snapshot = get_openclaw_state_repository().snapshot()
     return APIResponse.ok({
         "enabled": settings.openclaw_bridge_enabled,
         "subscribers": bridge_dispatcher.subscriber_count(),
-        "bot_sessions": bot_session_registry.session_count(),
-        "pending": pending_replies.count(),
+        "bot_sessions": snapshot.bot_sessions,
+        "pending": snapshot.pending,
+        "streams": snapshot.streams,
     })
 
 
