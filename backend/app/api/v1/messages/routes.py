@@ -23,11 +23,12 @@ from app.db.session import async_session_factory, get_session
 from app.services.channel_service import ChannelService
 from app.services.message_service import MessageService
 from app.services.orchestrator.adapter_resolver import get_adapter_for_bot
+from app.services.orchestrator.queue import enqueue_orchestrator_job
 from app.services.orchestrator.service import run_orchestrator
 from app.services.pipeline.bus import EventBus, WSEventBus, make_event_bus
 from app.services.pipeline.events import BotProcessing
 from app.services.pipeline.ingest import IngestContext, make_ingest_pipeline
-from app.services.ws_service import ws_manager
+from app.services.realtime_broker import get_realtime_broker
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.api.v1.messages")
@@ -89,78 +90,6 @@ async def _run_orchestrator_once(
         broadcast_processing=broadcast_bot_processing,
     )
 
-
-async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
-    """后台任务：在独立 session 中运行 Orchestrator。"""
-    try:
-        from sqlalchemy import select
-        async with async_session_factory() as session:
-            result = await session.execute(select(Message).where(Message.msg_id == msg_id))
-            msg = result.scalar_one_or_none()
-            if not msg:
-                logger.warning(
-                    "orchestrator_bg: message not found msg_id=%s channel_id=%s",
-                    msg_id, channel_id,
-                )
-                return
-            logger.info(
-                "orchestrator_bg: starting channel_id=%s msg_id=%s sender=%s",
-                channel_id, msg_id, msg.sender_id,
-            )
-            bus = make_event_bus(channel_id, stream_to_ws=True, stream_event=None)
-            bot_messages, already_broadcast_ids = await _run_orchestrator_once(
-                channel_id, msg, session, event_bus=bus
-            )
-            # Sanity guard: every bot message produced by the pipeline
-            # should have already been broadcast (BotMessageWriter
-            # pre_create / emit_routing_card / finish_with_error all
-            # add to ctx.already_broadcast). If anything slips through,
-            # log loudly — it points to a missing writer call somewhere.
-            unbroadcast = [bm for bm in bot_messages if bm.msg_id not in already_broadcast_ids]
-            if unbroadcast:
-                logger.error(
-                    "orchestrator_bg: %d bot message(s) escaped the "
-                    "BotMessageWriter broadcast path (expected zero) "
-                    "channel_id=%s ids=%s",
-                    len(unbroadcast), channel_id, [bm.msg_id for bm in unbroadcast],
-                )
-            if bot_messages:
-                logger.info(
-                    "orchestrator_bg: completed channel_id=%s bot_messages=%d",
-                    channel_id, len(bot_messages),
-                )
-            await session.commit()
-            if bot_messages:
-                _schedule_recent_update(channel_id)
-    except Exception as e:
-        # 确保错误被正确记录，不静默吞掉
-        logger.exception(
-            "orchestrator_bg: FAILED channel_id=%s msg_id=%s error=%s",
-            channel_id, msg_id, str(e),
-        )
-        # 尝试发送错误通知到 WebSocket
-        try:
-            await ws_manager.broadcast_to_channel(channel_id, {
-                "type": "orchestrator_error",
-                "data": {
-                    "channel_id": channel_id,
-                    "msg_id": msg_id,
-                    "error": f"Bot 处理失败: {e}",
-                }
-            })
-        except Exception:
-            pass
-
-
-def _should_run_orchestrator_inline(session: AsyncSession) -> bool:
-    from app.config import settings
-    try:
-        bind = session.get_bind()
-    except Exception:
-        return settings.database_url.strip().endswith(":memory:")
-    return str(bind.url).endswith(":memory:")
-
-
 @router.get("", response_model=APIResponse[list[dict]])
 async def list_messages(
     channel_id: str,
@@ -207,11 +136,24 @@ async def _handle_send_message(
     assert ctx.msg is not None and ctx.payload is not None
     await session.commit()
     _schedule_recent_update(channel_id)
-    if _should_run_orchestrator_inline(session):
-        await _run_orchestrator_bg(channel_id, ctx.msg.msg_id)
-    else:
-        asyncio.create_task(_run_orchestrator_bg(channel_id, ctx.msg.msg_id))
-        await asyncio.sleep(0)
+    try:
+        await enqueue_orchestrator_job(channel_id, ctx.msg.msg_id)
+    except Exception as exc:
+        logger.exception(
+            "orchestrator_enqueue: failed channel_id=%s msg_id=%s",
+            channel_id, ctx.msg.msg_id,
+        )
+        try:
+            await get_realtime_broker().publish_channel(channel_id, {
+                "type": "orchestrator_error",
+                "data": {
+                    "channel_id": channel_id,
+                    "msg_id": ctx.msg.msg_id,
+                    "error": f"Bot 处理调度失败: {exc}",
+                },
+            })
+        except Exception:
+            logger.debug("orchestrator_enqueue: failed to publish error frame", exc_info=True)
 
     return ctx.payload, ctx.secret_token
 

@@ -31,6 +31,7 @@ import asyncio
 import logging
 import time
 
+from app.config import settings
 from app.db.models import Message
 from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
 from app.services.pipeline.bot.capabilities import Capabilities
@@ -352,8 +353,15 @@ async def dispatch_many(
     if not pending:
         return
 
+    limit = max(1, int(settings.orchestrator_bot_concurrency_per_message or 1))
+    semaphore = asyncio.Semaphore(limit)
+
+    async def _consume_with_limit(adapter: OpenClawAdapter, payload: AgentPayload, bot_msg: Message):
+        async with semaphore:
+            return await _consume_execute(ctx, adapter, payload, bot_msg)
+
     timed_results = await asyncio.gather(
-        *[_consume_execute(ctx, adapter, payload, bot_msg)
+        *[_consume_with_limit(adapter, payload, bot_msg)
           for _, _, bot_msg, payload, adapter in pending],
     )
     for (username, bot_id, bot_msg, _, _), (resp_or_exc, dur_ms) in zip(pending, timed_results):

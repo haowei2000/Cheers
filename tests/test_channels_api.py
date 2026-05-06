@@ -1,10 +1,12 @@
 """ChatCore 频道 API 测试（TDD）."""
+from datetime import datetime, timedelta
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Channel, ChannelMembership, User, Workspace
+from app.db.models import Channel, ChannelMembership, Message, User, Workspace
 from app.db.seed import _ensure_builtin_bot_memberships
 from app.services.channel_service import ChannelService
 from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
@@ -157,3 +159,74 @@ async def test_list_channels_returns_created(client: AsyncClient, db_session: As
     assert len(items) >= 1
     names = [c["name"] for c in items]
     assert "random" in names
+
+
+@pytest.mark.asyncio
+async def test_unread_counts_for_uses_grouped_counts(db_session: AsyncSession) -> None:
+    ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000020", name="Unread Workspace")
+    user = User(
+        user_id="a0000000-0000-0000-0000-000000000020",
+        username="unread-user",
+        password_hash="x",
+    )
+    ch1 = Channel(channel_id="b0000000-0000-0000-0000-000000000020", workspace_id=ws.workspace_id, name="c1")
+    ch2 = Channel(channel_id="b0000000-0000-0000-0000-000000000021", workspace_id=ws.workspace_id, name="c2")
+    ch3 = Channel(channel_id="b0000000-0000-0000-0000-000000000022", workspace_id=ws.workspace_id, name="c3")
+    now = datetime.utcnow()
+    db_session.add_all([
+        ws,
+        user,
+        ch1,
+        ch2,
+        ch3,
+        ChannelMembership(
+            channel_id=ch1.channel_id,
+            member_id=user.user_id,
+            member_type="user",
+            last_read_at=now - timedelta(minutes=5),
+        ),
+        ChannelMembership(channel_id=ch2.channel_id, member_id=user.user_id, member_type="user"),
+        Message(
+            channel_id=ch1.channel_id,
+            sender_id="other",
+            sender_type="user",
+            content="old",
+            created_at=now - timedelta(minutes=10),
+        ),
+        Message(
+            channel_id=ch1.channel_id,
+            sender_id="other",
+            sender_type="user",
+            content="new",
+            created_at=now,
+        ),
+        Message(
+            channel_id=ch1.channel_id,
+            sender_id=user.user_id,
+            sender_type="user",
+            content="mine",
+            created_at=now,
+        ),
+        Message(
+            channel_id=ch2.channel_id,
+            sender_id="bot-1",
+            sender_type="bot",
+            content="bot",
+            created_at=now,
+        ),
+        Message(
+            channel_id=ch3.channel_id,
+            sender_id="other",
+            sender_type="user",
+            content="not a member",
+            created_at=now,
+        ),
+    ])
+    await db_session.flush()
+
+    counts = await ChannelService(db_session).unread_counts_for(
+        user.user_id,
+        [ch1.channel_id, ch2.channel_id, ch3.channel_id],
+    )
+
+    assert counts == {ch1.channel_id: 1, ch2.channel_id: 1, ch3.channel_id: 0}
