@@ -123,6 +123,7 @@ export type Message = {
   is_partial?: boolean;
   _bot_status?: string;
   _bot_trace?: BotTraceEvent[];
+  _websocket_task?: WebsocketTaskContentData;
 };
 
 export type ContextData = Record<string, string>;
