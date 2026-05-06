@@ -34,7 +34,6 @@ from app.services.pipeline.runner import Pipeline
 from app.services.pipeline.stage import Stage
 from app.services.secret_messages import SECRET_PLACEHOLDER, secret_placeholder_for
 from app.services.storage.base import StorageError
-from app.services.ws_service import ws_manager
 from app.utils.crypto import encrypt_value
 
 logger = logging.getLogger("app.services.pipeline.ingest")
@@ -222,11 +221,14 @@ class FanoutUnreadStage(Stage[IngestContext]):
                 "msg_id": msg_id,
             },
         }
+        from app.services.realtime_broker import get_realtime_broker
+
+        broker = get_realtime_broker()
         for row in rows:
             member_id = row[0]
             if sender_type == "user" and member_id == sender_id:
                 continue
-            await ws_manager.broadcast_to_user(member_id, event)
+            await broker.publish_user(member_id, event)
 
 
 def make_ingest_pipeline() -> Pipeline[IngestContext]:
