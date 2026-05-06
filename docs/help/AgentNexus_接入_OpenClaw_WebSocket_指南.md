@@ -43,6 +43,33 @@
 
 ## 3. AgentNexus 端：创建 WebSocket Bot
 
+### 3.0 机器可读入口（推荐给 OpenClaw 自动接入）
+
+OpenClaw 可以先读取：
+
+```bash
+curl http://localhost:8000/docs/openclaw/discovery
+```
+
+该接口会返回登录、注册、帮助问答、WebSocket bridge 等入口。OpenClaw 可让用户输入 AgentNexus 账号密码，然后直接注册：
+
+```bash
+curl -X POST http://localhost:8000/docs/openclaw/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "mybot",
+    "account_username": "user@example.com",
+    "account_password": "your-password",
+    "display_name": "OpenClaw 助手",
+    "agent_id": "main",
+    "scope": "private"
+  }'
+```
+
+如果本机已有 AgentNexus access token，也可以不传账号密码，改用 Header `Authorization: Bearer <AgentNexus access_token>`。
+
+响应会一次性返回 `bot_token`、`controlUrl`、`dataUrl` 与 OpenClaw 配置片段。也可以调用 `/docs/openclaw/help?q=怎么接入OpenClaw` 获取问答式帮助。
+
 ### 3.1 创建 Bot
 
 打开 **AdminPage → Bot 管理 → 创建 Bot**，关键字段：
@@ -69,21 +96,14 @@
 ### 方式 A：从 Release 装 tarball（推荐）
 
 ```bash
-# 用 gh CLI
-gh release download openclaw-channel-agentnexus-v0.2.0 \
-  -R Grant-Huang/AgentNexus \
-  --pattern "*.tgz" \
-  --dir /tmp
-openclaw plugins install /tmp/openclaw-channel-agentnexus-0.2.0.tgz
+curl -L -o /tmp/openclaw-channel-agentnexus.tgz \
+  "http://localhost:8000/docs/openclaw/release/openclaw-channel-agentnexus.tgz"
+openclaw plugins install /tmp/openclaw-channel-agentnexus.tgz
 ```
 
-或：
+机器可读下载地址也会出现在 `GET /docs/openclaw/discovery` 的 `plugin.download_url` 字段中。
 
-```bash
-curl -L -o /tmp/agentnexus.tgz \
-  "https://github.com/Grant-Huang/AgentNexus/releases/download/openclaw-channel-agentnexus-v0.2.0/openclaw-channel-agentnexus-0.2.0.tgz"
-openclaw plugins install /tmp/agentnexus.tgz
-```
+后端从 AgentNexus 项目根目录的 `release/` 文件夹读取插件包，默认文件名为 `openclaw-channel-agentnexus.tgz`。部署时请把打包好的插件放到 `AgentNexus/release/openclaw-channel-agentnexus.tgz`；如需调整目录或文件名，可设置 `OPENCLAW_PLUGIN_RELEASE_DIR` / `OPENCLAW_PLUGIN_FILE`。
 
 ### 方式 B：源码 link（开发态）
 
