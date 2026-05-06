@@ -29,8 +29,17 @@ async def agentnexus_discovery(request: Request) -> dict:
         "name": "AgentNexus",
         "description": "智枢人机协作平台；Bot 需管理员审核通过后可被加入项目并 @。",
         "base_url": base,
+        "openclaw_docs": {
+            "url": f"{base}/docs/openclaw/discovery",
+            "help_url": f"{base}/docs/openclaw/help",
+            "register_url": f"{base}/docs/openclaw/register",
+            "note": (
+                "推荐 OpenClaw 优先读取 /docs/openclaw/discovery；"
+                "登录用户可直接注册 WebSocket Bot。"
+            ),
+        },
         "register_request": {
-            "url": f"{base}/api/bots/register-request",
+            "url": f"{base}/api/v1/bots/register-request",
             "method": "POST",
             "content_type": "application/json",
             "body_schema": body_schema,
