@@ -214,6 +214,10 @@ class ChannelMembership(Base):
     channel: Mapped["Channel"] = relationship("Channel", back_populates="memberships")
     prompt_template: Mapped[Optional["PromptTemplate"]] = relationship("PromptTemplate", lazy="joined")
 
+    __table_args__ = (
+        Index("ix_channel_memberships_member_type", "member_id", "member_type"),
+    )
+
 
 class WorkspaceMembership(Base):
     """工作空间成员关系."""
@@ -250,6 +254,11 @@ class Message(Base):
     is_partial: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="messages")
+
+    __table_args__ = (
+        Index("ix_messages_channel_created_at", "channel_id", "created_at"),
+        Index("ix_messages_in_reply_created_at", "in_reply_to_msg_id", "created_at"),
+    )
 
 
 class HistoryPage(Base):
@@ -296,6 +305,10 @@ class FileRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="file_records")
+
+    __table_args__ = (
+        Index("ix_file_records_channel_created_at", "channel_id", "created_at"),
+    )
 
 
 class AgentTask(Base):

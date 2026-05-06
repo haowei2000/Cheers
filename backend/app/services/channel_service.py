@@ -213,15 +213,32 @@ class ChannelService:
             )
         )).scalars().all()
         result: dict[str, int] = {cid: 0 for cid in channel_ids}
-        for m in membership_rows:
-            q = select(func.count()).select_from(Message).where(
-                Message.channel_id == m.channel_id,
-                Message.sender_id != user_id,
+        member_channel_ids = [m.channel_id for m in membership_rows]
+        if not member_channel_ids:
+            return result
+
+        rows = (await self.session.execute(
+            select(Message.channel_id, func.count(Message.msg_id))
+            .join(
+                ChannelMembership,
+                and_(
+                    ChannelMembership.channel_id == Message.channel_id,
+                    ChannelMembership.member_id == user_id,
+                    ChannelMembership.member_type == "user",
+                ),
             )
-            if m.last_read_at is not None:
-                q = q.where(Message.created_at > m.last_read_at)
-            cnt = (await self.session.execute(q)).scalar() or 0
-            result[m.channel_id] = int(cnt)
+            .where(
+                Message.channel_id.in_(member_channel_ids),
+                Message.sender_id != user_id,
+                or_(
+                    ChannelMembership.last_read_at.is_(None),
+                    Message.created_at > ChannelMembership.last_read_at,
+                ),
+            )
+            .group_by(Message.channel_id)
+        )).all()
+        for channel_id, count in rows:
+            result[channel_id] = int(count or 0)
         return result
 
     async def mark_read(self, channel_id: str, user_id: str) -> datetime | None:

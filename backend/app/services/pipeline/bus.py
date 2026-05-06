@@ -30,9 +30,9 @@ class WSEventBus:
         frame = event.to_ws_frame()
         if frame is None:
             return
-        from app.services.ws_service import ws_manager
+        from app.services.realtime_broker import get_realtime_broker
 
-        await ws_manager.broadcast_to_channel(self._channel_id, frame)
+        await get_realtime_broker().publish_channel(self._channel_id, frame)
 
 
 class SSEEventBus:
