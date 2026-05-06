@@ -71,6 +71,31 @@ def _schedule_recent_update(channel_id: str) -> None:
     schedule_recent_update(channel_id)
 
 
+def _schedule_orchestrator_enqueue(channel_id: str, msg_id: str) -> None:
+    asyncio.create_task(_enqueue_orchestrator_bg(channel_id, msg_id))
+
+
+async def _enqueue_orchestrator_bg(channel_id: str, msg_id: str) -> None:
+    try:
+        await enqueue_orchestrator_job(channel_id, msg_id)
+    except Exception as exc:
+        logger.exception(
+            "orchestrator_enqueue: failed channel_id=%s msg_id=%s",
+            channel_id, msg_id,
+        )
+        try:
+            await get_realtime_broker().publish_channel(channel_id, {
+                "type": "orchestrator_error",
+                "data": {
+                    "channel_id": channel_id,
+                    "msg_id": msg_id,
+                    "error": f"Bot 处理调度失败: {exc}",
+                },
+            })
+        except Exception:
+            logger.debug("orchestrator_enqueue: failed to publish error frame", exc_info=True)
+
+
 async def _run_orchestrator_once(
     channel_id: str,
     trigger_msg: Message,
@@ -89,6 +114,7 @@ async def _run_orchestrator_once(
         event_bus=event_bus,
         broadcast_processing=broadcast_bot_processing,
     )
+
 
 @router.get("", response_model=APIResponse[list[dict]])
 async def list_messages(
@@ -136,24 +162,7 @@ async def _handle_send_message(
     assert ctx.msg is not None and ctx.payload is not None
     await session.commit()
     _schedule_recent_update(channel_id)
-    try:
-        await enqueue_orchestrator_job(channel_id, ctx.msg.msg_id)
-    except Exception as exc:
-        logger.exception(
-            "orchestrator_enqueue: failed channel_id=%s msg_id=%s",
-            channel_id, ctx.msg.msg_id,
-        )
-        try:
-            await get_realtime_broker().publish_channel(channel_id, {
-                "type": "orchestrator_error",
-                "data": {
-                    "channel_id": channel_id,
-                    "msg_id": ctx.msg.msg_id,
-                    "error": f"Bot 处理调度失败: {exc}",
-                },
-            })
-        except Exception:
-            logger.debug("orchestrator_enqueue: failed to publish error frame", exc_info=True)
+    _schedule_orchestrator_enqueue(channel_id, ctx.msg.msg_id)
 
     return ctx.payload, ctx.secret_token
 

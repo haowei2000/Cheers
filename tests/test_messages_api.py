@@ -1,6 +1,7 @@
 """ChatCore 消息 API 测试."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 
 import pytest
@@ -235,6 +236,57 @@ async def test_create_message_survives_orchestrator_enqueue_failure(
 
     rows = (await db_session.execute(select(message_routes.Message))).scalars().all()
     assert any(row.msg_id == data["msg_id"] for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_create_message_returns_before_orchestrator_enqueue_completes(
+    monkeypatch,
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """REST 发送消息不等待 Bot 调度完成，避免队列初始化拖住前端。"""
+    import app.api.v1.messages.routes as message_routes
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000033", name="W33")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000033",
+        workspace_id=ws.workspace_id,
+        name="enqueue-slow-ch",
+        type="public",
+    )
+    db_session.add_all([ws, ch])
+    await db_session.commit()
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_enqueue(channel_id: str, msg_id: str) -> str:
+        started.set()
+        await release.wait()
+        return "job-slow"
+
+    monkeypatch.setattr(message_routes, "enqueue_orchestrator_job", slow_enqueue)
+
+    try:
+        resp = await asyncio.wait_for(
+            client.post(
+                f"/api/v1/channels/{ch.channel_id}/messages",
+                json={
+                    "content": "returns immediately",
+                    "sender_id": "ignored",
+                    "sender_type": "user",
+                },
+            ),
+            timeout=1,
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["content"] == "returns immediately"
+        await asyncio.wait_for(started.wait(), timeout=1)
+    finally:
+        release.set()
+        await asyncio.sleep(0)
 
 
 @pytest.mark.asyncio
