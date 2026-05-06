@@ -930,19 +930,31 @@ export default function App() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.msg_id === msg_id
-                  ? {
-                      ...m,
-                      content:
+                  ? (() => {
+                      const taskData =
                         m.content_data?.kind === WEBSOCKET_TASK_KIND
+                          ? (m.content_data as WebsocketTaskContentData)
+                          : m._websocket_task;
+                      const switchingFromTaskCard =
+                        m.content_data?.kind === WEBSOCKET_TASK_KIND;
+                      return {
+                        ...m,
+                        content: switchingFromTaskCard
                           ? delta
                           : m.content + delta,
-                      content_data:
-                        m.content_data?.kind === WEBSOCKET_TASK_KIND
+                        content_data: switchingFromTaskCard
                           ? null
                           : m.content_data,
-                      _streaming: true,
-                      _bot_status: undefined,
-                    }
+                        _websocket_task: taskData
+                          ? {
+                              ...taskData,
+                              status: "streaming",
+                              message: "正在接收 OpenClaw 输出。",
+                            }
+                          : m._websocket_task,
+                        _streaming: true,
+                      };
+                    })()
                   : m,
               ),
             );
@@ -962,7 +974,7 @@ export default function App() {
               ),
             );
           } else if (msg.type === "message_done" && msg.data) {
-            const { msg_id, content, files, file_ids, is_partial } = msg.data;
+            const { msg_id, content, files, file_ids, is_partial, error } = msg.data;
             const hasContentData = Object.prototype.hasOwnProperty.call(
               msg.data,
               "content_data",
@@ -973,23 +985,48 @@ export default function App() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.msg_id === msg_id
-                  ? {
-                      ...m,
-                      content,
-                      content_data:
-                        nextContentData !== undefined
-                          ? nextContentData
-                          : m.content_data?.kind === WEBSOCKET_TASK_KIND
-                            ? null
-                            : m.content_data,
-                      _streaming: false,
-                      _bot_status: undefined,
-                      ...(files ? { files } : {}),
-                      ...(file_ids ? { file_ids } : {}),
-                      ...(typeof is_partial === "boolean"
-                        ? { is_partial }
-                        : {}),
-                    }
+                  ? (() => {
+                      const priorTask =
+                        m.content_data?.kind === WEBSOCKET_TASK_KIND
+                          ? (m.content_data as WebsocketTaskContentData)
+                          : m._websocket_task;
+                      const nextTask =
+                        nextContentData?.kind === WEBSOCKET_TASK_KIND
+                          ? (nextContentData as WebsocketTaskContentData)
+                          : priorTask
+                            ? {
+                                ...priorTask,
+                                status: error
+                                  ? "error"
+                                  : is_partial
+                                    ? "partial"
+                                    : "done",
+                                message: error
+                                  ? String(error)
+                                  : is_partial
+                                    ? "任务已中断，已保留当前输出。"
+                                    : "任务已完成。",
+                              }
+                            : m._websocket_task;
+                      return {
+                        ...m,
+                        content,
+                        content_data:
+                          nextContentData !== undefined
+                            ? nextContentData
+                            : m.content_data?.kind === WEBSOCKET_TASK_KIND
+                              ? null
+                              : m.content_data,
+                        _websocket_task: nextTask,
+                        _streaming: false,
+                        _bot_status: undefined,
+                        ...(files ? { files } : {}),
+                        ...(file_ids ? { file_ids } : {}),
+                        ...(typeof is_partial === "boolean"
+                          ? { is_partial }
+                          : {}),
+                      };
+                    })()
                   : m,
               ),
             );
@@ -1568,18 +1605,37 @@ export default function App() {
     );
   };
 
-  const websocketTaskData = (m: Message): WebsocketTaskContentData | null => {
+  const activeWebsocketTaskData = (m: Message): WebsocketTaskContentData | null => {
     const data = m.content_data;
     return data?.kind === WEBSOCKET_TASK_KIND
       ? (data as WebsocketTaskContentData)
       : null;
   };
 
+  const websocketTaskData = (m: Message): WebsocketTaskContentData | null => {
+    const activeTask = activeWebsocketTaskData(m);
+    if (activeTask) return activeTask;
+    if (m._websocket_task) return m._websocket_task;
+    if (m._bot_trace?.length) {
+      return {
+        kind: WEBSOCKET_TASK_KIND,
+        status: m._streaming ? "running" : "done",
+        title: "OpenClaw 过程",
+        message: m._streaming ? "OpenClaw 正在执行。" : "任务已完成。",
+        task_id: m.task_id || null,
+      };
+    }
+    return null;
+  };
+
   const websocketTaskMessages = useMemo(
     () =>
-      messages.filter(
-        (m): m is WebsocketTaskMessage => websocketTaskData(m) !== null,
-      ),
+      messages
+        .map((m) => {
+          const task = websocketTaskData(m);
+          return task ? ({ ...m, content_data: task } as WebsocketTaskMessage) : null;
+        })
+        .filter((m): m is WebsocketTaskMessage => m !== null),
     [messages],
   );
 
@@ -1598,7 +1654,7 @@ export default function App() {
   }, []);
 
   const renderWebsocketTaskCard = (m: Message) => {
-    const task = websocketTaskData(m);
+    const task = activeWebsocketTaskData(m);
     if (!task) return null;
     const title =
       typeof task.title === "string" ? task.title : "后台任务进行中";
@@ -3413,7 +3469,7 @@ export default function App() {
                                         </button>
                                       )}
                                     </div>
-                                  ) : websocketTaskData(m) ? (
+                                  ) : activeWebsocketTaskData(m) ? (
                                     renderWebsocketTaskCard(m)
                                   ) : (
                                     renderWithThinkFolding(
@@ -3760,7 +3816,7 @@ export default function App() {
                                       </button>
                                     )}
                                   </div>
-                                ) : websocketTaskData(m) ? (
+                                ) : activeWebsocketTaskData(m) ? (
                                   renderWebsocketTaskCard(m)
                                 ) : m._streaming && !text ? (
                                   <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
@@ -4082,7 +4138,7 @@ export default function App() {
                                             }
                                     }
                                   >
-                                    {websocketTaskData(r) ? (
+                                    {activeWebsocketTaskData(r) ? (
                                       renderWebsocketTaskCard(r)
                                     ) : r._streaming && !rTextRaw ? (
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
