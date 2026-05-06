@@ -5,11 +5,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentNexusSessionBinding, BotAccount, Channel, Workspace
+from app.db.models import AgentNexusSession, AgentNexusSessionBinding, BotAccount, Channel, Workspace
 from app.services.openclaw_bridge.session_map import (
     SCOPE_CHANNEL,
+    SCOPE_DM,
     SCOPE_TASK,
     SCOPE_TOPIC,
+    build_openclaw_session_key,
     resolve_dispatch_session,
 )
 
@@ -81,6 +83,156 @@ async def test_channel_scope_reuses_session_and_binds_tasks(db_session: AsyncSes
         (SCOPE_TASK, "task-chan-001", "alias"),
         (SCOPE_TASK, "task-chan-002", "alias"),
     }
+
+
+@pytest.mark.asyncio
+async def test_bot_dm_scope_uses_user_bot_identity_not_channel_id(db_session: AsyncSession) -> None:
+    bot, first_dm = await _seed_bot_channel(db_session, suffix="dm-001", channel_type="dm")
+    second_dm = Channel(
+        channel_id="sess-map-ch-dm-001-duplicate",
+        workspace_id=first_dm.workspace_id,
+        name="duplicate-dm-backing-channel",
+        type="dm",
+    )
+    db_session.add(second_dm)
+    await db_session.flush()
+
+    user_id = "sess-map-user-dm-001"
+    first = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=first_dm.channel_id,
+        trigger_message={"user": user_id, "text": "first dm turn"},
+        task_id="task-dm-001",
+        channel=first_dm,
+    )
+    second = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=second_dm.channel_id,
+        trigger_message={"user": user_id, "text": "same user same bot in another dm row"},
+        task_id="task-dm-002",
+        channel=second_dm,
+    )
+
+    assert second.session_id == first.session_id
+    assert second.openclaw_session_key == first.openclaw_session_key
+    assert first.primary_scope_type == SCOPE_DM
+    assert first.primary_scope_id == f"user:{user_id}:bot:{bot.bot_id}"
+
+    bindings = await _bindings(db_session, first.session_id)
+    assert {(b.scope_type, b.scope_id, b.role) for b in bindings} == {
+        (SCOPE_DM, f"user:{user_id}:bot:{bot.bot_id}", "primary"),
+        (SCOPE_TASK, "task-dm-001", "alias"),
+        (SCOPE_TASK, "task-dm-002", "alias"),
+    }
+    dm_binding = next(b for b in bindings if b.scope_type == SCOPE_DM)
+    assert dm_binding.channel_id is None
+    assert dm_binding.dm_id is None
+
+
+@pytest.mark.asyncio
+async def test_bot_dm_reply_topic_context_does_not_split_session(db_session: AsyncSession) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="dm-topic-001", channel_type="dm")
+    user_id = "sess-map-user-dm-topic-001"
+
+    first = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={"user": user_id, "text": "top-level dm"},
+        task_id="task-dm-topic-001",
+        channel=dm,
+    )
+    reply = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={
+            "user": user_id,
+            "text": "reply inside dm",
+            "topic_chain": [{"msg_id": "dm-topic-root-001"}],
+        },
+        task_id="task-dm-topic-002",
+        channel=dm,
+    )
+
+    assert reply.session_id == first.session_id
+    assert reply.openclaw_session_key == first.openclaw_session_key
+    assert reply.primary_scope_type == SCOPE_DM
+    assert reply.primary_scope_id == f"user:{user_id}:bot:{bot.bot_id}"
+
+    bindings = await _bindings(db_session, first.session_id)
+    assert (SCOPE_TOPIC, "dm-topic-root-001") not in {
+        (b.scope_type, b.scope_id) for b in bindings
+    }
+
+
+@pytest.mark.asyncio
+async def test_bot_dm_reuses_legacy_channel_scoped_binding(db_session: AsyncSession) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="dm-legacy-001", channel_type="dm")
+    user_id = "sess-map-user-dm-legacy-001"
+    legacy_session_id = "sess-map-legacy-dm-session-001"
+    legacy_key = build_openclaw_session_key(
+        openclaw_agent_id="agent-main",
+        openclaw_account_id="acct-dm-legacy-001",
+        session_id=legacy_session_id,
+    )
+    db_session.add(
+        AgentNexusSession(
+            session_id=legacy_session_id,
+            bot_id=bot.bot_id,
+            openclaw_agent_id="agent-main",
+            openclaw_account_id="acct-dm-legacy-001",
+            openclaw_session_key=legacy_key,
+            current_scope_type=SCOPE_DM,
+            current_scope_id=dm.channel_id,
+        )
+    )
+    db_session.add(
+        AgentNexusSessionBinding(
+            session_id=legacy_session_id,
+            bot_id=bot.bot_id,
+            openclaw_agent_id="agent-main",
+            openclaw_account_id="acct-dm-legacy-001",
+            scope_type=SCOPE_DM,
+            scope_id=dm.channel_id,
+            channel_id=dm.channel_id,
+            dm_id=dm.channel_id,
+            role="primary",
+        )
+    )
+    await db_session.flush()
+
+    resolved = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={"user": user_id, "text": "reuse existing dm context"},
+        task_id="task-dm-legacy-001",
+        channel=dm,
+    )
+
+    assert resolved.session_id == legacy_session_id
+    assert resolved.openclaw_session_key == legacy_key
+    assert resolved.primary_scope_type == SCOPE_DM
+    assert resolved.primary_scope_id == f"user:{user_id}:bot:{bot.bot_id}"
+
+    bindings = await _bindings(db_session, legacy_session_id)
+    assert (SCOPE_DM, dm.channel_id) in {
+        (b.scope_type, b.scope_id) for b in bindings
+    }
+    assert (SCOPE_DM, f"user:{user_id}:bot:{bot.bot_id}") in {
+        (b.scope_type, b.scope_id) for b in bindings
+    }
+    modern_dm_binding = next(
+        b for b in bindings if b.scope_type == SCOPE_DM and b.scope_id == f"user:{user_id}:bot:{bot.bot_id}"
+    )
+    legacy_dm_binding = next(b for b in bindings if b.scope_type == SCOPE_DM and b.scope_id == dm.channel_id)
+    assert modern_dm_binding.channel_id is None
+    assert modern_dm_binding.dm_id is None
+    assert legacy_dm_binding.channel_id == dm.channel_id
+    assert legacy_dm_binding.dm_id == dm.channel_id
 
 
 @pytest.mark.asyncio
