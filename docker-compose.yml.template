@@ -34,6 +34,11 @@ services:
       - OPENCLAW_BRIDGE_TIMEOUT_SECONDS=${OPENCLAW_BRIDGE_TIMEOUT_SECONDS:-300}
       - OPENCLAW_PLUGIN_RELEASE_DIR=${OPENCLAW_PLUGIN_RELEASE_DIR:-/app/release}
       - OPENCLAW_PLUGIN_FILE=${OPENCLAW_PLUGIN_FILE:-openclaw-channel-agentnexus.tgz}
+      - DB_MIGRATION_MODE=${DB_MIGRATION_MODE:-upgrade}
+      - DB_MIGRATION_TARGET=${DB_MIGRATION_TARGET:-head}
+      - CONTEXT_DB_MIGRATION_MODE=${CONTEXT_DB_MIGRATION_MODE:-upgrade}
+      - CONTEXT_DB_MIGRATION_TARGET=${CONTEXT_DB_MIGRATION_TARGET:-head}
+      - ALLOW_DB_DOWNGRADE=${ALLOW_DB_DOWNGRADE:-0}
       - SEED_DATA=${SEED_DATA:-1}
     volumes:
       - ./data/backend:/app/data
@@ -45,6 +50,27 @@ services:
         condition: service_started
       rustfs:
         condition: service_started
+
+  db-migrate:
+    build:
+      context: ./backend
+    profiles:
+      - tools
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-agentnexus}:${POSTGRES_PASSWORD:-agentnexus}@postgres:5432/${POSTGRES_DB:-agentnexus}
+      - CONTEXT_DB_URL=postgresql+asyncpg://${POSTGRES_USER:-agentnexus}:${POSTGRES_PASSWORD:-agentnexus}@postgres:5432/${POSTGRES_DB:-agentnexus}
+      - MIGRATE_ONLY=${MIGRATE_ONLY:-1}
+      - DB_MIGRATION_MODE=${DB_MIGRATION_MODE:-upgrade}
+      - DB_MIGRATION_TARGET=${DB_MIGRATION_TARGET:-head}
+      - CONTEXT_DB_MIGRATION_MODE=${CONTEXT_DB_MIGRATION_MODE:-upgrade}
+      - CONTEXT_DB_MIGRATION_TARGET=${CONTEXT_DB_MIGRATION_TARGET:-head}
+      - ALLOW_DB_DOWNGRADE=${ALLOW_DB_DOWNGRADE:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
