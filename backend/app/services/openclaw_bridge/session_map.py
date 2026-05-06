@@ -120,17 +120,43 @@ def _topic_id_from_trigger(trigger_message: dict[str, Any]) -> str | None:
     return None
 
 
+def _dm_scope_id(
+    *,
+    bot_id: str,
+    channel_id: str,
+    trigger_message: dict[str, Any],
+) -> str:
+    """Stable product-level scope for a 1:1 user-bot DM.
+
+    DMs are modeled in storage as ``Channel(type="dm")`` for message reuse, but
+    OpenClaw session identity should not depend on that backing channel row.
+    A duplicate/recreated DM channel for the same user and bot must still land
+    in the same OpenClaw conversation.
+    """
+    user_id = trigger_message.get("user")
+    if isinstance(user_id, str) and user_id.strip():
+        return f"user:{user_id.strip()}:bot:{bot_id}"
+    # Defensive fallback for malformed legacy dispatch frames. Normal Bot DM
+    # dispatches always carry trigger_message["user"].
+    return f"channel:{channel_id}:bot:{bot_id}"
+
+
 def _primary_scope(
     *,
+    bot_id: str,
     channel: Channel | None,
     channel_id: str,
     trigger_message: dict[str, Any],
 ) -> tuple[str, str]:
+    if channel is not None and channel.type == "dm":
+        return SCOPE_DM, _dm_scope_id(
+            bot_id=bot_id,
+            channel_id=channel_id,
+            trigger_message=trigger_message,
+        )
     topic_id = _topic_id_from_trigger(trigger_message)
     if topic_id:
         return SCOPE_TOPIC, topic_id
-    if channel is not None and channel.type == "dm":
-        return SCOPE_DM, channel_id
     return SCOPE_CHANNEL, channel_id
 
 
@@ -206,6 +232,7 @@ async def _ensure_binding(
     channel_id: str | None,
     role: str,
 ) -> AgentNexusSessionBinding:
+    binding_channel_id = None if scope_type == SCOPE_DM else channel_id
     existing = await _find_binding_by_scope(
         db,
         bot_id=bot_id,
@@ -226,9 +253,9 @@ async def _ensure_binding(
                 openclaw_account_id=openclaw_account_id,
                 scope_type=scope_type,
                 scope_id=scope_id,
-                channel_id=channel_id,
+                channel_id=binding_channel_id,
                 topic_id=scope_id if scope_type == SCOPE_TOPIC else None,
-                dm_id=scope_id if scope_type == SCOPE_DM else None,
+                dm_id=None,
                 task_id=scope_id if scope_type == SCOPE_TASK else None,
                 role=role,
             )
@@ -268,6 +295,7 @@ async def resolve_dispatch_session(
     openclaw_agent_id = openclaw_agent_id_for(bot)
     openclaw_account_id = openclaw_account_id_for(bot)
     scope_type, scope_id = _primary_scope(
+        bot_id=bot.bot_id,
         channel=channel,
         channel_id=channel_id,
         trigger_message=trigger_message,
@@ -297,6 +325,19 @@ async def resolve_dispatch_session(
             scope_type=scope_type,
             scope_id=scope_id,
         )
+        if primary_binding is None and scope_type == SCOPE_DM and scope_id != channel_id:
+            # Before DM sessions were promoted to first-class user-bot scopes,
+            # they were keyed by the backing Channel row id. Reuse that session
+            # once and bind the new identity scope to it, so existing Bot DMs do
+            # not lose OpenClaw context after deploy.
+            primary_binding = await _find_binding_by_scope(
+                db,
+                bot_id=bot.bot_id,
+                openclaw_agent_id=openclaw_agent_id,
+                openclaw_account_id=openclaw_account_id,
+                scope_type=scope_type,
+                scope_id=channel_id,
+            )
         if primary_binding is not None:
             session_row = await _load_session_for_binding(db, primary_binding)
     now = datetime.utcnow()
