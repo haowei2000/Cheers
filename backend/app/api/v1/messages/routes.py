@@ -6,7 +6,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,13 +71,37 @@ def _schedule_recent_update(channel_id: str) -> None:
     schedule_recent_update(channel_id)
 
 
-def _schedule_orchestrator_enqueue(channel_id: str, msg_id: str) -> None:
+def _schedule_orchestrator_enqueue(
+    channel_id: str,
+    msg_id: str,
+    background_tasks: BackgroundTasks | None = None,
+) -> None:
+    logger.info(
+        "orchestrator_enqueue: scheduled channel_id=%s msg_id=%s background_tasks=%s",
+        channel_id,
+        msg_id,
+        background_tasks is not None,
+    )
+    if background_tasks is not None:
+        background_tasks.add_task(_enqueue_orchestrator_bg, channel_id, msg_id)
+        return
     asyncio.create_task(_enqueue_orchestrator_bg(channel_id, msg_id))
 
 
 async def _enqueue_orchestrator_bg(channel_id: str, msg_id: str) -> None:
     try:
-        await enqueue_orchestrator_job(channel_id, msg_id)
+        logger.info(
+            "orchestrator_enqueue: starting channel_id=%s msg_id=%s",
+            channel_id,
+            msg_id,
+        )
+        job_id = await enqueue_orchestrator_job(channel_id, msg_id)
+        logger.info(
+            "orchestrator_enqueue: enqueued channel_id=%s msg_id=%s job_id=%s",
+            channel_id,
+            msg_id,
+            job_id,
+        )
     except Exception as exc:
         logger.exception(
             "orchestrator_enqueue: failed channel_id=%s msg_id=%s",
@@ -136,6 +160,7 @@ async def _handle_send_message(
     channel_id: str,
     body: MessageCreate,
     current_user: User,
+    background_tasks: BackgroundTasks | None = None,
 ) -> tuple[dict, str | None]:
     """持久化消息、广播、调度 orchestrator。返回 (payload_dict, secret_token)。"""
     await ChannelService(session).require_can_send_message(channel_id, current_user)
@@ -162,7 +187,7 @@ async def _handle_send_message(
     assert ctx.msg is not None and ctx.payload is not None
     await session.commit()
     _schedule_recent_update(channel_id)
-    _schedule_orchestrator_enqueue(channel_id, ctx.msg.msg_id)
+    _schedule_orchestrator_enqueue(channel_id, ctx.msg.msg_id, background_tasks)
 
     return ctx.payload, ctx.secret_token
 
@@ -171,11 +196,16 @@ async def _handle_send_message(
 async def send_message(
     channel_id: str,
     body: MessageCreate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     d, secret_token = await _handle_send_message(
-        session, channel_id=channel_id, body=body, current_user=current_user,
+        session,
+        channel_id=channel_id,
+        body=body,
+        current_user=current_user,
+        background_tasks=background_tasks,
     )
     response_data = dict(d)
     if secret_token:

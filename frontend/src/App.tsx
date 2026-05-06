@@ -241,6 +241,12 @@ export default function App() {
   }, [selectedId]);
   const activeDm = selectedId ? dms.find((d) => d.channel_id === selectedId) ?? null : null;
   const isSystemDm = activeDm?.counterparty.member_type === "system";
+  const botMentionIdsForChannel = (channelId: string): string[] => {
+    const dm = dms.find((item) => item.channel_id === channelId);
+    return dm?.counterparty.member_type === "bot"
+      ? [dm.counterparty.member_id]
+      : [];
+  };
   useEffect(() => {
     setTaskPageOpen(false);
     setPageTaskMsgId(null);
@@ -1354,6 +1360,7 @@ export default function App() {
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: [] as string[],
+      mention_bot_ids: botMentionIdsForChannel(targetChannelId),
       msg_type: inReplyToMsgId ? "reply" : "normal",
     };
     if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
@@ -1397,6 +1404,7 @@ export default function App() {
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: pendingFileIds,
+      mention_bot_ids: botMentionIdsForChannel(targetChannelId),
       is_secret: isSecretSend,
       msg_type: effectiveKind,
     };
@@ -1733,6 +1741,7 @@ export default function App() {
       sender_id: currentUserId,
       sender_type: "user",
       file_ids: [],
+      mention_bot_ids: botMentionIdsForChannel(channelId),
       is_secret: false,
       msg_type: "reply",
       in_reply_to_msg_id: rootMsgId,
