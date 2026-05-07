@@ -37,6 +37,24 @@ _LAYERS_BY_MSG_TYPE: dict[str, frozenset[str]] = {
     "permission": frozenset({"anchor"}),
 }
 
+_LAYER_ORDER = ("anchor", "progress", "decisions", "files_index", "recent", "todos")
+_LAYER_LABELS = {
+    "anchor": "项目锚点",
+    "progress": "项目进度",
+    "decisions": "决策记录",
+    "files_index": "资料索引",
+    "recent": "近期动态",
+    "todos": "待办事项",
+}
+_LAYER_SOURCES = {
+    "anchor": "MemoryEntry.ANCHOR",
+    "progress": "MemoryEntry.PROGRESS",
+    "decisions": "MemoryEntry.DECISIONS",
+    "files_index": "FileRecord rendered index",
+    "recent": "current_page + message_page summaries",
+    "todos": "TodoItem open items",
+}
+
 
 def select_memory_layers(msg_type: str | None) -> frozenset[str]:
     """Return the memory layer set to load for this trigger msg_type.
@@ -49,6 +67,46 @@ def select_memory_layers(msg_type: str | None) -> frozenset[str]:
     return _LAYERS_BY_MSG_TYPE.get(msg_type, ChannelMemory.ALL_LAYERS)
 
 
+def build_memory_load_detail(
+    *,
+    trigger_msg_id: str,
+    trigger_msg_type: str | None,
+    requested_layers: frozenset[str] | set[str],
+    memory_context: dict[str, str],
+) -> dict:
+    """Build the compact memory-load snapshot stored on bot replies."""
+    requested = set(requested_layers)
+    layers: list[dict] = []
+    total_chars = 0
+    for source in _LAYER_ORDER:
+        content = memory_context.get(source) or ""
+        chars = len(content)
+        total_chars += chars
+        preview = content.strip()
+        if len(preview) > 1200:
+            preview = preview[:1200] + "..."
+        layers.append(
+            {
+                "source": source,
+                "label": _LAYER_LABELS[source],
+                "loader": _LAYER_SOURCES[source],
+                "requested": source in requested,
+                "present": bool(content.strip()),
+                "chars": chars,
+                "preview": preview,
+            }
+        )
+    return {
+        "kind": "bot_memory_load",
+        "strategy": "ContextLoadStage.select_memory_layers",
+        "trigger_msg_id": trigger_msg_id,
+        "trigger_msg_type": trigger_msg_type or "normal",
+        "requested_layers": [layer for layer in _LAYER_ORDER if layer in requested],
+        "total_chars": total_chars,
+        "layers": layers,
+    }
+
+
 class ContextLoadStage(Stage[BotRunContext]):
     async def run(self, ctx: BotRunContext) -> None:
         layers = select_memory_layers(ctx.trigger_msg.msg_type)
@@ -58,6 +116,12 @@ class ContextLoadStage(Stage[BotRunContext]):
             gather_topic_context(ctx.trigger_msg, ctx.session),
         )
         ctx.memory_context = memory_context
+        ctx.memory_load_detail = build_memory_load_detail(
+            trigger_msg_id=ctx.trigger_msg.msg_id,
+            trigger_msg_type=ctx.trigger_msg.msg_type,
+            requested_layers=layers,
+            memory_context=memory_context,
+        )
         ctx.topic_chain, ctx.child_replies = topic_result
 
     @staticmethod

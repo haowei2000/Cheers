@@ -264,6 +264,46 @@ async def test_reject_cancel_block_and_unblock(db_session: AsyncSession) -> None
 
 
 @pytest.mark.asyncio
+async def test_blocking_incoming_request_preserves_notice_requester(db_session: AsyncSession) -> None:
+    alice = _user("friend-alice-block-notice", "friend_alice_block_notice")
+    bob = _user("friend-bob-block-notice", "friend_bob_block_notice")
+    db_session.add_all([alice, bob])
+    await db_session.commit()
+
+    req = await _request_as(
+        db_session,
+        alice,
+        "POST",
+        "/api/v1/friends/requests",
+        json={"friend_identifier": bob.user_id},
+    )
+    assert req.status_code == 200
+
+    dms = await _request_as(db_session, bob, "GET", "/api/v1/dms")
+    notice = dms.json()["data"][0]
+
+    blocked = await _request_as(
+        db_session,
+        bob,
+        "POST",
+        "/api/v1/friends/blocked",
+        json={"friend_identifier": alice.user_id},
+    )
+    assert blocked.status_code == 200
+
+    messages = await _request_as(
+        db_session,
+        bob,
+        "GET",
+        f"/api/v1/channels/{notice['channel_id']}/messages",
+    )
+    content_data = messages.json()["data"][0]["content_data"]
+    assert content_data["status"] == "blocked"
+    assert content_data["requester"]["user_id"] == alice.user_id
+    assert content_data["receiver"]["user_id"] == bob.user_id
+
+
+@pytest.mark.asyncio
 async def test_auth_and_spoofing_guards(db_session: AsyncSession) -> None:
     alice = _user("friend-alice-004", "friend_alice_004")
     bob = _user("friend-bob-004", "friend_bob_004")

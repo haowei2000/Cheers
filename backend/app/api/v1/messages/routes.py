@@ -125,12 +125,13 @@ async def _run_orchestrator_bg(channel_id: str, msg_id: str) -> None:
                     len(unbroadcast), channel_id, [bm.msg_id for bm in unbroadcast],
                 )
             if bot_messages:
-                _schedule_recent_update(channel_id)
                 logger.info(
                     "orchestrator_bg: completed channel_id=%s bot_messages=%d",
                     channel_id, len(bot_messages),
                 )
             await session.commit()
+            if bot_messages:
+                _schedule_recent_update(channel_id)
     except Exception as e:
         # 确保错误被正确记录，不静默吞掉
         logger.exception(
@@ -202,9 +203,10 @@ async def _handle_send_message(
         is_secret=bool(body.is_secret),
     )
     await make_ingest_pipeline().run(ctx)
-    _schedule_recent_update(channel_id)
 
     assert ctx.msg is not None and ctx.payload is not None
+    await session.commit()
+    _schedule_recent_update(channel_id)
     if _should_run_orchestrator_inline(session):
         await _run_orchestrator_bg(channel_id, ctx.msg.msg_id)
     else:
@@ -276,8 +278,9 @@ async def send_message_stream(
                 except (BadRequestError, AppError) as exc:
                     yield _format_sse("error", {"detail": str(exc), "status_code": 400})
                     return
-                _schedule_recent_update(channel_id)
                 assert ctx.msg is not None and ctx.payload is not None
+                await session.commit()
+                _schedule_recent_update(channel_id)
                 yield _format_sse("user_message", ctx.payload)
 
                 bus = make_event_bus(channel_id, stream_to_ws=False, stream_event=emit)
@@ -295,9 +298,9 @@ async def send_message_stream(
                     yield _format_sse(event, data)
 
                 bot_messages, _ = await orchestrator_task
+                await session.commit()
                 if bot_messages:
                     _schedule_recent_update(channel_id)
-                await session.commit()
                 yield _format_sse("complete", {"ok": True})
             except Exception as exc:
                 if orchestrator_task and not orchestrator_task.done():
