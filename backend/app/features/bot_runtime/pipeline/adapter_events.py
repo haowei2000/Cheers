@@ -1,4 +1,4 @@
-"""AdapterEvent: events streamed by an adapter's ``execute_iter`` AsyncIterator.
+"""AdapterEvent: events streamed by an adapter's ``execute`` AsyncIterator.
 
 A well-behaved adapter yields zero or more ``Delta`` events (token chunks)
 followed by exactly one terminal event — either ``Final`` (the adapter
@@ -6,10 +6,9 @@ finished and produced the full reply) or ``DispatchedAsync`` (the adapter
 handed off to an external Agent Bridge provider; the actual reply will arrive
 later).
 
-This is the streaming primitive that replaces the legacy
-``AgentResponse`` + ``_stream_token`` callback split: callers
-async-iterate the adapter and republish ``Delta`` to the channel
-EventBus, then act on the terminal event.
+This is the streaming primitive that replaces the legacy ``AgentResponse`` +
+``_stream_token`` callback split: callers async-iterate ``execute`` and
+republish ``Delta`` to the channel EventBus, then act on the terminal event.
 """
 from __future__ import annotations
 

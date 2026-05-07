@@ -7,7 +7,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, MemoryEntry, PromptTemplate, Workspace
-from app.features.bot_runtime.adapters.base import AgentPayload
+from app.features.bot_runtime.adapters.base import AgentPayload, drain_events_to_response
 from app.features.bot_runtime.adapters.channel_bot import ChannelBotAdapter
 
 
@@ -68,7 +68,8 @@ async def test_update_anchor_persists_content() -> None:
         patch("app.db.session.async_session_factory", new=test_session_factory),
     ):
         adapter = ChannelBotAdapter()
-        resp = await adapter.execute(_payload(channel_id, "请把项目锚点更新为：" + anchor_content))
+        payload = _payload(channel_id, "请把项目锚点更新为：" + anchor_content)
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
         assert resp.success is True
         assert "锚点" in resp.content or "已为你更新" in resp.content
@@ -110,7 +111,8 @@ async def test_update_anchor_empty_content_returns_error() -> None:
         patch("app.features.bot_runtime.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
     ):
         adapter = ChannelBotAdapter()
-        resp = await adapter.execute(_payload(channel_id, "清空锚点"))
+        payload = _payload(channel_id, "清空锚点")
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
         assert resp.success is True
 

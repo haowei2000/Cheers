@@ -11,7 +11,7 @@ import httpx
 
 from app.core.log_context import bind_context
 from app.db.models import AIModel, BotAccount, PromptTemplate
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.adapters.prompt_template import (
     build_template_context,
     render_user_template,
@@ -274,15 +274,11 @@ class HttpBotAdapter(BotAdapter):
         data = response.json()
         return bool(data.get("choices"))
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        """Legacy single-result entry — drains ``execute_iter`` into AgentResponse."""
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+    async def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
         """执行 LLM 调用，流式 yield ``Delta`` per token + 最终 ``Final``.
 
         上下文注入机制：
-        - payload.memory_context 由 ContextLoadStage 在模板包含 {{memory}}
+        - payload.context.memory 由 ContextLoadStage 在模板包含 {{memory}}
           时加载并渲染为模板变量
         - 是否发送记忆完全由 PromptTemplate.user_template 决定
         """
@@ -291,13 +287,13 @@ class HttpBotAdapter(BotAdapter):
                 yield event
 
     async def _execute_inner(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
-        user_text = (payload.trigger_message or {}).get("text", "")
+        user_text = payload.message.text
         task_id = payload.task_id
-        all_attachments = payload.attachments or []
+        all_attachments = payload.context.attachments or []
 
         # 解密：将 $secret{name} 引用替换为实际密钥值，
         # 并将加密消息占位符替换为解密后的原文
-        user_secrets = payload.process_config.user_secrets
+        user_secrets = payload.runtime.user_secrets
         if user_secrets:
             encrypted_msg = user_secrets.get("_encrypted_msg")
             if encrypted_msg and "🔒" in user_text:
@@ -324,7 +320,7 @@ class HttpBotAdapter(BotAdapter):
 
         headers = self._build_headers(api_config)
 
-        pconfig = payload.process_config
+        pconfig = payload.runtime
         trigger_meta = payload.trigger_message or {}
 
         context_vars = build_template_context(
@@ -333,7 +329,7 @@ class HttpBotAdapter(BotAdapter):
             channel_name=pconfig.channel_name,
             sender_name=trigger_meta.get("sender_name") or pconfig.sender_name,
             timestamp=trigger_meta.get("timestamp", ""),
-            memory_context=payload.memory_context,
+            memory_context=payload.context.memory,
         )
 
         # 子 bot 调用（call_bot）时跳过 system prompt，父 bot 的 message 已包含任务描述
@@ -376,7 +372,7 @@ class HttpBotAdapter(BotAdapter):
             api_config["provider"],
             api_config["model_name"],
             task_id,
-            len(payload.attachments or []),
+            len(payload.context.attachments or []),
         )
         if logger.isEnabledFor(logging.DEBUG):
             for idx, msg in enumerate(messages):

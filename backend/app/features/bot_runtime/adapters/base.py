@@ -7,35 +7,162 @@ from typing import Any
 
 from app.features.bot_runtime.pipeline.adapter_events import (
     AdapterEvent,
+    Delta,
     DispatchedAsync,
     Final,
 )
-from app.features.bot_runtime.pipeline.process_config import ProcessConfig
+from app.features.bot_runtime.pipeline.process_config import BotRuntime, ProcessConfig
 
 
 @dataclass
-class AgentPayload:
-    """Orchestrator 派发给任一 adapter 的标准输入（详细设计 §7.2）。"""
+class BotMessageInput:
+    """User message details visible to adapters."""
 
-    task_id: str
-    channel_id: str
-    trigger_message: dict[str, Any]
-    memory_context: dict[str, str]
+    text: str = ""
+    sender_id: str = ""
+    sender_name: str = ""
+    timestamp: str = ""
+    msg_id: str | None = None
+    msg_type: str | None = None
+    in_reply_to_msg_id: str | None = None
+    topic_chain: list[Any] = field(default_factory=list)
+    child_replies: list[Any] = field(default_factory=list)
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_trigger_message(cls, data: dict[str, Any] | None) -> "BotMessageInput":
+        raw = dict(data or {})
+        known = {
+            "text",
+            "user",
+            "sender_id",
+            "sender_name",
+            "timestamp",
+            "msg_id",
+            "msg_type",
+            "in_reply_to_msg_id",
+            "topic_chain",
+            "child_replies",
+        }
+        return cls(
+            text=str(raw.get("text") or ""),
+            sender_id=str(raw.get("sender_id") or raw.get("user") or ""),
+            sender_name=str(raw.get("sender_name") or ""),
+            timestamp=str(raw.get("timestamp") or ""),
+            msg_id=raw.get("msg_id"),
+            msg_type=raw.get("msg_type"),
+            in_reply_to_msg_id=raw.get("in_reply_to_msg_id"),
+            topic_chain=list(raw.get("topic_chain") or []),
+            child_replies=list(raw.get("child_replies") or []),
+            extra={k: v for k, v in raw.items() if k not in known},
+        )
+
+    def to_trigger_message(self) -> dict[str, Any]:
+        data: dict[str, Any] = {
+            "user": self.sender_id,
+            "sender_name": self.sender_name,
+            "text": self.text,
+            "timestamp": self.timestamp,
+            "in_reply_to_msg_id": self.in_reply_to_msg_id,
+            "topic_chain": self.topic_chain,
+            "child_replies": self.child_replies,
+        }
+        if self.msg_id is not None:
+            data["msg_id"] = self.msg_id
+        if self.msg_type is not None:
+            data["msg_type"] = self.msg_type
+        data.update(self.extra)
+        return data
+
+
+@dataclass
+class BotContext:
+    """Context injected around the message, separate from runtime controls."""
+
+    memory: dict[str, str] = field(default_factory=dict)
     attachments: list[dict[str, str]] = field(default_factory=list)
-    process_config: ProcessConfig = field(default_factory=ProcessConfig)
     # 澄清场景：原问题文本，供引导 Bot 合并上下文后生成最终回答
     original_question_text: str | None = None
 
 
+@dataclass(init=False)
+class AgentPayload:
+    """Standard adapter input: message + context + runtime controls."""
+
+    task_id: str
+    channel_id: str
+    message: BotMessageInput
+    context: BotContext
+    runtime: BotRuntime
+
+    def __init__(
+        self,
+        task_id: str,
+        channel_id: str,
+        message: BotMessageInput | None = None,
+        context: BotContext | None = None,
+        runtime: BotRuntime | None = None,
+        *,
+        trigger_message: dict[str, Any] | None = None,
+        memory_context: dict[str, str] | None = None,
+        attachments: list[dict[str, str]] | None = None,
+        process_config: ProcessConfig | None = None,
+        original_question_text: str | None = None,
+    ) -> None:
+        self.task_id = task_id
+        self.channel_id = channel_id
+        self.message = message or BotMessageInput.from_trigger_message(trigger_message)
+        self.context = context or BotContext(
+            memory=dict(memory_context or {}),
+            attachments=list(attachments or []),
+            original_question_text=original_question_text,
+        )
+        self.runtime = runtime or process_config or BotRuntime()
+
+    @property
+    def trigger_message(self) -> dict[str, Any]:
+        return self.message.to_trigger_message()
+
+    @trigger_message.setter
+    def trigger_message(self, value: dict[str, Any]) -> None:
+        self.message = BotMessageInput.from_trigger_message(value)
+
+    @property
+    def memory_context(self) -> dict[str, str]:
+        return self.context.memory
+
+    @memory_context.setter
+    def memory_context(self, value: dict[str, str]) -> None:
+        self.context.memory = dict(value or {})
+
+    @property
+    def attachments(self) -> list[dict[str, str]]:
+        return self.context.attachments
+
+    @attachments.setter
+    def attachments(self, value: list[dict[str, str]]) -> None:
+        self.context.attachments = list(value or [])
+
+    @property
+    def process_config(self) -> BotRuntime:
+        return self.runtime
+
+    @process_config.setter
+    def process_config(self, value: ProcessConfig) -> None:
+        self.runtime = value
+
+    @property
+    def original_question_text(self) -> str | None:
+        return self.context.original_question_text
+
+    @original_question_text.setter
+    def original_question_text(self, value: str | None) -> None:
+        self.context.original_question_text = value
+
+
 @dataclass
 class AgentResponse:
-    """Legacy single-result summary kept for back-compat.
-
-    Phase 4 introduced :class:`AdapterEvent` streaming via ``execute_iter``;
-    this dataclass is now mostly a reduction target for tests and a few
-    callers that haven't migrated. ``dispatch_one`` returns ``Final | None``
-    going forward — prefer that over constructing this directly.
-    """
+    """Reduced single-result summary used after draining adapter events."""
 
     content: str
     task_id: str
@@ -45,83 +172,66 @@ class AgentResponse:
     # True 表示 Bot 执行为异步派发（如 Agent Bridge Bot 交给外部 provider），
     # content 不会被 orchestrator 写入占位消息，回复通过 bridge 回推后再落盘。
     dispatched_async: bool = False
+    # True 表示用户取消了这次 Bot 回复。content 保留取消前已产生的部分内容。
+    cancelled: bool = False
+
+
+async def drain_events_to_response(
+    events: AsyncIterator[AdapterEvent],
+    *,
+    task_id: str,
+) -> AgentResponse:
+    """Reduce an adapter event stream into the legacy summary shape.
+
+    This helper is deliberately outside ``BotAdapter`` so adapter
+    implementations only expose one execution method: ``execute``.
+    """
+    deltas: list[str] = []
+    terminal: AdapterEvent | None = None
+    async for event in events:
+        if isinstance(event, Delta):
+            deltas.append(event.text)
+        else:
+            terminal = event
+            break
+
+    if isinstance(terminal, DispatchedAsync):
+        return AgentResponse(
+            content="",
+            task_id=task_id,
+            success=True,
+            dispatched_async=True,
+        )
+    if isinstance(terminal, Final):
+        return AgentResponse(
+            content=terminal.content,
+            task_id=task_id,
+            success=terminal.success,
+            error_message=terminal.error_message,
+            file_ids=list(terminal.file_ids),
+        )
+    return AgentResponse(
+        content="".join(deltas),
+        task_id=task_id,
+        success=False,
+        error_message="adapter yielded no terminal event",
+    )
 
 
 class BotAdapter(ABC):
     """所有 Bot 执行路径的共同协议。Orchestrator 只调这里的方法，adapter 可随意换实现。
 
-    Subclasses must implement ``execute`` (legacy single-result API).
-    They may additionally override ``execute_iter`` to yield streaming
-    Delta events natively; the default impl wraps ``execute`` into a
-    single-yield iterator so non-streaming adapters keep working.
+    ``execute`` is the single runtime entry point. Implementations yield zero
+    or more Delta events followed by exactly one terminal Final or
+    DispatchedAsync event.
     """
 
     @abstractmethod
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        """Single-result entry point. Returns an AgentResponse with the
-        final content. Streaming token deltas, if any, are routed through
-        the legacy ``payload.process_config['_stream_token']`` callback."""
+    def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+        """Run the bot for one payload and stream adapter events."""
         raise NotImplementedError
-
-    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
-        """Streaming entry point. Default impl wraps ``execute`` into a
-        single-yield iterator (no Delta events, just one Final or
-        DispatchedAsync). Adapters with native streaming override this
-        and yield Delta(text) per token + a terminal Final."""
-        resp = await self.execute(payload)
-        if resp.dispatched_async:
-            yield DispatchedAsync()
-            return
-        yield Final(
-            content=resp.content,
-            success=resp.success,
-            error_message=resp.error_message,
-            file_ids=list(resp.file_ids),
-        )
-
-    async def _drain_execute_iter(self, payload: AgentPayload) -> AgentResponse:
-        """Helper for adapters that implement ``execute_iter`` natively and
-        want a one-line ``execute`` override.
-
-        Drains the iterator, joining Delta text into the fallback content
-        and reducing the terminal event into an ``AgentResponse``. Calling
-        this from a subclass that DOESN'T override ``execute_iter`` causes
-        infinite recursion (default execute_iter wraps execute, which
-        would call this, which calls execute_iter…)."""
-        from app.features.bot_runtime.pipeline.adapter_events import Delta
-
-        deltas: list[str] = []
-        terminal: AdapterEvent | None = None
-        async for event in self.execute_iter(payload):
-            if isinstance(event, Delta):
-                deltas.append(event.text)
-            else:
-                terminal = event
-                break
-        if isinstance(terminal, DispatchedAsync):
-            return AgentResponse(
-                content="",
-                task_id=payload.task_id,
-                success=True,
-                dispatched_async=True,
-            )
-        if isinstance(terminal, Final):
-            return AgentResponse(
-                content=terminal.content,
-                task_id=payload.task_id,
-                success=terminal.success,
-                error_message=terminal.error_message,
-                file_ids=list(terminal.file_ids),
-            )
-        return AgentResponse(
-            content="".join(deltas),
-            task_id=payload.task_id,
-            success=False,
-            error_message="adapter yielded no terminal event",
-        )
 
     @abstractmethod
     async def health_check(self) -> bool:
         """检查该 adapter 的依赖（远端 LLM / WS 链路 / …）是否可用."""
         raise NotImplementedError
-

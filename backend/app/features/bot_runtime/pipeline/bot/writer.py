@@ -12,8 +12,8 @@ Stages (DispatchStage, AutoTakeoverStage) and adapter sub-bot paths
 loose closures around inside ``process_config``.
 
 Token streaming is no longer part of this class — adapters yield
-``Delta`` events directly out of ``execute_iter`` and ``subagent.
-_consume_execute`` republishes them to the channel EventBus.
+``Delta`` events directly out of ``execute`` and ``subagent._consume_execute``
+republishes them to the channel EventBus.
 """
 from __future__ import annotations
 
@@ -87,9 +87,12 @@ class BotMessageWriter:
         content: str,
         *,
         file_ids: list[str] | None = None,
+        is_partial: bool = False,
+        error: str | None = None,
     ) -> None:
         ctx = self.ctx
         msg.content = content
+        msg.is_partial = bool(is_partial)
         msg.mention_user_ids = await resolve_user_mentions(
             content, ctx.session, ctx.channel_id,
         )
@@ -118,11 +121,16 @@ class BotMessageWriter:
                 update=MessageAssembler.update(
                     msg,
                     file_map=file_map,
+                    is_partial=msg.is_partial,
+                    error=error,
                     content_data=msg.content_data,
                 ),
                 content_data=msg.content_data,
             )
         )
+        from app.features.agent_bridge.streams import stream_registry
+
+        await stream_registry.pop(msg.msg_id)
 
     # ── routing card (coordinator's pick + plan) ────────────────────────
 

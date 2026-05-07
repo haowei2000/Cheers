@@ -346,9 +346,14 @@ async def cancel_streaming_message(
         return APIResponse.ok(_serialize(msg, {}))
 
     bot_id = state.bot_id
-    finalized = await bridge_cancel_stream(
-        session, msg_id=msg_id, reason="user_cancelled",
-    )
+    if state.source == "agent_bridge":
+        finalized = await bridge_cancel_stream(
+            session, msg_id=msg_id, reason="user_cancelled",
+        )
+    else:
+        await stream_registry.request_cancel(msg_id, reason="user_cancelled")
+        finalized = None
+
     if finalized is not None:
         await session.commit()
         # Tell the plugin to stop generating. Best-effort: if plugin is
@@ -363,6 +368,13 @@ async def cancel_streaming_message(
             msg_id, bot_id, current_user.user_id,
         )
         return APIResponse.ok(_serialize(finalized, {}))
+    if state.source != "agent_bridge":
+        logger.info(
+            "cancel_streaming_message: requested local cancel msg_id=%s bot_id=%s by_user=%s",
+            msg_id, bot_id, current_user.user_id,
+        )
+        await session.refresh(msg)
+        return APIResponse.ok(_serialize(msg, {}))
     # Race: registry had it but cancel raced with done. Return current msg.
     await session.refresh(msg)
     return APIResponse.ok(_serialize(msg, {}))

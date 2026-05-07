@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
 from app.services.admin.settings_store import get_provider_for_scope
 
@@ -223,18 +223,15 @@ def _extract_text(content: Any) -> str:
 class HelpBotAdapter(BotAdapter):
     """帮助助手 Bot：加载 docs/help/ 下所有帮助文档，回答 AgentNexus 使用问题。"""
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(self, payload: AgentPayload):
-        user_text = (payload.trigger_message or {}).get("text", "") or ""
-        pconfig = payload.process_config
+    async def execute(self, payload: AgentPayload):
+        user_text = payload.message.text
+        pconfig = payload.runtime
         channel_id = payload.channel_id
-        memory = payload.memory_context or {}
+        memory = payload.context.memory or {}
         db_session = pconfig.db_session
         trigger_meta = payload.trigger_message or {}
         trigger_msg_id = trigger_meta.get("msg_id")
-        sender_id = trigger_meta.get("user", "")
+        sender_id = payload.message.sender_id
 
         # ── 加载帮助文档 ────────────────────────────────────────────────────────
         docs_content = get_help_docs()

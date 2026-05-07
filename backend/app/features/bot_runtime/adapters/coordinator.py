@@ -24,7 +24,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.adapters.help_catalog import (
     build_help_content_with_form,
     get_help_context_for_llm,
@@ -1032,14 +1032,11 @@ async def _run_agent_iter(
 class ChannelBotAdapter(BotAdapter):
     """@channel bot 内置适配器：LangChain Agent 驱动，支持 call_bot / call_user / update_anchor / update_decision 等工具。"""
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(self, payload: AgentPayload):
+    async def execute(self, payload: AgentPayload):
         from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
 
-        user_text = (payload.trigger_message or {}).get("text") or ""
-        all_attachments = payload.attachments or []
+        user_text = payload.message.text
+        all_attachments = payload.context.attachments or []
 
         # 分离图片与文档附件
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
@@ -1050,12 +1047,12 @@ class ChannelBotAdapter(BotAdapter):
         if file_refs:
             user_text = (user_text.strip() + "\n\n" + file_refs) if user_text.strip() else file_refs
 
-        memory = payload.memory_context or {}
+        memory = payload.context.memory or {}
         channel_id = payload.channel_id
-        pconfig = payload.process_config
+        pconfig = payload.runtime
         channel_bots: list[str] = pconfig.channel_bot_usernames
         bot_details: dict = pconfig.channel_bot_details
-        sender_id = (payload.trigger_message or {}).get("user") or ""
+        sender_id = payload.message.sender_id
 
         # ── 1. 构建 System Prompt ──────────────────────────────────────────────
         members_lines: list[str] = []
@@ -1090,8 +1087,8 @@ class ChannelBotAdapter(BotAdapter):
                     f"【最近关注】\n{memory.get('recent') or '（暂无）'}"
                 ),
                 (
-                    f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.original_question_text}\n"
-                    if payload.original_question_text
+                    f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.context.original_question_text}\n"
+                    if payload.context.original_question_text
                     else ""
                 ),
                 "=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n" + members_section,
@@ -1139,10 +1136,10 @@ class ChannelBotAdapter(BotAdapter):
             "memory": memory,
             "task_id": payload.task_id,
             "sender_id": sender_id,
-            "sender_name": pconfig.sender_name or (payload.trigger_message or {}).get("sender_name") or "",
+            "sender_name": pconfig.sender_name or payload.message.sender_name,
             "channel_name": pconfig.channel_name,
-            "attachments": payload.attachments or [],
-            "original_question_text": payload.original_question_text,
+            "attachments": payload.context.attachments or [],
+            "original_question_text": payload.context.original_question_text,
             "_db_session": pconfig.db_session,
             "_bot_id": pconfig.bot_id,
             "_event_bus": pconfig.event_bus,
@@ -1243,7 +1240,7 @@ class ChannelBotAdapter(BotAdapter):
         # ── 5. 关键词兜底（LLM 不可用时） ─────────────────────────────────────
         if not content:
             content = (
-                _build_attachment_fallback_reply(user_text, payload.attachments)
+                _build_attachment_fallback_reply(user_text, payload.context.attachments)
                 or build_help_content_with_form(user_text)
                 or _DEFAULT_REPLY
             )

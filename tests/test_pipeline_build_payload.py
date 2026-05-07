@@ -81,6 +81,7 @@ def test_leaf_payload_omits_run_ctx() -> None:
     assert payload.process_config.run_ctx is None
     assert payload.process_config.db_session is ctx.session
     assert payload.process_config.channel_bot_usernames == []
+    assert payload.runtime.run_ctx is None
 
 
 def test_leaf_payload_omits_msg_id_and_msg_type() -> None:
@@ -107,6 +108,8 @@ def test_regular_payload_carries_run_ctx() -> None:
     )
     assert payload.process_config.run_ctx is ctx
     assert payload.process_config.channel_bot_usernames == ["bob"]
+    assert payload.runtime.run_ctx is ctx
+    assert payload.runtime.channel_bot_usernames == ["bob"]
 
 
 def test_regular_payload_includes_msg_id() -> None:
@@ -145,6 +148,7 @@ def test_trigger_text_override_replaces_text() -> None:
         trigger_text_override="please summarize this",
     )
     assert payload.trigger_message["text"] == "please summarize this"
+    assert payload.message.text == "please summarize this"
 
 
 def test_payload_uses_pipeline_trigger_content_not_stored_message_content() -> None:
@@ -161,6 +165,7 @@ def test_payload_uses_pipeline_trigger_content_not_stored_message_content() -> N
         capabilities=Capabilities.regular(),
     )
     assert payload.trigger_message["text"] == "@alice decrypted task"
+    assert payload.message.text == "@alice decrypted task"
 
 
 def test_skip_system_prompt_flag_propagates() -> None:
@@ -183,6 +188,27 @@ def test_in_reply_to_override_chains_bot_at_bot() -> None:
         in_reply_to_msg_id="parent-bot-msg",
     )
     assert payload.trigger_message["in_reply_to_msg_id"] == "parent-bot-msg"
+    assert payload.message.in_reply_to_msg_id == "parent-bot-msg"
+
+
+def test_payload_groups_message_context_and_runtime() -> None:
+    ctx = _make_ctx(
+        memory_context={"anchor": "A"},
+        attachments=[{"file_id": "f1"}],
+        original_question="What now?",
+    )
+    payload = build_payload(
+        ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
+        capabilities=Capabilities.regular(),
+    )
+
+    assert payload.message.sender_id == "u1"
+    assert payload.message.sender_name == "Alice"
+    assert payload.context.memory == {"anchor": "A"}
+    assert payload.context.attachments == [{"file_id": "f1"}]
+    assert payload.context.original_question_text == "What now?"
+    assert payload.runtime.bot_id == "bot-a"
+    assert payload.runtime.placeholder_msg_id == "bot-msg-1"
 
 
 # ── shared invariants ────────────────────────────────────────────────

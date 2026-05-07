@@ -1,11 +1,19 @@
 """BotAccount / AIModel / PromptTemplate 数据访问层."""
 from __future__ import annotations
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models import AIModel, BotAccount, PromptTemplate
+from app.db.models import (
+    AIModel,
+    AgentBridgeEvent,
+    AgentNexusSession,
+    AgentNexusSessionBinding,
+    BotAccount,
+    ChannelMembership,
+    PromptTemplate,
+)
 
 _BOT_OPTIONS = (selectinload(BotAccount.ai_model), selectinload(BotAccount.prompt_template))
 
@@ -65,6 +73,21 @@ class BotRepository:
         return bot
 
     async def delete(self, bot: BotAccount) -> None:
+        await self.session.execute(
+            delete(AgentNexusSessionBinding).where(AgentNexusSessionBinding.bot_id == bot.bot_id)
+        )
+        await self.session.execute(
+            delete(AgentNexusSession).where(AgentNexusSession.bot_id == bot.bot_id)
+        )
+        await self.session.execute(
+            delete(AgentBridgeEvent).where(AgentBridgeEvent.bot_id == bot.bot_id)
+        )
+        await self.session.execute(
+            delete(ChannelMembership).where(
+                ChannelMembership.member_id == bot.bot_id,
+                ChannelMembership.member_type == "bot",
+            )
+        )
         await self.session.delete(bot)
         await self.session.flush()
 
