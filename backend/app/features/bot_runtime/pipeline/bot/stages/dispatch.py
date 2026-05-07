@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from app.db.models import Message
-from app.features.bot_runtime.orchestrator.mention import extract_mentions, filter_mentioned_bots
+from app.features.bot_runtime.pipeline.bot.mention import extract_mentions, filter_mentioned_bots
 from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
 from app.features.bot_runtime.pipeline.stage import Stage

@@ -23,7 +23,7 @@ from sqlalchemy.sql.schema import Table
 from app.db.models import BotAccount, Message, User
 from app.services.secret_messages import secret_placeholder_for
 
-logger = logging.getLogger("app.features.bot_runtime.orchestrator.topic_context")
+logger = logging.getLogger("app.features.bot_runtime.pipeline.bot.topic_context")
 
 MSG_TYPE_NORMAL = "normal"
 MSG_TYPE_REPLY = "reply"

@@ -1,6 +1,6 @@
 """Capabilities: what a dispatched bot is allowed to do during this run.
 
-Replaces the three implicit ``process_config`` shapes the orchestrator was
+Replaces the three implicit ``process_config`` shapes the Bot pipeline was
 hand-building (regular, coordinator, suggestee-leaf) with a single,
 type-checked dataclass.
 

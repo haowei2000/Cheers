@@ -12,7 +12,7 @@ import pytest
 
 from app.features.bot_runtime.adapters.agent_bridge_bot import AgentBridgeBotAdapter
 from app.features.bot_runtime.adapters.mock_bot import MockBotAdapter
-from app.features.bot_runtime.orchestrator.adapter_resolver import get_adapter_for_bot
+from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_for_bot
 
 
 def _fake_bot(**kwargs):

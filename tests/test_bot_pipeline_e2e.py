@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, PromptTemplate, Workspace
 from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
-from app.features.bot_runtime.orchestrator.queue import stop_orchestrator_workers
+from app.features.bot_runtime.pipeline.bot.queue import stop_bot_pipeline_workers
 from app.features.bot_runtime.pipeline.adapter_events import AdapterEvent, Delta, Final
 
 TEST_USER_ID = "a0000000-0000-0000-0000-000000000099"
@@ -79,7 +79,7 @@ def _patch_background_session_factories(
         autocommit=False,
         autoflush=False,
     )
-    monkeypatch.setattr("app.features.bot_runtime.orchestrator.jobs.async_session_factory", factory)
+    monkeypatch.setattr("app.features.bot_runtime.pipeline.bot.jobs.async_session_factory", factory)
     monkeypatch.setattr("app.features.bot_runtime.pipeline.ingest.stages.async_session_factory", factory)
 
 
@@ -111,7 +111,7 @@ async def test_dm_message_to_bot_gets_reply_without_mention(
     db_engine,
 ) -> None:
     """DM to a Bot should traverse REST -> ingest -> queue worker -> Bot reply."""
-    await stop_orchestrator_workers()
+    await stop_bot_pipeline_workers()
     _patch_background_session_factories(monkeypatch, db_engine)
     model = _make_disabled_model("pipeline-model-0001")
     tpl = _make_template("pipeline-tpl-0001")
@@ -165,7 +165,7 @@ async def test_dm_message_to_bot_gets_reply_without_mention(
         assert bot_msg is not None
         assert "PipelineDMBot" in bot_msg["content"] or "模型已禁用" in bot_msg["content"]
     finally:
-        await stop_orchestrator_workers()
+        await stop_bot_pipeline_workers()
 
 
 @pytest.mark.asyncio
@@ -176,12 +176,12 @@ async def test_worker_bot_pipeline_emits_realtime_status_and_stream_frames(
     db_engine,
 ) -> None:
     """Queued Bot execution should preserve the WS frames the frontend renders."""
-    await stop_orchestrator_workers()
+    await stop_bot_pipeline_workers()
     _patch_background_session_factories(monkeypatch, db_engine)
     broker = RecordingBroker()
     monkeypatch.setattr("app.services.realtime_broker._broker", broker)
 
-    import app.features.bot_runtime.orchestrator.jobs as jobs
+    import app.features.bot_runtime.pipeline.bot.jobs as jobs
 
     async def adapter_factory(bot_id: str, session: AsyncSession) -> BotAdapter:
         return StreamingAdapter()
@@ -252,4 +252,4 @@ async def test_worker_bot_pipeline_emits_realtime_status_and_stream_frames(
         assert frames[5]["data"]["msg_id"] == placeholder_id
         assert frames[5]["data"]["content"] == "stream ok"
     finally:
-        await stop_orchestrator_workers()
+        await stop_bot_pipeline_workers()

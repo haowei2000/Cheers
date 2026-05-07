@@ -170,7 +170,7 @@ class AgentResponse:
     error_message: str | None = None
     file_ids: list[str] = field(default_factory=list)
     # True 表示 Bot 执行为异步派发（如 Agent Bridge Bot 交给外部 provider），
-    # content 不会被 orchestrator 写入占位消息，回复通过 bridge 回推后再落盘。
+    # content 不会被 Bot pipeline 写入占位消息，回复通过 bridge 回推后再落盘。
     dispatched_async: bool = False
     # True 表示用户取消了这次 Bot 回复。content 保留取消前已产生的部分内容。
     cancelled: bool = False

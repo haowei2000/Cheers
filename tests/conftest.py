@@ -64,10 +64,10 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
     """覆盖依赖的 FastAPI 测试客户端。
 
     同时将 messages.py 中的 async_session_factory 替换为测试用工厂，
-    确保 _run_orchestrator_bg 后台任务也写入同一块测试 DB。
+    确保 Bot pipeline 后台任务也写入同一块测试 DB。
     """
     import app.api.v1.messages.routes as _messages_mod
-    import app.features.bot_runtime.orchestrator.jobs as _orchestrator_jobs_mod
+    import app.features.bot_runtime.pipeline.bot.jobs as _bot_pipeline_jobs_mod
     from app.core.dependencies import get_current_user
     from app.core.dependencies import get_session as get_session_core
     from app.db.models import User
@@ -97,9 +97,9 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
         return test_user
 
     original_factory = _messages_mod.async_session_factory
-    original_jobs_factory = _orchestrator_jobs_mod.async_session_factory
+    original_jobs_factory = _bot_pipeline_jobs_mod.async_session_factory
     _messages_mod.async_session_factory = test_session_factory
-    _orchestrator_jobs_mod.async_session_factory = test_session_factory
+    _bot_pipeline_jobs_mod.async_session_factory = test_session_factory
     app.dependency_overrides[get_session_core] = override_get_session
     app.dependency_overrides[get_session_db] = override_get_session
     app.dependency_overrides[get_current_user] = override_get_current_user
@@ -109,5 +109,5 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
         yield ac
 
     _messages_mod.async_session_factory = original_factory
-    _orchestrator_jobs_mod.async_session_factory = original_jobs_factory
+    _bot_pipeline_jobs_mod.async_session_factory = original_jobs_factory
     app.dependency_overrides.clear()

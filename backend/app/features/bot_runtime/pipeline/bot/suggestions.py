@@ -1,11 +1,7 @@
 """Coordinator reply parsing — extracts ``建议 @bot`` suggestions for auto-takeover.
 
-Historically this module also held an ``OrchestratorAdapter`` class
-(LLM-driven business-answer bot) and its ``_call_llm`` helper. Both
-were replaced by ``ChannelBotAdapter`` and the regular pipeline
-dispatch flow; only the suggestion-parser regex survives because
-``AutoTakeoverStage`` still uses it to decide which sub-bots to fan out
-to after the coordinator's reply.
+Only the suggestion-parser regex lives here; ``AutoTakeoverStage`` uses
+it to decide which sub-bots to fan out to after the coordinator's reply.
 """
 import re
 

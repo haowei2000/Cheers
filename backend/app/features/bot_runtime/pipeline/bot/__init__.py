@@ -1,47 +1,32 @@
-"""BotPipeline: orchestrator-side stages.
+"""Unified Bot pipeline runtime.
 
-Today only IngestStage is implemented; the rest of run_orchestrator is
-migrated stage-by-stage in subsequent commits. The stages share
-BotRunContext (data) and the same EventBus the IngestPipeline uses.
+Exports are resolved lazily so small utility imports such as
+``pipeline.bot.mention`` do not pull in the full Agent Bridge runtime.
 """
-from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
-from app.features.bot_runtime.pipeline.bot.context import BotRunContext
-from app.features.bot_runtime.pipeline.bot.stages.auto_takeover import AutoTakeoverStage
-from app.features.bot_runtime.pipeline.bot.stages.context_load import ContextLoadStage
-from app.features.bot_runtime.pipeline.bot.stages.dispatch import (
-    DispatchStage,
-    trigger_sub_bots_from_mentions,
-)
-from app.features.bot_runtime.pipeline.bot.stages.ingest import IngestStage
-from app.features.bot_runtime.pipeline.bot.stages.route import RouteStage
-from app.features.bot_runtime.pipeline.bot.subagent import (
-    build_payload,
-    dispatch_many,
-    dispatch_one,
-)
-from app.features.bot_runtime.pipeline.bot.task_timeout import (
-    AgentBridgeTaskTimeoutContext,
-    ConvertToTaskStage,
-    ValidatePendingStage,
-    make_agent_bridge_task_timeout_pipeline,
-)
-from app.features.bot_runtime.pipeline.bot.writer import BotMessageWriter
+from __future__ import annotations
 
-__all__ = [
-    "AutoTakeoverStage",
-    "BotMessageWriter",
-    "BotRunContext",
-    "Capabilities",
-    "ContextLoadStage",
-    "DispatchStage",
-    "IngestStage",
-    "RouteStage",
-    "ConvertToTaskStage",
-    "ValidatePendingStage",
-    "AgentBridgeTaskTimeoutContext",
-    "build_payload",
-    "dispatch_many",
-    "dispatch_one",
-    "make_agent_bridge_task_timeout_pipeline",
-    "trigger_sub_bots_from_mentions",
-]
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {
+    "BotRunContext": "app.features.bot_runtime.pipeline.bot.context",
+    "Capabilities": "app.features.bot_runtime.pipeline.bot.capabilities",
+    "build_bot_workflow": "app.features.bot_runtime.pipeline.workflow",
+    "dispatch_one": "app.features.bot_runtime.pipeline.bot.subagent",
+    "enqueue_bot_pipeline_job": "app.features.bot_runtime.pipeline.bot.queue",
+    "get_adapter_for_bot": "app.features.bot_runtime.pipeline.bot.adapter_resolver",
+    "run_bot_pipeline": "app.features.bot_runtime.pipeline.bot.service",
+    "start_bot_pipeline_workers": "app.features.bot_runtime.pipeline.bot.queue",
+    "stop_bot_pipeline_workers": "app.features.bot_runtime.pipeline.bot.queue",
+}
+
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value

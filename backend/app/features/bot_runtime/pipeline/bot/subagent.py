@@ -1,6 +1,6 @@
 """Unified sub-agent dispatch helpers.
 
-Today the orchestrator dispatches bots in four places — DispatchStage's
+The Bot pipeline dispatches bots in four places — DispatchStage's
 regular @mention loop, AutoTakeoverStage's coordinator call,
 AutoTakeoverStage's parallel suggestees, and ``trigger_sub_bots_from_mentions``'s
 Bot@Bot recursion — plus channel_bot.py's ``call_bot`` tool. Each had its
@@ -301,7 +301,7 @@ async def _finalize_response(
 
     if isinstance(resp_or_exc, BaseException):
         logger.warning(
-            "orchestrator: bot %s raised: %s duration_ms=%.0f",
+            "bot_pipeline: bot %s raised: %s duration_ms=%.0f",
             username,
             resp_or_exc,
             dur_ms,
@@ -324,7 +324,7 @@ async def _finalize_response(
     resp = resp_or_exc
     if resp.cancelled:
         logger.info(
-            "orchestrator: bot %s cancelled duration_ms=%.0f",
+            "bot_pipeline: bot %s cancelled duration_ms=%.0f",
             username,
             dur_ms,
         )
@@ -352,7 +352,7 @@ async def _finalize_response(
 
     if resp.dispatched_async:
         logger.info(
-            "orchestrator: bot %s async-dispatched via bridge duration_ms=%.0f",
+            "bot_pipeline: bot %s async-dispatched via bridge duration_ms=%.0f",
             username,
             dur_ms,
         )
@@ -364,14 +364,14 @@ async def _finalize_response(
 
     if not resp.success:
         logger.warning(
-            "orchestrator: bot %s failed: %s duration_ms=%.0f",
+            "bot_pipeline: bot %s failed: %s duration_ms=%.0f",
             username,
             resp.error_message or "unknown",
             dur_ms,
         )
     else:
         logger.info(
-            "orchestrator: bot %s completed duration_ms=%.0f",
+            "bot_pipeline: bot %s completed duration_ms=%.0f",
             username,
             dur_ms,
         )
@@ -473,7 +473,7 @@ async def dispatch_many(
         prepared = await _prepare(ctx, bot_id, capabilities=capabilities)
         pending.append(prepared)
         logger.info(
-            "orchestrator: queuing bot bot_id=%s username=%s memory_layers=%d attachments=%d",
+            "bot_pipeline: queuing bot bot_id=%s username=%s memory_layers=%d attachments=%d",
             bot_id,
             username,
             len(ctx.memory_context),

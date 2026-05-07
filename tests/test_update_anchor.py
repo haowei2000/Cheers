@@ -118,7 +118,7 @@ async def test_update_anchor_empty_content_returns_error() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Background task isolation issue - patches don't propagate to _run_orchestrator_bg")
+@pytest.mark.skip(reason="Background task isolation issue - patches don't propagate to _run_bot_pipeline_bg")
 async def test_update_anchor_via_api(client, db_session) -> None:
     """通过 HTTP API 发送消息，触发 update_anchor，验证 memory_entries 中锚点已更新。"""
     from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID

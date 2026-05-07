@@ -40,9 +40,9 @@ async def lifespan(app: FastAPI):
     from app.services.realtime_broker import init_realtime_broker
     await init_realtime_broker()
 
-    from app.features.bot_runtime.orchestrator.jobs import run_orchestrator_job
-    from app.features.bot_runtime.orchestrator.queue import start_orchestrator_workers
-    await start_orchestrator_workers(run_orchestrator_job)
+    from app.features.bot_runtime.pipeline.bot.jobs import run_bot_pipeline_job
+    from app.features.bot_runtime.pipeline.bot.queue import start_bot_pipeline_workers
+    await start_bot_pipeline_workers(run_bot_pipeline_job)
 
     from app.features.bot_runtime.bot_events.jobs import run_bot_event_job
     from app.features.bot_runtime.bot_events.queue import start_bot_event_workers
@@ -68,8 +68,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    from app.features.bot_runtime.orchestrator.queue import stop_orchestrator_workers
-    await stop_orchestrator_workers()
+    from app.features.bot_runtime.pipeline.bot.queue import stop_bot_pipeline_workers
+    await stop_bot_pipeline_workers()
 
     from app.features.bot_runtime.bot_events.queue import stop_bot_event_workers
     await stop_bot_event_workers()

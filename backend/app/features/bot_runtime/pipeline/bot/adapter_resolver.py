@@ -18,7 +18,7 @@ from app.features.bot_runtime.adapters.builtin_registry import get_builtin_adapt
 from app.features.bot_runtime.adapters.http_bot import HttpBotAdapter
 from app.features.bot_runtime.adapters.mock_bot import MockBotAdapter
 
-logger = logging.getLogger("app.features.bot_runtime.orchestrator.adapter_resolver")
+logger = logging.getLogger("app.features.bot_runtime.pipeline.bot.adapter_resolver")
 
 
 async def get_adapter_for_bot(
