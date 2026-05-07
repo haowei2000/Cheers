@@ -75,6 +75,26 @@ export type WebsocketTaskContentData = {
   timeout_seconds?: number;
 };
 
+export type MemoryLoadLayerDetail = {
+  source: string;
+  label?: string;
+  loader?: string;
+  requested?: boolean;
+  present?: boolean;
+  chars?: number;
+  preview?: string;
+};
+
+export type MemoryLoadDetail = {
+  kind: "bot_memory_load";
+  strategy?: string;
+  trigger_msg_id?: string;
+  trigger_msg_type?: string;
+  requested_layers?: string[];
+  total_chars?: number;
+  layers?: MemoryLoadLayerDetail[];
+};
+
 export type Message = {
   msg_id: string;
   task_id?: string | null;

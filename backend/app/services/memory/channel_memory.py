@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import asc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import FileRecord, HistoryPage, MemoryEntry, TodoItem
+from app.db.models import FileRecord, MemoryEntry, TodoItem
 
 # 支持结构化 CRUD 的层
 ENTRY_LAYERS = ("ANCHOR", "DECISIONS", "PROGRESS")
@@ -242,21 +242,10 @@ class ChannelMemory:
 
     @staticmethod
     async def _render_recent(channel_id: str, session: AsyncSession) -> str:
-        """从 HistoryPage 实时渲染 RECENT 文本。"""
-        result = await session.execute(
-            select(HistoryPage)
-            .where(HistoryPage.channel_id == channel_id)
-            .order_by(asc(HistoryPage.page_number))
-        )
-        pages = result.scalars().all()
-        if not pages:
-            return ""
-        lines: list[str] = []
-        for p in pages:
-            start_str = p.started_at.strftime("%Y-%m-%dT%H:%M:%SZ") if p.started_at else ""
-            end_str = p.ended_at.strftime("%Y-%m-%dT%H:%M:%SZ") if p.ended_at else ""
-            lines.append(f'<page id="{p.page_id}" from="{start_str}" to="{end_str}">{p.summary}</page>')
-        return "\n".join(lines)
+        """运行时渲染 RECENT：当前页 + 已封存历史页摘要。"""
+        from app.services.memory.history_pager import render_recent_context
+
+        return await render_recent_context(channel_id, session)
 
     @staticmethod
     async def _render_todos(channel_id: str, session: AsyncSession) -> str:
