@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator
 
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.pipeline.adapter_events import AdapterEvent, Final
 
 
@@ -19,10 +19,7 @@ class MockBotAdapter(BotAdapter):
         self.reply = reply
         self.healthy = healthy
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+    async def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
         yield Final(content=self.reply, success=True)
 
     async def health_check(self) -> bool:

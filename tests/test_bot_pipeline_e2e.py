@@ -9,7 +9,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, PromptTemplate, Workspace
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.orchestrator.queue import stop_orchestrator_workers
 from app.features.bot_runtime.pipeline.adapter_events import AdapterEvent, Delta, Final
 
@@ -35,10 +35,7 @@ class RecordingBroker:
 
 
 class StreamingAdapter(BotAdapter):
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+    async def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
         yield Delta(text="stream ")
         yield Delta(text="ok")
         yield Final(content="stream ok", success=True)

@@ -8,8 +8,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter, drain_events_to_response
 from app.features.bot_runtime.adapters.http_bot import HttpBotAdapter
+from app.features.bot_runtime.pipeline.adapter_events import Final
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
 from app.features.bot_runtime.pipeline.process_config import ProcessConfig
 
@@ -240,7 +241,7 @@ async def _execute_and_capture_body(adapter: HttpBotAdapter, payload: AgentPaylo
     mock_client.stream = _fake_stream
 
     with patch("app.features.bot_runtime.adapters.http_bot.get_http_client", return_value=mock_client):
-        resp = await adapter.execute(payload)
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
     assert resp.success is True
     return captured_body
@@ -479,12 +480,13 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
     async def _fake_adapter_factory(bot_id: str):
         """返回一个捕获 payload 的假 adapter。"""
         class _CapturingAdapter(BotAdapter):
-            async def execute(self, payload: AgentPayload) -> AgentResponse:
+            async def execute(self, payload: AgentPayload):
                 captured_payload.append(payload)
-                return AgentResponse(content="子bot回复", task_id=payload.task_id, success=True)
+                yield Final(content="子bot回复", success=True)
 
             async def health_check(self) -> bool:
                 return True
+
         return _CapturingAdapter()
 
     run_ctx = _make_call_bot_run_ctx(

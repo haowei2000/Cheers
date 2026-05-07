@@ -3,7 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
+from app.features.bot_runtime.pipeline.adapter_events import Final
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
 
 
@@ -22,13 +23,9 @@ class _CapturingAdapter(BotAdapter):
     def __init__(self) -> None:
         self.payloads: list[AgentPayload] = []
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
+    async def execute(self, payload: AgentPayload):
         self.payloads.append(payload)
-        return AgentResponse(
-            content="基于项目锚点，这是一个协作平台...",
-            task_id=payload.task_id,
-            success=True,
-        )
+        yield Final(content="基于项目锚点，这是一个协作平台...", success=True)
 
     async def health_check(self) -> bool:
         return True

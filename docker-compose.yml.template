@@ -51,7 +51,7 @@ services:
       redis:
         condition: service_started
       rustfs:
-        condition: service_started
+        condition: service_healthy
 
   db-migrate:
     build:
@@ -128,3 +128,9 @@ services:
     volumes:
       - ./data/rustfs:/data
       - ./data/rustfs_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
