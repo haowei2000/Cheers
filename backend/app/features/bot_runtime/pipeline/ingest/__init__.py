@@ -1,9 +1,7 @@
-"""IngestPipeline: validate → secret-envelope → persist → emit → fanout-unread.
+"""Message write stages used by the unified workflow.
 
 Used by every code path that creates a Message in a channel: HTTP send,
-SSE-streaming send, builtin-bot post-back. Routes the
-final emit through EventBus so frontend / SSE / unread-badges all see the
-same wire format.
+SSE-streaming send, builtin-bot post-back.
 """
 from app.features.bot_runtime.pipeline.ingest.context import IngestContext
 from app.features.bot_runtime.pipeline.ingest.stages import (
@@ -12,8 +10,8 @@ from app.features.bot_runtime.pipeline.ingest.stages import (
     FanoutUnreadStage,
     PersistStage,
     SecretEnvelopeStage,
+    SerializeStage,
     ValidateStage,
-    make_ingest_pipeline,
 )
 
 __all__ = [
@@ -23,6 +21,6 @@ __all__ = [
     "IngestContext",
     "PersistStage",
     "SecretEnvelopeStage",
+    "SerializeStage",
     "ValidateStage",
-    "make_ingest_pipeline",
 ]

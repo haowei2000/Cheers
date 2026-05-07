@@ -1,10 +1,10 @@
 """BotMessageWriter: the single owner of the bot-reply lifecycle.
 
 Encapsulates the helpers that used to live as closures inside
-``run_orchestrator``: pre-create a placeholder, finalize content + files,
+``run_bot_pipeline``: pre-create a placeholder, finalize content + files,
 broadcast a fully-formed message, emit a routing card, render an error
 fallback, log an AgentTask row, and arm the WebSocket-bot timeout. One
-writer per orchestrator run; it holds no state of its own — every method
+writer per Bot pipeline run; it holds no state of its own — every method
 reads from the BotRunContext passed to ``__init__``.
 
 Stages (DispatchStage, AutoTakeoverStage) and adapter sub-bot paths
@@ -26,8 +26,8 @@ from sqlalchemy import select
 
 from app.application.chat.message_assembler import MessageAssembler
 from app.db.models import AgentTask, BotAccount, FileRecord, Message
-from app.features.bot_runtime.orchestrator.mention import resolve_user_mentions
-from app.features.bot_runtime.orchestrator.topic_context import MSG_TYPE_REPLY, ensure_topic_root
+from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
+from app.features.bot_runtime.pipeline.bot.topic_context import MSG_TYPE_REPLY, ensure_topic_root
 from app.features.bot_runtime.pipeline.events import (
     BotMessagePlaceholder,
     MessageCreated,
@@ -181,7 +181,7 @@ class BotMessageWriter:
             ctx.bot_messages.append(routing_msg)
         except Exception:
             logger.exception(
-                "orchestrator: failed to emit routing card channel_id=%s",
+                "bot_pipeline: failed to emit routing card channel_id=%s",
                 ctx.channel_id,
             )
 

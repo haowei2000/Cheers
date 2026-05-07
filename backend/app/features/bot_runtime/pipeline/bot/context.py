@@ -1,10 +1,4 @@
-"""BotRunContext: data carried through BotPipeline stages.
-
-Replaces the implicit ``process_config`` dict + closure variables that
-run_orchestrator was building locally. Fields populate progressively as
-stages run; many start as defaults and are filled by the stage that owns
-that piece of state.
-"""
+"""BotRunContext: data carried through the Bot pipeline workflow."""
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
@@ -19,6 +13,7 @@ from app.features.bot_runtime.pipeline.bus import EventBus
 
 if TYPE_CHECKING:
     from app.features.bot_runtime.pipeline.bot.writer import BotMessageWriter
+    from app.features.bot_runtime.pipeline.workflow import BotWorkflowPlan
 
 
 @dataclass
@@ -31,7 +26,7 @@ class BotRunContext:
     adapter_factory: Callable[[str], Awaitable[BotAdapter]]
     broadcast_processing: Callable[[str, str, str], Awaitable[None]] | None = None
 
-    # ── filled by IngestStage ───────────────────────────────────────────
+    # ── filled by BotWorkflowBuilder ────────────────────────────────────
     channel_bot_usernames: list[str] = field(default_factory=list)
     bot_id_by_username: dict[str, str] = field(default_factory=dict)
     bot_details_by_username: dict[str, dict] = field(default_factory=dict)
@@ -43,11 +38,11 @@ class BotRunContext:
     channel_name: str = ""
     channel: Channel | None = None
 
-    # ── filled by RouteStage ────────────────────────────────────────────
+    # ── filled by BotWorkflowBuilder route planning ─────────────────────
     target_usernames: list[str] = field(default_factory=list)  # resolved valid bots to dispatch
     direct_answer_mode: bool = False  # auto-assist routed to coordinator
 
-    # ── filled by ContextLoadStage (future commit) ──────────────────────
+    # ── filled by ContextLoadStage ──────────────────────────────────────
     memory_context: dict[str, str] = field(default_factory=dict)
     memory_load_detail: dict[str, Any] = field(default_factory=dict)
     attachments: list[dict[str, str]] = field(default_factory=list)
@@ -57,9 +52,10 @@ class BotRunContext:
     original_question: str | None = None
     original_file_ids: list[str] = field(default_factory=list)
 
-    # ── orchestrator-run identity ───────────────────────────────────────
+    # ── pipeline-run identity ───────────────────────────────────────────
     root_task_id: str = ""
     writer: "BotMessageWriter | None" = None
+    workflow: "BotWorkflowPlan | None" = None
 
     # ── shared state across dispatch / auto-takeover / Bot@Bot ──────────
     triggered_bot_ids: set[str] = field(default_factory=set)

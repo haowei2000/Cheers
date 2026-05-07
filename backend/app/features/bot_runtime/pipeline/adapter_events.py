@@ -36,7 +36,7 @@ class Final:
 class DispatchedAsync:
     """Adapter handed off to an external async provider; the actual reply will
     arrive later through Agent Bridge.
-    The orchestrator records the placeholder as pending and arms a timeout."""
+    The Bot pipeline records the placeholder as pending and arms a timeout."""
 
 
 AdapterEvent = Delta | Final | DispatchedAsync

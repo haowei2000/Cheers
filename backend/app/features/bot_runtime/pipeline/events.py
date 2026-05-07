@@ -1,7 +1,7 @@
-"""Orchestrator pipeline event types.
+"""Pipeline event types.
 
 Each event knows how to render itself for the two transport sinks the
-orchestrator currently feeds: the channel-wide WebSocket and the per-request
+Bot pipeline currently feeds: the channel-wide WebSocket and the per-request
 SSE callback. This is the seed of the pipeline-v2 EventBus.
 """
 from __future__ import annotations

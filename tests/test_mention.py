@@ -4,7 +4,7 @@
 遇到非 @ 内容即停止；中间/末尾的 @ 不再被识别。
 """
 
-from app.features.bot_runtime.orchestrator.mention import extract_mentions, filter_mentioned_bots
+from app.features.bot_runtime.pipeline.bot.mention import extract_mentions, filter_mentioned_bots
 
 
 def test_extract_mentions_empty() -> None:

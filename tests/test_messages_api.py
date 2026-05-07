@@ -193,7 +193,7 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
 
 
 @pytest.mark.asyncio
-async def test_create_message_survives_orchestrator_enqueue_failure(
+async def test_create_message_survives_bot_pipeline_enqueue_failure(
     monkeypatch,
     client: AsyncClient,
     db_session: AsyncSession,
@@ -218,7 +218,7 @@ async def test_create_message_survives_orchestrator_enqueue_failure(
         async def publish_channel(self, channel_id: str, message: dict) -> None:
             raise RuntimeError("broker down")
 
-    monkeypatch.setattr(message_routes, "enqueue_orchestrator_job", fail_enqueue)
+    monkeypatch.setattr(message_routes, "enqueue_bot_pipeline_job", fail_enqueue)
     monkeypatch.setattr(message_routes, "get_realtime_broker", lambda: FailingBroker())
 
     resp = await client.post(
@@ -239,7 +239,7 @@ async def test_create_message_survives_orchestrator_enqueue_failure(
 
 
 @pytest.mark.asyncio
-async def test_create_message_returns_before_orchestrator_enqueue_completes(
+async def test_create_message_returns_before_bot_pipeline_enqueue_completes(
     monkeypatch,
     db_session: AsyncSession,
 ) -> None:
@@ -273,7 +273,7 @@ async def test_create_message_returns_before_orchestrator_enqueue_completes(
         raise AssertionError("enqueue must be deferred to the background task")
         return "job-slow"
 
-    monkeypatch.setattr(message_routes, "enqueue_orchestrator_job", slow_enqueue)
+    monkeypatch.setattr(message_routes, "enqueue_bot_pipeline_job", slow_enqueue)
     background_tasks = RecordingBackgroundTasks()
 
     data, secret_token = await message_routes._handle_send_message(
@@ -292,7 +292,7 @@ async def test_create_message_returns_before_orchestrator_enqueue_completes(
     assert data.content == "returns immediately"
     assert len(background_tasks.tasks) == 1
     func, args, kwargs = background_tasks.tasks[0]
-    assert func is message_routes._enqueue_orchestrator_bg
+    assert func is message_routes._enqueue_bot_pipeline_bg
     assert args == (ch.channel_id, data.msg_id)
     assert kwargs == {}
 

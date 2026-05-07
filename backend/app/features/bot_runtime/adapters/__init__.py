@@ -26,7 +26,7 @@
 
 边界约束
 --------
-- 唯一入口是 ``features.bot_runtime.orchestrator.adapter_resolver.get_adapter_for_bot``。
+- 唯一入口是 ``features.bot_runtime.pipeline.bot.get_adapter_for_bot``。
   API route / 领域服务禁止直接 import 具体 adapter 类。
 - adapter 之间不互相 import；共享逻辑放到 ``base.py`` 或上移到领域服务。
 """
