@@ -7,20 +7,14 @@ import { useResize } from "./hooks/useResize";
 import {
   ArrowUturnLeftIcon,
   Bars3Icon,
-  ChatBubbleLeftEllipsisIcon,
   ChatBubbleLeftIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   DocumentDuplicateIcon,
   DocumentIcon,
-  KeyIcon,
-  LinkIcon,
   LockClosedIcon,
-  MegaphoneIcon,
   PhotoIcon,
-  PlusIcon,
   QuestionMarkCircleIcon,
-  XMarkIcon,
 } from "@heroicons/react/24/solid";
 import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import { BotAvatar } from "./components/BotAvatar";
@@ -43,6 +37,11 @@ import {
 import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
+import {
+  MessageComposer,
+  MESSAGE_COMPOSER_KIND_ORDER,
+} from "./components/MessageComposer";
+import type { MessageComposerKind } from "./components/MessageComposer";
 import { TopicPage } from "./components/TopicPage";
 import { TaskPage } from "./components/TaskPage";
 import { Modal } from "./components/Modal";
@@ -203,14 +202,7 @@ export default function App() {
   // replyingTo overrides this. The "secret" kind syncs with the legacy
   // `secretMode` boolean so downstream code (send payload, render path) keeps
   // working unchanged.
-  type MsgKind = "normal" | "secret" | "announcement" | "topic";
-  const MSG_KINDS_ORDER: MsgKind[] = ["normal", "secret", "announcement", "topic"];
-  const MSG_KIND_LABEL: Record<MsgKind, string> = {
-    normal: "消息",
-    secret: "加密",
-    announcement: "公告",
-    topic: "主题",
-  };
+  type MsgKind = MessageComposerKind;
   const [msgKind, setMsgKind] = useState<MsgKind>("normal");
   // Optional title carried by announcement + topic kinds. Normal messages
   // ignore it; we clear it whenever kind cycles or a send completes.
@@ -218,11 +210,12 @@ export default function App() {
   const composerTitleRef = useRef<HTMLInputElement | null>(null);
   const cycleMsgKind = (direction: 1 | -1) => {
     setMsgKind((prev) => {
-      const idx = MSG_KINDS_ORDER.indexOf(prev);
+      const idx = MESSAGE_COMPOSER_KIND_ORDER.indexOf(prev);
       const next =
-        (idx + direction + MSG_KINDS_ORDER.length) % MSG_KINDS_ORDER.length;
+        (idx + direction + MESSAGE_COMPOSER_KIND_ORDER.length) %
+        MESSAGE_COMPOSER_KIND_ORDER.length;
       setComposerTitle("");
-      return MSG_KINDS_ORDER[next];
+      return MESSAGE_COMPOSER_KIND_ORDER[next];
     });
   };
   const [pageTopicId, setPageTopicId] = useState<string | null>(() => {
@@ -274,23 +267,6 @@ export default function App() {
   >([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounterRef = useRef(0);
-  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
-  const uploadMenuRef = useRef<HTMLDivElement>(null);
-  const fileImgInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!uploadMenuOpen) return;
-    const handle = (e: MouseEvent) => {
-      if (
-        uploadMenuRef.current &&
-        !uploadMenuRef.current.contains(e.target as Node)
-      ) {
-        setUploadMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [uploadMenuOpen]);
 
   // Keychain insert popup
   const [keychainPopupOpen, setKeychainPopupOpen] = useState(false);
@@ -298,21 +274,6 @@ export default function App() {
     { key_id: string; name: string }[]
   >([]);
   const [keychainPopupLoading, setKeychainPopupLoading] = useState(false);
-  const keychainPopupRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!keychainPopupOpen) return;
-    const handle = (e: MouseEvent) => {
-      if (
-        keychainPopupRef.current &&
-        !keychainPopupRef.current.contains(e.target as Node)
-      ) {
-        setKeychainPopupOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [keychainPopupOpen]);
 
   const openKeychainPopup = async () => {
     setKeychainPopupOpen((o) => !o);
@@ -325,27 +286,6 @@ export default function App() {
     } finally {
       setKeychainPopupLoading(false);
     }
-  };
-
-  const insertAtCursor = (snippet: string) => {
-    const el = inputRef.current;
-    if (!el) {
-      setInput((v) => v + snippet);
-      return;
-    }
-    const start = el.selectionStart ?? input.length;
-    const end = el.selectionEnd ?? input.length;
-    const newVal = input.slice(0, start) + snippet + input.slice(end);
-    setInput(newVal);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(start + snippet.length, start + snippet.length);
-    });
-  };
-
-  const insertSecret = (name: string) => {
-    insertAtCursor(`$secret{${name}}`);
-    setKeychainPopupOpen(false);
   };
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<
     string | null
@@ -373,11 +313,6 @@ export default function App() {
 
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
   const [channelUsers, setChannelUsers] = useState<ChannelUser[]>([]);
-  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
-  const [mentionFilter, setMentionFilter] = useState("");
-  const [mentionDropdownPlacement, setMentionDropdownPlacement] = useState<
-    "top" | "bottom"
-  >("bottom");
   // 加密消息状态。Bound to msgKind === "secret" via the effect below — the
   // 🔒 toolbar button and the kind switcher both flip this through msgKind,
   // and downstream send/render code keeps reading `secretMode` unchanged.
@@ -387,37 +322,6 @@ export default function App() {
     if (msgKind !== "secret" && secretMode) setSecretMode(false);
   }, [msgKind, secretMode]);
 
-  // Drag-resize: user can grab the top edge of the composer to pull it taller.
-  // null = use the CSS default (auto-grow up to max-height); otherwise a pinned
-  // textarea height in pixels. Double-click on the handle resets to default.
-  const [composerTextareaHeight, setComposerTextareaHeight] = useState<
-    number | null
-  >(null);
-  const composerDragRef = useRef<{ startY: number; startH: number } | null>(
-    null,
-  );
-  const onComposerResizeDown = (e: React.PointerEvent) => {
-    const ta = inputRef.current;
-    const startH = ta?.offsetHeight ?? 40;
-    composerDragRef.current = { startY: e.clientY, startH };
-    (e.target as Element).setPointerCapture(e.pointerId);
-    e.preventDefault();
-  };
-  const onComposerResizeMove = (e: React.PointerEvent) => {
-    const drag = composerDragRef.current;
-    if (!drag) return;
-    // 用户向上拖拽 → composer 变高（startY > clientY → delta > 0）
-    const next = Math.max(40, Math.min(600, drag.startH + (drag.startY - e.clientY)));
-    setComposerTextareaHeight(next);
-  };
-  const onComposerResizeUp = (e: React.PointerEvent) => {
-    composerDragRef.current = null;
-    try {
-      (e.target as Element).releasePointerCapture(e.pointerId);
-    } catch {
-      /* already released */
-    }
-  };
   const [revealedSecrets, setRevealedSecrets] = useState<
     Record<string, string>
   >({});
@@ -1172,70 +1076,6 @@ export default function App() {
     }
   }, [addBotOpen, authToken]);
 
-  useEffect(() => {
-    if (showMentionDropdown && selectedId) {
-      const headers: Record<string, string> = authToken
-        ? { Authorization: `Bearer ${authToken}` }
-        : {};
-      fetch(`${API}/bots`, { headers })
-        .then((r) => r.json())
-        .then((d) => setAllBots(d.data || []))
-        .catch(() => setAllBots([]));
-      fetch(`${API}/channels/${selectedId}/members?with_username=1`, {
-        headers,
-      })
-        .then((r) => r.json())
-        .then((d) => {
-          if (!d.data) return;
-          setChannelBots(
-            d.data
-              .filter(
-                (m: { member_type: string; username?: string }) =>
-                  m.member_type === "bot" && m.username,
-              )
-              .map(
-                (m: {
-                  member_id: string;
-                  username: string;
-                  avatar_url?: string;
-                  display_name?: string;
-                  scope?: BotItem["scope"];
-                  owner?: BotItem["owner"];
-                }) => ({
-                  member_id: m.member_id,
-                  username: m.username,
-                  avatar_url: m.avatar_url,
-                  display_name: m.display_name,
-                  scope: m.scope,
-                  owner: m.owner,
-                }),
-              ),
-          );
-          setChannelUsers(
-            d.data
-              .filter(
-                (m: { member_type: string; username?: string }) =>
-                  m.member_type === "user" && m.username,
-              )
-              .map(
-                (m: {
-                  member_id: string;
-                  username: string;
-                  avatar_url?: string;
-                  display_name?: string;
-                }) => ({
-                  member_id: m.member_id,
-                  username: m.username,
-                  avatar_url: m.avatar_url,
-                  display_name: m.display_name,
-                }),
-              ),
-          );
-        })
-        .catch(console.error);
-    }
-  }, [showMentionDropdown, selectedId, authToken]);
-
   const addBotToChannel = (botId: string): Promise<void> => {
     if (!selectedId) return Promise.resolve();
     return authFetch(`${API}/channels/${selectedId}/members`, {
@@ -1374,7 +1214,7 @@ export default function App() {
   };
 
   const send = () => {
-    if (!selectedId || !input.trim()) return;
+    if (!selectedId || (!input.trim() && pendingFileIds.length === 0)) return;
     if (isSystemDm) {
       toast.error("好友通知会话不能直接发送消息");
       return;
@@ -1727,12 +1567,13 @@ export default function App() {
     rootMsgId: string,
     text: string,
   ) => {
-    if (!text.trim()) return;
+    const attachedFileIds = [...pendingFileIds];
+    if (!text.trim() && attachedFileIds.length === 0) return;
     const body: Record<string, unknown> = {
       content: text.trim(),
       sender_id: currentUserId,
       sender_type: "user",
-      file_ids: [],
+      file_ids: attachedFileIds,
       mention_bot_ids: botMentionIdsForChannel(channelId),
       is_secret: false,
       msg_type: "reply",
@@ -1748,6 +1589,14 @@ export default function App() {
         prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data],
       );
     }
+    setPendingFileIds([]);
+    setPendingFileNames([]);
+    setPendingFilePreviews((prev) => {
+      prev.forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+      return [];
+    });
   };
 
   const handleClarifyContinue = (
@@ -2637,6 +2486,28 @@ export default function App() {
                       onSendReply={(text) =>
                         sendTopicReply(selectedId, rootId, text)
                       }
+                      pendingFiles={pendingFileNames.map((name, index) => ({
+                        name,
+                        previewUrl: pendingFilePreviews[index] ?? null,
+                      }))}
+                      onRemovePendingFile={(index) => {
+                        setPendingFileIds((prev) =>
+                          prev.filter((_, itemIndex) => itemIndex !== index),
+                        );
+                        setPendingFileNames((prev) =>
+                          prev.filter((_, itemIndex) => itemIndex !== index),
+                        );
+                        setPendingFilePreviews((prev) =>
+                          prev.filter((_, itemIndex) => itemIndex !== index),
+                        );
+                      }}
+                      onUploadFile={uploadFile}
+                      keychainEnabled={Boolean(currentUser)}
+                      keychainOpen={keychainPopupOpen}
+                      keychainLoading={keychainPopupLoading}
+                      keychainItems={keychainPopupItems}
+                      onToggleKeychain={openKeychainPopup}
+                      onCloseKeychain={() => setKeychainPopupOpen(false)}
                     />
                   </div>
                 );
@@ -4830,577 +4701,59 @@ export default function App() {
                     paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
                   }}
                 >
-                  {/* Kind switcher — hidden in DMs and when replying to a
-                      specific message (that flow forces msg_type="reply"). */}
-                  {!replyingTo && selectedChannel?.type !== "dm" && (
-                    <div className="an-msgkind-switcher">
-                      <button
-                        type="button"
-                        onClick={() => cycleMsgKind(-1)}
-                        className="an-msgkind-arrow"
-                        title="上一种消息类型 (Shift+Tab)"
-                        aria-label="上一种消息类型"
-                      >
-                        ‹
-                      </button>
-                      <span
-                        className={
-                          "an-msgkind-label inline-flex items-center gap-1.5" +
-                          (msgKind === "secret"
-                            ? " is-secret"
-                            : msgKind === "announcement"
-                              ? " is-announcement"
-                              : msgKind === "topic"
-                                ? " is-topic"
-                                : "")
-                        }
-                        title="Tab 切换 · Shift+Tab 反向"
-                      >
-                        {msgKind === "secret" ? (
-                          <LockClosedIcon className="w-3.5 h-3.5" />
-                        ) : msgKind === "announcement" ? (
-                          <MegaphoneIcon className="w-3.5 h-3.5" />
-                        ) : msgKind === "topic" ? (
-                          <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5" />
-                        ) : (
-                          <ChatBubbleLeftIcon className="w-3.5 h-3.5" />
-                        )}
-                        {MSG_KIND_LABEL[msgKind]}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => cycleMsgKind(1)}
-                        className="an-msgkind-arrow"
-                        title="下一种消息类型 (Tab)"
-                        aria-label="下一种消息类型"
-                      >
-                        ›
-                      </button>
-                    </div>
-                  )}
-                  {/* Reply bar */}
-                  {replyingTo &&
-                    (() => {
-                      const refBot =
-                        replyingTo.sender_type === "bot"
-                          ? channelBots.find(
-                              (b) => b.member_id === replyingTo.sender_id,
-                            )
-                          : null;
-                      const refLabel =
-                        replyingTo.sender_type === "bot"
-                          ? refBot?.display_name || refBot?.username || "Bot"
-                          : "我";
-                      const refPreview = (
-                        parseHelperPayload(replyingTo.content).text ||
-                        replyingTo.content
-                      )
-                        .replace(/\n/g, " ")
-                        .slice(0, 80);
-                      return (
-                        <div className="an-reply-quote mb-1" style={{ maxWidth: "none" }}>
-                          <span className="an-rq-arrow">↪</span>
-                          <span className="an-rq-name">{refLabel}</span>
-                          <span className="an-rq-snip">
-                            {refPreview}
-                            {(
-                              parseHelperPayload(replyingTo.content).text ||
-                              replyingTo.content
-                            ).length > 80
-                              ? "…"
-                              : ""}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setReplyingTo(null)}
-                            className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-[var(--surface-hover)]"
-                            style={{ color: "var(--fg-3)" }}
-                            title="取消回复"
-                          >
-                            <XMarkIcon className="w-3 h-3" />
-                          </button>
-                        </div>
+                  <MessageComposer
+                    value={input}
+                    inputRef={inputRef}
+                    onValueChange={setInput}
+                    onSend={send}
+                    canSend={Boolean(input.trim() || pendingFileIds.length > 0)}
+                    disabled={isSystemDm}
+                    placeholder={
+                      isSystemDm
+                        ? "好友通知会话用于处理申请，不能直接发送消息…"
+                        : secretMode
+                          ? "输入加密内容（仅 Bot 可读取原文）…"
+                          : msgKind === "announcement"
+                            ? `发布公告到 #${selectedChannel?.name || "频道"}…`
+                            : msgKind === "topic"
+                              ? "开启主题 · 标题将取首行…"
+                              : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
+                    }
+                    kind={msgKind}
+                    onKindChange={setMsgKind}
+                    onCycleKind={cycleMsgKind}
+                    showKindSwitcher={!replyingTo && selectedChannel?.type !== "dm"}
+                    enableKindCycling={!replyingTo && selectedChannel?.type !== "dm"}
+                    titleValue={composerTitle}
+                    titleRef={composerTitleRef}
+                    onTitleChange={setComposerTitle}
+                    channelBots={channelBots}
+                    channelUsers={channelUsers}
+                    replyingTo={replyingTo}
+                    onCancelReply={() => setReplyingTo(null)}
+                    pendingFiles={pendingFileNames.map((name, index) => ({
+                      name,
+                      previewUrl: pendingFilePreviews[index] ?? null,
+                    }))}
+                    onRemovePendingFile={(index) => {
+                      setPendingFileIds((prev) =>
+                        prev.filter((_, itemIndex) => itemIndex !== index),
                       );
-                    })()}
-                  {pendingFileNames.length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {pendingFileNames.map((name, i) => {
-                        const preview = pendingFilePreviews[i] ?? null;
-                        const removeItem = () => {
-                          if (preview) URL.revokeObjectURL(preview);
-                          setPendingFileIds((p) => p.filter((_, j) => j !== i));
-                          setPendingFileNames((p) =>
-                            p.filter((_, j) => j !== i),
-                          );
-                          setPendingFilePreviews((p) =>
-                            p.filter((_, j) => j !== i),
-                          );
-                        };
-                        return preview ? (
-                          <div
-                            key={i}
-                            className="relative group cursor-pointer rounded-xl overflow-hidden border border-gray-200 shadow-sm inline-block"
-                          >
-                            <img
-                              src={preview}
-                              alt={name}
-                              className="max-w-[180px] max-h-[140px] object-cover block"
-                            />
-                            <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5 max-w-[180px]">
-                              <PhotoIcon className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                              <span className="truncate">{name}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={removeItem}
-                              className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-[11px] leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ) : (
-                          <div
-                            key={i}
-                            className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[240px]"
-                          >
-                            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                              <DocumentIcon className="w-5 h-5 text-blue-500" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[13px] font-medium text-gray-700 truncate">
-                                {name}
-                              </div>
-                              <div className="text-[11px] text-gray-400">
-                                待发送
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={removeItem}
-                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-500 text-white rounded-full text-[11px] leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <div className="relative">
-                    <div
-                      className={
-                        "an-composer overflow-hidden" +
-                        (!replyingTo && msgKind === "secret"
-                          ? " is-secret"
-                          : !replyingTo && msgKind === "announcement"
-                            ? " is-announcement"
-                            : !replyingTo && msgKind === "topic"
-                              ? " is-topic"
-                              : "")
-                      }
-                    >
-                      {/* Top-edge drag handle: pull up to grow taller, pull
-                          down to shrink. Double-click to reset to auto. */}
-                      <div
-                        className="an-composer-resize"
-                        onPointerDown={onComposerResizeDown}
-                        onPointerMove={onComposerResizeMove}
-                        onPointerUp={onComposerResizeUp}
-                        onPointerCancel={onComposerResizeUp}
-                        onDoubleClick={() => setComposerTextareaHeight(null)}
-                        title="拖拽调整高度 · 双击重置"
-                        aria-label="拖拽调整发送框高度"
-                      >
-                        <span className="an-composer-resize-grip" />
-                      </div>
-                      {/* Always render the kindhead so the composer's overall
-                          height stays constant across all 4 kinds — switching
-                          types becomes a pure tint change with no layout shift. */}
-                      {!replyingTo && (
-                        <div className="an-composer-kindhead">
-                          {(msgKind === "announcement" ||
-                            msgKind === "topic") && (
-                            <input
-                              ref={composerTitleRef}
-                              className="an-composer-title"
-                              placeholder={
-                                msgKind === "announcement"
-                                  ? "标题（可选，例如「周五发布窗口」）…"
-                                  : "主题标题（可选，例如「升级计划讨论」）…"
-                              }
-                              value={composerTitle}
-                              onChange={(e) =>
-                                setComposerTitle(e.target.value)
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  inputRef.current?.focus();
-                                }
-                              }}
-                              maxLength={120}
-                            />
-                          )}
-                          {msgKind === "secret" && (
-                            <span className="an-composer-kindhead-hint">
-                              端到端加密 · 仅 @ 的 Bot 可读原文
-                            </span>
-                          )}
-                          {msgKind === "normal" && (
-                            <span className="an-composer-kindhead-hint">
-                              @ 呼叫 Bot · Tab 切换类型 · ↵ 发送
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      <textarea
-                        ref={inputRef}
-                        value={input}
-                        disabled={isSystemDm}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          const pos = e.target.selectionStart ?? v.length;
-                          setInput(v);
-                          const lastAt = v.lastIndexOf("@", pos - 1);
-                          if (lastAt !== -1) {
-                            const after = v.slice(lastAt + 1, pos);
-                            if (
-                              !after.includes(" ") &&
-                              !after.includes("\n")
-                            ) {
-                              const rect = e.target.getBoundingClientRect();
-                              const spaceBelow =
-                                window.innerHeight - rect.bottom;
-                              const spaceAbove = rect.top;
-                              if (
-                                spaceBelow < 180 &&
-                                spaceAbove > spaceBelow
-                              ) {
-                                setMentionDropdownPlacement("top");
-                              } else {
-                                setMentionDropdownPlacement("bottom");
-                              }
-                              setShowMentionDropdown(true);
-                              setMentionFilter(after);
-                              return;
-                            }
-                          }
-                          setShowMentionDropdown(false);
-                        }}
-                        onKeyDown={(e) => {
-                          if (showMentionDropdown && e.key === "Escape") {
-                            setShowMentionDropdown(false);
-                            return;
-                          }
-                          // Tab / Shift-Tab cycles msgKind (normal → 公告 →
-                          // 主题 → normal …). Skip in DMs where only
-                          // "normal" makes sense.
-                          if (
-                            e.key === "Tab" &&
-                            !showMentionDropdown &&
-                            !replyingTo &&
-                            selectedChannel?.type !== "dm"
-                          ) {
-                            e.preventDefault();
-                            cycleMsgKind(e.shiftKey ? -1 : 1);
-                            return;
-                          }
-                          // Enter sends · Shift+Enter inserts newline
-                          if (
-                            e.key === "Enter" &&
-                            !e.shiftKey &&
-                            !e.nativeEvent.isComposing &&
-                            !showMentionDropdown
-                          ) {
-                            e.preventDefault();
-                            if (input.trim() || pendingFileIds.length > 0) {
-                              send();
-                            }
-                          }
-                        }}
-                        placeholder={
-                          isSystemDm
-                            ? "好友通知会话用于处理申请，不能直接发送消息…"
-                            : secretMode
-                            ? "输入加密内容（仅 Bot 可读取原文）…"
-                            : msgKind === "announcement"
-                              ? `发布公告到 #${selectedChannel?.name || "频道"}…`
-                              : msgKind === "topic"
-                                ? `开启主题 · 标题将取首行…`
-                                : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
-                        }
-                        className="an-composer-textarea"
-                        style={
-                          composerTextareaHeight !== null
-                            ? {
-                                height: composerTextareaHeight,
-                                maxHeight: composerTextareaHeight,
-                              }
-                            : undefined
-                        }
-                        rows={1}
-                      />
-                      {/* Input toolbar */}
-                      <div className="an-composer-bar">
-                        <div className="flex items-center gap-1">
-                          {/* 上传文件和图片菜单 */}
-                          <input
-                            ref={fileImgInputRef}
-                            type="file"
-                            accept=".txt,.md,.docx,.pdf,.xlsx,.png,.jpg,.jpeg,.webp,.gif"
-                            className="hidden"
-                            onChange={uploadFile}
-                          />
-                          {/* Keychain insert button */}
-                          {currentUser && (
-                            <div ref={keychainPopupRef} className="relative">
-                              <button
-                                type="button"
-                                onClick={openKeychainPopup}
-                                className={
-                                  "an-composer-iconbtn" +
-                                  (keychainPopupOpen ? " is-active" : "")
-                                }
-                                title="插入密钥链"
-                              >
-                                <KeyIcon className="w-4 h-4" />
-                              </button>
-                              {keychainPopupOpen && (
-                                <div className="an-menu absolute" style={{ bottom: 40, left: 0, minWidth: 220, maxHeight: 256, overflowY: "auto" }}>
-                                  <div className="an-menu-head">插入密钥</div>
-                                  {keychainPopupLoading ? (
-                                    <div className="an-menu-empty">加载中…</div>
-                                  ) : keychainPopupItems.length === 0 ? (
-                                    <div className="an-menu-empty">
-                                      暂无密钥
-                                      <br />
-                                      <span style={{ opacity: 0.7 }}>点击侧边栏钥匙图标添加</span>
-                                    </div>
-                                  ) : (
-                                    keychainPopupItems.map((item) => (
-                                      <button
-                                        key={item.key_id}
-                                        type="button"
-                                        onClick={() => insertSecret(item.name)}
-                                        className="an-menu-item"
-                                      >
-                                        <span className="an-mi-ico">
-                                          <QuestionMarkCircleIcon className="w-3.5 h-3.5" />
-                                        </span>
-                                        <span className="font-mono truncate">{item.name}</span>
-                                      </button>
-                                    ))
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          <div ref={uploadMenuRef} className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setUploadMenuOpen((o) => !o)}
-                              className={
-                                "an-composer-iconbtn" +
-                                (uploadMenuOpen ? " is-active" : "")
-                              }
-                              title="上传文件和图片"
-                            >
-                              <PlusIcon className="w-[18px] h-[18px]" />
-                            </button>
-                            {uploadMenuOpen && (
-                              <div className="an-menu absolute" style={{ bottom: 40, left: 0, minWidth: 180 }}>
-                                <button
-                                  type="button"
-                                  className="an-menu-item"
-                                  onClick={() => {
-                                    setUploadMenuOpen(false);
-                                    fileImgInputRef.current?.click();
-                                  }}
-                                >
-                                  <span className="an-mi-ico">
-                                    <LinkIcon className="w-4 h-4" />
-                                  </span>
-                                  <span>上传文件和图片</span>
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          {/* @ mention trigger */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              insertAtCursor("@");
-                              setMentionFilter("");
-                              setMentionDropdownPlacement("top");
-                              setShowMentionDropdown(true);
-                            }}
-                            className="an-composer-iconbtn"
-                            title="提及成员或 Bot"
-                          >
-                            <span className="text-[15px] font-semibold leading-none">@</span>
-                          </button>
-                          {/* Newline insert — label matches the keyboard shortcut */}
-                          <button
-                            type="button"
-                            onClick={() => insertAtCursor("\n")}
-                            className="an-composer-iconbtn is-kbd"
-                            title="插入换行（快捷键 Shift+Enter）"
-                          >
-                            <span className="an-kbd-glyph">⇧↵</span>
-                          </button>
-                        </div>
-                        {/* 加密只对普通对话有意义；公告/主题是面向全频道的，
-                            不允许加密发送。 */}
-                        {(msgKind === "normal" || msgKind === "secret") && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setMsgKind((k) =>
-                                k === "secret" ? "normal" : "secret",
-                              )
-                            }
-                            title={
-                              msgKind === "secret"
-                                ? "取消加密模式"
-                                : "开启加密模式（仅 Bot 可读原文）"
-                            }
-                            className={
-                              "an-composer-iconbtn ml-auto" +
-                              (msgKind === "secret" ? " is-secret-on" : "")
-                            }
-                          >
-                            <LockClosedIcon className="w-4 h-4" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={send}
-                          className="an-composer-send"
-                          disabled={
-                            isSystemDm || (!input.trim() && pendingFileIds.length === 0)
-                          }
-                        >
-                          {msgKind === "secret" ? "加密发送" : "发送"}
-                        </button>
-                      </div>
-                    </div>
-                    {showMentionDropdown &&
-                      (() => {
-                        const allItems = [
-                          ...channelBots.map((b) => ({
-                            ...b,
-                            kind: "bot" as const,
-                          })),
-                          ...channelUsers.map((u) => ({
-                            ...u,
-                            kind: "user" as const,
-                          })),
-                        ];
-                        const matched = allItems.filter(
-                          (item) =>
-                            item.username
-                              .toLowerCase()
-                              .includes(mentionFilter.toLowerCase()) ||
-                            (item.display_name ?? "")
-                              .toLowerCase()
-                              .includes(mentionFilter.toLowerCase()),
-                        );
-                        if (matched.length === 0) return null;
-                        const placementClass =
-                          mentionDropdownPlacement === "top"
-                            ? "bottom-full mb-1"
-                            : "top-full mt-1";
-                        return (
-                          <ul
-                            className={`an-menu absolute left-0 right-0 ${placementClass}`}
-                            style={{ maxHeight: 240, overflowY: "auto" }}
-                            role="listbox"
-                          >
-                            <li className="an-menu-head" style={{ listStyle: "none" }}>
-                              @提及 · {matched.length} 项
-                            </li>
-                            {matched.map((item) => (
-                              <li
-                                key={item.member_id}
-                                role="option"
-                                className="an-menu-item"
-                                style={{ listStyle: "none" }}
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  const el = inputRef.current;
-                                  if (!el) return;
-                                  const v = el.value;
-                                  const pos = el.selectionStart ?? v.length;
-                                  const lastAt = v.lastIndexOf("@", pos - 1);
-                                  const newVal =
-                                    v.slice(0, lastAt) +
-                                    "@" +
-                                    item.username +
-                                    " " +
-                                    v.slice(pos);
-                                  setInput(newVal);
-                                  setShowMentionDropdown(false);
-                                  setTimeout(() => {
-                                    el.focus();
-                                    el.setSelectionRange(
-                                      lastAt + item.username.length + 2,
-                                      lastAt + item.username.length + 2,
-                                    );
-                                  }, 0);
-                                }}
-                              >
-                                <span
-                                  className="an-mi-ico"
-                                  style={{
-                                    width: 22,
-                                    height: 22,
-                                    borderRadius: 5,
-                                    color: "#fff",
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    background:
-                                      item.kind === "bot"
-                                        ? "var(--green)"
-                                        : "var(--accent)",
-                                  }}
-                                >
-                                  {item.username.slice(0, 1).toUpperCase()}
-                                </span>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <span
-                                    className="font-medium truncate"
-                                    style={{ color: "var(--fg-1)" }}
-                                  >
-                                    @{item.username}
-                                  </span>
-                                  {item.display_name && (
-                                    <span className="an-mi-sub truncate">
-                                      {item.display_name}
-                                    </span>
-                                  )}
-                                </div>
-                                <span
-                                  className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
-                                  style={{
-                                    background:
-                                      item.kind === "bot"
-                                        ? "var(--green-muted)"
-                                        : "var(--accent-muted)",
-                                    color:
-                                      item.kind === "bot"
-                                        ? "var(--green)"
-                                        : "var(--accent)",
-                                  }}
-                                >
-                                  {item.kind === "bot" ? "Bot" : "用户"}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        );
-                      })()}
-                  </div>
+                      setPendingFileNames((prev) =>
+                        prev.filter((_, itemIndex) => itemIndex !== index),
+                      );
+                      setPendingFilePreviews((prev) =>
+                        prev.filter((_, itemIndex) => itemIndex !== index),
+                      );
+                    }}
+                    onUploadFile={uploadFile}
+                    keychainEnabled={Boolean(currentUser)}
+                    keychainOpen={keychainPopupOpen}
+                    keychainLoading={keychainPopupLoading}
+                    keychainItems={keychainPopupItems}
+                    onToggleKeychain={openKeychainPopup}
+                    onCloseKeychain={() => setKeychainPopupOpen(false)}
+                  />
                 </div>
               </>
             ) : (
