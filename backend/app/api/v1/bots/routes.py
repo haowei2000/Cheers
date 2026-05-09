@@ -25,6 +25,10 @@ from app.core.schemas import (
 )
 from app.db.models import AIModel, BotAccount, PromptTemplate, User, gen_uuid
 from app.features.agent_bridge.registry import bot_session_registry
+from app.features.agent_bridge.session_queries import (
+    list_active_sessions_for_bot,
+    serialize_session,
+)
 from app.features.bot_runtime.adapters.builtin_registry import get_builtin_adapter
 from app.features.bot_runtime.adapters.http_bot import HttpBotAdapter
 from app.services.bot_service import (
@@ -448,6 +452,20 @@ async def test_bot_connection(
             template_override=template,
         )
     )
+
+
+@router.get("/{bot_id}/sessions", response_model=APIResponse[list[dict]])
+async def list_bot_sessions(
+    bot_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = BotService(session)
+    bot = await svc.get_or_404(bot_id)
+    if not can_manage_bot(bot, current_user):
+        raise ForbiddenError("无权查看该 Bot 的 session")
+    sessions = await list_active_sessions_for_bot(session, bot_id=bot_id)
+    return APIResponse.ok([serialize_session(row) for row in sessions])
 
 
 @router.post("/quick-connect", response_model=APIResponse[dict])

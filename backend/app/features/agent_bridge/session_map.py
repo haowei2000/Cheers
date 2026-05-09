@@ -28,6 +28,10 @@ SCOPE_DM = "dm"
 SCOPE_TOPIC = "topic"
 SCOPE_TASK = "task"
 
+SESSION_STATUS_ACTIVE = "active"
+SESSION_STATUS_TASK_OWNED = "task_owned"
+SESSION_STATUS_CLOSED = "closed"
+
 _SAFE_SEGMENT_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
 
 
@@ -217,11 +221,11 @@ async def _load_session_for_binding(
     return session_row
 
 
-async def _find_primary_binding_for_session(
+async def _find_primary_bindings_for_session(
     db: AsyncSession,
     *,
     session_id: str,
-) -> AgentNexusSessionBinding | None:
+) -> list[AgentNexusSessionBinding]:
     result = await db.execute(
         select(AgentNexusSessionBinding).where(
             AgentNexusSessionBinding.session_id == session_id,
@@ -232,7 +236,95 @@ async def _find_primary_binding_for_session(
     bindings = list(result.scalars().all())
     priority = {SCOPE_TOPIC: 0, SCOPE_DM: 1, SCOPE_CHANNEL: 2}
     bindings.sort(key=lambda b: priority.get(b.scope_type, 99))
+    return bindings
+
+
+async def _find_primary_binding_for_session(
+    db: AsyncSession,
+    *,
+    session_id: str,
+) -> AgentNexusSessionBinding | None:
+    bindings = await _find_primary_bindings_for_session(db, session_id=session_id)
     return bindings[0] if bindings else None
+
+
+def _session_metadata(session_row: AgentNexusSession) -> dict[str, Any]:
+    metadata = getattr(session_row, "session_metadata", None)
+    return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _new_session_row(
+    *,
+    bot_id: str,
+    provider: str,
+    provider_agent_id: str,
+    provider_account_id: str,
+    scope_type: str,
+    scope_id: str,
+    now: datetime,
+    metadata: dict[str, Any] | None = None,
+) -> AgentNexusSession:
+    session_id = gen_uuid()
+    return AgentNexusSession(
+        session_id=session_id,
+        bot_id=bot_id,
+        provider=provider,
+        provider_agent_id=provider_agent_id,
+        provider_account_id=provider_account_id,
+        provider_session_key=build_provider_session_key(
+            provider_agent_id=provider_agent_id,
+            provider_account_id=provider_account_id,
+            session_id=session_id,
+        ),
+        current_scope_type=scope_type,
+        current_scope_id=scope_id,
+        status=SESSION_STATUS_ACTIVE,
+        session_metadata=metadata,
+        last_used_at=now,
+    )
+
+
+async def _rotate_primary_binding_to_new_session(
+    db: AsyncSession,
+    *,
+    binding: AgentNexusSessionBinding,
+    bot_id: str,
+    provider: str,
+    provider_agent_id: str,
+    provider_account_id: str,
+    now: datetime,
+    reason: str,
+) -> AgentNexusSession:
+    """Move an existing parent scope binding onto a fresh clean session.
+
+    We update the binding in place instead of detaching + inserting a new row
+    because the current database constraints are not partial on detached_at.
+    The task-owned session keeps its task binding and parent information in
+    metadata, while the channel/topic/dm scope immediately points at a clean
+    provider session for future normal messages.
+    """
+    metadata = {
+        "rotated_from_session_id": binding.session_id,
+        "rotation_reason": reason,
+        "rotated_at": now.isoformat(),
+    }
+    new_session = _new_session_row(
+        bot_id=bot_id,
+        provider=provider,
+        provider_agent_id=provider_agent_id,
+        provider_account_id=provider_account_id,
+        scope_type=binding.scope_type,
+        scope_id=binding.scope_id,
+        now=now,
+        metadata=metadata,
+    )
+    db.add(new_session)
+    await db.flush()
+    binding.session_id = new_session.session_id
+    binding.role = "primary"
+    binding.detached_at = None
+    await db.flush()
+    return new_session
 
 
 async def _ensure_binding(
@@ -306,14 +398,16 @@ async def resolve_dispatch_session(
 ) -> SessionResolution:
     """Return the durable session mapping for one Bot dispatch.
 
-    The primary binding is topic > DM > channel. The current task_id is also
-    bound as an alias to the same session so task views can switch back to the
-    channel/topic context without creating a fresh provider conversation.
+    The primary binding is DM > topic > channel. ``task_id`` starts as an alias
+    to the dispatch session. If the placeholder later becomes a visible
+    background task, ``adopt_session_for_task`` promotes that alias to the task
+    primary session and rotates the parent scope onto a new clean session.
     """
     channel = await _load_channel(db, channel_id, channel)
     provider = provider_for(bot)
     provider_agent_id = provider_agent_id_for(bot)
     provider_account_id = provider_account_id_for(bot)
+    now = datetime.utcnow()
     scope_type, scope_id = _primary_scope(
         bot_id=bot.bot_id,
         channel=channel,
@@ -363,23 +457,26 @@ async def resolve_dispatch_session(
             )
         if primary_binding is not None:
             session_row = await _load_session_for_binding(db, primary_binding)
-    now = datetime.utcnow()
+            if session_row.status == SESSION_STATUS_TASK_OWNED:
+                session_row = await _rotate_primary_binding_to_new_session(
+                    db,
+                    binding=primary_binding,
+                    bot_id=bot.bot_id,
+                    provider=provider,
+                    provider_agent_id=provider_agent_id,
+                    provider_account_id=provider_account_id,
+                    now=now,
+                    reason="parent_scope_reentered_after_task_adoption",
+                )
     if session_row is None:
-        session_id = gen_uuid()
-        session_row = AgentNexusSession(
-            session_id=session_id,
+        session_row = _new_session_row(
             bot_id=bot.bot_id,
             provider=provider,
             provider_agent_id=provider_agent_id,
             provider_account_id=provider_account_id,
-            provider_session_key=build_provider_session_key(
-                provider_agent_id=provider_agent_id,
-                provider_account_id=provider_account_id,
-                session_id=session_id,
-            ),
-            current_scope_type=scope_type,
-            current_scope_id=scope_id,
-            last_used_at=now,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            now=now,
         )
         db.add(session_row)
         await db.flush()
@@ -388,7 +485,11 @@ async def resolve_dispatch_session(
     # A task alias is a more specific route than its parent channel. When a
     # task-originated turn no longer carries topic context, keep the task's
     # existing session instead of trying to bind the whole channel to it.
-    skip_primary_binding = found_via_task and scope_type == SCOPE_CHANNEL
+    skip_primary_binding = (
+        found_via_task
+        and scope_type != SCOPE_TASK
+        and session_row.status == SESSION_STATUS_TASK_OWNED
+    ) or (found_via_task and scope_type == SCOPE_CHANNEL)
     reported_scope_type = scope_type
     reported_scope_id = scope_id
     if skip_primary_binding:
@@ -464,5 +565,105 @@ async def resolve_dispatch_session(
         provider_agent_id=provider_agent_id,
         primary_scope_type=reported_scope_type,
         primary_scope_id=reported_scope_id,
+        task_scope_id=task_id,
+    )
+
+
+async def adopt_session_for_task(
+    db: AsyncSession,
+    *,
+    bot_id: str,
+    task_id: str,
+    channel_id: str | None = None,
+    source_msg_id: str | None = None,
+    reason: str = "background_task",
+) -> SessionResolution | None:
+    """Promote a dispatch task alias into the owner of its provider session.
+
+    This is called only once the Agent Bridge placeholder becomes a visible
+    background task. The provider session that was already running is kept for
+    the task, so OpenClaw does not have to restart work. Any parent
+    channel/topic/dm binding is rotated to a fresh session for future normal
+    messages.
+    """
+    bot = await db.get(BotAccount, bot_id)
+    if bot is None or not task_id:
+        return None
+    provider = provider_for(bot)
+    provider_agent_id = provider_agent_id_for(bot)
+    provider_account_id = provider_account_id_for(bot)
+    task_binding = await _find_binding_by_scope(
+        db,
+        bot_id=bot.bot_id,
+        provider=provider,
+        provider_agent_id=provider_agent_id,
+        provider_account_id=provider_account_id,
+        scope_type=SCOPE_TASK,
+        scope_id=task_id,
+    )
+    if task_binding is None:
+        return None
+
+    session_row = await _load_session_for_binding(db, task_binding)
+    now = datetime.utcnow()
+    parent_bindings = await _find_primary_bindings_for_session(
+        db,
+        session_id=session_row.session_id,
+    )
+    rotated_parent_sessions: list[AgentNexusSession] = []
+    parent_scopes: list[dict[str, Any]] = []
+    for parent_binding in parent_bindings:
+        parent_scopes.append({
+            "scope_type": parent_binding.scope_type,
+            "scope_id": parent_binding.scope_id,
+            "channel_id": parent_binding.channel_id,
+            "topic_id": parent_binding.topic_id,
+            "dm_id": parent_binding.dm_id,
+        })
+        rotated_parent_sessions.append(await _rotate_primary_binding_to_new_session(
+            db,
+            binding=parent_binding,
+            bot_id=bot.bot_id,
+            provider=provider,
+            provider_agent_id=provider_agent_id,
+            provider_account_id=provider_account_id,
+            now=now,
+            reason=f"task_adopted:{task_id}",
+        ))
+
+    task_binding.role = "primary"
+    if channel_id and not task_binding.channel_id:
+        task_binding.channel_id = channel_id
+
+    metadata = _session_metadata(session_row)
+    metadata.update({
+        "ownership": "task",
+        "adopted_by_task_id": task_id,
+        "adopted_at": now.isoformat(),
+        "adoption_reason": reason,
+        "source_msg_id": source_msg_id,
+    })
+    if parent_scopes:
+        metadata["parent_scope"] = parent_scopes[0]
+        metadata["parent_scopes"] = parent_scopes
+    if rotated_parent_sessions:
+        metadata["rotated_parent_session_id"] = rotated_parent_sessions[0].session_id
+        metadata["rotated_parent_session_ids"] = [row.session_id for row in rotated_parent_sessions]
+
+    session_row.status = SESSION_STATUS_TASK_OWNED
+    session_row.session_metadata = metadata
+    session_row.current_scope_type = SCOPE_TASK
+    session_row.current_scope_id = task_id
+    session_row.last_used_at = now
+    await db.flush()
+
+    return SessionResolution(
+        session_id=session_row.session_id,
+        provider=provider,
+        provider_session_key=session_row.provider_session_key,
+        provider_account_id=provider_account_id,
+        provider_agent_id=provider_agent_id,
+        primary_scope_type=SCOPE_TASK,
+        primary_scope_id=task_id,
         task_scope_id=task_id,
     )

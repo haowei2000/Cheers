@@ -1,5 +1,6 @@
 /* TopicPage — full-page topic view (displayed in place of the chat stream
  * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
+import type { ReactNode } from "react";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { MessageMarkdown } from "../MessageMarkdown";
@@ -16,6 +17,7 @@ export interface TopicPageProps {
   onBack: () => void;
   onGoToChannel?: () => void;
   onSendReply: (text: string) => Promise<void> | void;
+  sessionPanel?: ReactNode;
 }
 
 function resolveWho(
@@ -55,6 +57,7 @@ export function TopicPage({
   onBack,
   onGoToChannel,
   onSendReply,
+  sessionPanel,
 }: TopicPageProps) {
   const title =
     stripThinkTags(rootMsg.content || "")
@@ -207,6 +210,7 @@ export function TopicPage({
           </div>
         </div>
       </div>
+      {sessionPanel}
       <div className="an-tpp-body">
         {renderTopicMessage(rootMsg)}
 

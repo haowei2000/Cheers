@@ -45,6 +45,7 @@ import { ImageLightbox } from "./components/ImageLightbox";
 import { ChannelHeader } from "./components/ChannelHeader";
 import { TopicPage } from "./components/TopicPage";
 import { TaskPage } from "./components/TaskPage";
+import { SessionScopePanel } from "./components/SessionScopePanel";
 import { Modal } from "./components/Modal";
 import { WorkspaceRail } from "./components/WorkspaceRail";
 import { apiFetch, buildWsUrl } from "./api";
@@ -2637,6 +2638,14 @@ export default function App() {
                       onSendReply={(text) =>
                         sendTopicReply(selectedId, rootId, text)
                       }
+                      sessionPanel={
+                        <SessionScopePanel
+                          scopeType="topic"
+                          scopeId={rootId}
+                          channelId={selectedId}
+                          title="主题对应 Session"
+                        />
+                      }
                     />
                   </div>
                 );
@@ -2703,6 +2712,14 @@ export default function App() {
                     setTaskPageOpen(true);
                   }}
                 />
+                {selectedChannel?.type !== "dm" && (
+                  <SessionScopePanel
+                    scopeType="channel"
+                    scopeId={selectedId}
+                    channelId={selectedId}
+                    title="频道对应 Session"
+                  />
+                )}
 
                 <div
                   ref={messagesContainerRef}
