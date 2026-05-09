@@ -1,7 +1,7 @@
 /* TopicPage — full-page topic view (displayed in place of the chat stream
  * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
+import type { ChangeEvent, ReactNode } from "react";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
-import type { ChangeEvent } from "react";
 import { stripThinkTags } from "../lib/think";
 import { MessageMarkdown } from "../MessageMarkdown";
 import { BotAvatar } from "./BotAvatar";
@@ -30,6 +30,7 @@ export interface TopicPageProps {
   keychainItems?: ComposerKeychainItem[];
   onToggleKeychain?: () => void;
   onCloseKeychain?: () => void;
+  sessionPanel?: ReactNode;
 }
 
 function resolveWho(
@@ -78,6 +79,7 @@ export function TopicPage({
   keychainItems,
   onToggleKeychain,
   onCloseKeychain,
+  sessionPanel,
 }: TopicPageProps) {
   const title =
     stripThinkTags(rootMsg.content || "")
@@ -230,6 +232,7 @@ export function TopicPage({
           </div>
         </div>
       </div>
+      {sessionPanel}
       <div className="an-tpp-body">
         {renderTopicMessage(rootMsg)}
 

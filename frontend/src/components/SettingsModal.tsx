@@ -6,6 +6,7 @@ import { apiFetch } from "../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
 import { BotAvatar } from "./BotAvatar";
 import { Modal } from "./Modal";
+import { BotSessionsPanel } from "./SessionScopePanel";
 import { SearchPicker } from "./SearchPicker";
 
 type Density = "comfy" | "compact";
@@ -3412,6 +3413,9 @@ function BotEditPane({
             </div>
           )}
         </div>
+        {(bot.binding_type || "http") === "agent_bridge" && (
+          <BotSessionsPanel botId={bot.bot_id} authToken={authToken} />
+        )}
         {isHttpBot && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
             <div className="an-rc-title">LLM 模型</div>
