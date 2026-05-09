@@ -23,6 +23,8 @@ _STREAM_KEY = "agentnexus:queue:bot-events"
 _GROUP = "agentnexus-bot-events"
 _MAX_ATTEMPTS = 3
 _PENDING_IDLE_MS = 300_000
+_XREAD_BLOCK_MS = 5_000
+_REDIS_SOCKET_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -99,7 +101,7 @@ class RedisBotEventQueue:
             settings.redis_url,
             decode_responses=True,
             socket_connect_timeout=1.0,
-            socket_timeout=5.0,
+            socket_timeout=_REDIS_SOCKET_TIMEOUT_SECONDS,
         )
         pong = self._redis.ping()
         if inspect.isawaitable(pong):
@@ -142,7 +144,7 @@ class RedisBotEventQueue:
                 self._consumer,
                 streams={_STREAM_KEY: ">"},
                 count=1,
-                block=5000,
+                block=_XREAD_BLOCK_MS,
             )
             if not rows:
                 continue
