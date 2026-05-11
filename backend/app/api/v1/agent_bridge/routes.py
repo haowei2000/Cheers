@@ -47,11 +47,6 @@ from app.features.agent_bridge.dispatcher import bridge_dispatcher
 from app.features.agent_bridge.membership import load_memberships
 from app.features.agent_bridge.pending import pending_replies
 from app.features.agent_bridge.registry import bot_session_registry
-from app.features.agent_bridge.session_map import SCOPE_CHANNEL, SCOPE_TASK, SCOPE_TOPIC
-from app.features.agent_bridge.session_queries import (
-    list_active_sessions_for_scope,
-    serialize_session,
-)
 from app.features.agent_bridge.service import (
     apply_delta as bridge_apply_delta,
 )
@@ -60,6 +55,11 @@ from app.features.agent_bridge.service import (
 )
 from app.features.agent_bridge.service import (
     finalize_bot_reply,
+)
+from app.features.agent_bridge.session_map import SCOPE_CHANNEL, SCOPE_TASK, SCOPE_TOPIC
+from app.features.agent_bridge.session_queries import (
+    list_active_sessions_for_scope,
+    serialize_session,
 )
 from app.features.agent_bridge.state_repository import get_agent_bridge_state_repository
 from app.features.agent_bridge.tokens import resolve_bot_by_token

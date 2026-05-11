@@ -199,13 +199,13 @@ async def _consume_execute(
     channel EventBus. Reduces the terminal Final / DispatchedAsync into the
     AgentResponse shape so ``_finalize_response`` stays a single
     branch (existing callers don't see the AsyncIterator)."""
+    from app.features.agent_bridge.streams import stream_registry
     from app.features.bot_runtime.pipeline.adapter_events import (
         Delta,
         DispatchedAsync,
         Final,
     )
     from app.features.bot_runtime.pipeline.events import MessageStreamDelta
-    from app.features.agent_bridge.streams import stream_registry
 
     t0 = time.perf_counter()
     deltas: list[str] = []

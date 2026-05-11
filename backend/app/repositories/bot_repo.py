@@ -6,10 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models import (
-    AIModel,
     AgentBridgeEvent,
     AgentNexusSession,
     AgentNexusSessionBinding,
+    AIModel,
     BotAccount,
     ChannelMembership,
     PromptTemplate,
