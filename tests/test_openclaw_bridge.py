@@ -253,6 +253,41 @@ async def test_ws_bot_adapter_renders_prompt_template_before_dispatch(
 
 
 @pytest.mark.asyncio
+async def test_ws_bot_adapter_sends_delegated_xml_without_template_wrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.features.agent_bridge.pending import pending_replies
+    from app.features.agent_bridge.registry import bot_session_registry
+
+    _patch_record_event(monkeypatch)
+    ws = _FakeWS()
+    await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+    try:
+        adapter = AgentBridgeBotAdapter(_fake_bot(prompt_template=_fake_template()))
+        payload = _payload("t-ws-delegated-xml")
+        payload.process_config.placeholder_msg_id = "placeholder-delegated-xml"
+        payload.process_config.delegated_task_xml = True
+        payload.trigger_message = {
+            **payload.trigger_message,
+            "text": "<agentnexus_subbot_request><delegated_task>hi</delegated_task></agentnexus_subbot_request>",
+        }
+        payload.memory_context = {"anchor": "should-not-be-wrapped"}
+
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
+
+        assert resp.success is True
+        event = ws.sent[0]
+        rendered_text = event["trigger_message"]["text"]
+        assert rendered_text.startswith("<agentnexus_subbot_request>")
+        assert "任务：" not in rendered_text
+        assert "should-not-be-wrapped" not in rendered_text
+        assert event["prompt"]["user"] == rendered_text
+    finally:
+        await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+        await pending_replies.pop_by_msg("placeholder-delegated-xml")
+
+
+@pytest.mark.asyncio
 async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
     from app.features.agent_bridge.pending import pending_replies
 

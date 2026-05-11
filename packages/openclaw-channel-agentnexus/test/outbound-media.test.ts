@@ -23,6 +23,7 @@ import type { InboundMessage } from "../src/session.js";
 const {
   sessionRegistry, sendText, sendMedia, pendingMediaByTo,
   pendingStreamByTo, taskByPlaceholder,
+  startOutputFallbackWatcher, outputFallbackWatchers, resolveOutputFallbackConfig,
 } = __testonly;
 
 const ACCOUNT_ID = "acc-test";
@@ -112,6 +113,17 @@ function installFakeEntry(taskId: string, channelId: string, opts: { placeholder
   return session;
 }
 
+function markDeliverableRequest(taskId: string): void {
+  const entry = sessionRegistry.get(ACCOUNT_ID)!;
+  const source = entry.lastInboundByTaskId.get(taskId)!;
+  source.text = [
+    'Use the "mes-sales-consultant" skill for this request.',
+    "",
+    "User input:",
+    "武汉瑞和汽车调研报告",
+  ].join("\n");
+}
+
 describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
   let originalFetch: typeof globalThis.fetch;
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -124,6 +136,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     pendingMediaByTo.clear();
     pendingStreamByTo.clear();
     taskByPlaceholder.clear();
+    outputFallbackWatchers.clear();
     vi.useFakeTimers();
   });
 
@@ -134,6 +147,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     pendingMediaByTo.clear();
     pendingStreamByTo.clear();
     taskByPlaceholder.clear();
+    outputFallbackWatchers.clear();
   });
 
   it("sendMedia 走流式槽：caption 当作单 delta 推送，debounce 后 done 携带 fileIds", async () => {
@@ -298,6 +312,59 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     // 槽位清干净
     expect(pendingStreamByTo.get("task-6")).toBeUndefined();
     expect(taskByPlaceholder.get("ph-task-6")).toBeUndefined();
+  });
+
+  it("报告类任务的纯状态句会静默挂起，等待后台 task 和后续产物", async () => {
+    const session = installFakeEntry("task-status", "C1");
+    markDeliverableRequest("task-status");
+
+    const res = await sendText({
+      to: "task-status",
+      text: "正在生成瑞和汽车系统诊断报告，基于公开信息完成行业特征×工艺特点×运营模式三维分析...",
+      accountId: ACCOUNT_ID,
+    });
+
+    expect(res.messageId).toBe("ph-task-status-held-status");
+    expect(session.streamDelta).not.toHaveBeenCalled();
+    expect(session.streamDone).not.toHaveBeenCalled();
+    expect(session.streamError).not.toHaveBeenCalled();
+    expect(pendingStreamByTo.get("task-status")?.heldStatusText).toContain("正在生成瑞和汽车系统诊断报告");
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(session.streamDelta).not.toHaveBeenCalled();
+    expect(session.streamError).not.toHaveBeenCalled();
+    expect(session.streamDone).not.toHaveBeenCalled();
+    expect(pendingStreamByTo.get("task-status")).toBeDefined();
+  });
+
+  it("状态句后接真正正文时丢弃状态句并正常完成", async () => {
+    const session = installFakeEntry("task-status-then-body", "C1");
+    markDeliverableRequest("task-status-then-body");
+
+    await sendText({
+      to: "task-status-then-body",
+      text: "正在生成瑞和汽车系统诊断报告...",
+      accountId: ACCOUNT_ID,
+    });
+    await sendText({
+      to: "task-status-then-body",
+      text: "\n# 瑞和汽车系统诊断报告\n\n正文要点：产线、质量、设备与售后协同。",
+      accountId: ACCOUNT_ID,
+    });
+
+    expect(session.streamDelta).toHaveBeenCalledTimes(1);
+    expect(session.streamDelta.mock.calls[0][0]).toMatchObject({
+      msgId: "ph-task-status-then-body",
+      seq: 1,
+      delta: "\n# 瑞和汽车系统诊断报告\n\n正文要点：产线、质量、设备与售后协同。",
+    });
+    expect(session.streamError).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(session.streamDone).toHaveBeenCalledTimes(1);
+    expect(session.streamDone.mock.calls[0][0]).toEqual({ msgId: "ph-task-status-then-body" });
   });
 
   it("子 conversation 输出继续写回父 placeholder", async () => {
@@ -470,5 +537,63 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     });
     expect(session.streamDelta).not.toHaveBeenCalled();
     expect(session.streamDone).not.toHaveBeenCalled();
+  });
+
+  it("报告类后台任务发现稳定完整 output 文件后自动上传并 done", async () => {
+    const session = installFakeEntry("task-output", "C1");
+    markDeliverableRequest("task-output");
+
+    const dir = await mkdtemp(join(tmpdir(), "agentnexus-output-"));
+    const filePath = join(dir, "瑞和汽车系统调研报告.html");
+    const entry = sessionRegistry.get(ACCOUNT_ID)!;
+    entry.account.outputFallback = resolveOutputFallbackConfig({
+      outputDirs: [dir],
+      delayMs: 1,
+      pollMs: 50,
+      stableMs: 100,
+      minBytes: 1,
+      maxWatchMs: 5_000,
+    });
+
+    const source = entry.lastInboundByTaskId.get("task-output")!;
+    await startOutputFallbackWatcher(
+      entry,
+      ACCOUNT_ID,
+      source,
+      `agent:agentnexus-local:agentnexus:account:${ACCOUNT_ID}:session:test`,
+    );
+
+    await writeFile(filePath, "<html><body><h1>报告</h1></body></html>");
+    session.uploadFile.mockResolvedValueOnce({
+      type: "file_upload_ack", client_file_id: "c-output", ok: true, file_id: "f-output",
+    });
+
+    await vi.advanceTimersByTimeAsync(60);
+    expect(session.uploadFile).not.toHaveBeenCalled();
+
+    for (let i = 0; i < 20 && session.uploadFile.mock.calls.length === 0; i += 1) {
+      await vi.advanceTimersByTimeAsync(50);
+      await Promise.resolve();
+    }
+    expect(session.uploadFile).toHaveBeenCalledTimes(1);
+    expect(session.uploadFile.mock.calls[0][0]).toMatchObject({
+      channelId: "C1",
+      filename: "瑞和汽车系统调研报告.html",
+      contentType: "text/html; charset=utf-8",
+    });
+    expect(session.streamDelta).toHaveBeenCalledTimes(1);
+    expect(session.streamDelta.mock.calls[0][0]).toMatchObject({
+      msgId: "ph-task-output",
+      delta: "已生成文件，请查收附件：瑞和汽车系统调研报告.html",
+    });
+
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(session.streamDone).toHaveBeenCalledTimes(1);
+    expect(session.streamDone.mock.calls[0][0]).toEqual({
+      msgId: "ph-task-output",
+      fileIds: ["f-output"],
+    });
+    expect(outputFallbackWatchers.get(`${ACCOUNT_ID}:task-output`)).toBeUndefined();
   });
 });

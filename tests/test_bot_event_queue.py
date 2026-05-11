@@ -2,15 +2,15 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.db.models import Base, Channel, Message, Workspace
+from app.db.models import Base, Channel, FileRecord, Message, Workspace
 from app.features.agent_bridge.pending import PendingReply, pending_replies
 from app.features.agent_bridge.service import apply_delta, register_stream
+from app.features.bot_runtime.bot_events import queue as bot_event_queue
 from app.features.bot_runtime.bot_events.jobs import (
     AGENT_BRIDGE_REPLY,
     AGENT_BRIDGE_STREAM_DONE,
     handle_bot_event_job,
 )
-from app.features.bot_runtime.bot_events import queue as bot_event_queue
 from app.features.bot_runtime.bot_events.queue import BotEventJob, MemoryBotEventQueue
 from app.features.bot_runtime.bot_events.runs import ensure_bot_run, get_bot_run_by_placeholder
 
@@ -313,4 +313,98 @@ async def test_openclaw_stream_done_event_with_snapshot_preserves_event_type(
             assert broker.channel_frames[-1][1]["data"]["content"] == "snapshot stream done"
     finally:
         await pending_replies.pop_by_msg("msg-bot-event-snapshot")
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_openclaw_stream_done_updates_background_task_card_with_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broker = RecordingBroker()
+    monkeypatch.setattr("app.services.realtime_broker._broker", broker)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with factory() as session:
+            workspace = Workspace(workspace_id="ws-bot-event-bg", name="Workspace")
+            channel = Channel(
+                channel_id="ch-bot-event-bg",
+                workspace_id=workspace.workspace_id,
+                name="queued-background",
+            )
+            msg = Message(
+                msg_id="msg-bot-event-bg",
+                channel_id=channel.channel_id,
+                sender_id="bot-event-bg",
+                sender_type="bot",
+                content="Agent Bridge 已转入后台任务，完成后会自动更新这条回复。",
+                content_data={"kind": "agent_bridge_background_task", "status": "running"},
+                task_id="task-bot-event-bg",
+                in_reply_to_msg_id="trigger-bg",
+                msg_type="reply",
+            )
+            file_record = FileRecord(
+                file_id="file-bg-report",
+                channel_id=channel.channel_id,
+                uploader_id="bot-event-bg",
+                original_path="generated/file-bg-report",
+                object_key="generated/file-bg-report",
+                original_filename="report.html",
+                content_type="text/html",
+                size_bytes=128,
+                status="uploaded",
+            )
+            session.add_all([workspace, channel, msg, file_record])
+            await session.flush()
+            await ensure_bot_run(
+                session,
+                task_id="task-bot-event-bg",
+                channel_id=channel.channel_id,
+                trigger_msg_id="trigger-bg",
+                bot_id="bot-event-bg",
+                placeholder_msg_id=msg.msg_id,
+                status="background_task",
+            )
+            await pending_replies.register(
+                PendingReply(
+                    task_id="task-bot-event-bg",
+                    bot_id="bot-event-bg",
+                    channel_id=channel.channel_id,
+                    msg_id=msg.msg_id,
+                )
+            )
+
+            await handle_bot_event_job(
+                session,
+                BotEventJob(
+                    event_type=AGENT_BRIDGE_STREAM_DONE,
+                    payload={
+                        "msg_id": msg.msg_id,
+                        "bot_id": "bot-event-bg",
+                        "channel_id": channel.channel_id,
+                        "task_id": "task-bot-event-bg",
+                        "content": "已生成文件，请查收附件：report.html",
+                        "file_ids": ["file-bg-report"],
+                    },
+                ),
+            )
+            await session.flush()
+            await session.refresh(msg)
+
+            assert msg.content == "已生成文件，请查收附件：report.html"
+            assert msg.file_ids == ["file-bg-report"]
+            assert msg.content_data is None
+            assert await pending_replies.peek_by_msg(msg.msg_id) is None
+            run = await get_bot_run_by_placeholder(session, msg.msg_id)
+            assert run is not None
+            assert run.status == "done"
+            assert run.last_event_type == AGENT_BRIDGE_STREAM_DONE
+            assert broker.channel_frames[-1][1]["type"] == "message_done"
+            assert broker.channel_frames[-1][1]["data"]["file_ids"] == ["file-bg-report"]
+    finally:
+        await pending_replies.pop_by_msg("msg-bot-event-bg")
         await engine.dispose()

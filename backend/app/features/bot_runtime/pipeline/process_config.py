@@ -32,6 +32,7 @@ class BotRuntime:
 
     # ── call_bot tool flag ──────────────────────────────────────────────
     skip_system_prompt: bool = False
+    delegated_task_xml: bool = False
 
 
 ProcessConfig = BotRuntime

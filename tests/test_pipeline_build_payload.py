@@ -178,6 +178,18 @@ def test_skip_system_prompt_flag_propagates() -> None:
     assert payload.process_config.skip_system_prompt is True
 
 
+def test_delegated_task_xml_flag_propagates() -> None:
+    ctx = _make_ctx()
+    payload = build_payload(
+        ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
+        capabilities=Capabilities.regular(),
+        trigger_text_override="<agentnexus_subbot_request />",
+        delegated_task_xml=True,
+    )
+    assert payload.trigger_message["text"] == "<agentnexus_subbot_request />"
+    assert payload.process_config.delegated_task_xml is True
+
+
 def test_in_reply_to_override_chains_bot_at_bot() -> None:
     """Bot@Bot recursion sets the sub-reply's in_reply_to to the parent
     bot's msg_id so the sub-reply chains correctly."""

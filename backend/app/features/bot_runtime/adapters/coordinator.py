@@ -19,6 +19,7 @@ import json
 import logging
 import re
 from typing import Any, cast
+from xml.sax.saxutils import escape, quoteattr
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
@@ -43,6 +44,107 @@ _DEFAULT_REPLY = (
     "左边没有项目、@ 没反应、怎么安装、报错排查 等，我会根据说明书为您引导。"
     "也可以直接问项目相关问题，我会结合频道上下文回答。"
 )
+
+
+_MEMORY_XML_FIELDS = (
+    ("anchor", "项目锚点"),
+    ("progress", "项目进度"),
+    ("decisions", "决策记录"),
+    ("files_index", "资料索引"),
+    ("recent", "近期动态"),
+    ("todos", "待办事项"),
+)
+
+
+def _xml_text(value: Any) -> str:
+    return escape(str(value or ""), {"\r": "&#13;"})
+
+
+def _xml_attr(value: Any) -> str:
+    return quoteattr(str(value or ""))
+
+
+def _format_call_bot_xml_prompt(*, username: str, message: str, run_ctx: Any) -> str:
+    """Build the synthetic child-Bot prompt as one XML document.
+
+    The receiving adapter sends this document as-is. That keeps delegated
+    tasks structurally separate from channel memory and avoids the old
+    ``{{memory}}\n\n{{message}}`` soup when the parent Bot calls ``call_bot``.
+    """
+    from datetime import datetime, timezone
+
+    memory = getattr(run_ctx, "memory_context", None) or {}
+    original_question = (
+        getattr(run_ctx, "original_question", None)
+        or getattr(run_ctx, "trigger_content", None)
+        or ""
+    )
+    attachments = getattr(run_ctx, "attachments", None) or []
+    topic_chain = getattr(run_ctx, "topic_chain", None) or []
+    child_replies = getattr(run_ctx, "child_replies", None) or []
+    trigger_msg = getattr(run_ctx, "trigger_msg", None)
+    trigger_msg_id = getattr(trigger_msg, "msg_id", "") if trigger_msg is not None else ""
+
+    lines: list[str] = [
+        '<agentnexus_subbot_request version="1">',
+        "  <routing>",
+        f"    <target_bot username={_xml_attr(username)} />",
+        f"    <channel id={_xml_attr(getattr(run_ctx, 'channel_id', ''))}>{_xml_text(getattr(run_ctx, 'channel_name', ''))}</channel>",
+        f"    <sender id={_xml_attr(getattr(trigger_msg, 'sender_id', '') if trigger_msg is not None else '')}>{_xml_text(getattr(run_ctx, 'sender_name', ''))}</sender>",
+        f"    <root_task_id>{_xml_text(getattr(run_ctx, 'root_task_id', ''))}</root_task_id>",
+        f"    <trigger_msg_id>{_xml_text(trigger_msg_id)}</trigger_msg_id>",
+        f"    <generated_at>{datetime.now(timezone.utc).isoformat()}</generated_at>",
+        "  </routing>",
+        f"  <delegated_task>{_xml_text(message)}</delegated_task>",
+    ]
+    if original_question and original_question != message:
+        lines.extend([
+            f"  <original_user_input>{_xml_text(original_question)}</original_user_input>",
+        ])
+
+    lines.append("  <channel_memory>")
+    for key, label in _MEMORY_XML_FIELDS:
+        content = (memory.get(key) or "").strip() if isinstance(memory, dict) else ""
+        if not content:
+            continue
+        lines.append(f"    <layer name={_xml_attr(key)} label={_xml_attr(label)}>{_xml_text(content)}</layer>")
+    lines.append("  </channel_memory>")
+
+    if attachments:
+        lines.append("  <attachments>")
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            attrs = [
+                f"file_id={_xml_attr(attachment.get('file_id', ''))}",
+                f"filename={_xml_attr(attachment.get('filename') or attachment.get('original_filename') or '')}",
+                f"content_type={_xml_attr(attachment.get('content_type', ''))}",
+            ]
+            lines.append(f"    <attachment {' '.join(attrs)}>")
+            if attachment.get("summary"):
+                lines.append(f"      <summary>{_xml_text(attachment.get('summary'))}</summary>")
+            if attachment.get("download_url"):
+                lines.append(f"      <download_url>{_xml_text(attachment.get('download_url'))}</download_url>")
+            lines.append("    </attachment>")
+        lines.append("  </attachments>")
+
+    if topic_chain or child_replies:
+        lines.append("  <thread_context>")
+        if topic_chain:
+            lines.append(f"    <topic_chain>{_xml_text(json.dumps(topic_chain, ensure_ascii=False))}</topic_chain>")
+        if child_replies:
+            lines.append(f"    <child_replies>{_xml_text(json.dumps(child_replies, ensure_ascii=False))}</child_replies>")
+        lines.append("  </thread_context>")
+
+    lines.extend([
+        "  <response_contract>",
+        "    <item>Only handle the delegated_task unless original_user_input is needed for context.</item>",
+        "    <item>Use channel_memory as supporting context, not as the task itself.</item>",
+        "    <item>If you produce files, return them through AgentNexus attachments when available.</item>",
+        "  </response_contract>",
+        "</agentnexus_subbot_request>",
+    ])
+    return "\n".join(lines)
 
 
 # ─── LLM 配置 ─────────────────────────────────────────────────────────────────
@@ -214,13 +316,19 @@ def _make_tools(ctx: dict) -> list:
             len(message),
             message,
         )
+        delegated_prompt = _format_call_bot_xml_prompt(
+            username=username,
+            message=message,
+            run_ctx=run_ctx,
+        )
         try:
             resp = await dispatch_one(
                 run_ctx,
                 bot_id,
                 capabilities=Capabilities.regular(),
-                trigger_text_override=message,
+                trigger_text_override=delegated_prompt,
                 skip_system_prompt=True,
+                delegated_task_xml=True,
                 skip_attachment_error=True,
             )
             if resp is None:
