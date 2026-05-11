@@ -285,9 +285,9 @@ AGENT_BRIDGE_ENABLED=true
 # 与 plugin 用的 per-bot token 无关
 AGENT_BRIDGE_TOKEN=change-me
 
-# 后端对 Agent Bridge Bot dispatch 的超时；超时后占位消息自动 finalize 为
-# "[Agent Bridge Bot] 等待 OpenClaw channel plugin 回推超时（>Ns）"
-AGENT_BRIDGE_TIMEOUT_SECONDS=60
+# 后端对 Agent Bridge Bot 的前台等待阈值；超时后占位消息转为后台 task，
+# provider 任务继续运行，后续回推会自动更新原消息。
+AGENT_BRIDGE_TIMEOUT_SECONDS=180
 ```
 
 ---

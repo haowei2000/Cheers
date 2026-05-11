@@ -285,7 +285,7 @@ openclaw daemon logs --follow | grep agentnexus
 支持。plugin 每收到 agent 一段 token，就发 `delta` 帧，AgentNexus 广播 `message_stream`；最后用 `reply` 帧 finalize。
 
 **Q：plugin 离线时，期间发的 `@bot` 会丢吗？**
-后端会把消息当作 placeholder 存库；plugin 重连后可以基于 `pending_replies` 兜底（`reply_to_msg_id` / `task_id` peek），从而把答复贴回原占位。但**无主动重投**——如果 plugin 重连前 placeholder 已超时（默认 60s），就只是一条"等待超时"的消息。
+后端会把消息当作 placeholder 存库；plugin 重连后可以基于 `pending_replies` 兜底（`reply_to_msg_id` / `task_id` peek），从而把答复贴回原占位。但**无主动重投**——如果 plugin 重连前 placeholder 已超时（默认 3 分钟），就只是一条"等待超时"的消息。
 
 **Q：能给 Bot 上传文件吗？**
 可以。frontend 上传后会在 `message` 帧里带 `file_ids`，plugin 透传给 agent；agent 回复时也可以带 `file_ids`（必须是已上传到该频道的文件 id）。

@@ -251,7 +251,7 @@ class BotMessageWriter:
                 bot_msg.msg_id,
             )
             return
-        timeout_s = max(5, int(_settings.agent_bridge_timeout_seconds or 60))
+        timeout_s = max(5, int(_settings.agent_bridge_timeout_seconds or 180))
 
         async def _on_timeout() -> None:
             logger.warning(

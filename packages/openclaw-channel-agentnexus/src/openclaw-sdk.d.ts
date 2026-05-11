@@ -47,7 +47,7 @@ declare module "openclaw/plugin-sdk/channel-core" {
     };
     channel?: {
       session?: {
-        resolveStorePath(store?: string, opts?: { workspaceDir?: string }): string;
+        resolveStorePath(store?: string, opts?: { agentId?: string; workspaceDir?: string }): string;
         updateLastRoute(p: {
           storePath: string;
           sessionKey: string;
