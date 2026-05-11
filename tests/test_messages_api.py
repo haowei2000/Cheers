@@ -328,6 +328,7 @@ async def test_secret_message_content_stores_msg_id_reference(
     expected = f"🔒 [加密消息:{data['msg_id']}]"
     assert data["content"] == expected
     assert data["secret_token"]
+    assert data["created_at"].endswith("+00:00")
 
     resp2 = await client.get(f"/api/v1/channels/{ch.channel_id}/messages")
     assert resp2.status_code == 200
