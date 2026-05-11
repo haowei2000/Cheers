@@ -19,8 +19,8 @@ import asyncio
 import logging
 
 from app.features.bot_runtime.adapters.prompt_template import template_uses_memory
-from app.features.bot_runtime.pipeline.bot.topic_context import gather_topic_context
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
+from app.features.bot_runtime.pipeline.bot.topic_context import gather_topic_context
 from app.features.bot_runtime.pipeline.stage import Stage
 from app.features.memory.channel_memory import ChannelMemory
 from app.features.memory.manager import load_layers as memory_load_layers

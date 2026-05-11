@@ -16,8 +16,8 @@ from app.features.bot_runtime.adapters.prompt_template import (
     build_template_context,
     render_user_template,
 )
-from app.features.bot_runtime.pipeline.bot.secrets import replace_secret_refs
 from app.features.bot_runtime.pipeline.adapter_events import AdapterEvent, Delta, Final
+from app.features.bot_runtime.pipeline.bot.secrets import replace_secret_refs
 from app.http_client import get_http_client
 from app.services.secret_messages import replace_secret_placeholder
 from app.utils.crypto import decrypt_value
