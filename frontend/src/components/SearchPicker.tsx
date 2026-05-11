@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { MagnifyingGlassIcon } from "@heroicons/react/24/solid";
+import { ChevronDownIcon, MagnifyingGlassIcon } from "@heroicons/react/24/solid";
 import { apiFetch } from "../api";
 import type {
   SearchBotHit,
@@ -18,6 +18,13 @@ import type {
 export type SearchPickerHandle = {
   focus: (select?: boolean) => void;
   clear: () => void;
+};
+
+export type SearchScopeOption = {
+  value: string;
+  label: string;
+  title?: string;
+  marker?: string;
 };
 
 type SearchPickerProps = {
@@ -36,6 +43,9 @@ type SearchPickerProps = {
   actionLabel?: string | ((selection: SearchSelection) => string | null);
   scopeLabel?: string;
   scopeTitle?: string;
+  scopeValue?: string;
+  scopeOptions?: SearchScopeOption[];
+  onScopeChange?: (value: string) => void;
   onSelect: (selection: SearchSelection) => void;
 };
 
@@ -135,6 +145,9 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       actionLabel,
       scopeLabel,
       scopeTitle,
+      scopeValue,
+      scopeOptions = [],
+      onScopeChange,
       onSelect,
     },
     ref,
@@ -143,8 +156,10 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
     const [results, setResults] = useState<SearchResultsPayload | null>(null);
     const [busy, setBusy] = useState(false);
     const [open, setOpen] = useState(false);
+    const [scopeOpen, setScopeOpen] = useState(false);
     const inputRef = useRef<HTMLInputElement | null>(null);
     const wrapRef = useRef<HTMLDivElement | null>(null);
+    const canSwitchScope = Boolean(onScopeChange && scopeOptions.length > 1);
 
     useImperativeHandle(ref, () => ({
       focus: (select = true) => {
@@ -170,28 +185,31 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       const onKey = (e: KeyboardEvent) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
           e.preventDefault();
+          setScopeOpen(false);
           setOpen(true);
           inputRef.current?.focus();
           inputRef.current?.select();
-        } else if (e.key === "Escape" && open) {
+        } else if (e.key === "Escape" && (open || scopeOpen)) {
           setOpen(false);
+          setScopeOpen(false);
           inputRef.current?.blur();
         }
       };
       document.addEventListener("keydown", onKey);
       return () => document.removeEventListener("keydown", onKey);
-    }, [enableShortcut, open]);
+    }, [enableShortcut, open, scopeOpen]);
 
     useEffect(() => {
-      if (!open) return;
+      if (!open && !scopeOpen) return;
       const handler = (e: MouseEvent) => {
         if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
           setOpen(false);
+          setScopeOpen(false);
         }
       };
       document.addEventListener("mousedown", handler);
       return () => document.removeEventListener("mousedown", handler);
-    }, [open]);
+    }, [open, scopeOpen]);
 
     useEffect(() => {
       const needle = q.trim();
@@ -239,6 +257,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       setQ("");
       setResults(null);
       setOpen(false);
+      setScopeOpen(false);
     };
 
     const actionText = (selection: SearchSelection) => {
@@ -250,10 +269,11 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       "an-search",
       modal ? "in-modal" : "",
       scopeLabel ? "an-search-global" : "",
-      scopeLabel && open ? "is-open" : "",
+      scopeLabel && (open || scopeOpen) ? "is-open" : "",
       className,
     ].filter(Boolean).join(" ");
     const scopeDescription = scopeTitle || scopeLabel || "";
+    const currentScope = scopeOptions.find((option) => option.value === scopeValue);
     const input = (
       <input
         ref={inputRef}
@@ -281,14 +301,27 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             <span className="an-search-ico" aria-hidden="true">
               <MagnifyingGlassIcon />
             </span>
-            <span
-              className="an-search-scope"
-              title={scopeDescription}
-              aria-label={scopeDescription}
+            <button
+              type="button"
+              className={`an-search-scope ${canSwitchScope ? "is-clickable" : ""} ${scopeOpen ? "is-active" : ""}`}
+              title={canSwitchScope ? `${scopeDescription}；点击切换搜索范围` : scopeDescription}
+              aria-label={canSwitchScope ? `切换搜索范围，当前范围：${scopeLabel}` : scopeDescription}
+              aria-haspopup={canSwitchScope ? "menu" : undefined}
+              aria-expanded={canSwitchScope ? scopeOpen : undefined}
+              disabled={!canSwitchScope}
+              onClick={() => {
+                if (!canSwitchScope) return;
+                setOpen(false);
+                setScopeOpen((v) => !v);
+              }}
             >
               <span className="an-search-scope-label">Scope</span>
+              {currentScope?.marker && (
+                <span className="an-search-scope-marker">{currentScope.marker}</span>
+              )}
               <span className="an-search-scope-value">{scopeLabel}</span>
-            </span>
+              {canSwitchScope && <ChevronDownIcon className="an-search-scope-chevron" />}
+            </button>
             {input}
             {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
           </div>
@@ -298,6 +331,38 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             {input}
             {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
           </>
+        )}
+        {scopeOpen && canSwitchScope && (
+          <div className="an-search-scope-pop" role="menu">
+            {scopeOptions.map((option) => {
+              const selected = option.value === scopeValue;
+              return (
+                <button
+                  key={option.value || "__all__"}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  className="an-search-scope-option"
+                  data-active={selected ? "1" : undefined}
+                  title={option.title || option.label}
+                  onClick={() => {
+                    onScopeChange?.(option.value);
+                    setQ("");
+                    setResults(null);
+                    setScopeOpen(false);
+                  }}
+                >
+                  <span className="an-search-scope-option-mark">{option.marker || "∗"}</span>
+                  <span className="an-search-scope-option-text">
+                    <span className="an-search-scope-option-name">{option.label}</span>
+                    {option.title && (
+                      <span className="an-search-scope-option-sub">{option.title}</span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         )}
         {open && q.trim() && (
           <div className="an-search-pop" role="listbox">

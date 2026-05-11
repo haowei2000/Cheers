@@ -123,17 +123,20 @@ def build_provider_session_key(
 
 
 def _topic_id_from_trigger(trigger_message: dict[str, Any]) -> str | None:
-    topic_chain = trigger_message.get("topic_chain")
-    if isinstance(topic_chain, list) and topic_chain:
-        first = topic_chain[0]
-        if isinstance(first, dict):
-            msg_id = first.get("msg_id")
-            if isinstance(msg_id, str) and msg_id:
-                return msg_id
     if trigger_message.get("msg_type") == SCOPE_TOPIC:
         msg_id = trigger_message.get("msg_id")
         if isinstance(msg_id, str) and msg_id:
             return msg_id
+
+    topic_chain = trigger_message.get("topic_chain")
+    if isinstance(topic_chain, list) and topic_chain:
+        first = topic_chain[0]
+        if isinstance(first, dict):
+            if first.get("msg_type") != SCOPE_TOPIC:
+                return None
+            msg_id = first.get("msg_id")
+            if isinstance(msg_id, str) and msg_id:
+                return msg_id
     return None
 
 
@@ -398,10 +401,13 @@ async def resolve_dispatch_session(
 ) -> SessionResolution:
     """Return the durable session mapping for one Bot dispatch.
 
-    The primary binding is DM > topic > channel. ``task_id`` starts as an alias
-    to the dispatch session. If the placeholder later becomes a visible
-    background task, ``adopt_session_for_task`` promotes that alias to the task
-    primary session and rotates the parent scope onto a new clean session.
+    The primary binding is DM > promoted topic > channel. Ordinary channel
+    replies carry topic_chain for prompt context, but stay on the channel
+    session until the parent message has actually become a topic. ``task_id``
+    starts as an alias to the dispatch session. If the placeholder later
+    becomes a visible background task, ``adopt_session_for_task`` promotes that
+    alias to the task primary session and rotates the parent scope onto a new
+    clean session.
     """
     channel = await _load_channel(db, channel_id, channel)
     provider = provider_for(bot)

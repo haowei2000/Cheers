@@ -56,17 +56,18 @@ def serialize_session(session_row: AgentNexusSession) -> dict[str, Any]:
     }
 
 
-async def list_active_sessions_for_bot(
+async def list_sessions_for_bot(
     db: AsyncSession,
     *,
     bot_id: str,
+    include_closed: bool = True,
 ) -> list[AgentNexusSession]:
+    conditions = [AgentNexusSession.bot_id == bot_id]
+    if not include_closed:
+        conditions.append(AgentNexusSession.status != SESSION_STATUS_CLOSED)
     result = await db.execute(
         select(AgentNexusSession)
-        .where(
-            AgentNexusSession.bot_id == bot_id,
-            AgentNexusSession.status != SESSION_STATUS_CLOSED,
-        )
+        .where(*conditions)
         .options(
             selectinload(AgentNexusSession.bindings),
             selectinload(AgentNexusSession.bot),
@@ -74,6 +75,14 @@ async def list_active_sessions_for_bot(
         .order_by(AgentNexusSession.last_used_at.desc(), AgentNexusSession.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def list_active_sessions_for_bot(
+    db: AsyncSession,
+    *,
+    bot_id: str,
+) -> list[AgentNexusSession]:
+    return await list_sessions_for_bot(db, bot_id=bot_id, include_closed=False)
 
 
 async def list_active_sessions_for_scope(
