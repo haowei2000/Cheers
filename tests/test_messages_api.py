@@ -491,6 +491,87 @@ async def test_create_message_with_file_metadata(client: AsyncClient, db_session
 
 
 @pytest.mark.asyncio
+async def test_file_preview_content_returns_local_markdown(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000030", name="W30")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000030",
+        workspace_id=ws.workspace_id,
+        name="preview-ch",
+        type="public",
+    )
+    file_path = tmp_path / "preview.md"
+    file_path.write_text("# 预览\n\nhello preview", encoding="utf-8")
+    record = FileRecord(
+        file_id="file-preview-md1",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="preview.md",
+        content_type="text/markdown",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/files/{record.file_id}/content")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["preview_type"] == "markdown"
+    assert "hello preview" in data["content"]
+
+
+@pytest.mark.asyncio
+async def test_file_preview_content_parses_local_xlsx(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    from openpyxl import Workbook
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000031", name="W31")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000031",
+        workspace_id=ws.workspace_id,
+        name="preview-xlsx-ch",
+        type="public",
+    )
+    file_path = tmp_path / "report.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Summary"
+    sheet.append(["Name", "Count"])
+    sheet.append(["Alpha", 3])
+    workbook.save(file_path)
+    workbook.close()
+    record = FileRecord(
+        file_id="file-preview-xlsx",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="report.xlsx",
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/files/{record.file_id}/content")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["preview_type"] == "markdown"
+    assert "## Summary" in data["content"]
+    assert "| Alpha | 3 |" in data["content"]
+
+
+@pytest.mark.asyncio
 async def test_create_presigned_upload_returns_file_record(
     client: AsyncClient,
     db_session: AsyncSession,

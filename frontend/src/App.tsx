@@ -67,6 +67,7 @@ import type {
   DM,
   Workspace,
   Message,
+  FileInfo,
   BotTraceEvent,
   ContextData,
   ClarifySchema,
@@ -353,6 +354,8 @@ export default function App() {
   const [filePreviewPanel, setFilePreviewPanel] = useState<{
     url: string;
     filename: string;
+    contentType?: string | null;
+    sizeBytes?: number | null;
   } | null>(null);
   // 可伸缩面板宽度
   const [leftWidth, onLeftResize] = useResize(256, 160, 480, "right");
@@ -1832,6 +1835,41 @@ export default function App() {
     return "文件";
   };
 
+  const filePreviewUrl = (fileId: string) => `${API}/files/${fileId}/preview`;
+
+  const openFilePreview = (file: FileInfo) => {
+    setFilePreviewPanel({
+      url: filePreviewUrl(file.file_id),
+      filename: file.original_filename || file.file_id,
+      contentType: file.content_type,
+      sizeBytes: file.size_bytes,
+    });
+  };
+
+  const openFilePreviewUrl = (
+    url: string,
+    filename: string,
+    contentType?: string | null,
+    sizeBytes?: number | null,
+  ) => {
+    setFilePreviewPanel({ url, filename, contentType, sizeBytes });
+  };
+
+  const handleMarkdownImageClick = (src: string) => {
+    const match = src.match(/\/files\/([^/?]+)\/preview/);
+    if (match) {
+      const fileId = decodeURIComponent(match[1]);
+      openFilePreviewUrl(src, `file-${fileId.slice(0, 8)}`, "image/*");
+      return;
+    }
+    setLightboxSrc(src);
+    setLightboxFileId(null);
+  };
+
+  const handleMarkdownFileClick = (url: string, name: string) => {
+    openFilePreviewUrl(url, name);
+  };
+
   const renderFileAttachments = (msg: Message, alignRight = false) => {
     const files = msg.files;
     if (!files || files.length === 0) return null;
@@ -1850,13 +1888,10 @@ export default function App() {
           <div
             key={f.file_id}
             className="cursor-pointer rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-shadow inline-block"
-            onClick={() => {
-              setLightboxSrc(`${API}/files/${f.file_id}/preview`);
-              setLightboxFileId(f.file_id);
-            }}
+            onClick={() => openFilePreview(f)}
           >
             <img
-              src={`${API}/files/${f.file_id}/preview`}
+              src={filePreviewUrl(f.file_id)}
               alt={f.original_filename || "image"}
               className="max-w-[280px] max-h-[200px] object-cover block"
               loading="lazy"
@@ -1877,11 +1912,10 @@ export default function App() {
           </div>
         ))}
         {docs.map((f) => (
-          <a
+          <button
             key={f.file_id}
-            href={`${API}/files/${f.file_id}/download`}
-            target="_blank"
-            rel="noreferrer"
+            type="button"
+            onClick={() => openFilePreview(f)}
             className="flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[300px] hover:bg-gray-50 transition-colors cursor-pointer no-underline"
           >
             <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -1896,7 +1930,7 @@ export default function App() {
                 {f.size_bytes ? ` \u00B7 ${formatFileSize(f.size_bytes)}` : ""}
               </div>
             </div>
-          </a>
+          </button>
         ))}
       </div>
     );
@@ -2543,6 +2577,9 @@ export default function App() {
                       onSendReply={(text) =>
                         sendTopicReply(selectedId, rootId, text)
                       }
+                      onImageClick={handleMarkdownImageClick}
+                      onFileClick={handleMarkdownFileClick}
+                      renderAttachments={renderFileAttachments}
                       pendingFiles={pendingFileNames.map((name, index) => ({
                         name,
                         previewUrl: pendingFilePreviews[index] ?? null,
@@ -3439,17 +3476,8 @@ export default function App() {
                                         displayContent,
                                       `${m.msg_id}-`,
                                       !!m._streaming,
-                                      (src) => {
-                                        setLightboxSrc(src);
-                                        const m2 = src.match(
-                                          /\/files\/([^/]+)\/preview/,
-                                        );
-                                        setLightboxFileId(
-                                          m2 ? m2[1] : null,
-                                        );
-                                      },
-                                      (url, name) =>
-                                        setFilePreviewPanel({ url, filename: name }),
+                                      handleMarkdownImageClick,
+                                      handleMarkdownFileClick,
                                     )
                                   )}
                                   {m._streaming &&
@@ -3785,18 +3813,8 @@ export default function App() {
                                     parseQuotePrefix(text)?.rest ?? text,
                                     `${m.msg_id}-`,
                                     !!m._streaming,
-                                    (src) => {
-                                      setLightboxSrc(src);
-                                      const m2 = src.match(
-                                        /\/files\/([^/]+)\/preview/,
-                                      );
-                                      setLightboxFileId(m2 ? m2[1] : null);
-                                    },
-                                    (url, name) =>
-                                      setFilePreviewPanel({
-                                        url,
-                                        filename: name,
-                                      }),
+                                    handleMarkdownImageClick,
+                                    handleMarkdownFileClick,
                                   )
                                 )}
                                 {!isSecretUnrevealed &&
@@ -4113,18 +4131,8 @@ export default function App() {
                                         parseQuotePrefix(rDisplay)?.rest ?? rDisplay,
                                         `${r.msg_id}-`,
                                         !!r._streaming,
-                                        (src) => {
-                                          setLightboxSrc(src);
-                                          const m2 = src.match(
-                                            /\/files\/([^/]+)\/preview/,
-                                          );
-                                          setLightboxFileId(m2 ? m2[1] : null);
-                                        },
-                                        (url, name) =>
-                                          setFilePreviewPanel({
-                                            url,
-                                            filename: name,
-                                          }),
+                                        handleMarkdownImageClick,
+                                        handleMarkdownFileClick,
                                       )
                                     )}
                                     {r._streaming && !!rTextRaw && (
@@ -4632,20 +4640,8 @@ export default function App() {
                                                 rDisplay,
                                                 `${r.msg_id}-t-`,
                                                 !!r._streaming,
-                                                (src) => {
-                                                  setLightboxSrc(src);
-                                                  const m2 = src.match(
-                                                    /\/files\/([^/]+)\/preview/,
-                                                  );
-                                                  setLightboxFileId(
-                                                    m2 ? m2[1] : null,
-                                                  );
-                                                },
-                                                (url, name) =>
-                                                  setFilePreviewPanel({
-                                                    url,
-                                                    filename: name,
-                                                  }),
+                                                handleMarkdownImageClick,
+                                                handleMarkdownFileClick,
                                               )
                                             )}
                                             {r._streaming && !!rTextRaw && (
@@ -4907,6 +4903,14 @@ export default function App() {
                   )
                 }
                 currentUserId={currentUserId}
+                onFilePreview={(file) =>
+                  openFilePreview({
+                    file_id: file.file_id,
+                    original_filename: file.original_filename ?? undefined,
+                    content_type: file.content_type ?? undefined,
+                    size_bytes: file.size_bytes ?? undefined,
+                  })
+                }
                 onClose={() => setMemoryTab(null)}
               />
             </div>
@@ -4930,6 +4934,8 @@ export default function App() {
               <FilePreviewSidebar
                 url={filePreviewPanel.url}
                 filename={filePreviewPanel.filename}
+                contentType={filePreviewPanel.contentType}
+                sizeBytes={filePreviewPanel.sizeBytes}
                 onClose={() => setFilePreviewPanel(null)}
               />
             </div>

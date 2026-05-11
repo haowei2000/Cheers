@@ -1,4 +1,5 @@
 import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
+import { DocumentIcon, PhotoIcon } from "@heroicons/react/24/solid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js";
@@ -23,8 +24,8 @@ function preprocessMentions(text: string): string {
 
 // ── AgentNexus file URL detection ────────────────────────────────────────────
 
-/** Matches /api/files/{id}/preview|download (relative or absolute origin). */
-const FILE_URL_RE = /(?:https?:\/\/[^/]+)?\/api\/files\/([^/]+)\/(preview|download)/;
+/** Matches /api/files/{id}/preview|download and /api/v1/files/... URLs. */
+const FILE_URL_RE = /(?:https?:\/\/[^/]+)?\/api\/(?:v1\/)?files\/([^/]+)\/(preview|download)/;
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
 
@@ -60,10 +61,10 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
   const displayName = filename && filename !== previewUrl ? filename : `file-${fileId.slice(0, 8)}`;
 
   const handleClick = () => {
-    if (isImage && onImageClick) {
-      onImageClick(previewUrl);
-    } else if (onFileClick) {
+    if (onFileClick) {
       onFileClick(previewUrl, displayName);
+    } else if (isImage && onImageClick) {
+      onImageClick(previewUrl);
     } else {
       window.open(previewUrl, "_blank", "noreferrer");
     }
@@ -76,9 +77,11 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
       className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm max-w-full hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer my-0.5 align-middle"
     >
       <span className={`w-7 h-7 rounded-md ${bg} flex items-center justify-center flex-shrink-0`}>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 ${fg}`}>
-          <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
-        </svg>
+        {isImage ? (
+          <PhotoIcon className={`w-4 h-4 ${fg}`} />
+        ) : (
+          <DocumentIcon className={`w-4 h-4 ${fg}`} />
+        )}
       </span>
       <span className="text-[13px] font-medium text-gray-700 truncate">{displayName}</span>
     </button>
