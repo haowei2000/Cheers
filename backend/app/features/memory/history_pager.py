@@ -160,7 +160,7 @@ async def get_current_page(
 
 
 async def get_pages_summary_xml(channel_id: str, session: AsyncSession) -> str:
-    """Return all sealed HistoryPage summaries as XML-ish lines."""
+    """Return all sealed HistoryPage summaries as structured text."""
     return await render_message_page_summaries(channel_id, session)
 
 
@@ -368,11 +368,14 @@ async def render_message_page_summaries(channel_id: str, session: AsyncSession) 
     for p in pages:
         start_str = p.started_at.strftime("%Y-%m-%dT%H:%M:%SZ") if p.started_at else ""
         end_str = p.ended_at.strftime("%Y-%m-%dT%H:%M:%SZ") if p.ended_at else ""
-        lines.append(
-            f'<page id="{p.page_id}" number="{p.page_number}" '
-            f'from="{start_str}" to="{end_str}">{p.summary}</page>'
-        )
-    return "\n".join(lines)
+        lines.append("\n".join([
+            f"page_id: {p.page_id}",
+            f"page_number: {p.page_number}",
+            f"from: {start_str}",
+            f"to: {end_str}",
+            f"summary: {p.summary}",
+        ]))
+    return "\n\n".join(lines)
 
 
 async def render_current_page_summary(channel_id: str, session: AsyncSession) -> str:
@@ -399,9 +402,9 @@ async def render_recent_context(channel_id: str, session: AsyncSession) -> str:
     pages = await render_message_page_summaries(channel_id, session)
     sections: list[str] = []
     if current:
-        sections.append(f"== 当前页 ==\n{current}")
+        sections.append(f"current_page:\n{current}")
     if pages:
-        sections.append(f"== 历史摘要页 ==\n{pages}")
+        sections.append(f"history_summary_pages:\n{pages}")
     return "\n\n".join(sections)
 
 

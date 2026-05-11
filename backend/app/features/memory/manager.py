@@ -12,6 +12,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.memory.channel_memory import ChannelMemory
+from app.features.memory.prompt_xml import render_agent_memory_context_xml
 
 
 async def load(channel_id: str, session: AsyncSession) -> dict[str, str]:
@@ -165,15 +166,9 @@ async def _do_replace(
 
 
 def build_system_prompt_prefix(channel_name: str, bot_role: str, memory: dict[str, str]) -> str:
-    """拼接记忆为 System Prompt 前缀。"""
-    todos_section = f"\n== 待办事项（未完成）==\n{memory['todos']}\n" if memory.get("todos") else ""
-    progress_section = f"\n== 项目进度 ==\n{memory['progress']}\n" if memory.get("progress") else ""
-    return f"""你是 {bot_role}，正在参与频道「{channel_name}」的协作工作。
-== 项目锚点（最高优先级，务必遵守）==
-{memory.get('anchor', '')}
-== 重要决策记录 ==
-{memory.get('decisions', '')}{progress_section}
-== 已上传资料索引 ==
-{memory.get('files_index', '')}
-== 近期频道动态 ==
-{memory.get('recent', '')}{todos_section}"""
+    """拼接记忆为 XML System Prompt 前缀。"""
+    return render_agent_memory_context_xml(
+        channel_name=channel_name,
+        bot_role=bot_role,
+        memory_context=memory,
+    )

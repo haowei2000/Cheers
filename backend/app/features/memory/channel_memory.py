@@ -119,9 +119,9 @@ class ChannelMemory:
     def to_context_dict(self) -> dict[str, str]:
         """导出为 flat dict，兼容现有 payload.memory_context 格式。"""
         return {
-            "anchor": self.export_layer_md("ANCHOR"),
-            "decisions": self.export_layer_md("DECISIONS"),
-            "progress": self.export_layer_md("PROGRESS"),
+            "anchor": self.export_layer_text("ANCHOR"),
+            "decisions": self.export_layer_text("DECISIONS"),
+            "progress": self.export_layer_text("PROGRESS"),
             "files_index": self.files_index,
             "recent": self.recent,
             "todos": self.todos,
@@ -148,6 +148,19 @@ class ChannelMemory:
         for item in items:
             if item.title:
                 parts.append(f"### {item.title}\n{item.content}")
+            else:
+                parts.append(item.content)
+        return "\n\n".join(parts)
+
+    def export_layer_text(self, layer: str) -> str:
+        """将某个结构化层导出为适合 XML prompt 包装的纯文本。"""
+        items = self._get_items(layer)
+        if not items:
+            return ""
+        parts: list[str] = []
+        for item in items:
+            if item.title:
+                parts.append(f"title: {item.title}\ncontent: {item.content}")
             else:
                 parts.append(item.content)
         return "\n\n".join(parts)
@@ -228,17 +241,17 @@ class ChannelMemory:
         parts: list[str] = []
         for r in records:
             filename = r.original_filename or r.file_id
-            lines = [f"### {filename}"]
-            lines.append(f"- file_id: `{r.file_id}`")
+            lines = [f"filename: {filename}"]
+            lines.append(f"file_id: {r.file_id}")
             if r.content_type:
-                lines.append(f"- 类型: {r.content_type}")
+                lines.append(f"content_type: {r.content_type}")
             if r.summary_3lines:
-                lines.append(f"- 摘要: {r.summary_3lines}")
+                lines.append(f"summary: {r.summary_3lines}")
             ts = r.created_at.strftime("%Y-%m-%d %H:%M UTC") if r.created_at else ""
             if ts:
-                lines.append(f"- 登记时间: {ts}")
+                lines.append(f"registered_at: {ts}")
             parts.append("\n".join(lines))
-        return "\n\n---\n\n".join(parts)
+        return "\n\n".join(parts)
 
     @staticmethod
     async def _render_recent(channel_id: str, session: AsyncSession) -> str:
@@ -262,13 +275,13 @@ class ChannelMemory:
         completed = [t for t in all_todos if t.status == "completed"]
         parts: list[str] = []
         if pending:
-            parts.append("## 未完成")
+            parts.append("pending:")
             for t in pending:
                 short_id = t.todo_id[:8]
-                parts.append(f"- [ ] #{short_id}: {t.content}")
+                parts.append(f"todo_id: {short_id}\ncontent: {t.content}")
         if completed:
-            parts.append("## 已完成（仅索引）")
-            parts.append(" ".join(f"#{t.todo_id[:8]}" for t in completed))
+            parts.append("completed_ids:")
+            parts.append(" ".join(t.todo_id[:8] for t in completed))
         return "\n".join(parts)
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from xml.etree import ElementTree as ET
 
 import pytest
 from sqlalchemy import func, select
@@ -241,7 +242,11 @@ async def test_ws_bot_adapter_renders_prompt_template_before_dispatch(
         assert resp.success is True
         event = ws.sent[0]
         rendered_text = event["trigger_message"]["text"]
-        assert "=== 频道记忆上下文" in rendered_text
+        assert "=== 频道记忆上下文" not in rendered_text
+        start = rendered_text.index("<channel_memory")
+        end = rendered_text.index("</channel_memory>") + len("</channel_memory>")
+        memory_root = ET.fromstring(rendered_text[start:end])
+        assert memory_root.find("./layer[@name='anchor']/content").text == "WebSocket 锚点"
         assert "WebSocket 锚点" in rendered_text
         assert "任务：@ws-bot hi" in rendered_text
         assert event["raw_trigger_message"]["text"] == "@ws-bot hi"

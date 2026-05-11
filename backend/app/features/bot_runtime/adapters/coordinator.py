@@ -30,6 +30,7 @@ from app.features.bot_runtime.adapters.help_catalog import (
     build_help_content_with_form,
     get_help_context_for_llm,
 )
+from app.features.memory.prompt_xml import MEMORY_LAYER_FIELDS, render_channel_memory_xml
 from app.services.admin.settings_store import get_provider_for_scope
 
 logger = logging.getLogger("app.features.bot_runtime.adapters.channel_bot")
@@ -46,14 +47,7 @@ _DEFAULT_REPLY = (
 )
 
 
-_MEMORY_XML_FIELDS = (
-    ("anchor", "项目锚点"),
-    ("progress", "项目进度"),
-    ("decisions", "决策记录"),
-    ("files_index", "资料索引"),
-    ("recent", "近期动态"),
-    ("todos", "待办事项"),
-)
+_MEMORY_XML_FIELDS = MEMORY_LAYER_FIELDS
 
 
 def _xml_text(value: Any) -> str:
@@ -1186,14 +1180,7 @@ class ChannelBotAdapter(BotAdapter):
             [
                 "你是 AgentNexus 内置智能协作助手，兼顾使用引导、项目助手、协作协调三个职责。",
                 "=== 系统帮助文档（回答使用类问题时参考）===\n" + get_help_context_for_llm(),
-                (
-                    "=== 项目记忆 ===\n"
-                    f"【锚点·最高优先级】\n{memory.get('anchor') or '（暂无）'}\n\n"
-                    f"【项目进度】\n{memory.get('progress') or '（暂无）'}\n\n"
-                    f"【决策记录】\n{memory.get('decisions') or '（暂无）'}\n\n"
-                    f"【资料索引】\n{memory.get('files_index') or '（暂无）'}\n\n"
-                    f"【最近关注】\n{memory.get('recent') or '（暂无）'}"
-                ),
+                render_channel_memory_xml(memory) or '<channel_memory version="1" />',
                 (
                     f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.context.original_question_text}\n"
                     if payload.context.original_question_text

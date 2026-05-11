@@ -211,6 +211,29 @@ class TestApplyUserTemplate:
 UNRENDERED_VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
 
+def _extract_channel_memory_xml(text: str) -> ET.Element:
+    start = text.index("<channel_memory")
+    end = text.index("</channel_memory>") + len("</channel_memory>")
+    return ET.fromstring(text[start:end])
+
+
+def test_render_memory_context_uses_xml_not_markdown() -> None:
+    from app.features.bot_runtime.adapters.prompt_template import render_memory_context
+
+    rendered = render_memory_context({
+        "anchor": "项目目标 <A&B>",
+        "progress": "完成 50%",
+    })
+
+    assert "=== 频道记忆上下文" not in rendered
+    assert "##" not in rendered
+    root = ET.fromstring(rendered)
+    assert root.tag == "channel_memory"
+    assert root.attrib["version"] == "1"
+    assert root.find("./layer[@name='anchor']/content").text == "项目目标 <A&B>"
+    assert root.find("./layer[@name='progress']/content").text == "完成 50%"
+
+
 async def _execute_and_capture_body(adapter: HttpBotAdapter, payload: AgentPayload) -> dict:
     captured_body: dict = {}
 
@@ -347,8 +370,11 @@ async def test_execute_renders_memory_when_default_template_requests_it() -> Non
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
     user_content = messages[1]["content"]
-    assert "=== 频道记忆上下文" in user_content
-    assert "## 项目锚点" in user_content
+    assert "=== 频道记忆上下文" not in user_content
+    assert "## 项目锚点" not in user_content
+    root = _extract_channel_memory_xml(user_content)
+    assert root.attrib["version"] == "1"
+    assert root.find("./layer[@name='anchor']/content").text == "默认模板锚点"
     assert "默认模板锚点" in user_content
     assert "默认模板决策" in user_content
     assert "默认模板索引" in user_content
@@ -383,7 +409,7 @@ async def test_execute_renders_default_template_without_memory_content() -> None
     user_content = messages[1]["content"]
     assert "{{memory}}" not in user_content
     assert "{{message}}" not in user_content
-    assert "=== 频道记忆上下文" not in user_content
+    assert "<channel_memory" not in user_content
     assert "没有记忆也要回答" in user_content
 
 
@@ -422,7 +448,9 @@ async def test_skip_system_prompt_still_renders_memory_template() -> None:
     assert len(messages) == 1
     assert messages[0]["role"] == "user"
     user_content = messages[0]["content"]
-    assert "=== 频道记忆上下文" in user_content
+    assert "=== 频道记忆上下文" not in user_content
+    root = _extract_channel_memory_xml(user_content)
+    assert root.find("./layer[@name='anchor']/content").text == "子任务锚点"
     assert "子任务锚点" in user_content
     assert "子任务近况" in user_content
     assert user_content.index("子任务锚点") < user_content.index("请处理最终问题")
@@ -465,7 +493,9 @@ async def test_vision_request_renders_memory_template_in_text_part() -> None:
     assert isinstance(user_content, list)
     text_part = user_content[0]
     assert text_part["type"] == "text"
-    assert "=== 频道记忆上下文" in text_part["text"]
+    assert "=== 频道记忆上下文" not in text_part["text"]
+    root = _extract_channel_memory_xml(text_part["text"])
+    assert root.find("./layer[@name='anchor']/content").text == "图片请求锚点"
     assert "图片请求锚点" in text_part["text"]
     assert any(part["type"] == "image_url" for part in user_content)
 

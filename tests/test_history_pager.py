@@ -168,10 +168,10 @@ async def test_channel_memory_recent_combines_current_page_and_page_summaries(db
 
     mem = await ChannelMemory.load_layers(channel_id, db_session, {"recent"})
     recent = mem.to_context_dict()["recent"]
-    assert "== 当前页 ==" in recent
+    assert "current_page:" in recent
     assert "tail-current-page-entry" in recent
-    assert "== 历史摘要页 ==" in recent
-    assert "<page" in recent
+    assert "history_summary_pages:" in recent
+    assert "page_id:" in recent
 
 
 @pytest.mark.asyncio

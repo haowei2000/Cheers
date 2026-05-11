@@ -5,17 +5,9 @@ import re
 from typing import Any
 
 from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
+from app.features.memory.prompt_xml import MEMORY_LAYER_FIELDS, render_channel_memory_xml
 
 _VAR_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
-
-_MEMORY_BLOCK_FIELDS = (
-    ("anchor", "项目锚点"),
-    ("progress", "项目进度"),
-    ("decisions", "决策记录"),
-    ("files_index", "资料索引"),
-    ("recent", "近期动态"),
-    ("todos", "待办事项"),
-)
 
 
 def template_uses_memory(template: str | None) -> bool:
@@ -28,24 +20,7 @@ def template_uses_memory(template: str | None) -> bool:
 
 def render_memory_context(memory_context: dict[str, str] | None) -> str:
     """Render the loaded memory context as the canonical {{memory}} value."""
-    memory_context = memory_context or {}
-    sections: list[str] = []
-    for key, label in _MEMORY_BLOCK_FIELDS:
-        content = (memory_context.get(key) or "").strip()
-        if not content:
-            continue
-        sections.append(
-            "\n".join([
-                f"## {label}",
-                content,
-            ])
-        )
-    if not sections:
-        return ""
-    return "\n\n".join([
-        "=== 频道记忆上下文 ===",
-        *sections,
-    ])
+    return render_channel_memory_xml(memory_context)
 
 
 def render_user_template(
@@ -76,7 +51,7 @@ def build_template_context(
     memory_context: dict[str, str] | None,
 ) -> dict[str, str]:
     memory_context = memory_context or {}
-    return {
+    context = {
         "sender_name": sender_name,
         "channel_name": channel_name,
         "channel_id": channel_id,
@@ -84,3 +59,6 @@ def build_template_context(
         "timestamp": timestamp,
         "memory": render_memory_context(memory_context),
     }
+    for key, _ in MEMORY_LAYER_FIELDS:
+        context[key] = memory_context.get(key, "")
+    return context
