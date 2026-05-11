@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.messages import MessageDTO, MessageFileDTO
-from app.db.models import Message
+from app.db.models import Channel, Message
 from app.features.bot_runtime.pipeline.bus import EventBus
 
 if TYPE_CHECKING:
@@ -46,6 +46,7 @@ class IngestContext:
     workflow: "MessageWorkflowPlan | None" = None
 
     # ── intermediates / output ──────────────────────────────────────────
+    channel: Channel | None = None
     stored_content: str | None = None  # final content stored in DB
     secret_encrypted: str | None = None
     secret_token: str | None = None

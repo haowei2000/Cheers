@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models import AgentNexusSession, AgentNexusSessionBinding
-from app.features.agent_bridge.session_map import SESSION_STATUS_CLOSED
+from app.features.agent_bridge.session_map import SCOPE_DM, SESSION_STATUS_CLOSED
 
 
 def _dt(value) -> str | None:
@@ -99,7 +99,7 @@ async def list_active_sessions_for_scope(
         AgentNexusSessionBinding.detached_at.is_(None),
         AgentNexusSession.status != SESSION_STATUS_CLOSED,
     ]
-    if channel_id:
+    if channel_id and scope_type != SCOPE_DM:
         conditions.append(AgentNexusSessionBinding.channel_id == channel_id)
     if bot_id:
         conditions.append(AgentNexusSession.bot_id == bot_id)

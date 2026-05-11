@@ -226,6 +226,8 @@ export default function App() {
   });
   const [taskPageOpen, setTaskPageOpen] = useState(false);
   const [pageTaskMsgId, setPageTaskMsgId] = useState<string | null>(null);
+  const [refreshingDmSession, setRefreshingDmSession] = useState(false);
+  const [dmSessionRefreshNonce, setDmSessionRefreshNonce] = useState(0);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -234,6 +236,12 @@ export default function App() {
   }, [selectedId]);
   const activeDm = selectedId ? dms.find((d) => d.channel_id === selectedId) ?? null : null;
   const isSystemDm = activeDm?.counterparty.member_type === "system";
+  const isDmSelected = Boolean(activeDm);
+  const activeBotDm = activeDm?.counterparty.member_type === "bot" ? activeDm : null;
+  const activeDmSessionScopeId =
+    activeBotDm && currentUserId
+      ? `user:${currentUserId}:bot:${activeBotDm.counterparty.member_id}`
+      : null;
   const botMentionIdsForChannel = (channelId: string): string[] => {
     const dm = dms.find((item) => item.channel_id === channelId);
     return dm?.counterparty.member_type === "bot"
@@ -243,7 +251,13 @@ export default function App() {
   useEffect(() => {
     setTaskPageOpen(false);
     setPageTaskMsgId(null);
-  }, [selectedId]);
+    if (isDmSelected) {
+      setPageTopicId(null);
+      setReplyingTo(null);
+      setMsgKind("normal");
+      setComposerTitle("");
+    }
+  }, [isDmSelected, selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
   const [input, setInput] = useState("");
@@ -1194,9 +1208,9 @@ export default function App() {
       sender_type: "user",
       file_ids: [] as string[],
       mention_bot_ids: botMentionIdsForChannel(targetChannelId),
-      msg_type: inReplyToMsgId ? "reply" : "normal",
+      msg_type: isDmSelected ? "normal" : inReplyToMsgId ? "reply" : "normal",
     };
-    if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
+    if (inReplyToMsgId && !isDmSelected) body.in_reply_to_msg_id = inReplyToMsgId;
     return authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
@@ -1229,9 +1243,11 @@ export default function App() {
     const isSecretSend = secretMode;
     // Resolve msg_type: a pending reply-to always wins; otherwise use the
     // user's current msgKind pick from the composer switcher.
-    const effectiveKind: MsgKind | "reply" = replyingTo
-      ? "reply"
-      : msgKind;
+    const effectiveKind: MsgKind | "reply" = isDmSelected
+      ? "normal"
+      : replyingTo
+        ? "reply"
+        : msgKind;
     const body: Record<string, unknown> = {
       content,
       sender_id: currentUserId,
@@ -1241,7 +1257,7 @@ export default function App() {
       is_secret: isSecretSend,
       msg_type: effectiveKind,
     };
-    if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
+    if (replyingTo && !isDmSelected) body.in_reply_to_msg_id = replyingTo.msg_id;
     const titleTrim = composerTitle.trim() || null;
     if (effectiveKind === "announcement") {
       body.content_data = {
@@ -1289,6 +1305,33 @@ export default function App() {
       })
       .catch(console.error);
   };
+
+  const refreshDmSession = useCallback(async () => {
+    const botId = activeBotDm?.counterparty.member_id;
+    if (!selectedId || !botId) return;
+    setRefreshingDmSession(true);
+    try {
+      const res = await apiFetch("/agent-bridge/sessions/dm/refresh", {
+        method: "POST",
+        token: authToken,
+        body: {
+          channel_id: selectedId,
+          bot_id: botId,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || data?.status === "error") {
+        toast.error(data?.detail || data?.message || "刷新 DM Session 失败");
+        return;
+      }
+      setDmSessionRefreshNonce((v) => v + 1);
+      toast.success("DM Session 已刷新");
+    } catch {
+      toast.error("刷新 DM Session 失败");
+    } finally {
+      setRefreshingDmSession(false);
+    }
+  }, [activeBotDm?.counterparty.member_id, authToken, selectedId]);
 
   // Reveal an encrypted message by hitting /messages/:id/secret with the
   // per-send token (only the sender holds one, captured in secretTokens).
@@ -1447,6 +1490,7 @@ export default function App() {
   };
 
   const activeAgentBridgeTaskData = (m: Message): AgentBridgeTaskContentData | null => {
+    if (isDmSelected) return null;
     const data = m.content_data;
     return data?.kind === AGENT_BRIDGE_TASK_KIND
       ? (data as AgentBridgeTaskContentData)
@@ -1470,14 +1514,18 @@ export default function App() {
   };
 
   const agentBridgeTaskMessages = useMemo(
-    () =>
+    () => {
+      if (isDmSelected) return [];
+      return (
       messages
         .map((m) => {
           const task = agentBridgeTaskData(m);
           return task ? ({ ...m, content_data: task } as AgentBridgeTaskMessage) : null;
         })
-        .filter((m): m is AgentBridgeTaskMessage => m !== null),
-    [messages],
+        .filter((m): m is AgentBridgeTaskMessage => m !== null)
+      );
+    },
+    [isDmSelected, messages],
   );
 
   const jumpToMessage = useCallback((id: string) => {
@@ -1938,6 +1986,12 @@ export default function App() {
 
   // Build topic tree: follow parent chain to find root, group all descendants under it
   const { topicRoots, topicRepliesOf } = (() => {
+    if (isDmSelected) {
+      return {
+        topicRoots: messages,
+        topicRepliesOf: (): Message[] => [],
+      };
+    }
     const msgIdSet = new Set(messages.map((x) => x.msg_id));
     const rootIdCache = new Map<string, string>();
     function getRootId(msgId: string): string {
@@ -2417,6 +2471,7 @@ export default function App() {
             />
 
             {taskPageOpen &&
+              !isDmSelected &&
               selectedId &&
               (() => (
                 <div
@@ -2450,6 +2505,7 @@ export default function App() {
               ))()}
 
             {!taskPageOpen &&
+              !isDmSelected &&
               pageTopicId &&
               selectedId &&
               (() => {
@@ -2527,9 +2583,7 @@ export default function App() {
                 <ChannelHeader
                   channel={selectedChannel}
                   activeDm={
-                    selectedId
-                      ? dms.find((d) => d.channel_id === selectedId) ?? null
-                      : null
+                    activeDm
                   }
                   isMobile={isMobile}
                   onOpenSidebar={() => setSidebarOpen(true)}
@@ -2574,16 +2628,31 @@ export default function App() {
                     setPageTopicId(rootId);
                   }}
                   onJumpToMessage={jumpToMessage}
-                  taskCount={agentBridgeTaskMessages.length}
-                  taskActive={taskPageOpen}
-                  onOpenTasks={() => {
-                    setMemoryTab(null);
-                    setPageTopicId(null);
-                    setPageTaskMsgId(agentBridgeTaskMessages[0]?.msg_id ?? null);
-                    setTaskPageOpen(true);
-                  }}
+                  taskCount={isDmSelected ? 0 : agentBridgeTaskMessages.length}
+                  taskActive={!isDmSelected && taskPageOpen}
+                  onOpenTasks={
+                    isDmSelected
+                      ? undefined
+                      : () => {
+                          setMemoryTab(null);
+                          setPageTopicId(null);
+                          setPageTaskMsgId(agentBridgeTaskMessages[0]?.msg_id ?? null);
+                          setTaskPageOpen(true);
+                        }
+                  }
+                  onRefreshDmSession={activeBotDm ? refreshDmSession : undefined}
+                  refreshingDmSession={refreshingDmSession}
                 />
-                {selectedChannel?.type !== "dm" && (
+                {activeBotDm && activeDmSessionScopeId ? (
+                  <SessionScopePanel
+                    scopeType="dm"
+                    scopeId={activeDmSessionScopeId}
+                    channelId={selectedId}
+                    botId={activeBotDm.counterparty.member_id}
+                    title="DM 对应 Session"
+                    refreshKey={dmSessionRefreshNonce}
+                  />
+                ) : selectedChannel?.type !== "dm" && (
                   <SessionScopePanel
                     scopeType="channel"
                     scopeId={selectedId}
@@ -3458,29 +3527,31 @@ export default function App() {
                               我
                             </div>
                             <div className="flex items-end gap-1.5">
-                              <button
-                                type="button"
-                                title="回复"
-                                onClick={() => {
-                                  setReplyingTo(m);
-                                  const mention =
-                                    m.sender_type === "bot" &&
-                                    senderBot?.username
-                                      ? `@${senderBot.username} `
-                                      : "";
-                                  if (mention) setInput(mention);
-                                  (secretMode
-                                    ? secretInputRef.current
-                                    : inputRef.current
-                                  )?.focus();
-                                }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1"
-                              >
-                                {replyIcon}
-                              </button>
+                              {!isDmSelected && (
+                                <button
+                                  type="button"
+                                  title="回复"
+                                  onClick={() => {
+                                    setReplyingTo(m);
+                                    const mention =
+                                      m.sender_type === "bot" &&
+                                      senderBot?.username
+                                        ? `@${senderBot.username} `
+                                        : "";
+                                    if (mention) setInput(mention);
+                                    (secretMode
+                                      ? secretInputRef.current
+                                      : inputRef.current
+                                    )?.focus();
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1"
+                                >
+                                  {replyIcon}
+                                </button>
+                              )}
                               <div className="flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
                                 <div className="flex items-baseline gap-1.5 mb-1 justify-end">
-                                  {m.msg_type === "topic" && (
+                                  {!isDmSelected && m.msg_type === "topic" && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
                                       主题
                                     </span>
@@ -3621,7 +3692,7 @@ export default function App() {
                                     Bot
                                   </span>
                                 )}
-                                {m.msg_type === "topic" && (
+                                {!isDmSelected && m.msg_type === "topic" && (
                                   <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
                                     主题
                                   </span>
@@ -3756,25 +3827,27 @@ export default function App() {
                             </div>
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
                               {renderMemoryLoadButton(m)}
-                              <button
-                                type="button"
-                                title="回复"
-                                onClick={() => {
-                                  setReplyingTo(m);
-                                  const mention =
-                                    m.sender_type === "bot" && senderBot?.username
-                                      ? `@${senderBot.username} `
-                                      : "";
-                                  if (mention) setInput(mention);
-                                  (secretMode
-                                    ? secretInputRef.current
-                                    : inputRef.current
-                                  )?.focus();
-                                }}
-                                className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                              >
-                                {replyIcon}
-                              </button>
+                              {!isDmSelected && (
+                                <button
+                                  type="button"
+                                  title="回复"
+                                  onClick={() => {
+                                    setReplyingTo(m);
+                                    const mention =
+                                      m.sender_type === "bot" && senderBot?.username
+                                        ? `@${senderBot.username} `
+                                        : "";
+                                    if (mention) setInput(mention);
+                                    (secretMode
+                                      ? secretInputRef.current
+                                      : inputRef.current
+                                    )?.focus();
+                                  }}
+                                  className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                >
+                                  {replyIcon}
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
@@ -3785,7 +3858,7 @@ export default function App() {
                         // user sees the intent reflected immediately. The
                         // 4-reply threshold only gates implicit promotion of
                         // a normal message that's accumulated replies.
-                        const isExplicitTopic = m.msg_type === "topic";
+                        const isExplicitTopic = !isDmSelected && m.msg_type === "topic";
                         // Force expansion when there's nothing to collapse
                         // (0-reply explicit topic) — otherwise the collapsed
                         // preview path would blow up on replies[length-1].
@@ -4730,6 +4803,8 @@ export default function App() {
                         ? "好友通知会话用于处理申请，不能直接发送消息…"
                         : secretMode
                           ? "输入加密内容（仅 Bot 可读取原文）…"
+                          : isDmSelected
+                            ? `发消息给 ${activeDm?.counterparty.display_name || activeDm?.counterparty.username || "DM"}…`
                           : msgKind === "announcement"
                             ? `发布公告到 #${selectedChannel?.name || "频道"}…`
                             : msgKind === "topic"
@@ -4739,8 +4814,8 @@ export default function App() {
                     kind={msgKind}
                     onKindChange={setMsgKind}
                     onCycleKind={cycleMsgKind}
-                    showKindSwitcher={!replyingTo && selectedChannel?.type !== "dm"}
-                    enableKindCycling={!replyingTo && selectedChannel?.type !== "dm"}
+                    showKindSwitcher={!replyingTo && !isDmSelected}
+                    enableKindCycling={!replyingTo && !isDmSelected}
                     titleValue={composerTitle}
                     titleRef={composerTitleRef}
                     onTitleChange={setComposerTitle}

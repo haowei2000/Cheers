@@ -3,10 +3,18 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentNexusSession, AgentNexusSessionBinding, BotAccount, Channel, Message, Workspace
+from app.db.models import (
+    AgentNexusSession,
+    AgentNexusSessionBinding,
+    BotAccount,
+    Channel,
+    ChannelMembership,
+    Message,
+    Workspace,
+)
 from app.features.agent_bridge.session_map import (
     SCOPE_CHANNEL,
     SCOPE_DM,
@@ -16,6 +24,7 @@ from app.features.agent_bridge.session_map import (
     SESSION_STATUS_TASK_OWNED,
     adopt_session_for_task,
     build_provider_session_key,
+    refresh_dm_session_scope,
     resolve_dispatch_session,
 )
 from app.features.bot_runtime.pipeline.bot.topic_context import gather_topic_context
@@ -124,12 +133,12 @@ async def test_bot_dm_scope_uses_user_bot_identity_not_channel_id(db_session: As
     assert second.provider_session_key == first.provider_session_key
     assert first.primary_scope_type == SCOPE_DM
     assert first.primary_scope_id == f"user:{user_id}:bot:{bot.bot_id}"
+    assert first.task_scope_id is None
+    assert second.task_scope_id is None
 
     bindings = await _bindings(db_session, first.session_id)
     assert {(b.scope_type, b.scope_id, b.role) for b in bindings} == {
         (SCOPE_DM, f"user:{user_id}:bot:{bot.bot_id}", "primary"),
-        (SCOPE_TASK, "task-dm-001", "alias"),
-        (SCOPE_TASK, "task-dm-002", "alias"),
     }
     dm_binding = next(b for b in bindings if b.scope_type == SCOPE_DM)
     assert dm_binding.channel_id is None
@@ -169,6 +178,9 @@ async def test_bot_dm_reply_topic_context_does_not_split_session(db_session: Asy
 
     bindings = await _bindings(db_session, first.session_id)
     assert (SCOPE_TOPIC, "dm-topic-root-001") not in {
+        (b.scope_type, b.scope_id) for b in bindings
+    }
+    assert (SCOPE_TASK, "task-dm-topic-001") not in {
         (b.scope_type, b.scope_id) for b in bindings
     }
 
@@ -238,6 +250,41 @@ async def test_bot_dm_reuses_legacy_channel_scoped_binding(db_session: AsyncSess
     assert modern_dm_binding.dm_id is None
     assert legacy_dm_binding.channel_id == dm.channel_id
     assert legacy_dm_binding.dm_id == dm.channel_id
+
+
+@pytest.mark.asyncio
+async def test_dm_scope_manual_refresh_rotates_provider_session(db_session: AsyncSession) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="dm-refresh-001", channel_type="dm")
+    user_id = "sess-map-user-dm-refresh-001"
+    original = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={"user": user_id, "text": "original dm session"},
+        task_id="task-dm-refresh-001",
+        channel=dm,
+    )
+
+    refreshed = await refresh_dm_session_scope(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        user_id=user_id,
+        channel=dm,
+    )
+
+    assert refreshed.session_id != original.session_id
+    assert refreshed.provider_session_key != original.provider_session_key
+    assert refreshed.primary_scope_type == SCOPE_DM
+    assert refreshed.primary_scope_id == f"user:{user_id}:bot:{bot.bot_id}"
+    old_row = await db_session.get(AgentNexusSession, original.session_id)
+    assert old_row is not None
+    assert old_row.status == SESSION_STATUS_CLOSED
+
+    bindings = await _bindings(db_session, refreshed.session_id)
+    assert {(b.scope_type, b.scope_id, b.role) for b in bindings} == {
+        (SCOPE_DM, f"user:{user_id}:bot:{bot.bot_id}", "primary"),
+    }
 
 
 @pytest.mark.asyncio
@@ -576,6 +623,73 @@ async def test_session_visibility_api_lists_bot_and_scope(
     assert scope_resp.status_code == 200
     scope_data = scope_resp.json()["data"]
     assert [row["session_id"] for row in scope_data] == [resolved.session_id]
+
+
+@pytest.mark.asyncio
+async def test_dm_session_visibility_and_refresh_api(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="api-dm-001", channel_type="dm")
+    user_id = "a0000000-0000-0000-0000-000000000099"
+    db_session.add_all([
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=user_id,
+            member_type="user",
+            role="member",
+        ),
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
+    resolved = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={"user": user_id, "text": "hello dm api"},
+        task_id="task-api-dm-001",
+        channel=dm,
+    )
+    await db_session.flush()
+
+    scope_id = f"user:{user_id}:bot:{bot.bot_id}"
+    scope_resp = await client.get(
+        "/api/v1/agent-bridge/sessions/scope",
+        params={
+            "scope_type": SCOPE_DM,
+            "scope_id": scope_id,
+            "channel_id": dm.channel_id,
+            "bot_id": bot.bot_id,
+        },
+    )
+    assert scope_resp.status_code == 200
+    assert [row["session_id"] for row in scope_resp.json()["data"]] == [
+        resolved.session_id
+    ]
+
+    refresh_resp = await client.post(
+        "/api/v1/agent-bridge/sessions/dm/refresh",
+        json={"channel_id": dm.channel_id, "bot_id": bot.bot_id},
+    )
+    assert refresh_resp.status_code == 200
+    refresh_data = refresh_resp.json()["data"]
+    assert refresh_data["scope_type"] == SCOPE_DM
+    assert refresh_data["scope_id"] == scope_id
+    assert refresh_data["session"]["session_id"] != resolved.session_id
+    old_row = await db_session.get(AgentNexusSession, resolved.session_id)
+    assert old_row is not None
+    assert old_row.status == SESSION_STATUS_CLOSED
+    await db_session.execute(
+        delete(AgentNexusSessionBinding).where(AgentNexusSessionBinding.bot_id == bot.bot_id)
+    )
+    await db_session.execute(
+        delete(AgentNexusSession).where(AgentNexusSession.bot_id == bot.bot_id)
+    )
+    await db_session.commit()
 
 
 @pytest.mark.asyncio

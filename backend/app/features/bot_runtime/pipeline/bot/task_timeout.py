@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Message
+from app.db.models import Channel, Message
 from app.features.agent_bridge.pending import pending_replies
 from app.features.agent_bridge.service import mark_bot_reply_as_background_task
 from app.features.bot_runtime.pipeline.runner import Pipeline
@@ -60,6 +60,15 @@ class ValidatePendingStage(Stage[AgentBridgeTaskTimeoutContext]):
 class ConvertToTaskStage(Stage[AgentBridgeTaskTimeoutContext]):
     async def run(self, ctx: AgentBridgeTaskTimeoutContext) -> None:
         if not ctx.pending_exists:
+            return
+        channel = await ctx.session.get(Channel, ctx.channel_id)
+        if channel is not None and channel.type == "dm":
+            logger.info(
+                "agent_bridge_task_timeout: skip dm scope bot_id=%s task_id=%s msg_id=%s",
+                ctx.bot_id,
+                ctx.task_id,
+                ctx.msg_id,
+            )
             return
         msg = await mark_bot_reply_as_background_task(
             ctx.session,

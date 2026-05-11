@@ -14,6 +14,7 @@ from app.db.models import (
     Channel,
     ChannelMembership,
     FileRecord,
+    Message,
     PromptTemplate,
     User,
     Workspace,
@@ -190,6 +191,86 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
     assert resp2.status_code == 200
     assert len(resp2.json()["data"]) == 1
     assert resp2.json()["data"][0]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_dm_message_forces_normal_session_shape(
+    monkeypatch,
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """DM 消息不允许产生 topic/reply 结构，始终落成独立 DM session 的普通消息。"""
+    import app.api.v1.messages.routes as message_routes
+
+    monkeypatch.setattr(
+        message_routes,
+        "_schedule_bot_pipeline_enqueue",
+        lambda *args, **kwargs: None,
+    )
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000052", name="W52")
+    dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000052",
+        workspace_id=ws.workspace_id,
+        name="dm:test:bot",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000052",
+        username="dm_shape_bot",
+        display_name="DM Shape Bot",
+        status="online",
+        binding_type="agent_bridge",
+    )
+    parent = Message(
+        msg_id="m1000000-0000-0000-0000-000000000052",
+        channel_id=dm.channel_id,
+        sender_id=current_user_id,
+        sender_type="user",
+        content="parent",
+        msg_type="normal",
+    )
+    db_session.add_all([
+        ws,
+        dm,
+        bot,
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=current_user_id,
+            member_type="user",
+            role="member",
+        ),
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+        parent,
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{dm.channel_id}/messages",
+        json={
+            "content": "topic should be normalized",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "msg_type": "topic",
+            "in_reply_to_msg_id": parent.msg_id,
+            "content_data": {"title": "Not a Topic"},
+        },
+    )
+
+    assert resp.status_code == 200
+    msg_id = resp.json()["data"]["msg_id"]
+    saved = await db_session.get(Message, msg_id)
+    assert saved is not None
+    assert saved.msg_type == "normal"
+    assert saved.in_reply_to_msg_id is None
+    assert saved.content_data is None
+    await db_session.refresh(parent)
+    assert parent.msg_type == "normal"
 
 
 @pytest.mark.asyncio

@@ -38,11 +38,20 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import resolve_data_dir, settings
 from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
-from app.db.models import BotAccount, ChannelMembership, FileRecord, Message, User
+from app.db.models import (
+    AgentNexusSession,
+    BotAccount,
+    Channel,
+    ChannelMembership,
+    FileRecord,
+    Message,
+    User,
+)
 from app.features.agent_bridge.dispatcher import bridge_dispatcher
 from app.features.agent_bridge.membership import load_memberships
 from app.features.agent_bridge.pending import pending_replies
@@ -56,7 +65,13 @@ from app.features.agent_bridge.service import (
 from app.features.agent_bridge.service import (
     finalize_bot_reply,
 )
-from app.features.agent_bridge.session_map import SCOPE_CHANNEL, SCOPE_TASK, SCOPE_TOPIC
+from app.features.agent_bridge.session_map import (
+    SCOPE_CHANNEL,
+    SCOPE_DM,
+    SCOPE_TASK,
+    SCOPE_TOPIC,
+    refresh_dm_session_scope,
+)
 from app.features.agent_bridge.session_queries import (
     list_active_sessions_for_scope,
     serialize_session,
@@ -112,6 +127,14 @@ class BridgeReplyIn(BaseModel):
     file_ids: list[str] | None = Field(default=None, description="附件 file_ids（必须在目标频道内）")
 
 
+class DMSessionRefreshIn(BaseModel):
+    channel_id: str = Field(..., description="DM backing channel id")
+    bot_id: str | None = Field(
+        default=None,
+        description="Bot counterparty id; omitted means infer from DM members",
+    )
+
+
 # ============================================================================
 # HTTP 路由
 # ============================================================================
@@ -130,7 +153,7 @@ async def bridge_status(_: None = Depends(verify_bridge_token)) -> APIResponse:
 
 @router.get("/sessions/scope", response_model=APIResponse[list[dict]])
 async def list_scope_sessions(
-    scope_type: str = Query(..., pattern="^(channel|topic|task)$"),
+    scope_type: str = Query(..., pattern="^(channel|dm|topic|task)$"),
     scope_id: str = Query(..., min_length=1),
     channel_id: str = Query(..., min_length=1),
     bot_id: str | None = Query(default=None),
@@ -140,9 +163,29 @@ async def list_scope_sessions(
     """Return active Agent Bridge sessions currently bound to a UI scope."""
     if scope_type == SCOPE_CHANNEL and scope_id != channel_id:
         raise HTTPException(status_code=400, detail="channel scope_id must equal channel_id")
-    if scope_type not in {SCOPE_CHANNEL, SCOPE_TOPIC, SCOPE_TASK}:
+    if scope_type not in {SCOPE_CHANNEL, SCOPE_DM, SCOPE_TOPIC, SCOPE_TASK}:
         raise HTTPException(status_code=400, detail="unsupported scope_type")
     await ChannelService(session).require_channel_member(channel_id, current_user)
+    if scope_type == SCOPE_DM:
+        channel = await session.get(Channel, channel_id)
+        if channel is None or channel.type != "dm":
+            raise HTTPException(status_code=400, detail="dm scope requires a DM channel")
+        bot_rows = (await session.execute(
+            select(ChannelMembership.member_id).where(
+                ChannelMembership.channel_id == channel_id,
+                ChannelMembership.member_type == "bot",
+            )
+        )).all()
+        bot_ids = {row[0] for row in bot_rows}
+        if bot_id and bot_id not in bot_ids:
+            raise HTTPException(status_code=403, detail="bot is not a member of this DM")
+        allowed_scope_ids = {
+            f"user:{current_user.user_id}:bot:{candidate_bot_id}"
+            for candidate_bot_id in bot_ids
+        }
+        allowed_scope_ids.add(channel_id)
+        if scope_id not in allowed_scope_ids:
+            raise HTTPException(status_code=403, detail="dm scope_id does not belong to this DM")
     sessions = await list_active_sessions_for_scope(
         session,
         scope_type=scope_type,
@@ -151,6 +194,72 @@ async def list_scope_sessions(
         bot_id=bot_id,
     )
     return APIResponse.ok([serialize_session(row) for row in sessions])
+
+
+@router.post("/sessions/dm/refresh", response_model=APIResponse[dict])
+async def refresh_dm_session(
+    body: DMSessionRefreshIn,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Rotate the first-class DM session scope for a user-bot DM."""
+    channel = await session.get(Channel, body.channel_id)
+    if channel is None:
+        raise HTTPException(status_code=404, detail="DM channel not found")
+    if channel.type != "dm":
+        raise HTTPException(status_code=400, detail="channel is not a DM")
+    await ChannelService(session).require_channel_member(body.channel_id, current_user)
+
+    bot_id = body.bot_id
+    if not bot_id:
+        bot_member = (await session.execute(
+            select(ChannelMembership).where(
+                ChannelMembership.channel_id == body.channel_id,
+                ChannelMembership.member_type == "bot",
+            )
+        )).scalar_one_or_none()
+        bot_id = bot_member.member_id if bot_member else None
+    if not bot_id:
+        raise HTTPException(status_code=400, detail="DM has no bot counterparty")
+
+    membership = (await session.execute(
+        select(ChannelMembership).where(
+            ChannelMembership.channel_id == body.channel_id,
+            ChannelMembership.member_id == bot_id,
+            ChannelMembership.member_type == "bot",
+        )
+    )).scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(status_code=403, detail="bot is not a member of this DM")
+
+    bot = await session.get(BotAccount, bot_id)
+    if bot is None:
+        raise HTTPException(status_code=404, detail="bot not found")
+    if (bot.binding_type or "http") != "agent_bridge":
+        raise HTTPException(status_code=400, detail="DM counterparty is not an Agent Bridge Bot")
+
+    resolved = await refresh_dm_session_scope(
+        session,
+        bot=bot,
+        channel_id=body.channel_id,
+        user_id=current_user.user_id,
+        channel=channel,
+    )
+    row = (await session.execute(
+        select(AgentNexusSession)
+        .where(AgentNexusSession.session_id == resolved.session_id)
+        .options(
+            selectinload(AgentNexusSession.bindings),
+            selectinload(AgentNexusSession.bot),
+        )
+    )).scalar_one()
+    await session.commit()
+    return APIResponse.ok({
+        "refreshed": True,
+        "scope_type": SCOPE_DM,
+        "scope_id": resolved.primary_scope_id,
+        "session": serialize_session(row),
+    })
 
 
 def _validator_http_status(code: str) -> int:
