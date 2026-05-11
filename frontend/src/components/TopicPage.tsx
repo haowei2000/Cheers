@@ -21,6 +21,9 @@ export interface TopicPageProps {
   onBack: () => void;
   onGoToChannel?: () => void;
   onSendReply: (text: string) => Promise<void> | void;
+  onImageClick?: (src: string) => void;
+  onFileClick?: (url: string, filename: string) => void;
+  renderAttachments?: (message: Message) => ReactNode;
   pendingFiles?: ComposerPendingFile[];
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -70,6 +73,9 @@ export function TopicPage({
   onBack,
   onGoToChannel,
   onSendReply,
+  onImageClick,
+  onFileClick,
+  renderAttachments,
   pendingFiles,
   onRemovePendingFile,
   onUploadFile,
@@ -189,7 +195,12 @@ export function TopicPage({
                 wordWrap: "break-word",
               }}
             >
-              <MessageMarkdown text={stripThinkTags(m.content || "")} />
+              {renderAttachments?.(m)}
+              <MessageMarkdown
+                text={stripThinkTags(m.content || "")}
+                onImageClick={onImageClick}
+                onFileClick={onFileClick}
+              />
             </div>
           </div>
         </div>

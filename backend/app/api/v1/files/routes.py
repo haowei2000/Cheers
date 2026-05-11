@@ -10,23 +10,54 @@ from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.dependencies import get_current_user, get_session
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AppError, NotFoundError
 from app.core.responses import APIResponse
 from app.db.models import FileRecord, User
+from app.services.file_processor.convert import (
+    FileParseError,
+    UnsupportedFileTypeError,
+    is_image_type,
+    parse_document_bytes,
+)
 
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-def _content_disposition(filename: str) -> str:
+def _content_disposition(filename: str, disposition: str = "attachment") -> str:
     encoded = quote(filename, safe="")
-    return f"attachment; filename*=UTF-8''{encoded}"
+    return f"{disposition}; filename*=UTF-8''{encoded}"
 
 
 def _inline_disposition(content_type: str) -> bool:
-    from app.services.file_processor.convert import is_image_type
     ct = content_type.lower()
     return is_image_type(ct) or "pdf" in ct or ct.startswith("text/")
+
+
+def _storage_scope(rec: FileRecord) -> str:
+    return "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
+
+
+async def _load_file_body(rec: FileRecord) -> bytes:
+    if not rec.object_key and rec.original_path:
+        local_path = Path(rec.original_path)
+        if local_path.is_file():
+            return local_path.read_bytes()
+
+    from app.services.storage.base import StorageObjectNotFoundError
+    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
+
+    if not is_storage_enabled():
+        raise AppError("storage not enabled")
+    storage = get_storage_service()
+    try:
+        obj = await storage.get_object(rec.file_id, scope=_storage_scope(rec))
+    except StorageObjectNotFoundError:
+        raise NotFoundError("file not found in storage")
+    except Exception as exc:
+        raise AppError("failed to load file") from exc
+    return obj.body
 
 
 class PresignBody(BaseModel):
@@ -123,7 +154,10 @@ async def file_status(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     result = await session.execute(
-        select(FileRecord).where(FileRecord.file_id == file_id, FileRecord.channel_id == channel_id)
+        select(FileRecord).where(
+            FileRecord.file_id == file_id,
+            FileRecord.channel_id == channel_id,
+        )
     )
     rec = result.scalar_one_or_none()
     if not rec:
@@ -145,43 +179,104 @@ async def file_preview(
     file_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    result = await session.execute(select(FileRecord).where(FileRecord.file_id == file_id))
+    result = await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id)
+    )
     rec = result.scalar_one_or_none()
     if not rec:
         raise NotFoundError("file not found")
 
     content_type = rec.content_type or "application/octet-stream"
     filename = rec.original_filename or file_id
-    disposition = "inline" if _inline_disposition(content_type) else _content_disposition(filename)
-
-    if not rec.object_key and rec.original_path:
-        local_path = Path(rec.original_path)
-        if local_path.exists():
-            return Response(
-                content=local_path.read_bytes(),
-                media_type=content_type,
-                headers={"Content-Disposition": disposition, "Cache-Control": "public, max-age=3600"},
-            )
-
-    from app.services.storage.base import StorageObjectNotFoundError
-    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
-    if not is_storage_enabled():
-        from app.core.exceptions import AppError
-        raise AppError("storage not enabled")
-    storage = get_storage_service()
-    scope = "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
-    try:
-        obj = await storage.get_object(rec.file_id, scope=scope)
-    except StorageObjectNotFoundError:
-        raise NotFoundError("file not found in storage")
-    except Exception as exc:
-        from app.core.exceptions import AppError
-        raise AppError("failed to load file") from exc
-    return Response(
-        content=obj.body,
-        media_type=content_type,
-        headers={"Content-Disposition": disposition, "Cache-Control": "public, max-age=3600"},
+    disposition = (
+        _content_disposition(filename, "inline")
+        if _inline_disposition(content_type)
+        else _content_disposition(filename)
     )
+    body = await _load_file_body(rec)
+    return Response(
+        content=body,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": disposition,
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
+@router.get("/{file_id}/content", response_model=APIResponse[dict])
+async def file_preview_content(
+    file_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """返回适合预览窗口展示的文本/Markdown 内容。"""
+    result = await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id)
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise NotFoundError("file not found")
+
+    filename = rec.original_filename or file_id
+    content_type = rec.content_type or "application/octet-stream"
+    if is_image_type(content_type):
+        return APIResponse.ok({
+            "file_id": rec.file_id,
+            "filename": filename,
+            "content_type": content_type,
+            "preview_type": "image",
+            "content": "",
+            "truncated": False,
+            "summary": rec.summary_3lines,
+        })
+
+    if rec.md_path:
+        cache_path = Path(rec.md_path)
+        if cache_path.is_file():
+            return APIResponse.ok({
+                "file_id": rec.file_id,
+                "filename": filename,
+                "content_type": content_type,
+                "preview_type": "markdown",
+                "content": cache_path.read_text(encoding="utf-8", errors="replace"),
+                "truncated": False,
+                "summary": rec.summary_3lines,
+            })
+
+    try:
+        parsed = parse_document_bytes(
+            await _load_file_body(rec),
+            filename=filename,
+            content_type=content_type,
+            max_chars=settings.file_parse_max_chars,
+        )
+    except UnsupportedFileTypeError as exc:
+        return APIResponse.ok({
+            "file_id": rec.file_id,
+            "filename": filename,
+            "content_type": content_type,
+            "preview_type": "unsupported",
+            "content": "",
+            "truncated": False,
+            "summary": rec.summary_3lines,
+            "error": str(exc),
+        })
+    except FileParseError as exc:
+        raise AppError(f"file preview failed: {exc}") from exc
+
+    return APIResponse.ok({
+        "file_id": rec.file_id,
+        "filename": filename,
+        "content_type": content_type,
+        "preview_type": (
+            "markdown"
+            if filename.lower().endswith((".md", ".markdown", ".xlsx"))
+            else "text"
+        ),
+        "content": parsed.text,
+        "truncated": parsed.truncated,
+        "summary": parsed.summary,
+    })
 
 
 @router.get("/{file_id}/download")
@@ -189,38 +284,20 @@ async def file_download(
     file_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    result = await session.execute(select(FileRecord).where(FileRecord.file_id == file_id))
+    result = await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id)
+    )
     rec = result.scalar_one_or_none()
     if not rec:
         raise NotFoundError("file not found")
 
-    if not rec.object_key and rec.original_path:
-        local_path = Path(rec.original_path)
-        if local_path.exists():
-            filename = rec.original_filename or file_id
-            return Response(
-                content=local_path.read_bytes(),
-                media_type=rec.content_type or "application/octet-stream",
-                headers={"Content-Disposition": _content_disposition(filename), "Cache-Control": "public, max-age=3600"},
-            )
-
-    from app.services.storage.base import StorageObjectNotFoundError
-    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
-    if not is_storage_enabled():
-        from app.core.exceptions import AppError
-        raise AppError("storage not enabled")
-    storage = get_storage_service()
-    scope = "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
-    try:
-        obj = await storage.get_object(rec.file_id, scope=scope)
-    except StorageObjectNotFoundError:
-        raise NotFoundError("file not found in storage")
-    except Exception as exc:
-        from app.core.exceptions import AppError
-        raise AppError("failed to load file") from exc
     filename = rec.original_filename or file_id
+    body = await _load_file_body(rec)
     return Response(
-        content=obj.body,
+        content=body,
         media_type=rec.content_type or "application/octet-stream",
-        headers={"Content-Disposition": _content_disposition(filename), "Cache-Control": "public, max-age=3600"},
+        headers={
+            "Content-Disposition": _content_disposition(filename),
+            "Cache-Control": "public, max-age=3600",
+        },
     )

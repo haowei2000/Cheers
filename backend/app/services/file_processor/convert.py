@@ -85,6 +85,8 @@ def parse_document_bytes(
         text = _parse_docx(payload)
     elif suffix == ".pdf":
         text = _parse_pdf(payload)
+    elif suffix == ".xlsx":
+        text = _parse_xlsx(payload)
     else:
         raise UnsupportedFileTypeError(f"unsupported file type: {suffix}")
 
@@ -169,10 +171,11 @@ def _normalize_text(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _parse_xlsx(path: Path) -> str:
+def _parse_xlsx(source: bytes | Path) -> str:
     from openpyxl import load_workbook
 
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook_source = io.BytesIO(source) if isinstance(source, bytes) else source
+    workbook = load_workbook(workbook_source, read_only=True, data_only=True)
     try:
         parts: list[str] = []
         for sheet in workbook.worksheets:

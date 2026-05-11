@@ -15,6 +15,13 @@ import { InviteMemberSearch } from "./InviteMemberSearch";
 
 const API = "/api/v1";
 
+type ChannelFilePreview = {
+  file_id: string;
+  original_filename?: string | null;
+  content_type?: string | null;
+  size_bytes?: number | null;
+};
+
 // ── Memory Panel (right sidebar) ─────────────────────────────────────────────
 //
 // The panel can be driven in two modes:
@@ -33,6 +40,7 @@ export function MemoryPanel({
   activeLayer: externalLayer,
   onLayerChange,
   currentUserId,
+  onFilePreview,
 }: {
   channelId: string;
   channelName: string;
@@ -41,6 +49,7 @@ export function MemoryPanel({
   activeLayer?: string;
   onLayerChange?: (layer: string) => void;
   currentUserId?: string | null;
+  onFilePreview?: (file: ChannelFilePreview) => void;
 }) {
   const isControlled = externalLayer !== undefined;
   const [internalLayer, setInternalLayer] = useState<string>("ANCHOR");
@@ -1251,7 +1260,19 @@ export function MemoryPanel({
                 return (
                   <div
                     key={f.file_id}
-                    className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                    role={onFilePreview ? "button" : undefined}
+                    tabIndex={onFilePreview ? 0 : undefined}
+                    onClick={() => onFilePreview?.(f)}
+                    onKeyDown={(event) => {
+                      if (!onFilePreview) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onFilePreview(f);
+                      }
+                    }}
+                    className={`flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors ${
+                      onFilePreview ? "cursor-pointer" : ""
+                    }`}
                   >
                     <div className="w-8 h-8 rounded-md bg-amber-50 flex items-center justify-center flex-shrink-0">
                       <span className="text-sm">
@@ -1283,6 +1304,7 @@ export function MemoryPanel({
                     </div>
                     <a
                       href={`${API}/files/${f.file_id}/download`}
+                      onClick={(event) => event.stopPropagation()}
                       className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
                       title="下载文件"
                     >

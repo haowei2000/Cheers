@@ -3,45 +3,100 @@ import {
   ArrowDownTrayIcon,
   ArrowTopRightOnSquareIcon,
   DocumentIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
+
+type TextPreviewKind = "markdown" | "text";
+
+function swapFileAction(url: string, action: "preview" | "download" | "content") {
+  const [base, query] = url.split("?");
+  const next = base.replace(/\/(preview|download|content)$/, `/${action}`);
+  return query ? `${next}?${query}` : next;
+}
 
 export function FilePreviewSidebar({
   url,
   filename,
+  contentType,
+  sizeBytes,
   onClose,
 }: {
   url: string;
   filename: string;
+  contentType?: string | null;
+  sizeBytes?: number | null;
   onClose: () => void;
 }) {
-  const downloadUrl = url.replace(/\/preview$/, "/download");
+  const previewUrl = swapFileAction(url, "preview");
+  const downloadUrl = swapFileAction(url, "download");
+  const contentUrl = swapFileAction(url, "content");
   const ext = (filename.split(".").pop() ?? "").toLowerCase();
-  const isMarkdown = ext === "md" || ext === "markdown";
+  const normalizedType = (contentType ?? "").split(";", 1)[0].toLowerCase();
+  const isImage =
+    normalizedType.startsWith("image/") ||
+    ["png", "jpg", "jpeg", "webp", "gif"].includes(ext);
+  const isPdf = normalizedType.includes("pdf") || ext === "pdf";
+  const isMarkdown =
+    normalizedType === "text/markdown" || ext === "md" || ext === "markdown";
+  const isPlainText = normalizedType.startsWith("text/") || ext === "txt";
+  const isExtractedPreview =
+    ["docx", "xlsx"].includes(ext) ||
+    normalizedType.includes("wordprocessingml") ||
+    normalizedType.includes("spreadsheetml");
+  const shouldLoadText = !isImage && !isPdf && (isMarkdown || isPlainText || isExtractedPreview);
+  const sizeLabel =
+    sizeBytes && sizeBytes > 0
+      ? sizeBytes < 1024
+        ? `${sizeBytes} B`
+        : sizeBytes < 1024 * 1024
+          ? `${(sizeBytes / 1024).toFixed(1)} KB`
+          : `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+      : "";
 
-  const [mdContent, setMdContent] = useState<string | null>(null);
-  const [mdLoading, setMdLoading] = useState(false);
-  const [mdError, setMdError] = useState<string | null>(null);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [textKind, setTextKind] = useState<TextPreviewKind>(
+    isMarkdown || ext === "xlsx" ? "markdown" : "text",
+  );
+  const [textLoading, setTextLoading] = useState(false);
+  const [textError, setTextError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isMarkdown) return;
-    setMdLoading(true);
-    setMdContent(null);
-    setMdError(null);
-    fetch(url)
+    if (!shouldLoadText) {
+      setTextContent(null);
+      setTextError(null);
+      setTextLoading(false);
+      return;
+    }
+
+    const sourceUrl = isExtractedPreview ? contentUrl : previewUrl;
+    setTextLoading(true);
+    setTextContent(null);
+    setTextError(null);
+    fetch(sourceUrl)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.text();
+        return isExtractedPreview ? r.json() : r.text();
       })
-      .then((text) => {
-        setMdContent(text);
-        setMdLoading(false);
+      .then((payload) => {
+        if (isExtractedPreview) {
+          const data = payload?.data ?? payload;
+          if (data?.preview_type === "unsupported") {
+            throw new Error(data.error || "当前文件暂不支持预览");
+          }
+          setTextKind(data?.preview_type === "markdown" ? "markdown" : "text");
+          setTextContent(String(data?.content ?? ""));
+        } else {
+          setTextKind(isMarkdown ? "markdown" : "text");
+          setTextContent(String(payload ?? ""));
+        }
+        setTextLoading(false);
       })
       .catch((e) => {
-        setMdError(String(e));
-        setMdLoading(false);
+        setTextError(e instanceof Error ? e.message : String(e));
+        setTextLoading(false);
       });
-  }, [url, isMarkdown]);
+  }, [contentUrl, isExtractedPreview, isMarkdown, previewUrl, shouldLoadText]);
 
   return (
     <aside className="w-full border-l border-gray-200 bg-white flex flex-col">
@@ -53,6 +108,11 @@ export function FilePreviewSidebar({
         <span className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0">
           {filename}
         </span>
+        {sizeLabel && (
+          <span className="hidden sm:inline text-[11px] text-gray-400">
+            {sizeLabel}
+          </span>
+        )}
         <div className="flex items-center gap-0.5 flex-shrink-0">
           <a
             href={downloadUrl}
@@ -63,7 +123,7 @@ export function FilePreviewSidebar({
             <ArrowDownTrayIcon className="w-4 h-4" />
           </a>
           <a
-            href={url}
+            href={previewUrl}
             target="_blank"
             rel="noreferrer"
             className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -77,34 +137,61 @@ export function FilePreviewSidebar({
             className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none transition-colors"
             title="关闭"
           >
-            ×
+            <XMarkIcon className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {isMarkdown ? (
-          mdLoading ? (
-            <div className="flex items-center justify-center h-full text-sm text-gray-400">
-              加载中…
-            </div>
-          ) : mdError ? (
-            <div className="flex items-center justify-center h-full text-sm text-red-400">
-              {mdError}
-            </div>
-          ) : (
-            <div className="px-5 py-4">
-              <MessageMarkdown text={mdContent ?? ""} />
-            </div>
-          )
-        ) : (
+        {isImage ? (
+          <div className="min-h-full flex items-center justify-center bg-gray-50 p-4">
+            <img
+              src={previewUrl}
+              alt={filename}
+              className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+            />
+          </div>
+        ) : isPdf ? (
           <iframe
-            key={url}
-            src={url}
+            key={previewUrl}
+            src={previewUrl}
             title={filename}
             className="w-full h-full border-0"
           />
+        ) : shouldLoadText ? (
+          textLoading ? (
+            <div className="flex items-center justify-center h-full text-sm text-gray-400">
+              加载中…
+            </div>
+          ) : textError ? (
+            <div className="flex items-center justify-center h-full text-sm text-red-400">
+              {textError}
+            </div>
+          ) : textKind === "markdown" ? (
+            <div className="px-5 py-4">
+              <MessageMarkdown text={textContent ?? ""} />
+            </div>
+          ) : (
+            <div className="px-5 py-4">
+              <pre className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 font-mono">
+                {textContent ?? ""}
+              </pre>
+            </div>
+          )
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500">
+            <DocumentIcon className="w-10 h-10 text-gray-300" />
+            <p>当前文件类型无法直接预览</p>
+            <a
+              href={downloadUrl}
+              download={filename}
+              className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-700 transition-colors"
+            >
+              <ArrowDownTrayIcon className="w-4 h-4" />
+              下载文件
+            </a>
+          </div>
         )}
       </div>
     </aside>

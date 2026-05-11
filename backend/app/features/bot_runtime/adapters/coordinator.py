@@ -465,7 +465,7 @@ def _make_tools(ctx: dict) -> list:
                 s.add(record)
                 await s.commit()
 
-        download_url = f"/api/files/{file_id}/download"
+        preview_url = f"/api/v1/files/{file_id}/preview"
         logger.info(
             "channel_bot[tool]: create_file %s channel=%s",
             original_filename,
@@ -475,7 +475,7 @@ def _make_tools(ctx: dict) -> list:
         # 收集 file_id，最终会关联到 bot 回复消息上
         ctx.setdefault("_created_file_ids", []).append(file_id)
 
-        return f"文件已创建：[{original_filename}]({download_url})\n\n下载链接：`{download_url}`"
+        return f"文件已创建：[{original_filename}]({preview_url})\n\n预览链接：`{preview_url}`"
 
     @tool
     async def read_file(file_id: str) -> str:
