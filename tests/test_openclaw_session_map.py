@@ -6,17 +6,19 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentNexusSession, AgentNexusSessionBinding, BotAccount, Channel, Workspace
+from app.db.models import AgentNexusSession, AgentNexusSessionBinding, BotAccount, Channel, Message, Workspace
 from app.features.agent_bridge.session_map import (
     SCOPE_CHANNEL,
     SCOPE_DM,
     SCOPE_TASK,
     SCOPE_TOPIC,
+    SESSION_STATUS_CLOSED,
     SESSION_STATUS_TASK_OWNED,
     adopt_session_for_task,
     build_provider_session_key,
     resolve_dispatch_session,
 )
+from app.features.bot_runtime.pipeline.bot.topic_context import gather_topic_context
 
 
 async def _seed_bot_channel(
@@ -248,7 +250,7 @@ async def test_task_alias_can_switch_back_to_channel_session(db_session: AsyncSe
         channel_id=channel.channel_id,
         trigger_message={
             "text": "topic task",
-            "topic_chain": [{"msg_id": "topic-root-001"}],
+            "topic_chain": [{"msg_id": "topic-root-001", "msg_type": SCOPE_TOPIC}],
         },
         task_id="task-switch-001",
         channel=channel,
@@ -273,6 +275,131 @@ async def test_task_alias_can_switch_back_to_channel_session(db_session: AsyncSe
 
 
 @pytest.mark.asyncio
+async def test_channel_reply_uses_channel_session_until_parent_is_topic(db_session: AsyncSession) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="reply-channel-001")
+
+    channel_session = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "plain channel turn"},
+        task_id="task-reply-channel-root",
+        channel=channel,
+    )
+    reply_session = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={
+            "text": "ordinary reply",
+            "in_reply_to_msg_id": "parent-normal-001",
+            "topic_chain": [{"msg_id": "parent-normal-001", "msg_type": "normal"}],
+        },
+        task_id="task-reply-channel-ordinary",
+        channel=channel,
+    )
+    topic_session = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={
+            "text": "reply after parent promoted",
+            "in_reply_to_msg_id": "parent-topic-001",
+            "topic_chain": [{"msg_id": "parent-topic-001", "msg_type": SCOPE_TOPIC}],
+        },
+        task_id="task-reply-channel-topic",
+        channel=channel,
+    )
+
+    assert reply_session.session_id == channel_session.session_id
+    assert reply_session.primary_scope_type == SCOPE_CHANNEL
+    assert topic_session.session_id != channel_session.session_id
+    assert topic_session.primary_scope_type == SCOPE_TOPIC
+    assert topic_session.primary_scope_id == "parent-topic-001"
+
+    channel_bindings = await _bindings(db_session, channel_session.session_id)
+    topic_bindings = await _bindings(db_session, topic_session.session_id)
+    assert (SCOPE_TOPIC, "parent-normal-001") not in {
+        (b.scope_type, b.scope_id) for b in channel_bindings
+    }
+    assert (SCOPE_CHANNEL, channel.channel_id) in {
+        (b.scope_type, b.scope_id) for b in channel_bindings
+    }
+    assert (SCOPE_TOPIC, "parent-topic-001") in {
+        (b.scope_type, b.scope_id) for b in topic_bindings
+    }
+
+
+@pytest.mark.asyncio
+async def test_real_topic_context_drives_reply_session_split_after_promotion(db_session: AsyncSession) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="reply-promote-001")
+    parent = Message(
+        msg_id="reply-promote-parent-001",
+        channel_id=channel.channel_id,
+        sender_id="reply-promote-user-001",
+        sender_type="user",
+        content="parent",
+        msg_type="normal",
+    )
+    reply = Message(
+        msg_id="reply-promote-reply-001",
+        channel_id=channel.channel_id,
+        sender_id="reply-promote-user-001",
+        sender_type="user",
+        content="reply",
+        in_reply_to_msg_id=parent.msg_id,
+        msg_type="reply",
+    )
+    db_session.add_all([parent, reply])
+    await db_session.flush()
+
+    channel_session = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "plain channel turn"},
+        task_id="task-reply-promote-root",
+        channel=channel,
+    )
+    ordinary_chain, _ = await gather_topic_context(reply, db_session)
+    ordinary_reply = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={
+            "text": "ordinary reply from real context",
+            "in_reply_to_msg_id": parent.msg_id,
+            "topic_chain": ordinary_chain,
+        },
+        task_id="task-reply-promote-ordinary",
+        channel=channel,
+    )
+
+    parent.msg_type = SCOPE_TOPIC
+    await db_session.flush()
+    topic_chain, _ = await gather_topic_context(reply, db_session)
+    topic_reply = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={
+            "text": "topic reply from real context",
+            "in_reply_to_msg_id": parent.msg_id,
+            "topic_chain": topic_chain,
+        },
+        task_id="task-reply-promote-topic",
+        channel=channel,
+    )
+
+    assert ordinary_chain[0]["msg_type"] == "normal"
+    assert ordinary_reply.session_id == channel_session.session_id
+    assert topic_chain[0]["msg_type"] == SCOPE_TOPIC
+    assert topic_reply.session_id != channel_session.session_id
+    assert topic_reply.primary_scope_type == SCOPE_TOPIC
+    assert topic_reply.primary_scope_id == parent.msg_id
+
+
+@pytest.mark.asyncio
 async def test_topic_task_session_does_not_claim_channel_scope(db_session: AsyncSession) -> None:
     bot, channel = await _seed_bot_channel(db_session, suffix="topic-chan-001")
 
@@ -290,7 +417,7 @@ async def test_topic_task_session_does_not_claim_channel_scope(db_session: Async
         channel_id=channel.channel_id,
         trigger_message={
             "text": "topic turn",
-            "topic_chain": [{"msg_id": "topic-root-chan-001"}],
+            "topic_chain": [{"msg_id": "topic-root-chan-001", "msg_type": SCOPE_TOPIC}],
         },
         task_id="task-topic-001",
         channel=channel,
@@ -449,3 +576,51 @@ async def test_session_visibility_api_lists_bot_and_scope(
     assert scope_resp.status_code == 200
     scope_data = scope_resp.json()["data"]
     assert [row["session_id"] for row in scope_data] == [resolved.session_id]
+
+
+@pytest.mark.asyncio
+async def test_bot_sessions_api_includes_closed_sessions_by_default(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="api-all-001")
+    active = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "hello api all"},
+        task_id="task-api-all-active",
+        channel=channel,
+    )
+    closed_session_id = "sess-map-api-all-closed-001"
+    db_session.add(
+        AgentNexusSession(
+            session_id=closed_session_id,
+            bot_id=bot.bot_id,
+            provider_agent_id="agent-main",
+            provider_account_id="acct-api-all-001",
+            provider_session_key=build_provider_session_key(
+                provider_agent_id="agent-main",
+                provider_account_id="acct-api-all-001",
+                session_id=closed_session_id,
+            ),
+            current_scope_type=SCOPE_CHANNEL,
+            current_scope_id=channel.channel_id,
+            status=SESSION_STATUS_CLOSED,
+        )
+    )
+    await db_session.flush()
+
+    all_resp = await client.get(f"/api/v1/bots/{bot.bot_id}/sessions")
+    assert all_resp.status_code == 200
+    assert {row["session_id"] for row in all_resp.json()["data"]} == {
+        active.session_id,
+        closed_session_id,
+    }
+
+    active_resp = await client.get(
+        f"/api/v1/bots/{bot.bot_id}/sessions",
+        params={"include_closed": "false"},
+    )
+    assert active_resp.status_code == 200
+    assert [row["session_id"] for row in active_resp.json()["data"]] == [active.session_id]

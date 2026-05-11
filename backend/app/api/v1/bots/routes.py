@@ -7,7 +7,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,7 @@ from app.core.schemas import (
 from app.db.models import AIModel, BotAccount, PromptTemplate, User, gen_uuid
 from app.features.agent_bridge.registry import bot_session_registry
 from app.features.agent_bridge.session_queries import (
-    list_active_sessions_for_bot,
+    list_sessions_for_bot,
     serialize_session,
 )
 from app.features.bot_runtime.adapters.builtin_registry import get_builtin_adapter
@@ -457,6 +457,7 @@ async def test_bot_connection(
 @router.get("/{bot_id}/sessions", response_model=APIResponse[list[dict]])
 async def list_bot_sessions(
     bot_id: str,
+    include_closed: bool = Query(default=True),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
@@ -464,7 +465,7 @@ async def list_bot_sessions(
     bot = await svc.get_or_404(bot_id)
     if not can_manage_bot(bot, current_user):
         raise ForbiddenError("无权查看该 Bot 的 session")
-    sessions = await list_active_sessions_for_bot(session, bot_id=bot_id)
+    sessions = await list_sessions_for_bot(session, bot_id=bot_id, include_closed=include_closed)
     return APIResponse.ok([serialize_session(row) for row in sessions])
 
 

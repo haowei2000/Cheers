@@ -187,6 +187,7 @@ def _to_dict(msg: Message, name: str) -> dict[str, Any]:
         "text": text,
         "timestamp": msg.created_at.isoformat() if msg.created_at else "",
         "in_reply_to_msg_id": msg.in_reply_to_msg_id,
+        "msg_type": msg.msg_type,
     }
 
 

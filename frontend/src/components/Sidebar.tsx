@@ -10,7 +10,7 @@ import {
 import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
-import { SearchPicker, type SearchPickerHandle } from "./SearchPicker";
+import { SearchPicker, type SearchPickerHandle, type SearchScopeOption } from "./SearchPicker";
 import type { SearchSelection } from "../types";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
 
@@ -84,13 +84,43 @@ export function Sidebar({
   const currentWsLetter = currentWs ? currentWs.name.slice(0, 1).toUpperCase() : "∗";
   const currentWsAccent = currentWs ? wsColor(currentWs.workspace_id) : "var(--accent)";
   const currentWsAvatarUrl = currentWs?.avatar_url || "";
-  const searchScopeName = selectedWorkspaceId
-    ? currentWs?.name || "当前工作空间"
+  const [searchWorkspaceId, setSearchWorkspaceId] = useState(selectedWorkspaceId);
+  useEffect(() => {
+    setSearchWorkspaceId(selectedWorkspaceId);
+  }, [selectedWorkspaceId]);
+  const searchWorkspace = searchWorkspaceId
+    ? workspaces.find((w) => w.workspace_id === searchWorkspaceId)
+    : null;
+  const searchScopeName = searchWorkspaceId
+    ? searchWorkspace?.name || "当前工作空间"
     : "全部工作空间";
-  const searchScopeLabel = selectedWorkspaceId ? searchScopeName : "全部空间";
-  const searchScopeTitle = selectedWorkspaceId
+  const searchScopeLabel = searchWorkspaceId ? searchScopeName : "全部空间";
+  const searchScopeTitle = searchWorkspaceId
     ? `频道与消息范围：${searchScopeName}；成员和 Bot 全局搜索`
     : "频道、消息、成员和 Bot 全局搜索";
+  const searchScopeOptions = useMemo<SearchScopeOption[]>(
+    () => [
+      {
+        value: "",
+        label: "全部空间",
+        title: "频道、消息、成员和 Bot 全局搜索",
+        marker: "∗",
+      },
+      ...workspaces.map((w) => {
+        const trimmed = w.name.trim();
+        const marker = w.kind === "personal"
+          ? "个"
+          : [...trimmed].slice(0, 2).join("").toUpperCase() || "?";
+        return {
+          value: w.workspace_id,
+          label: w.name,
+          title: w.kind === "personal" ? "Personal · 私信" : "Workspace · 频道",
+          marker,
+        };
+      }),
+    ],
+    [workspaces],
+  );
 
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
@@ -124,6 +154,10 @@ export function Sidebar({
   };
 
   const openChannelHit = (channelId: string) => {
+    const channel = channels.find((c) => c.channel_id === channelId);
+    if (channel?.workspace_id) {
+      setSelectedWorkspaceId(channel.workspace_id);
+    }
     setSelectedId(channelId);
     resetSearch();
     if (isMobile) setSidebarOpen(false);
@@ -189,6 +223,7 @@ export function Sidebar({
   const handleSearchSelect = (selection: SearchSelection) => {
     if (selection.type === "workspace") {
       setSelectedWorkspaceId(selection.item.workspace_id);
+      setSearchWorkspaceId(selection.item.workspace_id);
       resetSearch();
       if (isMobile) setSidebarOpen(false);
       return;
@@ -356,12 +391,15 @@ export function Sidebar({
         ref={searchPickerRef}
         context="global_nav"
         token={authToken}
-        workspaceId={selectedWorkspaceId || undefined}
+        workspaceId={searchWorkspaceId || undefined}
         placeholder="搜索消息 / 频道 / 成员 / Bot"
         keyboardHint="⌘K"
         enableShortcut
         scopeLabel={searchScopeLabel}
         scopeTitle={searchScopeTitle}
+        scopeValue={searchWorkspaceId}
+        scopeOptions={searchScopeOptions}
+        onScopeChange={setSearchWorkspaceId}
         onSelect={handleSearchSelect}
       />
 

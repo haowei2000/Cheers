@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowPathIcon, ClipboardDocumentIcon } from "@heroicons/react/24/outline";
 import { apiFetch } from "../api";
 import type { AgentBridgeSession } from "../types";
 
@@ -34,6 +35,170 @@ function statusLabel(status: string): string {
   return status || "-";
 }
 
+function statusTone(status: string): { background: string; color: string } {
+  if (status === "task_owned") return { background: "var(--accent-muted)", color: "var(--accent)" };
+  if (status === "closed") return { background: "var(--surface-soft)", color: "var(--fg-3)" };
+  return { background: "var(--green-muted)", color: "var(--green)" };
+}
+
+function sessionScopeCounts(sessions: AgentBridgeSession[]): string {
+  const counts = sessions.reduce<Record<string, number>>((acc, s) => {
+    const key = s.current_scope_type || "unknown";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  return Object.entries(counts)
+    .map(([key, count]) => `${key}:${count}`)
+    .join(" · ");
+}
+
+async function copyText(value: string): Promise<void> {
+  if (!value || typeof navigator === "undefined" || !navigator.clipboard) return;
+  await navigator.clipboard.writeText(value);
+}
+
+function SessionCard({ session }: { session: AgentBridgeSession }) {
+  const [expanded, setExpanded] = useState(false);
+  const tone = statusTone(session.status);
+  const bindings = session.bindings || [];
+  const visibleBindings = expanded ? bindings : bindings.slice(0, 4);
+
+  return (
+    <div
+      className="rounded-md border text-xs"
+      style={{ borderColor: "var(--border)", background: "var(--bg-0)", overflow: "hidden" }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) auto",
+          gap: 10,
+          padding: "10px 12px",
+          borderBottom: "1px solid var(--border)",
+          background: "var(--surface)",
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div className="font-semibold truncate" style={{ color: "var(--fg-1)" }}>
+            {scopeLabel(session.current_scope_type, session.current_scope_id)}
+          </div>
+          <div className="mt-1 font-mono truncate" style={{ color: "var(--fg-3)" }} title={session.session_id}>
+            session:{session.session_id}
+          </div>
+        </div>
+        <span
+          className="rounded px-2 py-0.5 whitespace-nowrap"
+          style={{ alignSelf: "start", background: tone.background, color: tone.color }}
+        >
+          {statusLabel(session.status)}
+        </span>
+      </div>
+
+      <div style={{ padding: "10px 12px", display: "grid", gap: 10 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) auto",
+            gap: 8,
+            alignItems: "start",
+          }}
+        >
+          <div
+            className="font-mono"
+            style={{
+              color: "var(--fg-2)",
+              background: "var(--surface-soft)",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              padding: "7px 8px",
+              lineHeight: 1.45,
+              overflowWrap: "anywhere",
+            }}
+            title={session.provider_session_key}
+          >
+            {expanded ? session.provider_session_key : shortKey(session.provider_session_key)}
+          </div>
+          <button
+            type="button"
+            onClick={() => void copyText(session.provider_session_key)}
+            title="复制 provider session key"
+            aria-label="复制 provider session key"
+            style={{
+              width: 30,
+              height: 30,
+              display: "inline-grid",
+              placeItems: "center",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--bg-0)",
+              color: "var(--fg-2)",
+              cursor: "pointer",
+            }}
+          >
+            <ClipboardDocumentIcon style={{ width: 15, height: 15 }} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: "6px 12px",
+            color: "var(--fg-2)",
+          }}
+        >
+          <div>Provider：{session.provider} / {session.provider_agent_id}</div>
+          <div>Account：{session.provider_account_id}</div>
+          <div>创建：{fmtTime(session.created_at)}</div>
+          <div>最后使用：{fmtTime(session.last_used_at)}</div>
+        </div>
+
+        {bindings.length > 0 && (
+          <div style={{ display: "grid", gap: 6 }}>
+            <div className="an-rc-sub" style={{ marginTop: 0 }}>
+              Bindings · {bindings.length}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {visibleBindings.map((b) => (
+                <span
+                  key={b.binding_id}
+                  className="rounded border px-1.5 py-0.5 font-mono"
+                  style={{
+                    borderColor: b.detached_at ? "var(--red)" : "var(--border)",
+                    color: b.detached_at ? "var(--red)" : "var(--fg-3)",
+                    maxWidth: "100%",
+                    overflowWrap: "anywhere",
+                  }}
+                  title={b.scope_id}
+                >
+                  {b.role}:{b.scope_type}:{b.scope_id}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          style={{
+            justifySelf: "start",
+            border: 0,
+            background: "transparent",
+            color: "var(--accent)",
+            padding: 0,
+            fontSize: 12,
+            fontFamily: "inherit",
+            cursor: "pointer",
+          }}
+        >
+          {expanded ? "收起详情" : "展开详情"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SessionList({ sessions }: { sessions: AgentBridgeSession[] }) {
   if (sessions.length === 0) {
     return (
@@ -44,53 +209,7 @@ export function SessionList({ sessions }: { sessions: AgentBridgeSession[] }) {
   }
   return (
     <div className="grid gap-2">
-      {sessions.map((s) => (
-        <div
-          key={s.session_id}
-          className="rounded-md border p-3 text-xs"
-          style={{ borderColor: "var(--border)", background: "var(--surface-soft)" }}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="font-semibold truncate" style={{ color: "var(--fg-1)" }}>
-                {s.bot_display_name || s.bot_username || s.bot_id}
-              </div>
-              <div className="mt-1 font-mono break-all" style={{ color: "var(--fg-3)" }}>
-                {shortKey(s.provider_session_key)}
-              </div>
-            </div>
-            <span
-              className="rounded px-2 py-0.5 whitespace-nowrap"
-              style={{
-                background: s.status === "task_owned" ? "var(--accent-muted)" : "var(--green-muted)",
-                color: s.status === "task_owned" ? "var(--accent)" : "var(--green)",
-              }}
-            >
-              {statusLabel(s.status)}
-            </span>
-          </div>
-          <div className="mt-2 grid gap-1 sm:grid-cols-2" style={{ color: "var(--fg-2)" }}>
-            <div>Provider：{s.provider} / {s.provider_agent_id}</div>
-            <div>Account：{s.provider_account_id}</div>
-            <div>当前 scope：{scopeLabel(s.current_scope_type, s.current_scope_id)}</div>
-            <div>最后使用：{fmtTime(s.last_used_at)}</div>
-          </div>
-          {s.bindings.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {s.bindings.map((b) => (
-                <span
-                  key={b.binding_id}
-                  className="rounded border px-1.5 py-0.5 font-mono"
-                  style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}
-                  title={b.scope_id}
-                >
-                  {b.role}:{b.scope_type}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+      {sessions.map((s) => <SessionCard key={s.session_id} session={s} />)}
     </div>
   );
 }
@@ -183,12 +302,15 @@ export function BotSessionsPanel({
   const [sessions, setSessions] = useState<AgentBridgeSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [includeClosed, setIncludeClosed] = useState(true);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
-    apiFetch(`/bots/${botId}/sessions`, { token: authToken })
+    const params = new URLSearchParams({ include_closed: String(includeClosed) });
+    apiFetch(`/bots/${botId}/sessions?${params.toString()}`, { token: authToken })
       .then((r) => r.json())
       .then((d) => {
         if (!active) return;
@@ -205,17 +327,76 @@ export function BotSessionsPanel({
     return () => {
       active = false;
     };
-  }, [authToken, botId]);
+  }, [authToken, botId, includeClosed, refreshNonce]);
+
+  const activeCount = sessions.filter((s) => s.status !== "closed").length;
+  const closedCount = sessions.length - activeCount;
 
   return (
-    <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+    <div
+      style={{
+        display: "grid",
+        gap: 10,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface-soft)",
+        padding: 12,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
         <div>
-          <div className="an-rc-title">Active Sessions</div>
-          <div className="an-rc-sub">该 Bot 当前可复用的 Agent Bridge provider session</div>
+          <div className="an-rc-title">All Sessions</div>
+          <div className="an-rc-sub">
+            该 Bot 的 AgentNexus session、provider session key 与 scope binding
+          </div>
         </div>
-        <div className="an-rc-sub">{loading ? "加载中…" : `${sessions.length} 个`}</div>
+        <button
+          type="button"
+          onClick={() => setRefreshNonce((v) => v + 1)}
+          disabled={loading}
+          title="刷新 sessions"
+          aria-label="刷新 sessions"
+          style={{
+            width: 30,
+            height: 30,
+            display: "inline-grid",
+            placeItems: "center",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            background: "var(--bg-0)",
+            color: "var(--fg-2)",
+            cursor: loading ? "wait" : "pointer",
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          <ArrowPathIcon style={{ width: 15, height: 15 }} />
+        </button>
       </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div className="an-rc-sub" style={{ marginTop: 0 }}>
+          {loading
+            ? "加载中..."
+            : `${sessions.length} 个 sessions · active:${activeCount} · closed:${closedCount}${sessions.length ? ` · ${sessionScopeCounts(sessions)}` : ""}`}
+        </div>
+        <label className="an-rc-sub" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 0 }}>
+          <input
+            type="checkbox"
+            checked={includeClosed}
+            onChange={(e) => setIncludeClosed(e.target.checked)}
+          />
+          包含 closed
+        </label>
+      </div>
+
       {error ? (
         <div className="an-rc-sub" style={{ color: "var(--red)" }}>{error}</div>
       ) : (
