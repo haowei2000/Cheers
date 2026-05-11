@@ -1,14 +1,13 @@
-"""AdapterEvent contract tests + ABC default-wrapping behaviour.
+"""AdapterEvent contract tests + execute-stream reduction behaviour.
 
 Verifies:
 
 1. The Delta / Final / DispatchedAsync dataclasses round-trip and carry
    their documented fields.
-2. BotAdapter's default ``execute_iter`` wraps a legacy ``execute``
-   that returns AgentResponse — a non-streaming adapter still produces a
-   single Final via the iterator.
-3. _drain_execute_iter inverts that, reducing a streaming adapter's
-   Delta+Final stream into an AgentResponse.
+2. BotAdapter exposes one execution method, ``execute``, which streams
+   AdapterEvent values.
+3. ``drain_events_to_response`` reduces Delta+Final streams into an
+   AgentResponse when tests or compatibility code need the legacy shape.
 
 No DB / bus dependency — these are fast unit tests.
 """
@@ -18,7 +17,11 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import (
+    AgentPayload,
+    BotAdapter,
+    drain_events_to_response,
+)
 from app.features.bot_runtime.pipeline.adapter_events import (
     AdapterEvent,
     Delta,
@@ -63,75 +66,13 @@ def test_dispatched_async_is_marker() -> None:
     DispatchedAsync()  # constructible, no args
 
 
-# ── Default execute_iter wraps legacy execute ──────────────────────────
-
-
-class _LegacyAdapter(BotAdapter):
-    """Adapter that implements only the legacy single-result execute()."""
-
-    def __init__(self, resp: AgentResponse) -> None:
-        self._resp = resp
-
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return self._resp
-
-    async def health_check(self) -> bool:
-        return True
-
-
-async def test_default_execute_iter_wraps_success() -> None:
-    resp = AgentResponse(
-        content="hi", task_id="t-1", success=True, file_ids=["f1"],
-    )
-    adapter = _LegacyAdapter(resp)
-    events: list[AdapterEvent] = []
-    async for ev in adapter.execute_iter(_payload()):
-        events.append(ev)
-    assert len(events) == 1
-    final = events[0]
-    assert isinstance(final, Final)
-    assert final.content == "hi"
-    assert final.success is True
-    assert final.file_ids == ["f1"]
-
-
-async def test_default_execute_iter_wraps_dispatched_async() -> None:
-    resp = AgentResponse(
-        content="", task_id="t-1", success=True, dispatched_async=True,
-    )
-    adapter = _LegacyAdapter(resp)
-    events: list[AdapterEvent] = []
-    async for ev in adapter.execute_iter(_payload()):
-        events.append(ev)
-    assert len(events) == 1
-    assert isinstance(events[0], DispatchedAsync)
-
-
-async def test_default_execute_iter_wraps_error() -> None:
-    resp = AgentResponse(
-        content="", task_id="t-1", success=False, error_message="upstream down",
-    )
-    adapter = _LegacyAdapter(resp)
-    events: list[AdapterEvent] = []
-    async for ev in adapter.execute_iter(_payload()):
-        events.append(ev)
-    assert len(events) == 1
-    final = events[0]
-    assert isinstance(final, Final)
-    assert final.success is False
-    assert final.error_message == "upstream down"
-
-
-# ── _drain_execute_iter reduces streaming adapter to AgentResponse ─────
+# ── execute streams AdapterEvent values ────────────────────────────────
 
 
 class _StreamingAdapter(BotAdapter):
-    """Adapter that yields multiple Delta then a Final natively."""
+    """Adapter that yields multiple Delta then a Final."""
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(
+    async def execute(
         self, payload: AgentPayload,
     ) -> AsyncIterator[AdapterEvent]:
         yield Delta(text="he")
@@ -142,12 +83,19 @@ class _StreamingAdapter(BotAdapter):
         return True
 
 
+async def test_execute_streams_events() -> None:
+    adapter = _StreamingAdapter()
+    events = [event async for event in adapter.execute(_payload())]
+    assert [type(event) for event in events] == [Delta, Delta, Final]
+
+
 async def test_drain_reduces_deltas_into_final_content() -> None:
-    """_drain_execute_iter takes the Final's content (not the joined deltas)
+    """The reducer takes the Final's content (not the joined deltas)
     so adapters whose Final.content differs from concatenated deltas (e.g.
     post-processed text) still produce the canonical full reply."""
     adapter = _StreamingAdapter()
-    resp = await adapter.execute(_payload())
+    payload = _payload()
+    resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
     assert resp.content == "hello"
     assert resp.success is True
     assert resp.file_ids == ["fid"]
@@ -157,10 +105,7 @@ async def test_drain_reduces_deltas_into_final_content() -> None:
 class _NoTerminalAdapter(BotAdapter):
     """Pathological adapter that yields Delta but never a Final."""
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(
+    async def execute(
         self, payload: AgentPayload,
     ) -> AsyncIterator[AdapterEvent]:
         yield Delta(text="oops")
@@ -175,7 +120,8 @@ async def test_drain_falls_back_when_no_terminal() -> None:
     AgentResponse: the joined deltas as content, success=False with a
     descriptive error."""
     adapter = _NoTerminalAdapter()
-    resp = await adapter.execute(_payload())
+    payload = _payload()
+    resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
     assert resp.success is False
     assert resp.content == "oops"
     assert resp.error_message and "no terminal" in resp.error_message
@@ -185,10 +131,7 @@ async def test_drain_falls_back_when_no_terminal() -> None:
 
 
 class _AsyncDispatchAdapter(BotAdapter):
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(
+    async def execute(
         self, payload: AgentPayload,
     ) -> AsyncIterator[AdapterEvent]:
         yield DispatchedAsync()
@@ -199,7 +142,8 @@ class _AsyncDispatchAdapter(BotAdapter):
 
 async def test_drain_handles_dispatched_async() -> None:
     adapter = _AsyncDispatchAdapter()
-    resp = await adapter.execute(_payload("t-2"))
+    payload = _payload("t-2")
+    resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
     assert resp.dispatched_async is True
     assert resp.success is True
     assert resp.content == ""

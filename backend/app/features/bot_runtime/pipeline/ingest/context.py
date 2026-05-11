@@ -1,4 +1,4 @@
-"""IngestContext: data carried through the IngestPipeline.
+"""IngestContext: data carried through the unified message workflow.
 
 Inputs are populated by the caller (HTTP route, SSE endpoint, builtin-bot
 post-back). Stages mutate the intermediate / output fields as the pipeline
@@ -7,12 +7,16 @@ runs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.contracts.messages import MessageDTO, MessageFileDTO
 from app.db.models import Message
 from app.features.bot_runtime.pipeline.bus import EventBus
+
+if TYPE_CHECKING:
+    from app.features.bot_runtime.pipeline.workflow import MessageWorkflowPlan
 
 
 @dataclass
@@ -37,6 +41,9 @@ class IngestContext:
     skip_secret: bool = False  # builtin-bot post-back doesn't carry secrets
     skip_commit: bool = False  # caller manages the request transaction itself
     skip_fanout: bool = False  # tests / scenarios that suppress unread bumps
+
+    # ── workflow plan ──────────────────────────────────────────────────
+    workflow: "MessageWorkflowPlan | None" = None
 
     # ── intermediates / output ──────────────────────────────────────────
     stored_content: str | None = None  # final content stored in DB

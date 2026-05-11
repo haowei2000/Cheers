@@ -1,4 +1,4 @@
-"""Orchestrator job queue with memory and Redis Stream backends."""
+"""Bot pipeline job queue with memory and Redis Stream backends."""
 from __future__ import annotations
 
 import asyncio
@@ -11,21 +11,21 @@ from typing import Any, Protocol
 
 from app.config import settings
 
-logger = logging.getLogger("app.features.bot_runtime.orchestrator.queue")
+logger = logging.getLogger("app.features.bot_runtime.pipeline.bot.queue")
 
-_STREAM_KEY = "agentnexus:orchestrator:jobs"
+_STREAM_KEY = "agentnexus:bot_pipeline:jobs"
 _GROUP = "agentnexus-backend"
 _MAX_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
-class OrchestratorJob:
+class BotPipelineJob:
     channel_id: str
     msg_id: str
     job_id: str = ""
     attempts: int = 0
 
-    def with_defaults(self) -> "OrchestratorJob":
+    def with_defaults(self) -> "BotPipelineJob":
         if self.job_id:
             return self
         return replace(self, job_id=str(uuid.uuid4()))
@@ -33,22 +33,22 @@ class OrchestratorJob:
 
 @dataclass(frozen=True)
 class JobEnvelope:
-    job: OrchestratorJob
+    job: BotPipelineJob
     raw_id: Any = None
 
 
-class OrchestratorQueue(Protocol):
+class BotPipelineQueue(Protocol):
     async def start(self) -> None: ...
     async def close(self) -> None: ...
-    async def enqueue(self, job: OrchestratorJob) -> str: ...
+    async def enqueue(self, job: BotPipelineJob) -> str: ...
     async def receive(self) -> JobEnvelope: ...
     async def ack(self, envelope: JobEnvelope) -> None: ...
     async def retry(self, envelope: JobEnvelope, exc: BaseException) -> None: ...
 
 
-class MemoryOrchestratorQueue:
+class MemoryBotPipelineQueue:
     def __init__(self) -> None:
-        self._queue: asyncio.Queue[OrchestratorJob] = asyncio.Queue()
+        self._queue: asyncio.Queue[BotPipelineJob] = asyncio.Queue()
 
     async def start(self) -> None:
         return
@@ -56,7 +56,7 @@ class MemoryOrchestratorQueue:
     async def close(self) -> None:
         return
 
-    async def enqueue(self, job: OrchestratorJob) -> str:
+    async def enqueue(self, job: BotPipelineJob) -> str:
         job = job.with_defaults()
         await self._queue.put(job)
         return job.job_id
@@ -72,7 +72,7 @@ class MemoryOrchestratorQueue:
         job = envelope.job
         if job.attempts + 1 >= _MAX_ATTEMPTS:
             logger.error(
-                "orchestrator_queue.memory: dropping job channel_id=%s msg_id=%s attempts=%d",
+                "bot_pipeline_queue.memory: dropping job channel_id=%s msg_id=%s attempts=%d",
                 job.channel_id, job.msg_id, job.attempts + 1,
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
@@ -80,7 +80,7 @@ class MemoryOrchestratorQueue:
         await self.enqueue(replace(job, attempts=job.attempts + 1))
 
 
-class RedisOrchestratorQueue:
+class RedisBotPipelineQueue:
     def __init__(self) -> None:
         self._consumer = f"{uuid.uuid4().hex}-{int(time.time())}"
         self._redis = None
@@ -108,9 +108,9 @@ class RedisOrchestratorQueue:
             await self._redis.aclose()
             self._redis = None
 
-    async def enqueue(self, job: OrchestratorJob) -> str:
+    async def enqueue(self, job: BotPipelineJob) -> str:
         if self._redis is None:
-            raise RuntimeError("RedisOrchestratorQueue not started")
+            raise RuntimeError("RedisBotPipelineQueue not started")
         job = job.with_defaults()
         await self._redis.xadd(
             _STREAM_KEY,
@@ -125,7 +125,7 @@ class RedisOrchestratorQueue:
 
     async def receive(self) -> JobEnvelope:
         if self._redis is None:
-            raise RuntimeError("RedisOrchestratorQueue not started")
+            raise RuntimeError("RedisBotPipelineQueue not started")
         while True:
             rows = await self._redis.xreadgroup(
                 _GROUP,
@@ -150,20 +150,20 @@ class RedisOrchestratorQueue:
             await self.enqueue(replace(job, attempts=job.attempts + 1))
         else:
             logger.error(
-                "orchestrator_queue.redis: dropping job channel_id=%s msg_id=%s attempts=%d",
+                "bot_pipeline_queue.redis: dropping job channel_id=%s msg_id=%s attempts=%d",
                 job.channel_id, job.msg_id, job.attempts + 1,
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
         await self.ack(envelope)
 
 
-def _job_from_fields(fields: dict[str, Any]) -> OrchestratorJob:
+def _job_from_fields(fields: dict[str, Any]) -> BotPipelineJob:
     raw_attempts = fields.get("attempts") or 0
     try:
         attempts = int(raw_attempts)
     except (TypeError, ValueError):
         attempts = 0
-    return OrchestratorJob(
+    return BotPipelineJob(
         job_id=str(fields.get("job_id") or uuid.uuid4()),
         channel_id=str(fields.get("channel_id") or ""),
         msg_id=str(fields.get("msg_id") or ""),
@@ -171,47 +171,47 @@ def _job_from_fields(fields: dict[str, Any]) -> OrchestratorJob:
     )
 
 
-_queue: OrchestratorQueue = MemoryOrchestratorQueue()
+_queue: BotPipelineQueue = MemoryBotPipelineQueue()
 _worker_tasks: list[asyncio.Task] = []
 _handler = None
 
 
-def get_orchestrator_queue() -> OrchestratorQueue:
+def get_bot_pipeline_queue() -> BotPipelineQueue:
     return _queue
 
 
-async def init_orchestrator_queue() -> OrchestratorQueue:
+async def init_bot_pipeline_queue() -> BotPipelineQueue:
     global _queue
     backend = (settings.orchestrator_queue_backend or "redis").strip().lower()
     if backend == "redis":
-        q = RedisOrchestratorQueue()
+        q = RedisBotPipelineQueue()
         try:
             await q.start()
             _queue = q
-            logger.info("orchestrator_queue: using redis backend")
+            logger.info("bot_pipeline_queue: using redis backend")
             return _queue
         except Exception as exc:
-            logger.warning("orchestrator_queue: redis unavailable, falling back to memory: %s", exc)
+            logger.warning("bot_pipeline_queue: redis unavailable, falling back to memory: %s", exc)
             await q.close()
-    _queue = MemoryOrchestratorQueue()
+    _queue = MemoryBotPipelineQueue()
     await _queue.start()
-    logger.info("orchestrator_queue: using memory backend")
+    logger.info("bot_pipeline_queue: using memory backend")
     return _queue
 
 
-async def start_orchestrator_workers(handler) -> None:
+async def start_bot_pipeline_workers(handler) -> None:
     global _handler
     _handler = handler
     if _worker_tasks:
         return
-    await init_orchestrator_queue()
+    await init_bot_pipeline_queue()
     concurrency = max(1, int(settings.orchestrator_worker_concurrency or 1))
     for idx in range(concurrency):
         _worker_tasks.append(asyncio.create_task(_worker_loop(idx)))
-    logger.info("orchestrator_queue: started %d worker(s)", concurrency)
+    logger.info("bot_pipeline_queue: started %d worker(s)", concurrency)
 
 
-async def stop_orchestrator_workers() -> None:
+async def stop_bot_pipeline_workers() -> None:
     global _handler
     for task in list(_worker_tasks):
         task.cancel()
@@ -232,27 +232,27 @@ async def _worker_loop(index: int) -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("orchestrator_worker[%d]: receive failed; retrying", index)
+            logger.exception("bot_pipeline_worker[%d]: receive failed; retrying", index)
             await asyncio.sleep(1.0)
             continue
         try:
             if _handler is None:
-                raise RuntimeError("orchestrator worker handler is not configured")
+                raise RuntimeError("bot pipeline worker handler is not configured")
             await _handler(envelope.job.channel_id, envelope.job.msg_id)
             await _queue.ack(envelope)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.exception(
-                "orchestrator_worker[%d]: job failed channel_id=%s msg_id=%s",
+                "bot_pipeline_worker[%d]: job failed channel_id=%s msg_id=%s",
                 index, envelope.job.channel_id, envelope.job.msg_id,
             )
             await _queue.retry(envelope, exc)
 
 
-async def enqueue_orchestrator_job(channel_id: str, msg_id: str) -> str:
+async def enqueue_bot_pipeline_job(channel_id: str, msg_id: str) -> str:
     if not _worker_tasks:
-        from app.features.bot_runtime.orchestrator.jobs import run_orchestrator_job
+        from app.features.bot_runtime.pipeline.bot.jobs import run_bot_pipeline_job
 
-        await start_orchestrator_workers(run_orchestrator_job)
-    return await _queue.enqueue(OrchestratorJob(channel_id=channel_id, msg_id=msg_id))
+        await start_bot_pipeline_workers(run_bot_pipeline_job)
+    return await _queue.enqueue(BotPipelineJob(channel_id=channel_id, msg_id=msg_id))

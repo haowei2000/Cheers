@@ -1,11 +1,11 @@
 """AgentBridgeBotAdapter：异步 Agent Bridge Bot 适配器。
 
 Slack / Discord 风格的异步流程（Phase C：per-bot data WS）：
-  1. 用户 @mention 本 Bot 时，Orchestrator 创建占位 bot 消息后调 execute()；
+  1. 用户 @mention 本 Bot 时，Bot pipeline 创建占位 bot 消息后消费 execute() 事件流；
   2. execute() 向 bot_session_registry 查找目标 bot 的 data WS，推送 message 帧；
-     - 若找到：返回 AgentResponse(content="", dispatched_async=True)
-     - 若未连：返回 success=False，orchestrator 按原 finalize 路径写兜底文案
-  3. Orchestrator 看到 dispatched_async=True 后，把占位消息登记到 pending_replies，
+     - 若找到：yield DispatchedAsync()
+     - 若未连：返回 success=False，Bot pipeline 按原 finalize 路径写兜底文案
+  3. Bot pipeline 看到 dispatched_async=True 后，把占位消息登记到 pending_replies，
      调度超时兜底；
   4. 远端 provider agent 产出回复后，plugin 通过 data WS 的 reply 帧回推；
      bridge 的 /ws/agent-bridge/data 路由从 pending_replies 里 finalize 占位消息。
@@ -16,7 +16,7 @@ import logging
 from collections.abc import AsyncIterator
 
 from app.db.models import BotAccount, PromptTemplate
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.adapters.prompt_template import (
     DEFAULT_USER_TEMPLATE,
     build_template_context,
@@ -62,14 +62,14 @@ class AgentBridgeBotAdapter(BotAdapter):
 
     def _render_trigger_message(self, payload: AgentPayload) -> dict:
         trigger_meta = dict(payload.trigger_message or {})
-        pconfig = payload.process_config
+        pconfig = payload.runtime
         context_vars = build_template_context(
             bot_name=self.bot.display_name or self.bot.username,
             channel_id=payload.channel_id,
             channel_name=pconfig.channel_name,
             sender_name=trigger_meta.get("sender_name") or pconfig.sender_name,
             timestamp=trigger_meta.get("timestamp", ""),
-            memory_context=payload.memory_context,
+            memory_context=payload.context.memory,
         )
         template = self.template.user_template if self.template else DEFAULT_USER_TEMPLATE
         trigger_meta["text"] = render_user_template(
@@ -79,18 +79,15 @@ class AgentBridgeBotAdapter(BotAdapter):
         )
         return trigger_meta
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
-        return await self._drain_execute_iter(payload)
-
-    async def execute_iter(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+    async def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
         # 延迟导入以避免 import 时拉起 bridge 依赖
         from app.features.agent_bridge.pending import PendingReply, pending_replies
         from app.features.agent_bridge.registry import bot_session_registry
         from app.features.agent_bridge.service import register_stream
         from app.features.agent_bridge.streams import stream_registry
 
-        # orchestrator 将占位 bot_msg.msg_id 放在 process_config 里传下来
-        placeholder_msg_id = payload.process_config.placeholder_msg_id
+        # Bot pipeline 将占位 bot_msg.msg_id 放在 runtime 里传下来
+        placeholder_msg_id = payload.runtime.placeholder_msg_id
 
         sess = bot_session_registry.get(self.bot.bot_id)
         if sess is None or sess.data_ws is None:
@@ -102,7 +99,7 @@ class AgentBridgeBotAdapter(BotAdapter):
             return
 
         session_payload = None
-        db_session = payload.process_config.db_session
+        db_session = payload.runtime.db_session
         if db_session is not None:
             from app.features.agent_bridge.session_map import resolve_dispatch_session
 
@@ -117,7 +114,7 @@ class AgentBridgeBotAdapter(BotAdapter):
 
         # 先把 pending 登记到内存（不附 timeout），确保 plugin 秒回时
         # `/ws/agent-bridge/data` 的 reply handler 能从 pending 里 peek 到 channel_id /
-        # finalize 正确的占位消息。timeout 由 orchestrator 在确认 dispatched_async
+        # finalize 正确的占位消息。timeout 由 Bot pipeline 在确认 dispatched_async
         # 之后补登记（避免同步路径也被 arm）。
         preregistered = False
         if placeholder_msg_id:
@@ -163,8 +160,8 @@ class AgentBridgeBotAdapter(BotAdapter):
                 "system": self._get_system_prompt(),
                 "user": rendered_trigger_message.get("text", ""),
             },
-            "memory_context": payload.memory_context,
-            "attachments": [_sanitize_attachment(a) for a in (payload.attachments or [])],
+            "memory_context": payload.context.memory,
+            "attachments": [_sanitize_attachment(a) for a in (payload.context.attachments or [])],
             "binding_config": self.binding_config,
         }
         if session_payload is not None:
@@ -178,7 +175,7 @@ class AgentBridgeBotAdapter(BotAdapter):
         )
 
         if not delivered:
-            # 没 plugin 在线：回滚预登记，让 orchestrator 走原同步 finalize 路径
+            # 没 plugin 在线：回滚预登记，让 Bot pipeline 走原同步 finalize 路径
             if preregistered and placeholder_msg_id:
                 await pending_replies.pop_by_msg(placeholder_msg_id)
                 await stream_registry.pop(placeholder_msg_id)

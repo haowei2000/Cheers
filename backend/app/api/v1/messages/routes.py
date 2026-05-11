@@ -21,12 +21,13 @@ from app.core.schemas import (
 )
 from app.db.models import Message, User
 from app.db.session import async_session_factory, get_session
-from app.features.bot_runtime.orchestrator.adapter_resolver import get_adapter_for_bot
-from app.features.bot_runtime.orchestrator.queue import enqueue_orchestrator_job
-from app.features.bot_runtime.orchestrator.service import run_orchestrator
+from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_for_bot
+from app.features.bot_runtime.pipeline.bot.queue import enqueue_bot_pipeline_job
+from app.features.bot_runtime.pipeline.bot.service import run_bot_pipeline
 from app.features.bot_runtime.pipeline.bus import EventBus, WSEventBus, make_event_bus
 from app.features.bot_runtime.pipeline.events import BotProcessing
-from app.features.bot_runtime.pipeline.ingest import IngestContext, make_ingest_pipeline
+from app.features.bot_runtime.pipeline.ingest import IngestContext
+from app.features.bot_runtime.pipeline.workflow import run_message_workflow
 from app.services.channel_service import ChannelService
 from app.services.message_service import MessageService
 from app.services.realtime_broker import get_realtime_broker
@@ -70,45 +71,45 @@ def _schedule_recent_update(channel_id: str) -> None:
     schedule_recent_update(channel_id)
 
 
-def _schedule_orchestrator_enqueue(
+def _schedule_bot_pipeline_enqueue(
     channel_id: str,
     msg_id: str,
     background_tasks: BackgroundTasks | None = None,
 ) -> None:
     logger.info(
-        "orchestrator_enqueue: scheduled channel_id=%s msg_id=%s background_tasks=%s",
+        "bot_pipeline_enqueue: scheduled channel_id=%s msg_id=%s background_tasks=%s",
         channel_id,
         msg_id,
         background_tasks is not None,
     )
     if background_tasks is not None:
-        background_tasks.add_task(_enqueue_orchestrator_bg, channel_id, msg_id)
+        background_tasks.add_task(_enqueue_bot_pipeline_bg, channel_id, msg_id)
         return
-    asyncio.create_task(_enqueue_orchestrator_bg(channel_id, msg_id))
+    asyncio.create_task(_enqueue_bot_pipeline_bg(channel_id, msg_id))
 
 
-async def _enqueue_orchestrator_bg(channel_id: str, msg_id: str) -> None:
+async def _enqueue_bot_pipeline_bg(channel_id: str, msg_id: str) -> None:
     try:
         logger.info(
-            "orchestrator_enqueue: starting channel_id=%s msg_id=%s",
+            "bot_pipeline_enqueue: starting channel_id=%s msg_id=%s",
             channel_id,
             msg_id,
         )
-        job_id = await enqueue_orchestrator_job(channel_id, msg_id)
+        job_id = await enqueue_bot_pipeline_job(channel_id, msg_id)
         logger.info(
-            "orchestrator_enqueue: enqueued channel_id=%s msg_id=%s job_id=%s",
+            "bot_pipeline_enqueue: enqueued channel_id=%s msg_id=%s job_id=%s",
             channel_id,
             msg_id,
             job_id,
         )
     except Exception as exc:
         logger.exception(
-            "orchestrator_enqueue: failed channel_id=%s msg_id=%s",
+            "bot_pipeline_enqueue: failed channel_id=%s msg_id=%s",
             channel_id, msg_id,
         )
         try:
             await get_realtime_broker().publish_channel(channel_id, {
-                "type": "orchestrator_error",
+                "type": "bot_pipeline_error",
                 "data": {
                     "channel_id": channel_id,
                     "msg_id": msg_id,
@@ -116,10 +117,10 @@ async def _enqueue_orchestrator_bg(channel_id: str, msg_id: str) -> None:
                 },
             })
         except Exception:
-            logger.debug("orchestrator_enqueue: failed to publish error frame", exc_info=True)
+            logger.debug("bot_pipeline_enqueue: failed to publish error frame", exc_info=True)
 
 
-async def _run_orchestrator_once(
+async def _run_bot_pipeline_once(
     channel_id: str,
     trigger_msg: Message,
     session: AsyncSession,
@@ -129,7 +130,7 @@ async def _run_orchestrator_once(
     async def broadcast_bot_processing(ch_id: str, bot_id: str, username: str) -> None:
         await event_bus.publish(BotProcessing(bot_id=bot_id, username=username))
 
-    return await run_orchestrator(
+    return await run_bot_pipeline(
         channel_id,
         trigger_msg,
         session,
@@ -161,7 +162,7 @@ async def _handle_send_message(
     current_user: User,
     background_tasks: BackgroundTasks | None = None,
 ) -> tuple[MessageDTO, str | None]:
-    """持久化消息、广播、调度 orchestrator。返回 (payload_dict, secret_token)。"""
+    """持久化消息、广播、调度 Bot pipeline。返回 (payload_dict, secret_token)。"""
     await ChannelService(session).require_can_send_message(channel_id, current_user)
     raw_content_data = getattr(body, "content_data", None)
     if hasattr(raw_content_data, "model_dump"):
@@ -181,12 +182,12 @@ async def _handle_send_message(
         content_data=raw_content_data,
         is_secret=bool(body.is_secret),
     )
-    await make_ingest_pipeline().run(ctx)
+    await run_message_workflow(ctx, bot_trigger="enqueue")
 
     assert ctx.msg is not None and ctx.payload is not None
     await session.commit()
     _schedule_recent_update(channel_id)
-    _schedule_orchestrator_enqueue(channel_id, ctx.msg.msg_id, background_tasks)
+    _schedule_bot_pipeline_enqueue(channel_id, ctx.msg.msg_id, background_tasks)
 
     return ctx.payload, ctx.secret_token
 
@@ -230,7 +231,7 @@ async def send_message_stream(
             await queue.put((event, _wire_payload(payload)))
 
         async with async_session_factory() as session:
-            orchestrator_task = None
+            bot_pipeline_task = None
             try:
                 try:
                     await ChannelService(session).require_can_send_message(channel_id, current_user)
@@ -251,7 +252,7 @@ async def send_message_stream(
                     mention_bot_ids=body.mention_bot_ids or [],
                 )
                 try:
-                    await make_ingest_pipeline().run(ctx)
+                    await run_message_workflow(ctx, bot_trigger="inline")
                 except NotFoundError as exc:
                     yield _format_sse("error", {"detail": str(exc), "status_code": 404})
                     return
@@ -264,12 +265,12 @@ async def send_message_stream(
                 yield _format_sse("user_message", ctx.payload)
 
                 bus = make_event_bus(channel_id, stream_to_ws=False, stream_event=emit)
-                orchestrator_task = asyncio.create_task(
-                    _run_orchestrator_once(channel_id, ctx.msg, session, event_bus=bus)
+                bot_pipeline_task = asyncio.create_task(
+                    _run_bot_pipeline_once(channel_id, ctx.msg, session, event_bus=bus)
                 )
 
                 while True:
-                    if orchestrator_task.done() and queue.empty():
+                    if bot_pipeline_task.done() and queue.empty():
                         break
                     try:
                         event, data = await asyncio.wait_for(queue.get(), timeout=0.1)
@@ -277,16 +278,16 @@ async def send_message_stream(
                         continue
                     yield _format_sse(event, data)
 
-                bot_messages, _ = await orchestrator_task
+                bot_messages, _ = await bot_pipeline_task
                 await session.commit()
                 if bot_messages:
                     _schedule_recent_update(channel_id)
                 yield _format_sse("complete", {"ok": True})
             except Exception as exc:
-                if orchestrator_task and not orchestrator_task.done():
-                    orchestrator_task.cancel()
+                if bot_pipeline_task and not bot_pipeline_task.done():
+                    bot_pipeline_task.cancel()
                     try:
-                        await orchestrator_task
+                        await bot_pipeline_task
                     except Exception:
                         pass
                 await session.rollback()
@@ -346,9 +347,14 @@ async def cancel_streaming_message(
         return APIResponse.ok(_serialize(msg, {}))
 
     bot_id = state.bot_id
-    finalized = await bridge_cancel_stream(
-        session, msg_id=msg_id, reason="user_cancelled",
-    )
+    if state.source == "agent_bridge":
+        finalized = await bridge_cancel_stream(
+            session, msg_id=msg_id, reason="user_cancelled",
+        )
+    else:
+        await stream_registry.request_cancel(msg_id, reason="user_cancelled")
+        finalized = None
+
     if finalized is not None:
         await session.commit()
         # Tell the plugin to stop generating. Best-effort: if plugin is
@@ -363,6 +369,13 @@ async def cancel_streaming_message(
             msg_id, bot_id, current_user.user_id,
         )
         return APIResponse.ok(_serialize(finalized, {}))
+    if state.source != "agent_bridge":
+        logger.info(
+            "cancel_streaming_message: requested local cancel msg_id=%s bot_id=%s by_user=%s",
+            msg_id, bot_id, current_user.user_id,
+        )
+        await session.refresh(msg)
+        return APIResponse.ok(_serialize(msg, {}))
     # Race: registry had it but cancel raced with done. Return current msg.
     await session.refresh(msg)
     return APIResponse.ok(_serialize(msg, {}))

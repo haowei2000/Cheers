@@ -22,7 +22,7 @@ from app.application.chat.message_assembler import MessageAssembler
 from app.db.models import BotAccount, FileRecord, Message
 from app.features.agent_bridge.pending import PendingReply, pending_replies
 from app.features.agent_bridge.streams import StreamState, stream_registry
-from app.features.bot_runtime.orchestrator.mention import resolve_user_mentions
+from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
 from app.features.bot_runtime.pipeline.bus import WSEventBus
 from app.features.bot_runtime.pipeline.events import BotTrace, MessageCreated, MessageDone, MessageStreamDelta
 
@@ -270,14 +270,19 @@ async def register_stream(
     bot_id: str,
     channel_id: str,
     task_id: str | None = None,
+    source: str = "agent_bridge",
 ) -> StreamState:
     """Mark a placeholder message as eligible for streaming deltas.
 
-    Called by AgentBridgeBotAdapter right before dispatching to the plugin; the
-    matching plugin reply will arrive as `delta` frames keyed on this msg_id.
+    Agent Bridge bots use this for plugin `delta` frames; in-process bots use
+    the same registry for cancellation.
     """
     return await stream_registry.register(
-        msg_id=msg_id, bot_id=bot_id, channel_id=channel_id, task_id=task_id,
+        msg_id=msg_id,
+        bot_id=bot_id,
+        channel_id=channel_id,
+        task_id=task_id,
+        source=source,
     )
 
 
@@ -298,7 +303,7 @@ async def apply_delta(
     if state is None or state.bot_id != bot_id:
         return False
     async with state.lock:
-        if state.finalized:
+        if state.finalized or state.cancel_requested:
             return False
         if seq is not None:
             if seq <= state.last_seq:
@@ -442,11 +447,10 @@ async def cancel_stream(
     state = await stream_registry.get(msg_id)
     if state is None:
         return None
-    async with state.lock:
-        if state.finalized:
-            return None
-        state.cancel_requested = True
-        bot_id = state.bot_id
+    if state.finalized:
+        return None
+    await stream_registry.request_cancel(msg_id, reason=reason)
+    bot_id = state.bot_id
     return await finalize_stream(
         session, msg_id=msg_id, bot_id=bot_id, partial=True, error=reason,
     )

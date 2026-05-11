@@ -12,7 +12,7 @@ from app.db.models import AgentNexusSession, Channel, Message, Workspace
 from app.features.agent_bridge.dispatcher import BridgeDispatcher
 from app.features.agent_bridge.pending import PendingReply, PendingReplyRegistry
 from app.features.bot_runtime.adapters.agent_bridge_bot import AgentBridgeBotAdapter
-from app.features.bot_runtime.adapters.base import AgentPayload
+from app.features.bot_runtime.adapters.base import AgentPayload, drain_events_to_response
 
 
 def _fake_bot(**kwargs):
@@ -145,7 +145,7 @@ async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound(
         # 模拟 orchestrator：把占位 msg_id 放到 process_config
         payload.process_config.placeholder_msg_id = "placeholder-123"
 
-        resp = await adapter.execute(payload)
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
         assert resp.success is True
         assert resp.dispatched_async is True
         assert resp.content == ""
@@ -209,7 +209,7 @@ async def test_ws_bot_adapter_commits_placeholder_before_plugin_dispatch(
         payload.process_config.placeholder_msg_id = "placeholder-durable"
         payload.process_config.db_session = FakeSession()
 
-        resp = await adapter.execute(payload)
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
         assert resp.success is True
         assert resp.dispatched_async is True
@@ -236,7 +236,7 @@ async def test_ws_bot_adapter_renders_prompt_template_before_dispatch(
         payload.process_config.placeholder_msg_id = "placeholder-template"
         payload.memory_context = {"anchor": "WebSocket 锚点"}
 
-        resp = await adapter.execute(payload)
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
         assert resp.success is True
         event = ws.sent[0]
@@ -259,7 +259,7 @@ async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
     adapter = AgentBridgeBotAdapter(_fake_bot(display_name="Alpha"))
     payload = _payload()
     payload.process_config.placeholder_msg_id = "placeholder-fail-001"
-    resp = await adapter.execute(payload)
+    resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
     assert resp.success is False
     assert resp.dispatched_async is False
     assert resp.error_message == "no_plugin_subscribers"
@@ -277,7 +277,7 @@ async def test_ws_bot_adapter_does_not_create_session_when_no_data_ws(
     payload.process_config.placeholder_msg_id = "placeholder-no-ws-session"
     payload.process_config.db_session = db_session
 
-    resp = await adapter.execute(payload)
+    resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
     assert resp.success is False
     count = (
@@ -295,7 +295,8 @@ async def test_ws_bot_adapter_ignores_irrelevant_bot_session() -> None:
     await bot_session_registry.bind_data("some-other-bot", other)  # type: ignore[arg-type]
     try:
         adapter = AgentBridgeBotAdapter(_fake_bot())
-        resp = await adapter.execute(_payload())
+        payload = _payload()
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
         assert resp.success is False
         assert other.sent == []
     finally:

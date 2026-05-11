@@ -1,10 +1,10 @@
 """BotMessageWriter: the single owner of the bot-reply lifecycle.
 
 Encapsulates the helpers that used to live as closures inside
-``run_orchestrator``: pre-create a placeholder, finalize content + files,
+``run_bot_pipeline``: pre-create a placeholder, finalize content + files,
 broadcast a fully-formed message, emit a routing card, render an error
 fallback, log an AgentTask row, and arm the WebSocket-bot timeout. One
-writer per orchestrator run; it holds no state of its own — every method
+writer per Bot pipeline run; it holds no state of its own — every method
 reads from the BotRunContext passed to ``__init__``.
 
 Stages (DispatchStage, AutoTakeoverStage) and adapter sub-bot paths
@@ -12,8 +12,8 @@ Stages (DispatchStage, AutoTakeoverStage) and adapter sub-bot paths
 loose closures around inside ``process_config``.
 
 Token streaming is no longer part of this class — adapters yield
-``Delta`` events directly out of ``execute_iter`` and ``subagent.
-_consume_execute`` republishes them to the channel EventBus.
+``Delta`` events directly out of ``execute`` and ``subagent._consume_execute``
+republishes them to the channel EventBus.
 """
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ from sqlalchemy import select
 
 from app.application.chat.message_assembler import MessageAssembler
 from app.db.models import AgentTask, BotAccount, FileRecord, Message
-from app.features.bot_runtime.orchestrator.mention import resolve_user_mentions
-from app.features.bot_runtime.orchestrator.topic_context import MSG_TYPE_REPLY, ensure_topic_root
+from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
+from app.features.bot_runtime.pipeline.bot.topic_context import MSG_TYPE_REPLY, ensure_topic_root
 from app.features.bot_runtime.pipeline.events import (
     BotMessagePlaceholder,
     MessageCreated,
@@ -87,9 +87,12 @@ class BotMessageWriter:
         content: str,
         *,
         file_ids: list[str] | None = None,
+        is_partial: bool = False,
+        error: str | None = None,
     ) -> None:
         ctx = self.ctx
         msg.content = content
+        msg.is_partial = bool(is_partial)
         msg.mention_user_ids = await resolve_user_mentions(
             content, ctx.session, ctx.channel_id,
         )
@@ -118,11 +121,16 @@ class BotMessageWriter:
                 update=MessageAssembler.update(
                     msg,
                     file_map=file_map,
+                    is_partial=msg.is_partial,
+                    error=error,
                     content_data=msg.content_data,
                 ),
                 content_data=msg.content_data,
             )
         )
+        from app.features.agent_bridge.streams import stream_registry
+
+        await stream_registry.pop(msg.msg_id)
 
     # ── routing card (coordinator's pick + plan) ────────────────────────
 
@@ -173,7 +181,7 @@ class BotMessageWriter:
             ctx.bot_messages.append(routing_msg)
         except Exception:
             logger.exception(
-                "orchestrator: failed to emit routing card channel_id=%s",
+                "bot_pipeline: failed to emit routing card channel_id=%s",
                 ctx.channel_id,
             )
 

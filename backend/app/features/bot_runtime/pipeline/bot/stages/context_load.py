@@ -1,18 +1,17 @@
-"""ContextLoadStage: parallel load of channel memory, attachments, topic chain.
+"""ContextLoadStage: load the context requested by the prebuilt workflow.
 
 Three I/O paths run via asyncio.gather:
 
-- ``memory.manager.load_layers`` — picks the layer set per
-  ``trigger_msg.msg_type`` via ``_LAYERS_BY_MSG_TYPE`` so routing and
-  permission cards skip the heavy renders they don't need.
+- ``memory.manager.load_layers`` — uses the layer set selected by
+  ``BotWorkflowBuilder``.
 - ``FilePipelineService.prepare_metadata_only`` — ingests trigger_msg's
   files (or, in clarify scenarios, falls back to the original question's
-  files captured by RouteStage).
+  files captured by BotWorkflowBuilder).
 - ``topic_context.gather_topic_context`` — chain + child replies for
   prompt construction.
 
 All outputs land on BotRunContext. Errors loading attachments are recorded
-on ``ctx.attachment_error`` and DispatchStage decides how to surface them.
+on ``ctx.attachment_error`` and dispatch decides how to surface them.
 """
 from __future__ import annotations
 
@@ -20,8 +19,8 @@ import asyncio
 import logging
 
 from app.features.bot_runtime.adapters.prompt_template import template_uses_memory
-from app.features.bot_runtime.orchestrator.topic_context import gather_topic_context
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
+from app.features.bot_runtime.pipeline.bot.topic_context import gather_topic_context
 from app.features.bot_runtime.pipeline.stage import Stage
 from app.features.memory.channel_memory import ChannelMemory
 from app.features.memory.manager import load_layers as memory_load_layers
@@ -123,8 +122,11 @@ def build_memory_load_detail(
 
 class ContextLoadStage(Stage[BotRunContext]):
     async def run(self, ctx: BotRunContext) -> None:
-        layers = select_memory_layers(ctx.trigger_msg.msg_type)
-        memory_requested = should_build_memory(ctx)
+        plan = ctx.workflow
+        layers = plan.memory_layers if plan is not None else select_memory_layers(ctx.trigger_msg.msg_type)
+        memory_requested = plan.memory_requested if plan is not None else should_build_memory(ctx)
+        load_attachments = plan.load_attachments if plan is not None else True
+        load_topic_context = plan.load_topic_context if plan is not None else True
         memory_loader = (
             memory_load_layers(ctx.channel_id, ctx.session, layers)
             if memory_requested
@@ -132,8 +134,12 @@ class ContextLoadStage(Stage[BotRunContext]):
         )
         memory_context, _, topic_result = await asyncio.gather(
             memory_loader,
-            self._load_attachments(ctx),
-            gather_topic_context(ctx.trigger_msg, ctx.session),
+            self._load_attachments(ctx) if load_attachments else self._skip_attachments(),
+            (
+                gather_topic_context(ctx.trigger_msg, ctx.session)
+                if load_topic_context
+                else self._skip_topic_context()
+            ),
         )
         ctx.memory_context = memory_context
         ctx.memory_load_detail = build_memory_load_detail(
@@ -150,9 +156,17 @@ class ContextLoadStage(Stage[BotRunContext]):
         return {}
 
     @staticmethod
+    async def _skip_attachments() -> None:
+        return None
+
+    @staticmethod
+    async def _skip_topic_context() -> tuple[list, list]:
+        return [], []
+
+    @staticmethod
     async def _load_attachments(ctx: BotRunContext) -> None:
         # Trigger message's files have priority; clarify replies fall back to
-        # the original question's files captured by RouteStage.
+        # the original question's files captured by BotWorkflowBuilder.
         file_ids = ctx.trigger_msg.file_ids or ctx.original_file_ids
         if not file_ids:
             return
@@ -164,7 +178,7 @@ class ContextLoadStage(Stage[BotRunContext]):
             )
             if ctx.original_file_ids and not ctx.trigger_msg.file_ids:
                 logger.info(
-                    "orchestrator: restored %d attachment(s) from original clarify question channel=%s",
+                    "bot_pipeline: restored %d attachment(s) from original clarify question channel=%s",
                     len(ctx.attachments), ctx.channel_id,
                 )
         except FileFlowError as exc:

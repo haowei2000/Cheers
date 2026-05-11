@@ -51,7 +51,7 @@ services:
       redis:
         condition: service_started
       rustfs:
-        condition: service_started
+        condition: service_healthy
 
   db-migrate:
     build:
@@ -85,8 +85,6 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-agentnexus}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-agentnexus}
@@ -102,8 +100,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
 
   rustfs:
     image: rustfs/rustfs:latest
@@ -128,3 +124,9 @@ services:
     volumes:
       - ./data/rustfs:/data
       - ./data/rustfs_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s

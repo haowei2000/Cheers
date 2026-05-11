@@ -5,6 +5,7 @@ import {
 } from "@heroicons/react/24/outline";
 import type { BotTraceEvent, Channel, ChannelBot, Message, AgentBridgeTaskContentData } from "../types";
 import { formatTs } from "../lib/message";
+import { SessionScopePanel } from "./SessionScopePanel";
 
 type TaskMessage = Message & {
   content_data: AgentBridgeTaskContentData;
@@ -48,6 +49,8 @@ export function TaskPage({
 }: TaskPageProps) {
   const selected = tasks.find((t) => t.msg_id === selectedMsgId) || tasks[0] || null;
   const traces = selected?._bot_trace || [];
+  const selectedTaskId = selected?.content_data.task_id || selected?.task_id || "";
+  const selectedBotId = selected?.content_data.bot_id || selected?.sender_id || "";
 
   return (
     <div className="flex flex-col h-full min-h-0" style={{ background: "var(--bg-0)", color: "var(--fg-1)" }}>
@@ -69,6 +72,15 @@ export function TaskPage({
           </div>
         </div>
       </div>
+      {selected && selectedTaskId && channel?.channel_id && (
+        <SessionScopePanel
+          scopeType="task"
+          scopeId={selectedTaskId}
+          channelId={channel.channel_id}
+          botId={selectedBotId}
+          title="任务对应 Session"
+        />
+      )}
 
       <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)]">
         <div className="border-r overflow-auto" style={{ borderColor: "var(--border)" }}>

@@ -382,6 +382,8 @@ class MemberWithUsernameInResponse(BaseModel):
 
 class MessageFileInResponse(BaseModel):
     """消息引用的文件元信息。"""
+    model_config = ConfigDict(from_attributes=True)
+
     file_id: str
     original_filename: str | None = None
     content_type: str | None = None

@@ -1,6 +1,6 @@
 """Unified sub-agent dispatch helpers.
 
-Today the orchestrator dispatches bots in four places — DispatchStage's
+The Bot pipeline dispatches bots in four places — DispatchStage's
 regular @mention loop, AutoTakeoverStage's coordinator call,
 AutoTakeoverStage's parallel suggestees, and ``trigger_sub_bots_from_mentions``'s
 Bot@Bot recursion — plus channel_bot.py's ``call_bot`` tool. Each had its
@@ -35,7 +35,13 @@ from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.db.models import Message
-from app.features.bot_runtime.adapters.base import AgentPayload, AgentResponse, BotAdapter
+from app.features.bot_runtime.adapters.base import (
+    AgentPayload,
+    AgentResponse,
+    BotAdapter,
+    BotContext,
+    BotMessageInput,
+)
 from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
 
@@ -90,25 +96,25 @@ def build_payload(
         text = ctx.trigger_content
         timestamp = ctx.trigger_msg.created_at.isoformat() if ctx.trigger_msg.created_at else ""
 
-    trigger_message: dict = {
-        "user": ctx.trigger_msg.sender_id,
-        "sender_name": ctx.sender_name,
-        "text": text,
-        "timestamp": timestamp,
-        "in_reply_to_msg_id": in_reply_to_msg_id or ctx.trigger_msg.in_reply_to_msg_id,
-        "topic_chain": ctx.topic_chain,
-        "child_replies": ctx.child_replies,
-    }
+    message = BotMessageInput(
+        text=text,
+        sender_id=ctx.trigger_msg.sender_id,
+        sender_name=ctx.sender_name,
+        timestamp=timestamp,
+        in_reply_to_msg_id=in_reply_to_msg_id or ctx.trigger_msg.in_reply_to_msg_id,
+        topic_chain=list(ctx.topic_chain),
+        child_replies=list(ctx.child_replies),
+    )
     if capabilities.can_call_bot:
-        trigger_message["msg_id"] = ctx.trigger_msg.msg_id
+        message.msg_id = ctx.trigger_msg.msg_id
     if capabilities.include_msg_type:
-        trigger_message["msg_type"] = ctx.trigger_msg.msg_type
+        message.msg_type = ctx.trigger_msg.msg_type
 
-    # Token streaming flows through execute_iter's Delta events directly;
+    # Token streaming flows through execute's Delta events directly;
     # _stream_token in process_config is no longer consumed by any adapter.
-    from app.features.bot_runtime.pipeline.process_config import ProcessConfig
+    from app.features.bot_runtime.pipeline.process_config import BotRuntime
 
-    process_config = ProcessConfig(
+    runtime = BotRuntime(
         bot_id=bot_id,
         placeholder_msg_id=bot_msg.msg_id,
         user_secrets=dict(ctx.user_secrets),
@@ -123,18 +129,20 @@ def build_payload(
         # building in ChannelBotAdapter; everything else moved to
         # ``run_ctx`` (sub-adapter tools hop into dispatch_one rather
         # than carrying loose closures around).
-        process_config.channel_bot_usernames = other_bots
-        process_config.channel_bot_details = {k: v for k, v in ctx.bot_details_by_username.items() if k != sub_username}
-        process_config.run_ctx = ctx
+        runtime.channel_bot_usernames = other_bots
+        runtime.channel_bot_details = {k: v for k, v in ctx.bot_details_by_username.items() if k != sub_username}
+        runtime.run_ctx = ctx
 
     return AgentPayload(
         task_id=ctx.root_task_id,
         channel_id=ctx.channel_id,
-        trigger_message=trigger_message,
-        memory_context=ctx.memory_context,
-        attachments=ctx.attachments,
-        original_question_text=ctx.original_question,
-        process_config=process_config,
+        message=message,
+        context=BotContext(
+            memory=dict(ctx.memory_context),
+            attachments=list(ctx.attachments),
+            original_question_text=ctx.original_question,
+        ),
+        runtime=runtime,
     )
 
 
@@ -159,6 +167,15 @@ async def _prepare(
     username = await _username_for(ctx, bot_id)
     adapter = await ctx.adapter_factory(bot_id)
     bot_msg = await _writer(ctx).pre_create(bot_id, ctx.root_task_id)
+    from app.features.agent_bridge.service import register_stream
+
+    stream_state = await register_stream(
+        msg_id=bot_msg.msg_id,
+        bot_id=bot_id,
+        channel_id=ctx.channel_id,
+        task_id=ctx.root_task_id,
+        source="local",
+    )
     payload = build_payload(
         ctx,
         bot_id=bot_id,
@@ -168,6 +185,7 @@ async def _prepare(
         trigger_text_override=trigger_text_override,
         skip_system_prompt=skip_system_prompt,
     )
+    payload.runtime.cancel_event = stream_state.cancel_event
     return username, bot_id, bot_msg, payload, adapter
 
 
@@ -177,10 +195,11 @@ async def _consume_execute(
     payload: AgentPayload,
     bot_msg: Message,
 ) -> tuple[AgentResponse | BaseException, float]:
-    """Drain ``adapter.execute_iter`` while republishing Delta events to the
+    """Drain ``adapter.execute`` while republishing Delta events to the
     channel EventBus. Reduces the terminal Final / DispatchedAsync into the
-    legacy AgentResponse shape so ``_finalize_response`` stays a single
+    AgentResponse shape so ``_finalize_response`` stays a single
     branch (existing callers don't see the AsyncIterator)."""
+    from app.features.agent_bridge.streams import stream_registry
     from app.features.bot_runtime.pipeline.adapter_events import (
         Delta,
         DispatchedAsync,
@@ -191,18 +210,50 @@ async def _consume_execute(
     t0 = time.perf_counter()
     deltas: list[str] = []
     terminal: Final | DispatchedAsync | None = None
+    state = await stream_registry.bind_task(bot_msg.msg_id, asyncio.current_task())
+
+    def _cancel_response() -> AgentResponse:
+        content = state.buffer if state is not None else "".join(deltas)
+        reason = (
+            state.cancel_reason
+            if state is not None and state.cancel_reason
+            else "user_cancelled"
+        )
+        return AgentResponse(
+            content=content,
+            task_id=payload.task_id,
+            success=False,
+            error_message=reason,
+            cancelled=True,
+        )
+
     try:
-        async for event in adapter.execute_iter(payload):
+        if state is not None and state.cancel_requested:
+            return _cancel_response(), (time.perf_counter() - t0) * 1000
+        async for event in adapter.execute(payload):
+            if state is not None and state.cancel_requested:
+                return _cancel_response(), (time.perf_counter() - t0) * 1000
             if isinstance(event, Delta):
                 deltas.append(event.text)
+                if state is not None:
+                    async with state.lock:
+                        if state.cancel_requested:
+                            return _cancel_response(), (time.perf_counter() - t0) * 1000
+                        state.buffer += event.text
                 await ctx.bus.publish(
                     MessageStreamDelta(msg_id=bot_msg.msg_id, delta=event.text),
                 )
             else:
                 terminal = event
                 break
+    except asyncio.CancelledError:
+        return _cancel_response(), (time.perf_counter() - t0) * 1000
     except Exception as exc:
         return exc, (time.perf_counter() - t0) * 1000
+    finally:
+        task = asyncio.current_task()
+        if task is not None:
+            await stream_registry.unbind_task(bot_msg.msg_id, task)
 
     dur_ms = (time.perf_counter() - t0) * 1000
     if isinstance(terminal, DispatchedAsync):
@@ -250,7 +301,7 @@ async def _finalize_response(
 
     if isinstance(resp_or_exc, BaseException):
         logger.warning(
-            "orchestrator: bot %s raised: %s duration_ms=%.0f",
+            "bot_pipeline: bot %s raised: %s duration_ms=%.0f",
             username,
             resp_or_exc,
             dur_ms,
@@ -271,9 +322,37 @@ async def _finalize_response(
         return None
 
     resp = resp_or_exc
+    if resp.cancelled:
+        logger.info(
+            "bot_pipeline: bot %s cancelled duration_ms=%.0f",
+            username,
+            dur_ms,
+        )
+        await _writer(ctx).finalize(
+            bot_msg,
+            resp.content,
+            file_ids=resp.file_ids or [],
+            is_partial=True,
+            error=resp.error_message or "user_cancelled",
+        )
+        if ctx.session is not None:
+            from app.features.bot_runtime.bot_events.runs import mark_bot_run_status
+
+            await mark_bot_run_status(
+                ctx.session,
+                placeholder_msg_id=bot_msg.msg_id,
+                status="cancelled",
+                last_event_type="adapter.cancelled",
+                error_message=resp.error_message or "user_cancelled",
+            )
+        await _writer(ctx).record_task(bot_id, bot_msg.msg_id)
+        ctx.bot_messages.append(bot_msg)
+        ctx.triggered_bot_ids.add(bot_id)
+        return None
+
     if resp.dispatched_async:
         logger.info(
-            "orchestrator: bot %s async-dispatched via bridge duration_ms=%.0f",
+            "bot_pipeline: bot %s async-dispatched via bridge duration_ms=%.0f",
             username,
             dur_ms,
         )
@@ -285,14 +364,14 @@ async def _finalize_response(
 
     if not resp.success:
         logger.warning(
-            "orchestrator: bot %s failed: %s duration_ms=%.0f",
+            "bot_pipeline: bot %s failed: %s duration_ms=%.0f",
             username,
             resp.error_message or "unknown",
             dur_ms,
         )
     else:
         logger.info(
-            "orchestrator: bot %s completed duration_ms=%.0f",
+            "bot_pipeline: bot %s completed duration_ms=%.0f",
             username,
             dur_ms,
         )
@@ -394,7 +473,7 @@ async def dispatch_many(
         prepared = await _prepare(ctx, bot_id, capabilities=capabilities)
         pending.append(prepared)
         logger.info(
-            "orchestrator: queuing bot bot_id=%s username=%s memory_layers=%d attachments=%d",
+            "bot_pipeline: queuing bot bot_id=%s username=%s memory_layers=%d attachments=%d",
             bot_id,
             username,
             len(ctx.memory_context),

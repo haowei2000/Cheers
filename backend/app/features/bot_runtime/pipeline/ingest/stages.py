@@ -8,8 +8,8 @@ Five stages, run in order:
 4. EmitStage           — serialize, publish MessageCreated to bus
 5. FanoutUnreadStage   — push channel_new_message to user-scoped WS for unread badges
 
-Each stage reads/writes IngestContext. None depend on routes.py — call
-sites build the context, then invoke ``make_ingest_pipeline().run(ctx)``.
+Each stage reads/writes IngestContext. None depend on routes.py; the
+root workflow builder chooses and runs these stages.
 """
 from __future__ import annotations
 
@@ -23,14 +23,13 @@ from app.contracts.messages import MessageFileDTO
 from app.core.exceptions import AppError, BadRequestError, NotFoundError
 from app.db.models import Channel, ChannelMembership, FileRecord, Message
 from app.db.session import async_session_factory
-from app.features.bot_runtime.orchestrator.topic_context import (
+from app.features.bot_runtime.pipeline.bot.topic_context import (
     MSG_TYPE_NORMAL,
     MSG_TYPE_REPLY,
     ensure_topic_root,
 )
 from app.features.bot_runtime.pipeline.events import MessageCreated
 from app.features.bot_runtime.pipeline.ingest.context import IngestContext
-from app.features.bot_runtime.pipeline.runner import Pipeline
 from app.features.bot_runtime.pipeline.stage import Stage
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 from app.services.secret_messages import SECRET_PLACEHOLDER, secret_placeholder_for
@@ -64,7 +63,7 @@ class SecretEnvelopeStage(Stage[IngestContext]):
 
     Skipped when ``ctx.skip_secret`` (builtin-bot post-back) or
     ``not ctx.is_secret``. The matching unwrap (decrypting on-demand for the
-    LLM) lives in BotPipeline, not here — see ``services.orchestrator.service``.
+    LLM) lives in the Bot pipeline workflow, not here.
     """
 
     async def run(self, ctx: IngestContext) -> None:
@@ -134,7 +133,7 @@ class PersistStage(Stage[IngestContext]):
                 )
 
 
-class _SerializeStage(Stage[IngestContext]):
+class SerializeStage(Stage[IngestContext]):
     """Capture the response payload before commit so msg attributes can't
     be expired by SQLAlchemy's expire_on_commit semantics. Intermediate
     stage only; not exported."""
@@ -219,18 +218,3 @@ class FanoutUnreadStage(Stage[IngestContext]):
             if sender_type == "user" and member_id == sender_id:
                 continue
             await broker.publish_user(member_id, event)
-
-
-def make_ingest_pipeline() -> Pipeline[IngestContext]:
-    return Pipeline(
-        [
-            ValidateStage(),
-            SecretEnvelopeStage(),
-            PersistStage(),
-            _SerializeStage(),
-            CommitStage(),
-            EmitStage(),
-            FanoutUnreadStage(),
-        ],
-        name="ingest",
-    )

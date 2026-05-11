@@ -1,10 +1,15 @@
 /* TopicPage — full-page topic view (displayed in place of the chat stream
  * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
+import type { ChangeEvent, ReactNode } from "react";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { MessageMarkdown } from "../MessageMarkdown";
 import { BotAvatar } from "./BotAvatar";
 import { TopicComposer } from "./TopicComposer";
+import type {
+  ComposerKeychainItem,
+  ComposerPendingFile,
+} from "./MessageComposer";
 
 export interface TopicPageProps {
   rootMsg: Message;
@@ -16,6 +21,16 @@ export interface TopicPageProps {
   onBack: () => void;
   onGoToChannel?: () => void;
   onSendReply: (text: string) => Promise<void> | void;
+  pendingFiles?: ComposerPendingFile[];
+  onRemovePendingFile?: (index: number) => void;
+  onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
+  keychainEnabled?: boolean;
+  keychainOpen?: boolean;
+  keychainLoading?: boolean;
+  keychainItems?: ComposerKeychainItem[];
+  onToggleKeychain?: () => void;
+  onCloseKeychain?: () => void;
+  sessionPanel?: ReactNode;
 }
 
 function resolveWho(
@@ -55,6 +70,16 @@ export function TopicPage({
   onBack,
   onGoToChannel,
   onSendReply,
+  pendingFiles,
+  onRemovePendingFile,
+  onUploadFile,
+  keychainEnabled,
+  keychainOpen,
+  keychainLoading,
+  keychainItems,
+  onToggleKeychain,
+  onCloseKeychain,
+  sessionPanel,
 }: TopicPageProps) {
   const title =
     stripThinkTags(rootMsg.content || "")
@@ -207,6 +232,7 @@ export function TopicPage({
           </div>
         </div>
       </div>
+      {sessionPanel}
       <div className="an-tpp-body">
         {renderTopicMessage(rootMsg)}
 
@@ -236,12 +262,15 @@ export function TopicPage({
             channelBots={channelBots}
             channelUsers={channelUsers}
             onSend={onSendReply}
-            hint={
-              <>
-                <kbd>@</kbd> 提及 · <kbd>↵</kbd> 发送 · <kbd>⇧↵</kbd> 换行 ·
-                在这里的回复只留在本主题里
-              </>
-            }
+            pendingFiles={pendingFiles}
+            onRemovePendingFile={onRemovePendingFile}
+            onUploadFile={onUploadFile}
+            keychainEnabled={keychainEnabled}
+            keychainOpen={keychainOpen}
+            keychainLoading={keychainLoading}
+            keychainItems={keychainItems}
+            onToggleKeychain={onToggleKeychain}
+            onCloseKeychain={onCloseKeychain}
           />
         </div>
       </div>

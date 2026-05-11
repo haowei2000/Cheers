@@ -10,6 +10,7 @@ from app.features.bot_runtime.bot_events.jobs import (
     AGENT_BRIDGE_STREAM_DONE,
     handle_bot_event_job,
 )
+from app.features.bot_runtime.bot_events import queue as bot_event_queue
 from app.features.bot_runtime.bot_events.queue import BotEventJob, MemoryBotEventQueue
 from app.features.bot_runtime.bot_events.runs import ensure_bot_run, get_bot_run_by_placeholder
 
@@ -54,6 +55,10 @@ async def test_memory_bot_event_queue_enqueue_ack_retry() -> None:
     assert second.job.attempts == 1
 
     await queue.ack(second)
+
+
+def test_redis_bot_event_queue_socket_timeout_exceeds_block_wait() -> None:
+    assert bot_event_queue._REDIS_SOCKET_TIMEOUT_SECONDS > bot_event_queue._XREAD_BLOCK_MS / 1000
 
 
 @pytest.mark.asyncio

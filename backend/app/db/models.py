@@ -485,7 +485,9 @@ class AgentNexusSession(Base):
     __tablename__ = "agentnexus_sessions"
 
     session_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bot_accounts.bot_id"), nullable=False, index=True)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("bot_accounts.bot_id", ondelete="CASCADE"), nullable=False, index=True
+    )
     provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default="generic", default="generic")
     provider_account_id: Mapped[str] = mapped_column(String(128), nullable=False)
     provider_agent_id: Mapped[str] = mapped_column(String(128), nullable=False, server_default="main", default="main")
@@ -525,9 +527,11 @@ class AgentNexusSessionBinding(Base):
 
     binding_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     session_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("agentnexus_sessions.session_id"), nullable=False, index=True
+        String(36), ForeignKey("agentnexus_sessions.session_id", ondelete="CASCADE"), nullable=False, index=True
     )
-    bot_id: Mapped[str] = mapped_column(String(36), ForeignKey("bot_accounts.bot_id"), nullable=False, index=True)
+    bot_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("bot_accounts.bot_id", ondelete="CASCADE"), nullable=False, index=True
+    )
     provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default="generic", default="generic")
     provider_account_id: Mapped[str] = mapped_column(String(128), nullable=False)
     provider_agent_id: Mapped[str] = mapped_column(String(128), nullable=False, server_default="main", default="main")

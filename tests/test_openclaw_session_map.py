@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,8 @@ from app.features.agent_bridge.session_map import (
     SCOPE_DM,
     SCOPE_TASK,
     SCOPE_TOPIC,
+    SESSION_STATUS_TASK_OWNED,
+    adopt_session_for_task,
     build_provider_session_key,
     resolve_dispatch_session,
 )
@@ -349,3 +352,100 @@ async def test_same_channel_is_isolated_by_openclaw_account(db_session: AsyncSes
     assert other_account.session_id != first.session_id
     assert other_account.provider_session_key != first.provider_session_key
     assert "account:acct-other" in other_account.provider_session_key
+
+
+@pytest.mark.asyncio
+async def test_background_task_adopts_session_and_rotates_channel(db_session: AsyncSession) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="adopt-001")
+
+    original = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "start long openclaw work"},
+        task_id="task-adopt-001",
+        channel=channel,
+    )
+
+    adopted = await adopt_session_for_task(
+        db_session,
+        bot_id=bot.bot_id,
+        channel_id=channel.channel_id,
+        task_id="task-adopt-001",
+        source_msg_id="placeholder-adopt-001",
+        reason="test",
+    )
+    assert adopted is not None
+    assert adopted.session_id == original.session_id
+    assert adopted.provider_session_key == original.provider_session_key
+    assert adopted.primary_scope_type == SCOPE_TASK
+
+    task_session = await db_session.get(AgentNexusSession, original.session_id)
+    assert task_session is not None
+    assert task_session.status == SESSION_STATUS_TASK_OWNED
+    assert task_session.current_scope_type == SCOPE_TASK
+    assert task_session.current_scope_id == "task-adopt-001"
+    assert task_session.session_metadata["parent_scope"]["scope_type"] == SCOPE_CHANNEL
+    assert task_session.session_metadata["parent_scope"]["scope_id"] == channel.channel_id
+
+    old_bindings = await _bindings(db_session, original.session_id)
+    assert {(b.scope_type, b.scope_id, b.role) for b in old_bindings} == {
+        (SCOPE_TASK, "task-adopt-001", "primary"),
+    }
+
+    normal_after_adopt = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "normal channel follow up"},
+        task_id="task-channel-after-adopt",
+        channel=channel,
+    )
+    assert normal_after_adopt.session_id != original.session_id
+    assert normal_after_adopt.primary_scope_type == SCOPE_CHANNEL
+
+    old_task_again = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "continue old task"},
+        task_id="task-adopt-001",
+        channel=channel,
+    )
+    assert old_task_again.session_id == original.session_id
+    assert old_task_again.primary_scope_type == SCOPE_TASK
+
+
+@pytest.mark.asyncio
+async def test_session_visibility_api_lists_bot_and_scope(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="api-001")
+    resolved = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "hello api"},
+        task_id="task-api-001",
+        channel=channel,
+    )
+    await db_session.flush()
+
+    bot_resp = await client.get(f"/api/v1/bots/{bot.bot_id}/sessions")
+    assert bot_resp.status_code == 200
+    bot_data = bot_resp.json()["data"]
+    assert [row["session_id"] for row in bot_data] == [resolved.session_id]
+    assert bot_data[0]["provider_session_key"] == resolved.provider_session_key
+
+    scope_resp = await client.get(
+        "/api/v1/agent-bridge/sessions/scope",
+        params={
+            "scope_type": SCOPE_CHANNEL,
+            "scope_id": channel.channel_id,
+            "channel_id": channel.channel_id,
+        },
+    )
+    assert scope_resp.status_code == 200
+    scope_data = scope_resp.json()["data"]
+    assert [row["session_id"] for row in scope_data] == [resolved.session_id]

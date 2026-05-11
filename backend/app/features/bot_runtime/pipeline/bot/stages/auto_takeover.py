@@ -2,8 +2,8 @@
 
 Runs only when ``ctx.direct_answer_mode`` and the Coordinator bot is among
 the target usernames — i.e. the channel has auto-assist enabled and the
-user didn't @-mention anyone, so the orchestrator routed the message to
-the Coordinator.
+user didn't @-mention anyone, so the workflow builder routed the message
+to the Coordinator.
 
 Per-bot dispatch (pre-create, execute, finalize, record_task, recurse) is
 shared with DispatchStage / call_bot via ``pipeline.bot.subagent``. This
@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import logging
 
-from app.features.bot_runtime.orchestrator.orchestrator_adapter import extract_suggested_bots
 from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
 from app.features.bot_runtime.pipeline.bot.subagent import dispatch_many, dispatch_one
+from app.features.bot_runtime.pipeline.bot.suggestions import extract_suggested_bots
 from app.features.bot_runtime.pipeline.stage import Stage
 from app.services.admin.settings_store import get_assist_settings
 

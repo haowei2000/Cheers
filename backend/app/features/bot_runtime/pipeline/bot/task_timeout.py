@@ -72,8 +72,17 @@ class ConvertToTaskStage(Stage[AgentBridgeTaskTimeoutContext]):
         ctx.message = msg
         ctx.converted = msg is not None
         if ctx.converted:
+            from app.features.agent_bridge.session_map import adopt_session_for_task
             from app.features.bot_runtime.bot_events.runs import mark_bot_run_status
 
+            await adopt_session_for_task(
+                ctx.session,
+                bot_id=ctx.bot_id,
+                channel_id=ctx.channel_id,
+                task_id=ctx.task_id,
+                source_msg_id=ctx.msg_id,
+                reason="agent_bridge_timeout",
+            )
             await mark_bot_run_status(
                 ctx.session,
                 placeholder_msg_id=ctx.msg_id,

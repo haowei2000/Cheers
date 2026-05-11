@@ -1,4 +1,4 @@
-"""EventBus abstraction for orchestrator pipeline events.
+"""EventBus abstraction for pipeline events.
 
 Replaces the implicit dual-sink in ``_make_stream_token_cb`` (channel WS
 broadcast + optional per-request SSE callback) with a typed bus. Phase 1 of

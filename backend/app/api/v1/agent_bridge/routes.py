@@ -30,6 +30,7 @@ from fastapi import (
     Depends,
     Header,
     HTTPException,
+    Query,
     Request,
     WebSocket,
     WebSocketDisconnect,
@@ -39,9 +40,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import resolve_data_dir, settings
-from app.core.dependencies import get_session
+from app.core.dependencies import get_current_user, get_session
 from app.core.responses import APIResponse
-from app.db.models import BotAccount, ChannelMembership, FileRecord, Message
+from app.db.models import BotAccount, ChannelMembership, FileRecord, Message, User
 from app.features.agent_bridge.dispatcher import bridge_dispatcher
 from app.features.agent_bridge.membership import load_memberships
 from app.features.agent_bridge.pending import pending_replies
@@ -55,6 +56,11 @@ from app.features.agent_bridge.service import (
 from app.features.agent_bridge.service import (
     finalize_bot_reply,
 )
+from app.features.agent_bridge.session_map import SCOPE_CHANNEL, SCOPE_TASK, SCOPE_TOPIC
+from app.features.agent_bridge.session_queries import (
+    list_active_sessions_for_scope,
+    serialize_session,
+)
 from app.features.agent_bridge.state_repository import get_agent_bridge_state_repository
 from app.features.agent_bridge.tokens import resolve_bot_by_token
 from app.features.bot_runtime.bot_events.jobs import (
@@ -63,6 +69,7 @@ from app.features.bot_runtime.bot_events.jobs import (
     AGENT_BRIDGE_STREAM_ERROR,
 )
 from app.features.bot_runtime.bot_events.queue import enqueue_bot_event_job
+from app.services.channel_service import ChannelService
 from app.services.file_processor.convert import is_image_type
 from app.services.file_processor.service import FileFlowError, FilePipelineService
 
@@ -119,6 +126,31 @@ async def bridge_status(_: None = Depends(verify_bridge_token)) -> APIResponse:
         "pending": snapshot.pending,
         "streams": snapshot.streams,
     })
+
+
+@router.get("/sessions/scope", response_model=APIResponse[list[dict]])
+async def list_scope_sessions(
+    scope_type: str = Query(..., pattern="^(channel|topic|task)$"),
+    scope_id: str = Query(..., min_length=1),
+    channel_id: str = Query(..., min_length=1),
+    bot_id: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Return active Agent Bridge sessions currently bound to a UI scope."""
+    if scope_type == SCOPE_CHANNEL and scope_id != channel_id:
+        raise HTTPException(status_code=400, detail="channel scope_id must equal channel_id")
+    if scope_type not in {SCOPE_CHANNEL, SCOPE_TOPIC, SCOPE_TASK}:
+        raise HTTPException(status_code=400, detail="unsupported scope_type")
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    sessions = await list_active_sessions_for_scope(
+        session,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        channel_id=channel_id,
+        bot_id=bot_id,
+    )
+    return APIResponse.ok([serialize_session(row) for row in sessions])
 
 
 def _validator_http_status(code: str) -> int:

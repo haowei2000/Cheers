@@ -3,21 +3,21 @@ import asyncio
 import pytest
 
 from app.config import settings
-from app.features.bot_runtime.orchestrator.queue import (
-    MemoryOrchestratorQueue,
-    OrchestratorJob,
-    enqueue_orchestrator_job,
-    start_orchestrator_workers,
-    stop_orchestrator_workers,
+from app.features.bot_runtime.pipeline.bot.queue import (
+    MemoryBotPipelineQueue,
+    BotPipelineJob,
+    enqueue_bot_pipeline_job,
+    start_bot_pipeline_workers,
+    stop_bot_pipeline_workers,
 )
 
 
 @pytest.mark.asyncio
-async def test_memory_orchestrator_queue_enqueue_ack_retry() -> None:
-    queue = MemoryOrchestratorQueue()
+async def test_memory_bot_pipeline_queue_enqueue_ack_retry() -> None:
+    queue = MemoryBotPipelineQueue()
     await queue.start()
 
-    job_id = await queue.enqueue(OrchestratorJob(channel_id="ch-1", msg_id="m-1"))
+    job_id = await queue.enqueue(BotPipelineJob(channel_id="ch-1", msg_id="m-1"))
     first = await queue.receive()
 
     assert first.job.job_id == job_id
@@ -35,8 +35,8 @@ async def test_memory_orchestrator_queue_enqueue_ack_retry() -> None:
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_workers_respect_global_concurrency(monkeypatch) -> None:
-    await stop_orchestrator_workers()
+async def test_bot_pipeline_workers_respect_global_concurrency(monkeypatch) -> None:
+    await stop_bot_pipeline_workers()
     monkeypatch.setattr(settings, "orchestrator_queue_backend", "memory")
     monkeypatch.setattr(settings, "orchestrator_worker_concurrency", 2)
 
@@ -63,9 +63,9 @@ async def test_orchestrator_workers_respect_global_concurrency(monkeypatch) -> N
                 all_processed.set()
 
     try:
-        await start_orchestrator_workers(handler)
+        await start_bot_pipeline_workers(handler)
         for idx in range(5):
-            await enqueue_orchestrator_job("ch-1", f"m-{idx}")
+            await enqueue_bot_pipeline_job("ch-1", f"m-{idx}")
 
         await asyncio.wait_for(two_active.wait(), timeout=1)
         assert max_active == 2
@@ -74,4 +74,4 @@ async def test_orchestrator_workers_respect_global_concurrency(monkeypatch) -> N
         await asyncio.wait_for(all_processed.wait(), timeout=1)
     finally:
         release.set()
-        await stop_orchestrator_workers()
+        await stop_bot_pipeline_workers()
