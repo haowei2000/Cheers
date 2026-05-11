@@ -23,7 +23,8 @@ import type { InboundMessage } from "../src/session.js";
 const {
   sessionRegistry, sendText, sendMedia, pendingMediaByTo,
   pendingStreamByTo, taskByPlaceholder,
-  startOutputFallbackWatcher, outputFallbackWatchers, resolveOutputFallbackConfig,
+  startOutputFallbackWatcher, pollOutputFallbackWatcher,
+  outputFallbackWatchers, resolveOutputFallbackConfig,
 } = __testonly;
 
 const ACCOUNT_ID = "acc-test";
@@ -367,6 +368,96 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     expect(session.streamDone.mock.calls[0][0]).toEqual({ msgId: "ph-task-status-then-body" });
   });
 
+  it("报告类正文结束时等待 output 文件稳定并把文件合并到 done", async () => {
+    const session = installFakeEntry("task-text-output", "C1");
+    markDeliverableRequest("task-text-output");
+
+    const dir = await mkdtemp(join(tmpdir(), "agentnexus-output-after-text-"));
+    const filePath = join(dir, "瑞和汽车MES售前报告.md");
+    const entry = sessionRegistry.get(ACCOUNT_ID)!;
+    entry.account.outputFallback = resolveOutputFallbackConfig({
+      outputDirs: [dir],
+      delayMs: 10_000,
+      pollMs: 50,
+      stableMs: 100,
+      postStreamWatchMs: 1_000,
+      minBytes: 1,
+      maxWatchMs: 5_000,
+    });
+    const source = entry.lastInboundByTaskId.get("task-text-output")!;
+    await startOutputFallbackWatcher(
+      entry,
+      ACCOUNT_ID,
+      source,
+      `agent:agentnexus-local:agentnexus:account:${ACCOUNT_ID}:session:test`,
+    );
+
+    await sendText({
+      to: "task-text-output",
+      text: "报告已生成，保存在 `瑞和汽车MES售前报告.md`。",
+      accountId: ACCOUNT_ID,
+    });
+    await writeFile(filePath, "# 瑞和汽车MES售前报告\n\n正文");
+    session.uploadFile.mockResolvedValueOnce({
+      type: "file_upload_ack", client_file_id: "c-output", ok: true, file_id: "f-output",
+    });
+
+    await pollOutputFallbackWatcher(`${ACCOUNT_ID}:task-text-output`, entry);
+    await vi.advanceTimersByTimeAsync(120);
+    await pollOutputFallbackWatcher(`${ACCOUNT_ID}:task-text-output`, entry);
+
+    expect(session.uploadFile).toHaveBeenCalledTimes(1);
+    expect(session.streamDone).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(session.streamDone).toHaveBeenCalledTimes(1);
+    expect(session.streamDone.mock.calls[0][0]).toEqual({
+      msgId: "ph-task-text-output",
+      fileIds: ["f-output"],
+    });
+    expect(outputFallbackWatchers.get(`${ACCOUNT_ID}:task-text-output`)).toBeUndefined();
+  });
+
+  it("报告类正文结束但没有 output 文件时会在收尾窗口后完成 done", async () => {
+    const session = installFakeEntry("task-text-no-output", "C1");
+    markDeliverableRequest("task-text-no-output");
+
+    const dir = await mkdtemp(join(tmpdir(), "agentnexus-no-output-"));
+    const entry = sessionRegistry.get(ACCOUNT_ID)!;
+    entry.account.outputFallback = resolveOutputFallbackConfig({
+      outputDirs: [dir],
+      delayMs: 10_000,
+      pollMs: 50,
+      stableMs: 100,
+      postStreamWatchMs: 300,
+      minBytes: 1,
+      maxWatchMs: 5_000,
+    });
+    const source = entry.lastInboundByTaskId.get("task-text-no-output")!;
+    await startOutputFallbackWatcher(
+      entry,
+      ACCOUNT_ID,
+      source,
+      `agent:agentnexus-local:agentnexus:account:${ACCOUNT_ID}:session:test`,
+    );
+
+    await sendText({
+      to: "task-text-no-output",
+      text: "# 瑞和汽车MES售前报告\n\n正文已经直接输出。",
+      accountId: ACCOUNT_ID,
+    });
+
+    await vi.advanceTimersByTimeAsync(550);
+    expect(session.streamDone).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(session.streamDone).toHaveBeenCalledTimes(1);
+    expect(session.streamDone.mock.calls[0][0]).toEqual({ msgId: "ph-task-text-no-output" });
+    expect(outputFallbackWatchers.get(`${ACCOUNT_ID}:task-text-no-output`)).toBeUndefined();
+  });
+
   it("子 conversation 输出继续写回父 placeholder", async () => {
     const session = installFakeEntry("task-child-parent", "C1");
     const entry = sessionRegistry.get(ACCOUNT_ID)!;
@@ -568,13 +659,11 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
       type: "file_upload_ack", client_file_id: "c-output", ok: true, file_id: "f-output",
     });
 
-    await vi.advanceTimersByTimeAsync(60);
+    await pollOutputFallbackWatcher(`${ACCOUNT_ID}:task-output`, entry);
     expect(session.uploadFile).not.toHaveBeenCalled();
 
-    for (let i = 0; i < 20 && session.uploadFile.mock.calls.length === 0; i += 1) {
-      await vi.advanceTimersByTimeAsync(50);
-      await Promise.resolve();
-    }
+    await vi.advanceTimersByTimeAsync(120);
+    await pollOutputFallbackWatcher(`${ACCOUNT_ID}:task-output`, entry);
     expect(session.uploadFile).toHaveBeenCalledTimes(1);
     expect(session.uploadFile.mock.calls[0][0]).toMatchObject({
       channelId: "C1",
