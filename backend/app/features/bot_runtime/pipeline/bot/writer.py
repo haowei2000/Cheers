@@ -48,6 +48,7 @@ class BotMessageWriter:
 
     async def pre_create(self, bot_id: str, task_id: str) -> Message:
         ctx = self.ctx
+        is_dm = ctx.channel is not None and ctx.channel.type == "dm"
         msg = Message(
             channel_id=ctx.channel_id,
             sender_id=bot_id,
@@ -59,12 +60,13 @@ class BotMessageWriter:
                 else None
             ),
             task_id=task_id,
-            in_reply_to_msg_id=ctx.trigger_msg.msg_id,
-            msg_type=MSG_TYPE_REPLY,
+            in_reply_to_msg_id=None if is_dm else ctx.trigger_msg.msg_id,
+            msg_type="normal" if is_dm else MSG_TYPE_REPLY,
         )
         ctx.session.add(msg)
         await ctx.session.flush()
-        await ensure_topic_root(ctx.session, ctx.trigger_msg.msg_id)
+        if not is_dm:
+            await ensure_topic_root(ctx.session, ctx.trigger_msg.msg_id)
         from app.features.bot_runtime.bot_events.runs import ensure_bot_run
 
         await ensure_bot_run(
@@ -233,6 +235,22 @@ class BotMessageWriter:
         )
 
         ctx = self.ctx
+        if ctx.channel is not None and ctx.channel.type == "dm":
+            from app.features.bot_runtime.bot_events.runs import mark_bot_run_status
+
+            await mark_bot_run_status(
+                ctx.session,
+                placeholder_msg_id=bot_msg.msg_id,
+                status="dispatched_async",
+                last_event_type="agent_bridge.dispatch",
+            )
+            logger.info(
+                "register_async_pending: dm scope skips background task timer bot_id=%s task_id=%s msg_id=%s",
+                bot_id,
+                task_id,
+                bot_msg.msg_id,
+            )
+            return
         timeout_s = max(5, int(_settings.agent_bridge_timeout_seconds or 60))
 
         async def _on_timeout() -> None:

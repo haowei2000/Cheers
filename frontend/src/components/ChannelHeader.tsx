@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Bars3Icon,
   BriefcaseIcon,
+  ArrowPathIcon,
   CheckCircleIcon,
   ChatBubbleLeftEllipsisIcon,
   ClipboardDocumentListIcon,
@@ -80,6 +81,8 @@ interface ChannelHeaderProps {
   taskCount?: number;
   taskActive?: boolean;
   onOpenTasks?: () => void;
+  onRefreshDmSession?: () => void;
+  refreshingDmSession?: boolean;
 }
 
 export function ChannelHeader({
@@ -97,6 +100,8 @@ export function ChannelHeader({
   taskCount = 0,
   taskActive = false,
   onOpenTasks,
+  onRefreshDmSession,
+  refreshingDmSession = false,
 }: ChannelHeaderProps) {
   const subtitle = autoAssist ? "自动接管已开启" : "";
   const [topicsOpen, setTopicsOpen] = useState(false);
@@ -158,6 +163,19 @@ export function ChannelHeader({
 
       {/* Tasks + memory button group */}
       <div className="an-mem-cluster" role="group" aria-label="频道工具">
+        {activeDm?.counterparty.member_type === "bot" && onRefreshDmSession && (
+          <button
+            type="button"
+            className="an-mc-btn"
+            onClick={onRefreshDmSession}
+            disabled={refreshingDmSession}
+            title="刷新 DM Session"
+            aria-label="刷新 DM Session"
+          >
+            <ArrowPathIcon className={refreshingDmSession ? "animate-spin" : ""} />
+            <span className="an-mc-label hidden sm:inline">Session</span>
+          </button>
+        )}
         {onOpenTasks && (
           <button
             type="button"

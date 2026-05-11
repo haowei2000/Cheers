@@ -3,7 +3,7 @@ import { ArrowPathIcon, ClipboardDocumentIcon } from "@heroicons/react/24/outlin
 import { apiFetch } from "../api";
 import type { AgentBridgeSession } from "../types";
 
-type ScopeType = "channel" | "topic" | "task";
+type ScopeType = "channel" | "dm" | "topic" | "task";
 
 function fmtTime(value?: string | null): string {
   if (!value) return "-";
@@ -220,12 +220,14 @@ export function SessionScopePanel({
   channelId,
   botId,
   title = "对应 Session",
+  refreshKey = 0,
 }: {
   scopeType: ScopeType;
   scopeId: string;
   channelId: string;
   botId?: string | null;
   title?: string;
+  refreshKey?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -263,7 +265,7 @@ export function SessionScopePanel({
     return () => {
       active = false;
     };
-  }, [botId, channelId, scopeId, scopeType]);
+  }, [botId, channelId, refreshKey, scopeId, scopeType]);
 
   return (
     <div className="border-b px-4 py-2" style={{ borderColor: "var(--border)", background: "var(--bg-0)" }}>

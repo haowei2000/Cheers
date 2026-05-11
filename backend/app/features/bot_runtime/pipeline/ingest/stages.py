@@ -44,8 +44,10 @@ class ValidateStage(Stage[IngestContext]):
         result = await ctx.session.execute(
             select(Channel).where(Channel.channel_id == ctx.channel_id)
         )
-        if not result.scalar_one_or_none():
+        channel = result.scalar_one_or_none()
+        if not channel:
             raise NotFoundError("channel not found")
+        ctx.channel = channel
 
         if ctx.file_ids:
             try:
@@ -79,6 +81,14 @@ class SecretEnvelopeStage(Stage[IngestContext]):
 
 class PersistStage(Stage[IngestContext]):
     async def run(self, ctx: IngestContext) -> None:
+        if ctx.channel is not None and ctx.channel.type == "dm":
+            ctx.in_reply_to_msg_id = None
+            if ctx.msg_type in {"topic", MSG_TYPE_REPLY}:
+                ctx.msg_type = MSG_TYPE_NORMAL
+                ctx.content_data = None
+            if ctx.msg_type == "announcement":
+                ctx.msg_type = MSG_TYPE_NORMAL
+                ctx.content_data = None
         msg_type = ctx.msg_type or (
             MSG_TYPE_REPLY if ctx.in_reply_to_msg_id else MSG_TYPE_NORMAL
         )

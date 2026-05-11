@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.chat.message_assembler import MessageAssembler
-from app.db.models import BotAccount, FileRecord, Message
+from app.db.models import BotAccount, Channel, FileRecord, Message
 from app.features.agent_bridge.pending import PendingReply, pending_replies
 from app.features.agent_bridge.streams import StreamState, stream_registry
 from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
@@ -145,6 +145,10 @@ async def finalize_bot_reply(
             msg.msg_id, bot_id, task_id,
         )
         return msg, True
+
+    channel = await session.get(Channel, channel_id)
+    if channel is not None and channel.type == "dm":
+        in_reply_to_msg_id = None
 
     # 没有占位（超时兜底、或 plugin 主动发起的频道消息）：新建一条
     msg = Message(

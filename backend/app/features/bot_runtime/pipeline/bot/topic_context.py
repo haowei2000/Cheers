@@ -20,7 +20,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.schema import Table
 
-from app.db.models import BotAccount, Message, User
+from app.db.models import BotAccount, Channel, Message, User
 from app.services.secret_messages import secret_placeholder_for
 
 logger = logging.getLogger("app.features.bot_runtime.pipeline.bot.topic_context")
@@ -118,6 +118,14 @@ def _auto_promote_parent(_mapper, connection: Connection, target: Message) -> No
     """
     parent_id = target.in_reply_to_msg_id
     if not parent_id:
+        return
+    channel_tbl = cast(Table, Channel.__table__)
+    channel_type_q = (
+        select(channel_tbl.c.type)
+        .where(channel_tbl.c.channel_id == target.channel_id)
+        .limit(1)
+    )
+    if connection.execute(channel_type_q).scalar() == "dm":
         return
     tbl = cast(Table, Message.__table__)
     count_q = (
