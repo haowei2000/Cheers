@@ -15,12 +15,14 @@ import {
   emitRunTrace,
   getSharedApi,
   installAgentEventForwarder,
+  notifyOpenClawRunTerminal,
   registerOpenClawRunTrace,
   setSharedApi,
   type ResolvedAccount,
 } from "./plugin.js";
 
 const INBOUND_PATH = "/plugins/agentnexus/inbound";
+const RUN_COMPLETION_WAIT_TIMEOUT_MS = 48 * 60 * 60 * 1000;
 
 interface InboundBody {
   accountId: string;
@@ -52,6 +54,11 @@ function resolveGatewayToken(api: OpenClawPluginApi): string | null {
     return a.token;
   }
   return null;
+}
+
+function agentIdFromSessionKey(sessionKey: string): string | null {
+  const match = /^agent:([^:]+):/.exec(sessionKey);
+  return match?.[1] || null;
 }
 
 export default defineChannelPluginEntry<typeof agentnexusPlugin>({
@@ -145,7 +152,10 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
           const sessRT = api.runtime.channel?.session;
           if (sessRT?.resolveStorePath && sessRT?.updateLastRoute) {
             try {
-              const storePath = sessRT.resolveStorePath();
+              const agentId = agentIdFromSessionKey(body.sessionKey);
+              const storePath = agentId
+                ? sessRT.resolveStorePath(undefined, { agentId })
+                : sessRT.resolveStorePath();
               await sessRT.updateLastRoute({
                 storePath,
                 sessionKey: body.sessionKey,
@@ -188,6 +198,20 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
           api.logger.info(
             `agentnexus: inbound→subagent.run runId=${runId} sk=${body.sessionKey} task=${body.taskId}`,
           );
+          void api.runtime.subagent.waitForRun({
+            runId,
+            timeoutMs: RUN_COMPLETION_WAIT_TIMEOUT_MS,
+          }).then((result) => {
+            notifyOpenClawRunTerminal({
+              runId,
+              accountId: body.accountId,
+              taskId: body.taskId,
+              status: result.status,
+              error: result.error ?? null,
+            }, api.logger);
+          }).catch((err) => {
+            api.logger.warn(`agentnexus: waitForRun failed runId=${runId}: ${String(err)}`);
+          });
           res.statusCode = 200;
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ ok: true, runId }));

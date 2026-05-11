@@ -25,6 +25,7 @@ const {
   pendingStreamByTo, taskByPlaceholder,
   startOutputFallbackWatcher, pollOutputFallbackWatcher,
   outputFallbackWatchers, resolveOutputFallbackConfig,
+  notifyOpenClawRunTerminal, registerOpenClawRunTrace,
 } = __testonly;
 
 const ACCOUNT_ID = "acc-test";
@@ -337,6 +338,48 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     expect(session.streamError).not.toHaveBeenCalled();
     expect(session.streamDone).not.toHaveBeenCalled();
     expect(pendingStreamByTo.get("task-status")).toBeDefined();
+  });
+
+  it("报告类任务只输出状态句但 run 已结束时会失败收尾", async () => {
+    const session = installFakeEntry("task-status-terminal", "C1");
+    markDeliverableRequest("task-status-terminal");
+    registerOpenClawRunTrace({
+      runId: "run-status-terminal",
+      accountId: ACCOUNT_ID,
+      sessionKey: "agent:agentnexus-local:agentnexus:account:acc-test:session:test",
+      channelId: "C1",
+      taskId: "task-status-terminal",
+      placeholderMsgId: "ph-task-status-terminal",
+    });
+
+    await sendText({
+      to: "task-status-terminal",
+      text: "Now I have enough context. Let me generate the HTML report.",
+      accountId: ACCOUNT_ID,
+    });
+
+    expect(session.streamDelta).not.toHaveBeenCalled();
+    expect(session.streamError).not.toHaveBeenCalled();
+    expect(pendingStreamByTo.get("task-status-terminal")?.heldStatusText).toContain("Let me generate");
+
+    notifyOpenClawRunTerminal({
+      runId: "run-status-terminal",
+      accountId: ACCOUNT_ID,
+      taskId: "task-status-terminal",
+      status: "ok",
+    });
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(session.streamDelta).toHaveBeenCalledTimes(1);
+    expect(session.streamDelta.mock.calls[0][0]).toMatchObject({
+      msgId: "ph-task-status-terminal",
+    });
+    expect(String(session.streamDelta.mock.calls[0][0].delta)).toContain("没有生成可交付正文或附件");
+    expect(session.streamError).toHaveBeenCalledTimes(1);
+    expect(session.streamError.mock.calls[0][0]).toMatchObject({
+      msgId: "ph-task-status-terminal",
+    });
+    expect(pendingStreamByTo.get("task-status-terminal")).toBeUndefined();
   });
 
   it("状态句后接真正正文时丢弃状态句并正常完成", async () => {

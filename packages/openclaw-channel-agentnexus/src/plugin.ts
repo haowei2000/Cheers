@@ -117,9 +117,9 @@ type RawOutputFallbackConfig = Partial<OutputFallbackConfig>;
 const DEFAULT_OUTPUT_FALLBACK: OutputFallbackConfig = {
   enabled: true,
   outputDirs: [],
-  // AgentNexus defaults to converting Agent Bridge placeholders after 60s.
+  // AgentNexus defaults to converting Agent Bridge placeholders after 3 minutes.
   // Wait a touch longer so this fallback only speaks once the reply is a task.
-  delayMs: 65_000,
+  delayMs: 185_000,
   pollMs: 2_000,
   stableMs: 6_000,
   postStreamWatchMs: 15_000,
@@ -161,6 +161,8 @@ const AGENTNEXUS_RESPONSE_CONTRACT = `
   <rules>
     <rule>不要把“正在生成/我将生成/Let me generate/Now I have enough info”等进度句作为最终回复。</rule>
     <rule>如果任务要求报告、HTML、Markdown、附件或文件，请实际创建可交付文件，并用 MEDIA:/absolute/path 返回，或直接输出完整正文。</rule>
+    <rule>如果用户只说“报告”而未指定 HTML/PPT，优先创建 Markdown 文件；不要先在 assistant 正文或隐藏思考中起草超长 HTML。</rule>
+    <rule>创建文件后，最终回复必须包含 MEDIA:/absolute/path，便于 AgentNexus 自动上传附件。</rule>
     <rule>最终回复必须包含完整可见结果或 MEDIA 文件；不能只说明接下来要做什么。</rule>
     <rule>如果无法生成完整产物，请明确说明失败原因，不要返回进度占位句。</rule>
   </rules>
@@ -689,6 +691,103 @@ function forwardOpenClawAgentEvent(evt: OpenClawAgentEvent): void {
     data: sanitizeTraceData(evt.data),
   });
   if (isTerminalAgentEvent(evt)) runTraceByRunId.delete(evt.runId);
+}
+
+function noDeliverableMessage(status: string, error?: string | null): string {
+  if (status === "error") {
+    return `OpenClaw 运行失败，未生成可交付正文或附件：${error || "unknown error"}`;
+  }
+  return "OpenClaw 运行已结束，但没有生成可交付正文或附件；最后输出仅为进度句，已停止该后台任务。";
+}
+
+function hasVisibleStreamPayload(slot: PendingStreamSlot): boolean {
+  return slot.hasDeltas || slot.fileIds.length > 0;
+}
+
+function terminalSettleMsForOutputFallback(accountId: string | null | undefined, taskId: string): number {
+  if (!accountId || !taskId) return STREAM_DONE_DEBOUNCE_MS;
+  const watcher = outputFallbackWatchers.get(outputFallbackKey(accountId, taskId));
+  if (!watcher) return STREAM_DONE_DEBOUNCE_MS;
+  const now = Date.now();
+  const settleMs = outputFallbackSettleMs(watcher.cfg);
+  watcher.finishAfter = watcher.finishAfter
+    ? Math.min(watcher.finishAfter, now + settleMs)
+    : now + settleMs;
+  return Math.max(0, watcher.finishAfter - now) + watcher.cfg.pollMs + 50;
+}
+
+function finalizeHeldStatusOnlyStream(
+  entry: AccountRuntime,
+  taskId: string,
+  message: string,
+  log?: PluginLogger,
+): boolean {
+  const slot = pendingStreamByTo.get(taskId);
+  if (!slot || slot.cancelled || !slot.placeholderMsgId) return false;
+  if (!slot.heldStatusText || hasVisibleStreamPayload(slot)) return false;
+  if (slot.doneTimer) {
+    clearTimeout(slot.doneTimer);
+    slot.doneTimer = null;
+  }
+
+  pendingStreamByTo.delete(taskId);
+  taskByPlaceholder.delete(slot.placeholderMsgId);
+  stopOutputFallbackWatcher(entry.account.accountId, slot.source.event.task_id);
+
+  slot.seq += 1;
+  const wroteDelta = entry.session.streamDelta({
+    msgId: slot.placeholderMsgId,
+    seq: slot.seq,
+    delta: message,
+  });
+  const wroteError = entry.session.streamError({
+    msgId: slot.placeholderMsgId,
+    message,
+  });
+  log?.warn?.(`agentnexus: finalized held status-only run task=${taskId} wroteDelta=${wroteDelta} wroteError=${wroteError}`);
+  return wroteDelta || wroteError;
+}
+
+function finalizeUndeliveredRun(
+  target: RunTraceTarget,
+  status: string,
+  error?: string | null,
+  log?: PluginLogger,
+): boolean {
+  const entry = sessionRegistry.get(target.accountId);
+  if (!entry) return false;
+  const message = noDeliverableMessage(status, error);
+  if (finalizeHeldStatusOnlyStream(entry, target.taskId, message, log)) return true;
+
+  const source = entry.lastInboundByTaskId.get(target.taskId)
+    ?? entry.replyTargets.get(target.taskId)?.source;
+  if (!source) return false;
+  void entry.session.reply({ source, text: message }).catch((err) => {
+    log?.warn?.(`agentnexus: failed to finalize undelivered run task=${target.taskId}: ${String(err)}`);
+  });
+  stopOutputFallbackWatcher(target.accountId, target.taskId);
+  return true;
+}
+
+export function notifyOpenClawRunTerminal(args: {
+  runId: string;
+  accountId: string;
+  taskId: string;
+  status: "ok" | "error" | "timeout" | string;
+  error?: string | null;
+}, log?: PluginLogger): void {
+  const target = runTraceByRunId.get(args.runId)
+    ?? Array.from(runTraceByRunId.values()).find((item) => (
+      item.accountId === args.accountId && item.taskId === args.taskId
+    ));
+  if (!target) return;
+  if (args.status === "timeout") return;
+
+  const delayMs = terminalSettleMsForOutputFallback(target.accountId, target.taskId);
+  setTimeout(() => {
+    finalizeUndeliveredRun(target, args.status, args.error, log);
+    runTraceByRunId.delete(args.runId);
+  }, delayMs);
 }
 
 export function installAgentEventForwarder(api: OpenClawPluginApi): void {
@@ -2121,4 +2220,6 @@ export const __testonly = {
   outputFallbackWatchers,
   resolveOutputFallbackConfig,
   isCompleteOutputFile,
+  notifyOpenClawRunTerminal,
+  registerOpenClawRunTrace,
 };
