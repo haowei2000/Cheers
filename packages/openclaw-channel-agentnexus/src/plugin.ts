@@ -105,6 +105,7 @@ interface OutputFallbackConfig {
   delayMs: number;
   pollMs: number;
   stableMs: number;
+  postStreamWatchMs: number;
   maxWatchMs: number;
   maxFiles: number;
   minBytes: number;
@@ -121,6 +122,7 @@ const DEFAULT_OUTPUT_FALLBACK: OutputFallbackConfig = {
   delayMs: 65_000,
   pollMs: 2_000,
   stableMs: 6_000,
+  postStreamWatchMs: 15_000,
   maxWatchMs: 60 * 60 * 1000,
   maxFiles: 80,
   minBytes: 16,
@@ -143,6 +145,7 @@ function resolveOutputFallbackConfig(raw?: RawOutputFallbackConfig): OutputFallb
     delayMs: normalizePositiveInt(raw?.delayMs, base.delayMs),
     pollMs: normalizePositiveInt(raw?.pollMs, base.pollMs),
     stableMs: normalizePositiveInt(raw?.stableMs, base.stableMs),
+    postStreamWatchMs: normalizePositiveInt(raw?.postStreamWatchMs, base.postStreamWatchMs),
     maxWatchMs: normalizePositiveInt(raw?.maxWatchMs, base.maxWatchMs),
     maxFiles: normalizePositiveInt(raw?.maxFiles, base.maxFiles),
     minBytes: normalizePositiveInt(raw?.minBytes, base.minBytes),
@@ -1272,6 +1275,7 @@ interface OutputFallbackWatcher {
   baseline: Map<string, { size: number; mtimeMs: number }>;
   seen: Map<string, OutputFileSeen>;
   deliveredPaths: Set<string>;
+  finishAfter?: number;
   timer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -1294,8 +1298,10 @@ function candidateOutputDirs(cfg: OutputFallbackConfig, sessionKey: string): str
   }
   const agentId = agentIdFromSessionKey(sessionKey);
   if (agentId) {
-    const defaultDir = join(homedir(), ".openclaw", "workspace", agentId, "output");
+    const workspaceDir = join(homedir(), ".openclaw", "workspace", agentId);
+    const defaultDir = join(workspaceDir, "output");
     if (!dirs.includes(defaultDir)) dirs.push(defaultDir);
+    if (!dirs.includes(workspaceDir)) dirs.push(workspaceDir);
   }
   return dirs;
 }
@@ -1352,8 +1358,9 @@ async function collectOutputFiles(
       });
     }
   }
-  out.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return out.slice(0, cfg.maxFiles);
+  const unique = Array.from(new Map(out.map((file) => [file.path, file])).values());
+  unique.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return unique.slice(0, cfg.maxFiles);
 }
 
 async function buildOutputBaseline(
@@ -1453,6 +1460,10 @@ async function pollOutputFallbackWatcher(
     stopOutputFallbackWatcher(watcher.accountId, watcher.taskId);
     return;
   }
+  if (watcher.finishAfter && now > watcher.finishAfter) {
+    stopOutputFallbackWatcher(watcher.accountId, watcher.taskId);
+    return;
+  }
 
   const files = await collectOutputFiles(watcher.outputDirs, watcher.cfg);
   for (const file of files) {
@@ -1466,7 +1477,8 @@ async function pollOutputFallbackWatcher(
       mtimeMs: file.mtimeMs,
       stableSince,
     });
-    if (now - watcher.startedAt < watcher.cfg.delayMs) continue;
+    const streamStillOpen = pendingStreamByTo.has(watcher.taskId);
+    if (!streamStillOpen && now - watcher.startedAt < watcher.cfg.delayMs) continue;
     if (now - stableSince < watcher.cfg.stableMs) continue;
     if (!await isCompleteOutputFile(file)) continue;
 
@@ -1529,6 +1541,24 @@ function stopOutputFallbackWatcher(accountId: string | null | undefined, taskId:
   if (!watcher) return;
   if (watcher.timer) clearTimeout(watcher.timer);
   outputFallbackWatchers.delete(key);
+}
+
+function outputFallbackSettleMs(cfg: OutputFallbackConfig): number {
+  return Math.max(cfg.postStreamWatchMs, cfg.stableMs + cfg.pollMs);
+}
+
+function deferStreamDoneForOutputFallback(
+  accountId: string | null | undefined,
+  taskId: string,
+): number | null {
+  if (!accountId || !taskId) return null;
+  const watcher = outputFallbackWatchers.get(outputFallbackKey(accountId, taskId));
+  if (!watcher) return null;
+  const now = Date.now();
+  if (!watcher.finishAfter) {
+    watcher.finishAfter = now + outputFallbackSettleMs(watcher.cfg);
+  }
+  return now < watcher.finishAfter ? watcher.finishAfter - now : null;
 }
 
 function clearOutputFallbackWatchersForAccount(accountId: string): void {
@@ -1806,25 +1836,39 @@ async function flushStreamDone(to: string, entry: AccountRuntime): Promise<void>
     clearTimeout(slot.doneTimer);
     slot.doneTimer = null;
   }
+
+  const accountId = entry.account.accountId;
+  if (!slot.cancelled && slot.fileIds.length === 0) {
+    const deferredMs = deferStreamDoneForOutputFallback(accountId, slot.source.event.task_id);
+    if (deferredMs !== null) {
+      armStreamDoneTimer(to, entry, slot, Math.max(50, deferredMs));
+      return;
+    }
+  }
+
   pendingStreamByTo.delete(to);
   if (slot.placeholderMsgId) taskByPlaceholder.delete(slot.placeholderMsgId);
-  stopOutputFallbackWatcher(entry.account.accountId, slot.source.event.task_id);
 
   // Cancelled streams: server already finalized partial when it pushed the
   // cancel frame to us. We deliberately do NOT send `done` again; the server
   // would no-op on it but skipping the round-trip is cleaner.
-  if (slot.cancelled) return;
+  if (slot.cancelled) {
+    stopOutputFallbackWatcher(accountId, slot.source.event.task_id);
+    return;
+  }
 
   if (slot.placeholderMsgId && (slot.hasDeltas || slot.fileIds.length > 0)) {
     entry.session.streamDone({
       msgId: slot.placeholderMsgId,
       fileIds: slot.fileIds.length > 0 ? slot.fileIds : undefined,
     });
+    stopOutputFallbackWatcher(accountId, slot.source.event.task_id);
     return;
   }
 
   // No deltas and no files — agent produced nothing for this `to`. Drop the
   // stream silently; the placeholder will be finalized by orchestrator timeout.
+  stopOutputFallbackWatcher(accountId, slot.source.event.task_id);
 }
 
 /** sendText 主路径：把每次调用当作一个 delta 推到服务端，debounce 之后发 done。
@@ -2073,6 +2117,7 @@ export const __testonly = {
   shouldHoldStatusOnlyOutput,
   startOutputFallbackWatcher,
   stopOutputFallbackWatcher,
+  pollOutputFallbackWatcher,
   outputFallbackWatchers,
   resolveOutputFallbackConfig,
   isCompleteOutputFile,
