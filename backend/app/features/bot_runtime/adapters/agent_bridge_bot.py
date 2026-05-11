@@ -63,6 +63,9 @@ class AgentBridgeBotAdapter(BotAdapter):
     def _render_trigger_message(self, payload: AgentPayload) -> dict:
         trigger_meta = dict(payload.trigger_message or {})
         pconfig = payload.runtime
+        if pconfig.delegated_task_xml:
+            trigger_meta["text"] = str(trigger_meta.get("text") or "").strip()
+            return trigger_meta
         context_vars = build_template_context(
             bot_name=self.bot.display_name or self.bot.username,
             channel_id=payload.channel_id,

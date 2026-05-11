@@ -1,5 +1,6 @@
 """测试子 Bot 上下文传递优化。"""
 from types import SimpleNamespace
+from xml.etree import ElementTree as ET
 
 import pytest
 
@@ -137,8 +138,10 @@ async def test_call_bot_sub_bot_receives_decrypted_secret_parent_text():
 
     assert len(sub_adapter.payloads) == 1
     trigger_message = sub_adapter.payloads[0].trigger_message
-    assert trigger_message["text"] == plaintext
-    assert trigger_message["text"] != "🔒 [加密消息]"
+    root = ET.fromstring(trigger_message["text"])
+    assert root.findtext("./delegated_task") == plaintext
+    assert plaintext in trigger_message["text"]
+    assert "🔒 [加密消息]" not in trigger_message["text"]
 
 
 @pytest.mark.asyncio

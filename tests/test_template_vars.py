@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from xml.etree import ElementTree as ET
 
 import pytest
 
@@ -526,6 +527,15 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
     tm = sub.trigger_message or {}
     assert tm.get("sender_name") == "赵六", f"trigger_message.sender_name 缺失: {tm}"
     assert tm.get("timestamp"), f"trigger_message.timestamp 为空: {tm}"
+    assert pc.delegated_task_xml is True
+
+    root = ET.fromstring(tm["text"])
+    assert root.tag == "agentnexus_subbot_request"
+    assert root.findtext("./routing/channel") == "协作频道"
+    assert root.findtext("./routing/sender") == "赵六"
+    assert root.findtext("./delegated_task") == "帮我分析一下"
+    assert root.find("./channel_memory/layer[@name='anchor']").text == "锚点内容"
+    assert root.find("./channel_memory/layer[@name='progress']").text == "进度内容"
 
     # memory 应透传
     assert sub.memory_context.get("anchor") == "锚点内容"
@@ -544,11 +554,11 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
 # (Removed test_orchestrator_process_config_has_template_keys.)
 
 
-# ── call_bot → HttpBotAdapter 端到端模板渲染 ──────────────────────────────────
+# ── call_bot → HttpBotAdapter 端到端 XML 委托渲染 ──────────────────────────────
 
 @pytest.mark.asyncio
-async def test_call_bot_end_to_end_renders_all_vars() -> None:
-    """call_bot 调用 HttpBotAdapter 子 bot 时，模板中所有变量均被正确渲染。"""
+async def test_call_bot_end_to_end_renders_delegated_xml() -> None:
+    """call_bot 调用 HttpBotAdapter 子 bot 时，发送单一 XML 委托提示。"""
     from app.features.bot_runtime.adapters.channel_bot import _make_tools
 
     all_vars_template = (
@@ -630,19 +640,20 @@ async def test_call_bot_end_to_end_renders_all_vars() -> None:
     assert messages[0]["role"] == "user", "子 bot 调用的唯一消息应为 user role"
 
     user_content = messages[0]["content"]
+    assert user_content.startswith("<agentnexus_subbot_request")
     unrendered = UNRENDERED_VAR_PATTERN.findall(user_content)
     assert unrendered == [], f"未渲染的模板变量: {unrendered}"
 
-    assert "端到端频道" in user_content, "channel_name 未渲染"
-    assert "端到端用户" in user_content, "sender_name 未渲染"
-    assert "子Bot" in user_content, "bot_name 未渲染"
-    assert "ch-e2e" in user_content, "channel_id 未渲染"
-    assert "E2E锚点" in user_content, "memory 未渲染 anchor"
-    assert "E2E进度" in user_content, "progress 未渲染"
-    assert "E2E决策" in user_content, "decisions 未渲染"
-    assert "E2E索引" in user_content, "files_index 未渲染"
-    assert "E2E近况" in user_content, "recent 未渲染"
-    assert "E2E待办" in user_content, "todos 未渲染"
-    assert "端到端测试" in user_content, "message 未渲染"
-    # timestamp 由 call_bot 自动生成，只需确认非空
-    assert "时间=" in user_content and "时间={{timestamp}}" not in user_content, "timestamp 未渲染"
+    root = ET.fromstring(user_content)
+    assert root.find("./routing/target_bot").attrib["username"] == "child_bot"
+    assert root.findtext("./routing/channel") == "端到端频道"
+    assert root.find("./routing/channel").attrib["id"] == "ch-e2e"
+    assert root.findtext("./routing/sender") == "端到端用户"
+    assert root.findtext("./delegated_task") == "端到端测试"
+    assert root.find("./channel_memory/layer[@name='anchor']").text == "E2E锚点"
+    assert root.find("./channel_memory/layer[@name='progress']").text == "E2E进度"
+    assert root.find("./channel_memory/layer[@name='decisions']").text == "E2E决策"
+    assert root.find("./channel_memory/layer[@name='files_index']").text == "E2E索引"
+    assert root.find("./channel_memory/layer[@name='recent']").text == "E2E近况"
+    assert root.find("./channel_memory/layer[@name='todos']").text == "E2E待办"
+    assert root.findtext("./routing/generated_at"), "generated_at 未生成"

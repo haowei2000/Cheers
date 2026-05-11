@@ -120,7 +120,8 @@ class Settings(BaseSettings):
     # ===== Agent Bridge =====
     agent_bridge_enabled: bool = True
     agent_bridge_token: str = ""  # 空 = 未配置，bridge 路由返回 503
-    agent_bridge_timeout_seconds: int = 300  # 异步 Bot 慢回复阈值（超时后占位消息转后台任务）
+    # 异步 Bot 前台等待阈值：超时后只把占位消息转成后台 task，不终止 provider 任务。
+    agent_bridge_timeout_seconds: int = 60
 
     model_config = {
         "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],

@@ -66,6 +66,7 @@ def build_payload(
     in_reply_to_msg_id: str | None = None,
     trigger_text_override: str | None = None,
     skip_system_prompt: bool = False,
+    delegated_task_xml: bool = False,
 ) -> AgentPayload:
     """Compose AgentPayload according to the bot's capabilities.
 
@@ -80,6 +81,10 @@ def build_payload(
     ``skip_system_prompt`` adds a ``_skip_system_prompt`` flag to
     process_config so the sub-adapter knows to suppress its full system
     prompt for short delegated tasks.
+
+    ``delegated_task_xml`` tells adapters that ``trigger_text_override`` is
+    already a complete XML prompt for a synthetic child task, so they should
+    not wrap it in the bot's normal user template.
     """
     sub_username = next(
         (u for u, bid in ctx.bot_id_by_username.items() if bid == bot_id),
@@ -123,6 +128,7 @@ def build_payload(
         event_bus=ctx.bus,
         db_session=ctx.session,
         skip_system_prompt=skip_system_prompt,
+        delegated_task_xml=delegated_task_xml,
     )
     if capabilities.can_call_bot:
         # channel_bot_usernames + details still feed the system-prompt
@@ -162,6 +168,7 @@ async def _prepare(
     in_reply_to_msg_id: str | None = None,
     trigger_text_override: str | None = None,
     skip_system_prompt: bool = False,
+    delegated_task_xml: bool = False,
 ) -> _Prepared:
     """Pre-create placeholder + build payload + load adapter for one bot."""
     username = await _username_for(ctx, bot_id)
@@ -184,6 +191,7 @@ async def _prepare(
         in_reply_to_msg_id=in_reply_to_msg_id,
         trigger_text_override=trigger_text_override,
         skip_system_prompt=skip_system_prompt,
+        delegated_task_xml=delegated_task_xml,
     )
     payload.runtime.cancel_event = stream_state.cancel_event
     return username, bot_id, bot_msg, payload, adapter
@@ -412,6 +420,7 @@ async def dispatch_one(
     in_reply_to_msg_id: str | None = None,
     trigger_text_override: str | None = None,
     skip_system_prompt: bool = False,
+    delegated_task_xml: bool = False,
     skip_attachment_error: bool = False,
 ) -> AgentResponse | None:
     """Pre-create + execute + finalize one bot, serially. Used by single-bot
@@ -434,6 +443,7 @@ async def dispatch_one(
         in_reply_to_msg_id=in_reply_to_msg_id,
         trigger_text_override=trigger_text_override,
         skip_system_prompt=skip_system_prompt,
+        delegated_task_xml=delegated_task_xml,
     )
     resp_or_exc, dur_ms = await _consume_execute(ctx, adapter, payload, bot_msg)
     return await _finalize_response(

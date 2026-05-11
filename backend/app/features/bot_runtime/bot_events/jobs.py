@@ -22,6 +22,11 @@ AGENT_BRIDGE_STREAM_DONE = "agent_bridge.stream_done"
 AGENT_BRIDGE_STREAM_ERROR = "agent_bridge.stream_error"
 
 
+def _is_agent_bridge_background_task_message(msg: Message) -> bool:
+    data = msg.content_data
+    return isinstance(data, dict) and data.get("kind") == "agent_bridge_background_task"
+
+
 async def run_bot_event_job(job: BotEventJob) -> None:
     """Run one bot event in an independent DB session."""
     async with async_session_factory() as session:
@@ -68,6 +73,7 @@ async def _handle_agent_bridge_reply(
             existing is not None
             and existing.channel_id == channel_id
             and existing.sender_id == bot_id
+            and not _is_agent_bridge_background_task_message(existing)
             and ((existing.content or "").strip() or existing.file_ids)
         ):
             logger.info(

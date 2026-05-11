@@ -290,6 +290,8 @@ class HttpBotAdapter(BotAdapter):
         user_text = payload.message.text
         task_id = payload.task_id
         all_attachments = payload.context.attachments or []
+        pconfig = payload.runtime
+        delegated_task_xml = bool(pconfig.delegated_task_xml)
 
         # 解密：将 $secret{name} 引用替换为实际密钥值，
         # 并将加密消息占位符替换为解密后的原文
@@ -304,12 +306,15 @@ class HttpBotAdapter(BotAdapter):
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
         doc_attachments = [a for a in all_attachments if a.get("is_image") != "true"]
 
-        # 文档附件合并到文本
-        user_text = self._merge_attachments_into_message(user_text, doc_attachments)
+        # 文档附件合并到文本。call_bot 的 XML 委托提示已包含附件索引，
+        # 这里不再把 <attachments> 追加到 XML 根节点外。
+        if not delegated_task_xml:
+            user_text = self._merge_attachments_into_message(user_text, doc_attachments)
 
         # 注入主题上下文（4条规则）
         trigger_meta = payload.trigger_message or {}
-        user_text = self._apply_topic_context(trigger_meta, user_text)
+        if not delegated_task_xml:
+            user_text = self._apply_topic_context(trigger_meta, user_text)
 
         if not self.model or not self.template:
             yield Final(content="", success=False, error_message="Bot 未配置模型或模板")
@@ -320,7 +325,6 @@ class HttpBotAdapter(BotAdapter):
 
         headers = self._build_headers(api_config)
 
-        pconfig = payload.runtime
         trigger_meta = payload.trigger_message or {}
 
         context_vars = build_template_context(
@@ -337,7 +341,16 @@ class HttpBotAdapter(BotAdapter):
 
         # Vision 路径：模型支持且有图片时，构建多模态消息
         supports_vision = (self.model.config or {}).get("supports_vision", True)
-        if supports_vision and self._has_image_attachments(all_attachments):
+        if delegated_task_xml:
+            # XML delegation is a complete prompt document. Do not wrap it in
+            # PromptTemplate.user_template, otherwise memory/message get mixed
+            # back into the old free-form shape.
+            if supports_vision and self._has_image_attachments(all_attachments):
+                vision_content = self._build_vision_user_content(user_text.strip(), all_attachments)
+                messages = [{"role": "user", "content": vision_content}]
+            else:
+                messages = [{"role": "user", "content": user_text.strip()}]
+        elif supports_vision and self._has_image_attachments(all_attachments):
             templated_text = self._apply_user_template(user_text, context_vars)
             vision_content = self._build_vision_user_content(templated_text, all_attachments)
             messages = [{"role": "user", "content": vision_content}]

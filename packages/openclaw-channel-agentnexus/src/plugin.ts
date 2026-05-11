@@ -8,6 +8,9 @@
  * 原地 finalize AgentNexus 侧占位消息。
  */
 import { randomUUID } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, extname, join } from "node:path";
 
 import {
   createChannelPluginBase,
@@ -96,6 +99,75 @@ async function fetchFileContentForBot(
 /** agent 回复超过此字符阈值时，自动把正文上传为 .md 附件挂到 reply 上。 */
 const AUTO_ATTACH_THRESHOLD_CHARS = 4000;
 
+interface OutputFallbackConfig {
+  enabled: boolean;
+  outputDirs: string[];
+  delayMs: number;
+  pollMs: number;
+  stableMs: number;
+  maxWatchMs: number;
+  maxFiles: number;
+  minBytes: number;
+  maxBytes: number;
+}
+
+type RawOutputFallbackConfig = Partial<OutputFallbackConfig>;
+
+const DEFAULT_OUTPUT_FALLBACK: OutputFallbackConfig = {
+  enabled: true,
+  outputDirs: [],
+  // AgentNexus defaults to converting Agent Bridge placeholders after 60s.
+  // Wait a touch longer so this fallback only speaks once the reply is a task.
+  delayMs: 65_000,
+  pollMs: 2_000,
+  stableMs: 6_000,
+  maxWatchMs: 60 * 60 * 1000,
+  maxFiles: 80,
+  minBytes: 16,
+  maxBytes: 25 * 1024 * 1024,
+};
+
+function normalizePositiveInt(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+function resolveOutputFallbackConfig(raw?: RawOutputFallbackConfig): OutputFallbackConfig {
+  const base = DEFAULT_OUTPUT_FALLBACK;
+  return {
+    enabled: raw?.enabled ?? base.enabled,
+    outputDirs: Array.isArray(raw?.outputDirs)
+      ? raw.outputDirs.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : base.outputDirs,
+    delayMs: normalizePositiveInt(raw?.delayMs, base.delayMs),
+    pollMs: normalizePositiveInt(raw?.pollMs, base.pollMs),
+    stableMs: normalizePositiveInt(raw?.stableMs, base.stableMs),
+    maxWatchMs: normalizePositiveInt(raw?.maxWatchMs, base.maxWatchMs),
+    maxFiles: normalizePositiveInt(raw?.maxFiles, base.maxFiles),
+    minBytes: normalizePositiveInt(raw?.minBytes, base.minBytes),
+    maxBytes: normalizePositiveInt(raw?.maxBytes, base.maxBytes),
+  };
+}
+
+/** 入站到 OpenClaw agent 前追加的交付契约：防止模型只回“正在生成…”。 */
+const AGENTNEXUS_RESPONSE_CONTRACT = `
+
+<agentnexus_response_contract>
+  <final_output_required>true</final_output_required>
+  <rules>
+    <rule>不要把“正在生成/我将生成/Let me generate/Now I have enough info”等进度句作为最终回复。</rule>
+    <rule>如果任务要求报告、HTML、Markdown、附件或文件，请实际创建可交付文件，并用 MEDIA:/absolute/path 返回，或直接输出完整正文。</rule>
+    <rule>最终回复必须包含完整可见结果或 MEDIA 文件；不能只说明接下来要做什么。</rule>
+    <rule>如果无法生成完整产物，请明确说明失败原因，不要返回进度占位句。</rule>
+  </rules>
+</agentnexus_response_contract>`;
+
+function appendAgentNexusResponseContract(message: string): string {
+  if (message.includes("<agentnexus_response_contract>")) return message;
+  return `${message.trimEnd()}${AGENTNEXUS_RESPONSE_CONTRACT}`;
+}
+
 async function uploadBotMarkdownFile(
   session: BotSession,
   channelId: string,
@@ -171,6 +243,7 @@ export interface ResolvedAccount {
   };
   dmPolicy?: string;
   allowFrom: string[];
+  outputFallback: OutputFallbackConfig;
 }
 
 interface RawAccount {
@@ -181,6 +254,7 @@ interface RawAccount {
   advanced?: Partial<ResolvedAccount["advanced"]>;
   allowFrom?: string[];
   dmSecurity?: string;
+  outputFallback?: RawOutputFallbackConfig;
 }
 
 function getAccountsFromCfg(cfg: OpenClawConfig): Record<string, RawAccount> {
@@ -209,6 +283,7 @@ function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): Resolve
         sendAckTimeoutMs: 10000,
       },
       allowFrom: [],
+      outputFallback: resolveOutputFallbackConfig(),
     };
   }
   return {
@@ -225,6 +300,7 @@ function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): Resolve
     },
     dmPolicy: raw.dmSecurity,
     allowFrom: raw.allowFrom ?? [],
+    outputFallback: resolveOutputFallbackConfig(raw.outputFallback),
   };
 }
 
@@ -847,6 +923,8 @@ async function startAccount(rawCtx: unknown): Promise<void> {
         if (m.event.session?.task_scope_id) {
           rememberReplyTarget(replyTargets, String(m.event.session.task_scope_id), target);
         }
+        const runtimeEntry = sessionRegistry.get(accountId);
+        if (runtimeEntry) void startOutputFallbackWatcher(runtimeEntry, accountId, m, sk, log);
         log.info?.(
           `agentnexus: ${accountId} inbound channel=${m.channelId} task=${m.event.task_id} attachments=${m.attachments.length} text=${JSON.stringify(m.text).slice(0, 80)}`,
         );
@@ -882,12 +960,13 @@ async function startAccount(rawCtx: unknown): Promise<void> {
           });
         }
         const hydratedText = await buildMessageWithAttachments(httpBase, account.botToken, m, log);
+        const agentPromptText = appendAgentNexusResponseContract(hydratedText);
         if (m.attachments.length > 0) {
           emitInboundTrace(session, accountId, sk, m, {
             phase: "attachments_ready",
             title: "Attachments ready",
-            message: `prompt chars=${hydratedText.length}`,
-            data: { promptChars: hydratedText.length },
+            message: `prompt chars=${agentPromptText.length}`,
+            data: { promptChars: agentPromptText.length },
           });
         }
 
@@ -913,7 +992,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
               channelId: m.channelId,
               taskId: m.event.task_id,
               placeholderMsgId: m.event.placeholder_msg_id,
-              text: hydratedText,
+              text: agentPromptText,
             }),
           });
           if (!resp.ok) {
@@ -955,15 +1034,16 @@ async function startAccount(rawCtx: unknown): Promise<void> {
         // deltas had landed before the cancel. We just stop pushing more.
         const to = taskByPlaceholder.get(msgId);
         const slot = to ? pendingStreamByTo.get(to) : undefined;
-        if (!slot) {
-          log.info?.(`agentnexus: ${accountId} cancel for unknown msg=${msgId} (already done?)`);
-          return;
-        }
+      if (!to || !slot) {
+        log.info?.(`agentnexus: ${accountId} cancel for unknown msg=${msgId} (already done?)`);
+        return;
+      }
         slot.cancelled = true;
         if (slot.doneTimer) {
           clearTimeout(slot.doneTimer);
           slot.doneTimer = null;
         }
+        stopOutputFallbackWatcher(accountId, to);
         log.info?.(
           `agentnexus: ${accountId} cancel msg=${msgId} task=${to} reason=${reason ?? ""} chars=${slot.totalChars}`,
         );
@@ -1008,6 +1088,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
       void session.stop();
       sessionRegistry.delete(accountId);
       clearRunTraceTargetsForAccount(accountId);
+      clearOutputFallbackWatchersForAccount(accountId);
       resolve();
     };
     if (ctx.abortSignal?.aborted) {
@@ -1025,6 +1106,7 @@ async function stopAccount(rawCtx: unknown): Promise<void> {
   if (!entry) return;
   sessionRegistry.delete(ctx.accountId);
   clearRunTraceTargetsForAccount(ctx.accountId);
+  clearOutputFallbackWatchersForAccount(ctx.accountId);
   try {
     unregisterSessionBindingAdapter({
       channel: PLUGIN_ID,
@@ -1099,6 +1181,362 @@ const STREAM_DONE_DEBOUNCE_MS = 500;
 /** 单条流式回复最多累积多少字符，防 agent 一次性写一本小说。超过即自动收尾 + 截断。 */
 const STREAM_TEXT_CAP_CHARS = 200_000;
 
+function latestRequestTail(text: string): string {
+  return text.slice(Math.max(0, text.length - 2500));
+}
+
+function expectsConcreteDeliverable(sourceText: string): boolean {
+  const tail = latestRequestTail(sourceText);
+  return /Use the ["'][^"']+["'] skill/i.test(tail)
+    || /(报告|调研|诊断|HTML|Markdown|附件|文件|请创建|生成.*报告|返回文件|deliverable|diagnostic report|research report|attachment|file)/i.test(tail);
+}
+
+function isLikelyProgressOnlyText(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (!normalized || normalized.length > 320) return false;
+  if (/MEDIA:\s*\S+/i.test(normalized)) return false;
+  if (/<(?:!doctype|html|body|article|section|table)\b/i.test(normalized)) return false;
+  if (/^\s{0,3}#{1,6}\s+\S/m.test(text) || /\|.+\|.+\|/.test(text)) return false;
+
+  const startsLikeProgress = /^(正在|开始|准备|即将|接下来|我将|我会|让我|已经收集|已收集|已获取|已完成信息收集|报告已生成|已生成|Now I|Let me|I will|I'll|I'm going to|I have enough|Generating|Creating|Preparing)/i
+    .test(normalized);
+  const talksAboutWork = /(生成|创建|整理|分析|调研|诊断|报告|附件|文件|查找|收集|generate|create|prepare|diagnostic|report|attachment|file|collect|analy[sz]e)/i
+    .test(normalized);
+  return startsLikeProgress && talksAboutWork;
+}
+
+function shouldHoldStatusOnlyOutput(sourceText: string, outputText: string): boolean {
+  return expectsConcreteDeliverable(sourceText) && isLikelyProgressOnlyText(outputText);
+}
+
+const OUTPUT_FALLBACK_EXTENSIONS = new Set([
+  ".html",
+  ".htm",
+  ".md",
+  ".markdown",
+  ".txt",
+  ".csv",
+  ".json",
+  ".pdf",
+  ".docx",
+  ".xlsx",
+  ".pptx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+]);
+
+const OUTPUT_FALLBACK_CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".markdown": "text/markdown; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".csv": "text/csv; charset=utf-8",
+  ".json": "application/json",
+  ".pdf": "application/pdf",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+};
+
+interface OutputFileInfo {
+  path: string;
+  filename: string;
+  ext: string;
+  size: number;
+  mtimeMs: number;
+}
+
+interface OutputFileSeen {
+  size: number;
+  mtimeMs: number;
+  stableSince: number;
+}
+
+interface OutputFallbackWatcher {
+  accountId: string;
+  taskId: string;
+  sessionKey: string;
+  source: InboundMessage;
+  outputDirs: string[];
+  startedAt: number;
+  cfg: OutputFallbackConfig;
+  baseline: Map<string, { size: number; mtimeMs: number }>;
+  seen: Map<string, OutputFileSeen>;
+  deliveredPaths: Set<string>;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+const outputFallbackWatchers = new Map<string, OutputFallbackWatcher>();
+
+function outputFallbackKey(accountId: string, taskId: string): string {
+  return `${accountId}:${taskId}`;
+}
+
+function agentIdFromSessionKey(sessionKey: string): string | null {
+  const match = /^agent:([^:]+):/.exec(sessionKey);
+  return match?.[1] || null;
+}
+
+function candidateOutputDirs(cfg: OutputFallbackConfig, sessionKey: string): string[] {
+  const dirs: string[] = [];
+  for (const dir of cfg.outputDirs) {
+    const trimmed = dir.trim();
+    if (trimmed && !dirs.includes(trimmed)) dirs.push(trimmed);
+  }
+  const agentId = agentIdFromSessionKey(sessionKey);
+  if (agentId) {
+    const defaultDir = join(homedir(), ".openclaw", "workspace", agentId, "output");
+    if (!dirs.includes(defaultDir)) dirs.push(defaultDir);
+  }
+  return dirs;
+}
+
+function shouldIgnoreOutputName(name: string): boolean {
+  return !name
+    || name.startsWith(".")
+    || name.endsWith(".tmp")
+    || name.endsWith(".part")
+    || name.endsWith(".crdownload")
+    || name.endsWith("~");
+}
+
+async function collectOutputFiles(
+  dirs: string[],
+  cfg: OutputFallbackConfig,
+  depth = 0,
+): Promise<OutputFileInfo[]> {
+  const out: OutputFileInfo[] = [];
+  for (const dir of dirs) {
+    if (out.length >= cfg.maxFiles) break;
+    let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (out.length >= cfg.maxFiles) break;
+      if (shouldIgnoreOutputName(entry.name)) continue;
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < 2 && !["node_modules", ".git", ".openclaw"].includes(entry.name)) {
+          out.push(...await collectOutputFiles([fullPath], cfg, depth + 1));
+        }
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = extname(entry.name).toLowerCase();
+      if (!OUTPUT_FALLBACK_EXTENSIONS.has(ext)) continue;
+      let st: Awaited<ReturnType<typeof stat>>;
+      try {
+        st = await stat(fullPath);
+      } catch {
+        continue;
+      }
+      if (st.size < cfg.minBytes || st.size > cfg.maxBytes) continue;
+      out.push({
+        path: fullPath,
+        filename: basename(fullPath),
+        ext,
+        size: st.size,
+        mtimeMs: st.mtimeMs,
+      });
+    }
+  }
+  out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return out.slice(0, cfg.maxFiles);
+}
+
+async function buildOutputBaseline(
+  dirs: string[],
+  cfg: OutputFallbackConfig,
+): Promise<Map<string, { size: number; mtimeMs: number }>> {
+  const baseline = new Map<string, { size: number; mtimeMs: number }>();
+  for (const file of await collectOutputFiles(dirs, cfg)) {
+    baseline.set(file.path, { size: file.size, mtimeMs: file.mtimeMs });
+  }
+  return baseline;
+}
+
+function isNewOutputFile(watcher: OutputFallbackWatcher, file: OutputFileInfo): boolean {
+  if (file.mtimeMs < watcher.startedAt - 5_000) return false;
+  const baseline = watcher.baseline.get(file.path);
+  if (!baseline) return true;
+  return file.size !== baseline.size || file.mtimeMs > baseline.mtimeMs + 1;
+}
+
+async function isCompleteOutputFile(file: OutputFileInfo): Promise<boolean> {
+  if (file.ext === ".html" || file.ext === ".htm") {
+    try {
+      const text = await readFile(file.path, "utf8");
+      return /<\/(?:body|html)>\s*$/i.test(text.trim());
+    } catch {
+      return false;
+    }
+  }
+  if (file.ext === ".json") {
+    try {
+      JSON.parse(await readFile(file.path, "utf8"));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function attachOutputFallbackFile(
+  watcher: OutputFallbackWatcher,
+  entry: AccountRuntime,
+  file: OutputFileInfo,
+  log?: PluginLogger,
+): Promise<boolean> {
+  const contentType = OUTPUT_FALLBACK_CONTENT_TYPES[file.ext] ?? "application/octet-stream";
+  const result = await sendMedia({
+    to: watcher.taskId,
+    text: `已生成文件，请查收附件：${file.filename}`,
+    mediaUrl: file.path,
+    filename: file.filename,
+    contentType,
+    accountId: watcher.accountId,
+  });
+  if (!result.messageId) return false;
+  log?.info?.(
+    `agentnexus: output fallback attached task=${watcher.taskId} file=${file.path} size=${file.size}`,
+  );
+  emitRunTrace(watcher.taskId, {
+    stream: "agentnexus_plugin",
+    ts: Date.now(),
+    phase: "output_fallback_attached",
+    status: "completed",
+    title: "Output file attached",
+    message: file.filename,
+    data: { path: file.path, size: file.size },
+  });
+  return true;
+}
+
+function scheduleOutputFallbackPoll(
+  key: string,
+  entry: AccountRuntime,
+  log?: PluginLogger,
+): void {
+  const watcher = outputFallbackWatchers.get(key);
+  if (!watcher) return;
+  if (watcher.timer) clearTimeout(watcher.timer);
+  watcher.timer = setTimeout(() => {
+    pollOutputFallbackWatcher(key, entry, log).catch((err) => {
+      log?.warn?.(`agentnexus: output fallback watcher failed task=${watcher.taskId}: ${String(err)}`);
+      scheduleOutputFallbackPoll(key, entry, log);
+    });
+  }, watcher.cfg.pollMs);
+}
+
+async function pollOutputFallbackWatcher(
+  key: string,
+  entry: AccountRuntime,
+  log?: PluginLogger,
+): Promise<void> {
+  const watcher = outputFallbackWatchers.get(key);
+  if (!watcher) return;
+  const now = Date.now();
+  if (now - watcher.startedAt > watcher.cfg.maxWatchMs) {
+    stopOutputFallbackWatcher(watcher.accountId, watcher.taskId);
+    return;
+  }
+
+  const files = await collectOutputFiles(watcher.outputDirs, watcher.cfg);
+  for (const file of files) {
+    if (watcher.deliveredPaths.has(file.path) || !isNewOutputFile(watcher, file)) continue;
+    const previous = watcher.seen.get(file.path);
+    const stableSince = previous && previous.size === file.size && previous.mtimeMs === file.mtimeMs
+      ? previous.stableSince
+      : now;
+    watcher.seen.set(file.path, {
+      size: file.size,
+      mtimeMs: file.mtimeMs,
+      stableSince,
+    });
+    if (now - watcher.startedAt < watcher.cfg.delayMs) continue;
+    if (now - stableSince < watcher.cfg.stableMs) continue;
+    if (!await isCompleteOutputFile(file)) continue;
+
+    watcher.deliveredPaths.add(file.path);
+    if (await attachOutputFallbackFile(watcher, entry, file, log)) {
+      stopOutputFallbackWatcher(watcher.accountId, watcher.taskId);
+      return;
+    }
+  }
+  scheduleOutputFallbackPoll(key, entry, log);
+}
+
+async function startOutputFallbackWatcher(
+  entry: AccountRuntime,
+  accountId: string,
+  source: InboundMessage,
+  sessionKey: string,
+  log?: PluginLogger,
+): Promise<void> {
+  if (!source.event.placeholder_msg_id) return;
+  if (!expectsConcreteDeliverable(source.text)) return;
+  const cfg = entry.account.outputFallback ?? resolveOutputFallbackConfig();
+  if (!cfg.enabled) return;
+  const outputDirs = candidateOutputDirs(cfg, sessionKey);
+  if (outputDirs.length === 0) return;
+
+  const key = outputFallbackKey(accountId, source.event.task_id);
+  stopOutputFallbackWatcher(accountId, source.event.task_id);
+  const watcher: OutputFallbackWatcher = {
+    accountId,
+    taskId: source.event.task_id,
+    sessionKey,
+    source,
+    outputDirs,
+    startedAt: Date.now(),
+    cfg,
+    baseline: new Map(),
+    seen: new Map(),
+    deliveredPaths: new Set(),
+    timer: null,
+  };
+  outputFallbackWatchers.set(key, watcher);
+  try {
+    watcher.baseline = await buildOutputBaseline(outputDirs, cfg);
+  } catch (err) {
+    log?.warn?.(`agentnexus: output fallback baseline failed task=${source.event.task_id}: ${String(err)}`);
+  }
+  const current = outputFallbackWatchers.get(key);
+  if (!current) return;
+  log?.debug?.(
+    `agentnexus: output fallback watching task=${current.taskId} dirs=${outputDirs.join(",")}`,
+  );
+  scheduleOutputFallbackPoll(key, entry, log);
+}
+
+function stopOutputFallbackWatcher(accountId: string | null | undefined, taskId: string): void {
+  if (!accountId || !taskId) return;
+  const key = outputFallbackKey(accountId, taskId);
+  const watcher = outputFallbackWatchers.get(key);
+  if (!watcher) return;
+  if (watcher.timer) clearTimeout(watcher.timer);
+  outputFallbackWatchers.delete(key);
+}
+
+function clearOutputFallbackWatchersForAccount(accountId: string): void {
+  for (const watcher of Array.from(outputFallbackWatchers.values())) {
+    if (watcher.accountId === accountId) stopOutputFallbackWatcher(accountId, watcher.taskId);
+  }
+}
+
 interface PendingStreamSlot {
   /** 触发该 stream 的 inbound message —— 用于回滚 fallback 到 session.reply */
   source: InboundMessage;
@@ -1116,6 +1554,8 @@ interface PendingStreamSlot {
   /** sendMedia 期间累积的 file_ids；done 帧把它们一并交给 server,
    *  让 server 的 finalize_stream 把它们合并进占位消息的 file_ids 字段. */
   fileIds: string[];
+  /** 首段疑似“正在生成…”的进度句。确认有真正正文/文件前不推给频道。 */
+  heldStatusText: string;
   doneTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -1295,6 +1735,7 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
       cancelled: false,
       hasDeltas: false,
       fileIds: [],
+      heldStatusText: "",
       doneTimer: null,
     };
     pendingStreamByTo.set(streamKey, slot);
@@ -1345,11 +1786,16 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
 
 /** Schedule (or reschedule) the `done` frame for a stream. Called after every
  *  delta — whichever sendText is the *last* one will be the one that fires. */
-function armStreamDoneTimer(to: string, entry: AccountRuntime, slot: PendingStreamSlot): void {
+function armStreamDoneTimer(
+  to: string,
+  entry: AccountRuntime,
+  slot: PendingStreamSlot,
+  delayMs = STREAM_DONE_DEBOUNCE_MS,
+): void {
   if (slot.doneTimer) clearTimeout(slot.doneTimer);
   slot.doneTimer = setTimeout(() => {
     flushStreamDone(to, entry).catch(() => { /* swallow */ });
-  }, STREAM_DONE_DEBOUNCE_MS);
+  }, delayMs);
 }
 
 /** Send `done` and clean up. Idempotent; safe to call after cancel. */
@@ -1362,6 +1808,7 @@ async function flushStreamDone(to: string, entry: AccountRuntime): Promise<void>
   }
   pendingStreamByTo.delete(to);
   if (slot.placeholderMsgId) taskByPlaceholder.delete(slot.placeholderMsgId);
+  stopOutputFallbackWatcher(entry.account.accountId, slot.source.event.task_id);
 
   // Cancelled streams: server already finalized partial when it pushed the
   // cancel frame to us. We deliberately do NOT send `done` again; the server
@@ -1430,6 +1877,7 @@ async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
       cancelled: false,
       hasDeltas: false,
       fileIds: [],
+      heldStatusText: "",
       doneTimer: null,
     };
     pendingStreamByTo.set(streamKey, slot);
@@ -1462,18 +1910,36 @@ async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
     const fileIds = await maybeAutoAttachReplyAsFile(entry, slot.source.channelId, ctx.text);
     const r = await session.reply({ source: slot.source, text: ctx.text, fileIds });
     pendingStreamByTo.delete(streamKey);
+    stopOutputFallbackWatcher(accountId, slot.source.event.task_id);
     if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: slot.source.channelId };
     throw new Error(`agentnexus: session.reply failed (${r.code ?? "?"} ${r.error ?? ""})`);
   }
 
-  // Cap protection: once we've streamed enough, force a done and refuse more.
   const incoming = ctx.text || "";
+  if (!slot.hasDeltas && slot.fileIds.length === 0) {
+    const heldCandidate = `${slot.heldStatusText}${incoming}`;
+    if (shouldHoldStatusOnlyOutput(slot.source.text, heldCandidate)) {
+      slot.heldStatusText = heldCandidate.slice(0, 2000);
+      // 状态句不是最终回复。这里静默挂起，让 AgentNexus 后端的前台等待
+      // timer 把占位消息转成后台 task；OpenClaw 后续迟到的正文或 MEDIA
+      // 仍会继续写入同一个 stream slot 并最终更新该 task 消息。
+      return {
+        channel: PLUGIN_ID,
+        messageId: `${slot.placeholderMsgId}-held-status`,
+        chatId: slot.source.channelId,
+      };
+    }
+    if (slot.heldStatusText) slot.heldStatusText = "";
+  }
+
+  // Cap protection: once we've streamed enough, force a done and refuse more.
   if (slot.totalChars >= STREAM_TEXT_CAP_CHARS) {
     if (slot.placeholderMsgId) {
       session.streamDone({ msgId: slot.placeholderMsgId });
     }
     pendingStreamByTo.delete(streamKey);
     if (slot.placeholderMsgId) taskByPlaceholder.delete(slot.placeholderMsgId);
+    stopOutputFallbackWatcher(accountId, slot.source.event.task_id);
     return {
       channel: PLUGIN_ID,
       messageId: `truncated-${streamKey}`,
@@ -1496,6 +1962,7 @@ async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
     // (they went out as deltas), so just send this one as a reply and stop.
     pendingStreamByTo.delete(streamKey);
     if (slot.placeholderMsgId) taskByPlaceholder.delete(slot.placeholderMsgId);
+    stopOutputFallbackWatcher(accountId, slot.source.event.task_id);
     const fileIds = await maybeAutoAttachReplyAsFile(entry, slot.source.channelId, incoming);
     const r = await session.reply({ source: slot.source, text: incoming, fileIds });
     if (r.ok && r.messageId) return { channel: PLUGIN_ID, messageId: r.messageId, chatId: slot.source.channelId };
@@ -1602,4 +2069,11 @@ export const __testonly = {
   flushStreamDone,
   STREAM_DONE_DEBOUNCE_MS,
   STREAM_TEXT_CAP_CHARS,
+  appendAgentNexusResponseContract,
+  shouldHoldStatusOnlyOutput,
+  startOutputFallbackWatcher,
+  stopOutputFallbackWatcher,
+  outputFallbackWatchers,
+  resolveOutputFallbackConfig,
+  isCompleteOutputFile,
 };
