@@ -31,6 +31,12 @@ agentnexus-acp-connector --config ./agentnexus-acp.json
 
 ## npm CLI and daemon mode
 
+Install from npm after the package is published:
+
+```bash
+npm install -g @agentnexus/acp-connector
+```
+
 Install from this repository checkout:
 
 ```bash
@@ -129,3 +135,45 @@ agentnexus-acp-connector start --config ./agentnexus-acp.json --name codex-main
    `@codex-main hello`. The connector receives the AgentNexus dispatch frame,
    calls the local ACP agent over stdio, and streams `delta`/`done` frames back
    through the existing Agent Bridge WebSocket.
+
+## Release
+
+The real npm release is tag-driven by
+`.github/workflows/release-acp-connector.yml`.
+
+Prerequisite: configure the GitHub repository secret `NPM_TOKEN` with publish
+permission for the public `@agentnexus` npm scope.
+
+The workflow publishes packages in this order:
+
+1. `@agentnexus/bridge-client`
+2. `@agentnexus/acp-connector`
+
+If the shared bridge client has changed in a way consumers need, bump
+`packages/agentnexus-bridge-client/package.json` before tagging the connector.
+
+The repository keeps the connector dependency as
+`"@agentnexus/bridge-client": "file:../agentnexus-bridge-client"` for local
+development. During release, the workflow rewrites that dependency in the
+published tarball to the bridge package version, for example `^0.1.0`, so npm
+users can install the connector normally.
+
+To release the connector:
+
+```bash
+cd packages/agentnexus-acp-connector
+npm version patch --no-git-tag-version
+cd ../..
+VERSION=$(node -p "require('./packages/agentnexus-acp-connector/package.json').version")
+git add packages/agentnexus-acp-connector/package.json packages/agentnexus-acp-connector/package-lock.json
+git commit -m "chore: release ACP connector v${VERSION}"
+git push origin develop
+git tag "agentnexus-acp-connector-v${VERSION}"
+git push origin "agentnexus-acp-connector-v${VERSION}"
+```
+
+The tag must exactly match the connector package version:
+
+```text
+agentnexus-acp-connector-v<package.json version>
+```

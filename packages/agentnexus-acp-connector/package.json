@@ -14,6 +14,9 @@
       "import": "./dist/index.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "README.md"
@@ -39,6 +42,15 @@
     "claude"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Grant-Huang/AgentNexus.git",
+    "directory": "packages/agentnexus-acp-connector"
+  },
+  "bugs": {
+    "url": "https://github.com/Grant-Huang/AgentNexus/issues"
+  },
+  "homepage": "https://github.com/Grant-Huang/AgentNexus/tree/develop/packages/agentnexus-acp-connector#readme",
   "engines": {
     "node": ">=20.0.0"
   },
