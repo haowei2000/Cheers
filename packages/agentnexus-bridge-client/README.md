@@ -1,4 +1,4 @@
-# @agentnexus/bridge-client
+# @haowei0520/bridge-client
 
 Shared Node.js client for the AgentNexus Agent Bridge WebSocket protocol.
 
@@ -9,7 +9,7 @@ runtimes can reuse the same bridge transport.
 
 ## Release
 
-`@agentnexus/bridge-client` is published by the ACP connector release workflow
-before `@agentnexus/acp-connector`. Configure the repository secret `NPM_TOKEN`,
+`@haowei0520/bridge-client` is published by the ACP connector release workflow
+before `@haowei0520/acp-connector`. Configure the repository secret `NPM_TOKEN`,
 then push a tag named `agentnexus-acp-connector-v<version>` that matches the
 connector package version.

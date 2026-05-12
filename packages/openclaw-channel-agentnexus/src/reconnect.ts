@@ -4,4 +4,4 @@ export {
   ReconnectingClient,
   type ReconnectingClientCallbacks,
   type ReconnectOptions,
-} from "@agentnexus/bridge-client";
+} from "@haowei0520/bridge-client";

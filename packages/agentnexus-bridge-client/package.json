@@ -1,5 +1,5 @@
 {
-  "name": "@agentnexus/bridge-client",
+  "name": "@haowei0520/bridge-client",
   "version": "0.1.0",
   "description": "Shared AgentNexus Agent Bridge WebSocket client.",
   "type": "module",

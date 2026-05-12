@@ -1,4 +1,4 @@
-import { BotSession, type InboundMessage } from "@agentnexus/bridge-client";
+import { BotSession, type InboundMessage } from "@haowei0520/bridge-client";
 
 import { AcpStdioAgent } from "./acp-agent.js";
 import { SessionStateStore } from "./state.js";

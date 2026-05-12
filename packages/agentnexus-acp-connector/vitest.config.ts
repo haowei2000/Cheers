@@ -6,7 +6,7 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      "@agentnexus/bridge-client": `${here}../agentnexus-bridge-client/src/index.ts`,
+      "@haowei0520/bridge-client": `${here}../agentnexus-bridge-client/src/index.ts`,
     },
   },
   test: {

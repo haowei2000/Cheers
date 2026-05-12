@@ -10,7 +10,7 @@
 ┌──────────────────────────┐       ┌──────────────────────────────┐
 │ AgentNexus 后端          │       │ OpenClaw 进程                │
 │                          │       │                              │
-│ /ws/agent-bridge/control ◄───┼──ws───┤ openclaw-channel-agentnexus  │
+│ /ws/agent-bridge/control ◄───┼──ws───┤ @haowei0520/openclaw-channel-agentnexus │
 │   ↳ membership / hello   │       │   (channel plugin)           │
 │                          │       │                              │
 │ /ws/agent-bridge/data    ◄───┼──ws───┤   ↳ 转发 message → agent     │
@@ -33,7 +33,7 @@
 |---|---|
 | AgentNexus 版本 | 含 `agent_bridge` 路由（`/ws/agent-bridge/control`、`/ws/agent-bridge/data`） |
 | OpenClaw CLI | `2026.4.15` 或更新 |
-| Plugin 包 | `openclaw-channel-agentnexus` ≥ `0.2.0` |
+| Plugin 包 | `@haowei0520/openclaw-channel-agentnexus` ≥ `0.2.3` |
 | 网络 | OpenClaw 主机能直连 AgentNexus 后端的 8002（或反代后的 SSL 端口） |
 | 后端 `.env` | `AGENT_BRIDGE_ENABLED=1`、`AGENT_BRIDGE_TOKEN=<任意非空字符串>` |
 
@@ -118,7 +118,7 @@ openclaw plugins install -l "$(pwd)"
 
 ```bash
 openclaw plugins list | grep agentnexus
-# openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.0
+# @haowei0520/openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.3
 ```
 
 `failed to load`？检查 `dist/` 是否齐 + `openclaw.plugin.json` 是否在包根。

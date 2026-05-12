@@ -5,4 +5,4 @@ export {
   type SendResult,
   type SessionConfig,
   type SessionEvents,
-} from "@agentnexus/bridge-client";
+} from "@haowei0520/bridge-client";

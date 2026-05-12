@@ -1,5 +1,5 @@
 {
-  "name": "@agentnexus/acp-connector",
+  "name": "@haowei0520/acp-connector",
   "version": "0.1.0",
   "description": "Reverse bridge that connects local ACP stdio agents to AgentNexus Agent Bridge bots.",
   "type": "module",
@@ -55,7 +55,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@agentnexus/bridge-client": "file:../agentnexus-bridge-client"
+    "@haowei0520/bridge-client": "file:../agentnexus-bridge-client"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
