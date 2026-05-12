@@ -25,11 +25,11 @@ OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNe
 
 ```bash
 # 用 gh CLI（最稳，URL 不会被换行截断）
-gh release download openclaw-channel-agentnexus-v0.2.3 \
+gh release download openclaw-channel-agentnexus-v0.2.4 \
   -R Grant-Huang/AgentNexus \
   --pattern "*.tgz" \
   --dir /tmp
-openclaw plugins install /tmp/haowei0520-openclaw-channel-agentnexus-0.2.3.tgz
+openclaw plugins install /tmp/haowei0520-openclaw-channel-agentnexus-0.2.4.tgz
 
 # 或直接 curl（URL 必须用引号括住，避免终端换行截断）
 curl -L -o /tmp/agentnexus.tgz \
@@ -49,7 +49,7 @@ openclaw plugins install -l "$(pwd)"      # -l 表示 link，改 dist 重启即�
 两种方式都装完后，应在 `openclaw plugins list` 里看到：
 
 ```
-@haowei0520/openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.3
+@haowei0520/openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.4
 ```
 
 如果 `failed to load`：检查 `dist/` 是否齐 + `openclaw.plugin.json` 是否在包根。

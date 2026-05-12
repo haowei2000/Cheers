@@ -36,7 +36,7 @@ _PLUGIN_PACKAGE_NAME = (
     or "@haowei0520/openclaw-channel-agentnexus"
 )
 _PLUGIN_FILE_STEM = "openclaw-channel-agentnexus"
-_PLUGIN_VERSION = os.getenv("OPENCLAW_PLUGIN_VERSION", "0.2.3").strip() or "0.2.3"
+_PLUGIN_VERSION = os.getenv("OPENCLAW_PLUGIN_VERSION", "0.2.4").strip() or "0.2.4"
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _PLUGIN_RELEASE_DIR = Path(
     os.getenv("OPENCLAW_PLUGIN_RELEASE_DIR", str(_PROJECT_ROOT / "release"))

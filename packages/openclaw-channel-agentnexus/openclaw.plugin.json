@@ -3,7 +3,7 @@
   "kind": "channel",
   "name": "AgentNexus",
   "description": "Slack-like multi-channel chat with bots. One OpenClaw account = one AgentNexus Agent Bridge Bot.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "activation": {
     "onStartup": true,
     "onChannels": [

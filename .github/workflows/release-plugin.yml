@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re-)release, e.g. openclaw-channel-agentnexus-v0.2.3"
+        description: "Existing tag to (re-)release, e.g. openclaw-channel-agentnexus-v0.2.4"
         required: true
 
 permissions:
