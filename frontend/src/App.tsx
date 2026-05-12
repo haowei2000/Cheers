@@ -87,6 +87,59 @@ type AgentBridgeTaskMessage = Message & {
   content_data: AgentBridgeTaskContentData;
 };
 const API_DOCS_URL = "/docs";
+const CLIENT_STREAM_TRACE = "agentnexus_client";
+const MAX_BOT_TRACE_EVENTS = 160;
+
+function trimBotTraceEvents(events: BotTraceEvent[]): BotTraceEvent[] {
+  return events.slice(-MAX_BOT_TRACE_EVENTS);
+}
+
+function traceTimeLabel(ts?: number): string {
+  if (!ts) return "";
+  const ms = ts > 1_000_000_000_000 ? ts : ts > 1_000_000_000 ? ts * 1000 : ts;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function streamTraceLabel(trace: BotTraceEvent): string {
+  if (trace.stream !== CLIENT_STREAM_TRACE) return botTraceStatusText(trace);
+  const phase = trace.phase || "";
+  const labels: Record<string, string> = {
+    placeholder: "创建 Bot 回复占位",
+    message_stream: "收到流式片段",
+    message_done: "流式回复完成",
+    message_done_partial: "流式回复中断",
+    message_done_error: "流式回复出错",
+  };
+  return [labels[phase] || trace.title || "流式事件", trace.message]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function makeClientStreamTrace(
+  message: Pick<Message, "msg_id" | "task_id" | "sender_id">,
+  phase: string,
+  title: string,
+  data?: Record<string, unknown>,
+  messageText?: string,
+): BotTraceEvent {
+  return {
+    msg_id: message.msg_id,
+    task_id: message.task_id || null,
+    bot_id: message.sender_id,
+    stream: CLIENT_STREAM_TRACE,
+    phase,
+    title,
+    message: messageText,
+    ts: Date.now(),
+    data,
+  };
+}
 
 function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status" | "is_online" | "status">) {
   if ((bot.binding_type || "http") !== "agent_bridge") {
@@ -831,7 +884,18 @@ export default function App() {
               }
               const entry =
                 msg.data.sender_type === "bot"
-                  ? { ...msg.data, _streaming: true }
+                  ? {
+                      ...msg.data,
+                      _streaming: true,
+                      _bot_trace: [
+                        makeClientStreamTrace(
+                          msg.data,
+                          "placeholder",
+                          "创建 Bot 回复占位",
+                          { event_type: "message" },
+                        ),
+                      ],
+                    }
                   : msg.data;
               return [...prev, entry];
             });
@@ -857,11 +921,12 @@ export default function App() {
                           : m._agent_bridge_task;
                       const switchingFromTaskCard =
                         m.content_data?.kind === AGENT_BRIDGE_TASK_KIND;
+                      const nextContent = switchingFromTaskCard
+                        ? delta
+                        : m.content + delta;
                       return {
                         ...m,
-                        content: switchingFromTaskCard
-                          ? delta
-                          : m.content + delta,
+                        content: nextContent,
                         content_data: switchingFromTaskCard
                           ? null
                           : m.content_data,
@@ -872,6 +937,21 @@ export default function App() {
                               message: "正在接收 provider 输出。",
                             }
                           : m._agent_bridge_task,
+                        _bot_trace: trimBotTraceEvents([
+                          ...(m._bot_trace || []),
+                          makeClientStreamTrace(
+                            m,
+                            "message_stream",
+                            "收到流式片段",
+                            {
+                              event_type: "message_stream",
+                              delta_chars: String(delta || "").length,
+                              delta_preview: String(delta || "").slice(0, 160),
+                              accumulated_chars: nextContent.length,
+                            },
+                            `+${String(delta || "").length} chars`,
+                          ),
+                        ]),
                         _streaming: true,
                       };
                     })()
@@ -888,7 +968,10 @@ export default function App() {
                   ? {
                       ...m,
                       _bot_status: status,
-                      _bot_trace: [...(m._bot_trace || []), trace].slice(-24),
+                      _bot_trace: trimBotTraceEvents([
+                        ...(m._bot_trace || []),
+                        { ...trace, ts: trace.ts ?? Date.now() },
+                      ]),
                     }
                   : m,
               ),
@@ -939,6 +1022,36 @@ export default function App() {
                               : m.content_data,
                         _agent_bridge_task: nextTask,
                         _streaming: false,
+                        _bot_trace: trimBotTraceEvents([
+                          ...(m._bot_trace || []),
+                          makeClientStreamTrace(
+                            m,
+                            error
+                              ? "message_done_error"
+                              : is_partial
+                                ? "message_done_partial"
+                                : "message_done",
+                            error
+                              ? "流式回复出错"
+                              : is_partial
+                                ? "流式回复中断"
+                                : "流式回复完成",
+                            {
+                              event_type: "message_done",
+                              content_chars: String(content || "").length,
+                              is_partial: Boolean(is_partial),
+                              error: error || null,
+                              file_count: Array.isArray(files)
+                                ? files.length
+                                : Array.isArray(file_ids)
+                                  ? file_ids.length
+                                  : 0,
+                            },
+                            error
+                              ? String(error)
+                              : `${String(content || "").length} chars`,
+                          ),
+                        ]),
                         _bot_status: undefined,
                         ...(files ? { files } : {}),
                         ...(file_ids ? { file_ids } : {}),
@@ -1381,18 +1494,22 @@ export default function App() {
   };
 
   const renderMemoryLoadButton = (m: Message) => {
-    if (m.sender_type !== "bot" || !getMemoryLoadDetail(m)) return null;
+    if (!hasBotReplyDetails(m)) return null;
     return (
       <button
         type="button"
         onClick={() => setMemoryDetailMessage(m)}
-        title="查看这条 Bot 回复加载了哪些记忆"
+        title="查看这条 AI 回复的记忆与流式事件"
         className="an-chat-action"
       >
         <QuestionMarkCircleIcon className="h-3.5 w-3.5" />
       </button>
     );
   };
+
+  const hasBotReplyDetails = (m: Message): boolean =>
+    m.sender_type === "bot" &&
+    Boolean(getMemoryLoadDetail(m) || m._bot_trace?.length);
 
   const cancelStreamingMessage = async (m: Message) => {
     if (!selectedId) return;
@@ -2061,9 +2178,14 @@ export default function App() {
         replyMap.get(rootId) ?? [],
     };
   })();
-  const selectedMemoryLoadDetail = memoryDetailMessage
-    ? getMemoryLoadDetail(memoryDetailMessage)
+  const selectedDetailMessage = memoryDetailMessage
+    ? messages.find((m) => m.msg_id === memoryDetailMessage.msg_id) ||
+      memoryDetailMessage
     : null;
+  const selectedMemoryLoadDetail = selectedDetailMessage
+    ? getMemoryLoadDetail(selectedDetailMessage)
+    : null;
+  const selectedBotTraceEvents = selectedDetailMessage?._bot_trace || [];
 
   return (
     <>
@@ -2080,92 +2202,172 @@ export default function App() {
       <Modal
         open={!!memoryDetailMessage}
         onClose={() => setMemoryDetailMessage(null)}
-        title="记忆加载详情"
+        title="AI 回复详情"
         description={
           selectedMemoryLoadDetail
             ? `触发消息 ${selectedMemoryLoadDetail.trigger_msg_id || "-"} · ${selectedMemoryLoadDetail.trigger_msg_type || "normal"}`
-            : undefined
+            : selectedDetailMessage
+              ? `消息 ${selectedDetailMessage.msg_id}`
+              : undefined
         }
-        maxWidth="max-w-3xl"
+        maxWidth="max-w-4xl"
       >
-        {selectedMemoryLoadDetail ? (
-          <div className="space-y-4">
-            <div
-              className="grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-3"
-              style={{ borderColor: "var(--border)" }}
-            >
-              <div>
-                <div style={{ color: "var(--fg-3)" }}>加载策略</div>
-                <div className="mt-0.5 font-mono break-all">
-                  {selectedMemoryLoadDetail.strategy || "-"}
-                </div>
-              </div>
-              <div>
-                <div style={{ color: "var(--fg-3)" }}>请求层</div>
-                <div className="mt-0.5">
-                  {(selectedMemoryLoadDetail.requested_layers || []).join(", ") || "-"}
-                </div>
-              </div>
-              <div>
-                <div style={{ color: "var(--fg-3)" }}>总字符数</div>
-                <div className="mt-0.5">
-                  {selectedMemoryLoadDetail.total_chars ?? 0}
-                </div>
-              </div>
+        <div className="max-h-[72vh] space-y-5 overflow-y-auto pr-1">
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
+                调用记忆
+              </h3>
+              {selectedMemoryLoadDetail && (
+                <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
+                  {selectedMemoryLoadDetail.total_chars ?? 0} chars
+                </span>
+              )}
             </div>
-            <div className="max-h-[58vh] space-y-3 overflow-y-auto pr-1">
-              {(selectedMemoryLoadDetail.layers || []).map((layer) => (
+            {selectedMemoryLoadDetail ? (
+              <>
                 <div
-                  key={layer.source}
-                  className="rounded-lg border p-3"
+                  className="grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-3"
                   style={{ borderColor: "var(--border)" }}
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold">
-                      {layer.label || layer.source}
-                    </span>
-                    <span
-                      className="rounded px-1.5 py-0.5 text-[10px]"
-                      style={{
-                        background: layer.requested
-                          ? "var(--accent-muted)"
-                          : "var(--surface-soft)",
-                        color: layer.requested ? "var(--accent)" : "var(--fg-3)",
-                      }}
-                    >
-                      {layer.requested ? "已请求" : "未请求"}
-                    </span>
-                    <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-                      {layer.chars || 0} chars
-                    </span>
-                    <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
-                      {layer.loader || layer.source}
-                    </span>
-                  </div>
-                  {layer.preview ? (
-                    <pre
-                      className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md p-2 text-[11px] leading-relaxed"
-                      style={{
-                        background: "var(--surface-soft)",
-                        color: "var(--fg-2)",
-                      }}
-                    >
-                      {layer.preview}
-                    </pre>
-                  ) : (
-                    <div className="mt-2 text-xs" style={{ color: "var(--fg-3)" }}>
-                      {layer.requested ? "这一层没有可用内容。" : "这一层未参与本次加载。"}
+                  <div>
+                    <div style={{ color: "var(--fg-3)" }}>加载策略</div>
+                    <div className="mt-0.5 font-mono break-all">
+                      {selectedMemoryLoadDetail.strategy || "-"}
                     </div>
-                  )}
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--fg-3)" }}>请求层</div>
+                    <div className="mt-0.5">
+                      {(selectedMemoryLoadDetail.requested_layers || []).join(", ") || "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--fg-3)" }}>触发类型</div>
+                    <div className="mt-0.5">
+                      {selectedMemoryLoadDetail.trigger_msg_type || "normal"}
+                    </div>
+                  </div>
                 </div>
-              ))}
+                <div className="space-y-3">
+                  {(selectedMemoryLoadDetail.layers || []).map((layer) => (
+                    <div
+                      key={layer.source}
+                      className="rounded-lg border p-3"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold">
+                          {layer.label || layer.source}
+                        </span>
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px]"
+                          style={{
+                            background: layer.requested
+                              ? "var(--accent-muted)"
+                              : "var(--surface-soft)",
+                            color: layer.requested ? "var(--accent)" : "var(--fg-3)",
+                          }}
+                        >
+                          {layer.requested ? "已请求" : "未请求"}
+                        </span>
+                        <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
+                          {layer.chars || 0} chars
+                        </span>
+                        <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
+                          {layer.loader || layer.source}
+                        </span>
+                      </div>
+                      {layer.preview ? (
+                        <pre
+                          className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md p-2 text-[11px] leading-relaxed"
+                          style={{
+                            background: "var(--surface-soft)",
+                            color: "var(--fg-2)",
+                          }}
+                        >
+                          {layer.preview}
+                        </pre>
+                      ) : (
+                        <div className="mt-2 text-xs" style={{ color: "var(--fg-3)" }}>
+                          {layer.requested ? "这一层没有可用内容。" : "这一层未参与本次加载。"}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
+                这条消息没有可展示的记忆加载信息。
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
+                流式事件过程
+              </h3>
+              <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
+                {selectedBotTraceEvents.length} events
+              </span>
             </div>
-          </div>
-        ) : (
-          <div className="text-sm" style={{ color: "var(--fg-3)" }}>
-            这条消息没有可展示的记忆加载信息。
-          </div>
-        )}
+            {selectedBotTraceEvents.length ? (
+              <div className="space-y-2">
+                {selectedBotTraceEvents.map((event, index) => {
+                  const eventData = event.data || {};
+                  return (
+                    <div
+                      key={`${event.stream || "trace"}-${event.phase || "event"}-${event.seq ?? index}-${event.ts ?? index}`}
+                      className="rounded-lg border p-3"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-mono"
+                          style={{
+                            background: "var(--surface-soft)",
+                            color: "var(--fg-3)",
+                          }}
+                        >
+                          #{index + 1}
+                        </span>
+                        {event.ts && (
+                          <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
+                            {traceTimeLabel(event.ts)}
+                          </span>
+                        )}
+                        <span className="text-xs font-semibold" style={{ color: "var(--fg-1)" }}>
+                          {streamTraceLabel(event)}
+                        </span>
+                        <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
+                          {event.stream || "trace"}
+                          {event.phase ? `/${event.phase}` : ""}
+                        </span>
+                      </div>
+                      {Object.keys(eventData).length > 0 && (
+                        <pre
+                          className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded-md p-2 text-[11px] leading-relaxed"
+                          style={{
+                            background: "var(--surface-soft)",
+                            color: "var(--fg-2)",
+                          }}
+                        >
+                          {JSON.stringify(eventData, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
+                当前页面会话还没有捕获到这条回复的流式事件。
+              </div>
+            )}
+          </section>
+        </div>
       </Modal>
 
       <div className="flex h-dvh" style={{ background: "var(--bg-0)" }}>
@@ -2577,6 +2779,9 @@ export default function App() {
                       onSendReply={(text) =>
                         sendTopicReply(selectedId, rootId, text)
                       }
+                      onCopyMessage={copyMessageText}
+                      onShowMessageDetails={setMemoryDetailMessage}
+                      hasMessageDetails={hasBotReplyDetails}
                       onImageClick={handleMarkdownImageClick}
                       onFileClick={handleMarkdownFileClick}
                       renderAttachments={renderFileAttachments}

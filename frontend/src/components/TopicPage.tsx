@@ -1,6 +1,10 @@
 /* TopicPage — full-page topic view (displayed in place of the chat stream
  * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
 import type { ChangeEvent, ReactNode } from "react";
+import {
+  DocumentDuplicateIcon,
+  QuestionMarkCircleIcon,
+} from "@heroicons/react/24/solid";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { MessageMarkdown } from "../MessageMarkdown";
@@ -21,6 +25,9 @@ export interface TopicPageProps {
   onBack: () => void;
   onGoToChannel?: () => void;
   onSendReply: (text: string) => Promise<void> | void;
+  onCopyMessage?: (message: Message) => Promise<void> | void;
+  onShowMessageDetails?: (message: Message) => void;
+  hasMessageDetails?: (message: Message) => boolean;
   onImageClick?: (src: string) => void;
   onFileClick?: (url: string, filename: string) => void;
   renderAttachments?: (message: Message) => ReactNode;
@@ -73,6 +80,9 @@ export function TopicPage({
   onBack,
   onGoToChannel,
   onSendReply,
+  onCopyMessage,
+  onShowMessageDetails,
+  hasMessageDetails,
   onImageClick,
   onFileClick,
   renderAttachments,
@@ -203,6 +213,32 @@ export function TopicPage({
               />
             </div>
           </div>
+          {(onCopyMessage || onShowMessageDetails) && (
+            <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+              {onShowMessageDetails && hasMessageDetails?.(m) && (
+                <button
+                  type="button"
+                  title="查看这条 AI 回复的记忆与流式事件"
+                  aria-label="查看这条 AI 回复的记忆与流式事件"
+                  onClick={() => onShowMessageDetails(m)}
+                  className="an-chat-action"
+                >
+                  <QuestionMarkCircleIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {onCopyMessage && (
+                <button
+                  type="button"
+                  title="复制消息内容"
+                  aria-label="复制消息内容"
+                  onClick={() => void onCopyMessage(m)}
+                  className="an-chat-action"
+                >
+                  <DocumentDuplicateIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
