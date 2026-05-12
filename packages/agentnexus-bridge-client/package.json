@@ -11,6 +11,9 @@
       "import": "./dist/index.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "README.md"
@@ -18,7 +21,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "agentnexus",
@@ -26,6 +31,15 @@
     "agent-bridge"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Grant-Huang/AgentNexus.git",
+    "directory": "packages/agentnexus-bridge-client"
+  },
+  "bugs": {
+    "url": "https://github.com/Grant-Huang/AgentNexus/issues"
+  },
+  "homepage": "https://github.com/Grant-Huang/AgentNexus/tree/develop/packages/agentnexus-bridge-client#readme",
   "engines": {
     "node": ">=20.0.0"
   },
