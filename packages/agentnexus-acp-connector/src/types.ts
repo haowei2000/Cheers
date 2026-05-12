@@ -1,4 +1,4 @@
-import type { SessionConfig } from "@agentnexus/bridge-client";
+import type { SessionConfig } from "@haowei0520/bridge-client";
 
 export type PermissionMode = "reject" | "allow" | "cancel";
 

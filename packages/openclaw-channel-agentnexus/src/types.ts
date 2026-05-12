@@ -30,10 +30,10 @@ export type {
   TraceFrame,
   TriggerMessage,
   TypingFrame,
-} from "@agentnexus/bridge-client";
+} from "@haowei0520/bridge-client";
 
 export {
   WS_CLOSE_AUTH_FAIL,
   WS_CLOSE_BOT_UNAVAILABLE,
   WS_CLOSE_SUPERSEDED,
-} from "@agentnexus/bridge-client";
+} from "@haowei0520/bridge-client";

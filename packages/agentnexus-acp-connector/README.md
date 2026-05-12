@@ -1,4 +1,4 @@
-# @agentnexus/acp-connector
+# @haowei0520/acp-connector
 
 Runs local ACP stdio agents, such as Codex or Claude-compatible agents, and
 reverse-connects them to a public AgentNexus server through the existing Agent
@@ -34,7 +34,7 @@ agentnexus-acp-connector --config ./agentnexus-acp.json
 Install from npm after the package is published:
 
 ```bash
-npm install -g @agentnexus/acp-connector
+npm install -g @haowei0520/acp-connector
 ```
 
 Install from this repository checkout:
@@ -142,18 +142,18 @@ The real npm release is tag-driven by
 `.github/workflows/release-acp-connector.yml`.
 
 Prerequisite: configure the GitHub repository secret `NPM_TOKEN` with publish
-permission for the public `@agentnexus` npm scope.
+permission for the public `@haowei0520` npm scope.
 
 The workflow publishes packages in this order:
 
-1. `@agentnexus/bridge-client`
-2. `@agentnexus/acp-connector`
+1. `@haowei0520/bridge-client`
+2. `@haowei0520/acp-connector`
 
 If the shared bridge client has changed in a way consumers need, bump
 `packages/agentnexus-bridge-client/package.json` before tagging the connector.
 
 The repository keeps the connector dependency as
-`"@agentnexus/bridge-client": "file:../agentnexus-bridge-client"` for local
+`"@haowei0520/bridge-client": "file:../agentnexus-bridge-client"` for local
 development. During release, the workflow rewrites that dependency in the
 published tarball to the bridge package version, for example `^0.1.0`, so npm
 users can install the connector normally.

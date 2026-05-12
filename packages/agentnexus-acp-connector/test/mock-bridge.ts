@@ -3,7 +3,7 @@ import { AddressInfo } from "node:net";
 
 import { WebSocket, WebSocketServer } from "ws";
 
-import type { MessageEvent } from "@agentnexus/bridge-client";
+import type { MessageEvent } from "@haowei0520/bridge-client";
 
 export class MockBridge {
   private server!: http.Server;

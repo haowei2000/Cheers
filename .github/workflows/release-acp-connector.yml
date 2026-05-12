@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "::error::NPM_TOKEN secret is required to publish @agentnexus packages."
+            echo "::error::NPM_TOKEN secret is required to publish @haowei0520 packages."
             exit 1
           fi
 
@@ -63,7 +63,7 @@ jobs:
           ACP_VERSION=$(node -p "require('./packages/agentnexus-acp-connector/package.json').version")
           EXPECTED="agentnexus-acp-connector-v${ACP_VERSION}"
           if [ "$TAG" != "$EXPECTED" ]; then
-            echo "::error::Tag '$TAG' does not match @agentnexus/acp-connector version (expected '$EXPECTED')."
+            echo "::error::Tag '$TAG' does not match @haowei0520/acp-connector version (expected '$EXPECTED')."
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -87,8 +87,8 @@ jobs:
           BRIDGE_VERSION: ${{ steps.versions.outputs.bridge_version }}
         run: |
           set -euo pipefail
-          if npm view "@agentnexus/bridge-client@${BRIDGE_VERSION}" version >/dev/null 2>&1; then
-            echo "@agentnexus/bridge-client@${BRIDGE_VERSION} already exists on npm; skipping publish."
+          if npm view "@haowei0520/bridge-client@${BRIDGE_VERSION}" version >/dev/null 2>&1; then
+            echo "@haowei0520/bridge-client@${BRIDGE_VERSION} already exists on npm; skipping publish."
           else
             npm publish --access public --provenance
           fi
@@ -126,10 +126,10 @@ jobs:
           const path = "package.json";
           const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
           pkg.dependencies = pkg.dependencies || {};
-          pkg.dependencies["@agentnexus/bridge-client"] = `^${process.env.BRIDGE_VERSION}`;
+          pkg.dependencies["@haowei0520/bridge-client"] = `^${process.env.BRIDGE_VERSION}`;
           fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
           NODE
-          node -p "require('./package.json').dependencies['@agentnexus/bridge-client']"
+          node -p "require('./package.json').dependencies['@haowei0520/bridge-client']"
 
       - name: Pack ACP connector artifact
         id: acp_pack
@@ -148,8 +148,8 @@ jobs:
           ACP_VERSION: ${{ steps.versions.outputs.acp_version }}
         run: |
           set -euo pipefail
-          if npm view "@agentnexus/acp-connector@${ACP_VERSION}" version >/dev/null 2>&1; then
-            echo "@agentnexus/acp-connector@${ACP_VERSION} already exists on npm; skipping publish."
+          if npm view "@haowei0520/acp-connector@${ACP_VERSION}" version >/dev/null 2>&1; then
+            echo "@haowei0520/acp-connector@${ACP_VERSION} already exists on npm; skipping publish."
           else
             npm publish --access public --provenance
           fi

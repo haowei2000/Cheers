@@ -180,7 +180,7 @@ openclaw plugins install -l "$(pwd)"
 
 ```bash
 openclaw plugins list | grep agentnexus
-# openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.1.0
+# @haowei0520/openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.3
 ```
 
 ### 4.2 在 AgentNexus 建 Agent Bridge Bot 并拿 token

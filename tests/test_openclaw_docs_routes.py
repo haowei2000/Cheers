@@ -25,7 +25,7 @@ async def test_openclaw_discovery_exposes_docs_namespace(client: AsyncClient) ->
     assert "bridge_provider" in body_schema
     assert data["entrypoints"]["help_get"]["url"].endswith("/docs/agent-bridge/help?q=...")
     assert data["bridge"]["control_ws"].endswith("/ws/agent-bridge/control")
-    assert data["plugin"]["name"] == "openclaw-channel-agentnexus"
+    assert data["plugin"]["name"] == "@haowei0520/openclaw-channel-agentnexus"
     assert data["plugin"]["release_folder"] == "release"
     assert data["plugin"]["download_url"].endswith(
         "/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz"

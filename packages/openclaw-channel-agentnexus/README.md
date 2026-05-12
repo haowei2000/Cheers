@@ -1,4 +1,4 @@
-# openclaw-channel-agentnexus
+# @haowei0520/openclaw-channel-agentnexus
 
 OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNexus `Agent Bridge Bot`, connected over the per-bot control + data WS bridge.
 
@@ -25,11 +25,11 @@ OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNe
 
 ```bash
 # 用 gh CLI（最稳，URL 不会被换行截断）
-gh release download openclaw-channel-agentnexus-v0.2.2 \
+gh release download openclaw-channel-agentnexus-v0.2.3 \
   -R Grant-Huang/AgentNexus \
   --pattern "*.tgz" \
   --dir /tmp
-openclaw plugins install /tmp/openclaw-channel-agentnexus-0.2.2.tgz
+openclaw plugins install /tmp/haowei0520-openclaw-channel-agentnexus-0.2.3.tgz
 
 # 或直接 curl（URL 必须用引号括住，避免终端换行截断）
 curl -L -o /tmp/agentnexus.tgz \
@@ -49,7 +49,7 @@ openclaw plugins install -l "$(pwd)"      # -l 表示 link，改 dist 重启即�
 两种方式都装完后，应在 `openclaw plugins list` 里看到：
 
 ```
-openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.2
+@haowei0520/openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.3
 ```
 
 如果 `failed to load`：检查 `dist/` 是否齐 + `openclaw.plugin.json` 是否在包根。
@@ -158,7 +158,7 @@ SDK 的 `ChannelGatewayContext.runtime` helpers，这些在 2026.4.15 SDK 里还
 `BotSession` 是一个独立可用的 Node 类。在没有 OpenClaw SDK 的环境里可以直接：
 
 ```ts
-import { BotSession } from "openclaw-channel-agentnexus";
+import { BotSession } from "@haowei0520/openclaw-channel-agentnexus";
 
 const session = new BotSession(
   {

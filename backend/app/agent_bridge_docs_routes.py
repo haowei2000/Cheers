@@ -31,15 +31,19 @@ from app.services.channel_service import ChannelService
 
 router = APIRouter(prefix="/docs/agent-bridge", tags=["agent-bridge-docs"])
 
-_PLUGIN_NAME = "openclaw-channel-agentnexus"
+_PLUGIN_PACKAGE_NAME = (
+    os.getenv("OPENCLAW_PLUGIN_PACKAGE", "@haowei0520/openclaw-channel-agentnexus").strip()
+    or "@haowei0520/openclaw-channel-agentnexus"
+)
+_PLUGIN_FILE_STEM = "openclaw-channel-agentnexus"
 _PLUGIN_VERSION = os.getenv("OPENCLAW_PLUGIN_VERSION", "0.2.3").strip() or "0.2.3"
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _PLUGIN_RELEASE_DIR = Path(
     os.getenv("OPENCLAW_PLUGIN_RELEASE_DIR", str(_PROJECT_ROOT / "release"))
 ).resolve()
 _PLUGIN_FILE_NAME = (
-    os.getenv("OPENCLAW_PLUGIN_FILE", f"{_PLUGIN_NAME}.tgz").strip()
-    or f"{_PLUGIN_NAME}.tgz"
+    os.getenv("OPENCLAW_PLUGIN_FILE", f"{_PLUGIN_FILE_STEM}.tgz").strip()
+    or f"{_PLUGIN_FILE_STEM}.tgz"
 )
 _PLUGIN_SOURCE_URL = (
     "https://github.com/Grant-Huang/AgentNexus/tree/main/packages/openclaw-channel-agentnexus"
@@ -144,7 +148,7 @@ def _plugin_payload(request: Request) -> dict[str, Any]:
     download_url = _plugin_download_url(request)
     plugin_path = _plugin_file_path(_PLUGIN_FILE_NAME)
     return {
-        "name": _PLUGIN_NAME,
+        "name": _PLUGIN_PACKAGE_NAME,
         "version": _PLUGIN_VERSION,
         "download_url": download_url,
         "release_folder": "release",
@@ -152,8 +156,8 @@ def _plugin_payload(request: Request) -> dict[str, Any]:
         "available": plugin_path.is_file(),
         "source_url": _PLUGIN_SOURCE_URL,
         "install": {
-            "curl": f"curl -L -o /tmp/{_PLUGIN_NAME}.tgz \"{download_url}\"",
-            "openclaw": f"openclaw plugins install /tmp/{_PLUGIN_NAME}.tgz",
+            "curl": f"curl -L -o /tmp/{_PLUGIN_FILE_NAME} \"{download_url}\"",
+            "openclaw": f"openclaw plugins install /tmp/{_PLUGIN_FILE_NAME}",
         },
         "config_hint": "安装插件后，用 register 响应里的 agent_bridge_config 写入 OpenClaw 配置。",
     }
