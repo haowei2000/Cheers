@@ -3,10 +3,22 @@ from datetime import datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Channel, ChannelMembership, Message, User, Workspace
+from app.db.models import (
+    AgentNexusSession,
+    AgentNexusSessionBinding,
+    BotAccount,
+    Channel,
+    ChannelMembership,
+    ChannelProfile,
+    HistoryPage,
+    Message,
+    TodoItem,
+    User,
+    Workspace,
+)
 from app.db.seed import _ensure_builtin_bot_memberships
 from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 from app.services.channel_service import ChannelService
@@ -223,3 +235,107 @@ async def test_unread_counts_for_uses_grouped_counts(db_session: AsyncSession) -
     )
 
     assert counts == {ch1.channel_id: 1, ch2.channel_id: 1, ch3.channel_id: 0}
+
+
+@pytest.mark.asyncio
+async def test_delete_channel_cleans_session_bindings_and_related_rows(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """DELETE /channels/{id} also removes channel-scoped FK dependents."""
+    test_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(
+        workspace_id="delete-channel-ws-0001",
+        name="Delete Channel Workspace",
+    )
+    ch = Channel(
+        channel_id="delete-channel-ch-0001",
+        workspace_id=ws.workspace_id,
+        name="delete-me",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="delete-channel-bot-0001",
+        username="delete_channel_bot",
+        display_name="DeleteChannelBot",
+    )
+    agent_session = AgentNexusSession(
+        session_id="delete-channel-session-0001",
+        bot_id=bot.bot_id,
+        provider="generic",
+        provider_account_id="acct-delete-channel",
+        provider_agent_id="agent-main",
+        provider_session_key="provider:generic:account:acct-delete-channel:session:delete-channel-session-0001",
+        current_scope_type="channel",
+        current_scope_id=ch.channel_id,
+    )
+    binding = AgentNexusSessionBinding(
+        binding_id="delete-channel-binding-0001",
+        session_id=agent_session.session_id,
+        bot_id=bot.bot_id,
+        provider="generic",
+        provider_account_id=agent_session.provider_account_id,
+        provider_agent_id=agent_session.provider_agent_id,
+        scope_type="channel",
+        scope_id=ch.channel_id,
+        channel_id=ch.channel_id,
+        role="primary",
+    )
+    db_session.add_all([ws, ch, bot])
+    await db_session.flush()
+    db_session.add(agent_session)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            binding,
+            ChannelMembership(
+                channel_id=ch.channel_id,
+                member_id=test_user_id,
+                member_type="user",
+                role="owner",
+            ),
+            ChannelProfile(
+                channel_id=ch.channel_id,
+                user_id=test_user_id,
+                nickname="deleter",
+            ),
+            TodoItem(
+                todo_id="delete-channel-todo-0001",
+                channel_id=ch.channel_id,
+                creator_id=test_user_id,
+                creator_type="user",
+                content="cleanup",
+            ),
+            HistoryPage(
+                page_id="delete-channel-history-0001",
+                channel_id=ch.channel_id,
+                page_number=1,
+                started_at=datetime.utcnow(),
+                ended_at=datetime.utcnow(),
+                first_msg_id="msg-first",
+                last_msg_id="msg-last",
+                summary="summary",
+                raw_content="raw",
+                message_count=1,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await client.delete(f"/api/v1/channels/{ch.channel_id}")
+
+    assert resp.status_code == 200
+    db_session.expire_all()
+    assert await db_session.get(Channel, ch.channel_id) is None
+    assert await db_session.get(AgentNexusSession, agent_session.session_id) is None
+    assert await db_session.get(AgentNexusSessionBinding, binding.binding_id) is None
+
+    profile = await db_session.execute(
+        select(ChannelProfile).where(
+            ChannelProfile.channel_id == ch.channel_id,
+            ChannelProfile.user_id == test_user_id,
+        )
+    )
+    assert profile.scalar_one_or_none() is None
+    assert await db_session.get(TodoItem, "delete-channel-todo-0001") is None
+    assert await db_session.get(HistoryPage, "delete-channel-history-0001") is None
