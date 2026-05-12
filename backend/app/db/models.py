@@ -464,7 +464,7 @@ class AgentBridgeEvent(Base):
     """per-bot Agent Bridge 派发事件日志，用于 plugin 重连时按 last_event_seq 回放。"""
     __tablename__ = "agent_bridge_events"
 
-    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     bot_id: Mapped[str] = mapped_column(String(36), nullable=False)
     stream: Mapped[str] = mapped_column(String(16), nullable=False)  # 'data'
     seq: Mapped[int] = mapped_column(BigInteger, nullable=False)

@@ -1,3 +1,18 @@
+export {
+  BotSession,
+  type InboundMessage,
+  type MembershipSnapshot,
+  type SendResult,
+  type SessionConfig,
+  type SessionEvents,
+} from "./session.js";
+export {
+  computeBackoff,
+  isFatalCloseCode,
+  ReconnectingClient,
+  type ReconnectingClientCallbacks,
+  type ReconnectOptions,
+} from "./reconnect.js";
 export type {
   AgentNexusSessionRef,
   AttachmentInfo,
@@ -30,10 +45,9 @@ export type {
   TraceFrame,
   TriggerMessage,
   TypingFrame,
-} from "@agentnexus/bridge-client";
-
+} from "./types.js";
 export {
   WS_CLOSE_AUTH_FAIL,
   WS_CLOSE_BOT_UNAVAILABLE,
   WS_CLOSE_SUPERSEDED,
-} from "@agentnexus/bridge-client";
+} from "./types.js";

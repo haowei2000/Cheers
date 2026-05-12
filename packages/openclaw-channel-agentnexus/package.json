@@ -51,6 +51,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@agentnexus/bridge-client": "file:../agentnexus-bridge-client",
     "ws": "^8.18.0"
   },
   "peerDependencies": {

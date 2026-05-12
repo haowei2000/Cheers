@@ -1,0 +1,55 @@
+{
+  "name": "@agentnexus/acp-connector",
+  "version": "0.1.0",
+  "description": "Reverse bridge that connects local ACP stdio agents to AgentNexus Agent Bridge bots.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "agentnexus-acp-connector": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/cli.js run",
+    "daemon:start": "node dist/cli.js start",
+    "daemon:stop": "node dist/cli.js stop",
+    "daemon:restart": "node dist/cli.js restart",
+    "daemon:status": "node dist/cli.js status",
+    "daemon:logs": "node dist/cli.js logs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "agentnexus",
+    "acp",
+    "agent-client-protocol",
+    "codex",
+    "claude"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@agentnexus/bridge-client": "file:../agentnexus-bridge-client"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "~5.6.2",
+    "vitest": "^2.1.4",
+    "ws": "^8.18.0"
+  }
+}

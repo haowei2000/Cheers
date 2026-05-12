@@ -22,6 +22,7 @@ async def test_openclaw_discovery_exposes_docs_namespace(client: AsyncClient) ->
     body_schema = data["entrypoints"]["register"]["body_schema"]
     assert "account_username" in body_schema
     assert "account_password" in body_schema
+    assert "bridge_provider" in body_schema
     assert data["entrypoints"]["help_get"]["url"].endswith("/docs/agent-bridge/help?q=...")
     assert data["bridge"]["control_ws"].endswith("/ws/agent-bridge/control")
     assert data["plugin"]["name"] == "openclaw-channel-agentnexus"
@@ -112,6 +113,51 @@ async def test_openclaw_register_creates_websocket_bot(
     assert bot.created_by == "openclaw-docs-user-001"
     assert bot.bot_token_hash is not None
     assert token not in bot.bot_token_hash
+
+
+@pytest.mark.asyncio
+async def test_agent_bridge_register_accepts_acp_provider(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    db_session.add(
+        User(
+            user_id="acp-docs-user-001",
+            username="acp_docs_user",
+            password_hash=hash_password("Acp12345"),
+            display_name="ACP Docs User",
+            role="member",
+        )
+    )
+    await db_session.flush()
+
+    resp = await client.post(
+        "/docs/agent-bridge/register",
+        json={
+            "username": "docs_acp_bot",
+            "bridge_provider": "acp",
+            "account_username": "acp_docs_user",
+            "account_password": "Acp12345",
+            "agent_id": "codex-main",
+            "scope": "private",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    token = data["bot"]["bot_token"]
+    assert token.startswith("agb_")
+    assert data["bot"]["bridge_provider"] == "acp"
+    assert data["bot"]["binding_config"]["bridge_provider"] == "acp"
+    assert data["bot"]["description"] == "ACP Agent: codex-main"
+    assert data["acp_connector_config"]["accounts"]["docs_acp_bot"]["botToken"] == token
+    assert data["acp_connector_config"]["accounts"]["docs_acp_bot"]["agent"]["args"] == ["acp"]
+
+    bot = (
+        await db_session.execute(select(BotAccount).where(BotAccount.username == "docs_acp_bot"))
+    ).scalar_one()
+    assert bot.binding_type == "agent_bridge"
+    assert bot.bridge_provider == "acp"
 
 
 @pytest.mark.asyncio

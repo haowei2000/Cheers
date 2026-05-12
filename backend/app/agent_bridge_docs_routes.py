@@ -50,6 +50,11 @@ class AgentBridgeRegisterBody(BaseModel):
     """Register the caller's provider as an AgentNexus Agent Bridge Bot."""
 
     username: str = Field(..., min_length=1, max_length=64, description="@ mention username, unique in AgentNexus")
+    bridge_provider: str = Field(
+        default="openclaw",
+        pattern=r"^[a-zA-Z0-9_-]{1,32}$",
+        description="Agent Bridge provider metadata, e.g. openclaw or acp",
+    )
     account_username: str | None = Field(
         default=None,
         description="AgentNexus username or email. Optional when Authorization Bearer is supplied.",
@@ -157,6 +162,7 @@ def _plugin_payload(request: Request) -> dict[str, Any]:
 def _register_schema() -> dict[str, str]:
     return {
         "username": "必填。AgentNexus 中 @ 使用的 Bot 用户名，必须唯一。",
+        "bridge_provider": "选填。Provider 元数据；ACP connector 使用 acp，OpenClaw 默认 openclaw。",
         "account_username": "选填。AgentNexus 用户名或邮箱；未提供 Bearer token 时必填。",
         "account_password": "选填。AgentNexus 登录密码；未提供 Bearer token 时必填。",
         "display_name": "选填。聊天界面显示名称。",
@@ -233,14 +239,22 @@ def _intro_as_json(body: AgentBridgeRegisterBody, agent_id: str) -> str:
         intro = dict(body.intro)
     else:
         intro = {}
-    intro.setdefault("description", body.description or f"OpenClaw Agent: {agent_id}")
-    intro.setdefault("capabilities", ["OpenClaw channel plugin", "AgentNexus Agent Bridge"])
+    provider = _bridge_provider(body)
+    default_label = "ACP Agent" if provider == "acp" else "OpenClaw Agent"
+    default_capability = "ACP stdio connector" if provider == "acp" else "OpenClaw channel plugin"
+    intro.setdefault("description", body.description or f"{default_label}: {agent_id}")
+    intro.setdefault("capabilities", [default_capability, "AgentNexus Agent Bridge"])
     return json.dumps(intro, ensure_ascii=False)
+
+
+def _bridge_provider(body: AgentBridgeRegisterBody) -> str:
+    return (body.bridge_provider or "openclaw").strip().lower() or "openclaw"
 
 
 def _binding_config(body: AgentBridgeRegisterBody, agent_id: str) -> dict[str, Any]:
     cfg = dict(body.binding_config or {})
     cfg.setdefault("agent_id", agent_id)
+    cfg.setdefault("bridge_provider", _bridge_provider(body))
     if body.gateway and body.gateway.strip():
         cfg.setdefault("gateway", body.gateway.strip())
     cfg.setdefault("registered_via", "docs_agent_bridge_register")
@@ -275,6 +289,33 @@ def _agent_bridge_config(
     }
 
 
+def _acp_connector_config(
+    *,
+    request: Request,
+    account_id: str,
+    bot_token: str,
+) -> dict[str, Any]:
+    bridge = _bridge_urls(request)
+    return {
+        "accounts": {
+            account_id: {
+                "botToken": bot_token,
+                "controlUrl": bridge["control_ws"],
+                "dataUrl": bridge["data_ws"],
+                "agent": {
+                    "transport": "stdio",
+                    "command": "codex",
+                    "args": ["acp"],
+                    "cwd": "$PWD",
+                    "env": {
+                        "OPENAI_API_KEY": "$OPENAI_API_KEY",
+                    },
+                },
+            }
+        }
+    }
+
+
 def _registration_response(
     *,
     request: Request,
@@ -294,7 +335,7 @@ def _registration_response(
             "display_name": bot.display_name,
             "description": bot.description,
             "binding_type": bot.binding_type,
-            "bridge_provider": getattr(bot, "bridge_provider", None) or "openclaw",
+            "bridge_provider": getattr(bot, "bridge_provider", None) or "generic",
             "binding_config": bot.binding_config,
             "scope": bot.scope,
             "status": bot.status,
@@ -312,6 +353,11 @@ def _registration_response(
             bot_id=bot.bot_id,
             username=bot.username,
             agent_id=agent_id,
+            bot_token=bot_token,
+        ),
+        "acp_connector_config": _acp_connector_config(
+            request=request,
+            account_id=bot.username,
             bot_token=bot_token,
         ),
         "docs": _docs_urls(request),
@@ -457,18 +503,20 @@ async def register_agent_bridge_bot(
         authorization,
     )
     agent_id = (body.agent_id or "main").strip() or "main"
+    provider = _bridge_provider(body)
+    default_description = f"{'ACP Agent' if provider == 'acp' else 'OpenClaw Agent'}: {agent_id}"
     svc = BotService(session)
     bot, bot_token = await svc.create(
         username=body.username,
         display_name=body.display_name,
-        description=body.description or f"OpenClaw Agent: {agent_id}",
+        description=body.description or default_description,
         model_id=None,
         template_id=body.template_id,
         intro=_intro_as_json(body, agent_id),
         scope=body.scope,
         bot_id=body.bot_id,
         binding_type="agent_bridge",
-        bridge_provider="openclaw",
+        bridge_provider=provider,
         binding_config=_binding_config(body, agent_id),
         current_user=current_user,
     )

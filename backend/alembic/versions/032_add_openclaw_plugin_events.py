@@ -21,7 +21,7 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "openclaw_plugin_events",
-        sa.Column("event_id", sa.BigInteger, primary_key=True, autoincrement=True),
+        sa.Column("event_id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("bot_id", sa.String(36), nullable=False),
         sa.Column("stream", sa.String(16), nullable=False),
         sa.Column("seq", sa.BigInteger, nullable=False),
