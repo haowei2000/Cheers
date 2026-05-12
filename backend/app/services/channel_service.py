@@ -4,19 +4,23 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import cast
 
-from sqlalchemy import and_, func, or_, select, true
+from sqlalchemy import and_, delete, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import (
+    AgentNexusSession,
+    AgentNexusSessionBinding,
     BotAccount,
     Channel,
     ChannelMembership,
     ChannelProfile,
     FileRecord,
     Friendship,
+    HistoryPage,
     Message,
     PromptTemplate,
+    TodoItem,
     User,
 )
 from app.repositories.bot_repo import BotRepository
@@ -327,6 +331,43 @@ class ChannelService:
         wm = await self.ws_repo.get_membership(ch.workspace_id, current_user.user_id)
         if not is_admin(current_user) and (not wm or wm.role not in ("owner", "admin")):
             raise ForbiddenError("只有工作空间管理员可以删除频道")
+
+        # 频道删除要先清理所有带 channels 外键的附属数据。Postgres 会严格
+        # 拒绝删除仍被 AgentNexus session binding / todo / profile 等引用的
+        # 频道；这里保持删除入口自己兜底，而不依赖每张表都配置 DB cascade。
+        binding_condition = or_(
+            AgentNexusSessionBinding.channel_id == channel_id,
+            and_(
+                AgentNexusSessionBinding.scope_type == "dm",
+                AgentNexusSessionBinding.scope_id == channel_id,
+            ),
+        )
+        session_rows = await self.session.execute(
+            select(AgentNexusSessionBinding.session_id).where(binding_condition)
+        )
+        session_ids = set(session_rows.scalars().all())
+        if session_ids:
+            session_id_list = list(session_ids)
+            await self.session.execute(
+                delete(AgentNexusSessionBinding).where(
+                    AgentNexusSessionBinding.session_id.in_(session_id_list)
+                )
+            )
+            await self.session.execute(
+                delete(AgentNexusSession).where(
+                    AgentNexusSession.session_id.in_(session_id_list)
+                )
+            )
+
+        await self.session.execute(
+            delete(ChannelProfile).where(ChannelProfile.channel_id == channel_id)
+        )
+        await self.session.execute(
+            delete(TodoItem).where(TodoItem.channel_id == channel_id)
+        )
+        await self.session.execute(
+            delete(HistoryPage).where(HistoryPage.channel_id == channel_id)
+        )
 
         # 级联删除成员、消息、文件记录
         for membership in await self.repo.list_memberships(channel_id):
