@@ -90,7 +90,7 @@ jobs:
           if npm view "@haowei0520/bridge-client@${BRIDGE_VERSION}" version >/dev/null 2>&1; then
             echo "@haowei0520/bridge-client@${BRIDGE_VERSION} already exists on npm; skipping publish."
           else
-            npm publish --access public --provenance
+            npm publish --access public
           fi
 
       - name: Pack bridge-client artifact
@@ -151,7 +151,7 @@ jobs:
           if npm view "@haowei0520/acp-connector@${ACP_VERSION}" version >/dev/null 2>&1; then
             echo "@haowei0520/acp-connector@${ACP_VERSION} already exists on npm; skipping publish."
           else
-            npm publish --access public --provenance
+            npm publish --access public
           fi
 
       - name: Create GitHub Release

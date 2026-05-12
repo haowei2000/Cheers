@@ -94,7 +94,7 @@ jobs:
           if npm view "@haowei0520/bridge-client@${BRIDGE_VERSION}" version >/dev/null 2>&1; then
             echo "@haowei0520/bridge-client@${BRIDGE_VERSION} already exists on npm; skipping publish."
           else
-            npm publish --access public --provenance
+            npm publish --access public
           fi
 
       - name: Install dependencies
@@ -132,7 +132,7 @@ jobs:
           if npm view "@haowei0520/openclaw-channel-agentnexus@${PKG_VER}" version >/dev/null 2>&1; then
             echo "@haowei0520/openclaw-channel-agentnexus@${PKG_VER} already exists on npm; skipping publish."
           else
-            npm publish --access public --provenance
+            npm publish --access public
           fi
 
       - name: Build tarball
