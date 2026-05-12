@@ -31,6 +31,8 @@ import type {
   TriggerMessage,
 } from "./types.js";
 
+const DEFAULT_SEND_ACK_TIMEOUT_MS = 10 * 60 * 1000;
+
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
@@ -135,7 +137,7 @@ export class BotSession {
     this.reconnectBaseMs = adv.reconnectBaseMs ?? 1000;
     this.reconnectMaxMs = adv.reconnectMaxMs ?? 30000;
     this.heartbeatIntervalMs = adv.heartbeatIntervalMs ?? 30000;
-    this.sendAckTimeoutMs = adv.sendAckTimeoutMs ?? 10000;
+    this.sendAckTimeoutMs = adv.sendAckTimeoutMs ?? DEFAULT_SEND_ACK_TIMEOUT_MS;
 
     this.readyPromise = new Promise<void>((resolve) => {
       this.resolveReady = resolve;

@@ -32,6 +32,7 @@ import type { TraceFrame } from "./types.js";
 
 const PLUGIN_ID = "agentnexus";
 const INBOUND_CACHE_MAX = 1000;
+const DEFAULT_OPENCLAW_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ============================================================================
 // 附件正文 hydration —— 用 bot token 向 AgentNexus 的 bridge 读出 markdown，
@@ -117,9 +118,8 @@ type RawOutputFallbackConfig = Partial<OutputFallbackConfig>;
 const DEFAULT_OUTPUT_FALLBACK: OutputFallbackConfig = {
   enabled: true,
   outputDirs: [],
-  // AgentNexus defaults to converting Agent Bridge placeholders after 3 minutes.
-  // Wait a touch longer so this fallback only speaks once the reply is a task.
-  delayMs: 185_000,
+  // Keep OpenClaw's fallback aligned with AgentNexus's background handoff threshold.
+  delayMs: DEFAULT_OPENCLAW_TIMEOUT_MS,
   pollMs: 2_000,
   stableMs: 6_000,
   postStreamWatchMs: 15_000,
@@ -161,8 +161,10 @@ const AGENTNEXUS_RESPONSE_CONTRACT = `
   <rules>
     <rule>不要把“正在生成/我将生成/Let me generate/Now I have enough info”等进度句作为最终回复。</rule>
     <rule>如果任务要求报告、HTML、Markdown、附件或文件，请实际创建可交付文件，并用 MEDIA:/absolute/path 返回，或直接输出完整正文。</rule>
-    <rule>如果用户只说“报告”而未指定 HTML/PPT，优先创建 Markdown 文件；不要先在 assistant 正文或隐藏思考中起草超长 HTML。</rule>
-    <rule>创建文件后，最终回复必须包含 MEDIA:/absolute/path，便于 AgentNexus 自动上传附件。</rule>
+    <rule>本契约优先于 skill 中关于 HTML 报告的默认建议；除非用户原话明确要求 HTML/网页/可视化页面，否则“报告”默认创建 Markdown 文件。</rule>
+    <rule>不要在 assistant 正文或隐藏思考中起草超长 HTML；需要文件时先写入磁盘，再用 MEDIA:/absolute/path 返回。</rule>
+    <rule>使用 write 工具时每次调用都必须包含 path 和 content；不要用缺少 path 的 write 续写。</rule>
+    <rule>创建文件后，最终回复必须包含 MEDIA:/absolute/path，便于 AgentNexus 自动上传附件；不要停在 write 成功后的继续思考。</rule>
     <rule>最终回复必须包含完整可见结果或 MEDIA 文件；不能只说明接下来要做什么。</rule>
     <rule>如果无法生成完整产物，请明确说明失败原因，不要返回进度占位句。</rule>
   </rules>
@@ -285,7 +287,7 @@ function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): Resolve
         reconnectBaseMs: 1000,
         reconnectMaxMs: 30000,
         heartbeatIntervalMs: 30000,
-        sendAckTimeoutMs: 10000,
+        sendAckTimeoutMs: DEFAULT_OPENCLAW_TIMEOUT_MS,
       },
       allowFrom: [],
       outputFallback: resolveOutputFallbackConfig(),
@@ -301,7 +303,7 @@ function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): Resolve
       reconnectBaseMs: raw.advanced?.reconnectBaseMs ?? 1000,
       reconnectMaxMs: raw.advanced?.reconnectMaxMs ?? 30000,
       heartbeatIntervalMs: raw.advanced?.heartbeatIntervalMs ?? 30000,
-      sendAckTimeoutMs: raw.advanced?.sendAckTimeoutMs ?? 10000,
+      sendAckTimeoutMs: raw.advanced?.sendAckTimeoutMs ?? DEFAULT_OPENCLAW_TIMEOUT_MS,
     },
     dmPolicy: raw.dmSecurity,
     allowFrom: raw.allowFrom ?? [],
@@ -1395,9 +1397,13 @@ function candidateOutputDirs(cfg: OutputFallbackConfig, sessionKey: string): str
     const trimmed = dir.trim();
     if (trimmed && !dirs.includes(trimmed)) dirs.push(trimmed);
   }
+  const workspaceRoot = join(homedir(), ".openclaw", "workspace");
+  const rootOutputDir = join(workspaceRoot, "output");
+  if (!dirs.includes(rootOutputDir)) dirs.push(rootOutputDir);
+  if (!dirs.includes(workspaceRoot)) dirs.push(workspaceRoot);
   const agentId = agentIdFromSessionKey(sessionKey);
   if (agentId) {
-    const workspaceDir = join(homedir(), ".openclaw", "workspace", agentId);
+    const workspaceDir = join(workspaceRoot, agentId);
     const defaultDir = join(workspaceDir, "output");
     if (!dirs.includes(defaultDir)) dirs.push(defaultDir);
     if (!dirs.includes(workspaceDir)) dirs.push(workspaceDir);

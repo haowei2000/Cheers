@@ -89,7 +89,7 @@ openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.
             "reconnectBaseMs": 1000,                 // 重连退避起点
             "reconnectMaxMs": 30000,                 // 重连退避上限
             "heartbeatIntervalMs": 30000,            // ping 间隔
-            "sendAckTimeoutMs": 10000                // reply/send ack 超时
+            "sendAckTimeoutMs": 600000               // reply/send ack 超时（10 分钟）
           }
         }
         // 想多挂 bot 就再加 "another-bot": { ... }

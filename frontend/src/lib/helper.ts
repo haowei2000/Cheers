@@ -33,6 +33,7 @@ export function parseHelperPayload(content: string): {
 export function isClarifyReplyUserMessage(content: string): boolean {
   const t = (content || "").trim();
   return (
+    t.startsWith("@Helper 澄清回答：") ||
     t.startsWith("@Coordinator 澄清回答：") ||
     t.startsWith("@channel bot 澄清回答：") || // 历史名兜底
     t.includes("用户选择跳过澄清")

@@ -15,6 +15,7 @@ from app.db.models import BotAccount, Channel, ChannelMembership, Message, Promp
 from app.features.bot_runtime.adapters.base import BotAdapter
 from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_for_bot
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
+from app.features.bot_runtime.pipeline.bot.coordinator_names import first_coordinator_username
 from app.features.bot_runtime.pipeline.bot.mention import extract_mentions, filter_mentioned_bots
 from app.features.bot_runtime.pipeline.bot.secrets import extract_secret_refs, load_user_secrets
 from app.features.bot_runtime.pipeline.bot.stages.auto_takeover import AutoTakeoverStage
@@ -38,8 +39,6 @@ from app.features.bot_runtime.pipeline.stage import Stage
 from app.utils.crypto import decrypt_value
 
 logger = logging.getLogger("app.features.bot_runtime.pipeline.workflow")
-
-COORDINATOR_USERNAME = "Coordinator"
 
 _PromptOverrides = dict[str, PromptTemplate]
 
@@ -165,6 +164,7 @@ def _is_helper_clarify_reply(content: str) -> bool:
     text = (content or "").strip()
     return (
         text.startswith("@Coordinator 澄清回答：")
+        or text.startswith("@Helper 澄清回答：")
         or text.startswith("@引导 澄清回答：")
         or text.startswith("@channel bot 澄清回答：")
         or "用户选择跳过澄清" in text
@@ -382,12 +382,13 @@ class BotWorkflowBuilder:
             return "dm", "dm_counterparty_bot"
 
         channel_auto_assist = bool(ctx.channel.auto_assist) if ctx.channel else False
+        coordinator_username = first_coordinator_username(ctx.channel_bot_usernames)
         if (
             not mentioned
-            and COORDINATOR_USERNAME in ctx.channel_bot_usernames
+            and coordinator_username
             and channel_auto_assist
         ):
-            ctx.target_usernames = [COORDINATOR_USERNAME]
+            ctx.target_usernames = [coordinator_username]
             ctx.direct_answer_mode = True
             logger.info(
                 "bot_pipeline.workflow: route -> coordinator channel_id=%s auto_assist=%s",

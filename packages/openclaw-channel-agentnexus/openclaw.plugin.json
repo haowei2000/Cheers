@@ -1,5 +1,18 @@
 {
   "id": "agentnexus",
+  "kind": "channel",
+  "name": "AgentNexus",
+  "description": "Slack-like multi-channel chat with bots. One OpenClaw account = one AgentNexus Agent Bridge Bot.",
+  "version": "0.2.3",
+  "activation": {
+    "onStartup": true,
+    "onChannels": [
+      "agentnexus"
+    ],
+    "onCapabilities": [
+      "channel"
+    ]
+  },
   "channels": [
     "agentnexus"
   ],
@@ -47,7 +60,27 @@
                     "reconnectBaseMs": { "type": "integer", "default": 1000 },
                     "reconnectMaxMs": { "type": "integer", "default": 30000 },
                     "heartbeatIntervalMs": { "type": "integer", "default": 30000 },
-                    "sendAckTimeoutMs": { "type": "integer", "default": 10000 }
+                    "sendAckTimeoutMs": { "type": "integer", "default": 600000 }
+                  }
+                },
+                "outputFallback": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": true },
+                    "outputDirs": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "default": []
+                    },
+                    "delayMs": { "type": "integer", "default": 600000 },
+                    "pollMs": { "type": "integer", "default": 2000 },
+                    "stableMs": { "type": "integer", "default": 6000 },
+                    "postStreamWatchMs": { "type": "integer", "default": 15000 },
+                    "maxWatchMs": { "type": "integer", "default": 3600000 },
+                    "maxFiles": { "type": "integer", "default": 80 },
+                    "minBytes": { "type": "integer", "default": 16 },
+                    "maxBytes": { "type": "integer", "default": 26214400 }
                   }
                 }
               }
@@ -81,7 +114,26 @@
                     "reconnectBaseMs": { "type": "integer", "default": 1000 },
                     "reconnectMaxMs": { "type": "integer", "default": 30000 },
                     "heartbeatIntervalMs": { "type": "integer", "default": 30000 },
-                    "sendAckTimeoutMs": { "type": "integer", "default": 10000 }
+                    "sendAckTimeoutMs": { "type": "integer", "default": 600000 }
+                  }
+                },
+                "outputFallback": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": true },
+                    "outputDirs": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "default": []
+                    },
+                    "delayMs": { "type": "integer", "default": 600000 },
+                    "pollMs": { "type": "integer", "default": 2000 },
+                    "stableMs": { "type": "integer", "default": 6000 },
+                    "postStreamWatchMs": { "type": "integer", "default": 15000 },
+                    "maxWatchMs": { "type": "integer", "default": 3600000 },
+                    "maxFiles": { "type": "integer", "default": 80 },
+                    "minBytes": { "type": "integer", "default": 16 },
+                    "maxBytes": { "type": "integer", "default": 26214400 }
                   }
                 }
               }

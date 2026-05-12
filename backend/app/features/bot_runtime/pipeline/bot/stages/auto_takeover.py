@@ -19,6 +19,10 @@ import logging
 
 from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
+from app.features.bot_runtime.pipeline.bot.coordinator_names import (
+    first_coordinator_username,
+    is_coordinator_username,
+)
 from app.features.bot_runtime.pipeline.bot.subagent import dispatch_many, dispatch_one
 from app.features.bot_runtime.pipeline.bot.suggestions import extract_suggested_bots
 from app.features.bot_runtime.pipeline.stage import Stage
@@ -26,15 +30,13 @@ from app.services.admin.settings_store import get_assist_settings
 
 logger = logging.getLogger("app.features.bot_runtime.pipeline.bot.auto_takeover")
 
-COORDINATOR_USERNAME = "Coordinator"
-
-
 class AutoTakeoverStage(Stage[BotRunContext]):
     async def run(self, ctx: BotRunContext) -> None:
-        if not (COORDINATOR_USERNAME in ctx.target_usernames and ctx.direct_answer_mode):
+        coordinator_username = first_coordinator_username(ctx.target_usernames)
+        if not (coordinator_username and ctx.direct_answer_mode):
             return
 
-        bot_id = ctx.bot_id_by_username[COORDINATOR_USERNAME]
+        bot_id = ctx.bot_id_by_username[coordinator_username]
         resp = await dispatch_one(
             ctx,
             bot_id,
@@ -52,7 +54,7 @@ class AutoTakeoverStage(Stage[BotRunContext]):
         suggested = extract_suggested_bots(resp.content or "")
         valid_suggested = [
             sug for sug in suggested
-            if sug in ctx.channel_bot_usernames and sug != COORDINATOR_USERNAME
+            if sug in ctx.channel_bot_usernames and not is_coordinator_username(sug)
         ]
         if not valid_suggested:
             return

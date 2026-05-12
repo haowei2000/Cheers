@@ -11,13 +11,16 @@ from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import (
     AgentNexusSession,
     AgentNexusSessionBinding,
+    AgentTask,
     BotAccount,
+    BotRun,
     Channel,
     ChannelMembership,
     ChannelProfile,
     FileRecord,
     Friendship,
     HistoryPage,
+    MemoryEntry,
     Message,
     PromptTemplate,
     TodoItem,
@@ -338,6 +341,10 @@ class ChannelService:
         binding_condition = or_(
             AgentNexusSessionBinding.channel_id == channel_id,
             and_(
+                AgentNexusSessionBinding.scope_type == "channel",
+                AgentNexusSessionBinding.scope_id == channel_id,
+            ),
+            and_(
                 AgentNexusSessionBinding.scope_type == "dm",
                 AgentNexusSessionBinding.scope_id == channel_id,
             ),
@@ -346,12 +353,17 @@ class ChannelService:
             select(AgentNexusSessionBinding.session_id).where(binding_condition)
         )
         session_ids = set(session_rows.scalars().all())
+        current_scope_rows = await self.session.execute(
+            select(AgentNexusSession.session_id).where(
+                AgentNexusSession.current_scope_type.in_(("channel", "dm")),
+                AgentNexusSession.current_scope_id == channel_id,
+            )
+        )
+        session_ids.update(current_scope_rows.scalars().all())
         if session_ids:
             session_id_list = list(session_ids)
             await self.session.execute(
-                delete(AgentNexusSessionBinding).where(
-                    AgentNexusSessionBinding.session_id.in_(session_id_list)
-                )
+                delete(AgentNexusSessionBinding).where(binding_condition)
             )
             await self.session.execute(
                 delete(AgentNexusSession).where(
@@ -359,6 +371,17 @@ class ChannelService:
                 )
             )
 
+        # 这些表没有全部挂 channels 外键，但属于频道运行态/记忆态数据；
+        # 不清理会导致搜索、后台任务、记忆页看到已删除频道的残影。
+        await self.session.execute(
+            delete(BotRun).where(BotRun.channel_id == channel_id)
+        )
+        await self.session.execute(
+            delete(AgentTask).where(AgentTask.channel_id == channel_id)
+        )
+        await self.session.execute(
+            delete(MemoryEntry).where(MemoryEntry.channel_id == channel_id)
+        )
         await self.session.execute(
             delete(ChannelProfile).where(ChannelProfile.channel_id == channel_id)
         )

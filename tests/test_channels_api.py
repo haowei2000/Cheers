@@ -9,11 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     AgentNexusSession,
     AgentNexusSessionBinding,
+    AgentTask,
     BotAccount,
+    BotRun,
     Channel,
     ChannelMembership,
     ChannelProfile,
     HistoryPage,
+    MemoryEntry,
     Message,
     TodoItem,
     User,
@@ -281,13 +284,36 @@ async def test_delete_channel_cleans_session_bindings_and_related_rows(
         channel_id=ch.channel_id,
         role="primary",
     )
+    scope_only_session = AgentNexusSession(
+        session_id="delete-channel-session-0002",
+        bot_id=bot.bot_id,
+        provider="generic",
+        provider_account_id="acct-delete-channel",
+        provider_agent_id="agent-main",
+        provider_session_key="provider:generic:account:acct-delete-channel:session:delete-channel-session-0002",
+        current_scope_type="channel",
+        current_scope_id=ch.channel_id,
+    )
+    scope_only_binding = AgentNexusSessionBinding(
+        binding_id="delete-channel-binding-0002",
+        session_id=scope_only_session.session_id,
+        bot_id=bot.bot_id,
+        provider="generic",
+        provider_account_id=scope_only_session.provider_account_id,
+        provider_agent_id=scope_only_session.provider_agent_id,
+        scope_type="channel",
+        scope_id=ch.channel_id,
+        channel_id=None,
+        role="primary",
+    )
     db_session.add_all([ws, ch, bot])
     await db_session.flush()
-    db_session.add(agent_session)
+    db_session.add_all([agent_session, scope_only_session])
     await db_session.flush()
     db_session.add_all(
         [
             binding,
+            scope_only_binding,
             ChannelMembership(
                 channel_id=ch.channel_id,
                 member_id=test_user_id,
@@ -318,6 +344,28 @@ async def test_delete_channel_cleans_session_bindings_and_related_rows(
                 raw_content="raw",
                 message_count=1,
             ),
+            MemoryEntry(
+                entry_id="delete-channel-memory-0001",
+                channel_id=ch.channel_id,
+                layer="ANCHOR",
+                title="anchor",
+                content="memory",
+                sort_order=1,
+            ),
+            AgentTask(
+                task_id="delete-channel-task-0001",
+                channel_id=ch.channel_id,
+                bot_id=bot.bot_id,
+                trigger_msg_id="trigger-msg",
+            ),
+            BotRun(
+                bot_run_id="delete-channel-run-0001",
+                task_id="delete-channel-task-0001",
+                channel_id=ch.channel_id,
+                trigger_msg_id="trigger-msg",
+                bot_id=bot.bot_id,
+                placeholder_msg_id="placeholder-msg",
+            ),
         ]
     )
     await db_session.commit()
@@ -329,6 +377,8 @@ async def test_delete_channel_cleans_session_bindings_and_related_rows(
     assert await db_session.get(Channel, ch.channel_id) is None
     assert await db_session.get(AgentNexusSession, agent_session.session_id) is None
     assert await db_session.get(AgentNexusSessionBinding, binding.binding_id) is None
+    assert await db_session.get(AgentNexusSession, scope_only_session.session_id) is None
+    assert await db_session.get(AgentNexusSessionBinding, scope_only_binding.binding_id) is None
 
     profile = await db_session.execute(
         select(ChannelProfile).where(
@@ -338,4 +388,7 @@ async def test_delete_channel_cleans_session_bindings_and_related_rows(
     )
     assert profile.scalar_one_or_none() is None
     assert await db_session.get(TodoItem, "delete-channel-todo-0001") is None
+    assert await db_session.get(MemoryEntry, "delete-channel-memory-0001") is None
+    assert await db_session.get(AgentTask, "delete-channel-task-0001") is None
+    assert await db_session.get(BotRun, "delete-channel-run-0001") is None
     assert await db_session.get(HistoryPage, "delete-channel-history-0001") is None

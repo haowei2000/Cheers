@@ -2937,9 +2937,9 @@ export default function App() {
                             </div>
                             <div className="an-empty-chips">
                               {[
-                                "@coordinator 总结这个频道最近的进展",
+                                "@Coordinator 总结这个频道最近的进展",
                                 "这个频道的目标是什么？",
-                                "@coordinator 帮我接下来要做什么",
+                                "@Coordinator 帮我接下来要做什么",
                               ].map((s) => (
                                 <button
                                   key={s}
@@ -2991,6 +2991,7 @@ export default function App() {
                             (b) =>
                               // 现行用户名 + 历史名兜底（"channel bot" 老版本数据库）
                               b.username === "Coordinator" ||
+                              b.username === "Helper" ||
                               b.username === "channel bot" ||
                               b.username === "coordinator",
                           );
@@ -3007,7 +3008,7 @@ export default function App() {
                                 <span className="text-[13px] font-semibold text-gray-900">
                                   {coordBot?.display_name ||
                                     coordBot?.username ||
-                                    "Coordinator"}
+                                    "协作助手"}
                                 </span>
                                 <span
                                   className="an-tag coord"
@@ -3457,7 +3458,7 @@ export default function App() {
                           const base = isClarifyReplyUserMessage(effectiveContent)
                             ? effectiveContent
                                 .replace(
-                                  /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                  /^@(?:Helper|Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
                                   "",
                                 )
                                 .trim()
@@ -4142,7 +4143,7 @@ export default function App() {
                             const base = isClarifyReplyUserMessage(r.content)
                               ? r.content
                                   .replace(
-                                    /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                    /^@(?:Helper|Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
                                     "",
                                   )
                                   .trim()
@@ -4646,7 +4647,7 @@ export default function App() {
                                   const base = isClarifyReplyUserMessage(r.content)
                                     ? r.content
                                         .replace(
-                                          /^@(?:Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                          /^@(?:Helper|Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
                                           "",
                                         )
                                         .trim()

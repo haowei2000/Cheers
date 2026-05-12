@@ -469,12 +469,16 @@ export function Sidebar({
                     e.stopPropagation();
                     if (!confirm(`确定删除频道「${c.name}」？此操作不可恢复。`)) return;
                     apiFetch(`/channels/${c.channel_id}`, { method: "DELETE", token: authToken })
-                      .then((r) => {
-                        if (!r.ok) throw new Error("删除失败");
+                      .then(async (r) => {
+                        const payload = await r.json().catch(() => null);
+                        if (!r.ok || payload?.status === "error") {
+                          throw new Error(payload?.detail || payload?.message || "删除失败");
+                        }
                         setChannels((prev) => prev.filter((x) => x.channel_id !== c.channel_id));
                         if (selectedId === c.channel_id) setSelectedId(null);
+                        toast.success("频道已删除");
                       })
-                      .catch(() => toast.error("删除频道失败"));
+                      .catch((err) => toast.error(err?.message || "删除频道失败"));
                   }}
                   className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                   style={{ color: "var(--fg-3)" }}

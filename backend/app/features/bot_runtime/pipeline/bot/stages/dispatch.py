@@ -11,12 +11,12 @@ import logging
 from app.db.models import Message
 from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
+from app.features.bot_runtime.pipeline.bot.coordinator_names import is_coordinator_username
 from app.features.bot_runtime.pipeline.bot.mention import extract_mentions, filter_mentioned_bots
 from app.features.bot_runtime.pipeline.stage import Stage
 
 logger = logging.getLogger("app.features.bot_runtime.pipeline.bot.dispatch")
 
-COORDINATOR_USERNAME = "Coordinator"
 MAX_BOT_MENTION_DEPTH = 3
 
 
@@ -78,7 +78,7 @@ class DispatchStage(Stage[BotRunContext]):
         # it here so it isn't dispatched twice.
         regular_targets = [
             u for u in ctx.target_usernames
-            if not (u == COORDINATOR_USERNAME and ctx.direct_answer_mode)
+            if not (is_coordinator_username(u) and ctx.direct_answer_mode)
         ]
         if not regular_targets:
             return

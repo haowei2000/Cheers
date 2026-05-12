@@ -13,8 +13,7 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
   return (
     <Modal open={open} onClose={onClose} title="使用帮助">
       <p className="text-sm mb-3" style={{ color: "var(--fg-2)" }}>
-        在任意频道输入 <strong>@Coordinator</strong> 并输入你的问题，Coordinator
-        会根据说明书自动回复，并显示相关入口。
+        在任意频道输入 <strong>@Coordinator</strong> 并输入你的问题，协作助手会根据说明书自动回复，并显示相关入口。
       </p>
       <p className="text-xs mb-2" style={{ color: "var(--fg-3)" }}>
         例如可以问：
@@ -26,7 +25,7 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
         <li>@Coordinator 怎么用</li>
         <li>@Coordinator 怎么创建项目</li>
         <li>@Coordinator 怎么加入项目</li>
-        <li>@Helper 怎么接入 Agent Bridge</li>
+        <li>@Coordinator 怎么接入 Agent Bridge</li>
         <li>@Coordinator 入口</li>
       </ul>
       <p className="text-xs mb-2" style={{ color: "var(--fg-3)" }}>
