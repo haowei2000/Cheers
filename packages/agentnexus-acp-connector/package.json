@@ -1,12 +1,12 @@
 {
   "name": "@haowei0520/acp-connector",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Reverse bridge that connects local ACP stdio agents to AgentNexus Agent Bridge bots.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "agentnexus-acp-connector": "./dist/cli.js"
+    "agentnexus-acp-connector": "dist/cli.js"
   },
   "exports": {
     ".": {
