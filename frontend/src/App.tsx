@@ -5087,7 +5087,7 @@ export default function App() {
             <div
               className={
                 isMobile
-                  ? "fixed inset-0 z-[70] bg-white"
+                  ? "fixed inset-0 z-[70] flex bg-white"
                   : "relative flex-shrink-0 flex"
               }
               style={{ width: isMobile ? "100%" : memoryWidth }}
@@ -5126,7 +5126,7 @@ export default function App() {
             <div
               className={
                 isMobile
-                  ? "fixed inset-0 z-[70] bg-white"
+                  ? "fixed inset-0 z-[70] flex bg-white"
                   : "relative flex-shrink-0 flex"
               }
               style={{ width: isMobile ? "100%" : filePreviewWidth }}

@@ -74,7 +74,7 @@ export function Sidebar({
   selectedId,
   setSelectedId,
   setSidebarOpen,
-  onOpenCreateWorkspace: _onOpenCreateWorkspace,
+  onOpenCreateWorkspace,
   onOpenInviteWsMember,
   onOpenCreateChannel,
   onOpenSettings,
@@ -151,6 +151,18 @@ export function Sidebar({
 
   const resetSearch = () => {
     searchPickerRef.current?.clear();
+  };
+
+  const selectWorkspace = (workspaceId: string) => {
+    setSelectedWorkspaceId(workspaceId);
+    setSearchWorkspaceId(workspaceId);
+    resetSearch();
+  };
+
+  const workspaceInitials = (workspace: Workspace) => {
+    if (workspace.kind === "personal") return "个";
+    const trimmed = workspace.name.trim();
+    return [...trimmed].slice(0, 4).join("").toUpperCase() || "?";
   };
 
   const openChannelHit = (channelId: string) => {
@@ -259,12 +271,53 @@ export function Sidebar({
     <aside
       className={`an-rail flex flex-col flex-shrink-0 ${isMobile ? "fixed inset-y-0 left-0 z-[60] shadow-2xl transition-transform duration-300 ease-in-out" : "relative"}`}
       style={{
-        width: isMobile ? "280px" : leftWidth,
+        width: isMobile ? "min(88vw, 320px)" : leftWidth,
         transform:
           isMobile && !sidebarOpen ? "translateX(-100%)" : "translateX(0)",
         minHeight: 0,
       }}
     >
+      {isMobile && (
+        <div className="an-mobile-ws-strip" aria-label="工作空间">
+          {workspaces.map((workspace) => {
+            const active = selectedWorkspaceId === workspace.workspace_id;
+            return (
+              <button
+                key={workspace.workspace_id}
+                type="button"
+                className="an-mobile-ws-tile"
+                aria-pressed={active}
+                title={workspace.name}
+                onClick={() => selectWorkspace(workspace.workspace_id)}
+                style={{
+                  background: workspace.avatar_url
+                    ? "var(--surface-soft)"
+                    : wsColor(workspace.workspace_id),
+                }}
+              >
+                {workspace.avatar_url ? (
+                  <img src={workspace.avatar_url} alt={workspace.name} />
+                ) : (
+                  workspaceInitials(workspace)
+                )}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            className="an-mobile-ws-tile an-mobile-ws-add"
+            onClick={() => {
+              setSidebarOpen(false);
+              onOpenCreateWorkspace();
+            }}
+            title="创建工作空间"
+            aria-label="创建工作空间"
+          >
+            +
+          </button>
+        </div>
+      )}
+
       {/* Rail head: workspace picker has moved to the vertical WorkspaceRail
           on the left. This header now just names the active workspace with a
           minimal overflow ⋯ for invite / delete on team workspaces. */}
