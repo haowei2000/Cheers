@@ -9,6 +9,19 @@ export class MockBridge {
   private server!: http.Server;
   private wss!: WebSocketServer;
   private conns = new Set<{ ws: WebSocket; stream: "control" | "data" }>();
+  private readonly textFiles = new Map<string, {
+    filename: string;
+    contentType: string;
+    content: string;
+    truncated?: boolean;
+    summary?: string;
+  }>();
+  private readonly binaryFiles = new Map<string, {
+    filename: string;
+    contentType: string;
+    data: Uint8Array;
+    summary?: string;
+  }>();
   public controlUrl = "";
   public dataUrl = "";
   public receivedDeltas: Array<Record<string, unknown>> = [];
@@ -16,11 +29,12 @@ export class MockBridge {
   public receivedErrors: Array<Record<string, unknown>> = [];
   public receivedReplies: Array<Record<string, unknown>> = [];
   public receivedTraces: Array<Record<string, unknown>> = [];
+  public receivedUploads: Array<Record<string, unknown>> = [];
 
   constructor(private readonly botToken = "agb_test") {}
 
   async start(): Promise<void> {
-    this.server = http.createServer();
+    this.server = http.createServer((req, res) => this.handleHttpRequest(req, res));
     this.wss = new WebSocketServer({ noServer: true });
     this.server.on("upgrade", (req, socket, head) => {
       const auth = req.headers.authorization;
@@ -61,6 +75,20 @@ export class MockBridge {
       session: ev.session,
     };
     this.broadcast("data", frame);
+  }
+
+  setTextFile(
+    fileId: string,
+    file: { filename: string; contentType: string; content: string; truncated?: boolean; summary?: string },
+  ): void {
+    this.textFiles.set(fileId, file);
+  }
+
+  setBinaryFile(
+    fileId: string,
+    file: { filename: string; contentType: string; data: Uint8Array; summary?: string },
+  ): void {
+    this.binaryFiles.set(fileId, file);
   }
 
   connectionsFor(stream: "control" | "data"): number {
@@ -111,6 +139,19 @@ export class MockBridge {
     if (frame.type === "done") this.receivedDones.push(frame);
     if (frame.type === "error") this.receivedErrors.push(frame);
     if (frame.type === "trace") this.receivedTraces.push(frame);
+    if (frame.type === "file_upload") {
+      this.receivedUploads.push(frame);
+      ws.send(JSON.stringify({
+        type: "file_upload_ack",
+        client_file_id: frame.client_file_id,
+        ok: true,
+        file_id: `file-${this.receivedUploads.length}`,
+        filename: frame.filename,
+        content_type: frame.content_type || "application/octet-stream",
+        size_bytes: Buffer.from(String(frame.data_b64 || ""), "base64").byteLength,
+      }));
+      return;
+    }
     if (frame.type === "reply") {
       this.receivedReplies.push(frame);
       ws.send(JSON.stringify({
@@ -121,6 +162,67 @@ export class MockBridge {
         finalized_placeholder: true,
       }));
     }
+  }
+
+  private handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (req.headers.authorization !== `Bearer ${this.botToken}`) {
+      res.statusCode = 401;
+      res.end("unauthorized");
+      return;
+    }
+    const path = (req.url || "").split("?")[0];
+    const contentMatch = /^\/api\/v1\/agent-bridge\/files\/([^/]+)\/content$/.exec(path);
+    if (contentMatch) {
+      const fileId = decodeURIComponent(contentMatch[1]);
+      const file = this.textFiles.get(fileId);
+      if (!file) {
+        res.statusCode = 404;
+        res.end("not found");
+        return;
+      }
+      this.writeJson(res, {
+        status: "success",
+        data: {
+          file_id: fileId,
+          filename: file.filename,
+          content_type: file.contentType,
+          size_bytes: Buffer.byteLength(file.content, "utf8"),
+          summary: file.summary || "",
+          content: file.content,
+          truncated: file.truncated || false,
+        },
+      });
+      return;
+    }
+    const binaryMatch = /^\/api\/v1\/agent-bridge\/files\/([^/]+)\/binary$/.exec(path);
+    if (binaryMatch) {
+      const fileId = decodeURIComponent(binaryMatch[1]);
+      const file = this.binaryFiles.get(fileId);
+      if (!file) {
+        res.statusCode = 404;
+        res.end("not found");
+        return;
+      }
+      this.writeJson(res, {
+        status: "success",
+        data: {
+          file_id: fileId,
+          filename: file.filename,
+          content_type: file.contentType,
+          size_bytes: file.data.byteLength,
+          data_b64: Buffer.from(file.data).toString("base64"),
+        },
+      });
+      return;
+    }
+    res.statusCode = 404;
+    res.end("not found");
+  }
+
+  private writeJson(res: http.ServerResponse, body: unknown): void {
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(body));
   }
 
   private broadcast(stream: "control" | "data", frame: unknown): void {

@@ -308,8 +308,8 @@ def _acp_connector_config(
                 "dataUrl": bridge["data_ws"],
                 "agent": {
                     "transport": "stdio",
-                    "command": "codex",
-                    "args": ["acp"],
+                    "command": "codex-acp",
+                    "args": [],
                     "cwd": "$PWD",
                     "env": {
                         "OPENAI_API_KEY": "$OPENAI_API_KEY",

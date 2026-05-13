@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -392,6 +393,7 @@ async def bridge_list_channel_bots(
 # agent 读取文件正文时的内联大小上限；超过则截断并标记 truncated=true。
 # 做上限的目的是防一个 200MB 的 PDF 直接塞进 agent 的 system prompt。
 _FILE_CONTENT_MAX_CHARS = 200_000
+_FILE_BINARY_MAX_BYTES = int(settings.file_upload_max_bytes)
 
 
 def _parse_bearer_header(authorization: str | None) -> str | None:
@@ -435,6 +437,31 @@ async def _assert_bot_membership(
             status_code=403,
             detail=f"bot {bot_id} 不在文件所在频道 {channel_id} 的成员中",
         )
+
+
+def _file_storage_scope(record: FileRecord) -> str:
+    return "generated" if (record.object_key or "").startswith("generated/") else "uploads"
+
+
+async def _load_bridge_file_body(record: FileRecord) -> bytes:
+    if not record.object_key and record.original_path:
+        local_path = Path(record.original_path)
+        if local_path.is_file():
+            return local_path.read_bytes()
+
+    from app.services.storage.base import StorageObjectNotFoundError
+    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
+
+    if not is_storage_enabled():
+        raise HTTPException(status_code=503, detail="storage not enabled")
+    storage = get_storage_service()
+    try:
+        obj = await storage.get_object(record.file_id, scope=_file_storage_scope(record))
+    except StorageObjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="file not found in storage") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="failed to load file") from exc
+    return obj.body
 
 
 @router.get("/files/{file_id}/content", response_model=APIResponse[dict])
@@ -493,6 +520,50 @@ async def bridge_read_file_content(
         "summary": record.summary_3lines or "",
         "content": text,
         "truncated": truncated,
+    })
+
+
+@router.get("/files/{file_id}/binary", response_model=APIResponse[dict])
+async def bridge_read_file_binary(
+    file_id: str,
+    authorization: str | None = Header(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Bot 读取一个频道内文件的原始二进制内容，供 ACP image/resource 输入使用。
+
+    鉴权：per-bot token `Authorization: Bearer agb_...`。
+    授权：bot 必须是文件所在频道的成员。
+    返回 base64，connector 可转换为 ACP `image` 或 blob `resource` content block。
+    """
+    bot = await _resolve_bot_by_bearer(session, authorization)
+
+    record = (await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id)
+    )).scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"file {file_id} 不存在")
+
+    await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=record.channel_id)
+
+    if record.size_bytes and record.size_bytes > _FILE_BINARY_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"file exceeds binary read limit {_FILE_BINARY_MAX_BYTES} bytes",
+        )
+
+    body = await _load_bridge_file_body(record)
+    if len(body) > _FILE_BINARY_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"file exceeds binary read limit {_FILE_BINARY_MAX_BYTES} bytes",
+        )
+
+    return APIResponse.ok({
+        "file_id": record.file_id,
+        "filename": record.original_filename or record.file_id,
+        "content_type": record.content_type or "application/octet-stream",
+        "size_bytes": len(body),
+        "data_b64": base64.b64encode(body).decode("ascii"),
     })
 
 
