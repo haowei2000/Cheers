@@ -151,7 +151,9 @@ async def test_agent_bridge_register_accepts_acp_provider(
     assert data["bot"]["binding_config"]["bridge_provider"] == "acp"
     assert data["bot"]["description"] == "ACP Agent: codex-main"
     assert data["acp_connector_config"]["accounts"]["docs_acp_bot"]["botToken"] == token
-    assert data["acp_connector_config"]["accounts"]["docs_acp_bot"]["agent"]["args"] == ["acp"]
+    agent_config = data["acp_connector_config"]["accounts"]["docs_acp_bot"]["agent"]
+    assert agent_config["command"] == "codex-acp"
+    assert agent_config["args"] == []
 
     bot = (
         await db_session.execute(select(BotAccount).where(BotAccount.username == "docs_acp_bot"))
