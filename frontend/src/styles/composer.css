@@ -369,3 +369,55 @@
   background: var(--green);
   filter: brightness(0.95);
 }
+
+@media (max-width: 720px) {
+  .an-msgkind-switcher {
+    max-width: none;
+    margin: 0 4px 6px;
+  }
+  .an-composer {
+    max-width: none;
+    border-radius: 12px;
+  }
+  .an-composer-kindhead {
+    padding: 7px 12px 5px;
+  }
+  .an-composer-kindhead-hint {
+    font-size: 11px;
+  }
+  .an-composer-title {
+    font-size: 16px;
+  }
+  .an-composer-textarea {
+    padding: 10px 12px 4px;
+    font-size: 16px;
+    max-height: 36dvh;
+  }
+  .an-composer-bar {
+    gap: 3px;
+    padding: 6px;
+  }
+  .an-composer-bar .an-composer-iconbtn {
+    width: 34px;
+    height: 34px;
+  }
+  .an-composer-bar .an-composer-iconbtn.is-kbd {
+    min-width: 34px;
+  }
+  .an-composer-bar .an-composer-send {
+    height: 34px;
+    padding: 0 14px;
+  }
+  .an-composer-resize {
+    height: 6px;
+  }
+}
+
+@media (max-width: 380px) {
+  .an-composer-bar .an-composer-iconbtn.is-kbd {
+    display: none;
+  }
+  .an-composer-bar .an-composer-send {
+    padding: 0 12px;
+  }
+}
