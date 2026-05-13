@@ -478,7 +478,7 @@ export class AcpBridgeAccount {
   private readonly activeProviderSessions = new Map<string, string>();
   private readonly activeRunsBySession = new Map<string, RunContext>();
   private readonly activeRunsByMsg = new Map<string, RunContext>();
-  private queue: Promise<void> = Promise.resolve();
+  private readonly queuesByProviderSessionKey = new Map<string, Promise<void>>();
 
   constructor(
     private readonly accountId: string,
@@ -497,11 +497,7 @@ export class AcpBridgeAccount {
       },
       {
         onReady: () => this.logger.info("bridge account=%s ready", this.accountId),
-        onMessage: (message) => {
-          this.queue = this.queue
-            .then(() => this.handleMessage(message))
-            .catch((err) => this.logger.error("account=%s message failed: %s", this.accountId, String(err)));
-        },
+        onMessage: (message) => this.enqueueMessage(message),
         onCancel: (msgId, reason) => this.handleCancel(msgId, reason),
         onFatal: (reason) => this.logger.error("bridge account=%s fatal: %s", this.accountId, reason),
         onError: (err) => this.logger.error("bridge account=%s error: %s", this.accountId, String(err)),
@@ -523,6 +519,29 @@ export class AcpBridgeAccount {
 
   async stop(): Promise<void> {
     await Promise.allSettled([this.bridge.stop(), this.agent.stop()]);
+  }
+
+  private enqueueMessage(message: InboundMessage): void {
+    const providerSessionKey = providerSessionKeyOf(message);
+    const previous = this.queuesByProviderSessionKey.get(providerSessionKey) ?? Promise.resolve();
+    let next: Promise<void>;
+    next = previous
+      .catch(() => undefined)
+      .then(() => this.handleMessage(message))
+      .catch((err) => {
+        this.logger.error(
+          "account=%s session=%s message failed: %s",
+          this.accountId,
+          providerSessionKey,
+          String(err),
+        );
+      })
+      .finally(() => {
+        if (this.queuesByProviderSessionKey.get(providerSessionKey) === next) {
+          this.queuesByProviderSessionKey.delete(providerSessionKey);
+        }
+      });
+    this.queuesByProviderSessionKey.set(providerSessionKey, next);
   }
 
   private async ensureAcpSession(providerSessionKey: string): Promise<string> {

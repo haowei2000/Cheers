@@ -8,6 +8,8 @@ const loadSession = process.env.FAKE_ACP_LOAD_SESSION === "1";
 const permission = process.env.FAKE_ACP_PERMISSION === "1";
 const returnFile = process.env.FAKE_ACP_RETURN_FILE === "1";
 const returnFileLink = process.env.FAKE_ACP_RETURN_FILE_LINK === "1";
+const promptDelayMs = Number(process.env.FAKE_ACP_PROMPT_DELAY_MS || "0");
+const promptDelayIfIncludes = process.env.FAKE_ACP_PROMPT_DELAY_IF_INCLUDES || "";
 
 function send(frame) {
   process.stdout.write(`${JSON.stringify(frame)}\n`);
@@ -23,6 +25,10 @@ function error(id, code, message) {
 
 function notify(method, params) {
   send({ jsonrpc: "2.0", method, params });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function textOf(prompt) {
@@ -80,6 +86,10 @@ async function handle(frame) {
     return;
   }
   if (method === "session/prompt") {
+    const promptText = textOf(params.prompt);
+    if (promptDelayMs > 0 && (!promptDelayIfIncludes || promptText.includes(promptDelayIfIncludes))) {
+      await sleep(promptDelayMs);
+    }
     if (permission) {
       send({
         jsonrpc: "2.0",
@@ -113,7 +123,7 @@ async function handle(frame) {
       sessionId: params.sessionId,
       update: {
         sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: `echo: ${textOf(params.prompt)}` },
+        content: { type: "text", text: `echo: ${promptText}` },
       },
     });
     if (returnFile) {

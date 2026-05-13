@@ -314,15 +314,12 @@ async def _finalize_response(
             resp_or_exc,
             dur_ms,
         )
-        await _writer(ctx).finalize(bot_msg, f"处理出错: {resp_or_exc}")
-        from app.features.bot_runtime.bot_events.runs import mark_bot_run_status
-
-        await mark_bot_run_status(
-            ctx.session,
-            placeholder_msg_id=bot_msg.msg_id,
-            status="failed",
+        await _writer(ctx).finalize(
+            bot_msg,
+            f"处理出错: {resp_or_exc}",
+            run_status="failed",
             last_event_type="adapter.exception",
-            error_message=str(resp_or_exc),
+            run_error_message=str(resp_or_exc),
         )
         await _writer(ctx).record_task(bot_id, bot_msg.msg_id)
         ctx.bot_messages.append(bot_msg)
@@ -342,17 +339,10 @@ async def _finalize_response(
             file_ids=resp.file_ids or [],
             is_partial=True,
             error=resp.error_message or "user_cancelled",
+            run_status="cancelled",
+            last_event_type="adapter.cancelled",
+            run_error_message=resp.error_message or "user_cancelled",
         )
-        if ctx.session is not None:
-            from app.features.bot_runtime.bot_events.runs import mark_bot_run_status
-
-            await mark_bot_run_status(
-                ctx.session,
-                placeholder_msg_id=bot_msg.msg_id,
-                status="cancelled",
-                last_event_type="adapter.cancelled",
-                error_message=resp.error_message or "user_cancelled",
-            )
         await _writer(ctx).record_task(bot_id, bot_msg.msg_id)
         ctx.bot_messages.append(bot_msg)
         ctx.triggered_bot_ids.add(bot_id)
@@ -384,16 +374,16 @@ async def _finalize_response(
             dur_ms,
         )
     content = resp.content if resp.success else (resp.error_message or "处理出错")
-    await _writer(ctx).finalize(bot_msg, content, file_ids=resp.file_ids or [])
-    if not resp.success:
-        from app.features.bot_runtime.bot_events.runs import mark_bot_run_status
-
-        await mark_bot_run_status(
-            ctx.session,
-            placeholder_msg_id=bot_msg.msg_id,
-            status="failed",
+    if resp.success:
+        await _writer(ctx).finalize(bot_msg, content, file_ids=resp.file_ids or [])
+    else:
+        await _writer(ctx).finalize(
+            bot_msg,
+            content,
+            file_ids=resp.file_ids or [],
+            run_status="failed",
             last_event_type="adapter.final",
-            error_message=resp.error_message or "处理出错",
+            run_error_message=resp.error_message or "处理出错",
         )
     await _writer(ctx).record_task(bot_id, bot_msg.msg_id)
     ctx.bot_messages.append(bot_msg)

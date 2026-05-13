@@ -79,6 +79,7 @@ class BotMessageWriter:
             status="placeholder_created",
             last_event_type="placeholder_created",
         )
+        await ctx.session.commit()
         await ctx.bus.publish(BotMessagePlaceholder(data=MessageAssembler.assemble(msg)))
         ctx.already_broadcast.add(msg.msg_id)
         return msg
@@ -91,6 +92,9 @@ class BotMessageWriter:
         file_ids: list[str] | None = None,
         is_partial: bool = False,
         error: str | None = None,
+        run_status: str = "done",
+        last_event_type: str = "message_done",
+        run_error_message: str | None = None,
     ) -> None:
         ctx = self.ctx
         msg.content = content
@@ -106,8 +110,9 @@ class BotMessageWriter:
         await mark_bot_run_status(
             ctx.session,
             placeholder_msg_id=msg.msg_id,
-            status="done",
-            last_event_type="message_done",
+            status=run_status,
+            last_event_type=last_event_type,
+            error_message=run_error_message,
         )
 
         file_map = {}
@@ -116,6 +121,7 @@ class BotMessageWriter:
                 select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
             )
             file_map = {r.file_id: r for r in result.scalars().all()}
+        await ctx.session.commit()
         await ctx.bus.publish(
             MessageDone(
                 msg_id=msg.msg_id,
@@ -178,6 +184,7 @@ class BotMessageWriter:
             if coord_info:
                 dto.sender_name = coord_info[0] or coord_info[1] or ""
 
+            await ctx.session.commit()
             await ctx.bus.publish(MessageCreated(data=dto))
             ctx.already_broadcast.add(routing_msg.msg_id)
             ctx.bot_messages.append(routing_msg)
@@ -215,6 +222,7 @@ class BotMessageWriter:
             )
         )
         await ctx.session.flush()
+        await ctx.session.commit()
 
     async def register_async_pending(
         self, bot_msg: Message, task_id: str, bot_id: str,
@@ -244,6 +252,7 @@ class BotMessageWriter:
                 status="dispatched_async",
                 last_event_type="agent_bridge.dispatch",
             )
+            await ctx.session.commit()
             logger.info(
                 "register_async_pending: dm scope skips background task timer bot_id=%s task_id=%s msg_id=%s",
                 bot_id,
@@ -289,6 +298,7 @@ class BotMessageWriter:
             status="dispatched_async",
             last_event_type="agent_bridge.dispatch",
         )
+        await ctx.session.commit()
         loop = asyncio.get_event_loop()
 
         def _fire() -> None:

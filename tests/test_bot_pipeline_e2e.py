@@ -8,10 +8,12 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, PromptTemplate, Workspace
+from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, Message, PromptTemplate, User, Workspace
 from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.pipeline.bot.queue import stop_bot_pipeline_workers
+from app.features.bot_runtime.pipeline.bot.service import run_bot_pipeline
 from app.features.bot_runtime.pipeline.adapter_events import AdapterEvent, Delta, Final
+from app.features.bot_runtime.pipeline.bus import NullEventBus
 
 TEST_USER_ID = "a0000000-0000-0000-0000-000000000099"
 
@@ -42,6 +44,84 @@ class StreamingAdapter(BotAdapter):
 
     async def health_check(self) -> bool:
         return True
+
+
+@pytest.mark.asyncio
+async def test_bot_placeholder_is_committed_before_adapter_execute(
+    db_session: AsyncSession,
+    db_engine,
+) -> None:
+    factory = async_sessionmaker(
+        db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+    visible_during_execute: list[bool] = []
+
+    class VisibilityCheckingAdapter(BotAdapter):
+        async def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
+            placeholder_id = payload.runtime.placeholder_msg_id
+            async with factory() as probe:
+                msg = await probe.get(Message, placeholder_id)
+                visible_during_execute.append(msg is not None)
+            yield Final(content="visible", success=True)
+
+        async def health_check(self) -> bool:
+            return True
+
+    async def adapter_factory(_bot_id: str) -> BotAdapter:
+        return VisibilityCheckingAdapter()
+
+    model = _make_disabled_model("pipeline-model-lock")
+    tpl = _make_template("pipeline-tpl-lock")
+    user = User(
+        user_id="pipeline-user-lock",
+        username="pipeline_user_lock",
+        password_hash="x",
+        display_name="Pipeline User",
+    )
+    ws = Workspace(workspace_id="pipeline-ws-lock", name="Pipeline Lock")
+    ch = Channel(
+        channel_id="pipeline-ch-lock",
+        workspace_id=ws.workspace_id,
+        name="pipeline-lock",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="pipeline-bot-lock",
+        username="visible_bot",
+        display_name="VisibleBot",
+        model_id=model.model_id,
+        template_id=tpl.template_id,
+        status="online",
+    )
+    trigger = Message(
+        channel_id=ch.channel_id,
+        sender_id=user.user_id,
+        sender_type="user",
+        content="@visible_bot please check visibility",
+    )
+    db_session.add_all([model, tpl, user, ws, ch, bot, trigger])
+    db_session.add(
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+        )
+    )
+    await db_session.commit()
+
+    await run_bot_pipeline(
+        ch.channel_id,
+        trigger,
+        db_session,
+        adapter_factory,
+        event_bus=NullEventBus(),
+    )
+
+    assert visible_during_execute == [True]
 
 
 def _make_disabled_model(model_id: str) -> AIModel:

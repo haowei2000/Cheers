@@ -56,7 +56,7 @@ class _FakeWriter:
     async def pre_create(self, bot_id: str, task_id: str):
         return SimpleNamespace(msg_id=f"placeholder-{bot_id}")
 
-    async def finalize(self, msg, content: str, *, file_ids=None) -> None:
+    async def finalize(self, msg, content: str, *, file_ids=None, **_) -> None:
         self.finalized.append((msg, content))
 
     async def record_task(self, bot_id: str, msg_id: str) -> None:

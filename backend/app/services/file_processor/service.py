@@ -1,6 +1,7 @@
 """文件上传与解析服务：封装 presign、校验、对象读取与文本解析。"""
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import mimetypes
@@ -145,7 +146,6 @@ class FilePipelineService:
         attachments: list[dict[str, str]] = []
         for record in records:
             record.status = "processing"
-            await session.flush()
 
             # 图片文件：读取字节并 base64 编码，供 Vision LLM 使用
             if is_image_type(record.content_type or ""):
@@ -178,8 +178,8 @@ class FilePipelineService:
             if record.md_path:
                 try:
                     cache_path = Path(record.md_path)
-                    if cache_path.exists():
-                        text = cache_path.read_text(encoding="utf-8")
+                    if await asyncio.to_thread(cache_path.exists):
+                        text = await asyncio.to_thread(cache_path.read_text, encoding="utf-8")
                         record.status = "ready"
                         if not record.uploaded_at:
                             record.uploaded_at = datetime.utcnow()
@@ -204,7 +204,8 @@ class FilePipelineService:
                 obj = await self._load_record_object(record)
                 if not obj.body:
                     raise FileFlowError(f"文件 {record.original_filename or record.file_id} 为空，无法推理")
-                parsed = parse_document_bytes(
+                parsed = await asyncio.to_thread(
+                    parse_document_bytes,
                     obj.body,
                     filename=record.original_filename or f"{record.file_id}.txt",
                     content_type=record.content_type or obj.head.content_type,
@@ -228,7 +229,7 @@ class FilePipelineService:
                 )
                 raise FileFlowError(f"文件 {record.original_filename or record.file_id} 解析失败：{exc}") from exc
 
-            self._persist_parsed_cache(record, parsed)
+            await self._persist_parsed_cache(record, parsed)
             record.summary_3lines = parsed.summary or None
             record.last_error = None
             record.status = "ready"
@@ -267,7 +268,6 @@ class FilePipelineService:
             if is_image_type(record.content_type or ""):
                 # 图片仍需完整处理（Vision LLM 需要 base64）
                 record.status = "processing"
-                await session.flush()
                 image_b64 = ""
                 try:
                     await self._ensure_object_ready(record)
@@ -441,12 +441,13 @@ class FilePipelineService:
 
     async def _ensure_local_object_ready(self, record: FileRecord) -> StorageObjectHead:
         path = self._resolve_local_path(record.original_path)
-        if not path.exists():
+        exists = await asyncio.to_thread(path.exists)
+        if not exists:
             record.status = "failed"
             record.last_error = "local file not found"
             raise FileFlowError("找不到已上传文件，请重新上传后再试")
 
-        size = path.stat().st_size
+        size = await asyncio.to_thread(lambda: path.stat().st_size)
         if size <= 0:
             record.status = "failed"
             record.last_error = "empty local file"
@@ -486,7 +487,7 @@ class FilePipelineService:
     async def _load_local_object(self, record: FileRecord) -> StorageObject:
         head = await self._ensure_local_object_ready(record)
         path = self._resolve_local_path(record.original_path)
-        return StorageObject(head=head, body=path.read_bytes())
+        return StorageObject(head=head, body=await asyncio.to_thread(path.read_bytes))
 
     def _resolve_local_path(self, original_path: str) -> Path:
         path = Path(original_path)
@@ -520,12 +521,12 @@ class FilePipelineService:
             return "application/pdf"
         return "application/octet-stream"
 
-    def _persist_parsed_cache(self, record: FileRecord, parsed: ParsedDocument) -> None:
+    async def _persist_parsed_cache(self, record: FileRecord, parsed: ParsedDocument) -> None:
         base = Path(self.settings.data_dir)
         if not base.is_absolute():
             base = Path(__file__).resolve().parent.parent.parent / base
         cache_dir = base / "converted" / record.channel_id
-        cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / f"{record.file_id}.md"
-        cache_path.write_text(parsed.text, encoding="utf-8")
+        await asyncio.to_thread(cache_dir.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(cache_path.write_text, parsed.text, encoding="utf-8")
         record.md_path = str(cache_path)

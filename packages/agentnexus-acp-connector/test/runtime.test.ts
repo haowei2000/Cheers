@@ -77,6 +77,100 @@ describe("ConnectorRuntime", () => {
     await runtime.stop();
   });
 
+  it("runs different provider sessions concurrently", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_PROMPT_DELAY_MS: "300", FAKE_ACP_PROMPT_DELAY_IF_INCLUDES: "slow session" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-slow",
+      channel_id: "C1",
+      seq: 10,
+      placeholder_msg_id: "ph-slow",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "slow session first" },
+    });
+    bridge.pushMessage({
+      task_id: "task-fast",
+      channel_id: "D1",
+      seq: 11,
+      placeholder_msg_id: "ph-fast",
+      provider_session_key: "agentnexus:dm:user:U1:bot:bot-acp",
+      trigger_message: { text: "fast dm second" },
+    });
+
+    await waitFor(() => bridge.receivedDones.length >= 1);
+    expect(bridge.receivedDones[0]).toMatchObject({ type: "done", msg_id: "ph-fast" });
+    await waitFor(() => bridge.receivedDones.length === 2);
+    expect(bridge.receivedDones.map((d) => d.msg_id)).toEqual(["ph-fast", "ph-slow"]);
+    await runtime.stop();
+  });
+
+  it("keeps messages in the same provider session ordered", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            env: { FAKE_ACP_PROMPT_DELAY_MS: "300", FAKE_ACP_PROMPT_DELAY_IF_INCLUDES: "slow session" },
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushMessage({
+      task_id: "task-same-slow",
+      channel_id: "C1",
+      seq: 12,
+      placeholder_msg_id: "ph-same-slow",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "slow session first" },
+    });
+    bridge.pushMessage({
+      task_id: "task-same-fast",
+      channel_id: "C1",
+      seq: 13,
+      placeholder_msg_id: "ph-same-fast",
+      provider_session_key: "agentnexus:channel:C1",
+      trigger_message: { text: "fast same session second" },
+    });
+
+    await waitFor(() => bridge.receivedDones.length === 2);
+    expect(bridge.receivedDones.map((d) => d.msg_id)).toEqual(["ph-same-slow", "ph-same-fast"]);
+    await runtime.stop();
+  });
+
   it("loads a persisted ACP session when the agent supports session/load", async () => {
     const statePath = path.join(tmp, "state.json");
     await writeFile(

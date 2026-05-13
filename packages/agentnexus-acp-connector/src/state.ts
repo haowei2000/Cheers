@@ -14,6 +14,7 @@ interface StateFile {
 export class SessionStateStore {
   private state: StateFile = { version: 1, sessions: {} };
   private loaded = false;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly filePath: string) {}
 
@@ -37,17 +38,23 @@ export class SessionStateStore {
   }
 
   async set(accountId: string, providerSessionKey: string, acpSessionId: string): Promise<void> {
-    this.state.sessions[accountId] ??= {};
-    this.state.sessions[accountId][providerSessionKey] = {
-      acpSessionId,
-      updatedAt: new Date().toISOString(),
-    };
-    await this.save();
+    const write = this.writeQueue
+      .catch(() => undefined)
+      .then(async () => {
+        this.state.sessions[accountId] ??= {};
+        this.state.sessions[accountId][providerSessionKey] = {
+          acpSessionId,
+          updatedAt: new Date().toISOString(),
+        };
+        await this.save();
+      });
+    this.writeQueue = write.catch(() => undefined);
+    await write;
   }
 
   private async save(): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    const tmp = `${this.filePath}.${process.pid}.tmp`;
+    const tmp = `${this.filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
     await writeFile(tmp, JSON.stringify(this.state, null, 2), "utf8");
     await rename(tmp, this.filePath);
   }

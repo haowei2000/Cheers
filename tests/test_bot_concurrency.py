@@ -36,6 +36,7 @@ class _Writer:
         file_ids=None,
         is_partial: bool = False,
         error: str | None = None,
+        **_,
     ) -> None:
         msg.content = content
         msg.is_partial = is_partial
