@@ -316,14 +316,17 @@ async def test_ws_bot_adapter_does_not_create_session_when_no_data_ws(
     payload = _payload()
     payload.process_config.placeholder_msg_id = "placeholder-no-ws-session"
     payload.process_config.db_session = db_session
+    before_count = (
+        await db_session.execute(select(func.count()).select_from(AgentNexusSession))
+    ).scalar_one()
 
     resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
     assert resp.success is False
-    count = (
+    after_count = (
         await db_session.execute(select(func.count()).select_from(AgentNexusSession))
     ).scalar_one()
-    assert count == 0
+    assert after_count == before_count
 
 
 @pytest.mark.asyncio

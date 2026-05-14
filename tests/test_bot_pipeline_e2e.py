@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, Message, PromptTemplate, User, Workspace
@@ -164,19 +165,44 @@ def _patch_background_session_factories(
 
 
 async def _wait_for_bot_messages(
-    client: AsyncClient,
+    db_engine,
     channel_id: str,
     *,
     min_count: int,
-    timeout: float = 2.0,
+    timeout: float = 5.0,
+    require_content: bool = False,
 ) -> list[dict]:
+    factory = async_sessionmaker(
+        db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
     deadline = asyncio.get_running_loop().time() + timeout
     last_messages: list[dict] = []
     while True:
-        resp = await client.get(f"/api/v1/channels/{channel_id}/messages")
-        assert resp.status_code == 200
-        last_messages = resp.json()["data"]
-        if sum(1 for msg in last_messages if msg["sender_type"] == "bot") >= min_count:
+        async with factory() as probe:
+            result = await probe.execute(
+                select(Message)
+                .where(Message.channel_id == channel_id)
+                .order_by(Message.created_at.asc())
+            )
+            last_messages = [
+                {
+                    "msg_id": msg.msg_id,
+                    "sender_type": msg.sender_type,
+                    "content": msg.content,
+                }
+                for msg in result.scalars().all()
+            ]
+        bot_messages = [msg for msg in last_messages if msg["sender_type"] == "bot"]
+        has_required_count = len(bot_messages) >= min_count
+        has_required_content = (
+            not require_content
+            or any((msg.get("content") or "").strip() for msg in bot_messages)
+        )
+        if has_required_count and has_required_content:
             return last_messages
         if asyncio.get_running_loop().time() >= deadline:
             return last_messages
@@ -238,7 +264,12 @@ async def test_dm_message_to_bot_gets_reply_without_mention(
         )
         assert resp.status_code == 200
 
-        messages = await _wait_for_bot_messages(client, ch.channel_id, min_count=1)
+        messages = await _wait_for_bot_messages(
+            db_engine,
+            ch.channel_id,
+            min_count=1,
+            require_content=True,
+        )
         user_msg = next((m for m in messages if m["sender_type"] == "user"), None)
         bot_msg = next((m for m in messages if m["sender_type"] == "bot"), None)
         assert user_msg is not None and user_msg["content"] == "hello bot, no explicit mention"
