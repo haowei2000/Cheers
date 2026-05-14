@@ -11,6 +11,7 @@ import inspect
 import json
 import logging
 import uuid
+from collections.abc import Awaitable
 from typing import Any, Protocol
 
 from app.config import settings
@@ -85,12 +86,45 @@ class RedisRealtimeBroker:
             self._redis = None
 
     async def publish_channel(self, channel_id: str, message: dict) -> None:
-        await _deliver_channel_local(channel_id, message)
-        await self._publish(f"agentnexus:rt:channel:{channel_id}", "channel", channel_id, message)
+        await self._publish_and_deliver_local(
+            _deliver_channel_local(channel_id, message),
+            f"agentnexus:rt:channel:{channel_id}",
+            "channel",
+            channel_id,
+            message,
+        )
 
     async def publish_user(self, user_id: str, message: dict) -> None:
-        await _deliver_user_local(user_id, message)
-        await self._publish(f"agentnexus:rt:user:{user_id}", "user", user_id, message)
+        await self._publish_and_deliver_local(
+            _deliver_user_local(user_id, message),
+            f"agentnexus:rt:user:{user_id}",
+            "user",
+            user_id,
+            message,
+        )
+
+    async def _publish_and_deliver_local(
+        self,
+        local_delivery: Awaitable[None],
+        topic: str,
+        kind: str,
+        target_id: str,
+        message: dict,
+    ) -> None:
+        local_task = asyncio.create_task(local_delivery)
+        publish_task = asyncio.create_task(self._publish(topic, kind, target_id, message))
+        local_result, _publish_result = await asyncio.gather(
+            local_task,
+            publish_task,
+            return_exceptions=True,
+        )
+        if isinstance(local_result, Exception):
+            logger.warning(
+                "realtime_broker: local delivery failed kind=%s target_id=%s",
+                kind,
+                target_id,
+                exc_info=local_result,
+            )
 
     async def _publish(self, topic: str, kind: str, target_id: str, message: dict) -> None:
         if self._redis is None:

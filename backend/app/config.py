@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     bot_event_worker_concurrency: int = 4
     realtime_broker_backend: str = "redis"  # redis | memory
     ws_outbound_queue_size: int = 256
+    ws_broadcast_enqueue_concurrency: int = 128
     ws_send_timeout_seconds: float = 5.0
+    unread_fanout_concurrency: int = 64
     recent_debounce_seconds: float = 5.0
 
     # 数据目录（相对项目根或绝对路径）
