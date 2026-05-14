@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     realtime_broker_backend: str = "redis"  # redis | memory
     ws_outbound_queue_size: int = 256
     ws_send_timeout_seconds: float = 5.0
+    stream_delta_flush_interval_seconds: float = 0.08
+    stream_delta_flush_chars: int = 512
     recent_debounce_seconds: float = 5.0
 
     # 数据目录（相对项目根或绝对路径）

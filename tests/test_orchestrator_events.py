@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.config import settings
 from app.features.bot_runtime.pipeline.bus import (
     NullEventBus,
     SSEEventBus,
@@ -26,6 +27,7 @@ from app.features.bot_runtime.pipeline.events import (
     MessageDone,
     MessageStreamDelta,
 )
+from app.features.bot_runtime.pipeline.stream_coalescer import StreamDeltaCoalescer
 
 
 class _RecordingWS:
@@ -34,6 +36,14 @@ class _RecordingWS:
 
     async def broadcast_to_channel(self, channel_id: str, frame: dict) -> None:
         self.frames.append((channel_id, frame))
+
+
+class _RecordingBus:
+    def __init__(self) -> None:
+        self.events: list[MessageStreamDelta] = []
+
+    async def publish(self, event: MessageStreamDelta) -> None:
+        self.events.append(event)
 
 
 @pytest.fixture
@@ -52,6 +62,42 @@ def test_message_stream_delta_wire_format() -> None:
         "data": {"msg_id": "m1", "delta": "hi"},
     }
     assert e.to_sse() == ("delta", {"msg_id": "m1", "delta": "hi"})
+
+
+async def test_stream_delta_coalescer_flushes_combined_delta_on_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "stream_delta_flush_interval_seconds", 60.0)
+    monkeypatch.setattr(settings, "stream_delta_flush_chars", 512)
+    bus = _RecordingBus()
+    coalescer = StreamDeltaCoalescer(msg_id="m1", bus=bus)
+
+    await coalescer.add("stream ")
+    await coalescer.add("ok")
+
+    assert bus.events == []
+    await coalescer.close()
+    assert [event.to_ws_frame() for event in bus.events] == [
+        {"type": "message_stream", "data": {"msg_id": "m1", "delta": "stream ok"}},
+    ]
+
+
+async def test_stream_delta_coalescer_flushes_when_char_limit_is_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "stream_delta_flush_interval_seconds", 60.0)
+    monkeypatch.setattr(settings, "stream_delta_flush_chars", 3)
+    bus = _RecordingBus()
+    coalescer = StreamDeltaCoalescer(msg_id="m1", bus=bus)
+
+    await coalescer.add("ab")
+    assert bus.events == []
+    await coalescer.add("c")
+    await coalescer.close()
+
+    assert [event.to_ws_frame() for event in bus.events] == [
+        {"type": "message_stream", "data": {"msg_id": "m1", "delta": "abc"}},
+    ]
 
 
 def test_message_created_wire_format() -> None:

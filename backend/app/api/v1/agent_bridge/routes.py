@@ -66,6 +66,9 @@ from app.features.agent_bridge.service import (
 from app.features.agent_bridge.service import (
     finalize_bot_reply,
 )
+from app.features.agent_bridge.service import (
+    flush_stream_deltas as bridge_flush_stream_deltas,
+)
 from app.features.agent_bridge.session_map import (
     SCOPE_CHANNEL,
     SCOPE_DM,
@@ -1188,6 +1191,7 @@ async def _handle_data_done(
                     "task_id": state.task_id,
                     "content": state.buffer,
                 }
+    await bridge_flush_stream_deltas(msg_id)
     payload = {
         "msg_id": msg_id,
         "bot_id": bot.bot_id,
