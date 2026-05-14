@@ -9,6 +9,8 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.agent_bridge.routes import _BridgeOutboundQueueFull, _BridgeOutboundWriter
+from app.config import settings
 from app.db.models import AgentNexusSession, Channel, Message, Workspace
 from app.features.agent_bridge.dispatcher import BridgeDispatcher
 from app.features.agent_bridge.pending import PendingReply, PendingReplyRegistry
@@ -108,6 +110,46 @@ async def test_dispatcher_unsubscribe_stops_delivery() -> None:
     await d.unsubscribe(sub)
     delivered = await d.publish({"type": "dispatch", "bot_id": "bot-A"})
     assert delivered == 0
+
+
+@pytest.mark.asyncio
+async def test_bridge_outbound_writer_closes_slow_subscriber(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ws_outbound_queue_size", 1)
+    monkeypatch.setattr(settings, "ws_send_timeout_seconds", 10.0)
+
+    class SlowWS:
+        def __init__(self) -> None:
+            self.sent: list[dict] = []
+            self.closed = False
+            self.send_started = asyncio.Event()
+            self.release_send = asyncio.Event()
+
+        async def send_json(self, data: dict) -> None:
+            self.sent.append(data)
+            self.send_started.set()
+            await self.release_send.wait()
+
+        async def close(self, code: int = 1000, reason: str = "") -> None:
+            self.closed = True
+            self.close_code = code
+            self.close_reason = reason
+
+    ws = SlowWS()
+    writer = _BridgeOutboundWriter(ws)  # type: ignore[arg-type]
+    writer.start()
+
+    await writer.send({"type": "dispatch", "seq": 1})
+    await asyncio.wait_for(ws.send_started.wait(), timeout=1)
+    await writer.send({"type": "dispatch", "seq": 2})
+    with pytest.raises(_BridgeOutboundQueueFull):
+        await writer.send({"type": "dispatch", "seq": 3})
+
+    assert ws.closed is True
+    assert ws.close_code == 1011
+    assert ws.close_reason == "outbound queue full"
+
+    ws.release_send.set()
+    await writer.close()
 
 
 # --------------------------- AgentBridgeBotAdapter ---------------------------
