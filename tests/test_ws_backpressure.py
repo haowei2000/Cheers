@@ -28,6 +28,21 @@ class _SlowWebSocket:
         self.close_reason = reason
 
 
+class _SlowClosingWebSocket(_SlowWebSocket):
+    def __init__(self, tracker: dict[str, int]) -> None:
+        super().__init__()
+        self.tracker = tracker
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        self.tracker["active"] += 1
+        self.tracker["max_active"] = max(self.tracker["max_active"], self.tracker["active"])
+        try:
+            await asyncio.sleep(0.05)
+            await super().close(code=code, reason=reason)
+        finally:
+            self.tracker["active"] -= 1
+
+
 @pytest.mark.asyncio
 async def test_ws_outbound_queue_closes_slow_client(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ws_outbound_queue_size", 1)
@@ -46,6 +61,33 @@ async def test_ws_outbound_queue_closes_slow_client(monkeypatch) -> None:
 
     ws.release_send.set()
     await manager.disconnect(ws, "ch-1")
+
+
+@pytest.mark.asyncio
+async def test_ws_broadcast_closes_full_clients_concurrently(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ws_outbound_queue_size", 1)
+    monkeypatch.setattr(settings, "ws_broadcast_enqueue_concurrency", 3)
+    monkeypatch.setattr(settings, "ws_send_timeout_seconds", 10.0)
+
+    manager = ConnectionManager()
+    tracker = {"active": 0, "max_active": 0}
+    sockets = [_SlowClosingWebSocket(tracker) for _ in range(3)]
+    for ws in sockets:
+        await manager.connect(ws, "ch-1")
+
+    await manager.broadcast_to_channel("ch-1", {"type": "message", "data": {"n": 1}})
+    for ws in sockets:
+        await asyncio.wait_for(ws.send_started.wait(), timeout=1)
+    await manager.broadcast_to_channel("ch-1", {"type": "message", "data": {"n": 2}})
+    await manager.broadcast_to_channel("ch-1", {"type": "message", "data": {"n": 3}})
+
+    assert all(ws.closed for ws in sockets)
+    assert tracker["max_active"] == 3
+    assert "ch-1" not in manager._channel_connections
+
+    for ws in sockets:
+        ws.release_send.set()
+        await manager.disconnect(ws, "ch-1")
 
 
 @pytest.mark.asyncio
