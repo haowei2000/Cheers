@@ -48,6 +48,42 @@ class MessageService:
         }
         return messages, file_map
 
+    async def list_topic_messages(
+        self,
+        channel_id: str,
+        root_msg_id: str,
+    ) -> tuple[list[Message], dict[str, MessageFileDTO]]:
+        """返回话题根消息及其所有子孙回复。"""
+        ch = await self.channel_repo.get_by_id(channel_id)
+        if not ch:
+            raise NotFoundError("channel not found")
+
+        root = await self.msg_repo.get_by_id(root_msg_id)
+        if not root or root.channel_id != channel_id:
+            raise NotFoundError("topic root message not found")
+
+        descendants = await self.msg_repo.list_descendants_by_root(
+            channel_id,
+            root_msg_id,
+        )
+        messages = [root, *descendants]
+        file_ids = sorted({
+            fid for m in messages for fid in (m.file_ids or []) if fid
+        })
+        records = await self.file_repo.get_many_by_ids(file_ids)
+
+        file_map = {
+            fid: MessageFileDTO(
+                file_id=rec.file_id,
+                original_filename=rec.original_filename,
+                content_type=rec.content_type,
+                size_bytes=rec.size_bytes,
+                status=rec.status,
+            )
+            for fid, rec in records.items()
+        }
+        return messages, file_map
+
     async def send_message(
         self,
         channel_id: str,

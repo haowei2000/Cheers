@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -191,6 +192,98 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
     assert resp2.status_code == 200
     assert len(resp2.json()["data"]) == 1
     assert resp2.json()["data"][0]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_list_topic_messages_includes_nested_replies(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """话题独立页接口返回根消息及所有子孙回复，而不是只返回直接回复。"""
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000062", name="W62")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000062",
+        workspace_id=ws.workspace_id,
+        name="topic-page-ch",
+        type="public",
+    )
+    other = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000063",
+        workspace_id=ws.workspace_id,
+        name="other-ch",
+        type="public",
+    )
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    root = Message(
+        msg_id="m1000000-0000-0000-0000-000000000062",
+        channel_id=ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000099",
+        sender_type="user",
+        content="topic root",
+        msg_type="topic",
+        created_at=base_time,
+    )
+    direct_reply = Message(
+        msg_id="m1000000-0000-0000-0000-000000000063",
+        channel_id=ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000099",
+        sender_type="user",
+        content="direct reply",
+        msg_type="reply",
+        in_reply_to_msg_id=root.msg_id,
+        created_at=base_time + timedelta(seconds=1),
+    )
+    nested_reply = Message(
+        msg_id="m1000000-0000-0000-0000-000000000064",
+        channel_id=ch.channel_id,
+        sender_id="b1000000-0000-0000-0000-000000000062",
+        sender_type="bot",
+        content="nested bot reply",
+        msg_type="reply",
+        in_reply_to_msg_id=direct_reply.msg_id,
+        created_at=base_time + timedelta(seconds=2),
+    )
+    unrelated = Message(
+        msg_id="m1000000-0000-0000-0000-000000000065",
+        channel_id=ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000099",
+        sender_type="user",
+        content="unrelated",
+        msg_type="normal",
+        created_at=base_time + timedelta(seconds=3),
+    )
+    other_channel_reply = Message(
+        msg_id="m1000000-0000-0000-0000-000000000066",
+        channel_id=other.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000099",
+        sender_type="user",
+        content="other channel reply",
+        msg_type="reply",
+        in_reply_to_msg_id=root.msg_id,
+        created_at=base_time + timedelta(seconds=4),
+    )
+    db_session.add_all([
+        ws,
+        ch,
+        other,
+        root,
+        direct_reply,
+        nested_reply,
+        unrelated,
+        other_channel_reply,
+    ])
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/channels/{ch.channel_id}/messages/topics/{root.msg_id}"
+    )
+
+    assert resp.status_code == 200
+    assert [item["msg_id"] for item in resp.json()["data"]] == [
+        root.msg_id,
+        direct_reply.msg_id,
+        nested_reply.msg_id,
+    ]
 
 
 @pytest.mark.asyncio

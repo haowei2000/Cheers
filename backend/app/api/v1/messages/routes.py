@@ -154,6 +154,19 @@ async def list_messages(
     return APIResponse.ok([_serialize(m, file_map) for m in messages])
 
 
+@router.get("/topics/{root_msg_id}", response_model=APIResponse[list[dict]])
+async def list_topic_messages(
+    channel_id: str,
+    root_msg_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    await ChannelService(session).require_channel_member(channel_id, current_user)
+    svc = MessageService(session)
+    messages, file_map = await svc.list_topic_messages(channel_id, root_msg_id)
+    return APIResponse.ok([_serialize(m, file_map) for m in messages])
+
+
 async def _handle_send_message(
     session: AsyncSession,
     *,
