@@ -270,4 +270,21 @@ class FanoutUnreadStage(Stage[IngestContext]):
             for row in rows
             if not (sender_type == "user" and row[0] == sender_id)
         ]
+        if member_ids:
+            try:
+                async with async_session_factory() as session:
+                    from app.services.unread_count_service import increment_unread_counts
+
+                    await increment_unread_counts(
+                        session,
+                        channel_id=ctx.channel_id,
+                        user_ids=member_ids,
+                    )
+                    await session.commit()
+            except Exception:
+                logger.warning(
+                    "fanout_unread: failed to update unread cache channel_id=%s",
+                    ctx.channel_id,
+                    exc_info=True,
+                )
         await _publish_unread_events(member_ids, event)

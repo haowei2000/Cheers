@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import cast
 
-from sqlalchemy import and_, delete, func, or_, select, true
+from sqlalchemy import and_, delete, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
@@ -31,6 +31,8 @@ from app.repositories.channel_repo import ChannelRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
 from app.services.bot_service import BotService, bot_scope
+from app.services.unread_count_service import set_unread_count
+from app.services.unread_count_service import unread_counts_for as cached_unread_counts_for
 from app.utils.permissions import are_accepted_friends, is_admin, is_blocked_between
 
 CHANNEL_ADMIN_ROLES = {"owner", "admin"}
@@ -207,47 +209,17 @@ class ChannelService:
     async def unread_counts_for(
         self, user_id: str, channel_ids: list[str]
     ) -> dict[str, int]:
-        """Per-channel unread count for a user, derived from
-        channel_memberships.last_read_at. Channels the user isn't a member of
-        return 0. Messages the user sent themselves don't count as unread.
-        """
-        if not channel_ids:
-            return {}
-        membership_rows = (await self.session.execute(
-            select(ChannelMembership).where(
-                ChannelMembership.channel_id.in_(channel_ids),
-                ChannelMembership.member_id == user_id,
-                ChannelMembership.member_type == "user",
-            )
-        )).scalars().all()
-        result: dict[str, int] = {cid: 0 for cid in channel_ids}
-        member_channel_ids = [m.channel_id for m in membership_rows]
-        if not member_channel_ids:
-            return result
+        """Per-channel unread count for a user.
 
-        rows = (await self.session.execute(
-            select(Message.channel_id, func.count(Message.msg_id))
-            .join(
-                ChannelMembership,
-                and_(
-                    ChannelMembership.channel_id == Message.channel_id,
-                    ChannelMembership.member_id == user_id,
-                    ChannelMembership.member_type == "user",
-                ),
-            )
-            .where(
-                Message.channel_id.in_(member_channel_ids),
-                Message.sender_id != user_id,
-                or_(
-                    ChannelMembership.last_read_at.is_(None),
-                    Message.created_at > ChannelMembership.last_read_at,
-                ),
-            )
-            .group_by(Message.channel_id)
-        )).all()
-        for channel_id, count in rows:
-            result[channel_id] = int(count or 0)
-        return result
+        Prefer the incremental cache; missing cache rows are computed from
+        channel_memberships.last_read_at and backfilled for compatibility with
+        pre-cache deployments.
+        """
+        return await cached_unread_counts_for(
+            self.session,
+            user_id=user_id,
+            channel_ids=channel_ids,
+        )
 
     async def mark_read(self, channel_id: str, user_id: str) -> datetime | None:
         """Move the user's read cursor to "now" for this channel. Returns the
@@ -257,6 +229,12 @@ class ChannelService:
             return None
         now = datetime.now(timezone.utc)
         m.last_read_at = now
+        await set_unread_count(
+            self.session,
+            channel_id=channel_id,
+            user_id=user_id,
+            unread_count=0,
+        )
         await self.session.flush()
         return now
 
@@ -390,6 +368,11 @@ class ChannelService:
         )
         await self.session.execute(
             delete(HistoryPage).where(HistoryPage.channel_id == channel_id)
+        )
+        from app.db.models import ChannelUnreadCount
+
+        await self.session.execute(
+            delete(ChannelUnreadCount).where(ChannelUnreadCount.channel_id == channel_id)
         )
 
         # 级联删除成员、消息、文件记录
