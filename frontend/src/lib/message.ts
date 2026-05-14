@@ -35,6 +35,87 @@ export function isMsgReply(
   return !!m.in_reply_to_msg_id && msgIdSet.has(m.in_reply_to_msg_id);
 }
 
+function compareMessagesByCreatedAt(a: Message, b: Message): number {
+  const parsedATime = a.created_at ? Date.parse(a.created_at) : 0;
+  const parsedBTime = b.created_at ? Date.parse(b.created_at) : 0;
+  const aTime = Number.isFinite(parsedATime) ? parsedATime : 0;
+  const bTime = Number.isFinite(parsedBTime) ? parsedBTime : 0;
+  if (aTime !== bTime) return aTime - bTime;
+  return a.msg_id.localeCompare(b.msg_id);
+}
+
+export function mergeMessagesChronologically(
+  ...messageLists: Message[][]
+): Message[] {
+  const byId = new Map<string, Message>();
+  for (const list of messageLists) {
+    for (const message of list) {
+      const previous = byId.get(message.msg_id);
+      const merged = {
+        ...previous,
+        ...message,
+      };
+      if (previous?._streaming && !message._streaming) {
+        merged._streaming = true;
+        if ((previous.content || "").length > (message.content || "").length) {
+          merged.content = previous.content;
+        }
+      }
+      byId.set(message.msg_id, merged);
+    }
+  }
+  return Array.from(byId.values()).sort(compareMessagesByCreatedAt);
+}
+
+export function buildTopicTree(
+  messages: Message[],
+  isDmSelected: boolean,
+): {
+  topicRoots: Message[];
+  topicRepliesOf: (rootId: string) => Message[];
+} {
+  if (isDmSelected) {
+    return {
+      topicRoots: messages,
+      topicRepliesOf: (): Message[] => [],
+    };
+  }
+
+  const msgIdSet = new Set(messages.map((x) => x.msg_id));
+  const msgById = new Map(messages.map((x) => [x.msg_id, x]));
+  const rootIdCache = new Map<string, string>();
+  function getRootId(msgId: string): string {
+    if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
+    const m = msgById.get(msgId);
+    if (!m || !isMsgReply(m, msgIdSet) || !m.in_reply_to_msg_id) {
+      rootIdCache.set(msgId, msgId);
+      return msgId;
+    }
+    const rid = getRootId(m.in_reply_to_msg_id);
+    rootIdCache.set(msgId, rid);
+    return rid;
+  }
+
+  const replyMap = new Map<string, Message[]>();
+  const replySet = new Set<string>();
+  for (const m of messages) {
+    const rootId = getRootId(m.msg_id);
+    if (rootId !== m.msg_id) {
+      replySet.add(m.msg_id);
+      const arr = replyMap.get(rootId) ?? [];
+      arr.push(m);
+      replyMap.set(rootId, arr);
+    }
+  }
+  for (const arr of replyMap.values()) {
+    arr.sort(compareMessagesByCreatedAt);
+  }
+  return {
+    topicRoots: messages.filter((m) => !replySet.has(m.msg_id)),
+    topicRepliesOf: (rootId: string): Message[] => replyMap.get(rootId) ?? [],
+  };
+}
+
 const QUOTE_PREFIX_RE = /^> \[([^\]]+)\]: ([\s\S]+?)\n\n([\s\S]*)$/;
 
 export function parseQuotePrefix(
