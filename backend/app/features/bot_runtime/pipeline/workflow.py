@@ -147,6 +147,13 @@ class BotWorkflowPlan:
         }
 
 
+@dataclass(frozen=True)
+class BotEnqueueDecision:
+    should_enqueue: bool
+    target_usernames: list[str]
+    reason: str
+
+
 def _get_trigger_content(msg: Message) -> str:
     """Return the trigger message plaintext, decrypting sealed messages best-effort."""
     if msg.is_secret and msg.secret_encrypted:
@@ -207,6 +214,66 @@ def _dm_counterparty_bot_target(ctx: BotRunContext) -> str | None:
     if len(ctx.channel_bot_usernames) != 1:
         return None
     return ctx.channel_bot_usernames[0]
+
+
+async def resolve_bot_enqueue_decision(
+    session,
+    *,
+    channel_id: str,
+    content: str,
+    mention_bot_ids: list[str] | None = None,
+    channel: Channel | None = None,
+) -> BotEnqueueDecision:
+    """Cheaply decide whether a persisted user message can trigger any Bot.
+
+    This mirrors BotWorkflowBuilder routing without loading memory, files, or
+    adapters so message sends with no Bot target do not enter the worker queue.
+    The full workflow still short-circuits as a second guard.
+    """
+    if channel is None:
+        channel = await session.get(Channel, channel_id)
+
+    result = await session.execute(
+        select(ChannelMembership, BotAccount)
+        .join(BotAccount, ChannelMembership.member_id == BotAccount.bot_id)
+        .where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.member_type == "bot",
+        )
+    )
+    rows = [(membership, bot) for membership, bot in result.all()]
+    channel_bot_usernames = [row[1].username for row in rows]
+    bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
+    username_by_bot_id = {bot_id: username for username, bot_id in bot_id_by_username.items()}
+
+    explicit_targets = _dedupe_usernames(
+        [
+            username_by_bot_id[bot_id]
+            for bot_id in (mention_bot_ids or [])
+            if bot_id in username_by_bot_id
+        ]
+    )
+    mentioned = extract_mentions(content or "", channel_bot_usernames)
+    text_targets = filter_mentioned_bots(mentioned, channel_bot_usernames)
+
+    targets = _dedupe_usernames(explicit_targets + text_targets)
+    if targets:
+        if explicit_targets and text_targets:
+            return BotEnqueueDecision(True, targets, "explicit_and_text_mentions")
+        if explicit_targets:
+            return BotEnqueueDecision(True, targets, "explicit_mention_bot_ids")
+        return BotEnqueueDecision(True, targets, "text_mentions")
+
+    if channel and channel.type == "dm" and len(channel_bot_usernames) == 1:
+        return BotEnqueueDecision(True, [channel_bot_usernames[0]], "dm_counterparty_bot")
+
+    coordinator_username = first_coordinator_username(channel_bot_usernames)
+    if not mentioned and channel and channel.auto_assist and coordinator_username:
+        return BotEnqueueDecision(True, [coordinator_username], "channel_auto_assist")
+
+    if mentioned:
+        return BotEnqueueDecision(False, [], "mentioned_bots_not_in_channel")
+    return BotEnqueueDecision(False, [], "no_targets")
 
 
 class BotWorkflowBuilder:

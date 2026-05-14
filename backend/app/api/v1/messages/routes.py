@@ -27,7 +27,7 @@ from app.features.bot_runtime.pipeline.bot.service import run_bot_pipeline
 from app.features.bot_runtime.pipeline.bus import EventBus, WSEventBus, make_event_bus
 from app.features.bot_runtime.pipeline.events import BotProcessing
 from app.features.bot_runtime.pipeline.ingest import IngestContext
-from app.features.bot_runtime.pipeline.workflow import run_message_workflow
+from app.features.bot_runtime.pipeline.workflow import resolve_bot_enqueue_decision, run_message_workflow
 from app.services.channel_service import ChannelService
 from app.services.message_service import MessageService
 from app.services.realtime_broker import get_realtime_broker
@@ -200,7 +200,39 @@ async def _handle_send_message(
     assert ctx.msg is not None and ctx.payload is not None
     await session.commit()
     _schedule_recent_update(channel_id)
-    _schedule_bot_pipeline_enqueue(channel_id, ctx.msg.msg_id, background_tasks)
+    try:
+        enqueue_decision = await resolve_bot_enqueue_decision(
+            session,
+            channel_id=channel_id,
+            content=body.content,
+            mention_bot_ids=body.mention_bot_ids or [],
+            channel=ctx.channel,
+        )
+    except Exception:
+        logger.warning(
+            "bot_pipeline_enqueue: target check failed; falling back to enqueue channel_id=%s msg_id=%s",
+            channel_id,
+            ctx.msg.msg_id,
+            exc_info=True,
+        )
+        _schedule_bot_pipeline_enqueue(channel_id, ctx.msg.msg_id, background_tasks)
+    else:
+        if enqueue_decision.should_enqueue:
+            logger.info(
+                "bot_pipeline_enqueue: target_found channel_id=%s msg_id=%s reason=%s targets=%s",
+                channel_id,
+                ctx.msg.msg_id,
+                enqueue_decision.reason,
+                enqueue_decision.target_usernames,
+            )
+            _schedule_bot_pipeline_enqueue(channel_id, ctx.msg.msg_id, background_tasks)
+        else:
+            logger.info(
+                "bot_pipeline_enqueue: skipped channel_id=%s msg_id=%s reason=%s",
+                channel_id,
+                ctx.msg.msg_id,
+                enqueue_decision.reason,
+            )
 
     return ctx.payload, ctx.secret_token
 

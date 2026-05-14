@@ -66,6 +66,9 @@ from app.features.agent_bridge.service import (
 from app.features.agent_bridge.service import (
     finalize_bot_reply,
 )
+from app.features.agent_bridge.service import (
+    flush_stream_deltas as bridge_flush_stream_deltas,
+)
 from app.features.agent_bridge.session_map import (
     SCOPE_CHANNEL,
     SCOPE_DM,
@@ -758,6 +761,70 @@ ws_router = APIRouter()
 _SUBSCRIBE_TIMEOUT_SECONDS = 10
 
 
+class _BridgeOutboundQueueFull(RuntimeError):
+    pass
+
+
+class _BridgeOutboundWriter:
+    def __init__(self, websocket: WebSocket) -> None:
+        self.websocket = websocket
+        self.queue: asyncio.Queue[dict | None] = asyncio.Queue(
+            maxsize=max(1, int(settings.ws_outbound_queue_size or 256)),
+        )
+        self.closed = False
+        self._task: asyncio.Task | None = None
+
+    def start(self) -> None:
+        self._task = asyncio.create_task(self._run())
+
+    async def send(self, frame: dict) -> None:
+        if self.closed:
+            raise _BridgeOutboundQueueFull("agent bridge outbound writer is closed")
+        try:
+            self.queue.put_nowait(frame)
+        except asyncio.QueueFull as exc:
+            self.closed = True
+            logger.warning("agent bridge ws: outbound queue full; closing slow dispatch subscriber")
+            await self.close(code=1011, reason="outbound queue full")
+            raise _BridgeOutboundQueueFull("agent bridge outbound queue full") from exc
+
+    async def close(self, *, code: int = 1000, reason: str = "") -> None:
+        if self.closed and code == 1000:
+            return
+        self.closed = True
+        current = asyncio.current_task()
+        if self._task and self._task is not current:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        try:
+            await self.websocket.close(code=code, reason=reason)
+        except Exception:
+            pass
+
+    async def _run(self) -> None:
+        timeout = max(0.1, float(settings.ws_send_timeout_seconds or 5.0))
+        try:
+            while True:
+                frame = await self.queue.get()
+                if frame is None:
+                    return
+                await asyncio.wait_for(self.websocket.send_json(frame), timeout=timeout)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self.closed = True
+            logger.warning("agent bridge ws: outbound writer failed: %s", exc)
+            try:
+                await self.websocket.close(code=1011, reason="send failed")
+            except Exception:
+                pass
+        finally:
+            self.closed = True
+
+
 async def _resolve_subscribable_bot_ids(
     session: AsyncSession, requested: list[str],
 ) -> tuple[list[str], list[str]]:
@@ -788,9 +855,11 @@ async def bridge_websocket(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
+    outbox = _BridgeOutboundWriter(websocket)
+    outbox.start()
     # 初始订阅为空集合：plugin 在发出 subscribe 之前不会收到任何事件（默认拒绝）。
     sub = await bridge_dispatcher.subscribe(bot_ids=[])
-    await websocket.send_json({
+    await outbox.send({
         "type": "hello",
         "subscribers": bridge_dispatcher.subscriber_count(),
         "subscribe_required": True,
@@ -830,7 +899,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
             accepted, rejected = await _resolve_subscribable_bot_ids(session, requested)
         await bridge_dispatcher.update_subscription(sub, bot_ids=accepted)
 
-        await websocket.send_json({
+        await outbox.send({
             "type": "subscribed",
             "accepted_bot_ids": accepted,
             "rejected_bot_ids": rejected,
@@ -844,7 +913,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
         async def _consume() -> None:
             while True:
                 event = await sub.queue.get()
-                await websocket.send_json(event)
+                await outbox.send(event)
 
         consumer_task = asyncio.create_task(_consume())
 
@@ -853,7 +922,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
             try:
                 frame = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_json({"type": "error", "detail": "invalid JSON"})
+                await outbox.send({"type": "error", "detail": "invalid JSON"})
                 continue
             if not isinstance(frame, dict):
                 continue
@@ -864,22 +933,25 @@ async def bridge_websocket(websocket: WebSocket) -> None:
                     async with async_session_factory() as s2:
                         new_accepted, new_rejected = await _resolve_subscribable_bot_ids(s2, new_requested)
                     await bridge_dispatcher.update_subscription(sub, bot_ids=new_accepted)
-                    await websocket.send_json({
+                    await outbox.send({
                         "type": "subscribed",
                         "accepted_bot_ids": new_accepted,
                         "rejected_bot_ids": new_rejected,
                     })
             elif ftype == "ping":
-                await websocket.send_json({"type": "pong"})
+                await outbox.send({"type": "pong"})
             # 其他类型暂不处理
     except WebSocketDisconnect:
         logger.info("agent bridge ws: disconnected")
+    except _BridgeOutboundQueueFull:
+        logger.info("agent bridge ws: disconnected due to outbound backpressure")
     except Exception as exc:  # noqa: BLE001
         logger.warning("agent bridge ws: error: %s", exc)
     finally:
         if consumer_task and not consumer_task.done():
             consumer_task.cancel()
         await bridge_dispatcher.unsubscribe(sub)
+        await outbox.close()
 
 
 # ============================================================================
@@ -1188,6 +1260,7 @@ async def _handle_data_done(
                     "task_id": state.task_id,
                     "content": state.buffer,
                 }
+    await bridge_flush_stream_deltas(msg_id)
     payload = {
         "msg_id": msg_id,
         "bot_id": bot.bot_id,

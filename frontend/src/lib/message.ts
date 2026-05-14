@@ -82,10 +82,11 @@ export function buildTopicTree(
   }
 
   const msgIdSet = new Set(messages.map((x) => x.msg_id));
+  const msgById = new Map(messages.map((x) => [x.msg_id, x]));
   const rootIdCache = new Map<string, string>();
   function getRootId(msgId: string): string {
     if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
-    const m = messages.find((x) => x.msg_id === msgId);
+    const m = msgById.get(msgId);
     if (!m || !isMsgReply(m, msgIdSet) || !m.in_reply_to_msg_id) {
       rootIdCache.set(msgId, msgId);
       return msgId;

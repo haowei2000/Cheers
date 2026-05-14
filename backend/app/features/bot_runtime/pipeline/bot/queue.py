@@ -42,6 +42,7 @@ class BotPipelineQueue(Protocol):
     async def close(self) -> None: ...
     async def enqueue(self, job: BotPipelineJob) -> str: ...
     async def receive(self) -> JobEnvelope: ...
+    async def receive_batch(self, max_count: int | None = None) -> list[JobEnvelope]: ...
     async def ack(self, envelope: JobEnvelope) -> None: ...
     async def retry(self, envelope: JobEnvelope, exc: BaseException) -> None: ...
 
@@ -63,6 +64,17 @@ class MemoryBotPipelineQueue:
 
     async def receive(self) -> JobEnvelope:
         return JobEnvelope(job=await self._queue.get())
+
+    async def receive_batch(self, max_count: int | None = None) -> list[JobEnvelope]:
+        first = await self.receive()
+        envelopes = [first]
+        limit = max(1, int(max_count or 1))
+        for _ in range(limit - 1):
+            try:
+                envelopes.append(JobEnvelope(job=self._queue.get_nowait()))
+            except asyncio.QueueEmpty:
+                break
+        return envelopes
 
     async def ack(self, envelope: JobEnvelope) -> None:
         self._queue.task_done()
@@ -124,21 +136,27 @@ class RedisBotPipelineQueue:
         return job.job_id
 
     async def receive(self) -> JobEnvelope:
+        return (await self.receive_batch(max_count=1))[0]
+
+    async def receive_batch(self, max_count: int | None = None) -> list[JobEnvelope]:
         if self._redis is None:
             raise RuntimeError("RedisBotPipelineQueue not started")
+        limit = max(1, int(max_count or settings.bot_pipeline_redis_read_count or 1))
         while True:
             rows = await self._redis.xreadgroup(
                 _GROUP,
                 self._consumer,
                 streams={_STREAM_KEY: ">"},
-                count=1,
+                count=limit,
                 block=5000,
             )
             if not rows:
                 continue
             _stream, messages = rows[0]
-            raw_id, fields = messages[0]
-            return JobEnvelope(job=_job_from_fields(fields), raw_id=raw_id)
+            return [
+                JobEnvelope(job=_job_from_fields(fields), raw_id=raw_id)
+                for raw_id, fields in messages
+            ]
 
     async def ack(self, envelope: JobEnvelope) -> None:
         if self._redis is not None and envelope.raw_id is not None:
@@ -228,26 +246,27 @@ async def stop_bot_pipeline_workers() -> None:
 async def _worker_loop(index: int) -> None:
     while True:
         try:
-            envelope = await _queue.receive()
+            envelopes = await _queue.receive_batch()
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("bot_pipeline_worker[%d]: receive failed; retrying", index)
             await asyncio.sleep(1.0)
             continue
-        try:
-            if _handler is None:
-                raise RuntimeError("bot pipeline worker handler is not configured")
-            await _handler(envelope.job.channel_id, envelope.job.msg_id)
-            await _queue.ack(envelope)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.exception(
-                "bot_pipeline_worker[%d]: job failed channel_id=%s msg_id=%s",
-                index, envelope.job.channel_id, envelope.job.msg_id,
-            )
-            await _queue.retry(envelope, exc)
+        for envelope in envelopes:
+            try:
+                if _handler is None:
+                    raise RuntimeError("bot pipeline worker handler is not configured")
+                await _handler(envelope.job.channel_id, envelope.job.msg_id)
+                await _queue.ack(envelope)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception(
+                    "bot_pipeline_worker[%d]: job failed channel_id=%s msg_id=%s",
+                    index, envelope.job.channel_id, envelope.job.msg_id,
+                )
+                await _queue.retry(envelope, exc)
 
 
 async def enqueue_bot_pipeline_job(channel_id: str, msg_id: str) -> str:

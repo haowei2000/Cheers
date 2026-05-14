@@ -382,7 +382,23 @@ async def test_create_message_survives_bot_pipeline_enqueue_failure(
         name="enqueue-failure-ch",
         type="public",
     )
-    db_session.add_all([ws, ch])
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000032",
+        username="enqueue_fail_bot",
+        display_name="Enqueue Fail Bot",
+        status="online",
+    )
+    db_session.add_all([
+        ws,
+        ch,
+        bot,
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
     await db_session.commit()
 
     async def fail_enqueue(channel_id: str, msg_id: str) -> str:
@@ -398,7 +414,7 @@ async def test_create_message_survives_bot_pipeline_enqueue_failure(
     resp = await client.post(
         f"/api/v1/channels/{ch.channel_id}/messages",
         json={
-            "content": "still saved",
+            "content": "@enqueue_fail_bot still saved",
             "sender_id": "ignored",
             "sender_type": "user",
         },
@@ -406,7 +422,7 @@ async def test_create_message_survives_bot_pipeline_enqueue_failure(
 
     assert resp.status_code == 200
     data = resp.json()["data"]
-    assert data["content"] == "still saved"
+    assert data["content"] == "@enqueue_fail_bot still saved"
 
     rows = (await db_session.execute(select(message_routes.Message))).scalars().all()
     assert any(row.msg_id == data["msg_id"] for row in rows)
@@ -433,7 +449,24 @@ async def test_create_message_returns_before_bot_pipeline_enqueue_completes(
         name="enqueue-slow-ch",
         type="public",
     )
-    db_session.add_all([ws, user, ch])
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000033",
+        username="enqueue_slow_bot",
+        display_name="Enqueue Slow Bot",
+        status="online",
+    )
+    db_session.add_all([
+        ws,
+        user,
+        ch,
+        bot,
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
     await db_session.commit()
 
     class RecordingBackgroundTasks:
@@ -454,7 +487,7 @@ async def test_create_message_returns_before_bot_pipeline_enqueue_completes(
         db_session,
         channel_id=ch.channel_id,
         body=message_routes.MessageCreate(
-            content="returns immediately",
+            content="@enqueue_slow_bot returns immediately",
             sender_id="ignored",
             sender_type="user",
         ),
@@ -463,12 +496,60 @@ async def test_create_message_returns_before_bot_pipeline_enqueue_completes(
     )
 
     assert secret_token is None
-    assert data.content == "returns immediately"
+    assert data.content == "@enqueue_slow_bot returns immediately"
     assert len(background_tasks.tasks) == 1
     func, args, kwargs = background_tasks.tasks[0]
     assert func is message_routes._enqueue_bot_pipeline_bg
     assert args == (ch.channel_id, data.msg_id)
     assert kwargs == {}
+
+
+@pytest.mark.asyncio
+async def test_create_message_without_bot_target_skips_bot_pipeline_enqueue(
+    monkeypatch,
+    db_session: AsyncSession,
+) -> None:
+    """没有 Bot 目标时不入 Bot pipeline 队列。"""
+    import app.api.v1.messages.routes as message_routes
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000034", name="W34")
+    user = User(
+        user_id="f0000000-0000-0000-0000-000000000134",
+        username="enqueue_skip_admin",
+        password_hash="x",
+        role="system_admin",
+    )
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000034",
+        workspace_id=ws.workspace_id,
+        name="enqueue-skip-ch",
+        type="public",
+    )
+    db_session.add_all([ws, user, ch])
+    await db_session.commit()
+
+    scheduled: list[tuple] = []
+    monkeypatch.setattr(
+        message_routes,
+        "_schedule_bot_pipeline_enqueue",
+        lambda *args, **kwargs: scheduled.append((args, kwargs)),
+    )
+
+    data, secret_token = await message_routes._handle_send_message(
+        db_session,
+        channel_id=ch.channel_id,
+        body=message_routes.MessageCreate(
+            content="plain message without bot",
+            sender_id="ignored",
+            sender_type="user",
+        ),
+        current_user=user,
+        background_tasks=None,
+    )
+
+    assert secret_token is None
+    assert data.content == "plain message without bot"
+    assert scheduled == []
 
 
 @pytest.mark.asyncio

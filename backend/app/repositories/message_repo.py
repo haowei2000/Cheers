@@ -1,7 +1,7 @@
 """Message 数据访问层."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Message
@@ -26,9 +26,28 @@ class MessageRepository:
         if exclude_empty:
             query = query.where(Message.content != "")
         if before_id:
-            sub = select(Message.created_at).where(Message.msg_id == before_id).scalar_subquery()
-            query = query.where(Message.created_at < sub)
-        query = query.order_by(Message.created_at.desc()).limit(limit)
+            cursor = (
+                await self.session.execute(
+                    select(Message.created_at, Message.msg_id).where(
+                        Message.channel_id == channel_id,
+                        Message.msg_id == before_id,
+                    )
+                )
+            ).one_or_none()
+            if cursor is None:
+                query = query.where(false())
+            else:
+                before_created_at, before_msg_id = cursor
+                query = query.where(
+                    or_(
+                        Message.created_at < before_created_at,
+                        and_(
+                            Message.created_at == before_created_at,
+                            Message.msg_id < before_msg_id,
+                        ),
+                    )
+                )
+        query = query.order_by(Message.created_at.desc(), Message.msg_id.desc()).limit(limit)
         result = await self.session.execute(query)
         # 数据库查出来是逆序（最新的在前面），返回给前端通常希望是正序
         messages = list(result.scalars().all())

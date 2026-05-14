@@ -39,8 +39,8 @@ async def _run_bot_pipeline_once(
 async def run_bot_pipeline_job(channel_id: str, msg_id: str) -> None:
     """Run one persisted user-message trigger in an independent DB session."""
     try:
-        async with async_session_factory() as session:
-            result = await session.execute(select(Message).where(Message.msg_id == msg_id))
+        async with async_session_factory() as read_session:
+            result = await read_session.execute(select(Message).where(Message.msg_id == msg_id))
             msg = result.scalar_one_or_none()
             if not msg:
                 logger.warning(
@@ -48,6 +48,9 @@ async def run_bot_pipeline_job(channel_id: str, msg_id: str) -> None:
                     msg_id, channel_id,
                 )
                 return
+            read_session.expunge(msg)
+
+        async with async_session_factory() as session:
             logger.info(
                 "bot_pipeline_job: starting channel_id=%s msg_id=%s sender=%s",
                 channel_id, msg_id, msg.sender_id,

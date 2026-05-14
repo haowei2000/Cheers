@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.db.models import Message
+from app.db.session import async_session_factory
 from app.features.bot_runtime.adapters.base import (
     AgentPayload,
     AgentResponse,
@@ -213,12 +214,37 @@ async def _consume_execute(
         DispatchedAsync,
         Final,
     )
-    from app.features.bot_runtime.pipeline.events import MessageStreamDelta
+    from app.features.bot_runtime.pipeline.stream_coalescer import StreamDeltaCoalescer
 
     t0 = time.perf_counter()
     deltas: list[str] = []
     terminal: Final | DispatchedAsync | None = None
     state = await stream_registry.bind_task(bot_msg.msg_id, asyncio.current_task())
+    delta_coalescer = StreamDeltaCoalescer(msg_id=bot_msg.msg_id, bus=ctx.bus)
+    original_db_session = payload.runtime.db_session
+    execution_session_cm = None
+    execution_session = None
+    execution_session_closed = False
+    normal_completion = False
+
+    if original_db_session is not None:
+        execution_session_cm = async_session_factory()
+        execution_session = await execution_session_cm.__aenter__()
+        payload.runtime.db_session = execution_session
+
+    async def _finish_execution_session(*, commit: bool) -> None:
+        nonlocal execution_session_closed
+        if execution_session_closed:
+            return
+        execution_session_closed = True
+        payload.runtime.db_session = original_db_session
+        if execution_session is None or execution_session_cm is None:
+            return
+        if commit:
+            await execution_session.commit()
+        else:
+            await execution_session.rollback()
+        await execution_session_cm.__aexit__(None, None, None)
 
     def _cancel_response() -> AgentResponse:
         content = state.buffer if state is not None else "".join(deltas)
@@ -237,33 +263,45 @@ async def _consume_execute(
 
     try:
         if state is not None and state.cancel_requested:
+            await _finish_execution_session(commit=False)
             return _cancel_response(), (time.perf_counter() - t0) * 1000
         async for event in adapter.execute(payload):
             if state is not None and state.cancel_requested:
+                await delta_coalescer.close()
+                await _finish_execution_session(commit=False)
                 return _cancel_response(), (time.perf_counter() - t0) * 1000
             if isinstance(event, Delta):
                 deltas.append(event.text)
                 if state is not None:
                     async with state.lock:
                         if state.cancel_requested:
+                            await delta_coalescer.close()
+                            await _finish_execution_session(commit=False)
                             return _cancel_response(), (time.perf_counter() - t0) * 1000
                         state.buffer += event.text
-                await ctx.bus.publish(
-                    MessageStreamDelta(msg_id=bot_msg.msg_id, delta=event.text),
-                )
+                await delta_coalescer.add(event.text)
             else:
                 terminal = event
                 break
+        normal_completion = True
     except asyncio.CancelledError:
+        await delta_coalescer.close()
+        await _finish_execution_session(commit=False)
         return _cancel_response(), (time.perf_counter() - t0) * 1000
     except Exception as exc:
+        await delta_coalescer.close()
+        await _finish_execution_session(commit=False)
         return exc, (time.perf_counter() - t0) * 1000
     finally:
         task = asyncio.current_task()
         if task is not None:
             await stream_registry.unbind_task(bot_msg.msg_id, task)
+        if not execution_session_closed and not normal_completion:
+            await _finish_execution_session(commit=False)
 
+    await delta_coalescer.close()
     dur_ms = (time.perf_counter() - t0) * 1000
+    await _finish_execution_session(commit=True)
     if isinstance(terminal, DispatchedAsync):
         return AgentResponse(
             content="",

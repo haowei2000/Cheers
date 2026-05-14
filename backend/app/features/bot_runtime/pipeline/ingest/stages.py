@@ -13,12 +13,15 @@ root workflow builder chooses and runs these stages.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets as _sec
+from collections.abc import Sequence
 
 from sqlalchemy import select
 
 from app.application.chat.message_assembler import MessageAssembler
+from app.config import settings
 from app.contracts.messages import MessageFileDTO
 from app.core.exceptions import AppError, BadRequestError, NotFoundError
 from app.db.models import Channel, ChannelMembership, FileRecord, Message
@@ -37,6 +40,48 @@ from app.services.storage.base import StorageError
 from app.utils.crypto import encrypt_value
 
 logger = logging.getLogger("app.features.bot_runtime.pipeline.ingest")
+
+
+async def _publish_unread_events(member_ids: Sequence[str], event: dict) -> None:
+    """Publish unread notifications with bounded concurrency.
+
+    Large channels should not make message posting wait for one user-scoped
+    websocket/Redis publish at a time. Individual publish failures are logged
+    and do not stop the rest of the fan-out.
+    """
+    unique_member_ids = list(dict.fromkeys(member_ids))
+    if not unique_member_ids:
+        return
+
+    from app.services.realtime_broker import get_realtime_broker
+
+    broker = get_realtime_broker()
+    worker_count = min(
+        len(unique_member_ids),
+        max(1, int(getattr(settings, "unread_fanout_concurrency", 64) or 64)),
+    )
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    for member_id in unique_member_ids:
+        queue.put_nowait(member_id)
+
+    async def worker() -> None:
+        while True:
+            try:
+                member_id = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+            try:
+                await broker.publish_user(member_id, event)
+            except Exception:
+                logger.warning(
+                    "fanout_unread: failed to publish user notification user_id=%s",
+                    member_id,
+                    exc_info=True,
+                )
+            finally:
+                queue.task_done()
+
+    await asyncio.gather(*(worker() for _ in range(worker_count)))
 
 
 class ValidateStage(Stage[IngestContext]):
@@ -220,11 +265,26 @@ class FanoutUnreadStage(Stage[IngestContext]):
                 "msg_id": msg_id,
             },
         }
-        from app.services.realtime_broker import get_realtime_broker
+        member_ids = [
+            row[0]
+            for row in rows
+            if not (sender_type == "user" and row[0] == sender_id)
+        ]
+        if member_ids:
+            try:
+                async with async_session_factory() as session:
+                    from app.services.unread_count_service import increment_unread_counts
 
-        broker = get_realtime_broker()
-        for row in rows:
-            member_id = row[0]
-            if sender_type == "user" and member_id == sender_id:
-                continue
-            await broker.publish_user(member_id, event)
+                    await increment_unread_counts(
+                        session,
+                        channel_id=ctx.channel_id,
+                        user_ids=member_ids,
+                    )
+                    await session.commit()
+            except Exception:
+                logger.warning(
+                    "fanout_unread: failed to update unread cache channel_id=%s",
+                    ctx.channel_id,
+                    exc_info=True,
+                )
+        await _publish_unread_events(member_ids, event)

@@ -205,6 +205,26 @@ class ChannelMembership(Base):
     )
 
 
+class ChannelUnreadCount(Base):
+    """Per-user unread-count cache for channel and DM lists."""
+    __tablename__ = "channel_unread_counts"
+
+    channel_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("channels.channel_id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    unread_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    __table_args__ = (
+        Index("ix_channel_unread_counts_user", "user_id"),
+    )
+
+
 class WorkspaceMembership(Base):
     """工作空间成员关系."""
     __tablename__ = "workspace_memberships"
@@ -243,6 +263,7 @@ class Message(Base):
 
     __table_args__ = (
         Index("ix_messages_channel_created_at", "channel_id", "created_at"),
+        Index("ix_messages_channel_created_msg_id", "channel_id", "created_at", "msg_id"),
         Index("ix_messages_in_reply_created_at", "in_reply_to_msg_id", "created_at"),
     )
 
