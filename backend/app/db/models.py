@@ -243,6 +243,7 @@ class Message(Base):
 
     __table_args__ = (
         Index("ix_messages_channel_created_at", "channel_id", "created_at"),
+        Index("ix_messages_channel_created_msg_id", "channel_id", "created_at", "msg_id"),
         Index("ix_messages_in_reply_created_at", "in_reply_to_msg_id", "created_at"),
     )
 
