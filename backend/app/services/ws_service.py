@@ -145,10 +145,28 @@ class ConnectionManager:
             return
 
         dead: list[_ManagedConnection] = []
+        worker_count = min(
+            len(connections),
+            max(1, int(getattr(settings, "ws_broadcast_enqueue_concurrency", 128) or 128)),
+        )
+        queue: asyncio.Queue[_ManagedConnection] = asyncio.Queue()
         for conn in connections:
-            ok = await conn.enqueue(message)
-            if not ok or conn.closed:
-                dead.append(conn)
+            queue.put_nowait(conn)
+
+        async def worker() -> None:
+            while True:
+                try:
+                    conn = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                try:
+                    ok = await conn.enqueue(message)
+                    if not ok or conn.closed:
+                        dead.append(conn)
+                finally:
+                    queue.task_done()
+
+        await asyncio.gather(*(worker() for _ in range(worker_count)))
         if dead:
             await self._remove_dead(mapping, key, dead)
 
