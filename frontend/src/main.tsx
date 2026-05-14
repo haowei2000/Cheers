@@ -15,6 +15,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <Toaster position="top-center" />
       <Routes>
         <Route path="/" element={<App />} />
+        <Route path="/workspaces/:workspaceId" element={<App />} />
+        <Route path="/workspaces/:workspaceId/channels/:channelId" element={<App />} />
         <Route path="/docs" element={<DocsPage />} />
         <Route path="/bulletin" element={<BulletinPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
