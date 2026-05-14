@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -15,11 +16,27 @@ from app.config import settings
 logger = logging.getLogger("app.services.ws_service")
 
 
+@dataclass(frozen=True)
+class _SerializedWSMessage:
+    payload: dict[str, Any]
+    text: str
+
+
+_OutboundMessage = dict[str, Any] | _SerializedWSMessage
+
+
+def _serialize_ws_message(message: dict[str, Any]) -> _SerializedWSMessage:
+    return _SerializedWSMessage(
+        payload=message,
+        text=json.dumps(message, ensure_ascii=False, separators=(",", ":")),
+    )
+
+
 @dataclass(eq=False)
 class _ManagedConnection:
     websocket: WebSocket
     on_writer_close: Callable[["_ManagedConnection"], Awaitable[None]] | None = None
-    queue: asyncio.Queue[dict[str, Any] | None] = field(init=False)
+    queue: asyncio.Queue[_OutboundMessage | None] = field(init=False)
     writer_task: asyncio.Task | None = None
     closed: bool = False
 
@@ -30,7 +47,7 @@ class _ManagedConnection:
     def start(self) -> None:
         self.writer_task = asyncio.create_task(self._writer())
 
-    async def enqueue(self, message: dict[str, Any]) -> bool:
+    async def enqueue(self, message: _OutboundMessage) -> bool:
         if self.closed:
             return False
         try:
@@ -64,7 +81,10 @@ class _ManagedConnection:
                 message = await self.queue.get()
                 if message is None:
                     return
-                await asyncio.wait_for(self.websocket.send_json(message), timeout=timeout)
+                if isinstance(message, _SerializedWSMessage):
+                    await asyncio.wait_for(self.websocket.send_text(message.text), timeout=timeout)
+                else:
+                    await asyncio.wait_for(self.websocket.send_json(message), timeout=timeout)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -145,6 +165,7 @@ class ConnectionManager:
             return
 
         dead: list[_ManagedConnection] = []
+        wire_message = _serialize_ws_message(message)
         worker_count = min(
             len(connections),
             max(1, int(getattr(settings, "ws_broadcast_enqueue_concurrency", 128) or 128)),
@@ -160,7 +181,7 @@ class ConnectionManager:
                 except asyncio.QueueEmpty:
                     return
                 try:
-                    ok = await conn.enqueue(message)
+                    ok = await conn.enqueue(wire_message)
                     if not ok or conn.closed:
                         dead.append(conn)
                 finally:
