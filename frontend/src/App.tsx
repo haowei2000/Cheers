@@ -382,6 +382,16 @@ export default function App() {
   const streamDeltaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
   const [input, setInput] = useState("");
+  const [inputRevision, setInputRevision] = useState(0);
+  const inputDraftRef = useRef("");
+  const setComposerInput = useCallback((value: string) => {
+    inputDraftRef.current = value;
+    setInput(value);
+    setInputRevision((revision) => revision + 1);
+  }, []);
+  const handleComposerValueChange = useCallback((value: string) => {
+    inputDraftRef.current = value;
+  }, []);
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1553,14 +1563,16 @@ export default function App() {
       });
   };
 
-  const send = () => {
-    if (!selectedId || (!input.trim() && pendingFileIds.length === 0)) return;
+  const send = (draftValue?: string) => {
+    const rawContent =
+      draftValue ?? inputDraftRef.current ?? inputRef.current?.value ?? input;
+    if (!selectedId || (!rawContent.trim() && pendingFileIds.length === 0)) return;
     if (isSystemDm) {
       toast.error("好友通知会话不能直接发送消息");
       return;
     }
     const targetChannelId = selectedId;
-    const content = input.trim();
+    const content = rawContent.trim();
     // Reply context is conveyed by `in_reply_to_msg_id` (rendered as a chip).
     // We intentionally do NOT prepend a markdown blockquote of the parent
     // message: that would duplicate what the chip already shows AND pollute
@@ -1592,7 +1604,7 @@ export default function App() {
     } else if (effectiveKind === "topic") {
       body.content_data = titleTrim ? { title: titleTrim } : {};
     }
-    setInput("");
+    setComposerInput("");
     setSecretMode(false);
     setMsgKind("normal");
     setComposerTitle("");
@@ -3191,7 +3203,7 @@ export default function App() {
                                   type="button"
                                   className="an-empty-chip"
                                   onClick={() => {
-                                    setInput(s);
+                                    setComposerInput(s);
                                     setTimeout(
                                       () => inputRef.current?.focus(),
                                       0,
@@ -3984,7 +3996,7 @@ export default function App() {
                                       senderBot?.username
                                         ? `@${senderBot.username} `
                                         : "";
-                                    if (mention) setInput(mention);
+                                    if (mention) setComposerInput(mention);
                                     (secretMode
                                       ? secretInputRef.current
                                       : inputRef.current
@@ -4017,7 +4029,7 @@ export default function App() {
                                       senderBot?.username
                                         ? `@${senderBot.username} `
                                         : "";
-                                    if (mention) setInput(mention);
+                                    if (mention) setComposerInput(mention);
                                     (secretMode
                                       ? secretInputRef.current
                                       : inputRef.current
@@ -4306,7 +4318,7 @@ export default function App() {
                                       m.sender_type === "bot" && senderBot?.username
                                         ? `@${senderBot.username} `
                                         : "";
-                                    if (mention) setInput(mention);
+                                    if (mention) setComposerInput(mention);
                                     (secretMode
                                       ? secretInputRef.current
                                       : inputRef.current
@@ -4629,7 +4641,7 @@ export default function App() {
                                         r.sender_type === "bot" && rBot?.username
                                           ? `@${rBot.username} `
                                           : "";
-                                      if (mention) setInput(mention);
+                                      if (mention) setComposerInput(mention);
                                       (secretMode
                                         ? secretInputRef.current
                                         : inputRef.current
@@ -5136,7 +5148,7 @@ export default function App() {
                                             rBot?.username
                                               ? `@${rBot.username} `
                                               : "";
-                                          if (mention) setInput(mention);
+                                          if (mention) setComposerInput(mention);
                                           (secretMode
                                             ? secretInputRef.current
                                             : inputRef.current
@@ -5268,10 +5280,14 @@ export default function App() {
                 >
                   <MessageComposer
                     value={input}
+                    valueRevision={inputRevision}
                     inputRef={inputRef}
-                    onValueChange={setInput}
+                    onValueChange={handleComposerValueChange}
                     onSend={send}
-                    canSend={Boolean(input.trim() || pendingFileIds.length > 0)}
+                    canSend={pendingFileIds.length > 0}
+                    canSendPredicate={(value) =>
+                      Boolean(value.trim() || pendingFileIds.length > 0)
+                    }
                     disabled={isSystemDm}
                     placeholder={
                       isSystemDm
