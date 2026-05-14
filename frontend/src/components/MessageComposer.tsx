@@ -50,10 +50,12 @@ export interface ComposerKeychainItem {
 
 export interface MessageComposerProps {
   value: string;
+  valueRevision?: number;
   inputRef: RefObject<HTMLTextAreaElement>;
   onValueChange: (value: string) => void;
-  onSend: () => void;
+  onSend: (value: string) => void;
   canSend: boolean;
+  canSendPredicate?: (value: string) => boolean;
   placeholder: string;
   disabled?: boolean;
   kind: MessageComposerKind;
@@ -88,10 +90,12 @@ type MentionItem = (ChannelBot | ChannelUser) & {
 
 export function MessageComposer({
   value,
+  valueRevision = 0,
   inputRef,
   onValueChange,
   onSend,
   canSend,
+  canSendPredicate,
   placeholder,
   disabled = false,
   kind,
@@ -119,6 +123,7 @@ export function MessageComposer({
   sendButtonLabel,
   normalHint,
 }: MessageComposerProps) {
+  const [draftValue, setDraftValue] = useState(value);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
   const [mentionPlacement, setMentionPlacement] = useState<"top" | "bottom">(
@@ -131,6 +136,13 @@ export function MessageComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const keychainRef = useRef<HTMLDivElement | null>(null);
   const displayKind: MessageComposerKind = normalOnly ? "normal" : kind;
+  const effectiveCanSend = canSendPredicate
+    ? canSendPredicate(draftValue)
+    : canSend;
+
+  useEffect(() => {
+    setDraftValue(value);
+  }, [value, valueRevision]);
 
   useEffect(() => {
     if (!uploadMenuOpen) return;
@@ -180,13 +192,18 @@ export function MessageComposer({
 
   const insertAtCursor = (snippet: string) => {
     const el = inputRef.current;
+    const currentValue = el?.value ?? draftValue;
     if (!el) {
-      onValueChange(value + snippet);
+      const next = currentValue + snippet;
+      setDraftValue(next);
+      onValueChange(next);
       return;
     }
-    const start = el.selectionStart ?? value.length;
-    const end = el.selectionEnd ?? value.length;
-    const next = value.slice(0, start) + snippet + value.slice(end);
+    const start = el.selectionStart ?? currentValue.length;
+    const end = el.selectionEnd ?? currentValue.length;
+    const next =
+      currentValue.slice(0, start) + snippet + currentValue.slice(end);
+    setDraftValue(next);
     onValueChange(next);
     requestAnimationFrame(() => {
       el.focus();
@@ -196,7 +213,7 @@ export function MessageComposer({
 
   const pickMention = (item: MentionItem) => {
     const el = inputRef.current;
-    const currentValue = el?.value ?? value;
+    const currentValue = el?.value ?? draftValue;
     const pos = el?.selectionStart ?? currentValue.length;
     const lastAt = currentValue.lastIndexOf("@", pos - 1);
     const insert = `@${item.username} `;
@@ -205,6 +222,7 @@ export function MessageComposer({
         ? currentValue.slice(0, pos) + insert + currentValue.slice(pos)
         : currentValue.slice(0, lastAt) + insert + currentValue.slice(pos);
     const caret = lastAt === -1 ? pos + insert.length : lastAt + insert.length;
+    setDraftValue(next);
     onValueChange(next);
     setMentionOpen(false);
     setTimeout(() => {
@@ -217,6 +235,7 @@ export function MessageComposer({
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const next = event.target.value;
     const pos = event.target.selectionStart ?? next.length;
+    setDraftValue(next);
     onValueChange(next);
     const lastAt = next.lastIndexOf("@", pos - 1);
     if (lastAt !== -1) {
@@ -260,7 +279,7 @@ export function MessageComposer({
       !mentionOpen
     ) {
       event.preventDefault();
-      if (canSend) onSend();
+      if (effectiveCanSend) onSend(event.currentTarget.value);
     }
   };
 
@@ -495,7 +514,7 @@ export function MessageComposer({
 
           <textarea
             ref={inputRef}
-            value={value}
+            value={draftValue}
             disabled={disabled}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
@@ -663,9 +682,9 @@ export function MessageComposer({
 
             <button
               type="button"
-              onClick={onSend}
+              onClick={() => onSend(inputRef.current?.value ?? draftValue)}
               className="an-composer-send"
-              disabled={disabled || !canSend}
+              disabled={disabled || !effectiveCanSend}
             >
               {sendButtonLabel ?? (displayKind === "secret" ? "加密发送" : "发送")}
             </button>
