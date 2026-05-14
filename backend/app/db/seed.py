@@ -260,12 +260,12 @@ async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
         if membership.member_id not in _dm_name_members(channel.name):
             await session.delete(membership)
 
-    non_dm_channel_ids = (
+    workspace_channel_ids = (
         await session.execute(
-            select(Channel.channel_id).where(Channel.type != "dm")
+            select(Channel.channel_id).where(Channel.type.in_(("public", "workspace")))
         )
     ).scalars().all()
-    for channel_id in non_dm_channel_ids:
+    for channel_id in workspace_channel_ids:
         for bot_id in BUILTIN_BOT_IDS:
             existing = (
                 await session.execute(

@@ -11,7 +11,7 @@ import type { Channel, ChannelMember } from "../types";
 import { Modal, ModalFooter } from "./Modal";
 
 type TabId = "channel" | "admins" | "bots";
-type ChannelScope = "public" | "private";
+type ChannelScope = "workspace" | "private";
 type ApiEnvelope<T> = {
   status?: string;
   data?: T;
@@ -37,7 +37,11 @@ function initials(label: string): string {
 }
 
 function normalizeScope(value?: string | null): ChannelScope {
-  return value === "private" ? "private" : "public";
+  return value === "private" ? "private" : "workspace";
+}
+
+function scopeApiValue(value: ChannelScope): "public" | "private" {
+  return value === "workspace" ? "public" : "private";
 }
 
 async function parseEnvelope<T>(res: Response): Promise<T> {
@@ -143,7 +147,7 @@ export function ChannelSettingsModal({
           token: userToken,
           body: {
             auto_assist: autoAssist,
-            type: channelScope,
+            type: scopeApiValue(channelScope),
             allow_member_invites: allowMemberInvites,
             allow_bot_adds: allowBotAdds,
           },
@@ -294,10 +298,10 @@ export function ChannelSettingsModal({
 
               <div className="rounded-md border border-gray-200 px-3 py-3">
                 <label className="mb-2 block text-sm font-medium text-gray-800">
-                  频道 scope
+                  频道范围
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                  {(["public", "private"] as const).map((scope) => (
+                  {(["workspace", "private"] as const).map((scope) => (
                     <button
                       key={scope}
                       type="button"
@@ -310,12 +314,12 @@ export function ChannelSettingsModal({
                       }`}
                     >
                       <div className="font-medium">
-                        {scope === "public" ? "Public" : "Private"}
+                        {scope === "workspace" ? "Workspace" : "Private"}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {scope === "public"
-                          ? "工作空间内协作频道"
-                          : "仅频道成员可见"}
+                        {scope === "workspace"
+                          ? "工作空间频道；新成员自动加入"
+                          : "私有频道；仅频道成员可见"}
                       </div>
                     </button>
                   ))}
