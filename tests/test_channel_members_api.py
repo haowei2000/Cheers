@@ -3,7 +3,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Channel, ChannelMembership, Workspace
+from app.db.models import Channel, ChannelMembership, User, Workspace, WorkspaceMembership
 
 
 @pytest.mark.asyncio
@@ -37,13 +37,22 @@ async def test_add_member_and_list(client: AsyncClient, db_session: AsyncSession
         name="ch2",
         type="public",
     )
-    db_session.add(ws)
-    db_session.add(ch)
+    target = User(
+        user_id="e0000000-0000-0000-0000-000000000001",
+        username="channel_member_target",
+        password_hash="x",
+    )
+    db_session.add_all([
+        ws,
+        ch,
+        target,
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=target.user_id),
+    ])
     await db_session.commit()
 
     resp = await client.post(
         "/api/v1/channels/d0000000-0000-0000-0000-000000000002/members",
-        json={"member_id": "e0000000-0000-0000-0000-000000000001", "member_type": "user"},
+        json={"member_id": target.user_id, "member_type": "user"},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -53,8 +62,38 @@ async def test_add_member_and_list(client: AsyncClient, db_session: AsyncSession
     assert resp2.status_code == 200
     members = resp2.json()["data"]
     assert len(members) == 1
-    assert members[0]["member_id"] == "e0000000-0000-0000-0000-000000000001"
+    assert members[0]["member_id"] == target.user_id
     assert members[0]["member_type"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_add_user_member_requires_workspace_membership(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /api/channels/{id}/members rejects users outside the workspace."""
+    ws = Workspace(workspace_id="c0000000-0000-0000-0000-000000000022", name="W22")
+    ch = Channel(
+        channel_id="d0000000-0000-0000-0000-000000000022",
+        workspace_id=ws.workspace_id,
+        name="ch22",
+        type="private",
+    )
+    outsider = User(
+        user_id="e0000000-0000-0000-0000-000000000022",
+        username="channel_member_outsider",
+        password_hash="x",
+    )
+    db_session.add_all([ws, ch, outsider])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/members",
+        json={"member_id": outsider.user_id, "member_type": "user"},
+    )
+
+    assert resp.status_code == 400
+    assert "工作空间" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
