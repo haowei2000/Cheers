@@ -22,6 +22,7 @@ from app.db.models import (
     TodoItem,
     User,
     Workspace,
+    WorkspaceMembership,
 )
 from app.db.seed import _ensure_builtin_bot_memberships
 from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
@@ -58,6 +59,49 @@ async def test_create_channel(client: AsyncClient, db_session: AsyncSession) -> 
     assert ch["name"] == "general"
     assert ch["type"] == "public"
     assert ch["workspace_id"] == "a0000000-0000-0000-0000-000000000001"
+
+
+@pytest.mark.asyncio
+async def test_create_private_channel_only_adds_creator(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Private channels do not auto-join workspace members or built-in bots."""
+    ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000003", name="Private WS")
+    other = User(
+        user_id="a0000000-0000-0000-0000-000000000003",
+        username="private_channel_member",
+        password_hash="x",
+    )
+    db_session.add_all([
+        ws,
+        other,
+        WorkspaceMembership(
+            workspace_id=ws.workspace_id,
+            user_id=other.user_id,
+            role="member",
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/v1/channels",
+        json={
+            "workspace_id": ws.workspace_id,
+            "name": "ops-private",
+            "type": "private",
+        },
+    )
+
+    assert resp.status_code == 200
+    channel_id = resp.json()["data"]["channel_id"]
+    rows = (await db_session.execute(
+        select(ChannelMembership).where(ChannelMembership.channel_id == channel_id)
+    )).scalars().all()
+    member_ids = {row.member_id for row in rows}
+    assert "a0000000-0000-0000-0000-000000000099" in member_ids
+    assert other.user_id not in member_ids
+    assert HELPER_BOT_ID not in member_ids
 
 
 @pytest.mark.asyncio
@@ -99,6 +143,12 @@ async def test_builtin_membership_sync_skips_dm_channels(db_session: AsyncSessio
         name="general",
         type="public",
     )
+    private = Channel(
+        channel_id="b0000000-0000-0000-0000-000000000014",
+        workspace_id=ws.workspace_id,
+        name="private",
+        type="private",
+    )
     user_dm = Channel(
         channel_id="b0000000-0000-0000-0000-000000000012",
         workspace_id=ws.workspace_id,
@@ -111,7 +161,7 @@ async def test_builtin_membership_sync_skips_dm_channels(db_session: AsyncSessio
         name=f"dm:{':'.join(sorted(['user-a', HELPER_BOT_ID]))}",
         type="dm",
     )
-    db_session.add_all([ws, public, user_dm, helper_dm])
+    db_session.add_all([ws, public, private, user_dm, helper_dm])
     for channel_id, member_id in (
         (user_dm.channel_id, HELPER_BOT_ID),
         (helper_dm.channel_id, HELPER_BOT_ID),
@@ -135,6 +185,7 @@ async def test_builtin_membership_sync_skips_dm_channels(db_session: AsyncSessio
         members_by_channel.setdefault(channel_id, set()).add(member_id)
 
     assert HELPER_BOT_ID in members_by_channel[public.channel_id]
+    assert HELPER_BOT_ID not in members_by_channel.get(private.channel_id, set())
     assert HELPER_BOT_ID not in members_by_channel.get(user_dm.channel_id, set())
     assert HELPER_BOT_ID in members_by_channel[helper_dm.channel_id]
 
