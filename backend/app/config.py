@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     ws_outbound_queue_size: int = 256
     ws_broadcast_enqueue_concurrency: int = 128
     ws_send_timeout_seconds: float = 5.0
+    stream_delta_flush_interval_seconds: float = 0.08
+    stream_delta_flush_chars: int = 512
     unread_fanout_concurrency: int = 64
     recent_debounce_seconds: float = 5.0
 

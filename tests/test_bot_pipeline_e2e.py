@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, Message, PromptTemplate, User, Workspace
 from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
+from app.features.bot_runtime.pipeline.adapter_events import AdapterEvent, Delta, Final
 from app.features.bot_runtime.pipeline.bot.queue import stop_bot_pipeline_workers
 from app.features.bot_runtime.pipeline.bot.service import run_bot_pipeline
-from app.features.bot_runtime.pipeline.adapter_events import AdapterEvent, Delta, Final
 from app.features.bot_runtime.pipeline.bus import NullEventBus
 
 TEST_USER_ID = "a0000000-0000-0000-0000-000000000099"
@@ -349,7 +349,6 @@ async def test_worker_bot_pipeline_emits_realtime_status_and_stream_frames(
             "bot_processing",
             "message",
             "message_stream",
-            "message_stream",
             "message_done",
         ]
         assert frames[1]["data"] == {
@@ -358,9 +357,8 @@ async def test_worker_bot_pipeline_emits_realtime_status_and_stream_frames(
         }
         placeholder_id = frames[2]["data"]["msg_id"]
         assert frames[2]["data"]["sender_type"] == "bot"
-        assert frames[3]["data"] == {"msg_id": placeholder_id, "delta": "stream "}
-        assert frames[4]["data"] == {"msg_id": placeholder_id, "delta": "ok"}
-        assert frames[5]["data"]["msg_id"] == placeholder_id
-        assert frames[5]["data"]["content"] == "stream ok"
+        assert frames[3]["data"] == {"msg_id": placeholder_id, "delta": "stream ok"}
+        assert frames[4]["data"]["msg_id"] == placeholder_id
+        assert frames[4]["data"]["content"] == "stream ok"
     finally:
         await stop_bot_pipeline_workers()
