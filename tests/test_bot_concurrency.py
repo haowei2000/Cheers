@@ -9,6 +9,7 @@ from app.db.models import Message
 from app.features.bot_runtime.adapters.base import BotAdapter
 from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
 from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
+from app.features.bot_runtime.pipeline.bot import subagent as subagent_module
 from app.features.bot_runtime.pipeline.bot.subagent import dispatch_many, dispatch_one
 from app.features.bot_runtime.pipeline.bus import NullEventBus
 from app.features.bot_runtime.pipeline.events import MessageStreamDelta
@@ -109,6 +110,98 @@ async def test_dispatch_many_respects_per_message_bot_concurrency(monkeypatch) -
 
     assert max_active == 2
     assert len(ctx.bot_messages) == 4
+
+
+@pytest.mark.asyncio
+async def test_dispatch_many_uses_isolated_execution_sessions(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "orchestrator_bot_concurrency_per_message", 2)
+    sessions_seen = []
+    created_sessions = []
+
+    class FakeSession:
+        def __init__(self, idx: int) -> None:
+            self.idx = idx
+            self.committed = False
+            self.rolled_back = False
+
+        async def commit(self) -> None:
+            self.committed = True
+
+        async def rollback(self) -> None:
+            self.rolled_back = True
+
+    class FakeSessionContext:
+        def __init__(self, session: FakeSession) -> None:
+            self.session = session
+
+        async def __aenter__(self) -> FakeSession:
+            return self.session
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_session_factory() -> FakeSessionContext:
+        session = FakeSession(len(created_sessions) + 1)
+        created_sessions.append(session)
+        return FakeSessionContext(session)
+
+    monkeypatch.setattr(subagent_module, "async_session_factory", fake_session_factory)
+
+    class Adapter(BotAdapter):
+        async def execute(self, payload):
+            sessions_seen.append(payload.process_config.db_session)
+            await asyncio.sleep(0.01)
+            yield Final(content="ok", success=True)
+
+        async def health_check(self) -> bool:
+            return True
+
+    async def adapter_factory(_bot_id: str):
+        return Adapter()
+
+    shared_session = object()
+    trigger = Message(
+        msg_id="trigger-session",
+        channel_id="ch-1",
+        sender_id="user-1",
+        sender_type="user",
+        content="@a @b hi",
+        created_at=datetime.now(timezone.utc),
+    )
+    ctx = SimpleNamespace(
+        channel_id="ch-1",
+        bus=NullEventBus(),
+        session=shared_session,
+        trigger_msg=trigger,
+        adapter_factory=adapter_factory,
+        broadcast_processing=None,
+        channel_bot_usernames=["a", "b"],
+        bot_id_by_username={"a": "bot-a", "b": "bot-b"},
+        bot_details_by_username={},
+        trigger_content="hi",
+        user_secrets={},
+        sender_name="User",
+        channel_name="General",
+        memory_context={},
+        attachments=[],
+        attachment_error=None,
+        topic_chain=[],
+        child_replies=[],
+        original_question=None,
+        root_task_id="task-session",
+        writer=_Writer(),
+        triggered_bot_ids=set(),
+        bot_messages=[],
+        already_broadcast=set(),
+    )
+
+    await dispatch_many(ctx, ["a", "b"], capabilities=Capabilities.regular())
+
+    assert len(sessions_seen) == 2
+    assert sessions_seen[0] is not sessions_seen[1]
+    assert all(session is not shared_session for session in sessions_seen)
+    assert all(session.committed for session in created_sessions)
+    assert not any(session.rolled_back for session in created_sessions)
 
 
 @pytest.mark.asyncio
