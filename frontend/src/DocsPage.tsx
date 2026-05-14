@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { ArrowLeftIcon, Bars3Icon } from "@heroicons/react/24/solid";
 
@@ -158,6 +158,8 @@ function extractToc(md: string): TocEntry[] {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function DocsPage() {
+  const [urlParams, setUrlParams] = useSearchParams();
+  const selectedStemFromUrl = urlParams.get("file");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -191,6 +193,30 @@ export default function DocsPage() {
       })
       .catch(() => toast.error("Failed to load docs list"));
   }, []);
+
+  useEffect(() => {
+    if (!files.length) return;
+    if (!selectedStemFromUrl) {
+      if (selected) setSelected(null);
+      return;
+    }
+    if (selected?.stem === selectedStemFromUrl) return;
+    const hit = files.find((f) => f.stem === selectedStemFromUrl);
+    if (hit) setSelected(hit);
+  }, [files, selected?.stem, selectedStemFromUrl]);
+
+  useEffect(() => {
+    const current = urlParams.get("file");
+    const next = selected?.stem ?? null;
+    if (current === next) return;
+    const params = new URLSearchParams(urlParams);
+    if (next) {
+      params.set("file", next);
+    } else {
+      params.delete("file");
+    }
+    setUrlParams(params, { replace: true });
+  }, [selected?.stem, setUrlParams, urlParams]);
 
   // Load file content
   useEffect(() => {

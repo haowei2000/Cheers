@@ -213,6 +213,13 @@ export function Sidebar({
   };
 
   const openMessageHit = (channelId: string, msgId: string) => {
+    const channel = channels.find((c) => c.channel_id === channelId);
+    const dm = dms.find((d) => d.channel_id === channelId);
+    if (channel?.workspace_id) {
+      setSelectedWorkspaceId(channel.workspace_id);
+    } else if (dm?.workspace_id) {
+      setSelectedWorkspaceId(dm.workspace_id);
+    }
     setSelectedId(channelId);
     resetSearch();
     if (isMobile) setSidebarOpen(false);
