@@ -36,7 +36,7 @@ import {
 } from "./components/SettingsModal";
 import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
-import { ChannelHeader } from "./components/ChannelHeader";
+import { ChannelHeader, type MemoryTab } from "./components/ChannelHeader";
 import {
   MessageComposer,
   MESSAGE_COMPOSER_KIND_ORDER,
@@ -47,6 +47,7 @@ import { TaskPage } from "./components/TaskPage";
 import { SessionScopePanel } from "./components/SessionScopePanel";
 import { Modal } from "./components/Modal";
 import { WorkspaceRail } from "./components/WorkspaceRail";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { apiFetch, buildWsUrl } from "./api";
 import {
   parseHelperPayload,
@@ -96,6 +97,58 @@ const MAX_LOADED_MESSAGES = 800;
 const VIRTUAL_MESSAGE_MIN_ROWS = 120;
 const VIRTUAL_MESSAGE_ESTIMATED_HEIGHT = 118;
 const VIRTUAL_MESSAGE_OVERSCAN_ROWS = 12;
+const MEMORY_TAB_VALUES: MemoryTab[] = ["PROJECT", "FILES_INDEX", "MEMBERS", "TODO"];
+
+type ChatRouteParams = {
+  workspaceId?: string;
+  channelId?: string;
+};
+
+type ChatUrlState = {
+  topicId: string | null;
+  taskOpen: boolean;
+  taskMsgId: string | null;
+  memoryTab: MemoryTab | null;
+};
+
+function isMemoryTab(value: string | null): value is MemoryTab {
+  return Boolean(value && MEMORY_TAB_VALUES.includes(value as MemoryTab));
+}
+
+function readChatUrlState(search: string, hash: string): ChatUrlState {
+  const params = new URLSearchParams(search);
+  const topicFromSearch = params.get("topic");
+  const topicFromHash = /#topic=([^&]+)/.exec(hash || "")?.[1];
+  const topicId = topicFromSearch || (topicFromHash ? decodeURIComponent(topicFromHash) : null);
+  const view = params.get("view");
+  const panel = params.get("panel");
+
+  return {
+    topicId,
+    taskOpen: !topicId && view === "tasks",
+    taskMsgId: params.get("task"),
+    memoryTab: isMemoryTab(panel) ? panel : null,
+  };
+}
+
+function buildChatPath(workspaceId: string, channelId: string | null): string {
+  if (!workspaceId) return "/";
+  const encodedWorkspaceId = encodeURIComponent(workspaceId);
+  if (!channelId) return `/workspaces/${encodedWorkspaceId}`;
+  return `/workspaces/${encodedWorkspaceId}/channels/${encodeURIComponent(channelId)}`;
+}
+
+function buildChatSearch(state: ChatUrlState): string {
+  const params = new URLSearchParams();
+  if (state.topicId) {
+    params.set("topic", state.topicId);
+  } else if (state.taskOpen) {
+    params.set("view", "tasks");
+    if (state.taskMsgId) params.set("task", state.taskMsgId);
+  }
+  if (state.memoryTab) params.set("panel", state.memoryTab);
+  return params.toString();
+}
 
 type PendingStreamDelta = {
   delta: string;
@@ -262,6 +315,14 @@ function botOwnerText(bot: Pick<BotItem, "owner">) {
 
 export default function App() {
   const { isDark, setTheme } = useTheme();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { workspaceId: routeWorkspaceId = "", channelId: routeChannelId = null } =
+    useParams<ChatRouteParams>();
+  const chatUrlState = useMemo(
+    () => readChatUrlState(location.search, location.hash),
+    [location.search, location.hash],
+  );
 
   // Apply stored appearance prefs (density only — theme is light/dark, no
   // custom accent since the brand color is fixed in design-tokens.css).
@@ -311,7 +372,7 @@ export default function App() {
   const [dms, setDMs] = useState<DM[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   // Topic viewer: pageTopicId — root msg_id for the full-page view,
-  // mirrored to URL hash. There is no side-dock panel; opening a topic
+  // mirrored to URL query. There is no side-dock panel; opening a topic
   // always replaces the channel stream with the dedicated page.
   // Composer send-kind: 4 unified types — 普通 / 加密 / 公告 / 主题.
   // Switchable via Tab / Shift-Tab and the ‹ › buttons flanking the composer.
@@ -335,24 +396,35 @@ export default function App() {
       return MESSAGE_COMPOSER_KIND_ORDER[next];
     });
   };
-  const [pageTopicId, setPageTopicId] = useState<string | null>(() => {
-    if (typeof location === "undefined") return null;
-    const m = /#topic=([^&]+)/.exec(location.hash || "");
-    return m ? decodeURIComponent(m[1]) : null;
-  });
+  const [pageTopicId, setPageTopicId] = useState<string | null>(
+    () => chatUrlState.topicId,
+  );
   const [pageTopicMessages, setPageTopicMessages] = useState<Message[]>([]);
   const [pageTopicLoading, setPageTopicLoading] = useState(false);
   const [pageTopicError, setPageTopicError] = useState<string | null>(null);
-  const [taskPageOpen, setTaskPageOpen] = useState(false);
-  const [pageTaskMsgId, setPageTaskMsgId] = useState<string | null>(null);
+  const [taskPageOpen, setTaskPageOpen] = useState(() => chatUrlState.taskOpen);
+  const [pageTaskMsgId, setPageTaskMsgId] = useState<string | null>(
+    () => chatUrlState.taskMsgId,
+  );
   const [refreshingDmSession, setRefreshingDmSession] = useState(false);
   const [dmSessionRefreshNonce, setDmSessionRefreshNonce] = useState(0);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] =
+    useState<string>(routeWorkspaceId);
+  const [selectedId, setSelectedId] = useState<string | null>(routeChannelId);
   const selectedIdRef = useRef<string | null>(null);
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    if (routeWorkspaceId !== selectedWorkspaceId) {
+      setSelectedWorkspaceId(routeWorkspaceId);
+    }
+    if (routeChannelId !== selectedId) {
+      setSelectedId(routeChannelId);
+    }
+  }, [routeWorkspaceId, routeChannelId]);
+
   const activeDm = selectedId ? dms.find((d) => d.channel_id === selectedId) ?? null : null;
   const isSystemDm = activeDm?.counterparty.member_type === "system";
   const isDmSelected = Boolean(activeDm);
@@ -361,6 +433,7 @@ export default function App() {
     activeBotDm && currentUserId
       ? `user:${currentUserId}:bot:${activeBotDm.counterparty.member_id}`
       : null;
+  const selectionResetReadyRef = useRef(false);
   const botMentionIdsForChannel = (channelId: string): string[] => {
     const dm = dms.find((item) => item.channel_id === channelId);
     return dm?.counterparty.member_type === "bot"
@@ -368,8 +441,12 @@ export default function App() {
       : [];
   };
   useEffect(() => {
-    setTaskPageOpen(false);
-    setPageTaskMsgId(null);
+    if (selectionResetReadyRef.current) {
+      setTaskPageOpen(false);
+      setPageTaskMsgId(null);
+    } else {
+      selectionResetReadyRef.current = true;
+    }
     if (isDmSelected) {
       setPageTopicId(null);
       setReplyingTo(null);
@@ -391,10 +468,80 @@ export default function App() {
   //   "FILES_INDEX" — channel files
   //   "MEMBERS"     — members list
   //   "TODO"        — todos
-  const [memoryTab, setMemoryTab] = useState<
-    "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO" | null
-  >(null);
+  const [memoryTab, setMemoryTab] = useState<MemoryTab | null>(
+    () => chatUrlState.memoryTab,
+  );
   const memoryPanelOpen = memoryTab !== null;
+  const selectedIdWorkspaceId = useMemo(() => {
+    if (!selectedId) return null;
+    return (
+      channels.find((c) => c.channel_id === selectedId)?.workspace_id ??
+      dms.find((d) => d.channel_id === selectedId)?.workspace_id ??
+      null
+    );
+  }, [channels, dms, selectedId]);
+
+  useEffect(() => {
+    if (
+      selectedId &&
+      selectedWorkspaceId &&
+      selectedIdWorkspaceId &&
+      selectedIdWorkspaceId !== selectedWorkspaceId
+    ) {
+      setSelectedId(null);
+    }
+  }, [selectedId, selectedIdWorkspaceId, selectedWorkspaceId]);
+
+  useEffect(() => {
+    setPageTopicId((prev) =>
+      prev === chatUrlState.topicId ? prev : chatUrlState.topicId,
+    );
+    setTaskPageOpen((prev) =>
+      prev === chatUrlState.taskOpen ? prev : chatUrlState.taskOpen,
+    );
+    setPageTaskMsgId((prev) =>
+      prev === chatUrlState.taskMsgId ? prev : chatUrlState.taskMsgId,
+    );
+    setMemoryTab((prev) =>
+      prev === chatUrlState.memoryTab ? prev : chatUrlState.memoryTab,
+    );
+  }, [
+    chatUrlState.topicId,
+    chatUrlState.taskOpen,
+    chatUrlState.taskMsgId,
+    chatUrlState.memoryTab,
+  ]);
+
+  useEffect(() => {
+    const urlSelectedId =
+      selectedIdWorkspaceId && selectedIdWorkspaceId !== selectedWorkspaceId
+        ? null
+        : selectedId;
+    const pathname = buildChatPath(selectedWorkspaceId, urlSelectedId);
+    const search = urlSelectedId
+      ? buildChatSearch({
+          topicId: pageTopicId,
+          taskOpen: taskPageOpen,
+          taskMsgId: pageTaskMsgId,
+          memoryTab,
+        })
+      : "";
+    const target = `${pathname}${search ? `?${search}` : ""}`;
+    const current = `${location.pathname}${location.search}`;
+    if (current !== target || location.hash) {
+      navigate(target, { replace: true });
+    }
+  }, [
+    memoryTab,
+    navigate,
+    pageTaskMsgId,
+    pageTopicId,
+    selectedId,
+    selectedIdWorkspaceId,
+    selectedWorkspaceId,
+    taskPageOpen,
+  ]);
+
   const [contextData, setContextData] = useState<ContextData>({});
   const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
   const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
@@ -535,6 +682,10 @@ export default function App() {
 
 
   const handleNotifNavigate = (channelId: string, msgId?: string) => {
+    const workspaceId =
+      channels.find((c) => c.channel_id === channelId)?.workspace_id ??
+      dms.find((d) => d.channel_id === channelId)?.workspace_id;
+    if (workspaceId) setSelectedWorkspaceId(workspaceId);
     setSelectedId(channelId);
     if (msgId) pendingScrollMsgIdRef.current = msgId;
     setNotifPanelOpen(false);
@@ -723,36 +874,6 @@ export default function App() {
     },
     [authToken, selectedWorkspaceId, workspaces],
   );
-
-  // ── URL hash sync for #topic=<id> ──────────────────────────────────────
-  // Writer: whenever pageTopicId changes, reflect it into the hash (without
-  // adding history entries — replaceState). Reader: listen to popstate in
-  // case the user navigates back/forward.
-  useEffect(() => {
-    if (typeof history === "undefined") return;
-    const hash = location.hash || "";
-    const current = /#topic=([^&]+)/.exec(hash);
-    const currentId = current ? decodeURIComponent(current[1]) : null;
-    if (pageTopicId === currentId) return;
-    if (pageTopicId) {
-      history.replaceState(
-        null,
-        "",
-        `${location.pathname}${location.search}#topic=${encodeURIComponent(pageTopicId)}`,
-      );
-    } else if (/#topic=/.test(hash)) {
-      history.replaceState(null, "", `${location.pathname}${location.search}`);
-    }
-  }, [pageTopicId]);
-
-  useEffect(() => {
-    const onPop = () => {
-      const m = /#topic=([^&]+)/.exec(location.hash || "");
-      setPageTopicId(m ? decodeURIComponent(m[1]) : null);
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
 
   useEffect(() => {
     setPageTopicMessages([]);
