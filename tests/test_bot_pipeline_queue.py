@@ -6,6 +6,7 @@ from app.config import settings
 from app.features.bot_runtime.pipeline.bot.queue import (
     MemoryBotPipelineQueue,
     BotPipelineJob,
+    RedisBotPipelineQueue,
     enqueue_bot_pipeline_job,
     start_bot_pipeline_workers,
     stop_bot_pipeline_workers,
@@ -32,6 +33,49 @@ async def test_memory_bot_pipeline_queue_enqueue_ack_retry() -> None:
     assert second.job.attempts == 1
 
     await queue.ack(second)
+
+
+@pytest.mark.asyncio
+async def test_memory_bot_pipeline_queue_receive_batch_drains_available() -> None:
+    queue = MemoryBotPipelineQueue()
+    await queue.start()
+
+    for idx in range(3):
+        await queue.enqueue(BotPipelineJob(channel_id="ch-1", msg_id=f"m-{idx}"))
+
+    batch = await queue.receive_batch(max_count=8)
+
+    assert [envelope.job.msg_id for envelope in batch] == ["m-0", "m-1", "m-2"]
+    for envelope in batch:
+        await queue.ack(envelope)
+
+
+@pytest.mark.asyncio
+async def test_redis_bot_pipeline_queue_reads_configured_batch(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "bot_pipeline_redis_read_count", 8)
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.count = None
+
+        async def xreadgroup(self, *args, **kwargs):
+            self.count = kwargs["count"]
+            return [(
+                "stream",
+                [
+                    ("1-0", {"job_id": "j1", "channel_id": "ch", "msg_id": "m1", "attempts": "0"}),
+                    ("1-1", {"job_id": "j2", "channel_id": "ch", "msg_id": "m2", "attempts": "0"}),
+                ],
+            )]
+
+    redis = FakeRedis()
+    queue = RedisBotPipelineQueue()
+    queue._redis = redis
+
+    batch = await queue.receive_batch()
+
+    assert redis.count == 8
+    assert [envelope.job.msg_id for envelope in batch] == ["m1", "m2"]
 
 
 @pytest.mark.asyncio

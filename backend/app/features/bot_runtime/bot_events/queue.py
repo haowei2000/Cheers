@@ -51,6 +51,7 @@ class BotEventQueue(Protocol):
     async def close(self) -> None: ...
     async def enqueue(self, job: BotEventJob) -> str: ...
     async def receive(self) -> BotEventEnvelope: ...
+    async def receive_batch(self, max_count: int | None = None) -> list[BotEventEnvelope]: ...
     async def ack(self, envelope: BotEventEnvelope) -> None: ...
     async def retry(self, envelope: BotEventEnvelope, exc: BaseException) -> None: ...
 
@@ -72,6 +73,17 @@ class MemoryBotEventQueue:
 
     async def receive(self) -> BotEventEnvelope:
         return BotEventEnvelope(job=await self._queue.get())
+
+    async def receive_batch(self, max_count: int | None = None) -> list[BotEventEnvelope]:
+        first = await self.receive()
+        envelopes = [first]
+        limit = max(1, int(max_count or 1))
+        for _ in range(limit - 1):
+            try:
+                envelopes.append(BotEventEnvelope(job=self._queue.get_nowait()))
+            except asyncio.QueueEmpty:
+                break
+        return envelopes
 
     async def ack(self, envelope: BotEventEnvelope) -> None:
         self._queue.task_done()
@@ -133,28 +145,34 @@ class RedisBotEventQueue:
         return job.job_id
 
     async def receive(self) -> BotEventEnvelope:
+        return (await self.receive_batch(max_count=1))[0]
+
+    async def receive_batch(self, max_count: int | None = None) -> list[BotEventEnvelope]:
         if self._redis is None:
             raise RuntimeError("RedisBotEventQueue not started")
+        limit = max(1, int(max_count or settings.bot_event_redis_read_count or 1))
         while True:
-            claimed = await self._claim_stale_pending()
-            if claimed is not None:
+            claimed = await self._claim_stale_pending(limit)
+            if claimed:
                 return claimed
             rows = await self._redis.xreadgroup(
                 _GROUP,
                 self._consumer,
                 streams={_STREAM_KEY: ">"},
-                count=1,
+                count=limit,
                 block=_XREAD_BLOCK_MS,
             )
             if not rows:
                 continue
             _stream, messages = rows[0]
-            raw_id, fields = messages[0]
-            return BotEventEnvelope(job=_job_from_fields(fields), raw_id=raw_id)
+            return [
+                BotEventEnvelope(job=_job_from_fields(fields), raw_id=raw_id)
+                for raw_id, fields in messages
+            ]
 
-    async def _claim_stale_pending(self) -> BotEventEnvelope | None:
+    async def _claim_stale_pending(self, max_count: int) -> list[BotEventEnvelope]:
         if self._redis is None:
-            return None
+            return []
         try:
             claimed = await self._redis.xautoclaim(
                 _STREAM_KEY,
@@ -162,18 +180,20 @@ class RedisBotEventQueue:
                 self._consumer,
                 min_idle_time=_PENDING_IDLE_MS,
                 start_id="0-0",
-                count=1,
+                count=max_count,
             )
         except Exception as exc:
             logger.debug("bot_event_queue.redis: pending reclaim failed: %s", exc)
-            return None
+            return []
         messages = []
         if isinstance(claimed, (list, tuple)) and len(claimed) >= 2:
             messages = claimed[1] or []
         if not messages:
-            return None
-        raw_id, fields = messages[0]
-        return BotEventEnvelope(job=_job_from_fields(fields), raw_id=raw_id)
+            return []
+        return [
+            BotEventEnvelope(job=_job_from_fields(fields), raw_id=raw_id)
+            for raw_id, fields in messages
+        ]
 
     async def ack(self, envelope: BotEventEnvelope) -> None:
         if self._redis is not None and envelope.raw_id is not None:
@@ -272,26 +292,27 @@ async def stop_bot_event_workers() -> None:
 async def _worker_loop(index: int) -> None:
     while True:
         try:
-            envelope = await _queue.receive()
+            envelopes = await _queue.receive_batch()
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("bot_event_worker[%d]: receive failed; retrying", index)
             await asyncio.sleep(1.0)
             continue
-        try:
-            if _handler is None:
-                raise RuntimeError("bot event worker handler is not configured")
-            await _handler(envelope.job)
-            await _queue.ack(envelope)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.exception(
-                "bot_event_worker[%d]: job failed event_type=%s job_id=%s",
-                index, envelope.job.event_type, envelope.job.job_id,
-            )
-            await _queue.retry(envelope, exc)
+        for envelope in envelopes:
+            try:
+                if _handler is None:
+                    raise RuntimeError("bot event worker handler is not configured")
+                await _handler(envelope.job)
+                await _queue.ack(envelope)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception(
+                    "bot_event_worker[%d]: job failed event_type=%s job_id=%s",
+                    index, envelope.job.event_type, envelope.job.job_id,
+                )
+                await _queue.retry(envelope, exc)
 
 
 async def enqueue_bot_event_job(event_type: str, payload: dict[str, Any]) -> str:
