@@ -46,11 +46,12 @@ export function TopicComposer({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const canSend = Boolean(value.trim() || pendingFiles.length > 0);
 
-  const submit = async () => {
-    if (!canSend || busy) return;
+  const submit = async (draftValue: string) => {
+    const content = draftValue.trim() ? draftValue : value;
+    if ((!content.trim() && pendingFiles.length === 0) || busy) return;
     setBusy(true);
     try {
-      await onSend(value);
+      await onSend(content);
       setValue("");
     } finally {
       setBusy(false);
