@@ -89,6 +89,18 @@ type AgentBridgeTaskMessage = Message & {
 const API_DOCS_URL = "/docs";
 const CLIENT_STREAM_TRACE = "agentnexus_client";
 const MAX_BOT_TRACE_EVENTS = 160;
+const STREAM_DELTA_FLUSH_MS = 50;
+const MAX_LOADED_MESSAGES = 800;
+
+type PendingStreamDelta = {
+  delta: string;
+  chunks: number;
+};
+
+function trimToRecentMessages(messages: Message[]): Message[] {
+  if (messages.length <= MAX_LOADED_MESSAGES) return messages;
+  return messages.slice(-MAX_LOADED_MESSAGES);
+}
 
 function trimBotTraceEvents(events: BotTraceEvent[]): BotTraceEvent[] {
   return events.slice(-MAX_BOT_TRACE_EVENTS);
@@ -313,6 +325,8 @@ export default function App() {
     }
   }, [isDmSelected, selectedId]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const streamDeltaBufferRef = useRef<Record<string, PendingStreamDelta>>({});
+  const streamDeltaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -758,8 +772,12 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => {
         const data = d.data || [];
-        setMessages(data);
-        setHasMore(d.meta?.has_more ?? data.length >= 30);
+        const visibleData = trimToRecentMessages(data);
+        setMessages(visibleData);
+        setHasMore(
+          Boolean(d.meta?.has_more ?? data.length >= 30) &&
+            visibleData.length < MAX_LOADED_MESSAGES,
+        );
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -768,6 +786,10 @@ export default function App() {
   // ── 上划加载更多历史消息 ──────────────────────────────────────────────────
   const loadMoreMessages = useCallback(async () => {
     if (!selectedId || !hasMore || loadingMore) return;
+    if (messages.length >= MAX_LOADED_MESSAGES) {
+      setHasMore(false);
+      return;
+    }
     const targetChannelId = selectedId;
     const oldest = messages[0];
     if (!oldest) return;
@@ -786,8 +808,11 @@ export default function App() {
         return;
       }
       if (selectedIdRef.current !== targetChannelId) return;
-      setHasMore(d.meta?.has_more ?? older.length >= 50);
-      setMessages((prev) => [...older, ...prev]);
+      const hitWindowCap = messages.length + older.length >= MAX_LOADED_MESSAGES;
+      setHasMore(
+        !hitWindowCap && Boolean(d.meta?.has_more ?? older.length >= 50),
+      );
+      setMessages((prev) => trimToRecentMessages([...older, ...prev]));
       // 恢复滚动位置
       requestAnimationFrame(() => {
         if (container) {
@@ -811,6 +836,90 @@ export default function App() {
       }
     },
     [hasMore, loadingMore, loadMoreMessages],
+  );
+
+  const flushStreamDeltaBuffer = useCallback(() => {
+    const pending = streamDeltaBufferRef.current;
+    streamDeltaBufferRef.current = {};
+    if (streamDeltaTimerRef.current) {
+      clearTimeout(streamDeltaTimerRef.current);
+      streamDeltaTimerRef.current = null;
+    }
+
+    const entries = Object.entries(pending).filter(
+      ([, item]) => item.delta.length > 0,
+    );
+    if (entries.length === 0) return;
+
+    const pendingByMsgId = new Map(entries);
+    setMessages((prev) =>
+      prev.map((m) => {
+        const item = pendingByMsgId.get(m.msg_id);
+        if (!item) return m;
+        const taskData =
+          m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
+            ? (m.content_data as AgentBridgeTaskContentData)
+            : m._agent_bridge_task;
+        const switchingFromTaskCard =
+          m.content_data?.kind === AGENT_BRIDGE_TASK_KIND;
+        const nextContent = switchingFromTaskCard
+          ? item.delta
+          : `${m.content || ""}${item.delta}`;
+        return {
+          ...m,
+          content: nextContent,
+          content_data: switchingFromTaskCard ? null : m.content_data,
+          _agent_bridge_task: taskData
+            ? {
+                ...taskData,
+                status: "streaming",
+                message: "正在接收 provider 输出。",
+              }
+            : m._agent_bridge_task,
+          _bot_trace: trimBotTraceEvents([
+            ...(m._bot_trace || []),
+            makeClientStreamTrace(
+              m,
+              "message_stream",
+              "收到流式片段",
+              {
+                event_type: "message_stream",
+                delta_chars: item.delta.length,
+                delta_preview: item.delta.slice(0, 160),
+                accumulated_chars: nextContent.length,
+                coalesced_chunks: item.chunks,
+              },
+              item.chunks > 1
+                ? `+${item.delta.length} chars / ${item.chunks} chunks`
+                : `+${item.delta.length} chars`,
+            ),
+          ]),
+          _streaming: true,
+        };
+      }),
+    );
+  }, []);
+
+  const queueStreamDelta = useCallback(
+    (msgId: unknown, value: unknown) => {
+      const id = typeof msgId === "string" ? msgId : "";
+      const delta =
+        typeof value === "string" ? value : value == null ? "" : String(value);
+      if (!id || !delta) return;
+
+      const current = streamDeltaBufferRef.current[id];
+      streamDeltaBufferRef.current[id] = {
+        delta: `${current?.delta || ""}${delta}`,
+        chunks: (current?.chunks || 0) + 1,
+      };
+      if (streamDeltaTimerRef.current === null) {
+        streamDeltaTimerRef.current = setTimeout(
+          flushStreamDeltaBuffer,
+          STREAM_DELTA_FLUSH_MS,
+        );
+      }
+    },
+    [flushStreamDeltaBuffer],
   );
 
   // Scroll to a pending message after channel switch + messages load
@@ -897,7 +1006,7 @@ export default function App() {
                       ],
                     }
                   : msg.data;
-              return [...prev, entry];
+              return trimToRecentMessages([...prev, entry]);
             });
             if (
               msg.data.sender_type === "bot" &&
@@ -911,53 +1020,7 @@ export default function App() {
             }
           } else if (msg.type === "message_stream" && msg.data) {
             const { msg_id, delta } = msg.data;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.msg_id === msg_id
-                  ? (() => {
-                      const taskData =
-                        m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
-                          ? (m.content_data as AgentBridgeTaskContentData)
-                          : m._agent_bridge_task;
-                      const switchingFromTaskCard =
-                        m.content_data?.kind === AGENT_BRIDGE_TASK_KIND;
-                      const nextContent = switchingFromTaskCard
-                        ? delta
-                        : m.content + delta;
-                      return {
-                        ...m,
-                        content: nextContent,
-                        content_data: switchingFromTaskCard
-                          ? null
-                          : m.content_data,
-                        _agent_bridge_task: taskData
-                          ? {
-                              ...taskData,
-                              status: "streaming",
-                              message: "正在接收 provider 输出。",
-                            }
-                          : m._agent_bridge_task,
-                        _bot_trace: trimBotTraceEvents([
-                          ...(m._bot_trace || []),
-                          makeClientStreamTrace(
-                            m,
-                            "message_stream",
-                            "收到流式片段",
-                            {
-                              event_type: "message_stream",
-                              delta_chars: String(delta || "").length,
-                              delta_preview: String(delta || "").slice(0, 160),
-                              accumulated_chars: nextContent.length,
-                            },
-                            `+${String(delta || "").length} chars`,
-                          ),
-                        ]),
-                        _streaming: true,
-                      };
-                    })()
-                  : m,
-              ),
-            );
+            queueStreamDelta(msg_id, delta);
           } else if (msg.type === "bot_trace" && msg.data) {
             const trace = msg.data as BotTraceEvent;
             if (!trace.msg_id) return;
@@ -978,6 +1041,7 @@ export default function App() {
             );
           } else if (msg.type === "message_done" && msg.data) {
             const { msg_id, content, files, file_ids, is_partial, error } = msg.data;
+            flushStreamDeltaBuffer();
             const hasContentData = Object.prototype.hasOwnProperty.call(
               msg.data,
               "content_data",
@@ -1103,9 +1167,14 @@ export default function App() {
     return () => {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (streamDeltaTimerRef.current) {
+        clearTimeout(streamDeltaTimerRef.current);
+        streamDeltaTimerRef.current = null;
+      }
+      streamDeltaBufferRef.current = {};
       if (ws) ws.close();
     };
-  }, [selectedId, reportClientError]);
+  }, [selectedId, reportClientError, flushStreamDeltaBuffer, queueStreamDelta]);
 
   // User-scoped WebSocket: receives lightweight notifications for channels
   // the user isn't currently viewing. Used to live-increment rail unread
@@ -1338,7 +1407,7 @@ export default function App() {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id)
               ? prev
-              : [...prev, d.data],
+              : trimToRecentMessages([...prev, d.data]),
           );
         }
       });
@@ -1408,7 +1477,7 @@ export default function App() {
           setMessages((prev) =>
             prev.some((m) => m.msg_id === d.data.msg_id)
               ? prev
-              : [...prev, d.data],
+              : trimToRecentMessages([...prev, d.data]),
           );
           // 保存 secret_token（仅发送方当次 session 持有，不通过 WS 广播）
           if (d.data.secret_token) {
@@ -1755,7 +1824,9 @@ export default function App() {
     const d = await r.json().catch(() => null);
     if (d?.data && selectedIdRef.current === channelId) {
       setMessages((prev) =>
-        prev.some((m) => m.msg_id === d.data.msg_id) ? prev : [...prev, d.data],
+        prev.some((m) => m.msg_id === d.data.msg_id)
+          ? prev
+          : trimToRecentMessages([...prev, d.data]),
       );
     }
     setPendingFileIds([]);

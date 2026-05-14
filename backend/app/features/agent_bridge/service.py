@@ -24,11 +24,14 @@ from app.features.agent_bridge.pending import PendingReply, pending_replies
 from app.features.agent_bridge.streams import StreamState, stream_registry
 from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
 from app.features.bot_runtime.pipeline.bus import WSEventBus
-from app.features.bot_runtime.pipeline.events import BotTrace, MessageCreated, MessageDone, MessageStreamDelta
+from app.features.bot_runtime.pipeline.events import BotTrace, MessageCreated, MessageDone
+from app.features.bot_runtime.pipeline.stream_coalescer import StreamDeltaCoalescer
 
 logger = logging.getLogger("app.features.agent_bridge.service")
 
 AGENT_BRIDGE_TASK_KIND = "agent_bridge_background_task"
+_DELTA_COALESCERS: dict[str, StreamDeltaCoalescer] = {}
+_DELTA_COALESCERS_LOCK = asyncio.Lock()
 
 
 def agent_bridge_task_content_data(
@@ -83,6 +86,30 @@ async def _get_message_with_retry(
     return None
 
 
+async def _get_delta_coalescer(state: StreamState) -> StreamDeltaCoalescer:
+    async with _DELTA_COALESCERS_LOCK:
+        coalescer = _DELTA_COALESCERS.get(state.msg_id)
+        if coalescer is None:
+            coalescer = StreamDeltaCoalescer(
+                msg_id=state.msg_id,
+                bus=WSEventBus(state.channel_id),
+            )
+            _DELTA_COALESCERS[state.msg_id] = coalescer
+        return coalescer
+
+
+async def _flush_delta_coalescer(msg_id: str) -> None:
+    async with _DELTA_COALESCERS_LOCK:
+        coalescer = _DELTA_COALESCERS.pop(msg_id, None)
+    if coalescer is not None:
+        await coalescer.close()
+
+
+async def flush_stream_deltas(msg_id: str) -> None:
+    """Flush any coalesced frontend deltas for a stream before terminal frames."""
+    await _flush_delta_coalescer(msg_id)
+
+
 async def finalize_bot_reply(
     session: AsyncSession,
     *,
@@ -112,6 +139,7 @@ async def finalize_bot_reply(
     # instead of `delta`/`done`), drop it — the full text in `content` wins.
     if pending:
         await stream_registry.pop(pending.msg_id)
+        await _flush_delta_coalescer(pending.msg_id)
     file_ids = list(dict.fromkeys(file_ids or []))
 
     if pending:
@@ -318,9 +346,8 @@ async def apply_delta(
                 return False
             state.last_seq = seq
         state.buffer += delta or ""
-    await WSEventBus(state.channel_id).publish(
-        MessageStreamDelta(msg_id=msg_id, delta=delta)
-    )
+    coalescer = await _get_delta_coalescer(state)
+    await coalescer.add(delta)
     return True
 
 
@@ -387,6 +414,7 @@ async def finalize_stream(
             return None
         state.finalized = True
         content = state.buffer
+    await _flush_delta_coalescer(msg_id)
 
     pending = await pending_replies.resolve(
         task_id=state.task_id, bot_id=bot_id, msg_id=msg_id,
