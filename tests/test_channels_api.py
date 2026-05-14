@@ -15,6 +15,7 @@ from app.db.models import (
     Channel,
     ChannelMembership,
     ChannelProfile,
+    ChannelUnreadCount,
     HistoryPage,
     MemoryEntry,
     Message,
@@ -238,6 +239,48 @@ async def test_unread_counts_for_uses_grouped_counts(db_session: AsyncSession) -
     )
 
     assert counts == {ch1.channel_id: 1, ch2.channel_id: 1, ch3.channel_id: 0}
+    cached = (
+        await db_session.execute(
+            select(ChannelUnreadCount).where(ChannelUnreadCount.user_id == user.user_id)
+        )
+    ).scalars().all()
+    assert {row.channel_id: row.unread_count for row in cached} == {
+        ch1.channel_id: 1,
+        ch2.channel_id: 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_unread_count_cache_increment_and_mark_read(db_session: AsyncSession) -> None:
+    ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000023", name="Unread Cache Workspace")
+    user = User(
+        user_id="a0000000-0000-0000-0000-000000000023",
+        username="unread-cache-user",
+        password_hash="x",
+    )
+    ch = Channel(channel_id="b0000000-0000-0000-0000-000000000023", workspace_id=ws.workspace_id, name="cache")
+    db_session.add_all([
+        ws,
+        user,
+        ch,
+        ChannelMembership(channel_id=ch.channel_id, member_id=user.user_id, member_type="user"),
+    ])
+    await db_session.flush()
+
+    from app.services.unread_count_service import increment_unread_counts
+
+    await increment_unread_counts(
+        db_session,
+        channel_id=ch.channel_id,
+        user_ids=[user.user_id, user.user_id],
+    )
+    counts = await ChannelService(db_session).unread_counts_for(user.user_id, [ch.channel_id])
+    assert counts == {ch.channel_id: 1}
+
+    marked_at = await ChannelService(db_session).mark_read(ch.channel_id, user.user_id)
+    assert marked_at is not None
+    counts = await ChannelService(db_session).unread_counts_for(user.user_id, [ch.channel_id])
+    assert counts == {ch.channel_id: 0}
 
 
 @pytest.mark.asyncio
