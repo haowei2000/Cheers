@@ -1,9 +1,30 @@
 import asyncio
+import json
 
 import pytest
 
 from app.config import settings
+from app.services import ws_service
 from app.services.ws_service import ConnectionManager
+
+
+class _FastWebSocket:
+    def __init__(self) -> None:
+        self.accepted = False
+        self.closed = False
+        self.sent: list[dict] = []
+
+    async def accept(self) -> None:
+        self.accepted = True
+
+    async def send_text(self, data: str) -> None:
+        self.sent.append(json.loads(data))
+
+    async def send_json(self, data: dict) -> None:
+        self.sent.append(data)
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        self.closed = True
 
 
 class _SlowWebSocket:
@@ -19,6 +40,11 @@ class _SlowWebSocket:
 
     async def send_json(self, data: dict) -> None:
         self.sent.append(data)
+        self.send_started.set()
+        await self.release_send.wait()
+
+    async def send_text(self, data: str) -> None:
+        self.sent.append(json.loads(data))
         self.send_started.set()
         await self.release_send.wait()
 
@@ -87,6 +113,34 @@ async def test_ws_broadcast_closes_full_clients_concurrently(monkeypatch) -> Non
 
     for ws in sockets:
         ws.release_send.set()
+        await manager.disconnect(ws, "ch-1")
+
+
+@pytest.mark.asyncio
+async def test_ws_broadcast_serializes_payload_once(monkeypatch) -> None:
+    calls = 0
+    original = ws_service._serialize_ws_message
+
+    def counted(message: dict):
+        nonlocal calls
+        calls += 1
+        return original(message)
+
+    monkeypatch.setattr(ws_service, "_serialize_ws_message", counted)
+
+    manager = ConnectionManager()
+    sockets = [_FastWebSocket(), _FastWebSocket()]
+    for ws in sockets:
+        await manager.connect(ws, "ch-1")
+
+    message = {"type": "message", "data": {"text": "你好"}}
+    await manager.broadcast_to_channel("ch-1", message)
+    await asyncio.wait_for(_wait_until(lambda: all(ws.sent for ws in sockets)), timeout=1)
+
+    assert calls == 1
+    assert [ws.sent[0] for ws in sockets] == [message, message]
+
+    for ws in sockets:
         await manager.disconnect(ws, "ch-1")
 
 
