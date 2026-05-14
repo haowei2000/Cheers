@@ -53,7 +53,9 @@ import {
   isClarifyReplyUserMessage,
 } from "./lib/helper";
 import {
+  buildTopicTree,
   isMsgReply,
+  mergeMessagesChronologically,
   parseQuotePrefix,
   stripLeadingQuotePrefixes,
   formatTs,
@@ -278,6 +280,9 @@ export default function App() {
     const m = /#topic=([^&]+)/.exec(location.hash || "");
     return m ? decodeURIComponent(m[1]) : null;
   });
+  const [pageTopicMessages, setPageTopicMessages] = useState<Message[]>([]);
+  const [pageTopicLoading, setPageTopicLoading] = useState(false);
+  const [pageTopicError, setPageTopicError] = useState<string | null>(null);
   const [taskPageOpen, setTaskPageOpen] = useState(false);
   const [pageTaskMsgId, setPageTaskMsgId] = useState<string | null>(null);
   const [refreshingDmSession, setRefreshingDmSession] = useState(false);
@@ -682,6 +687,39 @@ export default function App() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+
+  useEffect(() => {
+    setPageTopicMessages([]);
+    setPageTopicError(null);
+    if (!selectedId || !pageTopicId || isDmSelected) {
+      setPageTopicLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setPageTopicLoading(true);
+    authFetch(`${API}/channels/${selectedId}/messages/topics/${pageTopicId}`, {
+      signal: controller.signal,
+    })
+      .then(async (r) => {
+        const d = await r.json().catch(() => null);
+        if (!r.ok || d?.status === "error") {
+          throw new Error(d?.message || d?.detail || `HTTP ${r.status}`);
+        }
+        if (!controller.signal.aborted) {
+          setPageTopicMessages(d?.data || []);
+        }
+      })
+      .catch((e) => {
+        if ((e as { name?: string }).name === "AbortError") return;
+        setPageTopicError("话题消息加载失败");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPageTopicLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [authFetch, isDmSelected, pageTopicId, selectedId]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -2135,49 +2173,19 @@ export default function App() {
       setExpandedTopics((prev) => new Set([...prev, ...toExpand]));
   }, [messages]);
 
-  // Build topic tree: follow parent chain to find root, group all descendants under it
-  const { topicRoots, topicRepliesOf } = (() => {
-    if (isDmSelected) {
-      return {
-        topicRoots: messages,
-        topicRepliesOf: (): Message[] => [],
-      };
-    }
-    const msgIdSet = new Set(messages.map((x) => x.msg_id));
-    const rootIdCache = new Map<string, string>();
-    function getRootId(msgId: string): string {
-      if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
-      const m = messages.find((x) => x.msg_id === msgId);
-      if (!m || !isMsgReply(m, msgIdSet) || !m.in_reply_to_msg_id) {
-        rootIdCache.set(msgId, msgId);
-        return msgId;
-      }
-      const rid = getRootId(m.in_reply_to_msg_id);
-      rootIdCache.set(msgId, rid);
-      return rid;
-    }
-    const replyMap = new Map<string, Message[]>();
-    const replySet = new Set<string>();
-    for (const m of messages) {
-      const rootId = getRootId(m.msg_id);
-      if (rootId !== m.msg_id) {
-        replySet.add(m.msg_id);
-        const arr = replyMap.get(rootId) ?? [];
-        arr.push(m);
-        replyMap.set(rootId, arr);
-      }
-    }
-    for (const arr of replyMap.values()) {
-      arr.sort((a, b) =>
-        (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1,
-      );
-    }
-    return {
-      topicRoots: messages.filter((m) => !replySet.has(m.msg_id)),
-      topicRepliesOf: (rootId: string): Message[] =>
-        replyMap.get(rootId) ?? [],
-    };
-  })();
+  // Build topic tree: follow parent chain to find root, group all descendants under it.
+  const { topicRoots, topicRepliesOf } = useMemo(
+    () => buildTopicTree(messages, isDmSelected),
+    [isDmSelected, messages],
+  );
+  const pageTopicSourceMessages = useMemo(
+    () => mergeMessagesChronologically(messages, pageTopicMessages),
+    [messages, pageTopicMessages],
+  );
+  const { topicRepliesOf: pageTopicRepliesOf } = useMemo(
+    () => buildTopicTree(pageTopicSourceMessages, false),
+    [pageTopicSourceMessages],
+  );
   const selectedDetailMessage = memoryDetailMessage
     ? messages.find((m) => m.msg_id === memoryDetailMessage.msg_id) ||
       memoryDetailMessage
@@ -2745,16 +2753,10 @@ export default function App() {
               pageTopicId &&
               selectedId &&
               (() => {
-                const rootMsg = messages.find(
+                const rootMsg = pageTopicSourceMessages.find(
                   (m) => m.msg_id === pageTopicId,
                 );
-                if (!rootMsg) return null;
                 const rootId = pageTopicId; // narrowed non-null
-                const topicReplies = messages
-                  .filter((m) => m.in_reply_to_msg_id === rootId)
-                  .sort((a, b) =>
-                    (a.created_at || "") < (b.created_at || "") ? -1 : 1,
-                  );
                 return (
                   <div
                     style={{
@@ -2767,55 +2769,86 @@ export default function App() {
                       minHeight: 0,
                     }}
                   >
-                    <TopicPage
-                      rootMsg={rootMsg}
-                      replies={topicReplies}
-                      channel={selectedChannel}
-                      channelBots={channelBots}
-                      channelUsers={channelUsers}
-                      currentUserId={currentUserId}
-                      onBack={() => setPageTopicId(null)}
-                      onGoToChannel={() => setPageTopicId(null)}
-                      onSendReply={(text) =>
-                        sendTopicReply(selectedId, rootId, text)
-                      }
-                      onCopyMessage={copyMessageText}
-                      onShowMessageDetails={setMemoryDetailMessage}
-                      hasMessageDetails={hasBotReplyDetails}
-                      onImageClick={handleMarkdownImageClick}
-                      onFileClick={handleMarkdownFileClick}
-                      renderAttachments={renderFileAttachments}
-                      pendingFiles={pendingFileNames.map((name, index) => ({
-                        name,
-                        previewUrl: pendingFilePreviews[index] ?? null,
-                      }))}
-                      onRemovePendingFile={(index) => {
-                        setPendingFileIds((prev) =>
-                          prev.filter((_, itemIndex) => itemIndex !== index),
-                        );
-                        setPendingFileNames((prev) =>
-                          prev.filter((_, itemIndex) => itemIndex !== index),
-                        );
-                        setPendingFilePreviews((prev) =>
-                          prev.filter((_, itemIndex) => itemIndex !== index),
-                        );
-                      }}
-                      onUploadFile={uploadFile}
-                      keychainEnabled={Boolean(currentUser)}
-                      keychainOpen={keychainPopupOpen}
-                      keychainLoading={keychainPopupLoading}
-                      keychainItems={keychainPopupItems}
-                      onToggleKeychain={openKeychainPopup}
-                      onCloseKeychain={() => setKeychainPopupOpen(false)}
-                      sessionPanel={
-                        <SessionScopePanel
-                          scopeType="topic"
-                          scopeId={rootId}
-                          channelId={selectedId}
-                          title="主题对应 Session"
-                        />
-                      }
-                    />
+                    {rootMsg ? (
+                      <TopicPage
+                        rootMsg={rootMsg}
+                        replies={pageTopicRepliesOf(rootId)}
+                        channel={selectedChannel}
+                        channelBots={channelBots}
+                        channelUsers={channelUsers}
+                        currentUserId={currentUserId}
+                        onBack={() => setPageTopicId(null)}
+                        onGoToChannel={() => setPageTopicId(null)}
+                        onSendReply={(text) =>
+                          sendTopicReply(selectedId, rootId, text)
+                        }
+                        onCopyMessage={copyMessageText}
+                        onShowMessageDetails={setMemoryDetailMessage}
+                        hasMessageDetails={hasBotReplyDetails}
+                        onImageClick={handleMarkdownImageClick}
+                        onFileClick={handleMarkdownFileClick}
+                        renderAttachments={renderFileAttachments}
+                        pendingFiles={pendingFileNames.map((name, index) => ({
+                          name,
+                          previewUrl: pendingFilePreviews[index] ?? null,
+                        }))}
+                        onRemovePendingFile={(index) => {
+                          setPendingFileIds((prev) =>
+                            prev.filter((_, itemIndex) => itemIndex !== index),
+                          );
+                          setPendingFileNames((prev) =>
+                            prev.filter((_, itemIndex) => itemIndex !== index),
+                          );
+                          setPendingFilePreviews((prev) =>
+                            prev.filter((_, itemIndex) => itemIndex !== index),
+                          );
+                        }}
+                        onUploadFile={uploadFile}
+                        keychainEnabled={Boolean(currentUser)}
+                        keychainOpen={keychainPopupOpen}
+                        keychainLoading={keychainPopupLoading}
+                        keychainItems={keychainPopupItems}
+                        onToggleKeychain={openKeychainPopup}
+                        onCloseKeychain={() => setKeychainPopupOpen(false)}
+                        sessionPanel={
+                          <SessionScopePanel
+                            scopeType="topic"
+                            scopeId={rootId}
+                            channelId={selectedId}
+                            title="主题对应 Session"
+                          />
+                        }
+                      />
+                    ) : (
+                      <div className="an-topic-page">
+                        <div className="an-tpp-top">
+                          <button
+                            type="button"
+                            className="an-tpp-back"
+                            onClick={() => setPageTopicId(null)}
+                          >
+                            ← 返回频道
+                          </button>
+                          <div className="an-tpp-meta">
+                            <div className="an-tpp-crumbs">
+                              <span>
+                                {selectedChannel
+                                  ? `#${selectedChannel.name}`
+                                  : "频道"}
+                              </span>
+                              <span className="an-sep">›</span>
+                              <span>主题</span>
+                            </div>
+                            <div className="an-tpp-title">
+                              {pageTopicError ||
+                                (pageTopicLoading
+                                  ? "正在加载话题消息"
+                                  : "未找到话题消息")}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}

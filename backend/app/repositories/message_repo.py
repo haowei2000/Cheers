@@ -35,6 +35,42 @@ class MessageRepository:
         messages.reverse()
         return messages
 
+    async def list_descendants_by_root(
+        self,
+        channel_id: str,
+        root_msg_id: str,
+    ) -> list[Message]:
+        """返回某条消息下的全部子孙回复，按创建时间正序排列。"""
+        seen = {root_msg_id}
+        frontier = [root_msg_id]
+        descendants: list[Message] = []
+
+        while frontier:
+            result = await self.session.execute(
+                select(Message)
+                .where(
+                    Message.channel_id == channel_id,
+                    Message.in_reply_to_msg_id.in_(frontier),
+                )
+                .order_by(Message.created_at.asc(), Message.msg_id.asc())
+            )
+            next_frontier: list[str] = []
+            for msg in result.scalars().all():
+                if msg.msg_id in seen:
+                    continue
+                seen.add(msg.msg_id)
+                descendants.append(msg)
+                next_frontier.append(msg.msg_id)
+            frontier = next_frontier
+
+        descendants.sort(
+            key=lambda msg: (
+                msg.created_at.isoformat() if msg.created_at else "",
+                msg.msg_id,
+            )
+        )
+        return descendants
+
     async def create(
         self,
         channel_id: str,
