@@ -25,6 +25,7 @@ from app.db.models import (
     PromptTemplate,
     TodoItem,
     User,
+    WorkspaceMembership,
 )
 from app.repositories.bot_repo import BotRepository
 from app.repositories.channel_repo import ChannelRepository
@@ -37,6 +38,21 @@ from app.utils.permissions import are_accepted_friends, is_admin, is_blocked_bet
 
 CHANNEL_ADMIN_ROLES = {"owner", "admin"}
 CHANNEL_MEMBER_ROLES = CHANNEL_ADMIN_ROLES | {"member"}
+WORKSPACE_CHANNEL_TYPES = {"public", "workspace"}
+CHANNEL_TYPE_ALIASES = {
+    "public": "public",
+    "workspace": "public",
+    "private": "private",
+    "dm": "dm",
+}
+
+
+def normalize_channel_type(value: str | None) -> str:
+    raw = (value or "public").strip().lower()
+    normalized = CHANNEL_TYPE_ALIASES.get(raw)
+    if not normalized:
+        raise BadRequestError("频道类型必须是 workspace、private 或 dm")
+    return normalized
 
 
 class ChannelService:
@@ -257,6 +273,7 @@ class ChannelService:
         if not wm and not is_admin(creator):
             raise ForbiddenError("您不是该工作空间的成员")
 
+        type = normalize_channel_type(type)
         ch = await self.repo.create(
             workspace_id=workspace_id,
             name=name,
@@ -267,15 +284,15 @@ class ChannelService:
         )
 
         added_user_ids = set()
-        if type != "dm":
-            # 内置 Bot 自动加入普通频道；DM 保持一对一，不注入 Helper。
+        if type in WORKSPACE_CHANNEL_TYPES:
+            # 内置 Bot 自动加入工作空间频道；私有频道和 DM 不自动注入 Helper。
             from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
 
             for bot_id in BUILTIN_BOT_IDS:
                 if not await self.repo.get_membership(ch.channel_id, bot_id):
                     await self.repo.add_member(ch.channel_id, bot_id, "bot")
 
-            # 工作空间所有成员自动加入普通频道。
+            # 工作空间所有成员自动加入 workspace 频道。
             ws_members = await self.ws_repo.list_members(workspace_id)
             for wm in ws_members:
                 if not await self.repo.get_membership(ch.channel_id, wm.user_id):
@@ -304,6 +321,8 @@ class ChannelService:
     async def update(self, channel_id: str, current_user: User, **kwargs) -> Channel:
         ch = await self.get_or_404(channel_id)
         await self._require_channel_admin(ch, current_user)
+        if "type" in kwargs:
+            kwargs["type"] = normalize_channel_type(kwargs["type"])
         return await self.repo.update(ch, **kwargs)
 
     async def delete(self, channel_id: str, current_user: User) -> None:
@@ -399,6 +418,18 @@ class ChannelService:
         """Public access guard for routes that expose channel-scoped data."""
         await self.get_or_404(channel_id)
         await self._require_channel_member(channel_id, user)
+
+    async def require_channel_member_or_manager(self, channel_id: str, user: User) -> Channel:
+        """Allow channel members and workspace/channel/global managers to read channel metadata."""
+        channel = await self.get_or_404(channel_id)
+        if is_admin(user):
+            return channel
+        membership = await self.repo.get_membership(channel_id, user.user_id)
+        if membership and membership.member_type == "user":
+            return channel
+        if await self._is_workspace_admin(channel, user):
+            return channel
+        raise ForbiddenError("您不是该频道的成员")
 
     async def require_can_send_message(self, channel_id: str, user: User) -> None:
         """Guard message sends, adding DM-specific friendship/privacy rules."""
@@ -669,6 +700,13 @@ class ChannelService:
                 current_user,
                 "无权邀请该 Bot 进入频道",
             )
+        else:
+            user = await self.user_repo.get_by_id(member_id)
+            if not user:
+                raise NotFoundError("用户不存在")
+            workspace_membership = await self.ws_repo.get_membership(channel.workspace_id, user.user_id)
+            if not workspace_membership:
+                raise BadRequestError("用户不是该工作空间成员，请先邀请进入工作空间")
 
         m = await self.repo.add_member(channel_id, member_id, member_type, added_by=current_user.user_id)
         if member_type == "bot":
@@ -697,6 +735,9 @@ class ChannelService:
 
         if await self.repo.get_membership(channel_id, user.user_id):
             raise BadRequestError("用户已在频道中")
+        workspace_membership = await self.ws_repo.get_membership(channel.workspace_id, user.user_id)
+        if not workspace_membership:
+            raise BadRequestError("用户不是该工作空间成员，请先邀请进入工作空间")
 
         await self.repo.add_member(channel_id, user.user_id, "user", added_by=current_user.user_id)
         return {
@@ -829,11 +870,13 @@ class ChannelService:
                     and_(Friendship.user_id == User.user_id, Friendship.friend_id == user_id),
                 ),
             )
+            .join(WorkspaceMembership, WorkspaceMembership.user_id == User.user_id)
             .where(
                 or_(
                     and_(Friendship.user_id == user_id, Friendship.status == "accepted"),
                     and_(Friendship.friend_id == user_id, Friendship.status == "accepted"),
                 ),
+                WorkspaceMembership.workspace_id == channel.workspace_id,
                 User.user_id.notin_(member_ids) if member_ids else true(),
             )
         )

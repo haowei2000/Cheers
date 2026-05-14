@@ -1,17 +1,19 @@
 """Workspace 业务逻辑层."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
-from app.db.models import User, Workspace, WorkspaceMembership
+from app.db.models import Channel, ChannelMembership, User, Workspace, WorkspaceMembership
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
 from app.utils.permissions import is_admin
 
 PERSONAL_WORKSPACE_KIND = "personal"
 TEAM_WORKSPACE_KIND = "team"
+WORKSPACE_CHANNEL_TYPES = ("public", "workspace")
+WORKSPACE_MEMBER_ROLES = {"owner", "admin", "member"}
 
 
 class WorkspaceService:
@@ -132,13 +134,78 @@ class WorkspaceService:
     ) -> WorkspaceMembership:
         await self.get_or_404(workspace_id)
         await self._check_workspace_permission(workspace_id, current_user)
-        user = await self.user_repo.get_by_username_or_email(identifier)
+        if role not in WORKSPACE_MEMBER_ROLES:
+            raise BadRequestError("role must be one of: owner, admin, member")
+        identifier = identifier.strip()
+        user = await self.user_repo.get_by_id(identifier)
+        if not user:
+            user = await self.user_repo.get_by_username_or_email(identifier)
         if not user:
             raise NotFoundError(f"用户 '{identifier}' 不存在")
         existing = await self.repo.get_membership(workspace_id, user.user_id)
         if existing:
+            await self._ensure_workspace_channel_memberships(
+                workspace_id,
+                user.user_id,
+                workspace_role=existing.role,
+                added_by=current_user.user_id,
+            )
             return existing
-        return await self.repo.add_member(workspace_id, user.user_id, role)
+        membership = await self.repo.add_member(workspace_id, user.user_id, role)
+        await self._ensure_workspace_channel_memberships(
+            workspace_id,
+            user.user_id,
+            workspace_role=membership.role,
+            added_by=current_user.user_id,
+        )
+        return membership
+
+    async def _ensure_workspace_channel_memberships(
+        self,
+        workspace_id: str,
+        user_id: str,
+        *,
+        workspace_role: str,
+        added_by: str | None,
+    ) -> None:
+        """Backfill membership for workspace-scope channels.
+
+        The database still stores legacy "public" for channels that are now
+        described in the UI as "workspace" channels.
+        """
+        rows = await self.session.execute(
+            select(Channel.channel_id)
+            .where(
+                Channel.workspace_id == workspace_id,
+                Channel.type.in_(WORKSPACE_CHANNEL_TYPES),
+            )
+            .order_by(Channel.created_at)
+        )
+        channel_ids = rows.scalars().all()
+        if not channel_ids:
+            return
+
+        channel_role = "admin" if workspace_role in ("owner", "admin") else "member"
+        for channel_id in channel_ids:
+            existing = await self.session.execute(
+                select(ChannelMembership).where(
+                    ChannelMembership.channel_id == channel_id,
+                    ChannelMembership.member_id == user_id,
+                    ChannelMembership.member_type == "user",
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+            self.session.add(
+                ChannelMembership(
+                    channel_id=channel_id,
+                    member_id=user_id,
+                    member_type="user",
+                    role=channel_role,
+                    added_by=added_by,
+                )
+            )
+        await self.session.flush()
 
     async def remove_member(
         self, workspace_id: str, user_id: str, current_user: User
@@ -168,5 +235,39 @@ class WorkspaceService:
 
     async def list_channels(self, workspace_id: str, current_user: User) -> list:
         await self.get_or_404(workspace_id)
-        await self._check_workspace_member(workspace_id, current_user)
-        return await self.repo.list_channels(workspace_id)
+        membership = await self.repo.get_membership(workspace_id, current_user.user_id)
+        if not membership and not is_admin(current_user):
+            raise ForbiddenError("您不是该工作空间的成员")
+
+        if is_admin(current_user) or (membership and membership.role in ("owner", "admin")):
+            rows = await self.session.execute(
+                select(Channel)
+                .where(
+                    Channel.workspace_id == workspace_id,
+                    Channel.type != "dm",
+                )
+                .order_by(Channel.name)
+            )
+            return list(rows.scalars().all())
+
+        rows = await self.session.execute(
+            select(Channel)
+            .outerjoin(
+                ChannelMembership,
+                and_(
+                    ChannelMembership.channel_id == Channel.channel_id,
+                    ChannelMembership.member_id == current_user.user_id,
+                    ChannelMembership.member_type == "user",
+                ),
+            )
+            .where(
+                Channel.workspace_id == workspace_id,
+                Channel.type != "dm",
+                or_(
+                    Channel.type.in_(WORKSPACE_CHANNEL_TYPES),
+                    ChannelMembership.channel_id.is_not(None),
+                ),
+            )
+            .order_by(Channel.name)
+        )
+        return list(rows.scalars().all())
