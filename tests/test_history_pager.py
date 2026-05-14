@@ -184,3 +184,31 @@ async def test_message_repository_pagination_ignores_history_pages(db_session: A
 
     listed = await MessageRepository(db_session).list_by_channel(channel_id, limit=2)
     assert [m.content for m in listed] == ["two", "three"]
+
+
+@pytest.mark.asyncio
+async def test_message_repository_pagination_uses_msg_id_tiebreaker(db_session: AsyncSession) -> None:
+    channel_id = await _seed_channel(db_session, "tie")
+    created_at = datetime(2026, 1, 1, 12, 0, 0)
+    for idx, content in enumerate(["one", "two", "three", "four"], start=1):
+        db_session.add(
+            Message(
+                msg_id=f"hist-msg-tie-{idx:02d}",
+                channel_id=channel_id,
+                sender_id="hist-user-tie",
+                sender_type="user",
+                content=content,
+                created_at=created_at,
+            )
+        )
+    await db_session.flush()
+
+    first_page = await MessageRepository(db_session).list_by_channel(channel_id, limit=2)
+    assert [m.content for m in first_page] == ["three", "four"]
+
+    older_page = await MessageRepository(db_session).list_by_channel(
+        channel_id,
+        limit=2,
+        before_id=first_page[0].msg_id,
+    )
+    assert [m.content for m in older_page] == ["one", "two"]

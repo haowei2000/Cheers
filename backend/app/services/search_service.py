@@ -199,6 +199,7 @@ class SearchService:
                 current_user=current_user,
                 limit=limit,
                 workspace_id=workspace_id,
+                channel_id=channel_id,
             ),
         )
 
@@ -387,6 +388,7 @@ class SearchService:
         current_user: User,
         limit: int,
         workspace_id: str | None = None,
+        channel_id: str | None = None,
     ) -> list[SearchMessageHit]:
         stmt = (
             select(Message)
@@ -402,6 +404,8 @@ class SearchService:
             stmt = stmt.join(Channel, Channel.channel_id == Message.channel_id).where(
                 Channel.workspace_id == workspace_id
             )
+        if channel_id:
+            stmt = stmt.where(Message.channel_id == channel_id)
         result = await self.session.execute(stmt.order_by(Message.created_at.desc()).limit(limit))
         rows = list(result.scalars().all())
         return await self._message_hits(rows, q, current_user=current_user)

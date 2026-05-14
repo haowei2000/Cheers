@@ -264,6 +264,60 @@ async def test_global_nav_does_not_leak_channel_scoped_rows(db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_global_nav_message_search_can_be_channel_scoped(db_session: AsyncSession) -> None:
+    user = _user("sr-channel-scope-user", "sr_channel_scope_user")
+    ws = Workspace(workspace_id="sr-channel-scope-ws", name="Channel Scope Workspace")
+    first_ch = Channel(
+        channel_id="sr-channel-scope-a",
+        workspace_id=ws.workspace_id,
+        name="scope-a",
+        type="public",
+    )
+    second_ch = Channel(
+        channel_id="sr-channel-scope-b",
+        workspace_id=ws.workspace_id,
+        name="scope-b",
+        type="public",
+    )
+    first_msg = Message(
+        msg_id="sr-channel-scope-msg-a",
+        channel_id=first_ch.channel_id,
+        sender_id=user.user_id,
+        sender_type="user",
+        content="needle scoped first channel",
+    )
+    second_msg = Message(
+        msg_id="sr-channel-scope-msg-b",
+        channel_id=second_ch.channel_id,
+        sender_id=user.user_id,
+        sender_type="user",
+        content="needle scoped second channel",
+    )
+    db_session.add_all([
+        user,
+        ws,
+        first_ch,
+        second_ch,
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=user.user_id),
+        ChannelMembership(channel_id=first_ch.channel_id, member_id=user.user_id, member_type="user"),
+        ChannelMembership(channel_id=second_ch.channel_id, member_id=user.user_id, member_type="user"),
+        first_msg,
+        second_msg,
+    ])
+    await db_session.flush()
+
+    resp = await _request_as(
+        db_session,
+        user,
+        "GET",
+        f"/api/v1/search?q=needle&context=global_nav&channel_id={second_ch.channel_id}&limit=20",
+    )
+
+    assert resp.status_code == 200
+    assert {m["msg_id"] for m in resp.json()["data"]["messages"]} == {second_msg.msg_id}
+
+
+@pytest.mark.asyncio
 async def test_task_monitor_context_allows_system_admin_to_search_all_tasks(db_session: AsyncSession) -> None:
     admin = _user("sr-admin", "sr_admin", role="system_admin")
     user = _user("sr-task-user", "sr_task_user")
