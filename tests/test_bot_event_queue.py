@@ -11,7 +11,7 @@ from app.features.bot_runtime.bot_events.jobs import (
     AGENT_BRIDGE_STREAM_DONE,
     handle_bot_event_job,
 )
-from app.features.bot_runtime.bot_events.queue import BotEventJob, MemoryBotEventQueue
+from app.features.bot_runtime.bot_events.queue import BotEventJob, MemoryBotEventQueue, RedisBotEventQueue
 from app.features.bot_runtime.bot_events.runs import ensure_bot_run, get_bot_run_by_placeholder
 
 
@@ -55,6 +55,65 @@ async def test_memory_bot_event_queue_enqueue_ack_retry() -> None:
     assert second.job.attempts == 1
 
     await queue.ack(second)
+
+
+@pytest.mark.asyncio
+async def test_memory_bot_event_queue_receive_batch_drains_available() -> None:
+    queue = MemoryBotEventQueue()
+    await queue.start()
+
+    for idx in range(3):
+        await queue.enqueue(BotEventJob(event_type=AGENT_BRIDGE_REPLY, payload={"idx": idx}))
+
+    batch = await queue.receive_batch(max_count=8)
+
+    assert [envelope.job.payload["idx"] for envelope in batch] == [0, 1, 2]
+    for envelope in batch:
+        await queue.ack(envelope)
+
+
+@pytest.mark.asyncio
+async def test_redis_bot_event_queue_reads_configured_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(bot_event_queue.settings, "bot_event_redis_read_count", 8)
+
+    class FakeRedis:
+        def __init__(self) -> None:
+            self.claim_count = None
+            self.read_count = None
+
+        async def xautoclaim(self, *args, **kwargs):
+            self.claim_count = kwargs["count"]
+            return ["0-0", []]
+
+        async def xreadgroup(self, *args, **kwargs):
+            self.read_count = kwargs["count"]
+            return [(
+                "stream",
+                [
+                    ("1-0", {
+                        "job_id": "j1",
+                        "event_type": AGENT_BRIDGE_REPLY,
+                        "payload": "{\"idx\": 1}",
+                        "attempts": "0",
+                    }),
+                    ("1-1", {
+                        "job_id": "j2",
+                        "event_type": AGENT_BRIDGE_REPLY,
+                        "payload": "{\"idx\": 2}",
+                        "attempts": "0",
+                    }),
+                ],
+            )]
+
+    redis = FakeRedis()
+    queue = RedisBotEventQueue()
+    queue._redis = redis
+
+    batch = await queue.receive_batch()
+
+    assert redis.claim_count == 8
+    assert redis.read_count == 8
+    assert [envelope.job.payload["idx"] for envelope in batch] == [1, 2]
 
 
 def test_redis_bot_event_queue_socket_timeout_exceeds_block_wait() -> None:
