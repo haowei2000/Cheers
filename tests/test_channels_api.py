@@ -288,9 +288,9 @@ async def test_delete_channel_cleans_session_bindings_and_related_rows(
         session_id="delete-channel-session-0002",
         bot_id=bot.bot_id,
         provider="generic",
-        provider_account_id="acct-delete-channel",
+        provider_account_id="acct-delete-channel-scope-only",
         provider_agent_id="agent-main",
-        provider_session_key="provider:generic:account:acct-delete-channel:session:delete-channel-session-0002",
+        provider_session_key="provider:generic:account:acct-delete-channel-scope-only:session:delete-channel-session-0002",
         current_scope_type="channel",
         current_scope_id=ch.channel_id,
     )
