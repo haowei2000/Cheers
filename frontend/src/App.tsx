@@ -91,15 +91,63 @@ const CLIENT_STREAM_TRACE = "agentnexus_client";
 const MAX_BOT_TRACE_EVENTS = 160;
 const STREAM_DELTA_FLUSH_MS = 50;
 const MAX_LOADED_MESSAGES = 800;
+const VIRTUAL_MESSAGE_MIN_ROWS = 120;
+const VIRTUAL_MESSAGE_ESTIMATED_HEIGHT = 118;
+const VIRTUAL_MESSAGE_OVERSCAN_ROWS = 12;
 
 type PendingStreamDelta = {
   delta: string;
   chunks: number;
 };
 
+type VirtualMessageWindow = {
+  enabled: boolean;
+  startIndex: number;
+  endIndex: number;
+  paddingTop: number;
+  paddingBottom: number;
+};
+
 function trimToRecentMessages(messages: Message[]): Message[] {
   if (messages.length <= MAX_LOADED_MESSAGES) return messages;
   return messages.slice(-MAX_LOADED_MESSAGES);
+}
+
+function getVirtualMessageWindow(
+  rowCount: number,
+  scrollTop: number,
+  viewportHeight: number,
+): VirtualMessageWindow {
+  if (rowCount <= VIRTUAL_MESSAGE_MIN_ROWS) {
+    return {
+      enabled: false,
+      startIndex: 0,
+      endIndex: rowCount,
+      paddingTop: 0,
+      paddingBottom: 0,
+    };
+  }
+  const visibleRows = Math.max(
+    1,
+    Math.ceil(Math.max(viewportHeight, VIRTUAL_MESSAGE_ESTIMATED_HEIGHT) / VIRTUAL_MESSAGE_ESTIMATED_HEIGHT),
+  );
+  const windowRows = visibleRows + VIRTUAL_MESSAGE_OVERSCAN_ROWS * 2;
+  const maxStartIndex = Math.max(0, rowCount - windowRows);
+  const startIndex = Math.min(
+    maxStartIndex,
+    Math.max(
+      0,
+      Math.floor(Math.max(0, scrollTop) / VIRTUAL_MESSAGE_ESTIMATED_HEIGHT) - VIRTUAL_MESSAGE_OVERSCAN_ROWS,
+    ),
+  );
+  const endIndex = Math.min(rowCount, startIndex + windowRows);
+  return {
+    enabled: true,
+    startIndex,
+    endIndex,
+    paddingTop: startIndex * VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
+    paddingBottom: Math.max(0, rowCount - endIndex) * VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
+  };
 }
 
 function trimBotTraceEvents(events: BotTraceEvent[]): BotTraceEvent[] {
@@ -470,6 +518,10 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const messageScrollRafRef = useRef<number | null>(null);
+  const messageScrollMetricsRef = useRef({ scrollTop: 0, viewportHeight: 0 });
+  const [messageScrollTop, setMessageScrollTop] = useState(0);
+  const [messageViewportHeight, setMessageViewportHeight] = useState(0);
   const [processingBots, setProcessingBots] = useState<Record<string, string>>(
     {},
   );
@@ -817,6 +869,12 @@ export default function App() {
       requestAnimationFrame(() => {
         if (container) {
           container.scrollTop = container.scrollHeight - prevScrollHeight;
+          messageScrollMetricsRef.current = {
+            scrollTop: container.scrollTop,
+            viewportHeight: container.clientHeight,
+          };
+          setMessageScrollTop(container.scrollTop);
+          setMessageViewportHeight(container.clientHeight);
         }
         isLoadingOlderRef.current = false;
       });
@@ -831,6 +889,18 @@ export default function App() {
   const handleMessagesScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const target = e.currentTarget;
+      messageScrollMetricsRef.current = {
+        scrollTop: target.scrollTop,
+        viewportHeight: target.clientHeight,
+      };
+      if (messageScrollRafRef.current === null) {
+        messageScrollRafRef.current = requestAnimationFrame(() => {
+          const metrics = messageScrollMetricsRef.current;
+          setMessageScrollTop(metrics.scrollTop);
+          setMessageViewportHeight(metrics.viewportHeight);
+          messageScrollRafRef.current = null;
+        });
+      }
       if (target.scrollTop < 100 && hasMore && !loadingMore) {
         loadMoreMessages();
       }
@@ -922,15 +992,47 @@ export default function App() {
     [flushStreamDeltaBuffer],
   );
 
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const updateMetrics = () => {
+      messageScrollMetricsRef.current = {
+        scrollTop: container.scrollTop,
+        viewportHeight: container.clientHeight,
+      };
+      setMessageScrollTop(container.scrollTop);
+      setMessageViewportHeight(container.clientHeight);
+    };
+
+    updateMetrics();
+    const observer = new ResizeObserver(updateMetrics);
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+      if (messageScrollRafRef.current !== null) {
+        cancelAnimationFrame(messageScrollRafRef.current);
+        messageScrollRafRef.current = null;
+      }
+    };
+  }, [selectedId]);
+
   // Scroll to a pending message after channel switch + messages load
   useEffect(() => {
     const msgId = pendingScrollMsgIdRef.current;
     if (!msgId || loading || messages.length === 0) return;
     pendingScrollMsgIdRef.current = null;
     setTimeout(() => {
-      document
-        .getElementById(`msg-${msgId}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const el = document.getElementById(`msg-${msgId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      const idx = messages.findIndex((m) => m.msg_id === msgId);
+      const container = messagesContainerRef.current;
+      if (idx >= 0 && container) {
+        container.scrollTop = Math.max(0, idx * VIRTUAL_MESSAGE_ESTIMATED_HEIGHT - container.clientHeight / 2);
+      }
     }, 100);
   }, [messages, loading]);
 
@@ -1718,18 +1820,34 @@ export default function App() {
   );
 
   const jumpToMessage = useCallback((id: string) => {
+    const highlight = (el: HTMLElement) => {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      const orig = el.style.transition;
+      el.style.transition = "background 200ms";
+      const prev = el.style.background;
+      el.style.background = "var(--accent-muted)";
+      setTimeout(() => {
+        el.style.background = prev;
+        el.style.transition = orig;
+      }, 1200);
+    };
     const el = document.getElementById(`msg-${id}`);
-    if (!el) return;
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
-    const orig = el.style.transition;
-    el.style.transition = "background 200ms";
-    const prev = el.style.background;
-    el.style.background = "var(--accent-muted)";
-    setTimeout(() => {
-      el.style.background = prev;
-      el.style.transition = orig;
-    }, 1200);
-  }, []);
+    if (el) {
+      highlight(el);
+      return;
+    }
+    const idx = messages.findIndex((m) => m.msg_id === id);
+    const container = messagesContainerRef.current;
+    if (idx < 0 || !container) return;
+    container.scrollTop = Math.max(
+      0,
+      idx * VIRTUAL_MESSAGE_ESTIMATED_HEIGHT - container.clientHeight / 2,
+    );
+    requestAnimationFrame(() => {
+      const next = document.getElementById(`msg-${id}`);
+      if (next) highlight(next);
+    });
+  }, [messages]);
 
   const renderAgentBridgeTaskCard = (m: Message) => {
     const task = activeAgentBridgeTaskData(m);
@@ -2150,8 +2268,14 @@ export default function App() {
   // 进入频道或收到新消息时，聊天区域滚动到最新消息（加载旧消息时跳过）
   useEffect(() => {
     if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
-    messagesContainerRef.current.scrollTop =
-      messagesContainerRef.current.scrollHeight;
+    const container = messagesContainerRef.current;
+    container.scrollTop = container.scrollHeight;
+    messageScrollMetricsRef.current = {
+      scrollTop: container.scrollTop,
+      viewportHeight: container.clientHeight,
+    };
+    setMessageScrollTop(container.scrollTop);
+    setMessageViewportHeight(container.clientHeight);
   }, [selectedId, messages.length]);
 
   // 打开频道时把未读标记为已读：先在本地把徽标清零（立即反馈），再向后端
@@ -2207,7 +2331,7 @@ export default function App() {
   }, [messages]);
 
   // Build topic tree: follow parent chain to find root, group all descendants under it
-  const { topicRoots, topicRepliesOf } = (() => {
+  const { topicRoots, topicRepliesOf } = useMemo(() => {
     if (isDmSelected) {
       return {
         topicRoots: messages,
@@ -2215,10 +2339,11 @@ export default function App() {
       };
     }
     const msgIdSet = new Set(messages.map((x) => x.msg_id));
+    const msgById = new Map(messages.map((x) => [x.msg_id, x]));
     const rootIdCache = new Map<string, string>();
     function getRootId(msgId: string): string {
       if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
-      const m = messages.find((x) => x.msg_id === msgId);
+      const m = msgById.get(msgId);
       if (!m || !isMsgReply(m, msgIdSet) || !m.in_reply_to_msg_id) {
         rootIdCache.set(msgId, msgId);
         return msgId;
@@ -2248,7 +2373,24 @@ export default function App() {
       topicRepliesOf: (rootId: string): Message[] =>
         replyMap.get(rootId) ?? [],
     };
-  })();
+  }, [isDmSelected, messages]);
+  const messageVirtualWindow = useMemo(
+    () =>
+      getVirtualMessageWindow(
+        topicRoots.length,
+        messageScrollTop,
+        messageViewportHeight,
+      ),
+    [topicRoots.length, messageScrollTop, messageViewportHeight],
+  );
+  const virtualTopicRoots = useMemo(
+    () =>
+      topicRoots.slice(
+        messageVirtualWindow.startIndex,
+        messageVirtualWindow.endIndex,
+      ),
+    [topicRoots, messageVirtualWindow.startIndex, messageVirtualWindow.endIndex],
+  );
   const selectedDetailMessage = memoryDetailMessage
     ? messages.find((m) => m.msg_id === memoryDetailMessage.msg_id) ||
       memoryDetailMessage
@@ -3031,7 +3173,7 @@ export default function App() {
                           </div>
                         )}
                       {(() => {
-                      const renderedRows = topicRoots.map((m) => {
+                      const renderedRows = virtualTopicRoots.map((m) => {
                         // isDM gates the "intimate" bubble + self-right
                         // treatment; channel rendering is Discord-style
                         // flat, all-left, always with sender identity.
@@ -4997,14 +5139,31 @@ export default function App() {
                       // — runs outside the big map callback so none of the
                       // existing branch logic has to change.
                       const out: React.ReactNode[] = [];
-                      let lastDay = "";
-                      for (let i = 0; i < topicRoots.length; i++) {
-                        const m = topicRoots[i];
+                      if (messageVirtualWindow.paddingTop > 0) {
+                        out.push(
+                          <div
+                            key="virtual-message-top-spacer"
+                            aria-hidden="true"
+                            style={{ height: messageVirtualWindow.paddingTop }}
+                          />,
+                        );
+                      }
+                      let lastDay =
+                        messageVirtualWindow.startIndex > 0
+                          ? formatDayLabel(
+                              topicRoots[messageVirtualWindow.startIndex - 1]
+                                ?.created_at,
+                            )
+                          : "";
+                      for (let i = 0; i < virtualTopicRoots.length; i++) {
+                        const m = virtualTopicRoots[i];
+                        const absoluteIndex =
+                          messageVirtualWindow.startIndex + i;
                         const day = formatDayLabel(m.created_at);
                         if (day && day !== lastDay) {
                           out.push(
                             <div
-                              key={`day-${i}-${day}`}
+                              key={`day-${absoluteIndex}-${day}`}
                               className="an-day-divider"
                             >
                               <span>{day}</span>
@@ -5013,6 +5172,17 @@ export default function App() {
                           lastDay = day;
                         }
                         out.push(renderedRows[i]);
+                      }
+                      if (messageVirtualWindow.paddingBottom > 0) {
+                        out.push(
+                          <div
+                            key="virtual-message-bottom-spacer"
+                            aria-hidden="true"
+                            style={{
+                              height: messageVirtualWindow.paddingBottom,
+                            }}
+                          />,
+                        );
                       }
                       return out;
                       })()}
