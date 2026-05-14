@@ -462,12 +462,20 @@ class ChannelService:
         await self._require_channel_admin(channel, user)
         return channel
 
+    def _ensure_not_dm_for_member_add(self, channel: Channel) -> None:
+        if channel.type == "dm":
+            raise BadRequestError("私信不支持邀请成员或添加 Bot")
+
     async def _can_invite_members(self, channel: Channel, user: User) -> bool:
+        if channel.type == "dm":
+            return False
         if await self._is_channel_admin(channel, user):
             return True
         return bool(channel.allow_member_invites and await self._is_channel_member(channel, user))
 
     async def _can_add_bots(self, channel: Channel, user: User) -> bool:
+        if channel.type == "dm":
+            return False
         if await self._is_channel_admin(channel, user):
             return True
         return bool(channel.allow_bot_adds and await self._is_channel_member(channel, user))
@@ -483,6 +491,13 @@ class ChannelService:
     async def channel_permission_summary(self, channel: Channel, user: User) -> dict:
         """Return caller's channel role and channel-scoped capabilities."""
         if is_admin(user):
+            if channel.type == "dm":
+                return {
+                    "my_role": "system_admin",
+                    "can_manage": True,
+                    "can_invite_members": False,
+                    "can_add_bots": False,
+                }
             return {
                 "my_role": "system_admin",
                 "can_manage": True,
@@ -496,8 +511,12 @@ class ChannelService:
         workspace_admin = await self._is_workspace_admin(channel, user)
         can_manage = bool(role in CHANNEL_ADMIN_ROLES or workspace_admin)
         is_member = bool(role)
-        can_invite_members = can_manage or bool(channel.allow_member_invites and is_member)
-        can_add_bots = can_manage or bool(channel.allow_bot_adds and is_member)
+        if channel.type == "dm":
+            can_invite_members = False
+            can_add_bots = False
+        else:
+            can_invite_members = can_manage or bool(channel.allow_member_invites and is_member)
+            can_add_bots = can_manage or bool(channel.allow_bot_adds and is_member)
         if workspace_admin and role not in CHANNEL_ADMIN_ROLES:
             role = "workspace_admin"
         return {
@@ -629,6 +648,7 @@ class ChannelService:
         current_user: User,
     ) -> ChannelMembership:
         channel = await self.get_or_404(channel_id)
+        self._ensure_not_dm_for_member_add(channel)
         if member_type == "user":
             await self._require_can_invite_members(channel, current_user)
         elif member_type == "bot":
@@ -666,6 +686,7 @@ class ChannelService:
         current_user: User,
     ) -> dict:
         channel = await self.get_or_404(channel_id)
+        self._ensure_not_dm_for_member_add(channel)
         await self._require_can_invite_members(channel, current_user)
 
         user = await self.user_repo.get_by_id(identifier)
@@ -791,6 +812,7 @@ class ChannelService:
     async def get_friends_to_invite(self, channel_id: str, current_user: User) -> list[dict]:
         """返回当前用户的好友中尚未加入频道的列表."""
         channel = await self.get_or_404(channel_id)
+        self._ensure_not_dm_for_member_add(channel)
         await self._require_can_invite_members(channel, current_user)
         user_id = current_user.user_id
         existing = await self.session.execute(

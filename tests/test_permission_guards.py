@@ -236,6 +236,103 @@ async def test_member_invites_default_to_all_members_and_can_be_restricted(db_se
 
 
 @pytest.mark.asyncio
+async def test_dm_rejects_member_and_bot_adds(db_session: AsyncSession) -> None:
+    owner = User(
+        user_id="u-perm-dm-owner",
+        username="perm_dm_owner",
+        password_hash="x",
+        role="system_admin",
+    )
+    peer = User(
+        user_id="u-perm-dm-peer",
+        username="perm_dm_peer",
+        password_hash="x",
+        role="member",
+    )
+    target = User(
+        user_id="u-perm-dm-target",
+        username="perm_dm_target",
+        password_hash="x",
+        role="member",
+    )
+    bot = BotAccount(
+        bot_id="bot-perm-dm-target",
+        username="perm_dm_target_bot",
+        display_name="DM Target Bot",
+        scope="everyone",
+    )
+    ws = Workspace(workspace_id="w-perm-dm", name="Perm DM WS")
+    dm = Channel(
+        channel_id="c-perm-dm",
+        workspace_id=ws.workspace_id,
+        name="dm:u-perm-dm-owner:u-perm-dm-peer",
+        type="dm",
+        allow_member_invites=True,
+        allow_bot_adds=True,
+    )
+    db_session.add_all([
+        owner,
+        peer,
+        target,
+        bot,
+        ws,
+        dm,
+        ChannelMembership(channel_id=dm.channel_id, member_id=owner.user_id, member_type="user"),
+        ChannelMembership(channel_id=dm.channel_id, member_id=peer.user_id, member_type="user"),
+    ])
+    await db_session.commit()
+
+    settings = await _request_as(
+        db_session,
+        owner,
+        "GET",
+        f"/api/v1/channels/{dm.channel_id}/settings",
+    )
+    assert settings.status_code == 200
+    assert settings.json()["data"]["permissions"]["can_invite_members"] is False
+    assert settings.json()["data"]["permissions"]["can_add_bots"] is False
+
+    add_user = await _request_as(
+        db_session,
+        owner,
+        "POST",
+        f"/api/v1/channels/{dm.channel_id}/members",
+        json={"member_id": target.user_id, "member_type": "user"},
+    )
+    assert add_user.status_code == 400
+    assert "私信" in add_user.json()["detail"]
+
+    add_bot = await _request_as(
+        db_session,
+        owner,
+        "POST",
+        f"/api/v1/channels/{dm.channel_id}/members",
+        json={"member_id": bot.bot_id, "member_type": "bot"},
+    )
+    assert add_bot.status_code == 400
+    assert "私信" in add_bot.json()["detail"]
+
+    invite_by_name = await _request_as(
+        db_session,
+        owner,
+        "POST",
+        f"/api/v1/channels/{dm.channel_id}/invite",
+        json={"identifier": target.username},
+    )
+    assert invite_by_name.status_code == 400
+    assert "私信" in invite_by_name.json()["detail"]
+
+    friends_to_invite = await _request_as(
+        db_session,
+        owner,
+        "GET",
+        f"/api/v1/channels/{dm.channel_id}/friends-to-invite",
+    )
+    assert friends_to_invite.status_code == 400
+    assert "私信" in friends_to_invite.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_bot_adds_default_to_all_members_and_can_be_restricted(db_session: AsyncSession) -> None:
     admin = User(user_id="u-perm-bot-admin", username="perm_bot_admin", password_hash="x", role="member")
     member = User(user_id="u-perm-bot-member", username="perm_bot_member", password_hash="x", role="member")
