@@ -44,13 +44,11 @@ export function useWorkspaceDirectory({
   }, [selectedId]);
 
   useEffect(() => {
-    if (routeWorkspaceId !== selectedWorkspaceId) {
-      setSelectedWorkspaceId(routeWorkspaceId);
-    }
-    if (routeChannelId !== selectedId) {
-      setSelectedId(routeChannelId);
-    }
-  }, [routeWorkspaceId, routeChannelId, selectedWorkspaceId, selectedId]);
+    setSelectedWorkspaceId((prev) =>
+      routeWorkspaceId === prev ? prev : routeWorkspaceId,
+    );
+    setSelectedId((prev) => (routeChannelId === prev ? prev : routeChannelId));
+  }, [routeWorkspaceId, routeChannelId]);
 
   useEffect(() => {
     refreshChannels(setChannels, authToken ?? undefined);
