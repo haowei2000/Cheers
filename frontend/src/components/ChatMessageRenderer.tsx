@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type CSSProperties, type ReactNode } from "react";
+import { lazy, memo, Suspense, useState, type CSSProperties, type ReactNode } from "react";
 import type { FileInfo } from "../types";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
@@ -46,7 +46,7 @@ interface ChatAttachmentCardProps {
   onPreview?: (file: FileInfo) => void;
 }
 
-function ChatAttachmentCard({
+const ChatAttachmentCard = memo(function ChatAttachmentCard({
   align = "left",
   file,
   getDownloadUrl,
@@ -131,7 +131,7 @@ function ChatAttachmentCard({
       </div>
     </div>
   );
-}
+});
 
 export interface ChatAttachmentsProps {
   align?: "left" | "right";
@@ -141,7 +141,7 @@ export interface ChatAttachmentsProps {
   onPreview?: (file: FileInfo) => void;
 }
 
-export function ChatAttachments({
+export const ChatAttachments = memo(function ChatAttachments({
   align = "left",
   files,
   getDownloadUrl,
@@ -164,7 +164,7 @@ export function ChatAttachments({
       ))}
     </div>
   );
-}
+});
 
 export interface ChatMessageRendererProps {
   align?: "left" | "right";
@@ -185,7 +185,7 @@ export interface ChatMessageRendererProps {
   onImageClick?: (src: string) => void;
 }
 
-export function ChatMessageRenderer({
+export const ChatMessageRenderer = memo(function ChatMessageRenderer({
   align = "left",
   attachments,
   bodyClassName,
@@ -255,4 +255,4 @@ export function ChatMessageRenderer({
       {(hasContent || streaming || bodySuffix) ? (renderBody ? renderBody(body) : body) : null}
     </>
   );
-}
+});

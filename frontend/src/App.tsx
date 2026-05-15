@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import toast from "react-hot-toast";
 import NotificationPanel from "./NotificationPanel";
 import { useTheme } from "./useTheme";
@@ -67,12 +68,21 @@ import {
   type ChatRouteParams,
 } from "./lib/chat-routing";
 import {
-  getVirtualMessageWindow,
   MAX_LOADED_MESSAGES,
   trimToRecentMessages,
   VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
   type PendingStreamDelta,
 } from "./lib/message-window";
+import {
+  emptyMessageStore,
+  messagesToStore,
+  patchMessage,
+  patchMessages,
+  storeToMessages,
+  trimMessageStoreToRecent,
+  upsertMessage,
+  type MessageStore,
+} from "./lib/message-store";
 import type {
   Channel,
   DM,
@@ -90,7 +100,6 @@ import type {
   MemoryLoadDetail,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
-const STREAM_DELTA_FLUSH_MS = 50;
 
 const SettingsModal = lazy(() =>
   import("./components/SettingsModal").then((module) => ({
@@ -108,6 +117,62 @@ function LazyPanelFallback({ label = "加载中..." }: { label?: string }) {
   return (
     <div className="flex h-full min-h-24 items-center justify-center text-sm text-[var(--fg-3)]">
       {label}
+    </div>
+  );
+}
+
+function getSecretSecondsLeft(createdAt?: string | null, now = Date.now()): number | null {
+  if (!createdAt) return null;
+  const createdMs = new Date(createdAt).getTime();
+  if (!Number.isFinite(createdMs)) return null;
+  return Math.max(0, 60 - Math.floor((now - createdMs) / 1000));
+}
+
+function SecretMessageVeil({
+  canReveal,
+  createdAt,
+  onReveal,
+}: {
+  canReveal: boolean;
+  createdAt?: string | null;
+  onReveal: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const secondsLeft = getSecretSecondsLeft(createdAt, now);
+  const expired = secondsLeft !== null && secondsLeft <= 0;
+
+  useEffect(() => {
+    if (secondsLeft === null || secondsLeft <= 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), 1000);
+    return () => clearTimeout(timer);
+  }, [secondsLeft]);
+
+  return (
+    <div className={`an-secret-veil${expired ? " is-expired" : ""}`}>
+      <span className="an-secret-veil-icon">
+        <AppIcon name="lock" className="w-5 h-5" />
+      </span>
+      <div className="an-secret-veil-body">
+        <span className="an-secret-veil-label">
+          {expired ? "加密消息已过期" : "加密消息"}
+        </span>
+        <span className="an-secret-veil-meta">
+          {expired
+            ? "一次性查看窗口已关闭"
+            : secondsLeft !== null
+              ? `剩余 ${secondsLeft}s · 仅 Bot 可读`
+              : "仅 Bot 可读"}
+        </span>
+      </div>
+      {!expired && canReveal && (
+        <button
+          type="button"
+          className="an-secret-veil-reveal"
+          onClick={onReveal}
+        >
+          查看
+        </button>
+      )}
     </div>
   );
 }
@@ -255,9 +320,23 @@ export default function App() {
       setComposerTitle("");
     }
   }, [isDmSelected, selectedId]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messageStore, setMessageStore] = useState<MessageStore>(() =>
+    emptyMessageStore(),
+  );
+  const messages = useMemo(() => storeToMessages(messageStore), [messageStore]);
+  const setMessages = useCallback(
+    (next: Message[] | ((prev: Message[]) => Message[])) => {
+      setMessageStore((prevStore) => {
+        const prevMessages = storeToMessages(prevStore);
+        const nextMessages =
+          typeof next === "function" ? next(prevMessages) : next;
+        return messagesToStore(nextMessages);
+      });
+    },
+    [],
+  );
   const streamDeltaBufferRef = useRef<Record<string, PendingStreamDelta>>({});
-  const streamDeltaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamDeltaRafRef = useRef<number | null>(null);
   const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
   const [input, setInput] = useState("");
   const [inputRevision, setInputRevision] = useState(0);
@@ -420,11 +499,6 @@ export default function App() {
     Record<string, string>
   >({});
   const [secretTokens, setSecretTokens] = useState<Record<string, string>>({}); // msg_id -> token（仅发送方当次 session 持有）
-  const [secretNow, setSecretNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setSecretNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
   // Lightbox 状态
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
@@ -481,10 +555,8 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const messageScrollRafRef = useRef<number | null>(null);
-  const messageScrollMetricsRef = useRef({ scrollTop: 0, viewportHeight: 0 });
-  const [messageScrollTop, setMessageScrollTop] = useState(0);
-  const [messageViewportHeight, setMessageViewportHeight] = useState(0);
+  const stickToBottomRef = useRef(true);
+  const lastAutoScrollChannelRef = useRef<string | null>(null);
   const [processingBots, setProcessingBots] = useState<Record<string, string>>(
     {},
   );
@@ -847,17 +919,18 @@ export default function App() {
       setHasMore(
         !hitWindowCap && Boolean(d.meta?.has_more ?? older.length >= 50),
       );
-      setMessages((prev) => trimToRecentMessages([...older, ...prev]));
+      setMessageStore((prev) =>
+        trimMessageStoreToRecent(
+          messagesToStore([...older, ...storeToMessages(prev)]),
+          MAX_LOADED_MESSAGES,
+        ),
+      );
       // 恢复滚动位置
       requestAnimationFrame(() => {
         if (container) {
           container.scrollTop = container.scrollHeight - prevScrollHeight;
-          messageScrollMetricsRef.current = {
-            scrollTop: container.scrollTop,
-            viewportHeight: container.clientHeight,
-          };
-          setMessageScrollTop(container.scrollTop);
-          setMessageViewportHeight(container.clientHeight);
+          stickToBottomRef.current =
+            container.scrollHeight - container.scrollTop - container.clientHeight < 160;
         }
         isLoadingOlderRef.current = false;
       });
@@ -872,18 +945,8 @@ export default function App() {
   const handleMessagesScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const target = e.currentTarget;
-      messageScrollMetricsRef.current = {
-        scrollTop: target.scrollTop,
-        viewportHeight: target.clientHeight,
-      };
-      if (messageScrollRafRef.current === null) {
-        messageScrollRafRef.current = requestAnimationFrame(() => {
-          const metrics = messageScrollMetricsRef.current;
-          setMessageScrollTop(metrics.scrollTop);
-          setMessageViewportHeight(metrics.viewportHeight);
-          messageScrollRafRef.current = null;
-        });
-      }
+      stickToBottomRef.current =
+        target.scrollHeight - target.scrollTop - target.clientHeight < 160;
       if (target.scrollTop < 100 && hasMore && !loadingMore) {
         loadMoreMessages();
       }
@@ -894,9 +957,9 @@ export default function App() {
   const flushStreamDeltaBuffer = useCallback(() => {
     const pending = streamDeltaBufferRef.current;
     streamDeltaBufferRef.current = {};
-    if (streamDeltaTimerRef.current) {
-      clearTimeout(streamDeltaTimerRef.current);
-      streamDeltaTimerRef.current = null;
+    if (streamDeltaRafRef.current !== null) {
+      cancelAnimationFrame(streamDeltaRafRef.current);
+      streamDeltaRafRef.current = null;
     }
 
     const entries = Object.entries(pending).filter(
@@ -904,52 +967,55 @@ export default function App() {
     );
     if (entries.length === 0) return;
 
-    const pendingByMsgId = new Map(entries);
-    setMessages((prev) =>
-      prev.map((m) => {
-        const item = pendingByMsgId.get(m.msg_id);
-        if (!item) return m;
-        const taskData =
-          m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
-            ? (m.content_data as AgentBridgeTaskContentData)
-            : m._agent_bridge_task;
-        const switchingFromTaskCard =
-          m.content_data?.kind === AGENT_BRIDGE_TASK_KIND;
-        const nextContent = switchingFromTaskCard
-          ? item.delta
-          : `${m.content || ""}${item.delta}`;
-        return {
-          ...m,
-          content: nextContent,
-          content_data: switchingFromTaskCard ? null : m.content_data,
-          _agent_bridge_task: taskData
-            ? {
-                ...taskData,
-                status: "streaming",
-                message: "正在接收 provider 输出。",
-              }
-            : m._agent_bridge_task,
-          _bot_trace: trimBotTraceEvents([
-            ...(m._bot_trace || []),
-            makeClientStreamTrace(
-              m,
-              "message_stream",
-              "收到流式片段",
-              {
-                event_type: "message_stream",
-                delta_chars: item.delta.length,
-                delta_preview: item.delta.slice(0, 160),
-                accumulated_chars: nextContent.length,
-                coalesced_chunks: item.chunks,
-              },
-              item.chunks > 1
-                ? `+${item.delta.length} chars / ${item.chunks} chunks`
-                : `+${item.delta.length} chars`,
-            ),
-          ]),
-          _streaming: true,
-        };
-      }),
+    setMessageStore((prev) =>
+      patchMessages(
+        prev,
+        entries.map(([msgId, item]) => ({
+          msgId,
+          update: (m) => {
+            const taskData =
+              m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
+                ? (m.content_data as AgentBridgeTaskContentData)
+                : m._agent_bridge_task;
+            const switchingFromTaskCard =
+              m.content_data?.kind === AGENT_BRIDGE_TASK_KIND;
+            const nextContent = switchingFromTaskCard
+              ? item.delta
+              : `${m.content || ""}${item.delta}`;
+            return {
+              ...m,
+              content: nextContent,
+              content_data: switchingFromTaskCard ? null : m.content_data,
+              _agent_bridge_task: taskData
+                ? {
+                    ...taskData,
+                    status: "streaming",
+                    message: "正在接收 provider 输出。",
+                  }
+                : m._agent_bridge_task,
+              _bot_trace: trimBotTraceEvents([
+                ...(m._bot_trace || []),
+                makeClientStreamTrace(
+                  m,
+                  "message_stream",
+                  "收到流式片段",
+                  {
+                    event_type: "message_stream",
+                    delta_chars: item.delta.length,
+                    delta_preview: item.delta.slice(0, 160),
+                    accumulated_chars: nextContent.length,
+                    coalesced_chunks: item.chunks,
+                  },
+                  item.chunks > 1
+                    ? `+${item.delta.length} chars / ${item.chunks} chunks`
+                    : `+${item.delta.length} chars`,
+                ),
+              ]),
+              _streaming: true,
+            };
+          },
+        })),
+      ),
     );
   }, []);
 
@@ -965,11 +1031,11 @@ export default function App() {
         delta: `${current?.delta || ""}${delta}`,
         chunks: (current?.chunks || 0) + 1,
       };
-      if (streamDeltaTimerRef.current === null) {
-        streamDeltaTimerRef.current = setTimeout(
-          flushStreamDeltaBuffer,
-          STREAM_DELTA_FLUSH_MS,
-        );
+      if (streamDeltaRafRef.current === null) {
+        streamDeltaRafRef.current = requestAnimationFrame(() => {
+          streamDeltaRafRef.current = null;
+          flushStreamDeltaBuffer();
+        });
       }
     },
     [flushStreamDeltaBuffer],
@@ -980,12 +1046,8 @@ export default function App() {
     if (!container) return;
 
     const updateMetrics = () => {
-      messageScrollMetricsRef.current = {
-        scrollTop: container.scrollTop,
-        viewportHeight: container.clientHeight,
-      };
-      setMessageScrollTop(container.scrollTop);
-      setMessageViewportHeight(container.clientHeight);
+      stickToBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 160;
     };
 
     updateMetrics();
@@ -993,10 +1055,6 @@ export default function App() {
     observer.observe(container);
     return () => {
       observer.disconnect();
-      if (messageScrollRafRef.current !== null) {
-        cancelAnimationFrame(messageScrollRafRef.current);
-        messageScrollRafRef.current = null;
-      }
     };
   }, [selectedId]);
 
@@ -1058,40 +1116,36 @@ export default function App() {
                 return next;
               });
             }
-            setMessages((prev) => {
-              const id = msg.data.msg_id;
-              if (id && prev.some((m) => m.msg_id === id)) {
+            setMessageStore((prev) => {
+              const incoming = msg.data as Message;
+              const id = incoming.msg_id;
+              if (id && prev.byId[id]) {
                 // Already present — merge post-hoc updates (e.g. permission
                 // card resolution flipping content_data.resolved). Keep any
                 // client-local transient fields like _streaming.
-                return prev.map((m) =>
-                  m.msg_id === id
-                    ? {
-                        ...m,
-                        content: msg.data.content ?? m.content,
-                        content_data:
-                          msg.data.content_data ?? m.content_data,
-                        msg_type: msg.data.msg_type ?? m.msg_type,
-                      }
-                    : m,
-                );
+                return patchMessage(prev, id, (m) => ({
+                  ...m,
+                  content: incoming.content ?? m.content,
+                  content_data: incoming.content_data ?? m.content_data,
+                  msg_type: incoming.msg_type ?? m.msg_type,
+                }));
               }
               const entry =
-                msg.data.sender_type === "bot"
+                incoming.sender_type === "bot"
                   ? {
-                      ...msg.data,
+                      ...incoming,
                       _streaming: true,
                       _bot_trace: [
                         makeClientStreamTrace(
-                          msg.data,
+                          incoming,
                           "placeholder",
                           "创建 Bot 回复占位",
                           { event_type: "message" },
                         ),
                       ],
                     }
-                  : msg.data;
-              return trimToRecentMessages([...prev, entry]);
+                  : incoming;
+              return upsertMessage(prev, entry, MAX_LOADED_MESSAGES);
             });
             if (
               msg.data.sender_type === "bot" &&
@@ -1110,19 +1164,15 @@ export default function App() {
             const trace = msg.data as BotTraceEvent;
             if (!trace.msg_id) return;
             const status = botTraceStatusText(trace);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.msg_id === trace.msg_id
-                  ? {
-                      ...m,
-                      _bot_status: status,
-                      _bot_trace: trimBotTraceEvents([
-                        ...(m._bot_trace || []),
-                        { ...trace, ts: trace.ts ?? Date.now() },
-                      ]),
-                    }
-                  : m,
-              ),
+            setMessageStore((prev) =>
+              patchMessage(prev, trace.msg_id!, (m) => ({
+                ...m,
+                _bot_status: status,
+                _bot_trace: trimBotTraceEvents([
+                  ...(m._bot_trace || []),
+                  { ...trace, ts: trace.ts ?? Date.now() },
+                ]),
+              })),
             );
           } else if (msg.type === "message_done" && msg.data) {
             const { msg_id, content, files, file_ids, is_partial, error } = msg.data;
@@ -1134,83 +1184,79 @@ export default function App() {
             const nextContentData = hasContentData
               ? msg.data.content_data
               : undefined;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.msg_id === msg_id
-                  ? (() => {
-                      const priorTask =
-                        m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
-                          ? (m.content_data as AgentBridgeTaskContentData)
-                          : m._agent_bridge_task;
-                      const nextTask =
-                        nextContentData?.kind === AGENT_BRIDGE_TASK_KIND
-                          ? (nextContentData as AgentBridgeTaskContentData)
-                          : priorTask
-                            ? {
-                                ...priorTask,
-                                status: error
-                                  ? "error"
-                                  : is_partial
-                                    ? "partial"
-                                    : "done",
-                                message: error
-                                  ? String(error)
-                                  : is_partial
-                                    ? "任务已中断，已保留当前输出。"
-                                    : "任务已完成。",
-                              }
-                            : m._agent_bridge_task;
-                      return {
-                        ...m,
-                        content,
-                        content_data:
-                          nextContentData !== undefined
-                            ? nextContentData
-                            : m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
-                              ? null
-                              : m.content_data,
-                        _agent_bridge_task: nextTask,
-                        _streaming: false,
-                        _bot_trace: trimBotTraceEvents([
-                          ...(m._bot_trace || []),
-                          makeClientStreamTrace(
-                            m,
-                            error
-                              ? "message_done_error"
-                              : is_partial
-                                ? "message_done_partial"
-                                : "message_done",
-                            error
-                              ? "流式回复出错"
-                              : is_partial
-                                ? "流式回复中断"
-                                : "流式回复完成",
-                            {
-                              event_type: "message_done",
-                              content_chars: String(content || "").length,
-                              is_partial: Boolean(is_partial),
-                              error: error || null,
-                              file_count: Array.isArray(files)
-                                ? files.length
-                                : Array.isArray(file_ids)
-                                  ? file_ids.length
-                                  : 0,
-                            },
-                            error
-                              ? String(error)
-                              : `${String(content || "").length} chars`,
-                          ),
-                        ]),
-                        _bot_status: undefined,
-                        ...(files ? { files } : {}),
-                        ...(file_ids ? { file_ids } : {}),
-                        ...(typeof is_partial === "boolean"
-                          ? { is_partial }
-                          : {}),
-                      };
-                    })()
-                  : m,
-              ),
+            setMessageStore((prev) =>
+              patchMessage(prev, msg_id, (m) => {
+                const priorTask =
+                  m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
+                    ? (m.content_data as AgentBridgeTaskContentData)
+                    : m._agent_bridge_task;
+                const nextTask =
+                  nextContentData?.kind === AGENT_BRIDGE_TASK_KIND
+                    ? (nextContentData as AgentBridgeTaskContentData)
+                    : priorTask
+                      ? {
+                          ...priorTask,
+                          status: error
+                            ? "error"
+                            : is_partial
+                              ? "partial"
+                              : "done",
+                          message: error
+                            ? String(error)
+                            : is_partial
+                              ? "任务已中断，已保留当前输出。"
+                              : "任务已完成。",
+                        }
+                      : m._agent_bridge_task;
+                return {
+                  ...m,
+                  content,
+                  content_data:
+                    nextContentData !== undefined
+                      ? nextContentData
+                      : m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
+                        ? null
+                        : m.content_data,
+                  _agent_bridge_task: nextTask,
+                  _streaming: false,
+                  _bot_trace: trimBotTraceEvents([
+                    ...(m._bot_trace || []),
+                    makeClientStreamTrace(
+                      m,
+                      error
+                        ? "message_done_error"
+                        : is_partial
+                          ? "message_done_partial"
+                          : "message_done",
+                      error
+                        ? "流式回复出错"
+                        : is_partial
+                          ? "流式回复中断"
+                          : "流式回复完成",
+                      {
+                        event_type: "message_done",
+                        content_chars: String(content || "").length,
+                        is_partial: Boolean(is_partial),
+                        error: error || null,
+                        file_count: Array.isArray(files)
+                          ? files.length
+                          : Array.isArray(file_ids)
+                            ? file_ids.length
+                            : 0,
+                      },
+                      error
+                        ? String(error)
+                        : `${String(content || "").length} chars`,
+                    ),
+                  ]),
+                  _bot_status: undefined,
+                  ...(files ? { files } : {}),
+                  ...(file_ids ? { file_ids } : {}),
+                  ...(typeof is_partial === "boolean"
+                    ? { is_partial }
+                    : {}),
+                };
+              }),
             );
             if (
               typeof content === "string" &&
@@ -1252,9 +1298,9 @@ export default function App() {
     return () => {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (streamDeltaTimerRef.current) {
-        clearTimeout(streamDeltaTimerRef.current);
-        streamDeltaTimerRef.current = null;
+      if (streamDeltaRafRef.current !== null) {
+        cancelAnimationFrame(streamDeltaRafRef.current);
+        streamDeltaRafRef.current = null;
       }
       streamDeltaBufferRef.current = {};
       if (ws) ws.close();
@@ -1494,10 +1540,10 @@ export default function App() {
       .then((d) => {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
         if (d.data && selectedIdRef.current === targetChannelId) {
-          setMessages((prev) =>
-            prev.some((m) => m.msg_id === d.data.msg_id)
+          setMessageStore((prev) =>
+            prev.byId[d.data.msg_id]
               ? prev
-              : trimToRecentMessages([...prev, d.data]),
+              : upsertMessage(prev, d.data, MAX_LOADED_MESSAGES),
           );
         }
       });
@@ -1571,10 +1617,10 @@ export default function App() {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
         // 仅在用户仍停留在发送消息的频道时才插入，避免跨频道串消息
         if (d.data && selectedIdRef.current === targetChannelId) {
-          setMessages((prev) =>
-            prev.some((m) => m.msg_id === d.data.msg_id)
+          setMessageStore((prev) =>
+            prev.byId[d.data.msg_id]
               ? prev
-              : trimToRecentMessages([...prev, d.data]),
+              : upsertMessage(prev, d.data, MAX_LOADED_MESSAGES),
           );
           // 保存 secret_token（仅发送方当次 session 持有，不通过 WS 广播）
           if (d.data.secret_token) {
@@ -1682,10 +1728,8 @@ export default function App() {
     // Optimistic: stop the streaming pulse immediately so the user sees feedback;
     // the message_done event will arrive shortly with is_partial=true and the
     // final buffered content. If the request fails we restore _streaming.
-    setMessages((prev) =>
-      prev.map((x) =>
-        x.msg_id === m.msg_id ? { ...x, _streaming: false } : x,
-      ),
+    setMessageStore((prev) =>
+      patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: false })),
     );
     try {
       const r = await apiFetch(
@@ -1693,18 +1737,14 @@ export default function App() {
         { method: "POST", token: authToken },
       );
       if (!r.ok) {
-        setMessages((prev) =>
-          prev.map((x) =>
-            x.msg_id === m.msg_id ? { ...x, _streaming: true } : x,
-          ),
+        setMessageStore((prev) =>
+          patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: true })),
         );
         toast.error("取消失败");
       }
     } catch {
-      setMessages((prev) =>
-        prev.map((x) =>
-          x.msg_id === m.msg_id ? { ...x, _streaming: true } : x,
-        ),
+      setMessageStore((prev) =>
+        patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: true })),
       );
       toast.error("取消失败");
     }
@@ -1941,10 +1981,10 @@ export default function App() {
     });
     const d = await r.json().catch(() => null);
     if (d?.data && selectedIdRef.current === channelId) {
-      setMessages((prev) =>
-        prev.some((m) => m.msg_id === d.data.msg_id)
+      setMessageStore((prev) =>
+        prev.byId[d.data.msg_id]
           ? prev
-          : trimToRecentMessages([...prev, d.data]),
+          : upsertMessage(prev, d.data, MAX_LOADED_MESSAGES),
       );
     }
     setPendingFileIds([]);
@@ -2204,13 +2244,13 @@ export default function App() {
   useEffect(() => {
     if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
     const container = messagesContainerRef.current;
-    container.scrollTop = container.scrollHeight;
-    messageScrollMetricsRef.current = {
-      scrollTop: container.scrollTop,
-      viewportHeight: container.clientHeight,
-    };
-    setMessageScrollTop(container.scrollTop);
-    setMessageViewportHeight(container.clientHeight);
+    const channelChanged = lastAutoScrollChannelRef.current !== selectedId;
+    lastAutoScrollChannelRef.current = selectedId ?? null;
+    if (!channelChanged && !stickToBottomRef.current) return;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+      stickToBottomRef.current = true;
+    });
   }, [selectedId, messages.length]);
 
   // 打开频道时把未读标记为已读：先在本地把徽标清零（立即反馈），再向后端
@@ -2270,6 +2310,53 @@ export default function App() {
     () => buildTopicTree(messages, isDmSelected),
     [isDmSelected, messages],
   );
+  const botById = useMemo(
+    () => new Map(channelBots.map((bot) => [bot.member_id, bot])),
+    [channelBots],
+  );
+  const botByUsername = useMemo(
+    () => new Map(channelBots.map((bot) => [bot.username, bot])),
+    [channelBots],
+  );
+  const coordinatorBot = useMemo(
+    () =>
+      channelBots.find(
+        (bot) =>
+          bot.username === "Coordinator" ||
+          bot.username === "Helper" ||
+          bot.username === "channel bot" ||
+          bot.username === "coordinator",
+      ),
+    [channelBots],
+  );
+  const userById = useMemo(
+    () => new Map(channelUsers.map((user) => [user.member_id, user])),
+    [channelUsers],
+  );
+  const msgById = useMemo(
+    () => new Map(messages.map((message) => [message.msg_id, message])),
+    [messages],
+  );
+  const clarifyAnsweredParentIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const message of messages) {
+      if (
+        message.in_reply_to_msg_id &&
+        isClarifyReplyUserMessage(message.content)
+      ) {
+        ids.add(message.in_reply_to_msg_id);
+      }
+    }
+    return ids;
+  }, [messages]);
+  const rowVirtualizer = useVirtualizer({
+    count: topicRoots.length,
+    getScrollElement: () => messagesContainerRef.current,
+    estimateSize: () => VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
+    overscan: 12,
+    getItemKey: (index) => topicRoots[index]?.msg_id ?? index,
+  });
+  const virtualItems = rowVirtualizer.getVirtualItems();
   const pageTopicSourceMessages = useMemo(
     () => mergeMessagesChronologically(messages, pageTopicMessages),
     [messages, pageTopicMessages],
@@ -2278,26 +2365,8 @@ export default function App() {
     () => buildTopicTree(pageTopicSourceMessages, false),
     [pageTopicSourceMessages],
   );
-  const messageVirtualWindow = useMemo(
-    () =>
-      getVirtualMessageWindow(
-        topicRoots.length,
-        messageScrollTop,
-        messageViewportHeight,
-      ),
-    [topicRoots.length, messageScrollTop, messageViewportHeight],
-  );
-  const virtualTopicRoots = useMemo(
-    () =>
-      topicRoots.slice(
-        messageVirtualWindow.startIndex,
-        messageVirtualWindow.endIndex,
-      ),
-    [topicRoots, messageVirtualWindow.startIndex, messageVirtualWindow.endIndex],
-  );
   const selectedDetailMessage = memoryDetailMessage
-    ? messages.find((m) => m.msg_id === memoryDetailMessage.msg_id) ||
-      memoryDetailMessage
+    ? msgById.get(memoryDetailMessage.msg_id) || memoryDetailMessage
     : null;
   const selectedMemoryLoadDetail = selectedDetailMessage
     ? getMemoryLoadDetail(selectedDetailMessage)
@@ -2802,7 +2871,9 @@ export default function App() {
                           </div>
                         )}
                       {(() => {
-                      const renderedRows = virtualTopicRoots.map((m) => {
+                      const renderedRows = virtualItems.map((virtualItem) => {
+                        const m = topicRoots[virtualItem.index];
+                        if (!m) return null;
                         // isDM gates the "intimate" bubble + self-right
                         // treatment; channel rendering is Discord-style
                         // flat, all-left, always with sender identity.
@@ -2829,14 +2900,7 @@ export default function App() {
                             picked: p.picked === true,
                             secondary: p.secondary === true,
                           }));
-                          const coordBot = channelBots.find(
-                            (b) =>
-                              // 现行用户名 + 历史名兜底（"channel bot" 老版本数据库）
-                              b.username === "Coordinator" ||
-                              b.username === "Helper" ||
-                              b.username === "channel bot" ||
-                              b.username === "coordinator",
-                          );
+                          const coordBot = coordinatorBot;
                           const rTime = m.created_at
                             ? formatTs(m.created_at)
                             : "";
@@ -2881,9 +2945,7 @@ export default function App() {
                                 {picks.length > 0 && (
                                   <div className="an-picks">
                                     {picks.map((p) => {
-                                      const bot = channelBots.find(
-                                        (b) => b.username === p.agent,
-                                      );
+                                      const bot = botByUsername.get(p.agent);
                                       const color =
                                         bot?.avatar_url ?? null;
                                       return (
@@ -2972,19 +3034,15 @@ export default function App() {
                               }
                               const nextStatus =
                                 action === "accept" ? "accepted" : "rejected";
-                              setMessages((prev) =>
-                                prev.map((x) =>
-                                  x.msg_id === m.msg_id
-                                    ? {
-                                        ...x,
-                                        content_data: {
-                                          ...(x.content_data || {}),
-                                          status: nextStatus,
-                                          resolved_by: currentUserId,
-                                        },
-                                      }
-                                    : x,
-                                ),
+                              setMessageStore((prev) =>
+                                patchMessage(prev, m.msg_id, (x) => ({
+                                  ...x,
+                                  content_data: {
+                                    ...(x.content_data || {}),
+                                    status: nextStatus,
+                                    resolved_by: currentUserId,
+                                  },
+                                })),
                               );
                               refreshDMs(setDMs, authToken ?? undefined);
                               toast.success(action === "accept" ? "已同意好友申请" : "已拒绝好友申请");
@@ -3072,9 +3130,7 @@ export default function App() {
                               : null;
                           const senderBot =
                             m.sender_type === "bot"
-                              ? channelBots.find(
-                                  (b) => b.member_id === m.sender_id,
-                                )
+                              ? botById.get(m.sender_id)
                               : null;
                           const senderLabel =
                             senderBot?.display_name ||
@@ -3101,16 +3157,11 @@ export default function App() {
                               // merges it back in, so this mainly covers the case
                               // where the user clicks while offline-ish.
                               if (data?.data?.content_data) {
-                                setMessages((prev) =>
-                                  prev.map((x) =>
-                                    x.msg_id === m.msg_id
-                                      ? {
-                                          ...x,
-                                          content_data:
-                                            data.data.content_data,
-                                        }
-                                      : x,
-                                  ),
+                                setMessageStore((prev) =>
+                                  patchMessage(prev, m.msg_id, (x) => ({
+                                    ...x,
+                                    content_data: data.data.content_data,
+                                  })),
                                 );
                               }
                             } catch {
@@ -3220,9 +3271,7 @@ export default function App() {
                           const pinnedUser = pinnedById
                             ? pinnedById === currentUserId
                               ? { display_name: "我", username: "me" }
-                              : channelUsers.find(
-                                  (u) => u.member_id === pinnedById,
-                                )
+                              : userById.get(pinnedById)
                             : null;
                           const pinnedLabel =
                             pinnedUser?.display_name ||
@@ -3277,11 +3326,7 @@ export default function App() {
                           parseHelperPayload(effectiveContent);
                         const clarifyAnswered =
                           !!clarify &&
-                          messages.some(
-                            (r) =>
-                              r.in_reply_to_msg_id === m.msg_id &&
-                              isClarifyReplyUserMessage(r.content),
-                          );
+                          clarifyAnsweredParentIds.has(m.msg_id);
                         const clarifyWaiting =
                           pendingClarifyReplyMsgId === m.msg_id;
                         const clarifyStatus:
@@ -3314,9 +3359,7 @@ export default function App() {
                           m.sender_id === currentUserId;
                         const senderBot =
                           m.sender_type === "bot"
-                            ? channelBots.find(
-                                (b) => b.member_id === m.sender_id,
-                              )
+                            ? botById.get(m.sender_id)
                             : undefined;
                         const botLabel =
                           m.sender_name ||
@@ -3325,9 +3368,7 @@ export default function App() {
                           "Bot";
                         const senderUser =
                           m.sender_type === "user" && !isOwn
-                            ? channelUsers.find(
-                                (u) => u.member_id === m.sender_id,
-                              )
+                            ? userById.get(m.sender_id)
                             : undefined;
                         const userLabel =
                           m.sender_name ||
@@ -3352,20 +3393,19 @@ export default function App() {
 
                         const secretSecsLeft =
                           m.is_secret && !revealedContent && m.created_at
-                            ? Math.max(
-                                0,
-                                60 -
-                                  Math.floor(
-                                    (secretNow -
-                                      new Date(m.created_at).getTime()) /
-                                      1000,
-                                  ),
-                              )
+                            ? getSecretSecondsLeft(m.created_at)
                             : null;
                         const isSecretExpired =
                           secretSecsLeft !== null && secretSecsLeft <= 0;
                         const isSecretUnrevealed =
                           m.is_secret && !revealedContent && !isSecretExpired;
+                        const secretVeil = (
+                          <SecretMessageVeil
+                            createdAt={m.created_at}
+                            canReveal={Boolean(secretTokens[m.msg_id])}
+                            onReveal={() => revealSecretMessage(m.msg_id)}
+                          />
+                        );
                         const rootBubble = !isDMRender ? (
                           // ── Channel flat render — Discord style ────────
                           // All-left alignment, no bubble, always with avatar.
@@ -3471,47 +3511,8 @@ export default function App() {
                                     wordWrap: "break-word",
                                   }}
                                 >
-                                  {isSecretExpired ? (
-                                    <div className="an-secret-veil is-expired">
-                                      <span className="an-secret-veil-icon">
-                                        <AppIcon name="lock" className="w-5 h-5" />
-                                      </span>
-                                      <div className="an-secret-veil-body">
-                                        <span className="an-secret-veil-label">
-                                          加密消息已过期
-                                        </span>
-                                        <span className="an-secret-veil-meta">
-                                          一次性查看窗口已关闭
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ) : isSecretUnrevealed ? (
-                                    <div className="an-secret-veil">
-                                      <span className="an-secret-veil-icon">
-                                        <AppIcon name="lock" className="w-5 h-5" />
-                                      </span>
-                                      <div className="an-secret-veil-body">
-                                        <span className="an-secret-veil-label">
-                                          加密消息
-                                        </span>
-                                        <span className="an-secret-veil-meta">
-                                          {secretSecsLeft !== null
-                                            ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
-                                            : "仅 Bot 可读"}
-                                        </span>
-                                      </div>
-                                      {secretTokens[m.msg_id] && (
-                                        <button
-                                          type="button"
-                                          className="an-secret-veil-reveal"
-                                          onClick={() =>
-                                            revealSecretMessage(m.msg_id)
-                                          }
-                                        >
-                                          查看
-                                        </button>
-                                      )}
-                                    </div>
+                                  {isSecretExpired || isSecretUnrevealed ? (
+                                    secretVeil
                                   ) : activeAgentBridgeTaskData(m) ? (
                                     renderAgentBridgeTaskCard(m)
                                   ) : (
@@ -3670,47 +3671,8 @@ export default function App() {
                                     </div>
                                   );
                                 })()}
-                                {isSecretExpired ? (
-                                  <div className="an-secret-veil is-expired">
-                                    <span className="an-secret-veil-icon">
-                                      <AppIcon name="lock" className="w-5 h-5" />
-                                    </span>
-                                    <div className="an-secret-veil-body">
-                                      <span className="an-secret-veil-label">
-                                        加密消息已过期
-                                      </span>
-                                      <span className="an-secret-veil-meta">
-                                        一次性查看窗口已关闭
-                                      </span>
-                                    </div>
-                                  </div>
-                                ) : isSecretUnrevealed ? (
-                                  <div className="an-secret-veil">
-                                    <span className="an-secret-veil-icon">
-                                      <AppIcon name="lock" className="w-5 h-5" />
-                                    </span>
-                                    <div className="an-secret-veil-body">
-                                      <span className="an-secret-veil-label">
-                                        加密消息
-                                      </span>
-                                      <span className="an-secret-veil-meta">
-                                        {secretSecsLeft !== null
-                                          ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
-                                          : "仅 Bot 可读"}
-                                      </span>
-                                    </div>
-                                    {secretTokens[m.msg_id] && (
-                                      <button
-                                        type="button"
-                                        className="an-secret-veil-reveal"
-                                        onClick={() =>
-                                          revealSecretMessage(m.msg_id)
-                                        }
-                                      >
-                                        查看
-                                      </button>
-                                    )}
-                                  </div>
+                                {isSecretExpired || isSecretUnrevealed ? (
+                                  secretVeil
                                 ) : (
                                   <div
                                     className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words"
@@ -3814,47 +3776,8 @@ export default function App() {
                                   border: "1px solid var(--border)",
                                 }}
                               >
-                                {isSecretExpired ? (
-                                  <div className="an-secret-veil is-expired">
-                                    <span className="an-secret-veil-icon">
-                                      <AppIcon name="lock" className="w-5 h-5" />
-                                    </span>
-                                    <div className="an-secret-veil-body">
-                                      <span className="an-secret-veil-label">
-                                        加密消息已过期
-                                      </span>
-                                      <span className="an-secret-veil-meta">
-                                        一次性查看窗口已关闭
-                                      </span>
-                                    </div>
-                                  </div>
-                                ) : isSecretUnrevealed ? (
-                                  <div className="an-secret-veil">
-                                    <span className="an-secret-veil-icon">
-                                      <AppIcon name="lock" className="w-5 h-5" />
-                                    </span>
-                                    <div className="an-secret-veil-body">
-                                      <span className="an-secret-veil-label">
-                                        加密消息
-                                      </span>
-                                      <span className="an-secret-veil-meta">
-                                        {secretSecsLeft !== null
-                                          ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
-                                          : "仅 Bot 可读"}
-                                      </span>
-                                    </div>
-                                    {secretTokens[m.msg_id] && (
-                                      <button
-                                        type="button"
-                                        className="an-secret-veil-reveal"
-                                        onClick={() =>
-                                          revealSecretMessage(m.msg_id)
-                                        }
-                                      >
-                                        查看
-                                      </button>
-                                    )}
-                                  </div>
+                                {isSecretExpired || isSecretUnrevealed ? (
+                                  secretVeil
                                 ) : activeAgentBridgeTaskData(m) ? (
                                   renderAgentBridgeTaskCard(m)
                                 ) : m._streaming && !text ? (
@@ -3955,15 +3878,11 @@ export default function App() {
                             r.sender_id === currentUserId;
                           const rBot =
                             r.sender_type === "bot"
-                              ? channelBots.find(
-                                  (b) => b.member_id === r.sender_id,
-                                )
+                              ? botById.get(r.sender_id)
                               : undefined;
                           const rSenderUser =
                             r.sender_type === "user" && !rIsOwn
-                              ? channelUsers.find(
-                                  (u) => u.member_id === r.sender_id,
-                                )
+                              ? userById.get(r.sender_id)
                               : undefined;
                           const rLabel = rBot
                             ? rBot.display_name || rBot.username || "Bot"
@@ -4000,11 +3919,7 @@ export default function App() {
                           })();
                           const rClarifyAnswered =
                             !!rClarify &&
-                            messages.some(
-                              (x) =>
-                                x.in_reply_to_msg_id === r.msg_id &&
-                                isClarifyReplyUserMessage(x.content),
-                            );
+                            clarifyAnsweredParentIds.has(r.msg_id);
                           const rClarifyWaiting =
                             pendingClarifyReplyMsgId === r.msg_id;
                           const rClarifyStatus:
@@ -4287,9 +4202,7 @@ export default function App() {
                             const key = `${stype}:${sid}`;
                             if (acc.some((p) => p.key === key)) return;
                             if (stype === "bot") {
-                              const b = channelBots.find(
-                                (x) => x.member_id === sid,
-                              );
+                              const b = botById.get(sid);
                               const label =
                                 b?.display_name || b?.username || "Bot";
                               acc.push({
@@ -4304,9 +4217,7 @@ export default function App() {
                               const isSelf = sid === currentUserId;
                               const u = isSelf
                                 ? null
-                                : channelUsers.find(
-                                    (x) => x.member_id === sid,
-                                  );
+                                : userById.get(sid);
                               const label = isSelf
                                 ? "我"
                                 : u?.display_name ||
@@ -4462,15 +4373,11 @@ export default function App() {
                                   r.sender_id === currentUserId;
                                 const rBot =
                                   r.sender_type === "bot"
-                                    ? channelBots.find(
-                                        (b) => b.member_id === r.sender_id,
-                                      )
+                                    ? botById.get(r.sender_id)
                                     : undefined;
                                 const rSenderUser =
                                   r.sender_type === "user" && !rIsOwn
-                                    ? channelUsers.find(
-                                        (u) => u.member_id === r.sender_id,
-                                      )
+                                    ? userById.get(r.sender_id)
                                     : undefined;
                                 const rLabel = rBot
                                   ? rBot.display_name || rBot.username || "Bot"
@@ -4507,11 +4414,7 @@ export default function App() {
                                 })();
                                 const rClarifyAnswered =
                                   !!rClarify &&
-                                  messages.some(
-                                    (x) =>
-                                      x.in_reply_to_msg_id === r.msg_id &&
-                                      isClarifyReplyUserMessage(x.content),
-                                  );
+                                  clarifyAnsweredParentIds.has(r.msg_id);
                                 const rClarifyWaiting =
                                   pendingClarifyReplyMsgId === r.msg_id;
                                 const rClarifyStatus:
@@ -4528,27 +4431,16 @@ export default function App() {
                                     : null;
                                 const rDirectParent =
                                   r.in_reply_to_msg_id !== m.msg_id
-                                    ? messages.find(
-                                        (x) =>
-                                          x.msg_id === r.in_reply_to_msg_id,
-                                      )
+                                    ? msgById.get(r.in_reply_to_msg_id || "")
                                     : null;
                                 const rParentBot =
                                   rDirectParent?.sender_type === "bot"
-                                    ? channelBots.find(
-                                        (b) =>
-                                          b.member_id ===
-                                          rDirectParent.sender_id,
-                                      )
+                                    ? botById.get(rDirectParent.sender_id)
                                     : null;
                                 const rParentSenderUser =
                                   rDirectParent?.sender_type === "user" &&
                                   rDirectParent.sender_id !== currentUserId
-                                    ? channelUsers.find(
-                                        (u) =>
-                                          u.member_id ===
-                                          rDirectParent.sender_id,
-                                      )
+                                    ? userById.get(rDirectParent.sender_id)
                                     : undefined;
                                 const rParentLabel = rDirectParent
                                   ? rDirectParent.sender_type === "bot"
@@ -4771,57 +4663,51 @@ export default function App() {
                           </div>
                         );
                       });
-                      // Intersperse day dividers between message groups based
-                      // on their created_at calendar day. Purely presentational
-                      // — runs outside the big map callback so none of the
-                      // existing branch logic has to change.
-                      const out: React.ReactNode[] = [];
-                      if (messageVirtualWindow.paddingTop > 0) {
-                        out.push(
-                          <div
-                            key="virtual-message-top-spacer"
-                            aria-hidden="true"
-                            style={{ height: messageVirtualWindow.paddingTop }}
-                          />,
-                        );
-                      }
-                      let lastDay =
-                        messageVirtualWindow.startIndex > 0
-                          ? formatDayLabel(
-                              topicRoots[messageVirtualWindow.startIndex - 1]
-                                ?.created_at,
-                            )
-                          : "";
-                      for (let i = 0; i < virtualTopicRoots.length; i++) {
-                        const m = virtualTopicRoots[i];
-                        const absoluteIndex =
-                          messageVirtualWindow.startIndex + i;
-                        const day = formatDayLabel(m.created_at);
-                        if (day && day !== lastDay) {
-                          out.push(
-                            <div
-                              key={`day-${absoluteIndex}-${day}`}
-                              className="an-day-divider"
-                            >
-                              <span>{day}</span>
-                            </div>,
-                          );
-                          lastDay = day;
-                        }
-                        out.push(renderedRows[i]);
-                      }
-                      if (messageVirtualWindow.paddingBottom > 0) {
-                        out.push(
-                          <div
-                            key="virtual-message-bottom-spacer"
-                            aria-hidden="true"
-                            style={{
-                              height: messageVirtualWindow.paddingBottom,
-                            }}
-                          />,
-                        );
-                      }
-                      return out;
+                      return (
+                        <div
+                          style={{
+                            height: rowVirtualizer.getTotalSize(),
+                            position: "relative",
+                            width: "100%",
+                          }}
+                        >
+                          {virtualItems.map((virtualItem, i) => {
+                            const m = topicRoots[virtualItem.index];
+                            if (!m) return null;
+                            const day = formatDayLabel(m.created_at);
+                            const prevDay =
+                              virtualItem.index > 0
+                                ? formatDayLabel(
+                                    topicRoots[virtualItem.index - 1]?.created_at,
+                                  )
+                                : "";
+                            return (
+                              <div
+                                key={virtualItem.key}
+                                ref={rowVirtualizer.measureElement}
+                                data-index={virtualItem.index}
+                                style={{
+                                  position: "absolute",
+                                  top: 0,
+                                  left: 0,
+                                  width: "100%",
+                                  transform: `translateY(${virtualItem.start}px)`,
+                                }}
+                              >
+                                {day && day !== prevDay ? (
+                                  <div
+                                    key={`day-${virtualItem.index}-${day}`}
+                                    className="an-day-divider"
+                                  >
+                                    <span>{day}</span>
+                                  </div>
+                                ) : null}
+                                {renderedRows[i]}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
                       })()}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (

@@ -76,6 +76,8 @@ const FILE_URL_RE = /(?:https?:\/\/[^/]+)?\/api\/(?:v1\/)?files\/([^/]+)\/(previ
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
 const MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS = 5;
+const HIGHLIGHT_CACHE_LIMIT = 240;
+const highlightCache = new Map<string, string>();
 
 interface MarkdownImageLoadState {
   attempt: number;
@@ -104,6 +106,37 @@ function childrenToText(children: unknown): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map((c) => childrenToText(c)).join("");
   return "";
+}
+
+function rememberHighlightedCode(key: string, value: string): string {
+  if (highlightCache.has(key)) highlightCache.delete(key);
+  highlightCache.set(key, value);
+  while (highlightCache.size > HIGHLIGHT_CACHE_LIMIT) {
+    const oldestKey = highlightCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    highlightCache.delete(oldestKey);
+  }
+  return value;
+}
+
+function highlightCode(codeText: string, lang: string): string {
+  const key = `${lang}\n${codeText}`;
+  const cached = highlightCache.get(key);
+  if (cached !== undefined) {
+    highlightCache.delete(key);
+    highlightCache.set(key, cached);
+    return cached;
+  }
+
+  try {
+    const highlighted =
+      lang && hljs.getLanguage(lang)
+        ? hljs.highlight(codeText, { language: lang, ignoreIllegals: true }).value
+        : hljs.highlightAuto(codeText).value;
+    return rememberHighlightedCode(key, highlighted);
+  } catch {
+    return rememberHighlightedCode(key, codeText);
+  }
 }
 
 function withRetryParam(src: string, attempt: number): string {
@@ -767,8 +800,13 @@ interface MessageMarkdownProps {
   onFileClick?: (url: string, filename: string) => void;
 }
 
-export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: MessageMarkdownProps) {
-  const processedText = preprocessMentions(text);
+export const MessageMarkdown = memo(function MessageMarkdown({
+  text,
+  streaming,
+  onImageClick,
+  onFileClick,
+}: MessageMarkdownProps) {
+  const processedText = useMemo(() => preprocessMentions(text), [text]);
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -785,14 +823,7 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
           }
 
           if (!inline) {
-            let highlighted = codeText;
-            try {
-              if (lang && hljs.getLanguage(lang)) {
-                highlighted = hljs.highlight(codeText, { language: lang, ignoreIllegals: true }).value;
-              } else {
-                highlighted = hljs.highlightAuto(codeText).value;
-              }
-            } catch {}
+            const highlighted = highlightCode(codeText, lang);
             return (
               <pre className="bg-gray-900 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
                 <code
@@ -946,4 +977,4 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
       {processedText}
     </ReactMarkdown>
   );
-}
+});
