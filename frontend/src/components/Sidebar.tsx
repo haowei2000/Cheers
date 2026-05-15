@@ -14,6 +14,7 @@ import {
 import { MemberAvatar, type MemberKind } from "./members";
 import type { SearchSelection } from "../types";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
+import { Modal } from "./Modal";
 
 interface SidebarProps {
   isMobile: boolean;
@@ -50,6 +51,18 @@ interface SidebarProps {
 }
 
 const WS_LETTER_COLORS = ["#7c6cf5", "#3ecf8e", "#f5a623", "#56a7ff", "#f05454", "#9586ff"];
+type PersonalAddDialogState = {
+  kind: "dm" | "project" | "projectChat";
+  projectId: string;
+  projectTitle: string;
+} | null;
+type PersonalFileItem = FileInfo & {
+  channel_id: string;
+  channel_label: string;
+  created_at?: string | null;
+  summary_3lines?: string | null;
+};
+
 const wsColor = (id: string) => {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
@@ -159,6 +172,11 @@ export function Sidebar({
     : "var(--accent)";
 
   const searchPickerRef = useRef<SearchPickerHandle | null>(null);
+  const [personalAddDialog, setPersonalAddDialog] =
+    useState<PersonalAddDialogState>(null);
+  const [projectDraftTitle, setProjectDraftTitle] = useState("");
+  const [personalFiles, setPersonalFiles] = useState<PersonalFileItem[]>([]);
+  const [personalFilesLoading, setPersonalFilesLoading] = useState(false);
 
   const dmWorkspaceId = useMemo(
     () => selectedWorkspaceId || workspaces[0]?.workspace_id || "",
@@ -168,6 +186,130 @@ export function Sidebar({
   const resetSearch = () => {
     searchPickerRef.current?.clear();
   };
+
+  const visiblePersonalDms = useMemo(
+    () =>
+      dms.filter(
+        (dm) => !selectedWorkspaceId || dm.workspace_id === selectedWorkspaceId,
+      ),
+    [dms, selectedWorkspaceId],
+  );
+
+  const directDms = useMemo(
+    () =>
+      visiblePersonalDms.filter(
+        (dm) => dm.counterparty.member_type !== "bot",
+      ),
+    [visiblePersonalDms],
+  );
+
+  const projectGroups = useMemo(() => {
+    const sorted = visiblePersonalDms
+      .filter((dm) => dm.counterparty.member_type === "bot")
+      .sort((a, b) => {
+        const aProject = a.project_title || "Project 1";
+        const bProject = b.project_title || "Project 1";
+        const projectOrder = aProject.localeCompare(bProject, "zh-Hans-CN");
+        if (projectOrder !== 0) return projectOrder;
+        const at = a.created_at ? Date.parse(a.created_at) : 0;
+        const bt = b.created_at ? Date.parse(b.created_at) : 0;
+        return at - bt;
+      });
+    const groups = new Map<
+      string,
+      {
+        projectId: string;
+        projectTitle: string;
+        chats: { dm: DM; botLabel: string; chatLabel: string }[];
+      }
+    >();
+    const counts = new Map<string, number>();
+    for (const dm of sorted) {
+      const cp = dm.counterparty;
+      const botLabel = cp.display_name || cp.username || "Bot";
+      const projectId = dm.project_id || "personal-project-default";
+      const projectTitle = dm.project_title || "Project 1";
+      const next = (counts.get(projectId) || 0) + 1;
+      counts.set(projectId, next);
+      const chatLabel = dm.chat_title?.trim() || dm.title?.trim() || `Chat ${next}`;
+      const group =
+        groups.get(projectId) ||
+        { projectId, projectTitle, chats: [] };
+      group.chats.push({ dm, botLabel, chatLabel });
+      groups.set(projectId, group);
+    }
+    return [...groups.values()];
+  }, [visiblePersonalDms]);
+
+  const nextProjectTitle = () => `Project ${projectGroups.length + 1}`;
+
+  const nextProjectChatTitle = (projectId: string) => {
+    const count =
+      projectGroups.find((group) => group.projectId === projectId)?.chats.length ?? 0;
+    return `Chat ${count + 1}`;
+  };
+
+  const personalFileChannelKey = useMemo(
+    () =>
+      visiblePersonalDms
+        .map((dm) => dm.channel_id)
+        .sort()
+        .join("|"),
+    [visiblePersonalDms],
+  );
+
+  useEffect(() => {
+    if (!isPersonalWorkspace || visiblePersonalDms.length === 0) {
+      setPersonalFiles([]);
+      setPersonalFilesLoading(false);
+      return;
+    }
+    let active = true;
+    setPersonalFilesLoading(true);
+    Promise.all(
+      visiblePersonalDms.map(async (dm) => {
+        const cp = dm.counterparty;
+        const channelLabel =
+          dm.title ||
+          cp.display_name ||
+          cp.username ||
+          (cp.member_type === "bot" ? "Bot Chat" : "私信");
+        try {
+          const response = await apiFetch(`/files/by-channel/${dm.channel_id}`, {
+            token: authToken,
+          });
+          if (!response.ok) return [];
+          const payload = await response.json();
+          const files = Array.isArray(payload?.data) ? payload.data : [];
+          return files.map((file: FileInfo & { created_at?: string | null; summary_3lines?: string | null }) => ({
+            ...file,
+            channel_id: dm.channel_id,
+            channel_label: channelLabel,
+          }));
+        } catch {
+          return [];
+        }
+      }),
+    )
+      .then((groups) => {
+        if (!active) return;
+        setPersonalFiles(
+          groups
+            .flat()
+            .sort((a, b) => {
+              const at = a.created_at ? Date.parse(a.created_at) : 0;
+              const bt = b.created_at ? Date.parse(b.created_at) : 0;
+              return bt - at;
+            }),
+        );
+      })
+      .finally(() => {
+        if (active) setPersonalFilesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authToken, isPersonalWorkspace, personalFileChannelKey, visiblePersonalDms]);
 
   const selectWorkspace = (workspaceId: string) => {
     setSelectedWorkspaceId(workspaceId);
@@ -194,6 +336,13 @@ export function Sidebar({
   const openDmWith = async (
     memberId: string,
     memberType: "user" | "bot",
+    options: {
+      createNew?: boolean;
+      title?: string;
+      projectId?: string;
+      projectTitle?: string;
+      chatTitle?: string;
+    } = {},
   ) => {
     if (!dmWorkspaceId) {
       toast.error("请先选择工作空间");
@@ -206,6 +355,11 @@ export function Sidebar({
           workspace_id: dmWorkspaceId,
           member_id: memberId,
           member_type: memberType,
+          create_new: options.createNew ?? false,
+          title: options.title,
+          project_id: options.projectId,
+          project_title: options.projectTitle,
+          chat_title: options.chatTitle,
         },
         token: authToken ?? undefined,
       });
@@ -222,10 +376,31 @@ export function Sidebar({
       resetSearch();
       if (isMobile) setSidebarOpen(false);
     } catch {
-      toast.error("发起私信失败");
+      toast.error(options.createNew ? "发起 Chat 失败" : "发起私信失败");
       // Still refresh so any partial state reconciles.
       if (setDMs) refreshDMs(setDMs, authToken ?? undefined);
     }
+  };
+
+  const openPersonalAddDialog = (
+    kind: "dm" | "project" | "projectChat",
+    project?: {
+    projectId: string;
+    projectTitle: string;
+    },
+  ) => {
+    const projectId =
+      project?.projectId ||
+      (typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `project-${Date.now()}`);
+    const projectTitle = project?.projectTitle || nextProjectTitle();
+    setProjectDraftTitle(projectTitle);
+    setPersonalAddDialog({
+      kind,
+      projectId,
+      projectTitle,
+    });
   };
 
   const openMessageHit = (channelId: string, msgId: string) => {
@@ -253,6 +428,39 @@ export function Sidebar({
         el.style.transition = orig;
       }, 1200);
     }, 400);
+  };
+
+  const handlePersonalAddSelect = (selection: SearchSelection) => {
+    if (!personalAddDialog) return;
+    if (personalAddDialog.kind === "dm") {
+      if (selection.type !== "user") {
+        toast.error("请选择成员开始私信");
+        return;
+      }
+      setPersonalAddDialog(null);
+      openDmWith(selection.item.user_id, "user");
+      return;
+    }
+    if (personalAddDialog.kind === "project" || personalAddDialog.kind === "projectChat") {
+      if (selection.type !== "bot") {
+        toast.error("请选择 Bot 添加到 Project");
+        return;
+      }
+      const projectTitle =
+        personalAddDialog.kind === "project"
+          ? projectDraftTitle.trim() || personalAddDialog.projectTitle
+          : personalAddDialog.projectTitle;
+      const chatTitle = nextProjectChatTitle(personalAddDialog.projectId);
+      setPersonalAddDialog(null);
+      openDmWith(selection.item.bot_id, "bot", {
+        createNew: true,
+        projectId: personalAddDialog.projectId,
+        projectTitle,
+        chatTitle,
+        title: chatTitle,
+      });
+      return;
+    }
   };
 
   const handleSearchSelect = (selection: SearchSelection) => {
@@ -478,7 +686,9 @@ export function Sidebar({
         context="global_nav"
         token={authToken}
         workspaceId={searchWorkspaceId || undefined}
-        placeholder="搜索消息 / 文件 / 频道 / 成员 / Bot"
+        placeholder={
+          "搜索消息 / 文件 / 频道 / 成员 / Bot"
+        }
         keyboardHint="⌘K"
         enableShortcut
         typeOptions={searchTypeOptions}
@@ -581,9 +791,8 @@ export function Sidebar({
         </>
       )}
 
-      {/* Direct section — only in the Personal workspace. 1:1 DMs with
-          users + bots. Header always shown so users have an affordance to
-          start a new DM even when the list is empty. */}
+      {/* Personal workspace: user DMs, files gathered from personal chats, and
+          bot conversations grouped under Projects. */}
       {isPersonalWorkspace && (
         <>
       <div className="an-rail-section-h">
@@ -591,18 +800,15 @@ export function Sidebar({
         <button
           type="button"
           className="an-add"
-          title="搜索用户/Bot 开始私信"
+          title="搜索用户开始私信"
           onClick={() => {
-            setTimeout(() => {
-              searchPickerRef.current?.clear();
-              searchPickerRef.current?.focus(false);
-            }, 0);
+            openPersonalAddDialog("dm");
           }}
         >
           +
         </button>
       </div>
-      {dms.length === 0 && (
+      {directDms.length === 0 && (
         <div
           style={{
             fontSize: 11,
@@ -613,24 +819,18 @@ export function Sidebar({
           还没有 DM · 点 ＋ 开始一个
         </div>
       )}
-      {dms.length > 0 && (
+      {directDms.length > 0 && (
         <>
           <ul className="px-2 py-1 pb-2">
-            {dms
-              .filter(
-                (d) =>
-                  !selectedWorkspaceId || d.workspace_id === selectedWorkspaceId,
-              )
-              .map((d) => {
+            {directDms.map((d) => {
                 const isActive = selectedId === d.channel_id;
                 const cp = d.counterparty;
                 const label =
                   cp.display_name ||
                   cp.username ||
-                  (cp.member_type === "bot" ? "Bot" : cp.member_type === "system" ? "系统" : "用户");
-                const isBot = cp.member_type === "bot";
+                  (cp.member_type === "system" ? "系统" : "用户");
                 const isSystem = cp.member_type === "system";
-                const memberKind: MemberKind = isBot ? "bot" : isSystem ? "system" : "user";
+                const memberKind: MemberKind = isSystem ? "system" : "user";
                 return (
                   <li
                     key={d.channel_id}
@@ -709,6 +909,153 @@ export function Sidebar({
           </ul>
         </>
       )}
+
+      <div className="an-rail-section-h">
+        <span>文件</span>
+        <span className="an-rail-count">
+          {personalFilesLoading ? "…" : personalFiles.length}
+        </span>
+      </div>
+      <ul className="px-2 py-1 pb-2">
+        {personalFiles.length === 0 && (
+          <li className="an-rail-empty">
+            {personalFilesLoading ? "文件加载中…" : "暂无文件"}
+          </li>
+        )}
+        {personalFiles.map((file) => (
+          <li key={`${file.channel_id}:${file.file_id}`} className="group relative">
+            <button
+              type="button"
+              className="an-rail-row w-full"
+              title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
+              onClick={() => {
+                onOpenFilePreview?.(file);
+                if (isMobile) setSidebarOpen(false);
+              }}
+            >
+              <span className="an-sigil">
+                <AppIcon name="file" />
+              </span>
+              <span className="an-name">
+                {file.original_filename || file.file_id}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <div className="an-rail-section-h">
+        <span>Project</span>
+        <button
+          type="button"
+          className="an-add"
+          title="创建 Project 并选择 Bot"
+          onClick={() => openPersonalAddDialog("project")}
+        >
+          +
+        </button>
+      </div>
+      <ul className="px-2 py-1 pb-2">
+        {projectGroups.length === 0 && (
+          <li className="an-rail-empty">还没有 Project · 点 ＋ 选择 Bot 创建一个</li>
+        )}
+        {projectGroups.map((project) => (
+          <li key={project.projectId} className="an-project-group">
+            <div className="an-project-head">
+              <div className="an-rail-row an-project-row" title={project.projectTitle}>
+                <span className="an-sigil">
+                  <AppIcon name="folder" />
+                </span>
+                <span className="an-name">{project.projectTitle}</span>
+              </div>
+              <button
+                type="button"
+                className="an-project-add"
+                title={`给 ${project.projectTitle} 添加 Bot Chat`}
+                aria-label={`给 ${project.projectTitle} 添加 Bot Chat`}
+                onClick={() => openPersonalAddDialog("projectChat", project)}
+              >
+                <AppIcon name="plus" />
+              </button>
+            </div>
+            <ul className="an-project-chats">
+              {project.chats.map(({ dm, botLabel, chatLabel }) => {
+                const isActive = selectedId === dm.channel_id;
+                const cp = dm.counterparty;
+                const label = `${botLabel} · ${chatLabel}`;
+                return (
+                  <li
+                    key={dm.channel_id}
+                    className="group relative"
+                    onClick={() => isMobile && setSidebarOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(dm.channel_id)}
+                      className={`an-rail-row an-project-chat-row w-full ${
+                        isActive ? "active" : ""
+                      } pr-7`}
+                      title={cp.username ? `${label} · @${cp.username}` : label}
+                    >
+                      <span className="an-sigil">
+                        <MemberAvatar
+                          avatarUrl={cp.avatar_url}
+                          kind="bot"
+                          label={botLabel}
+                          size={16}
+                        />
+                      </span>
+                      <span className="an-name">{label}</span>
+                      {!isActive && (dm.unread_count ?? 0) > 0 && (
+                        <span className="an-rail-tags">
+                          <span className="an-unread">
+                            {(dm.unread_count ?? 0) > 99
+                              ? "99+"
+                              : dm.unread_count}
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      title="移除此 Chat"
+                      aria-label="移除此 Chat"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!currentUser) return;
+                        if (
+                          !confirm(
+                            `从列表中移除「${label}」？Bot 再次消息时会重新出现。`,
+                          )
+                        )
+                          return;
+                        apiFetch(
+                          `/channels/${dm.channel_id}/members/${currentUser.user_id}`,
+                          { method: "DELETE", token: authToken },
+                        )
+                          .then((r) => {
+                            if (!r.ok) throw new Error("leave failed");
+                            setDMs?.((prev) =>
+                              prev.filter((x) => x.channel_id !== dm.channel_id),
+                            );
+                            if (selectedId === dm.channel_id) {
+                              setSelectedId(null);
+                            }
+                          })
+                          .catch(() => toast.error("移除 Chat 失败"));
+                      }}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                      style={{ color: "var(--fg-3)" }}
+                    >
+                      <AppIcon name="minus" className="w-3 h-3" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        ))}
+      </ul>
         </>
       )}
 
@@ -773,6 +1120,56 @@ export function Sidebar({
         )
       }
     />
+    <Modal
+      open={Boolean(personalAddDialog)}
+      onClose={() => setPersonalAddDialog(null)}
+      title={
+        personalAddDialog?.kind === "dm"
+          ? "开始私信"
+          : personalAddDialog?.kind === "project"
+            ? "创建 Project"
+            : "添加 Bot Chat"
+      }
+      description={
+        personalAddDialog?.kind === "dm"
+          ? "搜索成员并创建私信。"
+          : personalAddDialog?.kind === "project"
+            ? "命名 Project，然后选择第一个 Bot Chat。"
+            : `给 ${personalAddDialog?.projectTitle || "Project"} 添加一个 Bot Chat。`
+      }
+    >
+      {personalAddDialog?.kind === "project" && (
+        <label className="mb-3 block">
+          <span className="mb-1 block text-xs font-medium" style={{ color: "var(--fg-2)" }}>
+            Project 名称
+          </span>
+          <input
+            value={projectDraftTitle}
+            onChange={(event) => setProjectDraftTitle(event.target.value)}
+            className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
+            style={{
+              borderColor: "var(--border)",
+              background: "var(--bg-0)",
+              color: "var(--fg-1)",
+            }}
+            maxLength={80}
+          />
+        </label>
+      )}
+      <SearchPicker
+        key={`${personalAddDialog?.kind || "none"}:${personalAddDialog?.projectId || ""}`}
+        context="global_nav"
+        token={authToken}
+        workspaceId={searchWorkspaceId || undefined}
+        types={personalAddDialog?.kind === "dm" ? ["users"] : ["bots"]}
+        placeholder={personalAddDialog?.kind === "dm" ? "搜索成员" : "搜索 Bot"}
+        modal
+        autoFocus
+        emptyText={personalAddDialog?.kind === "dm" ? "没有可添加的成员" : "没有可添加的 Bot"}
+        actionLabel={personalAddDialog?.kind === "dm" ? "私信" : "添加"}
+        onSelect={handlePersonalAddSelect}
+      />
+    </Modal>
     </>
   );
 }

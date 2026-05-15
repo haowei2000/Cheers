@@ -15,6 +15,8 @@ import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
 
 const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
+const MESSAGE_COLLAPSE_MAX_HEIGHT = 360;
+const MESSAGE_COLLAPSE_THRESHOLD = 40;
 const ThinkMarkdownContent = lazy(() =>
   import("./ThinkMarkdownContent").then((module) => ({
     default: module.ThinkMarkdownContent,
@@ -235,6 +237,80 @@ export const ChatAttachments = memo(function ChatAttachments({
   );
 });
 
+export interface MessageContentClampProps {
+  children: ReactNode;
+  contentKey: string;
+  disabled?: boolean;
+  maxHeight?: number;
+}
+
+export function MessageContentClamp({
+  children,
+  contentKey,
+  disabled = false,
+  maxHeight = MESSAGE_COLLAPSE_MAX_HEIGHT,
+}: MessageContentClampProps) {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [canCollapse, setCanCollapse] = useState(false);
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [contentKey]);
+
+  useEffect(() => {
+    if (disabled) {
+      setCanCollapse(false);
+      return;
+    }
+    const element = contentRef.current;
+    if (!element) return;
+    const update = () => {
+      const nextCanCollapse =
+        element.scrollHeight > maxHeight + MESSAGE_COLLAPSE_THRESHOLD;
+      setCanCollapse(nextCanCollapse);
+      if (!nextCanCollapse) setExpanded(false);
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [contentKey, disabled, maxHeight]);
+
+  if (disabled) return <>{children}</>;
+
+  const collapsed = canCollapse && !expanded;
+  return (
+    <div
+      className={`an-message-clamp ${
+        collapsed ? "is-collapsed" : expanded ? "is-expanded" : ""
+      }`}
+    >
+      <div
+        className="an-message-clamp-window"
+        style={collapsed ? { maxHeight } : undefined}
+      >
+        <div ref={contentRef}>{children}</div>
+      </div>
+      {canCollapse && (
+        <button
+          type="button"
+          className="an-message-clamp-toggle"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+        >
+          <AppIcon
+            name={expanded ? "chevronUp" : "chevronDown"}
+            className="h-3.5 w-3.5"
+          />
+          {expanded ? "收起" : "展开完整消息"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export interface ChatMessageRendererProps {
   align?: "left" | "right";
   attachments?: ReactNode;
@@ -242,6 +318,9 @@ export interface ChatMessageRendererProps {
   bodyStyle?: CSSProperties;
   bodySuffix?: ReactNode;
   content: string;
+  collapseKey?: string;
+  collapseMaxHeight?: number;
+  disableAutoCollapse?: boolean;
   files?: FileInfo[];
   getDownloadUrl?: (file: FileInfo) => string;
   getPreviewUrl?: (file: FileInfo) => string;
@@ -262,6 +341,9 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
   bodyStyle,
   bodySuffix,
   content,
+  collapseKey,
+  collapseMaxHeight,
+  disableAutoCollapse = false,
   files,
   getDownloadUrl,
   getPreviewUrl,
@@ -410,7 +492,13 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
         ) : null)}
       {hasContent || streaming || bodySuffix ? (
         <div ref={bodySelectionRef} className="relative">
-          {renderBody ? renderBody(body) : body}
+          <MessageContentClamp
+            contentKey={collapseKey ?? content}
+            disabled={disableAutoCollapse || !hasContent}
+            maxHeight={collapseMaxHeight}
+          >
+            {renderBody ? renderBody(body) : body}
+          </MessageContentClamp>
           {selectionCopy && (
             <button
               type="button"

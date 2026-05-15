@@ -1,6 +1,11 @@
 import { useState } from "react";
 import type { MemberItem } from "../../../types";
-import { MemberListItem, colorForIdentity, initialsForIdentity } from "../../../components/members";
+import {
+  MemberListItem,
+  MemberPresenceBadge,
+  colorForIdentity,
+  initialsForIdentity,
+} from "../../../components/members";
 
 export function MembersView({
   members,
@@ -85,6 +90,7 @@ export function MembersView({
                 >
                   {isBot ? "BOT" : "USER"}
                 </span>
+                <MemberPresenceBadge member={selected} />
               </div>
               <div className="an-h">
                 {selected.username && (
@@ -205,6 +211,7 @@ export function MembersView({
                   displayName={label}
                   avatarUrl={m.avatar_url}
                   variant="panel"
+                  badges={<MemberPresenceBadge member={m} />}
                   onClick={() => setSelected(m)}
                 />
               );
@@ -230,6 +237,7 @@ export function MembersView({
                   avatarUrl={m.avatar_url}
                   variant="panel"
                   self={isSelf}
+                  badges={<MemberPresenceBadge member={m} />}
                   onClick={() => setSelected(m)}
                   title={isSelf ? "我的频道资料" : undefined}
                   aria-label={isSelf ? "我的频道资料" : label}

@@ -326,9 +326,8 @@
   line-height: 1;
 }
 
-/* Send always sits at the right edge; if the lock toggle is rendered it
- * carries `ml-auto` which wins, so the gap pushes between the left cluster
- * and the right (lock, send) cluster. */
+/* Send always sits at the right edge; the preceding toolbar controls stay
+ * grouped on the left. */
 .an-composer-bar .an-composer-send {
   margin-left: auto;
 }

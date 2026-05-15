@@ -1,4 +1,5 @@
 import type { BotRow, BotScope } from "./types";
+import { MemberPresenceBadge } from "../../../components/members";
 
 const BOT_SCOPE_OPTIONS: { value: BotScope; label: string; hint: string }[] = [
   { value: "private", label: "Private", hint: "仅自己可发起私信或邀请" },
@@ -60,78 +61,14 @@ export function BotScopeControl({
   );
 }
 
-function botOnlineMeta(bot: BotRow) {
-  if (bot.is_builtin) {
-    const online = bot.is_online !== false && bot.status !== "offline";
-    return {
-      label: online ? "内置已启用" : "已停用",
-      color: online ? "var(--green)" : "var(--fg-3)",
-      bg: online ? "var(--green-muted)" : "var(--surface-soft)",
-      title: online ? "内置 Bot 使用专用 adapter，不依赖 Bot 的 LLM 绑定" : "Bot 状态为 offline",
-    };
-  }
-  const isWs = (bot.binding_type || "http") === "agent_bridge";
-  if (!isWs) {
-    const online = bot.is_online !== false && bot.status !== "offline";
-    return {
-      label: online ? "HTTP 已启用" : "已停用",
-      color: online ? "var(--green)" : "var(--fg-3)",
-      bg: online ? "var(--green-muted)" : "var(--surface-soft)",
-      title: online ? "HTTP Bot 无需长连接；可点击测试连通验证模型 API" : "Bot 状态为 offline",
-    };
-  }
-  if (bot.connection_status === "online" && bot.is_online) {
-    return {
-      label: "Bridge 在线",
-      color: "var(--green)",
-      bg: "var(--green-muted)",
-      title: "control/data 连接均在线",
-    };
-  }
-  if (bot.connection_status === "partial") {
-    return {
-      label: "Bridge 部分连接",
-      color: "var(--yellow)",
-      bg: "rgba(251, 191, 36, 0.16)",
-      title: `control: ${bot.control_connected ? "在线" : "离线"} · data: ${bot.data_connected ? "在线" : "离线"}`,
-    };
-  }
-  return {
-    label: "Bridge 离线",
-    color: "var(--red)",
-    bg: "var(--red-muted)",
-    title: "Agent Bridge provider 未连接",
-  };
-}
-
 export function BotOnlineBadge({ bot }: { bot: BotRow }) {
-  const meta = botOnlineMeta(bot);
   return (
-    <span
-      title={meta.title}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "3px 7px",
-        borderRadius: 999,
-        background: meta.bg,
-        color: meta.color,
-        fontSize: 11,
-        fontWeight: 650,
-        whiteSpace: "nowrap",
+    <MemberPresenceBadge
+      member={{
+        ...bot,
+        member_id: bot.bot_id,
+        member_type: "bot",
       }}
-    >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 999,
-          background: meta.color,
-          flexShrink: 0,
-        }}
-      />
-      {meta.label}
-    </span>
+    />
   );
 }

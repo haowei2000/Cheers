@@ -153,6 +153,17 @@ class ConnectionManager:
         """向某用户的所有本实例连接投递轻量通知。"""
         await self._broadcast_local(self._user_connections, user_id, message)
 
+    async def connected_user_ids(self, user_ids: set[str]) -> set[str]:
+        """Return user IDs with at least one live user WebSocket on this instance."""
+        if not user_ids:
+            return set()
+        async with self._lock:
+            return {
+                user_id
+                for user_id in user_ids
+                if any(not conn.closed for conn in self._user_connections.get(user_id, []))
+            }
+
     async def _broadcast_local(
         self,
         mapping: dict[str, list[_ManagedConnection]],

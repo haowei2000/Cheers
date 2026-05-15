@@ -107,7 +107,8 @@ export function useWorkspaceDirectory({
     activeDm?.counterparty.member_type === "bot" ? activeDm : null;
   const activeDmSessionScopeId =
     activeBotDm && currentUserId
-      ? `user:${currentUserId}:bot:${activeBotDm.counterparty.member_id}`
+      ? activeBotDm.session_scope_id ||
+        `user:${currentUserId}:bot:${activeBotDm.counterparty.member_id}`
       : null;
 
   const selectedChannel: Channel | null = useMemo(() => {

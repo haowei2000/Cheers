@@ -9,7 +9,10 @@ import type { VirtualItem, Virtualizer } from "@tanstack/react-virtual";
 import toast from "react-hot-toast";
 import { BotAvatar } from "../../../components/BotAvatar";
 import { ClarifyInlineBlock } from "../../../components/ClarifyInlineBlock";
-import { ChatMessageRenderer } from "../../../components/ChatMessageRenderer";
+import {
+  ChatMessageRenderer,
+  MessageContentClamp,
+} from "../../../components/ChatMessageRenderer";
 import { AppIcon } from "../../../components/icons/AppIcon";
 import { apiFetch } from "../../../api";
 import {
@@ -865,6 +868,7 @@ export function ChatMessageList({
                                     renderAgentBridgeTaskCard(m)
                                   ) : (
                                     <ChatMessageRenderer
+                                      collapseKey={m.msg_id}
                                       content={
                                         // Strip the `> [Author]: …\n\n` prefix
                                         // (rendered separately as .an-reply-quote
@@ -1039,11 +1043,13 @@ export function ChatMessageList({
                                         parseQuotePrefix(displayContent);
                                       const body = q ? q.rest : displayContent;
                                       return (
-                                        <span className="whitespace-pre-wrap">
-                                          {body
-                                            .replace(/!\[.*?\]\(.*?\)\s*/g, "")
-                                            .trim() || body}
-                                        </span>
+                                        <MessageContentClamp contentKey={m.msg_id}>
+                                          <span className="whitespace-pre-wrap">
+                                            {body
+                                              .replace(/!\[.*?\]\(.*?\)\s*/g, "")
+                                              .trim() || body}
+                                          </span>
+                                        </MessageContentClamp>
                                       );
                                     })()}
                                   </div>
@@ -1139,6 +1145,7 @@ export function ChatMessageList({
                                   <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                 ) : (
                                   <ChatMessageRenderer
+                                    collapseKey={m.msg_id}
                                     content={parseQuotePrefix(text)?.rest ?? text}
                                     keyPrefix={`${m.msg_id}-`}
                                     streaming={!!m._streaming}
@@ -1451,6 +1458,7 @@ export function ChatMessageList({
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                     ) : (
                                       <ChatMessageRenderer
+                                        collapseKey={r.msg_id}
                                         content={
                                           // Drop the `> [Author]: …\n\n` prefix
                                           // (now rendered above as an
@@ -1945,6 +1953,7 @@ export function ChatMessageList({
                                               <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                             ) : (
                                               <ChatMessageRenderer
+                                                collapseKey={r.msg_id}
                                                 content={rDisplay}
                                                 keyPrefix={`${r.msg_id}-t-`}
                                                 streaming={!!r._streaming}

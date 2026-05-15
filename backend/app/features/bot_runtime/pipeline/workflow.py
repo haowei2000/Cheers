@@ -41,6 +41,46 @@ from app.utils.crypto import decrypt_value
 logger = logging.getLogger("app.features.bot_runtime.pipeline.workflow")
 
 _PromptOverrides = dict[str, PromptTemplate]
+PROMPT_TEMPLATE_OVERRIDE_KEY = "prompt_template_override_id"
+
+
+def _message_prompt_template_override_id(msg: Message) -> str | None:
+    data = msg.content_data if isinstance(msg.content_data, dict) else {}
+    value = data.get(PROMPT_TEMPLATE_OVERRIDE_KEY)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+async def _load_message_prompt_template_override(ctx: BotRunContext) -> PromptTemplate | None:
+    template_id = _message_prompt_template_override_id(ctx.trigger_msg)
+    if not template_id:
+        return None
+    template = await ctx.session.get(PromptTemplate, template_id)
+    if not template:
+        logger.warning(
+            "bot_pipeline.workflow: prompt template override missing msg_id=%s template_id=%s",
+            ctx.trigger_msg.msg_id,
+            template_id,
+        )
+        return None
+    if template.is_builtin or template.created_by is None:
+        return template
+    sender = await ctx.session.get(User, ctx.trigger_msg.sender_id)
+    if sender and sender.user_id == template.created_by:
+        return template
+    if sender:
+        from app.utils.permissions import is_admin
+
+        if is_admin(sender):
+            return template
+    logger.warning(
+        "bot_pipeline.workflow: prompt template override denied msg_id=%s sender=%s template_id=%s",
+        ctx.trigger_msg.msg_id,
+        ctx.trigger_msg.sender_id,
+        template_id,
+    )
+    return None
 
 
 @dataclass(frozen=True)
@@ -281,7 +321,7 @@ class BotWorkflowBuilder:
         rows, overrides = await self._load_channel_bots(ctx)
         self._wrap_adapter_factory(ctx, overrides)
         self._build_bot_details(ctx, rows)
-        self._build_bot_templates(ctx, rows)
+        self._build_bot_templates(ctx, rows, overrides)
         await self._unwrap_secret_content(ctx)
         await self._lookup_sender_and_channel(ctx)
         route_mode, reason = await self._route(ctx)
@@ -340,6 +380,14 @@ class BotWorkflowBuilder:
         rows = [(membership, bot) for membership, bot in result.all()]
         ctx.channel_bot_usernames = [row[1].username for row in rows]
         ctx.bot_id_by_username = {row[1].username: row[1].bot_id for row in rows}
+        message_override = await _load_message_prompt_template_override(ctx)
+        if message_override:
+            logger.info(
+                "bot_pipeline.workflow: forcing prompt template override msg_id=%s template_id=%s",
+                ctx.trigger_msg.msg_id,
+                message_override.template_id,
+            )
+            return rows, {bot.bot_id: message_override for _, bot in rows}
         overrides = {
             bot.bot_id: membership.prompt_template
             for membership, bot in rows
@@ -372,10 +420,10 @@ class BotWorkflowBuilder:
         }
 
     @staticmethod
-    def _build_bot_templates(ctx: BotRunContext, rows: list) -> None:
+    def _build_bot_templates(ctx: BotRunContext, rows: list, overrides: _PromptOverrides) -> None:
         ctx.bot_user_templates_by_username = {}
         for membership, bot in rows:
-            effective_template = membership.prompt_template or bot.prompt_template
+            effective_template = overrides.get(bot.bot_id) or membership.prompt_template or bot.prompt_template
             ctx.bot_user_templates_by_username[bot.username] = (
                 effective_template.user_template
                 if effective_template

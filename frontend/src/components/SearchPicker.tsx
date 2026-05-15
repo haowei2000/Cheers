@@ -115,11 +115,12 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
     const [results, setResults] = useState<SearchResultsPayload | null>(null);
     const [busy, setBusy] = useState(false);
     const [open, setOpen] = useState(false);
-    const [scopeOpen, setScopeOpen] = useState(false);
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const inputRef = useRef<HTMLInputElement | null>(null);
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const requestSeqRef = useRef(0);
     const canSwitchScope = Boolean(onScopeChange && scopeOptions.length > 1);
+    const canOpenSettings = Boolean(canSwitchScope || typeOptions.length > 0);
     const typeOptionsKey = typeOptions.map((option) => option.type).join(",");
     const [activeTypes, setActiveTypes] = useState<SearchResultType[]>(
       () => typeOptions.map((option) => option.type),
@@ -155,31 +156,31 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       const onKey = (e: KeyboardEvent) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
           e.preventDefault();
-          setScopeOpen(false);
+          setSettingsOpen(false);
           setOpen(true);
           inputRef.current?.focus();
           inputRef.current?.select();
-        } else if (e.key === "Escape" && (open || scopeOpen)) {
+        } else if (e.key === "Escape" && (open || settingsOpen)) {
           setOpen(false);
-          setScopeOpen(false);
+          setSettingsOpen(false);
           inputRef.current?.blur();
         }
       };
       document.addEventListener("keydown", onKey);
       return () => document.removeEventListener("keydown", onKey);
-    }, [enableShortcut, open, scopeOpen]);
+    }, [enableShortcut, open, settingsOpen]);
 
     useEffect(() => {
-      if (!open && !scopeOpen) return;
+      if (!open && !settingsOpen) return;
       const handler = (e: MouseEvent) => {
         if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
           setOpen(false);
-          setScopeOpen(false);
+          setSettingsOpen(false);
         }
       };
       document.addEventListener("mousedown", handler);
       return () => document.removeEventListener("mousedown", handler);
-    }, [open, scopeOpen]);
+    }, [open, settingsOpen]);
 
     useEffect(() => {
       const needle = q.trim();
@@ -249,7 +250,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       setQ("");
       setResults(null);
       setOpen(false);
-      setScopeOpen(false);
+      setSettingsOpen(false);
     };
 
     const actionText = (selection: SearchSelection) => {
@@ -261,12 +262,11 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       "an-search",
       modal ? "in-modal" : "",
       scopeLabel ? "an-search-global" : "",
-      scopeLabel && (open || scopeOpen) ? "is-open" : "",
+      scopeLabel && (open || settingsOpen) ? "is-open" : "",
       className,
     ].filter(Boolean).join(" ");
     const scopeDescription = scopeTitle || scopeLabel || "";
-    const currentScope = scopeOptions.find((option) => option.value === scopeValue);
-    const toggleType = (type: SearchResultType) => {
+    const toggleType = (type: SearchResultType, options?: { showResults?: boolean }) => {
       setActiveTypes((prev) => {
         if (prev.includes(type)) {
           return prev.length > 1 ? prev.filter((item) => item !== type) : prev;
@@ -274,7 +274,9 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
         return [...prev, type];
       });
       setResults(null);
-      setOpen(true);
+      if (options?.showResults ?? true) {
+        setOpen(true);
+      }
     };
     const input = (
       <input
@@ -305,24 +307,19 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             </span>
             <button
               type="button"
-              className={`an-search-scope ${canSwitchScope ? "is-clickable" : ""} ${scopeOpen ? "is-active" : ""}`}
-              title={canSwitchScope ? `${scopeDescription}；点击切换搜索范围` : scopeDescription}
-              aria-label={canSwitchScope ? `切换搜索范围，当前范围：${scopeLabel}` : scopeDescription}
-              aria-haspopup={canSwitchScope ? "menu" : undefined}
-              aria-expanded={canSwitchScope ? scopeOpen : undefined}
-              disabled={!canSwitchScope}
+              className={`an-search-scope ${canOpenSettings ? "is-clickable" : ""} ${settingsOpen ? "is-active" : ""}`}
+              title={canOpenSettings ? `搜索设置${scopeDescription ? `；${scopeDescription}` : ""}` : scopeDescription}
+              aria-label={canOpenSettings ? "搜索设置" : scopeDescription}
+              aria-haspopup={canOpenSettings ? "dialog" : undefined}
+              aria-expanded={canOpenSettings ? settingsOpen : undefined}
+              disabled={!canOpenSettings}
               onClick={() => {
-                if (!canSwitchScope) return;
+                if (!canOpenSettings) return;
                 setOpen(false);
-                setScopeOpen((v) => !v);
+                setSettingsOpen((v) => !v);
               }}
             >
-              <span className="an-search-scope-label">Scope</span>
-              {currentScope?.marker && (
-                <span className="an-search-scope-marker">{currentScope.marker}</span>
-              )}
-              <span className="an-search-scope-value">{scopeLabel}</span>
-              {canSwitchScope && <AppIcon name="chevronDown" className="an-search-scope-chevron" />}
+              <AppIcon name="settings" className="an-search-scope-icon" />
             </button>
             {input}
             {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
@@ -334,21 +331,26 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
           </>
         )}
-        <SearchFilters
-          options={typeOptions}
-          activeTypes={activeTypes}
-          onToggle={toggleType}
-        />
-        {scopeOpen && canSwitchScope && (
+        {!scopeLabel && (
+          <SearchFilters
+            options={typeOptions}
+            activeTypes={activeTypes}
+            onToggle={toggleType}
+          />
+        )}
+        {settingsOpen && canOpenSettings && (
           <SearchScopeMenu
-            options={scopeOptions}
+            options={canSwitchScope ? scopeOptions : []}
             value={scopeValue}
             onSelect={(value) => {
               onScopeChange?.(value);
               setQ("");
               setResults(null);
-              setScopeOpen(false);
+              setSettingsOpen(false);
             }}
+            typeOptions={typeOptions}
+            activeTypes={activeTypes}
+            onTypeToggle={(type) => toggleType(type, { showResults: false })}
           />
         )}
         {open && q.trim() && (
