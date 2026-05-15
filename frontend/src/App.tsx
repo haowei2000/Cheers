@@ -19,10 +19,10 @@ import { useChannelParticipants } from "./features/chat/hooks/useChannelParticip
 import { useChatRealtime } from "./features/chat/hooks/useChatRealtime";
 import { useComposerController } from "./features/chat/hooks/useComposerController";
 import { usePendingFiles } from "./features/chat/hooks/usePendingFiles";
+import { useWorkspaceDirectory } from "./features/chat/hooks/useWorkspaceDirectory";
 import { AgentBridgeTaskCard } from "./features/chat/messages/AgentBridgeTaskCard";
-import { apiFetch, buildWsUrl } from "./api";
+import { apiFetch } from "./api";
 import { parseHelperPayload } from "./lib/helper";
-import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
 import { API, API_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
 import {
@@ -45,9 +45,6 @@ import {
   upsertMessage,
 } from "./lib/message-store";
 import type {
-  Channel,
-  DM,
-  Workspace,
   Message,
   FileInfo,
   ContextData,
@@ -113,9 +110,7 @@ export default function App() {
     }
   }, []);
 
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [dms, setDMs] = useState<DM[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Topic viewer: pageTopicId — root msg_id for the full-page view,
   // mirrored to URL query. There is no side-dock panel; opening a topic
   // always replaces the channel stream with the dedicated page.
@@ -150,38 +145,57 @@ export default function App() {
   );
   const [refreshingDmSession, setRefreshingDmSession] = useState(false);
   const [dmSessionRefreshNonce, setDmSessionRefreshNonce] = useState(0);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] =
-    useState<string>(routeWorkspaceId);
-  const [selectedId, setSelectedId] = useState<string | null>(routeChannelId);
-  const selectedIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    selectedIdRef.current = selectedId;
-  }, [selectedId]);
-
-  useEffect(() => {
-    if (routeWorkspaceId !== selectedWorkspaceId) {
-      setSelectedWorkspaceId(routeWorkspaceId);
-    }
-    if (routeChannelId !== selectedId) {
-      setSelectedId(routeChannelId);
-    }
-  }, [routeWorkspaceId, routeChannelId]);
-
-  const activeDm = selectedId ? dms.find((d) => d.channel_id === selectedId) ?? null : null;
-  const isSystemDm = activeDm?.counterparty.member_type === "system";
-  const isDmSelected = Boolean(activeDm);
-  const activeBotDm = activeDm?.counterparty.member_type === "bot" ? activeDm : null;
-  const activeDmSessionScopeId =
-    activeBotDm && currentUserId
-      ? `user:${currentUserId}:bot:${activeBotDm.counterparty.member_id}`
-      : null;
+  const {
+    channels,
+    setChannels,
+    dms,
+    setDMs,
+    workspaces,
+    setWorkspaces,
+    selectedWorkspaceId,
+    setSelectedWorkspaceId,
+    selectedId,
+    setSelectedId,
+    selectedIdRef,
+    selectedIdWorkspaceId,
+    selectedChannel,
+    isPersonalWorkspace,
+    activeDm,
+    isSystemDm,
+    isDmSelected,
+    activeBotDm,
+    activeDmSessionScopeId,
+    createWsOpen,
+    setCreateWsOpen,
+    createChannelOpen,
+    setCreateChannelOpen,
+    newWorkspaceName,
+    setNewWorkspaceName,
+    newWorkspaceAvatarUrl,
+    setNewWorkspaceAvatarUrl,
+    inviteWsMemberOpen,
+    setInviteWsMemberOpen,
+    inviteWsIdentifier,
+    setInviteWsIdentifier,
+    newChannelName,
+    setNewChannelName,
+    handleCreateWorkspace,
+    inviteWorkspaceMember,
+    handleInviteWsMember,
+    handleCreateChannel,
+    openDirectMessage,
+    botMentionIdsForChannel,
+    getWorkspaceIdForChannel,
+    resetDirectory,
+  } = useWorkspaceDirectory({
+    routeWorkspaceId,
+    routeChannelId,
+    authToken,
+    authFetch,
+    currentUserId,
+    onCloseSettings: () => setSettingsOpen(false),
+  });
   const selectionResetReadyRef = useRef(false);
-  const botMentionIdsForChannel = (channelId: string): string[] => {
-    const dm = dms.find((item) => item.channel_id === channelId);
-    return dm?.counterparty.member_type === "bot"
-      ? [dm.counterparty.member_id]
-      : [];
-  };
   useEffect(() => {
     if (selectionResetReadyRef.current) {
       setTaskPageOpen(false);
@@ -198,7 +212,6 @@ export default function App() {
   }, [isDmSelected, selectedId]);
   const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   // memoryTab drives the 4-tab cluster in the channel header + the drawer.
   //   null          — drawer closed
   //   "PROJECT"     — anchors + progress + decisions (design's Project view)
@@ -209,25 +222,6 @@ export default function App() {
     () => chatUrlState.memoryTab,
   );
   const memoryPanelOpen = memoryTab !== null;
-  const selectedIdWorkspaceId = useMemo(() => {
-    if (!selectedId) return null;
-    return (
-      channels.find((c) => c.channel_id === selectedId)?.workspace_id ??
-      dms.find((d) => d.channel_id === selectedId)?.workspace_id ??
-      null
-    );
-  }, [channels, dms, selectedId]);
-
-  useEffect(() => {
-    if (
-      selectedId &&
-      selectedWorkspaceId &&
-      selectedIdWorkspaceId &&
-      selectedIdWorkspaceId !== selectedWorkspaceId
-    ) {
-      setSelectedId(null);
-    }
-  }, [selectedId, selectedIdWorkspaceId, selectedWorkspaceId]);
 
   useEffect(() => {
     setPageTopicId((prev) =>
@@ -375,13 +369,6 @@ export default function App() {
   }, []);
 
   const [addBotOpen, setAddBotOpen] = useState(false);
-  const [createWsOpen, setCreateWsOpen] = useState(false);
-  const [createChannelOpen, setCreateChannelOpen] = useState(false);
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [newWorkspaceAvatarUrl, setNewWorkspaceAvatarUrl] = useState("");
-  const [inviteWsMemberOpen, setInviteWsMemberOpen] = useState(false);
-  const [inviteWsIdentifier, setInviteWsIdentifier] = useState("");
-  const [newChannelName, setNewChannelName] = useState("");
   const {
     autoAssist,
     setAutoAssist,
@@ -442,9 +429,7 @@ export default function App() {
 
 
   const handleNotifNavigate = (channelId: string, msgId?: string) => {
-    const workspaceId =
-      channels.find((c) => c.channel_id === channelId)?.workspace_id ??
-      dms.find((d) => d.channel_id === channelId)?.workspace_id;
+    const workspaceId = getWorkspaceIdForChannel(channelId);
     if (workspaceId) setSelectedWorkspaceId(workspaceId);
     setSelectedId(channelId);
     if (msgId) pendingScrollMsgIdRef.current = msgId;
@@ -453,174 +438,10 @@ export default function App() {
 
   const handleLogout = () => {
     clearAuth();
-    setSelectedId(null);
-    setSelectedWorkspaceId("");
-    setChannels([]);
-    setDMs([]);
-    setWorkspaces([]);
+    resetDirectory();
     setMessages([]);
     setLoginModalOpen(true);
   };
-
-  // 创建工作空间
-  const handleCreateWorkspace = () => {
-    if (!newWorkspaceName.trim()) {
-      toast.error("请填写工作空间名称");
-      return;
-    }
-    authFetch(`${API}/workspaces`, {
-      method: "POST",
-      body: JSON.stringify({
-        name: newWorkspaceName.trim(),
-        avatar_url: newWorkspaceAvatarUrl.trim() || null,
-      }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success") {
-          toast.success("工作空间创建成功");
-          setNewWorkspaceName("");
-          setNewWorkspaceAvatarUrl("");
-          setCreateWsOpen(false);
-          refreshWorkspaces(setWorkspaces, authToken ?? undefined);
-          setSelectedWorkspaceId(d.data.workspace_id);
-        } else {
-          toast.error(d.detail || "创建失败");
-        }
-      })
-      .catch(() => toast.error("创建失败"));
-  };
-
-  // 邀请成员加入工作空间
-  const inviteWorkspaceMember = (identifier: string) => {
-    const cleaned = identifier.trim();
-    if (!cleaned) {
-      toast.error("请输入用户名");
-      return;
-    }
-    if (!selectedWorkspaceId) {
-      toast.error("请先选择工作空间");
-      return;
-    }
-    authFetch(`${API}/workspaces/${selectedWorkspaceId}/invite`, {
-      method: "POST",
-      body: JSON.stringify({ identifier: cleaned }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success") {
-          toast.success(d.message || "邀请成功");
-          setInviteWsIdentifier("");
-          setInviteWsMemberOpen(false);
-        } else {
-          toast.error(d.detail || "邀请失败");
-        }
-      })
-      .catch(() => toast.error("邀请失败"));
-  };
-
-  const handleInviteWsMember = () => {
-    inviteWorkspaceMember(inviteWsIdentifier);
-  };
-
-  // 创建频道（项目）
-  const handleCreateChannel = () => {
-    if (!newChannelName.trim()) {
-      toast.error("请填写频道名称");
-      return;
-    }
-    if (!selectedWorkspaceId) {
-      toast.error("请先选择工作空间");
-      return;
-    }
-    authFetch(`${API}/channels`, {
-      method: "POST",
-      body: JSON.stringify({
-        workspace_id: selectedWorkspaceId,
-        name: newChannelName.trim(),
-        type: "public",
-        purpose: "",
-      }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success") {
-          toast.success("频道创建成功");
-          setNewChannelName("");
-          setCreateChannelOpen(false);
-          refreshChannels(setChannels, authToken ?? undefined);
-          setSelectedId(d.data.channel_id);
-        } else {
-          toast.error(d.detail || "创建失败");
-        }
-      })
-      .catch(() => toast.error("创建失败"));
-  };
-
-  useEffect(() => {
-    refreshChannels(setChannels, authToken ?? undefined);
-    refreshDMs(setDMs, authToken ?? undefined);
-    refreshWorkspaces(setWorkspaces, authToken ?? undefined);
-  }, [authToken]);
-
-  // Default to the user's Personal workspace on first load (or when the
-  // currently-selected workspace is no longer in the list, e.g. after a
-  // deletion). Explicit team-workspace picks from the rail are preserved.
-  useEffect(() => {
-    if (workspaces.length === 0) return;
-    const current = workspaces.find(
-      (w) => w.workspace_id === selectedWorkspaceId,
-    );
-    if (current) return;
-    const personal = workspaces.find((w) => w.kind === "personal");
-    setSelectedWorkspaceId(
-      personal?.workspace_id ?? workspaces[0].workspace_id,
-    );
-  }, [workspaces, selectedWorkspaceId]);
-
-  const activeWorkspace = workspaces.find(
-    (w) => w.workspace_id === selectedWorkspaceId,
-  );
-  const isPersonalWorkspace = activeWorkspace?.kind === "personal";
-  const openDirectMessage = useCallback(
-    async (memberId: string, memberType: "user" | "bot") => {
-      const personal = workspaces.find((w) => w.kind === "personal");
-      const workspaceId = personal?.workspace_id ?? selectedWorkspaceId;
-      if (!workspaceId) {
-        toast.error("请先进入个人空间");
-        return;
-      }
-      try {
-        const res = await apiFetch("dms", {
-          method: "POST",
-          token: authToken,
-          body: {
-            workspace_id: workspaceId,
-            member_id: memberId,
-            member_type: memberType,
-          },
-        });
-        const data = await res.json();
-        if (!res.ok || data?.status === "error") {
-          toast.error(data?.detail || data?.message || "发起私信失败");
-          return;
-        }
-        const dm = data?.data as DM | undefined;
-        if (!dm) return;
-        setDMs((prev) =>
-          prev.some((x) => x.channel_id === dm.channel_id)
-            ? prev.map((x) => (x.channel_id === dm.channel_id ? dm : x))
-            : [...prev, dm],
-        );
-        if (personal?.workspace_id) setSelectedWorkspaceId(personal.workspace_id);
-        setSelectedId(dm.channel_id);
-        setSettingsOpen(false);
-      } catch {
-        toast.error("发起私信失败");
-      }
-    },
-    [authToken, selectedWorkspaceId, workspaces],
-  );
 
   useEffect(() => {
     setPageTopicMessages([]);
@@ -670,84 +491,6 @@ export default function App() {
     setProcessingBots,
     reportClientError,
   });
-
-  // User-scoped WebSocket: receives lightweight notifications for channels
-  // the user isn't currently viewing. Used to live-increment rail unread
-  // counts without opening a per-channel socket for every membership.
-  useEffect(() => {
-    if (!currentUserId) return;
-    let ws: WebSocket | null = null;
-    let disposed = false;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let retryCount = 0;
-    const MAX_RETRIES = 10;
-    const BASE_DELAY = 1000;
-    const MAX_DELAY = 30000;
-
-    const connect = () => {
-      if (disposed) return;
-      ws = new WebSocket(buildWsUrl(`/ws/users/${currentUserId}`));
-      ws.onopen = () => {
-        retryCount = 0;
-      };
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === "channel_new_message" && msg.data) {
-            const chId = msg.data.channel_id as string | undefined;
-            if (!chId) return;
-            // Ignore the channel the user is actively viewing — they'll get the
-            // message on the channel WS and we'll mark-read on scroll/select.
-            if (chId === selectedId) return;
-            setChannels((prev) =>
-              prev.map((c) =>
-                c.channel_id === chId
-                  ? { ...c, unread_count: (c.unread_count ?? 0) + 1 }
-                  : c,
-              ),
-            );
-            setDMs((prev) =>
-              prev.map((d) =>
-                d.channel_id === chId
-                  ? { ...d, unread_count: (d.unread_count ?? 0) + 1 }
-                  : d,
-              ),
-            );
-          } else if (
-            msg.type === "friend_request_created" ||
-            msg.type === "friendship_changed"
-          ) {
-            refreshDMs(setDMs, authToken ?? undefined);
-            refreshChannels(setChannels, authToken ?? undefined);
-            if (msg.type === "friend_request_created") {
-              toast.success("收到新的好友申请");
-            } else if (msg.type === "friendship_changed") {
-              toast.success("好友状态已更新");
-            }
-          }
-        } catch {
-          /* ignore malformed payloads */
-        }
-      };
-      ws.onclose = () => {
-        if (disposed) return;
-        if (retryCount >= MAX_RETRIES) return;
-        const delay = Math.min(BASE_DELAY * 2 ** retryCount, MAX_DELAY);
-        retryCount += 1;
-        reconnectTimer = setTimeout(connect, delay);
-      };
-      ws.onerror = () => {
-        // onclose will run after onerror, which handles the retry.
-      };
-    };
-    connect();
-
-    return () => {
-      disposed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) ws.close();
-    };
-  }, [authToken, currentUserId, selectedId]);
 
   useEffect(() => {
     if (memoryPanelOpen && selectedId) {
@@ -1248,59 +991,6 @@ export default function App() {
       />
     );
   };
-
-  const selectedChannel: Channel | null = (() => {
-    const hit = channels.find((c) => c.channel_id === selectedId);
-    if (hit) return hit;
-    // DMs aren't in the channels[] list — synthesize a minimal Channel so
-    // downstream references to selectedChannel.name / .workspace_id work.
-    const dm = selectedId
-      ? dms.find((d) => d.channel_id === selectedId)
-      : undefined;
-    if (!dm) return null;
-    const label =
-      dm.counterparty.display_name ||
-      dm.counterparty.username ||
-      "DM";
-    return {
-      channel_id: dm.channel_id,
-      workspace_id: dm.workspace_id,
-      name: label,
-      type: "dm",
-      auto_assist: false,
-      unread_count: dm.unread_count ?? 0,
-    };
-  })();
-
-  // 打开频道时把未读标记为已读：先在本地把徽标清零（立即反馈），再向后端
-  // 同步阅读游标。失败不回滚徽标——下次加载频道列表时会重新计算。
-  useEffect(() => {
-    if (!selectedId || !authToken) return;
-    setChannels((prev) =>
-      prev.some(
-        (c) => c.channel_id === selectedId && (c.unread_count ?? 0) > 0,
-      )
-        ? prev.map((c) =>
-            c.channel_id === selectedId ? { ...c, unread_count: 0 } : c,
-          )
-        : prev,
-    );
-    setDMs((prev) =>
-      prev.some(
-        (d) => d.channel_id === selectedId && (d.unread_count ?? 0) > 0,
-      )
-        ? prev.map((d) =>
-            d.channel_id === selectedId ? { ...d, unread_count: 0 } : d,
-          )
-        : prev,
-    );
-    apiFetch(`/channels/${selectedId}/read`, {
-      method: "POST",
-      token: authToken,
-    }).catch(() => {
-      /* ignore — rail badge stays cleared locally; next list refresh re-syncs */
-    });
-  }, [selectedId, authToken]);
 
   const botById = useMemo(
     () => new Map(channelBots.map((bot) => [bot.member_id, bot])),

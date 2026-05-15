@@ -117,7 +117,7 @@ App.tsx
 ├── ImageLightbox
 ```
 
-`App.tsx` 可以继续负责状态聚合、路由同步、WebSocket、消息窗口和跨面板协调。新 UI 代码如果可以独立复用，应优先放到 `components/app/` 或 `components/`，不要继续扩大 `App.tsx`。
+`App.tsx` 只负责主题、认证、URL 编排和跨 feature 组合；工作区/频道/DM 目录、消息窗口、实时消息、文件上传和输入框状态都应优先下沉到 `features/chat/hooks/`。新 UI 代码如果可以独立复用，应优先放到 `components/app/` 或 `components/`，不要继续扩大 `App.tsx`。
 
 ## 目录职责
 
@@ -136,7 +136,8 @@ features/
 │   │   ├── useChannelParticipants.ts # 频道用户/Bot、Bot 候选、添加/移除和 autoAssist
 │   │   ├── useChatRealtime.ts      # 频道 WebSocket、流式增量、trace 和 message_done 合并
 │   │   ├── useComposerController.ts # 输入草稿、消息类型、标题、回复和加密模式
-│   │   └── usePendingFiles.ts       # 待发送文件、预览 URL、上传、删除和清理
+│   │   ├── usePendingFiles.ts       # 待发送文件、预览 URL、上传、删除和清理
+│   │   └── useWorkspaceDirectory.ts # 工作区、频道、DM、选择同步、创建/邀请和未读状态
 │   ├── messages/
 │       ├── AgentBridgeTaskCard.tsx  # Agent Bridge 后台任务消息卡
 │       ├── ChatMessageList.tsx      # 虚拟消息列表、特殊消息卡和话题回复渲染
