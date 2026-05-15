@@ -24,6 +24,7 @@ from app.services.file_processor.convert import (
     is_image_type,
     parse_document_bytes,
 )
+from app.services.file_retention import active_file_filter, file_expires_at
 from app.services.storage.base import (
     StorageClientInitError,
     StorageObject,
@@ -32,7 +33,6 @@ from app.services.storage.base import (
     StorageProvider,
 )
 from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
-from app.services.file_retention import active_file_filter, file_expires_at
 
 logger = logging.getLogger("app.services.file_processor.service")
 

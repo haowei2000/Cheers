@@ -16,13 +16,13 @@ from app.core.exceptions import AppError, NotFoundError
 from app.core.responses import APIResponse
 from app.db.models import FileRecord, User
 from app.services.channel_service import ChannelService
-from app.services.file_retention import active_file_filter
 from app.services.file_processor.convert import (
     FileParseError,
     UnsupportedFileTypeError,
     is_image_type,
     parse_document_bytes,
 )
+from app.services.file_retention import active_file_filter
 
 router = APIRouter(prefix="/files", tags=["files"])
 

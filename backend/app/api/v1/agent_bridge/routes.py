@@ -89,9 +89,9 @@ from app.features.bot_runtime.bot_events.jobs import (
 )
 from app.features.bot_runtime.bot_events.queue import enqueue_bot_event_job
 from app.services.channel_service import ChannelService
-from app.services.file_retention import active_file_filter, file_expires_at
 from app.services.file_processor.convert import is_image_type
 from app.services.file_processor.service import FileFlowError, FilePipelineService
+from app.services.file_retention import active_file_filter, file_expires_at
 
 logger = logging.getLogger("app.api.v1.agent_bridge")
 

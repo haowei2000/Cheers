@@ -20,13 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.chat.message_assembler import MessageAssembler
 from app.db.models import BotAccount, Channel, FileRecord, Message
-from app.services.file_retention import active_file_filter
 from app.features.agent_bridge.pending import PendingReply, pending_replies
 from app.features.agent_bridge.streams import StreamState, stream_registry
 from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
 from app.features.bot_runtime.pipeline.bus import WSEventBus
 from app.features.bot_runtime.pipeline.events import BotTrace, MessageCreated, MessageDone
 from app.features.bot_runtime.pipeline.stream_coalescer import StreamDeltaCoalescer
+from app.services.file_retention import active_file_filter
 
 logger = logging.getLogger("app.features.agent_bridge.service")
 
