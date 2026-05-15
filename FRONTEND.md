@@ -136,6 +136,8 @@ features/
 │   │   ├── useChannelParticipants.ts # 频道用户/Bot、Bot 候选、添加/移除和 autoAssist
 │   │   ├── useChatRealtime.ts      # 频道 WebSocket、流式增量、trace 和 message_done 合并
 │   │   ├── useComposerController.ts # 输入草稿、消息类型、标题、回复和加密模式
+│   │   ├── useFilePreviewController.tsx # 文件预览侧栏、Markdown 图片点击和附件渲染
+│   │   ├── useMessagePresentation.tsx # AI 记忆、流式状态、Agent Bridge 任务卡展示辅助
 │   │   ├── usePendingFiles.ts       # 待发送文件、预览 URL、上传、删除和清理
 │   │   └── useWorkspaceDirectory.ts # 工作区、频道、DM、选择同步、创建/邀请和未读状态
 │   ├── messages/

@@ -3,10 +3,8 @@ import toast from "react-hot-toast";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
-import { AppIcon } from "./components/icons/AppIcon";
 import { Sidebar } from "./components/Sidebar";
 import { ImageLightbox } from "./components/ImageLightbox";
-import { ChatAttachments } from "./components/ChatMessageRenderer";
 import type { MemoryTab } from "./components/ChannelHeader";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { AppModals } from "./components/app/AppModals";
@@ -18,18 +16,14 @@ import { useChannelMessages } from "./features/chat/hooks/useChannelMessages";
 import { useChannelParticipants } from "./features/chat/hooks/useChannelParticipants";
 import { useChatRealtime } from "./features/chat/hooks/useChatRealtime";
 import { useComposerController } from "./features/chat/hooks/useComposerController";
+import { useFilePreviewController } from "./features/chat/hooks/useFilePreviewController";
+import { useMessagePresentation } from "./features/chat/hooks/useMessagePresentation";
 import { usePendingFiles } from "./features/chat/hooks/usePendingFiles";
 import { useWorkspaceDirectory } from "./features/chat/hooks/useWorkspaceDirectory";
-import { AgentBridgeTaskCard } from "./features/chat/messages/AgentBridgeTaskCard";
 import { apiFetch } from "./api";
 import { parseHelperPayload } from "./lib/helper";
 import { API, API_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
-import {
-  getActiveAgentBridgeTaskData,
-  getAgentBridgeTaskData,
-  type AgentBridgeTaskMessage,
-} from "./lib/agent-bridge";
 import {
   buildChatPath,
   buildChatSearch,
@@ -40,18 +34,12 @@ import {
   MAX_LOADED_MESSAGES,
   VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
 } from "./lib/message-window";
-import {
-  patchMessage,
-  upsertMessage,
-} from "./lib/message-store";
+import { upsertMessage } from "./lib/message-store";
 import type {
   Message,
-  FileInfo,
   ContextData,
   ClarifySchema,
   ClarifyAnswers,
-  AgentBridgeTaskContentData,
-  MemoryLoadDetail,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
 
@@ -335,16 +323,18 @@ export default function App() {
     Record<string, string>
   >({});
   const [secretTokens, setSecretTokens] = useState<Record<string, string>>({}); // msg_id -> token（仅发送方当次 session 持有）
-  // Lightbox 状态
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-  const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
-  // 文件预览侧边栏
-  const [filePreviewPanel, setFilePreviewPanel] = useState<{
-    url: string;
-    filename: string;
-    contentType?: string | null;
-    sizeBytes?: number | null;
-  } | null>(null);
+  const {
+    lightboxSrc,
+    lightboxFileId,
+    setLightboxSrc,
+    setLightboxFileId,
+    filePreviewPanel,
+    setFilePreviewPanel,
+    openFilePreview,
+    handleMarkdownImageClick,
+    handleMarkdownFileClick,
+    renderFileAttachments,
+  } = useFilePreviewController();
   // 可伸缩面板宽度
   const [leftWidth, onLeftResize] = useResize(256, 160, 480, "right");
   const [memoryWidth, onMemoryResize] = useResize(288, 200, 600, "left");
@@ -680,145 +670,29 @@ export default function App() {
     }
   };
 
-  const getMemoryLoadDetail = (m: Message): MemoryLoadDetail | null => {
-    const value = m.content_data?.memory_load;
-    if (!value || typeof value !== "object") return null;
-    const detail = value as MemoryLoadDetail;
-    return detail.kind === "bot_memory_load" ? detail : null;
-  };
-
-  const renderMemoryLoadButton = (m: Message) => {
-    if (!hasBotReplyDetails(m)) return null;
-    return (
-      <button
-        type="button"
-        onClick={() => setMemoryDetailMessage(m)}
-        title="查看这条 AI 回复的记忆与流式事件"
-        className="an-chat-action"
-      >
-        <AppIcon name="help" className="h-3.5 w-3.5" />
-      </button>
-    );
-  };
-
-  const hasBotReplyDetails = (m: Message): boolean =>
-    m.sender_type === "bot" &&
-    Boolean(getMemoryLoadDetail(m) || m._bot_trace?.length);
-
-  const cancelStreamingMessage = async (m: Message) => {
-    if (!selectedId) return;
-    // Optimistic: stop the streaming pulse immediately so the user sees feedback;
-    // the message_done event will arrive shortly with is_partial=true and the
-    // final buffered content. If the request fails we restore _streaming.
-    setMessageStore((prev) =>
-      patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: false })),
-    );
-    try {
-      const r = await apiFetch(
-        `/channels/${selectedId}/messages/${m.msg_id}/cancel`,
-        { method: "POST", token: authToken },
-      );
-      if (!r.ok) {
-        setMessageStore((prev) =>
-          patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: true })),
-        );
-        toast.error("取消失败");
-      }
-    } catch {
-      setMessageStore((prev) =>
-        patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: true })),
-      );
-      toast.error("取消失败");
-    }
-  };
-
-  /** Inline ⏹ stop button shown next to the streaming pulse on bot bubbles.
-   *  Returns null for non-streaming or non-bot messages so callers can drop
-   *  it next to every pulse location without an extra wrapping condition. */
-  const renderStopStreamButton = (m: Message) => {
-    if (!m._streaming || m.sender_type !== "bot") return null;
-    return (
-      <button
-        type="button"
-        title="停止生成"
-        onClick={() => cancelStreamingMessage(m)}
-        className="inline-flex items-center justify-center align-middle ml-1.5 w-5 h-5 rounded border"
-        style={{
-          borderColor: "var(--border)",
-          background: "var(--surface-soft)",
-          color: "var(--fg-2)",
-          cursor: "pointer",
-        }}
-      >
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            background: "currentColor",
-            borderRadius: 1,
-          }}
-        />
-      </button>
-    );
-  };
-
-  /** Inline "已取消" badge shown after a streaming bot reply was cancelled. */
-  const renderPartialBadge = (m: Message) => {
-    if (m._streaming || !m.is_partial || m.sender_type !== "bot") return null;
-    return (
-      <span
-        className="inline-block align-middle ml-1.5 px-1.5 py-0.5 rounded text-[10px]"
-        style={{
-          background: "var(--surface-soft)",
-          border: "1px solid var(--border)",
-          color: "var(--fg-3)",
-        }}
-      >
-        已取消
-      </span>
-    );
-  };
-
-  const renderBotTraceStatus = (m: Message) => {
-    if (!m._streaming || m.sender_type !== "bot" || !m._bot_status) return null;
-    return (
-      <div
-        className="mt-1 flex items-center gap-1.5 text-[11px] leading-snug"
-        style={{ color: "var(--fg-3)" }}
-      >
-        <span
-          className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-          style={{ background: "var(--fg-3)" }}
-        />
-        <span className="truncate max-w-[min(520px,70vw)]">
-          {m._bot_status}
-        </span>
-      </div>
-    );
-  };
-
-  const activeAgentBridgeTaskData = (m: Message): AgentBridgeTaskContentData | null => {
-    return getActiveAgentBridgeTaskData(m, isDmSelected);
-  };
-
-  const agentBridgeTaskData = (m: Message): AgentBridgeTaskContentData | null => {
-    return getAgentBridgeTaskData(m, isDmSelected);
-  };
-
-  const agentBridgeTaskMessages = useMemo(
-    () => {
-      if (isDmSelected) return [];
-      return (
-      messages
-        .map((m) => {
-          const task = agentBridgeTaskData(m);
-          return task ? ({ ...m, content_data: task } as AgentBridgeTaskMessage) : null;
-        })
-        .filter((m): m is AgentBridgeTaskMessage => m !== null)
-      );
+  const {
+    getMemoryLoadDetail,
+    hasBotReplyDetails,
+    renderMemoryLoadButton,
+    renderStopStreamButton,
+    renderPartialBadge,
+    renderBotTraceStatus,
+    activeAgentBridgeTaskData,
+    agentBridgeTaskMessages,
+    renderAgentBridgeTaskCard,
+  } = useMessagePresentation({
+    selectedId,
+    authToken,
+    isDmSelected,
+    messages,
+    setMessageStore,
+    onShowMessageDetails: setMemoryDetailMessage,
+    onOpenAgentBridgeTask: (messageId) => {
+      setPageTopicId(null);
+      setPageTaskMsgId(messageId);
+      setTaskPageOpen(true);
     },
-    [isDmSelected, messages],
-  );
+  });
 
   const jumpToMessage = useCallback((id: string) => {
     const highlight = (el: HTMLElement) => {
@@ -849,22 +723,6 @@ export default function App() {
       if (next) highlight(next);
     });
   }, [messages]);
-
-  const renderAgentBridgeTaskCard = (m: Message) => {
-    const task = activeAgentBridgeTaskData(m);
-    if (!task) return null;
-    return (
-      <AgentBridgeTaskCard
-        message={m}
-        task={task}
-        onOpen={(messageId) => {
-          setPageTopicId(null);
-          setPageTaskMsgId(messageId);
-          setTaskPageOpen(true);
-        }}
-      />
-    );
-  };
 
   const sendTopicReply = async (
     channelId: string,
@@ -942,54 +800,6 @@ export default function App() {
       setPendingClarifyReplyMsgId(null);
       toast.error("提交失败，请重试");
     });
-  };
-
-  const filePreviewUrl = (fileId: string) => `${API}/files/${fileId}/preview`;
-  const fileDownloadUrl = (fileId: string) => `${API}/files/${fileId}/download`;
-
-  const openFilePreview = (file: FileInfo) => {
-    setFilePreviewPanel({
-      url: filePreviewUrl(file.file_id),
-      filename: file.original_filename || file.file_id,
-      contentType: file.content_type,
-      sizeBytes: file.size_bytes,
-    });
-  };
-
-  const openFilePreviewUrl = (
-    url: string,
-    filename: string,
-    contentType?: string | null,
-    sizeBytes?: number | null,
-  ) => {
-    setFilePreviewPanel({ url, filename, contentType, sizeBytes });
-  };
-
-  const handleMarkdownImageClick = (src: string) => {
-    const match = src.match(/\/files\/([^/?]+)\/preview/);
-    if (match) {
-      const fileId = decodeURIComponent(match[1]);
-      openFilePreviewUrl(src, `file-${fileId.slice(0, 8)}`, "image/*");
-      return;
-    }
-    setLightboxSrc(src);
-    setLightboxFileId(null);
-  };
-
-  const handleMarkdownFileClick = (url: string, name: string) => {
-    openFilePreviewUrl(url, name);
-  };
-
-  const renderFileAttachments = (msg: Message, alignRight = false) => {
-    return (
-      <ChatAttachments
-        align={alignRight ? "right" : "left"}
-        files={msg.files}
-        getPreviewUrl={(file) => filePreviewUrl(file.file_id)}
-        getDownloadUrl={(file) => fileDownloadUrl(file.file_id)}
-        onPreview={openFilePreview}
-      />
-    );
   };
 
   const botById = useMemo(
