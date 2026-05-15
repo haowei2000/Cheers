@@ -54,6 +54,13 @@ type ForwardModalState = {
   summary: string;
 };
 
+type ComposerPromptTemplateOption = {
+  template_id: string;
+  name: string;
+  description?: string | null;
+  is_builtin?: boolean;
+};
+
 export default function App() {
   const { isDark, setTheme } = useTheme();
   const navigate = useNavigate();
@@ -132,6 +139,9 @@ export default function App() {
     secretMode,
     resetComposerAfterSend,
   } = useComposerController();
+  const [promptTemplates, setPromptTemplates] = useState<ComposerPromptTemplateOption[]>([]);
+  const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
+  const [selectedPromptTemplateId, setSelectedPromptTemplateId] = useState<string | null>(null);
   const [pageTopicId, setPageTopicId] = useState<string | null>(
     () => chatUrlState.topicId,
   );
@@ -144,6 +154,31 @@ export default function App() {
   );
   const [refreshingDmSession, setRefreshingDmSession] = useState(false);
   const [dmSessionRefreshNonce, setDmSessionRefreshNonce] = useState(0);
+
+  useEffect(() => {
+    if (!authToken) {
+      setPromptTemplates([]);
+      setSelectedPromptTemplateId(null);
+      return;
+    }
+    let active = true;
+    setPromptTemplatesLoading(true);
+    apiFetch("/templates", { token: authToken })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!active) return;
+        setPromptTemplates(Array.isArray(data?.data) ? data.data : []);
+      })
+      .catch(() => {
+        if (active) setPromptTemplates([]);
+      })
+      .finally(() => {
+        if (active) setPromptTemplatesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authToken]);
   const {
     channels,
     setChannels,
@@ -596,6 +631,11 @@ export default function App() {
     };
     if (replyingTo && !isDmSelected) body.in_reply_to_msg_id = replyingTo.msg_id;
     const titleTrim = composerTitle.trim() || null;
+    const selectedPromptTemplate = selectedPromptTemplateId
+      ? promptTemplates.find(
+          (template) => template.template_id === selectedPromptTemplateId,
+        )
+      : null;
     if (effectiveKind === "announcement") {
       body.content_data = {
         pinned_by: currentUserId,
@@ -604,7 +644,15 @@ export default function App() {
     } else if (effectiveKind === "topic") {
       body.content_data = titleTrim ? { title: titleTrim } : {};
     }
+    if (selectedPromptTemplate) {
+      body.content_data = {
+        ...((body.content_data as Record<string, unknown> | undefined) || {}),
+        prompt_template_override_id: selectedPromptTemplate.template_id,
+        prompt_template_override_name: selectedPromptTemplate.name,
+      };
+    }
     resetComposerAfterSend();
+    setSelectedPromptTemplateId(null);
     clearPendingFiles();
     authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
@@ -1279,6 +1327,7 @@ export default function App() {
               activeDmSessionScopeId={activeDmSessionScopeId}
               dmSessionRefreshNonce={dmSessionRefreshNonce}
               isMobile={isMobile}
+              isPersonalWorkspace={isPersonalWorkspace}
               isDmSelected={isDmSelected}
               autoAssist={autoAssist}
               memoryTab={memoryTab}
@@ -1462,6 +1511,10 @@ export default function App() {
                 keychainItems: keychainPopupItems,
                 onToggleKeychain: openKeychainPopup,
                 onCloseKeychain: () => setKeychainPopupOpen(false),
+                promptTemplates,
+                promptTemplatesLoading,
+                selectedPromptTemplateId,
+                onPromptTemplateChange: setSelectedPromptTemplateId,
               }}
               setMemoryTab={setMemoryTab}
               setPageTopicId={setPageTopicId}

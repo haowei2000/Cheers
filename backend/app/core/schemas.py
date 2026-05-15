@@ -269,6 +269,12 @@ class DMInResponse(BaseModel):
     channel_id: str
     workspace_id: str
     counterparty: DMCounterparty
+    title: str | None = None
+    project_id: str | None = None
+    project_title: str | None = None
+    chat_title: str | None = None
+    session_scope_id: str | None = None
+    created_at: datetime | None = None
     unread_count: int | None = None
 
 
@@ -277,6 +283,11 @@ class DMCreateRequest(BaseModel):
     workspace_id: str
     member_id: str
     member_type: str  # "user" | "bot"
+    create_new: bool = False
+    title: str | None = Field(default=None, max_length=80)
+    project_id: str | None = Field(default=None, max_length=80)
+    project_title: str | None = Field(default=None, max_length=80)
+    chat_title: str | None = Field(default=None, max_length=80)
 
 
 # ==================== Global search ====================

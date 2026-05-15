@@ -38,6 +38,13 @@ export interface ComposerKeychainItem {
   name: string;
 }
 
+export interface ComposerPromptTemplate {
+  template_id: string;
+  name: string;
+  description?: string | null;
+  is_builtin?: boolean;
+}
+
 export interface MessageComposerProps {
   value: string;
   valueRevision?: number;
@@ -71,6 +78,10 @@ export interface MessageComposerProps {
   keychainItems?: ComposerKeychainItem[];
   onToggleKeychain?: () => void;
   onCloseKeychain?: () => void;
+  promptTemplates?: ComposerPromptTemplate[];
+  promptTemplatesLoading?: boolean;
+  selectedPromptTemplateId?: string | null;
+  onPromptTemplateChange?: (templateId: string | null) => void;
   sendButtonLabel?: string;
   normalHint?: ReactNode;
 }
@@ -112,6 +123,10 @@ export function MessageComposer({
   keychainItems = [],
   onToggleKeychain,
   onCloseKeychain,
+  promptTemplates = [],
+  promptTemplatesLoading = false,
+  selectedPromptTemplateId = null,
+  onPromptTemplateChange,
   sendButtonLabel,
   normalHint,
 }: MessageComposerProps) {
@@ -122,15 +137,27 @@ export function MessageComposer({
     "bottom",
   );
   const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState<number | null>(null);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const keychainTriggerRef = useRef<HTMLDivElement | null>(null);
+  const keychainMenuRef = useRef<HTMLDivElement | null>(null);
+  const uploadTriggerRef = useRef<HTMLDivElement | null>(null);
   const uploadMenuRef = useRef<HTMLDivElement | null>(null);
+  const templateTriggerRef = useRef<HTMLDivElement | null>(null);
+  const templateMenuRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const keychainRef = useRef<HTMLDivElement | null>(null);
   const displayKind: MessageComposerKind = normalOnly ? "normal" : kind;
   const effectiveCanSend = canSendPredicate
     ? canSendPredicate(draftValue)
     : canSend;
+  const selectedPromptTemplate = useMemo(
+    () =>
+      promptTemplates.find(
+        (template) => template.template_id === selectedPromptTemplateId,
+      ) || null,
+    [promptTemplates, selectedPromptTemplateId],
+  );
 
   useEffect(() => {
     setDraftValue(value);
@@ -140,6 +167,8 @@ export function MessageComposer({
     if (!uploadMenuOpen) return;
     const handle = (event: MouseEvent) => {
       if (
+        uploadTriggerRef.current &&
+        !uploadTriggerRef.current.contains(event.target as Node) &&
         uploadMenuRef.current &&
         !uploadMenuRef.current.contains(event.target as Node)
       ) {
@@ -151,11 +180,29 @@ export function MessageComposer({
   }, [uploadMenuOpen]);
 
   useEffect(() => {
+    if (!templateMenuOpen) return;
+    const handle = (event: MouseEvent) => {
+      if (
+        templateTriggerRef.current &&
+        !templateTriggerRef.current.contains(event.target as Node) &&
+        templateMenuRef.current &&
+        !templateMenuRef.current.contains(event.target as Node)
+      ) {
+        setTemplateMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [templateMenuOpen]);
+
+  useEffect(() => {
     if (!keychainOpen) return;
     const handle = (event: MouseEvent) => {
       if (
-        keychainRef.current &&
-        !keychainRef.current.contains(event.target as Node)
+        keychainTriggerRef.current &&
+        !keychainTriggerRef.current.contains(event.target as Node) &&
+        keychainMenuRef.current &&
+        !keychainMenuRef.current.contains(event.target as Node)
       ) {
         onCloseKeychain?.();
       }
@@ -311,6 +358,7 @@ export function MessageComposer({
   const shouldShowKindhead = !replyingTo;
   const placementClass =
     mentionPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1";
+  const toolbarMenuClass = "an-menu absolute left-0 right-0 bottom-full mb-1";
 
   return (
     <>
@@ -510,6 +558,14 @@ export function MessageComposer({
                   {normalHint ?? "@ 呼叫 Bot · Tab 切换类型 · ↵ 发送"}
                 </span>
               )}
+              {selectedPromptTemplate && (
+                <span
+                  className="an-composer-template-chip"
+                  title={`本次消息强制使用模板：${selectedPromptTemplate.name}`}
+                >
+                  / {selectedPromptTemplate.name}
+                </span>
+              )}
             </div>
           )}
 
@@ -532,7 +588,7 @@ export function MessageComposer({
           <div className="an-composer-bar">
             <div className="flex items-center gap-1">
               {keychainEnabled && (
-                <div ref={keychainRef} className="relative">
+                <div ref={keychainTriggerRef} className="relative">
                   <button
                     type="button"
                     onClick={onToggleKeychain}
@@ -543,50 +599,6 @@ export function MessageComposer({
                   >
                     <AppIcon name="key" className="w-4 h-4" />
                   </button>
-                  {keychainOpen && (
-                    <div
-                      className="an-menu absolute"
-                      style={{
-                        bottom: 40,
-                        left: 0,
-                        minWidth: 220,
-                        maxHeight: 256,
-                        overflowY: "auto",
-                      }}
-                    >
-                      <div className="an-menu-head">插入密钥</div>
-                      {keychainLoading ? (
-                        <div className="an-menu-empty">加载中…</div>
-                      ) : keychainItems.length === 0 ? (
-                        <div className="an-menu-empty">
-                          暂无密钥
-                          <br />
-                          <span style={{ opacity: 0.7 }}>
-                            点击侧边栏钥匙图标添加
-                          </span>
-                        </div>
-                      ) : (
-                        keychainItems.map((item) => (
-                          <button
-                            key={item.key_id}
-                            type="button"
-                            onClick={() => {
-                              insertAtCursor(`$secret{${item.name}}`);
-                              onCloseKeychain?.();
-                            }}
-                            className="an-menu-item"
-                          >
-                            <span className="an-mi-ico">
-                              <AppIcon name="help" className="w-3.5 h-3.5" />
-                            </span>
-                            <span className="font-mono truncate">
-                              {item.name}
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -599,7 +611,7 @@ export function MessageComposer({
                     className="hidden"
                     onChange={onUploadFile}
                   />
-                  <div ref={uploadMenuRef} className="relative">
+                  <div ref={uploadTriggerRef} className="relative">
                     <button
                       type="button"
                       onClick={() => setUploadMenuOpen((open) => !open)}
@@ -611,28 +623,29 @@ export function MessageComposer({
                     >
                       <AppIcon name="plus" className="w-[18px] h-[18px]" />
                     </button>
-                    {uploadMenuOpen && (
-                      <div
-                        className="an-menu absolute"
-                        style={{ bottom: 40, left: 0, minWidth: 180 }}
-                      >
-                        <button
-                          type="button"
-                          className="an-menu-item"
-                          onClick={() => {
-                            setUploadMenuOpen(false);
-                            fileInputRef.current?.click();
-                          }}
-                        >
-                          <span className="an-mi-ico">
-                            <AppIcon name="link" className="w-4 h-4" />
-                          </span>
-                          <span>上传文件和图片</span>
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </>
+              )}
+
+              {onPromptTemplateChange && (
+                <div ref={templateTriggerRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setTemplateMenuOpen((open) => !open)}
+                    className={
+                      "an-composer-iconbtn" +
+                      (templateMenuOpen || selectedPromptTemplate ? " is-active" : "")
+                    }
+                    title={
+                      selectedPromptTemplate
+                        ? `强制模板：${selectedPromptTemplate.name}`
+                        : "选择提示词模板覆盖本次消息"
+                    }
+                    aria-label="选择提示词模板"
+                  >
+                    <span className="text-[15px] font-semibold leading-none">/</span>
+                  </button>
+                </div>
               )}
 
               <button
@@ -656,30 +669,29 @@ export function MessageComposer({
               >
                 <span className="an-kbd-glyph">⇧↵</span>
               </button>
+              {!normalOnly &&
+                (displayKind === "normal" || displayKind === "secret") && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onKindChange?.(
+                        displayKind === "secret" ? "normal" : "secret",
+                      )
+                    }
+                    title={
+                      displayKind === "secret"
+                        ? "取消加密模式"
+                        : "开启加密模式（仅 Bot 可读原文）"
+                    }
+                    className={
+                      "an-composer-iconbtn" +
+                      (displayKind === "secret" ? " is-secret-on" : "")
+                    }
+                  >
+                    <AppIcon name="lock" className="w-4 h-4" />
+                  </button>
+                )}
             </div>
-
-            {!normalOnly &&
-              (displayKind === "normal" || displayKind === "secret") && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    onKindChange?.(
-                      displayKind === "secret" ? "normal" : "secret",
-                    )
-                  }
-                  title={
-                    displayKind === "secret"
-                      ? "取消加密模式"
-                      : "开启加密模式（仅 Bot 可读原文）"
-                  }
-                  className={
-                    "an-composer-iconbtn ml-auto" +
-                    (displayKind === "secret" ? " is-secret-on" : "")
-                  }
-                >
-                  <AppIcon name="lock" className="w-4 h-4" />
-                </button>
-              )}
 
             <button
               type="button"
@@ -691,6 +703,130 @@ export function MessageComposer({
             </button>
           </div>
         </div>
+
+        {keychainOpen && (
+          <div
+            ref={keychainMenuRef}
+            className={toolbarMenuClass}
+            style={{
+              maxHeight: 256,
+              overflowY: "auto",
+            }}
+          >
+            <div className="an-menu-head">插入密钥</div>
+            {keychainLoading ? (
+              <div className="an-menu-empty">加载中…</div>
+            ) : keychainItems.length === 0 ? (
+              <div className="an-menu-empty">
+                暂无密钥
+                <br />
+                <span style={{ opacity: 0.7 }}>点击侧边栏钥匙图标添加</span>
+              </div>
+            ) : (
+              keychainItems.map((item) => (
+                <button
+                  key={item.key_id}
+                  type="button"
+                  onClick={() => {
+                    insertAtCursor(`$secret{${item.name}}`);
+                    onCloseKeychain?.();
+                  }}
+                  className="an-menu-item"
+                >
+                  <span className="an-mi-ico">
+                    <AppIcon name="help" className="w-3.5 h-3.5" />
+                  </span>
+                  <span className="font-mono truncate">{item.name}</span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+
+        {uploadMenuOpen && (
+          <div
+            ref={uploadMenuRef}
+            className={toolbarMenuClass}
+          >
+            <button
+              type="button"
+              className="an-menu-item"
+              onClick={() => {
+                setUploadMenuOpen(false);
+                fileInputRef.current?.click();
+              }}
+            >
+              <span className="an-mi-ico">
+                <AppIcon name="link" className="w-4 h-4" />
+              </span>
+              <span>上传文件和图片</span>
+            </button>
+          </div>
+        )}
+
+        {templateMenuOpen && (
+          <div
+            ref={templateMenuRef}
+            className={toolbarMenuClass}
+            style={{
+              maxHeight: 300,
+              overflowY: "auto",
+            }}
+          >
+            <div className="an-menu-head">提示词模板 · 强制覆盖本次消息</div>
+            {selectedPromptTemplate && (
+              <button
+                type="button"
+                className="an-menu-item"
+                onClick={() => {
+                  onPromptTemplateChange?.(null);
+                  setTemplateMenuOpen(false);
+                }}
+              >
+                <span className="an-mi-ico">
+                  <AppIcon name="close" className="w-3.5 h-3.5" />
+                </span>
+                <span>清除模板覆盖</span>
+              </button>
+            )}
+            {promptTemplatesLoading ? (
+              <div className="an-menu-empty">加载中…</div>
+            ) : promptTemplates.length === 0 ? (
+              <div className="an-menu-empty">暂无可用模板</div>
+            ) : (
+              promptTemplates.map((template) => (
+                <button
+                  key={template.template_id}
+                  type="button"
+                  className="an-menu-item"
+                  onClick={() => {
+                    onPromptTemplateChange?.(template.template_id);
+                    setTemplateMenuOpen(false);
+                  }}
+                >
+                  <span className="an-mi-ico">
+                    {template.template_id === selectedPromptTemplateId ? (
+                      <AppIcon name="check" className="w-3.5 h-3.5" />
+                    ) : (
+                      <span className="text-[14px] font-semibold">/</span>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{template.name}</span>
+                    {template.description && (
+                      <span
+                        className="block truncate text-[11px]"
+                        style={{ color: "var(--fg-3)" }}
+                      >
+                        {template.description}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
 
         {mentionOpen && matchedMentionItems.length > 0 && (
           <ul

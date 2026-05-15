@@ -1,8 +1,10 @@
 """Channel 业务逻辑层."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import cast
+from uuid import uuid4
 
 from sqlalchemy import and_, delete, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +47,56 @@ CHANNEL_TYPE_ALIASES = {
     "private": "private",
     "dm": "dm",
 }
+PERSONAL_PROJECT_PURPOSE_KIND = "personal_project_chat"
+
+
+def _clean_short_text(value: str | None, fallback: str | None = None) -> str | None:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return fallback
+    return cleaned[:80]
+
+
+def _personal_project_purpose(
+    *,
+    project_id: str,
+    project_title: str,
+    chat_title: str,
+) -> str:
+    return json.dumps(
+        {
+            "kind": PERSONAL_PROJECT_PURPOSE_KIND,
+            "project_id": project_id,
+            "project_title": project_title,
+            "chat_title": chat_title,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _parse_personal_project_purpose(value: str | None) -> dict[str, str | None]:
+    if not value:
+        return {"project_id": None, "project_title": None, "chat_title": None}
+    try:
+        payload = json.loads(value)
+    except (TypeError, ValueError):
+        return {
+            "project_id": None,
+            "project_title": None,
+            "chat_title": _clean_short_text(value),
+        }
+    if not isinstance(payload, dict) or payload.get("kind") != PERSONAL_PROJECT_PURPOSE_KIND:
+        return {
+            "project_id": None,
+            "project_title": None,
+            "chat_title": _clean_short_text(value),
+        }
+    return {
+        "project_id": _clean_short_text(payload.get("project_id")),
+        "project_title": _clean_short_text(payload.get("project_title")),
+        "chat_title": _clean_short_text(payload.get("chat_title")),
+    }
 
 
 def normalize_channel_type(value: str | None) -> str:
@@ -88,11 +140,18 @@ class ChannelService:
         current_user: User,
         other_id: str,
         other_type: str,
+        create_new: bool = False,
+        title: str | None = None,
+        project_id: str | None = None,
+        project_title: str | None = None,
+        chat_title: str | None = None,
     ) -> Channel:
         """Return an existing 1:1 DM channel between current_user and (other)
         in the given workspace, or create one on first request. Idempotent."""
         if other_type not in ("user", "bot"):
             raise BadRequestError("member_type must be 'user' or 'bot'")
+        if create_new and other_type != "bot":
+            raise BadRequestError("only bot chats support create_new")
         if other_type == "user" and other_id == current_user.user_id:
             raise BadRequestError("cannot DM yourself")
 
@@ -117,27 +176,29 @@ class ChannelService:
             ):
                 raise ForbiddenError("只能与好友发起私信")
 
-        # Look for an existing DM channel with exactly these two members.
-        from sqlalchemy.orm import aliased
+        if not create_new:
+            # Look for an existing DM channel with exactly these two members.
+            from sqlalchemy.orm import aliased
 
-        m1 = aliased(ChannelMembership)
-        m2 = aliased(ChannelMembership)
-        existing = (await self.session.execute(
-            select(Channel)
-            .join(m1, m1.channel_id == Channel.channel_id)
-            .join(m2, m2.channel_id == Channel.channel_id)
-            .where(
-                Channel.workspace_id == workspace_id,
-                Channel.type == "dm",
-                m1.member_id == current_user.user_id,
-                m1.member_type == "user",
-                m2.member_id == other_id,
-                m2.member_type == other_type,
-            )
-            .limit(1)
-        )).scalar_one_or_none()
-        if existing:
-            return existing
+            m1 = aliased(ChannelMembership)
+            m2 = aliased(ChannelMembership)
+            existing = (await self.session.execute(
+                select(Channel)
+                .join(m1, m1.channel_id == Channel.channel_id)
+                .join(m2, m2.channel_id == Channel.channel_id)
+                .where(
+                    Channel.workspace_id == workspace_id,
+                    Channel.type == "dm",
+                    m1.member_id == current_user.user_id,
+                    m1.member_type == "user",
+                    m2.member_id == other_id,
+                    m2.member_type == other_type,
+                    Channel.name.notlike("dmchat:%"),
+                )
+                .limit(1)
+            )).scalar_one_or_none()
+            if existing:
+                return existing
 
         if other_type == "bot":
             await BotService(self.session).assert_can_use(
@@ -146,11 +207,30 @@ class ChannelService:
                 "无权与该 Bot 发起私信",
             )
 
-        # Deterministic name for dedup debugging; display comes from counterparty.
-        a, b = sorted([current_user.user_id, other_id])
-        name = f"dm:{a}:{b}"[:255]
+        if create_new:
+            name = f"dmchat:{current_user.user_id}:{other_id}:{uuid4()}"[:255]
+            resolved_project_id = _clean_short_text(project_id) or f"project:{uuid4()}"
+            resolved_project_title = (
+                _clean_short_text(project_title)
+                or "Project"
+            )
+            resolved_chat_title = (
+                _clean_short_text(chat_title)
+                or _clean_short_text(title)
+                or "Chat 1"
+            )
+            purpose = _personal_project_purpose(
+                project_id=resolved_project_id,
+                project_title=resolved_project_title,
+                chat_title=resolved_chat_title,
+            )
+        else:
+            # Deterministic name for dedup debugging; display comes from counterparty.
+            a, b = sorted([current_user.user_id, other_id])
+            name = f"dm:{a}:{b}"[:255]
+            purpose = None
         ch = await self.repo.create(
-            workspace_id=workspace_id, name=name, type="dm", purpose=None,
+            workspace_id=workspace_id, name=name, type="dm", purpose=purpose,
         )
         await self.repo.add_member(
             ch.channel_id, current_user.user_id, "user", added_by=current_user.user_id,
@@ -180,6 +260,7 @@ class ChannelService:
                 bot = await self.bot_repo.get_by_id(other.member_id)
                 if not bot:
                     continue
+                project_meta = _parse_personal_project_purpose(ch.purpose)
                 cp = {
                     "member_id": bot.bot_id,
                     "member_type": "bot",
@@ -187,6 +268,11 @@ class ChannelService:
                     "display_name": bot.display_name,
                     "avatar_url": bot.avatar_url,
                 }
+                session_scope_id = (
+                    ch.channel_id
+                    if ch.name.startswith("dmchat:")
+                    else f"user:{user.user_id}:bot:{bot.bot_id}"
+                )
             elif other.member_type == "system":
                 from app.services.friendship_service import (
                     FRIEND_NOTICE_DISPLAY_NAME,
@@ -202,6 +288,8 @@ class ChannelService:
                     "display_name": FRIEND_NOTICE_DISPLAY_NAME,
                     "avatar_url": None,
                 }
+                session_scope_id = None
+                project_meta = {"project_id": None, "project_title": None, "chat_title": None}
             else:
                 u = await self.user_repo.get_by_id(other.member_id)
                 if not u:
@@ -213,11 +301,19 @@ class ChannelService:
                     "display_name": u.display_name,
                     "avatar_url": u.avatar_url,
                 }
+                session_scope_id = None
+                project_meta = {"project_id": None, "project_title": None, "chat_title": None}
             out.append(
                 {
                     "channel_id": ch.channel_id,
                     "workspace_id": ch.workspace_id,
                     "counterparty": cp,
+                    "title": project_meta.get("chat_title"),
+                    "project_id": project_meta.get("project_id"),
+                    "project_title": project_meta.get("project_title"),
+                    "chat_title": project_meta.get("chat_title"),
+                    "session_scope_id": session_scope_id,
+                    "created_at": ch.created_at,
                 }
             )
         return out
@@ -589,6 +685,9 @@ class ChannelService:
                 select(User).where(User.user_id.in_(user_ids))
             )).scalars()
             users_by_id = {u.user_id: u for u in rows}
+        from app.services.ws_service import ws_manager
+
+        online_user_ids = await ws_manager.connected_user_ids(user_ids)
         owner_ids = {b.created_by for b in bots_by_id.values() if b.created_by}
         inviter_ids = {m.added_by for m in memberships if m.added_by}
         missing_user_ids = (owner_ids | inviter_ids) - set(users_by_id)
@@ -668,6 +767,10 @@ class ChannelService:
                         "control_connected": None,
                         "data_connected": None,
                     })
+            else:
+                is_online = m.member_id in online_user_ids
+                item["status"] = "online" if is_online else "offline"
+                item["is_online"] = is_online
             result.append(item)
         return result
 

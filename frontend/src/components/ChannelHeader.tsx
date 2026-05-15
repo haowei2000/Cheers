@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Channel, DM } from "../types";
 import { AppIcon } from "./icons/AppIcon";
 
@@ -71,8 +71,7 @@ interface ChannelHeaderProps {
   taskCount?: number;
   taskActive?: boolean;
   onOpenTasks?: () => void;
-  onRefreshDmSession?: () => void;
-  refreshingDmSession?: boolean;
+  sessionAction?: ReactNode;
 }
 
 export function ChannelHeader({
@@ -90,10 +89,25 @@ export function ChannelHeader({
   taskCount = 0,
   taskActive = false,
   onOpenTasks,
-  onRefreshDmSession,
-  refreshingDmSession = false,
+  sessionAction,
 }: ChannelHeaderProps) {
-  const subtitle = autoAssist ? "自动接管已开启" : "";
+  const dmDisplayName =
+    activeDm?.counterparty.display_name ||
+    activeDm?.counterparty.username ||
+    "DM";
+  const dmChatTitle = activeDm?.chat_title?.trim() || activeDm?.title?.trim() || "";
+  const dmProjectTitle = activeDm?.project_title?.trim() || "";
+  const dmContextTitle =
+    dmProjectTitle && dmChatTitle
+      ? `${dmProjectTitle} · ${dmChatTitle}`
+      : dmProjectTitle || dmChatTitle;
+  const subtitle = activeDm
+    ? dmContextTitle && dmContextTitle !== dmDisplayName
+      ? dmContextTitle
+      : ""
+    : autoAssist
+      ? "自动接管已开启"
+      : "";
   const [topicsOpen, setTopicsOpen] = useState(false);
   const popRef = useRef<HTMLDivElement | null>(null);
 
@@ -138,9 +152,7 @@ export function ChannelHeader({
                 />
               </span>
               <span>
-                {activeDm.counterparty.display_name ||
-                  activeDm.counterparty.username ||
-                  "DM"}
+                {dmDisplayName}
               </span>
             </>
           ) : (
@@ -159,19 +171,6 @@ export function ChannelHeader({
 
       {/* Tasks + memory button group */}
       <div className="an-mem-cluster" role="group" aria-label="频道工具">
-        {activeDm?.counterparty.member_type === "bot" && onRefreshDmSession && (
-          <button
-            type="button"
-            className="an-mc-btn"
-            onClick={onRefreshDmSession}
-            disabled={refreshingDmSession}
-            title="刷新 DM Session"
-            aria-label="刷新 DM Session"
-          >
-            <AppIcon name="refresh" className={refreshingDmSession ? "animate-spin" : ""} />
-            <span className="an-mc-label hidden sm:inline">Session</span>
-          </button>
-        )}
         {onOpenTasks && (
           <button
             type="button"
@@ -258,6 +257,7 @@ export function ChannelHeader({
           )}
         </div>
       )}
+      {sessionAction}
       {!activeDm && channel && (
         <button
           type="button"

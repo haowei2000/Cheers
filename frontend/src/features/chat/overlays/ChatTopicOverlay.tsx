@@ -139,6 +139,7 @@ export function ChatTopicOverlay({
                 scopeId={rootId}
                 channelId={selectedId}
                 title="主题对应 Session"
+                variant="toolbar"
               />
             }
           />

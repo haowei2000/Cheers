@@ -298,6 +298,7 @@ export function TopicPage({
             >
               <ChatMessageRenderer
                 attachments={renderAttachments?.(m)}
+                collapseKey={m.msg_id}
                 content={stripThinkTags(m.content || "")}
                 onImageClick={onImageClick}
                 onFileClick={onFileClick}
@@ -377,8 +378,12 @@ export function TopicPage({
             )}
           </div>
         </div>
+        {sessionPanel && (
+          <div className="an-tpp-actions">
+            {sessionPanel}
+          </div>
+        )}
       </div>
-      {sessionPanel}
       <div className="an-tpp-body">
         {renderTopicMessage(rootMsg)}
 

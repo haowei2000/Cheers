@@ -145,14 +145,18 @@ def _dm_scope_id(
     bot_id: str,
     channel_id: str,
     trigger_message: dict[str, Any],
+    channel: Channel | None = None,
 ) -> str:
     """Stable product-level scope for a 1:1 user-bot DM.
 
     DMs are modeled in storage as ``Channel(type="dm")`` for message reuse, but
     provider session identity should not depend on that backing channel row.
-    A duplicate/recreated DM channel for the same user and bot must still land
-    in the same provider conversation.
+    A duplicate/recreated legacy DM channel for the same user and bot must
+    still land in the same provider conversation. Explicit multi-chat DMs use
+    their backing channel id so each chat can own a separate provider session.
     """
+    if channel is not None and channel.name.startswith("dmchat:"):
+        return channel.channel_id
     user_id = trigger_message.get("user")
     if isinstance(user_id, str) and user_id.strip():
         return f"user:{user_id.strip()}:bot:{bot_id}"
@@ -173,6 +177,7 @@ def _primary_scope(
             bot_id=bot_id,
             channel_id=channel_id,
             trigger_message=trigger_message,
+            channel=channel,
         )
     topic_id = _topic_id_from_trigger(trigger_message)
     if topic_id:
@@ -603,6 +608,7 @@ async def refresh_dm_session_scope(
         bot_id=bot.bot_id,
         channel_id=channel_id,
         trigger_message={"user": user_id},
+        channel=channel,
     )
 
     binding = await _find_binding_by_scope(

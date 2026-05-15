@@ -79,6 +79,32 @@ export function memberMutedBackground(kind: MemberKind): string {
   return "var(--accent-muted, #EAF4FF)";
 }
 
+export function isMemberOnline(member: MemberLike): boolean {
+  const kind = resolveMemberKind(member);
+  if (typeof member.is_online === "boolean") return member.is_online;
+  if (member.status === "offline") return false;
+  if (kind === "bot") {
+    if ((member.binding_type || "http") === "agent_bridge") {
+      return member.connection_status === "online";
+    }
+    return member.status !== "offline";
+  }
+  return member.status === "online";
+}
+
+export function MemberPresenceBadge({ member }: { member: MemberLike }) {
+  const online = isMemberOnline(member);
+  const label = online ? "在线" : "离线";
+  return (
+    <span
+      className="an-member-presence"
+      data-online={online ? "true" : "false"}
+      title={label}
+      aria-label={label}
+    />
+  );
+}
+
 export function sortMembersByKind<T extends MemberLike>(members: T[], currentUserId?: string | null): T[] {
   return members
     .map((member, index) => ({ member, index }))

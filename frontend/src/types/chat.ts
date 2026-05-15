@@ -37,6 +37,12 @@ export type DM = {
   channel_id: string;
   workspace_id: string;
   counterparty: DMCounterparty;
+  title?: string | null;
+  project_id?: string | null;
+  project_title?: string | null;
+  chat_title?: string | null;
+  session_scope_id?: string | null;
+  created_at?: string | null;
   unread_count?: number | null;
 };
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import type { AgentBridgeSession } from "../types";
 import { AppIcon } from "./icons/AppIcon";
@@ -221,6 +221,9 @@ export function SessionScopePanel({
   botId,
   title = "对应 Session",
   refreshKey = 0,
+  variant = "block",
+  onRefresh,
+  refreshing = false,
 }: {
   scopeType: ScopeType;
   scopeId: string;
@@ -228,11 +231,15 @@ export function SessionScopePanel({
   botId?: string | null;
   title?: string;
   refreshKey?: number;
+  variant?: "block" | "toolbar";
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<AgentBridgeSession[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -266,6 +273,61 @@ export function SessionScopePanel({
       active = false;
     };
   }, [botId, channelId, refreshKey, scopeId, scopeType]);
+
+  useEffect(() => {
+    if (variant !== "toolbar" || !open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open, variant]);
+
+  if (variant === "toolbar") {
+    const summary = loading ? "…" : String(sessions.length);
+    return (
+      <div className={`an-session-control ${onRefresh ? "has-refresh" : ""}`} ref={wrapRef}>
+        <button
+          type="button"
+          className={`an-topics-btn an-session-btn ${open ? "on" : ""}`}
+          onClick={() => setOpen((v) => !v)}
+          title={title}
+          aria-label={`${title}，${loading ? "加载中" : `${sessions.length} 个 active session`}`}
+          aria-expanded={open}
+        >
+          <AppIcon name="link" />
+          <span className="hidden sm:inline">Session</span>
+          <span className="an-tb-n">{summary}</span>
+        </button>
+        {onRefresh && (
+          <button
+            type="button"
+            className="an-session-refresh-btn"
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="刷新 DM Session"
+            aria-label="刷新 DM Session"
+          >
+            <AppIcon name="refresh" className={refreshing ? "animate-spin" : ""} />
+          </button>
+        )}
+        {open && (
+          <div className="an-topics-pop an-session-pop">
+            <div className="an-hd">{title}</div>
+            <div className="an-session-pop-body">
+              {error ? (
+                <div className="text-xs" style={{ color: "var(--red)" }}>{error}</div>
+              ) : (
+                <SessionList sessions={sessions} />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="border-b px-4 py-2" style={{ borderColor: "var(--border)", background: "var(--bg-0)" }}>

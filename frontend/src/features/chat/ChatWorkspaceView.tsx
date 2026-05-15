@@ -30,6 +30,7 @@ interface ChatWorkspaceViewProps {
   activeDmSessionScopeId: string | null;
   dmSessionRefreshNonce: number;
   isMobile: boolean;
+  isPersonalWorkspace: boolean;
   isDmSelected: boolean;
   autoAssist: boolean;
   memoryTab: MemoryTab | null;
@@ -61,6 +62,7 @@ export function ChatWorkspaceView({
   activeDmSessionScopeId,
   dmSessionRefreshNonce,
   isMobile,
+  isPersonalWorkspace,
   isDmSelected,
   autoAssist,
   memoryTab,
@@ -142,29 +144,32 @@ export function ChatWorkspaceView({
                     setTaskPageOpen(true);
                   }
             }
-            onRefreshDmSession={activeBotDm ? onRefreshDmSession : undefined}
-            refreshingDmSession={refreshingDmSession}
+            sessionAction={
+              activeBotDm && activeDmSessionScopeId ? (
+                <SessionScopePanel
+                  scopeType="dm"
+                  scopeId={activeDmSessionScopeId}
+                  channelId={selectedId}
+                  botId={activeBotDm.counterparty.member_id}
+                  title="DM 对应 Session"
+                  refreshKey={dmSessionRefreshNonce}
+                  variant="toolbar"
+                  onRefresh={onRefreshDmSession}
+                  refreshing={refreshingDmSession}
+                />
+              ) : (
+                selectedChannel?.type !== "dm" && (
+                  <SessionScopePanel
+                    scopeType="channel"
+                    scopeId={selectedId}
+                    channelId={selectedId}
+                    title="频道对应 Session"
+                    variant="toolbar"
+                  />
+                )
+              )
+            }
           />
-
-          {activeBotDm && activeDmSessionScopeId ? (
-            <SessionScopePanel
-              scopeType="dm"
-              scopeId={activeDmSessionScopeId}
-              channelId={selectedId}
-              botId={activeBotDm.counterparty.member_id}
-              title="DM 对应 Session"
-              refreshKey={dmSessionRefreshNonce}
-            />
-          ) : (
-            selectedChannel?.type !== "dm" && (
-              <SessionScopePanel
-                scopeType="channel"
-                scopeId={selectedId}
-                channelId={selectedId}
-                title="频道对应 Session"
-              />
-            )
-          )}
 
           <ChatMessageList {...messageListProps} />
           {forwardSelectionBar}
@@ -197,11 +202,17 @@ export function ChatWorkspaceView({
               <AppIcon name="messageCircle" className="w-10 h-10 text-gray-300" />
             </div>
             <p className="text-gray-700 text-[15px] font-semibold">
-              选择一个频道
+              {isPersonalWorkspace ? "选择一个私信或 Project" : "选择一个频道"}
             </p>
             <p className="text-gray-400 text-[13px] mt-1.5">
-              从左侧选择频道开始对话，或{" "}
-              <span className="text-[#1264A3]">创建新频道</span>
+              {isPersonalWorkspace ? (
+                "从左侧选择私信、文件或 Project。"
+              ) : (
+                <>
+                  从左侧选择频道开始对话，或{" "}
+                  <span className="text-[#1264A3]">创建新频道</span>
+                </>
+              )}
             </p>
           </div>
         </div>

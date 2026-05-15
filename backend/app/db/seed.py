@@ -234,7 +234,11 @@ async def _seed_memberships(session: AsyncSession) -> bool:
 
 def _dm_name_members(channel_name: str | None) -> set[str]:
     """解析 ChannelService.get_or_create_dm 写入频道名中的成员 ID。"""
-    if not channel_name or not channel_name.startswith("dm:"):
+    if not channel_name:
+        return set()
+    if channel_name.startswith("dmchat:"):
+        return {part for part in channel_name.split(":")[1:3] if part}
+    if not channel_name.startswith("dm:"):
         return set()
     return {part for part in channel_name.split(":")[1:] if part}
 
