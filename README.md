@@ -1,6 +1,6 @@
 # AgentNexus（智枢协作平台）
 
-多智能体与人类协作的聊天枢纽：类 Slack 体验 + OpenClaw Bot + 四层记忆，Python 全栈自研。
+多智能体与人类协作的聊天枢纽：类 Slack 体验 + Agent Bridge Bot + 四层记忆，Python 全栈自研。
 
 ## 文档
 
@@ -11,7 +11,7 @@
 - [使用说明书](docs/help/使用说明书.md)（总索引）
   - [普通用户使用说明](docs/help/普通用户使用说明.md) · [系统管理说明书](docs/help/系统管理说明书.md) · [安装部署说明](docs/help/安装部署说明.md) · [技术排查Q&A](docs/help/技术排查Q&A.md)
 - [RustFS 对象存储部署说明](docs/help/RustFS对象存储部署说明.md)
-- [OpenClaw 接入指南](docs/help/OpenClaw接入指南.md) · [外部 Bot 接入指南](docs/help/外部Bot接入指南.md)
+- [Agent Bridge 接入指南](docs/help/AgentBridge接入指南.md)（OpenClaw 与 ACP / Codex ACP）
 
 **开发 / 设计（`docs/develop/`）**
 
@@ -24,7 +24,7 @@
 
 - **后端**：Python 3.13+ / FastAPI / WebSocket / SQLite（主库 + Context Store）/ Redis（可选）
 - **前端**：React / Tailwind CSS
-- **Agent**：OpenClaw（通过 OpenClawAdapter 隔离）
+- **Agent**：Agent Bridge（OpenClaw / ACP provider）与 HTTP Bot
 - **部署**：Docker Compose
 
 ## 本地开发
@@ -81,7 +81,7 @@ docker compose up -d
 - [ ] 门户阶段二：公共平台（公共知识/数据平台 + 访问申请 API）
 - [ ] 门户阶段三：能力发现与编排增强（skills/MCP + A2A 握手）
 
-详细里程碑规划与当前进度见 [ROADMAP.md](ROADMAP.md)。
+详细里程碑规划与当前进度见 [ROADMAP.md](docs/ROADMAP.md)。
 
 ## 许可证
 

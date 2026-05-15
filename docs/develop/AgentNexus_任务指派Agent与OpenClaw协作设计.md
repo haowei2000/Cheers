@@ -2,7 +2,7 @@
 
 > 版本：v1.0  
 > 适用范围：AgentNexus 与基于 OpenClaw 的部门 Bot 协作场景  
-> 关联文档：《AgentNexus 详细设计》《AgentNexus 门户与知识平台设计》《OpenClaw 接入指南》
+> 关联文档：《AgentNexus 详细设计》《AgentNexus 门户与知识平台设计》《Agent Bridge 接入指南》
 
 ---
 

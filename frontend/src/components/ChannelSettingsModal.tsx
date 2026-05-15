@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { apiFetch } from "../api";
 import type { Channel, ChannelMember } from "../types";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 import { Modal, ModalFooter } from "./Modal";
 
 type TabId = "channel" | "admins" | "bots";

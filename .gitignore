@@ -69,3 +69,11 @@ packages/openclaw-channel-agentnexus/*.tgz
 .pytest_tmp/
 tmp_pytest/
 
+*.md
+*.html
+*.png
+outputs
+artifacts
+!AGENTS.md
+!CLAUDE.md
+!README.md

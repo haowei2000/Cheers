@@ -1,6 +1,6 @@
 import type { BotTraceEvent, Channel, ChannelBot, Message, AgentBridgeTaskContentData } from "../types";
 import { formatTs } from "../lib/message";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 import { SessionScopePanel } from "./SessionScopePanel";
 
 type TaskMessage = Message & {

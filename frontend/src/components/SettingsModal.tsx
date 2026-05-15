@@ -8,21 +8,14 @@ import { AiBrandIcon, AppIcon } from "./icons";
 import { Modal } from "./Modal";
 import { BotSessionsPanel } from "./SessionScopePanel";
 import { SearchPicker } from "./SearchPicker";
+import {
+  applyDensity,
+  DENSITY_KEY,
+  getStoredDensity,
+  type Density,
+} from "../lib/density";
 
-type Density = "comfy" | "compact";
 type BotScope = "private" | "friend" | "everyone";
-
-const DENSITY_KEY = "agentnexus-density";
-
-export function getStoredDensity(): Density {
-  if (typeof window === "undefined") return "comfy";
-  const v = localStorage.getItem(DENSITY_KEY);
-  return v === "compact" ? "compact" : "comfy";
-}
-
-export function applyDensity(d: Density) {
-  document.documentElement.setAttribute("data-density", d);
-}
 
 interface SettingsModalProps {
   open: boolean;

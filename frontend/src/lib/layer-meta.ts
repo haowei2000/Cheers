@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { createElement } from "react";
-import { AppIcon, type AppIconName } from "../components/icons";
+import { AppIcon, type AppIconName } from "../components/icons/AppIcon";
 
 export type LayerMeta = {
   label: string;

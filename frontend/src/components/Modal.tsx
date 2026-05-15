@@ -27,7 +27,7 @@ import {
   Transition,
   TransitionChild,
 } from "@headlessui/react";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 import { cn } from "../lib/cn";
 
 interface ModalProps {
@@ -59,7 +59,7 @@ export function Modal({
 }: ModalProps) {
   return (
     <Transition show={open} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
+      <Dialog as="div" className="relative z-[90]" onClose={onClose}>
         {/* Backdrop */}
         <TransitionChild
           as={Fragment}

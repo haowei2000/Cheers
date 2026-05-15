@@ -507,6 +507,9 @@
   max-width: 70%;
   margin-left: auto;
   margin-right: auto;
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 118px;
 }
 
 /* On narrow viewports 70% is too cramped; give it the full column. */

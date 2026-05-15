@@ -1,14 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import toast from "react-hot-toast";
 import NotificationPanel from "./NotificationPanel";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
 import { BotAvatar } from "./components/BotAvatar";
-import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
-import { AppIcon } from "./components/icons";
-import { MemoryPanel } from "./components/MemoryPanel";
+import { AppIcon } from "./components/icons/AppIcon";
 import { LoginModal } from "./components/LoginModal";
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
@@ -17,12 +16,6 @@ import { OpenClawQcModal } from "./components/OpenClawQcModal";
 import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { HelpModal } from "./components/HelpModal";
-import {
-  SettingsModal,
-  applyDensity,
-  getStoredDensity,
-} from "./components/SettingsModal";
-import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import {
   ChatAttachments,
@@ -34,12 +27,13 @@ import {
   MESSAGE_COMPOSER_KIND_ORDER,
 } from "./components/MessageComposer";
 import type { MessageComposerKind } from "./components/MessageComposer";
-import { TopicPage } from "./components/TopicPage";
-import { TaskPage } from "./components/TaskPage";
 import { SessionScopePanel } from "./components/SessionScopePanel";
-import { Modal } from "./components/Modal";
-import { WorkspaceRail } from "./components/WorkspaceRail";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { AddBotModal } from "./components/app/AddBotModal";
+import { ChannelMainFrame } from "./components/app/ChannelMainFrame";
+import { ChatShell } from "./components/app/ChatShell";
+import { ChatSidePanels } from "./components/app/ChatSidePanels";
+import { MessageDetailModal } from "./components/app/MessageDetailModal";
 import { apiFetch, buildWsUrl } from "./api";
 import {
   parseHelperPayload,
@@ -56,6 +50,39 @@ import {
   TOPIC_DISPLAY_THRESHOLD,
 } from "./lib/message";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
+import { API, API_DOCS_URL } from "./lib/app-config";
+import { applyDensity, getStoredDensity } from "./lib/density";
+import {
+  AGENT_BRIDGE_TASK_KIND,
+  type AgentBridgeTaskMessage,
+} from "./lib/agent-bridge";
+import {
+  botTraceStatusText,
+  makeClientStreamTrace,
+  trimBotTraceEvents,
+} from "./lib/bot-trace";
+import {
+  buildChatPath,
+  buildChatSearch,
+  readChatUrlState,
+  type ChatRouteParams,
+} from "./lib/chat-routing";
+import {
+  MAX_LOADED_MESSAGES,
+  trimToRecentMessages,
+  VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
+  type PendingStreamDelta,
+} from "./lib/message-window";
+import {
+  emptyMessageStore,
+  messagesToStore,
+  patchMessage,
+  patchMessages,
+  storeToMessages,
+  trimMessageStoreToRecent,
+  upsertMessage,
+  type MessageStore,
+} from "./lib/message-store";
 import type {
   Channel,
   DM,
@@ -74,232 +101,80 @@ import type {
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
 
-const API = "/api/v1";
-const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
-const AGENT_BRIDGE_TASK_KIND = "agent_bridge_background_task";
-type AgentBridgeTaskMessage = Message & {
-  content_data: AgentBridgeTaskContentData;
-};
-const API_DOCS_URL = "/docs";
-const CLIENT_STREAM_TRACE = "agentnexus_client";
-const MAX_BOT_TRACE_EVENTS = 160;
-const STREAM_DELTA_FLUSH_MS = 50;
-const MAX_LOADED_MESSAGES = 800;
-const VIRTUAL_MESSAGE_MIN_ROWS = 120;
-const VIRTUAL_MESSAGE_ESTIMATED_HEIGHT = 118;
-const VIRTUAL_MESSAGE_OVERSCAN_ROWS = 12;
-const MEMORY_TAB_VALUES: MemoryTab[] = ["PROJECT", "FILES_INDEX", "MEMBERS", "TODO"];
+const SettingsModal = lazy(() =>
+  import("./components/SettingsModal").then((module) => ({
+    default: module.SettingsModal,
+  })),
+);
+const TaskPage = lazy(() =>
+  import("./components/TaskPage").then((module) => ({ default: module.TaskPage })),
+);
+const TopicPage = lazy(() =>
+  import("./components/TopicPage").then((module) => ({ default: module.TopicPage })),
+);
 
-type ChatRouteParams = {
-  workspaceId?: string;
-  channelId?: string;
-};
-
-type ChatUrlState = {
-  topicId: string | null;
-  taskOpen: boolean;
-  taskMsgId: string | null;
-  memoryTab: MemoryTab | null;
-};
-
-function isMemoryTab(value: string | null): value is MemoryTab {
-  return Boolean(value && MEMORY_TAB_VALUES.includes(value as MemoryTab));
-}
-
-function readChatUrlState(search: string, hash: string): ChatUrlState {
-  const params = new URLSearchParams(search);
-  const topicFromSearch = params.get("topic");
-  const topicFromHash = /#topic=([^&]+)/.exec(hash || "")?.[1];
-  const topicId = topicFromSearch || (topicFromHash ? decodeURIComponent(topicFromHash) : null);
-  const view = params.get("view");
-  const panel = params.get("panel");
-
-  return {
-    topicId,
-    taskOpen: !topicId && view === "tasks",
-    taskMsgId: params.get("task"),
-    memoryTab: isMemoryTab(panel) ? panel : null,
-  };
-}
-
-function buildChatPath(workspaceId: string, channelId: string | null): string {
-  if (!workspaceId) return "/";
-  const encodedWorkspaceId = encodeURIComponent(workspaceId);
-  if (!channelId) return `/workspaces/${encodedWorkspaceId}`;
-  return `/workspaces/${encodedWorkspaceId}/channels/${encodeURIComponent(channelId)}`;
-}
-
-function buildChatSearch(state: ChatUrlState): string {
-  const params = new URLSearchParams();
-  if (state.topicId) {
-    params.set("topic", state.topicId);
-  } else if (state.taskOpen) {
-    params.set("view", "tasks");
-    if (state.taskMsgId) params.set("task", state.taskMsgId);
-  }
-  if (state.memoryTab) params.set("panel", state.memoryTab);
-  return params.toString();
-}
-
-type PendingStreamDelta = {
-  delta: string;
-  chunks: number;
-};
-
-type VirtualMessageWindow = {
-  enabled: boolean;
-  startIndex: number;
-  endIndex: number;
-  paddingTop: number;
-  paddingBottom: number;
-};
-
-function trimToRecentMessages(messages: Message[]): Message[] {
-  if (messages.length <= MAX_LOADED_MESSAGES) return messages;
-  return messages.slice(-MAX_LOADED_MESSAGES);
-}
-
-function getVirtualMessageWindow(
-  rowCount: number,
-  scrollTop: number,
-  viewportHeight: number,
-): VirtualMessageWindow {
-  if (rowCount <= VIRTUAL_MESSAGE_MIN_ROWS) {
-    return {
-      enabled: false,
-      startIndex: 0,
-      endIndex: rowCount,
-      paddingTop: 0,
-      paddingBottom: 0,
-    };
-  }
-  const visibleRows = Math.max(
-    1,
-    Math.ceil(Math.max(viewportHeight, VIRTUAL_MESSAGE_ESTIMATED_HEIGHT) / VIRTUAL_MESSAGE_ESTIMATED_HEIGHT),
+function LazyPanelFallback({ label = "加载中..." }: { label?: string }) {
+  return (
+    <div className="flex h-full min-h-24 items-center justify-center text-sm text-[var(--fg-3)]">
+      {label}
+    </div>
   );
-  const windowRows = visibleRows + VIRTUAL_MESSAGE_OVERSCAN_ROWS * 2;
-  const maxStartIndex = Math.max(0, rowCount - windowRows);
-  const startIndex = Math.min(
-    maxStartIndex,
-    Math.max(
-      0,
-      Math.floor(Math.max(0, scrollTop) / VIRTUAL_MESSAGE_ESTIMATED_HEIGHT) - VIRTUAL_MESSAGE_OVERSCAN_ROWS,
-    ),
+}
+
+function getSecretSecondsLeft(createdAt?: string | null, now = Date.now()): number | null {
+  if (!createdAt) return null;
+  const createdMs = new Date(createdAt).getTime();
+  if (!Number.isFinite(createdMs)) return null;
+  return Math.max(0, 60 - Math.floor((now - createdMs) / 1000));
+}
+
+function SecretMessageVeil({
+  canReveal,
+  createdAt,
+  onReveal,
+}: {
+  canReveal: boolean;
+  createdAt?: string | null;
+  onReveal: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const secondsLeft = getSecretSecondsLeft(createdAt, now);
+  const expired = secondsLeft !== null && secondsLeft <= 0;
+
+  useEffect(() => {
+    if (secondsLeft === null || secondsLeft <= 0) return;
+    const timer = setTimeout(() => setNow(Date.now()), 1000);
+    return () => clearTimeout(timer);
+  }, [secondsLeft]);
+
+  return (
+    <div className={`an-secret-veil${expired ? " is-expired" : ""}`}>
+      <span className="an-secret-veil-icon">
+        <AppIcon name="lock" className="w-5 h-5" />
+      </span>
+      <div className="an-secret-veil-body">
+        <span className="an-secret-veil-label">
+          {expired ? "加密消息已过期" : "加密消息"}
+        </span>
+        <span className="an-secret-veil-meta">
+          {expired
+            ? "一次性查看窗口已关闭"
+            : secondsLeft !== null
+              ? `剩余 ${secondsLeft}s · 仅 Bot 可读`
+              : "仅 Bot 可读"}
+        </span>
+      </div>
+      {!expired && canReveal && (
+        <button
+          type="button"
+          className="an-secret-veil-reveal"
+          onClick={onReveal}
+        >
+          查看
+        </button>
+      )}
+    </div>
   );
-  const endIndex = Math.min(rowCount, startIndex + windowRows);
-  return {
-    enabled: true,
-    startIndex,
-    endIndex,
-    paddingTop: startIndex * VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
-    paddingBottom: Math.max(0, rowCount - endIndex) * VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
-  };
-}
-
-function trimBotTraceEvents(events: BotTraceEvent[]): BotTraceEvent[] {
-  return events.slice(-MAX_BOT_TRACE_EVENTS);
-}
-
-function traceTimeLabel(ts?: number): string {
-  if (!ts) return "";
-  const ms = ts > 1_000_000_000_000 ? ts : ts > 1_000_000_000 ? ts * 1000 : ts;
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-function streamTraceLabel(trace: BotTraceEvent): string {
-  if (trace.stream !== CLIENT_STREAM_TRACE) return botTraceStatusText(trace);
-  const phase = trace.phase || "";
-  const labels: Record<string, string> = {
-    placeholder: "创建 Bot 回复占位",
-    message_stream: "收到流式片段",
-    message_done: "流式回复完成",
-    message_done_partial: "流式回复中断",
-    message_done_error: "流式回复出错",
-  };
-  return [labels[phase] || trace.title || "流式事件", trace.message]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-function makeClientStreamTrace(
-  message: Pick<Message, "msg_id" | "task_id" | "sender_id">,
-  phase: string,
-  title: string,
-  data?: Record<string, unknown>,
-  messageText?: string,
-): BotTraceEvent {
-  return {
-    msg_id: message.msg_id,
-    task_id: message.task_id || null,
-    bot_id: message.sender_id,
-    stream: CLIENT_STREAM_TRACE,
-    phase,
-    title,
-    message: messageText,
-    ts: Date.now(),
-    data,
-  };
-}
-
-function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status" | "is_online" | "status">) {
-  if ((bot.binding_type || "http") !== "agent_bridge") {
-    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 已启用";
-  }
-  if (bot.connection_status === "online" && bot.is_online) return "Bridge 在线";
-  if (bot.connection_status === "partial") return "Bridge 部分连接";
-  return "Bridge 离线";
-}
-
-function botTraceStatusText(trace: BotTraceEvent): string {
-  const stream = trace.stream || "trace";
-  const phase = trace.phase || "";
-  const title = trace.title || "";
-  const message = trace.message || "";
-  if (stream === "agentnexus_plugin") {
-    const labels: Record<string, string> = {
-      received: "插件已收到消息",
-      hydrating_attachments: "正在读取附件",
-      attachments_ready: "附件已准备好",
-      loopback_start: "正在启动 provider",
-      loopback_accepted: "provider 已接收任务",
-      loopback_error: "provider 路由异常",
-      subagent_run_started: "provider run 已启动",
-      subagent_run_error: "provider run 启动失败",
-    };
-    return [labels[phase] || title || "插件处理中", message].filter(Boolean).join(" · ");
-  }
-  if (stream === "lifecycle") {
-    if (phase === "start") return "provider 开始执行";
-    if (phase === "end") return "provider 执行完成";
-    if (phase === "error") return message || "provider 执行异常";
-    return [title || "provider 生命周期", message].filter(Boolean).join(" · ");
-  }
-  if (stream === "assistant") return message ? `正在生成回复 · ${message}` : "正在生成回复";
-  if (stream === "thinking") return message ? `思考中 · ${message}` : "思考中";
-  if (stream === "plan") return title ? `更新计划 · ${title}` : "更新计划";
-  if (stream === "tool" || stream === "item") {
-    return [title || "正在调用工具", trace.status || message].filter(Boolean).join(" · ");
-  }
-  if (stream === "command_output") return [title || "命令执行中", message].filter(Boolean).join(" · ");
-  if (stream === "approval") return [title || "等待审批", trace.status || message].filter(Boolean).join(" · ");
-  if (stream === "error") return message || title || "provider 内部错误";
-  return [title || stream, message].filter(Boolean).join(" · ");
-}
-
-function botScopeText(scope?: BotItem["scope"]) {
-  if (scope === "private") return "Private";
-  if (scope === "everyone") return "Everyone";
-  return "Friend";
-}
-
-function botOwnerText(bot: Pick<BotItem, "owner">) {
-  return bot.owner?.display_name || bot.owner?.username || "系统";
 }
 
 
@@ -322,7 +197,7 @@ export default function App() {
   }, []);
 
   const { currentUser, authToken, currentUserId, authFetch, setAuth, setCurrentUser, logout: clearAuth } =
-    useAuth(DEV_USER_ID);
+    useAuth();
 
   const [loginModalOpen, setLoginModalOpen] = useState(false);
 
@@ -445,9 +320,23 @@ export default function App() {
       setComposerTitle("");
     }
   }, [isDmSelected, selectedId]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messageStore, setMessageStore] = useState<MessageStore>(() =>
+    emptyMessageStore(),
+  );
+  const messages = useMemo(() => storeToMessages(messageStore), [messageStore]);
+  const setMessages = useCallback(
+    (next: Message[] | ((prev: Message[]) => Message[])) => {
+      setMessageStore((prevStore) => {
+        const prevMessages = storeToMessages(prevStore);
+        const nextMessages =
+          typeof next === "function" ? next(prevMessages) : next;
+        return messagesToStore(nextMessages);
+      });
+    },
+    [],
+  );
   const streamDeltaBufferRef = useRef<Record<string, PendingStreamDelta>>({});
-  const streamDeltaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamDeltaRafRef = useRef<number | null>(null);
   const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
   const [input, setInput] = useState("");
   const [inputRevision, setInputRevision] = useState(0);
@@ -610,11 +499,6 @@ export default function App() {
     Record<string, string>
   >({});
   const [secretTokens, setSecretTokens] = useState<Record<string, string>>({}); // msg_id -> token（仅发送方当次 session 持有）
-  const [secretNow, setSecretNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setSecretNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
   // Lightbox 状态
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
@@ -671,10 +555,8 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const messageScrollRafRef = useRef<number | null>(null);
-  const messageScrollMetricsRef = useRef({ scrollTop: 0, viewportHeight: 0 });
-  const [messageScrollTop, setMessageScrollTop] = useState(0);
-  const [messageViewportHeight, setMessageViewportHeight] = useState(0);
+  const stickToBottomRef = useRef(true);
+  const lastAutoScrollChannelRef = useRef<string | null>(null);
   const [processingBots, setProcessingBots] = useState<Record<string, string>>(
     {},
   );
@@ -799,18 +681,6 @@ export default function App() {
       .catch(() => toast.error("创建失败"));
   };
 
-  function introSummary(intro: string | undefined): string {
-    if (!intro) return "";
-    try {
-      const o = JSON.parse(intro);
-      if (o.description) return o.description;
-      if (Array.isArray(o.capabilities)) return o.capabilities.join(", ");
-      return intro.slice(0, 50) + (intro.length > 50 ? "…" : "");
-    } catch {
-      return intro.slice(0, 50) + (intro.length > 50 ? "…" : "");
-    }
-  }
-
   useEffect(() => {
     refreshChannels(setChannels, authToken ?? undefined);
     refreshDMs(setDMs, authToken ?? undefined);
@@ -914,17 +784,25 @@ export default function App() {
       setMessages([]);
       setHasMore(true);
       setChannelBots([]);
+      setChannelUsers([]);
       setProcessingBots({});
       setAutoAssist(false);
       setReplyingTo(null);
+      setLoading(false);
       return;
     }
-    const ch = channels.find((c) => c.channel_id === selectedId);
+    const targetChannelId = selectedId;
+    const controller = new AbortController();
+    const ch = channels.find((c) => c.channel_id === targetChannelId);
     setAutoAssist(ch?.auto_assist ?? false);
     setLoading(true);
-    authFetch(`${API}/channels/${selectedId}/members?with_username=1`)
+
+    authFetch(`${API}/channels/${targetChannelId}/members?with_username=1`, {
+      signal: controller.signal,
+    })
       .then((r) => r.json())
       .then((d) => {
+        if (controller.signal.aborted || selectedIdRef.current !== targetChannelId) return;
         if (d.data) {
           const bots: ChannelBot[] = d.data
             .filter(
@@ -977,23 +855,40 @@ export default function App() {
           setChannelUsers([]);
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        if ((error as { name?: string }).name === "AbortError") return;
+        if (selectedIdRef.current !== targetChannelId) return;
         setChannelBots([]);
+        setChannelUsers([]);
       });
-    authFetch(`${API}/channels/${selectedId}/messages`)
+
+    authFetch(`${API}/channels/${targetChannelId}/messages`, {
+      signal: controller.signal,
+    })
       .then((r) => r.json())
       .then((d) => {
+        if (controller.signal.aborted || selectedIdRef.current !== targetChannelId) return;
         const data = d.data || [];
         const visibleData = trimToRecentMessages(data);
         setMessages(visibleData);
         setHasMore(
           Boolean(d.meta?.has_more ?? data.length >= 30) &&
-            visibleData.length < MAX_LOADED_MESSAGES,
+          visibleData.length < MAX_LOADED_MESSAGES,
         );
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [selectedId]);
+      .catch((error) => {
+        if ((error as { name?: string }).name === "AbortError") return;
+        if (selectedIdRef.current !== targetChannelId) return;
+        console.error(error);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && selectedIdRef.current === targetChannelId) {
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [authFetch, authToken, channels, selectedId]);
 
   // ── 上划加载更多历史消息 ──────────────────────────────────────────────────
   const loadMoreMessages = useCallback(async () => {
@@ -1024,17 +919,18 @@ export default function App() {
       setHasMore(
         !hitWindowCap && Boolean(d.meta?.has_more ?? older.length >= 50),
       );
-      setMessages((prev) => trimToRecentMessages([...older, ...prev]));
+      setMessageStore((prev) =>
+        trimMessageStoreToRecent(
+          messagesToStore([...older, ...storeToMessages(prev)]),
+          MAX_LOADED_MESSAGES,
+        ),
+      );
       // 恢复滚动位置
       requestAnimationFrame(() => {
         if (container) {
           container.scrollTop = container.scrollHeight - prevScrollHeight;
-          messageScrollMetricsRef.current = {
-            scrollTop: container.scrollTop,
-            viewportHeight: container.clientHeight,
-          };
-          setMessageScrollTop(container.scrollTop);
-          setMessageViewportHeight(container.clientHeight);
+          stickToBottomRef.current =
+            container.scrollHeight - container.scrollTop - container.clientHeight < 160;
         }
         isLoadingOlderRef.current = false;
       });
@@ -1049,18 +945,8 @@ export default function App() {
   const handleMessagesScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const target = e.currentTarget;
-      messageScrollMetricsRef.current = {
-        scrollTop: target.scrollTop,
-        viewportHeight: target.clientHeight,
-      };
-      if (messageScrollRafRef.current === null) {
-        messageScrollRafRef.current = requestAnimationFrame(() => {
-          const metrics = messageScrollMetricsRef.current;
-          setMessageScrollTop(metrics.scrollTop);
-          setMessageViewportHeight(metrics.viewportHeight);
-          messageScrollRafRef.current = null;
-        });
-      }
+      stickToBottomRef.current =
+        target.scrollHeight - target.scrollTop - target.clientHeight < 160;
       if (target.scrollTop < 100 && hasMore && !loadingMore) {
         loadMoreMessages();
       }
@@ -1071,9 +957,9 @@ export default function App() {
   const flushStreamDeltaBuffer = useCallback(() => {
     const pending = streamDeltaBufferRef.current;
     streamDeltaBufferRef.current = {};
-    if (streamDeltaTimerRef.current) {
-      clearTimeout(streamDeltaTimerRef.current);
-      streamDeltaTimerRef.current = null;
+    if (streamDeltaRafRef.current !== null) {
+      cancelAnimationFrame(streamDeltaRafRef.current);
+      streamDeltaRafRef.current = null;
     }
 
     const entries = Object.entries(pending).filter(
@@ -1081,52 +967,55 @@ export default function App() {
     );
     if (entries.length === 0) return;
 
-    const pendingByMsgId = new Map(entries);
-    setMessages((prev) =>
-      prev.map((m) => {
-        const item = pendingByMsgId.get(m.msg_id);
-        if (!item) return m;
-        const taskData =
-          m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
-            ? (m.content_data as AgentBridgeTaskContentData)
-            : m._agent_bridge_task;
-        const switchingFromTaskCard =
-          m.content_data?.kind === AGENT_BRIDGE_TASK_KIND;
-        const nextContent = switchingFromTaskCard
-          ? item.delta
-          : `${m.content || ""}${item.delta}`;
-        return {
-          ...m,
-          content: nextContent,
-          content_data: switchingFromTaskCard ? null : m.content_data,
-          _agent_bridge_task: taskData
-            ? {
-                ...taskData,
-                status: "streaming",
-                message: "正在接收 provider 输出。",
-              }
-            : m._agent_bridge_task,
-          _bot_trace: trimBotTraceEvents([
-            ...(m._bot_trace || []),
-            makeClientStreamTrace(
-              m,
-              "message_stream",
-              "收到流式片段",
-              {
-                event_type: "message_stream",
-                delta_chars: item.delta.length,
-                delta_preview: item.delta.slice(0, 160),
-                accumulated_chars: nextContent.length,
-                coalesced_chunks: item.chunks,
-              },
-              item.chunks > 1
-                ? `+${item.delta.length} chars / ${item.chunks} chunks`
-                : `+${item.delta.length} chars`,
-            ),
-          ]),
-          _streaming: true,
-        };
-      }),
+    setMessageStore((prev) =>
+      patchMessages(
+        prev,
+        entries.map(([msgId, item]) => ({
+          msgId,
+          update: (m) => {
+            const taskData =
+              m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
+                ? (m.content_data as AgentBridgeTaskContentData)
+                : m._agent_bridge_task;
+            const switchingFromTaskCard =
+              m.content_data?.kind === AGENT_BRIDGE_TASK_KIND;
+            const nextContent = switchingFromTaskCard
+              ? item.delta
+              : `${m.content || ""}${item.delta}`;
+            return {
+              ...m,
+              content: nextContent,
+              content_data: switchingFromTaskCard ? null : m.content_data,
+              _agent_bridge_task: taskData
+                ? {
+                    ...taskData,
+                    status: "streaming",
+                    message: "正在接收 provider 输出。",
+                  }
+                : m._agent_bridge_task,
+              _bot_trace: trimBotTraceEvents([
+                ...(m._bot_trace || []),
+                makeClientStreamTrace(
+                  m,
+                  "message_stream",
+                  "收到流式片段",
+                  {
+                    event_type: "message_stream",
+                    delta_chars: item.delta.length,
+                    delta_preview: item.delta.slice(0, 160),
+                    accumulated_chars: nextContent.length,
+                    coalesced_chunks: item.chunks,
+                  },
+                  item.chunks > 1
+                    ? `+${item.delta.length} chars / ${item.chunks} chunks`
+                    : `+${item.delta.length} chars`,
+                ),
+              ]),
+              _streaming: true,
+            };
+          },
+        })),
+      ),
     );
   }, []);
 
@@ -1142,11 +1031,11 @@ export default function App() {
         delta: `${current?.delta || ""}${delta}`,
         chunks: (current?.chunks || 0) + 1,
       };
-      if (streamDeltaTimerRef.current === null) {
-        streamDeltaTimerRef.current = setTimeout(
-          flushStreamDeltaBuffer,
-          STREAM_DELTA_FLUSH_MS,
-        );
+      if (streamDeltaRafRef.current === null) {
+        streamDeltaRafRef.current = requestAnimationFrame(() => {
+          streamDeltaRafRef.current = null;
+          flushStreamDeltaBuffer();
+        });
       }
     },
     [flushStreamDeltaBuffer],
@@ -1157,12 +1046,8 @@ export default function App() {
     if (!container) return;
 
     const updateMetrics = () => {
-      messageScrollMetricsRef.current = {
-        scrollTop: container.scrollTop,
-        viewportHeight: container.clientHeight,
-      };
-      setMessageScrollTop(container.scrollTop);
-      setMessageViewportHeight(container.clientHeight);
+      stickToBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 160;
     };
 
     updateMetrics();
@@ -1170,10 +1055,6 @@ export default function App() {
     observer.observe(container);
     return () => {
       observer.disconnect();
-      if (messageScrollRafRef.current !== null) {
-        cancelAnimationFrame(messageScrollRafRef.current);
-        messageScrollRafRef.current = null;
-      }
     };
   }, [selectedId]);
 
@@ -1235,40 +1116,36 @@ export default function App() {
                 return next;
               });
             }
-            setMessages((prev) => {
-              const id = msg.data.msg_id;
-              if (id && prev.some((m) => m.msg_id === id)) {
+            setMessageStore((prev) => {
+              const incoming = msg.data as Message;
+              const id = incoming.msg_id;
+              if (id && prev.byId[id]) {
                 // Already present — merge post-hoc updates (e.g. permission
                 // card resolution flipping content_data.resolved). Keep any
                 // client-local transient fields like _streaming.
-                return prev.map((m) =>
-                  m.msg_id === id
-                    ? {
-                        ...m,
-                        content: msg.data.content ?? m.content,
-                        content_data:
-                          msg.data.content_data ?? m.content_data,
-                        msg_type: msg.data.msg_type ?? m.msg_type,
-                      }
-                    : m,
-                );
+                return patchMessage(prev, id, (m) => ({
+                  ...m,
+                  content: incoming.content ?? m.content,
+                  content_data: incoming.content_data ?? m.content_data,
+                  msg_type: incoming.msg_type ?? m.msg_type,
+                }));
               }
               const entry =
-                msg.data.sender_type === "bot"
+                incoming.sender_type === "bot"
                   ? {
-                      ...msg.data,
+                      ...incoming,
                       _streaming: true,
                       _bot_trace: [
                         makeClientStreamTrace(
-                          msg.data,
+                          incoming,
                           "placeholder",
                           "创建 Bot 回复占位",
                           { event_type: "message" },
                         ),
                       ],
                     }
-                  : msg.data;
-              return trimToRecentMessages([...prev, entry]);
+                  : incoming;
+              return upsertMessage(prev, entry, MAX_LOADED_MESSAGES);
             });
             if (
               msg.data.sender_type === "bot" &&
@@ -1287,19 +1164,15 @@ export default function App() {
             const trace = msg.data as BotTraceEvent;
             if (!trace.msg_id) return;
             const status = botTraceStatusText(trace);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.msg_id === trace.msg_id
-                  ? {
-                      ...m,
-                      _bot_status: status,
-                      _bot_trace: trimBotTraceEvents([
-                        ...(m._bot_trace || []),
-                        { ...trace, ts: trace.ts ?? Date.now() },
-                      ]),
-                    }
-                  : m,
-              ),
+            setMessageStore((prev) =>
+              patchMessage(prev, trace.msg_id!, (m) => ({
+                ...m,
+                _bot_status: status,
+                _bot_trace: trimBotTraceEvents([
+                  ...(m._bot_trace || []),
+                  { ...trace, ts: trace.ts ?? Date.now() },
+                ]),
+              })),
             );
           } else if (msg.type === "message_done" && msg.data) {
             const { msg_id, content, files, file_ids, is_partial, error } = msg.data;
@@ -1311,83 +1184,79 @@ export default function App() {
             const nextContentData = hasContentData
               ? msg.data.content_data
               : undefined;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.msg_id === msg_id
-                  ? (() => {
-                      const priorTask =
-                        m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
-                          ? (m.content_data as AgentBridgeTaskContentData)
-                          : m._agent_bridge_task;
-                      const nextTask =
-                        nextContentData?.kind === AGENT_BRIDGE_TASK_KIND
-                          ? (nextContentData as AgentBridgeTaskContentData)
-                          : priorTask
-                            ? {
-                                ...priorTask,
-                                status: error
-                                  ? "error"
-                                  : is_partial
-                                    ? "partial"
-                                    : "done",
-                                message: error
-                                  ? String(error)
-                                  : is_partial
-                                    ? "任务已中断，已保留当前输出。"
-                                    : "任务已完成。",
-                              }
-                            : m._agent_bridge_task;
-                      return {
-                        ...m,
-                        content,
-                        content_data:
-                          nextContentData !== undefined
-                            ? nextContentData
-                            : m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
-                              ? null
-                              : m.content_data,
-                        _agent_bridge_task: nextTask,
-                        _streaming: false,
-                        _bot_trace: trimBotTraceEvents([
-                          ...(m._bot_trace || []),
-                          makeClientStreamTrace(
-                            m,
-                            error
-                              ? "message_done_error"
-                              : is_partial
-                                ? "message_done_partial"
-                                : "message_done",
-                            error
-                              ? "流式回复出错"
-                              : is_partial
-                                ? "流式回复中断"
-                                : "流式回复完成",
-                            {
-                              event_type: "message_done",
-                              content_chars: String(content || "").length,
-                              is_partial: Boolean(is_partial),
-                              error: error || null,
-                              file_count: Array.isArray(files)
-                                ? files.length
-                                : Array.isArray(file_ids)
-                                  ? file_ids.length
-                                  : 0,
-                            },
-                            error
-                              ? String(error)
-                              : `${String(content || "").length} chars`,
-                          ),
-                        ]),
-                        _bot_status: undefined,
-                        ...(files ? { files } : {}),
-                        ...(file_ids ? { file_ids } : {}),
-                        ...(typeof is_partial === "boolean"
-                          ? { is_partial }
-                          : {}),
-                      };
-                    })()
-                  : m,
-              ),
+            setMessageStore((prev) =>
+              patchMessage(prev, msg_id, (m) => {
+                const priorTask =
+                  m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
+                    ? (m.content_data as AgentBridgeTaskContentData)
+                    : m._agent_bridge_task;
+                const nextTask =
+                  nextContentData?.kind === AGENT_BRIDGE_TASK_KIND
+                    ? (nextContentData as AgentBridgeTaskContentData)
+                    : priorTask
+                      ? {
+                          ...priorTask,
+                          status: error
+                            ? "error"
+                            : is_partial
+                              ? "partial"
+                              : "done",
+                          message: error
+                            ? String(error)
+                            : is_partial
+                              ? "任务已中断，已保留当前输出。"
+                              : "任务已完成。",
+                        }
+                      : m._agent_bridge_task;
+                return {
+                  ...m,
+                  content,
+                  content_data:
+                    nextContentData !== undefined
+                      ? nextContentData
+                      : m.content_data?.kind === AGENT_BRIDGE_TASK_KIND
+                        ? null
+                        : m.content_data,
+                  _agent_bridge_task: nextTask,
+                  _streaming: false,
+                  _bot_trace: trimBotTraceEvents([
+                    ...(m._bot_trace || []),
+                    makeClientStreamTrace(
+                      m,
+                      error
+                        ? "message_done_error"
+                        : is_partial
+                          ? "message_done_partial"
+                          : "message_done",
+                      error
+                        ? "流式回复出错"
+                        : is_partial
+                          ? "流式回复中断"
+                          : "流式回复完成",
+                      {
+                        event_type: "message_done",
+                        content_chars: String(content || "").length,
+                        is_partial: Boolean(is_partial),
+                        error: error || null,
+                        file_count: Array.isArray(files)
+                          ? files.length
+                          : Array.isArray(file_ids)
+                            ? file_ids.length
+                            : 0,
+                      },
+                      error
+                        ? String(error)
+                        : `${String(content || "").length} chars`,
+                    ),
+                  ]),
+                  _bot_status: undefined,
+                  ...(files ? { files } : {}),
+                  ...(file_ids ? { file_ids } : {}),
+                  ...(typeof is_partial === "boolean"
+                    ? { is_partial }
+                    : {}),
+                };
+              }),
             );
             if (
               typeof content === "string" &&
@@ -1429,9 +1298,9 @@ export default function App() {
     return () => {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (streamDeltaTimerRef.current) {
-        clearTimeout(streamDeltaTimerRef.current);
-        streamDeltaTimerRef.current = null;
+      if (streamDeltaRafRef.current !== null) {
+        cancelAnimationFrame(streamDeltaRafRef.current);
+        streamDeltaRafRef.current = null;
       }
       streamDeltaBufferRef.current = {};
       if (ws) ws.close();
@@ -1644,6 +1513,11 @@ export default function App() {
     inReplyToMsgId?: string,
   ): Promise<void> => {
     if (!selectedId || !content.trim()) return Promise.resolve();
+    if (!currentUserId) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再发送消息");
+      return Promise.resolve();
+    }
     if (isSystemDm) {
       toast.error("好友通知会话不能直接发送消息");
       return Promise.resolve();
@@ -1666,10 +1540,10 @@ export default function App() {
       .then((d) => {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
         if (d.data && selectedIdRef.current === targetChannelId) {
-          setMessages((prev) =>
-            prev.some((m) => m.msg_id === d.data.msg_id)
+          setMessageStore((prev) =>
+            prev.byId[d.data.msg_id]
               ? prev
-              : trimToRecentMessages([...prev, d.data]),
+              : upsertMessage(prev, d.data, MAX_LOADED_MESSAGES),
           );
         }
       });
@@ -1679,6 +1553,11 @@ export default function App() {
     const rawContent =
       draftValue ?? inputDraftRef.current ?? inputRef.current?.value ?? input;
     if (!selectedId || (!rawContent.trim() && pendingFileIds.length === 0)) return;
+    if (!currentUserId) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再发送消息");
+      return;
+    }
     if (isSystemDm) {
       toast.error("好友通知会话不能直接发送消息");
       return;
@@ -1738,10 +1617,10 @@ export default function App() {
         // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
         // 仅在用户仍停留在发送消息的频道时才插入，避免跨频道串消息
         if (d.data && selectedIdRef.current === targetChannelId) {
-          setMessages((prev) =>
-            prev.some((m) => m.msg_id === d.data.msg_id)
+          setMessageStore((prev) =>
+            prev.byId[d.data.msg_id]
               ? prev
-              : trimToRecentMessages([...prev, d.data]),
+              : upsertMessage(prev, d.data, MAX_LOADED_MESSAGES),
           );
           // 保存 secret_token（仅发送方当次 session 持有，不通过 WS 广播）
           if (d.data.secret_token) {
@@ -1849,10 +1728,8 @@ export default function App() {
     // Optimistic: stop the streaming pulse immediately so the user sees feedback;
     // the message_done event will arrive shortly with is_partial=true and the
     // final buffered content. If the request fails we restore _streaming.
-    setMessages((prev) =>
-      prev.map((x) =>
-        x.msg_id === m.msg_id ? { ...x, _streaming: false } : x,
-      ),
+    setMessageStore((prev) =>
+      patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: false })),
     );
     try {
       const r = await apiFetch(
@@ -1860,18 +1737,14 @@ export default function App() {
         { method: "POST", token: authToken },
       );
       if (!r.ok) {
-        setMessages((prev) =>
-          prev.map((x) =>
-            x.msg_id === m.msg_id ? { ...x, _streaming: true } : x,
-          ),
+        setMessageStore((prev) =>
+          patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: true })),
         );
         toast.error("取消失败");
       }
     } catch {
-      setMessages((prev) =>
-        prev.map((x) =>
-          x.msg_id === m.msg_id ? { ...x, _streaming: true } : x,
-        ),
+      setMessageStore((prev) =>
+        patchMessage(prev, m.msg_id, (x) => ({ ...x, _streaming: true })),
       );
       toast.error("取消失败");
     }
@@ -2087,6 +1960,11 @@ export default function App() {
   ) => {
     const attachedFileIds = [...pendingFileIds];
     if (!text.trim() && attachedFileIds.length === 0) return;
+    if (!currentUserId) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再发送回复");
+      return;
+    }
     const body: Record<string, unknown> = {
       content: text.trim(),
       sender_id: currentUserId,
@@ -2103,10 +1981,10 @@ export default function App() {
     });
     const d = await r.json().catch(() => null);
     if (d?.data && selectedIdRef.current === channelId) {
-      setMessages((prev) =>
-        prev.some((m) => m.msg_id === d.data.msg_id)
+      setMessageStore((prev) =>
+        prev.byId[d.data.msg_id]
           ? prev
-          : trimToRecentMessages([...prev, d.data]),
+          : upsertMessage(prev, d.data, MAX_LOADED_MESSAGES),
       );
     }
     setPendingFileIds([]);
@@ -2191,6 +2069,11 @@ export default function App() {
 
   const uploadFileObject = async (file: File) => {
     if (!selectedId) return;
+    if (!currentUserId) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再上传文件");
+      return;
+    }
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
     const allowed = [
       ".txt",
@@ -2361,13 +2244,13 @@ export default function App() {
   useEffect(() => {
     if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
     const container = messagesContainerRef.current;
-    container.scrollTop = container.scrollHeight;
-    messageScrollMetricsRef.current = {
-      scrollTop: container.scrollTop,
-      viewportHeight: container.clientHeight,
-    };
-    setMessageScrollTop(container.scrollTop);
-    setMessageViewportHeight(container.clientHeight);
+    const channelChanged = lastAutoScrollChannelRef.current !== selectedId;
+    lastAutoScrollChannelRef.current = selectedId ?? null;
+    if (!channelChanged && !stickToBottomRef.current) return;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+      stickToBottomRef.current = true;
+    });
   }, [selectedId, messages.length]);
 
   // 打开频道时把未读标记为已读：先在本地把徽标清零（立即反馈），再向后端
@@ -2427,6 +2310,53 @@ export default function App() {
     () => buildTopicTree(messages, isDmSelected),
     [isDmSelected, messages],
   );
+  const botById = useMemo(
+    () => new Map(channelBots.map((bot) => [bot.member_id, bot])),
+    [channelBots],
+  );
+  const botByUsername = useMemo(
+    () => new Map(channelBots.map((bot) => [bot.username, bot])),
+    [channelBots],
+  );
+  const coordinatorBot = useMemo(
+    () =>
+      channelBots.find(
+        (bot) =>
+          bot.username === "Coordinator" ||
+          bot.username === "Helper" ||
+          bot.username === "channel bot" ||
+          bot.username === "coordinator",
+      ),
+    [channelBots],
+  );
+  const userById = useMemo(
+    () => new Map(channelUsers.map((user) => [user.member_id, user])),
+    [channelUsers],
+  );
+  const msgById = useMemo(
+    () => new Map(messages.map((message) => [message.msg_id, message])),
+    [messages],
+  );
+  const clarifyAnsweredParentIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const message of messages) {
+      if (
+        message.in_reply_to_msg_id &&
+        isClarifyReplyUserMessage(message.content)
+      ) {
+        ids.add(message.in_reply_to_msg_id);
+      }
+    }
+    return ids;
+  }, [messages]);
+  const rowVirtualizer = useVirtualizer({
+    count: topicRoots.length,
+    getScrollElement: () => messagesContainerRef.current,
+    estimateSize: () => VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
+    overscan: 12,
+    getItemKey: (index) => topicRoots[index]?.msg_id ?? index,
+  });
+  const virtualItems = rowVirtualizer.getVirtualItems();
   const pageTopicSourceMessages = useMemo(
     () => mergeMessagesChronologically(messages, pageTopicMessages),
     [messages, pageTopicMessages],
@@ -2435,26 +2365,8 @@ export default function App() {
     () => buildTopicTree(pageTopicSourceMessages, false),
     [pageTopicSourceMessages],
   );
-  const messageVirtualWindow = useMemo(
-    () =>
-      getVirtualMessageWindow(
-        topicRoots.length,
-        messageScrollTop,
-        messageViewportHeight,
-      ),
-    [topicRoots.length, messageScrollTop, messageViewportHeight],
-  );
-  const virtualTopicRoots = useMemo(
-    () =>
-      topicRoots.slice(
-        messageVirtualWindow.startIndex,
-        messageVirtualWindow.endIndex,
-      ),
-    [topicRoots, messageVirtualWindow.startIndex, messageVirtualWindow.endIndex],
-  );
   const selectedDetailMessage = memoryDetailMessage
-    ? messages.find((m) => m.msg_id === memoryDetailMessage.msg_id) ||
-      memoryDetailMessage
+    ? msgById.get(memoryDetailMessage.msg_id) || memoryDetailMessage
     : null;
   const selectedMemoryLoadDetail = selectedDetailMessage
     ? getMemoryLoadDetail(selectedDetailMessage)
@@ -2473,217 +2385,49 @@ export default function App() {
         }}
       />
 
-      <Modal
-        open={!!memoryDetailMessage}
+      <MessageDetailModal
+        message={selectedDetailMessage}
+        memoryLoadDetail={selectedMemoryLoadDetail}
+        botTraceEvents={selectedBotTraceEvents}
         onClose={() => setMemoryDetailMessage(null)}
-        title="AI 回复详情"
-        description={
-          selectedMemoryLoadDetail
-            ? `触发消息 ${selectedMemoryLoadDetail.trigger_msg_id || "-"} · ${selectedMemoryLoadDetail.trigger_msg_type || "normal"}`
-            : selectedDetailMessage
-              ? `消息 ${selectedDetailMessage.msg_id}`
-              : undefined
-        }
-        maxWidth="max-w-4xl"
-      >
-        <div className="max-h-[72vh] space-y-5 overflow-y-auto pr-1">
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
-                调用记忆
-              </h3>
-              {selectedMemoryLoadDetail && (
-                <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-                  {selectedMemoryLoadDetail.total_chars ?? 0} chars
-                </span>
-              )}
-            </div>
-            {selectedMemoryLoadDetail ? (
-              <>
-                <div
-                  className="grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-3"
-                  style={{ borderColor: "var(--border)" }}
-                >
-                  <div>
-                    <div style={{ color: "var(--fg-3)" }}>加载策略</div>
-                    <div className="mt-0.5 font-mono break-all">
-                      {selectedMemoryLoadDetail.strategy || "-"}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--fg-3)" }}>请求层</div>
-                    <div className="mt-0.5">
-                      {(selectedMemoryLoadDetail.requested_layers || []).join(", ") || "-"}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--fg-3)" }}>触发类型</div>
-                    <div className="mt-0.5">
-                      {selectedMemoryLoadDetail.trigger_msg_type || "normal"}
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {(selectedMemoryLoadDetail.layers || []).map((layer) => (
-                    <div
-                      key={layer.source}
-                      className="rounded-lg border p-3"
-                      style={{ borderColor: "var(--border)" }}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold">
-                          {layer.label || layer.source}
-                        </span>
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px]"
-                          style={{
-                            background: layer.requested
-                              ? "var(--accent-muted)"
-                              : "var(--surface-soft)",
-                            color: layer.requested ? "var(--accent)" : "var(--fg-3)",
-                          }}
-                        >
-                          {layer.requested ? "已请求" : "未请求"}
-                        </span>
-                        <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-                          {layer.chars || 0} chars
-                        </span>
-                        <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
-                          {layer.loader || layer.source}
-                        </span>
-                      </div>
-                      {layer.preview ? (
-                        <pre
-                          className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md p-2 text-[11px] leading-relaxed"
-                          style={{
-                            background: "var(--surface-soft)",
-                            color: "var(--fg-2)",
-                          }}
-                        >
-                          {layer.preview}
-                        </pre>
-                      ) : (
-                        <div className="mt-2 text-xs" style={{ color: "var(--fg-3)" }}>
-                          {layer.requested ? "这一层没有可用内容。" : "这一层未参与本次加载。"}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                这条消息没有可展示的记忆加载信息。
-              </div>
-            )}
-          </section>
+      />
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
-                流式事件过程
-              </h3>
-              <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-                {selectedBotTraceEvents.length} events
-              </span>
-            </div>
-            {selectedBotTraceEvents.length ? (
-              <div className="space-y-2">
-                {selectedBotTraceEvents.map((event, index) => {
-                  const eventData = event.data || {};
-                  return (
-                    <div
-                      key={`${event.stream || "trace"}-${event.phase || "event"}-${event.seq ?? index}-${event.ts ?? index}`}
-                      className="rounded-lg border p-3"
-                      style={{ borderColor: "var(--border)" }}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-mono"
-                          style={{
-                            background: "var(--surface-soft)",
-                            color: "var(--fg-3)",
-                          }}
-                        >
-                          #{index + 1}
-                        </span>
-                        {event.ts && (
-                          <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
-                            {traceTimeLabel(event.ts)}
-                          </span>
-                        )}
-                        <span className="text-xs font-semibold" style={{ color: "var(--fg-1)" }}>
-                          {streamTraceLabel(event)}
-                        </span>
-                        <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
-                          {event.stream || "trace"}
-                          {event.phase ? `/${event.phase}` : ""}
-                        </span>
-                      </div>
-                      {Object.keys(eventData).length > 0 && (
-                        <pre
-                          className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded-md p-2 text-[11px] leading-relaxed"
-                          style={{
-                            background: "var(--surface-soft)",
-                            color: "var(--fg-2)",
-                          }}
-                        >
-                          {JSON.stringify(eventData, null, 2)}
-                        </pre>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                当前页面会话还没有捕获到这条回复的流式事件。
-              </div>
-            )}
-          </section>
-        </div>
-      </Modal>
-
-      <div className="flex h-dvh" style={{ background: "var(--bg-0)" }}>
-        {isMobile && sidebarOpen && (
-          <div
-            className="fixed inset-0 bg-black/50 z-[55]"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-        {!isMobile && (
-          <WorkspaceRail
+      <ChatShell
+        isMobile={isMobile}
+        sidebarOpen={sidebarOpen}
+        onCloseSidebar={() => setSidebarOpen(false)}
+        workspaces={workspaces}
+        selectedWorkspaceId={selectedWorkspaceId}
+        onSelectWorkspace={setSelectedWorkspaceId}
+        onCreateWorkspace={() => setCreateWsOpen(true)}
+        sidebar={
+          <Sidebar
+            isMobile={isMobile}
+            sidebarOpen={sidebarOpen}
+            leftWidth={leftWidth}
+            onLeftResize={onLeftResize}
+            currentUser={currentUser}
+            authToken={authToken}
+            onLoginClick={() => setLoginModalOpen(true)}
             workspaces={workspaces}
+            setWorkspaces={setWorkspaces}
             selectedWorkspaceId={selectedWorkspaceId}
-            onSelect={setSelectedWorkspaceId}
-            onCreate={() => setCreateWsOpen(true)}
+            setSelectedWorkspaceId={setSelectedWorkspaceId}
+            isPersonalWorkspace={isPersonalWorkspace}
+            channels={channels}
+            setChannels={setChannels}
+            dms={dms}
+            setDMs={setDMs}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            setSidebarOpen={setSidebarOpen}
+            onOpenCreateWorkspace={() => setCreateWsOpen(true)}
+            onOpenInviteWsMember={() => setInviteWsMemberOpen(true)}
+            onOpenCreateChannel={() => setCreateChannelOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
-        )}
-        <Sidebar
-          isMobile={isMobile}
-          sidebarOpen={sidebarOpen}
-          leftWidth={leftWidth}
-          onLeftResize={onLeftResize}
-          currentUser={currentUser}
-          authToken={authToken}
-          onLoginClick={() => setLoginModalOpen(true)}
-          workspaces={workspaces}
-          setWorkspaces={setWorkspaces}
-          selectedWorkspaceId={selectedWorkspaceId}
-          setSelectedWorkspaceId={setSelectedWorkspaceId}
-          isPersonalWorkspace={isPersonalWorkspace}
-          channels={channels}
-          setChannels={setChannels}
-          dms={dms}
-          setDMs={setDMs}
-          selectedId={selectedId}
-          setSelectedId={setSelectedId}
-          setSidebarOpen={setSidebarOpen}
-          onOpenCreateWorkspace={() => setCreateWsOpen(true)}
-          onOpenInviteWsMember={() => setInviteWsMemberOpen(true)}
-          onOpenCreateChannel={() => setCreateChannelOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
+        }
+      >
 
         <HelpModal
           open={helpOpen}
@@ -2691,25 +2435,29 @@ export default function App() {
           apiDocsUrl={API_DOCS_URL}
         />
 
-        <SettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          isDark={isDark}
-          setTheme={setTheme}
-          authToken={authToken}
-          currentUser={currentUser}
-          onProfileUpdated={(data) => {
-            if (!currentUser) return;
-            setCurrentUser({
-              ...currentUser,
-              display_name: data.display_name,
-              bio: data.bio ?? currentUser.bio,
-              avatar_url: data.avatar_url ?? null,
-            });
-          }}
-          onOpenDM={openDirectMessage}
-          onLogout={handleLogout}
-        />
+        {settingsOpen && (
+          <Suspense fallback={null}>
+            <SettingsModal
+              open={settingsOpen}
+              onClose={() => setSettingsOpen(false)}
+              isDark={isDark}
+              setTheme={setTheme}
+              authToken={authToken}
+              currentUser={currentUser}
+              onProfileUpdated={(data) => {
+                if (!currentUser) return;
+                setCurrentUser({
+                  ...currentUser,
+                  display_name: data.display_name,
+                  bio: data.bio ?? currentUser.bio,
+                  avatar_url: data.avatar_url ?? null,
+                });
+              }}
+              onOpenDM={openDirectMessage}
+              onLogout={handleLogout}
+            />
+          </Suspense>
+        )}
 
         <OpenClawQcModal
           open={qcOpen}
@@ -2750,169 +2498,33 @@ export default function App() {
           onClose={() => setCreateChannelOpen(false)}
         />
 
-        {addBotOpen && selectedId && (
-          <div
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40"
-            onClick={() => setAddBotOpen(false)}
-            aria-modal="true"
-            role="dialog"
-          >
-            <div
-              className="bg-white rounded-xl shadow-2xl max-w-xl w-full mx-4 p-6 text-left max-h-[90vh] overflow-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold text-gray-900">
-                  管理频道 Bot
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setAddBotOpen(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl"
-                  aria-label="关闭"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    已加入的 Bot
-                  </h3>
-                  {channelBots.length === 0 ? (
-                    <p className="text-sm text-gray-400">暂无</p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {channelBots.map((b) => (
-                        <li
-                          key={b.member_id}
-                          className="flex items-center justify-between py-2 px-3 bg-[#F8F8F8] rounded-lg text-sm"
-                        >
-                          <div className="min-w-0">
-                            <span className="font-medium text-gray-800">
-                              @{b.username}
-                            </span>
-                            <div className="text-[11px] text-gray-500">
-                              {botInlineStatus(b)}
-                            </div>
-                            <div className="text-[11px] text-gray-500">
-                              {botScopeText(b.scope)} · Owner: {botOwnerText(b)}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeBotFromChannel(b.member_id)}
-                            className="text-red-500 text-xs hover:text-red-700"
-                          >
-                            移除
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    可添加的 Bot
-                  </h3>
-                  {(() => {
-                    const inChannelIds = new Set(
-                      channelBots.map((c) => c.member_id),
-                    );
-                    const available = allBots.filter(
-                      (b) => !inChannelIds.has(b.bot_id),
-                    );
-                    if (available.length === 0)
-                      return (
-                        <p className="text-sm text-gray-400">
-                          暂无或已全部加入
-                        </p>
-                      );
-                    return (
-                      <ul className="space-y-1">
-                        {available.map((b) => {
-                          const checked = selectedBotIds.has(b.bot_id);
-                          return (
-                            <li
-                              key={b.bot_id}
-                              className={`flex items-start gap-2 py-2 px-3 rounded-lg text-sm cursor-pointer transition-colors select-none ${checked ? "bg-blue-50 border border-[#1264A3]/30" : "bg-[#F8F8F8] hover:bg-gray-100"}`}
-                              onClick={() =>
-                                setSelectedBotIds((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(b.bot_id)) next.delete(b.bot_id);
-                                  else next.add(b.bot_id);
-                                  return next;
-                                })
-                              }
-                            >
-                              <input
-                                type="checkbox"
-                                className="mt-0.5 accent-[#1264A3] shrink-0"
-                                checked={checked}
-                                onChange={() => {}}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-medium text-gray-800">
-                                  @{b.username}
-                                </span>
-                                <span className="text-[11px] text-gray-500">
-                                  {botInlineStatus(b)}
-                                </span>
-                                <span className="text-[11px] text-gray-500">
-                                  {botScopeText(b.scope)} · Owner: {botOwnerText(b)}
-                                </span>
-                                {introSummary(b.intro) && (
-                                  <span
-                                    className="text-xs text-gray-500 truncate"
-                                    title={b.intro}
-                                  >
-                                    {introSummary(b.intro)}
-                                  </span>
-                                )}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    );
-                  })()}
-                </div>
-              </div>
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAddBotOpen(false)}
-                  className="px-4 py-2 bg-[#F8F8F8] text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
-                >
-                  关闭
-                </button>
-                {selectedBotIds.size > 0 && (
-                  <button
-                    type="button"
-                    disabled={addingBots}
-                    onClick={async () => {
-                      setAddingBots(true);
-                      try {
-                        await Promise.all(
-                          [...selectedBotIds].map((id) => addBotToChannel(id)),
-                        );
-                        setSelectedBotIds(new Set());
-                      } finally {
-                        setAddingBots(false);
-                      }
-                    }}
-                    className="px-4 py-2 bg-[#1264A3] text-white rounded-lg hover:bg-[#0f5a94] text-sm font-medium disabled:opacity-60"
-                  >
-                    {addingBots
-                      ? "添加中…"
-                      : `添加选中 (${selectedBotIds.size})`}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        <AddBotModal
+          open={addBotOpen}
+          selectedChannelId={selectedId}
+          channelBots={channelBots}
+          allBots={allBots}
+          selectedBotIds={selectedBotIds}
+          addingBots={addingBots}
+          onClose={() => setAddBotOpen(false)}
+          onRemoveBot={removeBotFromChannel}
+          onToggleBot={(botId) =>
+            setSelectedBotIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(botId)) next.delete(botId);
+              else next.add(botId);
+              return next;
+            })
+          }
+          onAddSelected={async () => {
+            setAddingBots(true);
+            try {
+              await Promise.all([...selectedBotIds].map((id) => addBotToChannel(id)));
+              setSelectedBotIds(new Set());
+            } finally {
+              setAddingBots(false);
+            }
+          }}
+        />
 
         {/* 通知面板 */}
         <NotificationPanel
@@ -2942,9 +2554,10 @@ export default function App() {
         )}
 
         <div className="flex-1 flex min-w-0">
-          <main
-            className="flex-1 flex flex-col min-w-0 relative"
-            style={{ background: "var(--bg-0)" }}
+          <ChannelMainFrame
+            selectedId={selectedId}
+            isDark={isDark}
+            isDraggingOver={isDraggingOver}
             onDragEnter={(e) => {
               if (!selectedId || !e.dataTransfer.types.includes("Files"))
                 return;
@@ -2975,11 +2588,6 @@ export default function App() {
               }
             }}
           >
-            <DragOverlay
-              visible={isDraggingOver && !!selectedId}
-              isDark={isDark}
-            />
-
             {taskPageOpen &&
               !isDmSelected &&
               selectedId &&
@@ -2995,22 +2603,24 @@ export default function App() {
                     minHeight: 0,
                   }}
                 >
-                  <TaskPage
-                    tasks={agentBridgeTaskMessages}
-                    selectedMsgId={pageTaskMsgId}
-                    channel={selectedChannel}
-                    channelBots={channelBots}
-                    onSelectTask={setPageTaskMsgId}
-                    onBack={() => {
-                      setTaskPageOpen(false);
-                      setPageTaskMsgId(null);
-                    }}
-                    onJumpToMessage={(msgId) => {
-                      setTaskPageOpen(false);
-                      setPageTaskMsgId(null);
-                      setTimeout(() => jumpToMessage(msgId), 0);
-                    }}
-                  />
+                  <Suspense fallback={<LazyPanelFallback label="正在加载任务视图..." />}>
+                    <TaskPage
+                      tasks={agentBridgeTaskMessages}
+                      selectedMsgId={pageTaskMsgId}
+                      channel={selectedChannel}
+                      channelBots={channelBots}
+                      onSelectTask={setPageTaskMsgId}
+                      onBack={() => {
+                        setTaskPageOpen(false);
+                        setPageTaskMsgId(null);
+                      }}
+                      onJumpToMessage={(msgId) => {
+                        setTaskPageOpen(false);
+                        setPageTaskMsgId(null);
+                        setTimeout(() => jumpToMessage(msgId), 0);
+                      }}
+                    />
+                  </Suspense>
                 </div>
               ))()}
 
@@ -3036,55 +2646,57 @@ export default function App() {
                     }}
                   >
                     {rootMsg ? (
-                      <TopicPage
-                        rootMsg={rootMsg}
-                        replies={pageTopicRepliesOf(rootId)}
-                        channel={selectedChannel}
-                        channelBots={channelBots}
-                        channelUsers={channelUsers}
-                        currentUserId={currentUserId}
-                        onBack={() => setPageTopicId(null)}
-                        onGoToChannel={() => setPageTopicId(null)}
-                        onSendReply={(text) =>
-                          sendTopicReply(selectedId, rootId, text)
-                        }
-                        onCopyMessage={copyMessageText}
-                        onShowMessageDetails={setMemoryDetailMessage}
-                        hasMessageDetails={hasBotReplyDetails}
-                        onImageClick={handleMarkdownImageClick}
-                        onFileClick={handleMarkdownFileClick}
-                        renderAttachments={renderFileAttachments}
-                        pendingFiles={pendingFileNames.map((name, index) => ({
-                          name,
-                          previewUrl: pendingFilePreviews[index] ?? null,
-                        }))}
-                        onRemovePendingFile={(index) => {
-                          setPendingFileIds((prev) =>
-                            prev.filter((_, itemIndex) => itemIndex !== index),
-                          );
-                          setPendingFileNames((prev) =>
-                            prev.filter((_, itemIndex) => itemIndex !== index),
-                          );
-                          setPendingFilePreviews((prev) =>
-                            prev.filter((_, itemIndex) => itemIndex !== index),
-                          );
-                        }}
-                        onUploadFile={uploadFile}
-                        keychainEnabled={Boolean(currentUser)}
-                        keychainOpen={keychainPopupOpen}
-                        keychainLoading={keychainPopupLoading}
-                        keychainItems={keychainPopupItems}
-                        onToggleKeychain={openKeychainPopup}
-                        onCloseKeychain={() => setKeychainPopupOpen(false)}
-                        sessionPanel={
-                          <SessionScopePanel
-                            scopeType="topic"
-                            scopeId={rootId}
-                            channelId={selectedId}
-                            title="主题对应 Session"
-                          />
-                        }
-                      />
+                      <Suspense fallback={<LazyPanelFallback label="正在加载话题视图..." />}>
+                        <TopicPage
+                          rootMsg={rootMsg}
+                          replies={pageTopicRepliesOf(rootId)}
+                          channel={selectedChannel}
+                          channelBots={channelBots}
+                          channelUsers={channelUsers}
+                          currentUserId={currentUserId}
+                          onBack={() => setPageTopicId(null)}
+                          onGoToChannel={() => setPageTopicId(null)}
+                          onSendReply={(text) =>
+                            sendTopicReply(selectedId, rootId, text)
+                          }
+                          onCopyMessage={copyMessageText}
+                          onShowMessageDetails={setMemoryDetailMessage}
+                          hasMessageDetails={hasBotReplyDetails}
+                          onImageClick={handleMarkdownImageClick}
+                          onFileClick={handleMarkdownFileClick}
+                          renderAttachments={renderFileAttachments}
+                          pendingFiles={pendingFileNames.map((name, index) => ({
+                            name,
+                            previewUrl: pendingFilePreviews[index] ?? null,
+                          }))}
+                          onRemovePendingFile={(index) => {
+                            setPendingFileIds((prev) =>
+                              prev.filter((_, itemIndex) => itemIndex !== index),
+                            );
+                            setPendingFileNames((prev) =>
+                              prev.filter((_, itemIndex) => itemIndex !== index),
+                            );
+                            setPendingFilePreviews((prev) =>
+                              prev.filter((_, itemIndex) => itemIndex !== index),
+                            );
+                          }}
+                          onUploadFile={uploadFile}
+                          keychainEnabled={Boolean(currentUser)}
+                          keychainOpen={keychainPopupOpen}
+                          keychainLoading={keychainPopupLoading}
+                          keychainItems={keychainPopupItems}
+                          onToggleKeychain={openKeychainPopup}
+                          onCloseKeychain={() => setKeychainPopupOpen(false)}
+                          sessionPanel={
+                            <SessionScopePanel
+                              scopeType="topic"
+                              scopeId={rootId}
+                              channelId={selectedId}
+                              title="主题对应 Session"
+                            />
+                          }
+                        />
+                      </Suspense>
                     ) : (
                       <div className="an-topic-page">
                         <div className="an-tpp-top">
@@ -3259,7 +2871,9 @@ export default function App() {
                           </div>
                         )}
                       {(() => {
-                      const renderedRows = virtualTopicRoots.map((m) => {
+                      const renderedRows = virtualItems.map((virtualItem) => {
+                        const m = topicRoots[virtualItem.index];
+                        if (!m) return null;
                         // isDM gates the "intimate" bubble + self-right
                         // treatment; channel rendering is Discord-style
                         // flat, all-left, always with sender identity.
@@ -3286,14 +2900,7 @@ export default function App() {
                             picked: p.picked === true,
                             secondary: p.secondary === true,
                           }));
-                          const coordBot = channelBots.find(
-                            (b) =>
-                              // 现行用户名 + 历史名兜底（"channel bot" 老版本数据库）
-                              b.username === "Coordinator" ||
-                              b.username === "Helper" ||
-                              b.username === "channel bot" ||
-                              b.username === "coordinator",
-                          );
+                          const coordBot = coordinatorBot;
                           const rTime = m.created_at
                             ? formatTs(m.created_at)
                             : "";
@@ -3338,9 +2945,7 @@ export default function App() {
                                 {picks.length > 0 && (
                                   <div className="an-picks">
                                     {picks.map((p) => {
-                                      const bot = channelBots.find(
-                                        (b) => b.username === p.agent,
-                                      );
+                                      const bot = botByUsername.get(p.agent);
                                       const color =
                                         bot?.avatar_url ?? null;
                                       return (
@@ -3429,19 +3034,15 @@ export default function App() {
                               }
                               const nextStatus =
                                 action === "accept" ? "accepted" : "rejected";
-                              setMessages((prev) =>
-                                prev.map((x) =>
-                                  x.msg_id === m.msg_id
-                                    ? {
-                                        ...x,
-                                        content_data: {
-                                          ...(x.content_data || {}),
-                                          status: nextStatus,
-                                          resolved_by: currentUserId,
-                                        },
-                                      }
-                                    : x,
-                                ),
+                              setMessageStore((prev) =>
+                                patchMessage(prev, m.msg_id, (x) => ({
+                                  ...x,
+                                  content_data: {
+                                    ...(x.content_data || {}),
+                                    status: nextStatus,
+                                    resolved_by: currentUserId,
+                                  },
+                                })),
                               );
                               refreshDMs(setDMs, authToken ?? undefined);
                               toast.success(action === "accept" ? "已同意好友申请" : "已拒绝好友申请");
@@ -3529,9 +3130,7 @@ export default function App() {
                               : null;
                           const senderBot =
                             m.sender_type === "bot"
-                              ? channelBots.find(
-                                  (b) => b.member_id === m.sender_id,
-                                )
+                              ? botById.get(m.sender_id)
                               : null;
                           const senderLabel =
                             senderBot?.display_name ||
@@ -3558,16 +3157,11 @@ export default function App() {
                               // merges it back in, so this mainly covers the case
                               // where the user clicks while offline-ish.
                               if (data?.data?.content_data) {
-                                setMessages((prev) =>
-                                  prev.map((x) =>
-                                    x.msg_id === m.msg_id
-                                      ? {
-                                          ...x,
-                                          content_data:
-                                            data.data.content_data,
-                                        }
-                                      : x,
-                                  ),
+                                setMessageStore((prev) =>
+                                  patchMessage(prev, m.msg_id, (x) => ({
+                                    ...x,
+                                    content_data: data.data.content_data,
+                                  })),
                                 );
                               }
                             } catch {
@@ -3677,9 +3271,7 @@ export default function App() {
                           const pinnedUser = pinnedById
                             ? pinnedById === currentUserId
                               ? { display_name: "我", username: "me" }
-                              : channelUsers.find(
-                                  (u) => u.member_id === pinnedById,
-                                )
+                              : userById.get(pinnedById)
                             : null;
                           const pinnedLabel =
                             pinnedUser?.display_name ||
@@ -3734,11 +3326,7 @@ export default function App() {
                           parseHelperPayload(effectiveContent);
                         const clarifyAnswered =
                           !!clarify &&
-                          messages.some(
-                            (r) =>
-                              r.in_reply_to_msg_id === m.msg_id &&
-                              isClarifyReplyUserMessage(r.content),
-                          );
+                          clarifyAnsweredParentIds.has(m.msg_id);
                         const clarifyWaiting =
                           pendingClarifyReplyMsgId === m.msg_id;
                         const clarifyStatus:
@@ -3771,9 +3359,7 @@ export default function App() {
                           m.sender_id === currentUserId;
                         const senderBot =
                           m.sender_type === "bot"
-                            ? channelBots.find(
-                                (b) => b.member_id === m.sender_id,
-                              )
+                            ? botById.get(m.sender_id)
                             : undefined;
                         const botLabel =
                           m.sender_name ||
@@ -3782,9 +3368,7 @@ export default function App() {
                           "Bot";
                         const senderUser =
                           m.sender_type === "user" && !isOwn
-                            ? channelUsers.find(
-                                (u) => u.member_id === m.sender_id,
-                              )
+                            ? userById.get(m.sender_id)
                             : undefined;
                         const userLabel =
                           m.sender_name ||
@@ -3809,20 +3393,19 @@ export default function App() {
 
                         const secretSecsLeft =
                           m.is_secret && !revealedContent && m.created_at
-                            ? Math.max(
-                                0,
-                                60 -
-                                  Math.floor(
-                                    (secretNow -
-                                      new Date(m.created_at).getTime()) /
-                                      1000,
-                                  ),
-                              )
+                            ? getSecretSecondsLeft(m.created_at)
                             : null;
                         const isSecretExpired =
                           secretSecsLeft !== null && secretSecsLeft <= 0;
                         const isSecretUnrevealed =
                           m.is_secret && !revealedContent && !isSecretExpired;
+                        const secretVeil = (
+                          <SecretMessageVeil
+                            createdAt={m.created_at}
+                            canReveal={Boolean(secretTokens[m.msg_id])}
+                            onReveal={() => revealSecretMessage(m.msg_id)}
+                          />
+                        );
                         const rootBubble = !isDMRender ? (
                           // ── Channel flat render — Discord style ────────
                           // All-left alignment, no bubble, always with avatar.
@@ -3929,47 +3512,8 @@ export default function App() {
                                     wordWrap: "break-word",
                                   }}
                                 >
-                                  {isSecretExpired ? (
-                                    <div className="an-secret-veil is-expired">
-                                      <span className="an-secret-veil-icon">
-                                        <AppIcon name="lock" className="w-5 h-5" />
-                                      </span>
-                                      <div className="an-secret-veil-body">
-                                        <span className="an-secret-veil-label">
-                                          加密消息已过期
-                                        </span>
-                                        <span className="an-secret-veil-meta">
-                                          一次性查看窗口已关闭
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ) : isSecretUnrevealed ? (
-                                    <div className="an-secret-veil">
-                                      <span className="an-secret-veil-icon">
-                                        <AppIcon name="lock" className="w-5 h-5" />
-                                      </span>
-                                      <div className="an-secret-veil-body">
-                                        <span className="an-secret-veil-label">
-                                          加密消息
-                                        </span>
-                                        <span className="an-secret-veil-meta">
-                                          {secretSecsLeft !== null
-                                            ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
-                                            : "仅 Bot 可读"}
-                                        </span>
-                                      </div>
-                                      {secretTokens[m.msg_id] && (
-                                        <button
-                                          type="button"
-                                          className="an-secret-veil-reveal"
-                                          onClick={() =>
-                                            revealSecretMessage(m.msg_id)
-                                          }
-                                        >
-                                          查看
-                                        </button>
-                                      )}
-                                    </div>
+                                  {isSecretExpired || isSecretUnrevealed ? (
+                                    secretVeil
                                   ) : activeAgentBridgeTaskData(m) ? (
                                     renderAgentBridgeTaskCard(m)
                                   ) : (
@@ -4128,47 +3672,8 @@ export default function App() {
                                     </div>
                                   );
                                 })()}
-                                {isSecretExpired ? (
-                                  <div className="an-secret-veil is-expired">
-                                    <span className="an-secret-veil-icon">
-                                      <AppIcon name="lock" className="w-5 h-5" />
-                                    </span>
-                                    <div className="an-secret-veil-body">
-                                      <span className="an-secret-veil-label">
-                                        加密消息已过期
-                                      </span>
-                                      <span className="an-secret-veil-meta">
-                                        一次性查看窗口已关闭
-                                      </span>
-                                    </div>
-                                  </div>
-                                ) : isSecretUnrevealed ? (
-                                  <div className="an-secret-veil">
-                                    <span className="an-secret-veil-icon">
-                                      <AppIcon name="lock" className="w-5 h-5" />
-                                    </span>
-                                    <div className="an-secret-veil-body">
-                                      <span className="an-secret-veil-label">
-                                        加密消息
-                                      </span>
-                                      <span className="an-secret-veil-meta">
-                                        {secretSecsLeft !== null
-                                          ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
-                                          : "仅 Bot 可读"}
-                                      </span>
-                                    </div>
-                                    {secretTokens[m.msg_id] && (
-                                      <button
-                                        type="button"
-                                        className="an-secret-veil-reveal"
-                                        onClick={() =>
-                                          revealSecretMessage(m.msg_id)
-                                        }
-                                      >
-                                        查看
-                                      </button>
-                                    )}
-                                  </div>
+                                {isSecretExpired || isSecretUnrevealed ? (
+                                  secretVeil
                                 ) : (
                                   <div
                                     className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words"
@@ -4273,47 +3778,8 @@ export default function App() {
                                   border: "1px solid var(--border)",
                                 }}
                               >
-                                {isSecretExpired ? (
-                                  <div className="an-secret-veil is-expired">
-                                    <span className="an-secret-veil-icon">
-                                      <AppIcon name="lock" className="w-5 h-5" />
-                                    </span>
-                                    <div className="an-secret-veil-body">
-                                      <span className="an-secret-veil-label">
-                                        加密消息已过期
-                                      </span>
-                                      <span className="an-secret-veil-meta">
-                                        一次性查看窗口已关闭
-                                      </span>
-                                    </div>
-                                  </div>
-                                ) : isSecretUnrevealed ? (
-                                  <div className="an-secret-veil">
-                                    <span className="an-secret-veil-icon">
-                                      <AppIcon name="lock" className="w-5 h-5" />
-                                    </span>
-                                    <div className="an-secret-veil-body">
-                                      <span className="an-secret-veil-label">
-                                        加密消息
-                                      </span>
-                                      <span className="an-secret-veil-meta">
-                                        {secretSecsLeft !== null
-                                          ? `剩余 ${secretSecsLeft}s · 仅 Bot 可读`
-                                          : "仅 Bot 可读"}
-                                      </span>
-                                    </div>
-                                    {secretTokens[m.msg_id] && (
-                                      <button
-                                        type="button"
-                                        className="an-secret-veil-reveal"
-                                        onClick={() =>
-                                          revealSecretMessage(m.msg_id)
-                                        }
-                                      >
-                                        查看
-                                      </button>
-                                    )}
-                                  </div>
+                                {isSecretExpired || isSecretUnrevealed ? (
+                                  secretVeil
                                 ) : activeAgentBridgeTaskData(m) ? (
                                   renderAgentBridgeTaskCard(m)
                                 ) : m._streaming && !text ? (
@@ -4414,15 +3880,11 @@ export default function App() {
                             r.sender_id === currentUserId;
                           const rBot =
                             r.sender_type === "bot"
-                              ? channelBots.find(
-                                  (b) => b.member_id === r.sender_id,
-                                )
+                              ? botById.get(r.sender_id)
                               : undefined;
                           const rSenderUser =
                             r.sender_type === "user" && !rIsOwn
-                              ? channelUsers.find(
-                                  (u) => u.member_id === r.sender_id,
-                                )
+                              ? userById.get(r.sender_id)
                               : undefined;
                           const rLabel = rBot
                             ? rBot.display_name || rBot.username || "Bot"
@@ -4459,11 +3921,7 @@ export default function App() {
                           })();
                           const rClarifyAnswered =
                             !!rClarify &&
-                            messages.some(
-                              (x) =>
-                                x.in_reply_to_msg_id === r.msg_id &&
-                                isClarifyReplyUserMessage(x.content),
-                            );
+                            clarifyAnsweredParentIds.has(r.msg_id);
                           const rClarifyWaiting =
                             pendingClarifyReplyMsgId === r.msg_id;
                           const rClarifyStatus:
@@ -4746,9 +4204,7 @@ export default function App() {
                             const key = `${stype}:${sid}`;
                             if (acc.some((p) => p.key === key)) return;
                             if (stype === "bot") {
-                              const b = channelBots.find(
-                                (x) => x.member_id === sid,
-                              );
+                              const b = botById.get(sid);
                               const label =
                                 b?.display_name || b?.username || "Bot";
                               acc.push({
@@ -4763,9 +4219,7 @@ export default function App() {
                               const isSelf = sid === currentUserId;
                               const u = isSelf
                                 ? null
-                                : channelUsers.find(
-                                    (x) => x.member_id === sid,
-                                  );
+                                : userById.get(sid);
                               const label = isSelf
                                 ? "我"
                                 : u?.display_name ||
@@ -4921,15 +4375,11 @@ export default function App() {
                                   r.sender_id === currentUserId;
                                 const rBot =
                                   r.sender_type === "bot"
-                                    ? channelBots.find(
-                                        (b) => b.member_id === r.sender_id,
-                                      )
+                                    ? botById.get(r.sender_id)
                                     : undefined;
                                 const rSenderUser =
                                   r.sender_type === "user" && !rIsOwn
-                                    ? channelUsers.find(
-                                        (u) => u.member_id === r.sender_id,
-                                      )
+                                    ? userById.get(r.sender_id)
                                     : undefined;
                                 const rLabel = rBot
                                   ? rBot.display_name || rBot.username || "Bot"
@@ -4966,11 +4416,7 @@ export default function App() {
                                 })();
                                 const rClarifyAnswered =
                                   !!rClarify &&
-                                  messages.some(
-                                    (x) =>
-                                      x.in_reply_to_msg_id === r.msg_id &&
-                                      isClarifyReplyUserMessage(x.content),
-                                  );
+                                  clarifyAnsweredParentIds.has(r.msg_id);
                                 const rClarifyWaiting =
                                   pendingClarifyReplyMsgId === r.msg_id;
                                 const rClarifyStatus:
@@ -4987,27 +4433,16 @@ export default function App() {
                                     : null;
                                 const rDirectParent =
                                   r.in_reply_to_msg_id !== m.msg_id
-                                    ? messages.find(
-                                        (x) =>
-                                          x.msg_id === r.in_reply_to_msg_id,
-                                      )
+                                    ? msgById.get(r.in_reply_to_msg_id || "")
                                     : null;
                                 const rParentBot =
                                   rDirectParent?.sender_type === "bot"
-                                    ? channelBots.find(
-                                        (b) =>
-                                          b.member_id ===
-                                          rDirectParent.sender_id,
-                                      )
+                                    ? botById.get(rDirectParent.sender_id)
                                     : null;
                                 const rParentSenderUser =
                                   rDirectParent?.sender_type === "user" &&
                                   rDirectParent.sender_id !== currentUserId
-                                    ? channelUsers.find(
-                                        (u) =>
-                                          u.member_id ===
-                                          rDirectParent.sender_id,
-                                      )
+                                    ? userById.get(rDirectParent.sender_id)
                                     : undefined;
                                 const rParentLabel = rDirectParent
                                   ? rDirectParent.sender_type === "bot"
@@ -5230,57 +4665,51 @@ export default function App() {
                           </div>
                         );
                       });
-                      // Intersperse day dividers between message groups based
-                      // on their created_at calendar day. Purely presentational
-                      // — runs outside the big map callback so none of the
-                      // existing branch logic has to change.
-                      const out: React.ReactNode[] = [];
-                      if (messageVirtualWindow.paddingTop > 0) {
-                        out.push(
-                          <div
-                            key="virtual-message-top-spacer"
-                            aria-hidden="true"
-                            style={{ height: messageVirtualWindow.paddingTop }}
-                          />,
-                        );
-                      }
-                      let lastDay =
-                        messageVirtualWindow.startIndex > 0
-                          ? formatDayLabel(
-                              topicRoots[messageVirtualWindow.startIndex - 1]
-                                ?.created_at,
-                            )
-                          : "";
-                      for (let i = 0; i < virtualTopicRoots.length; i++) {
-                        const m = virtualTopicRoots[i];
-                        const absoluteIndex =
-                          messageVirtualWindow.startIndex + i;
-                        const day = formatDayLabel(m.created_at);
-                        if (day && day !== lastDay) {
-                          out.push(
-                            <div
-                              key={`day-${absoluteIndex}-${day}`}
-                              className="an-day-divider"
-                            >
-                              <span>{day}</span>
-                            </div>,
-                          );
-                          lastDay = day;
-                        }
-                        out.push(renderedRows[i]);
-                      }
-                      if (messageVirtualWindow.paddingBottom > 0) {
-                        out.push(
-                          <div
-                            key="virtual-message-bottom-spacer"
-                            aria-hidden="true"
-                            style={{
-                              height: messageVirtualWindow.paddingBottom,
-                            }}
-                          />,
-                        );
-                      }
-                      return out;
+                      return (
+                        <div
+                          style={{
+                            height: rowVirtualizer.getTotalSize(),
+                            position: "relative",
+                            width: "100%",
+                          }}
+                        >
+                          {virtualItems.map((virtualItem, i) => {
+                            const m = topicRoots[virtualItem.index];
+                            if (!m) return null;
+                            const day = formatDayLabel(m.created_at);
+                            const prevDay =
+                              virtualItem.index > 0
+                                ? formatDayLabel(
+                                    topicRoots[virtualItem.index - 1]?.created_at,
+                                  )
+                                : "";
+                            return (
+                              <div
+                                key={virtualItem.key}
+                                ref={rowVirtualizer.measureElement}
+                                data-index={virtualItem.index}
+                                style={{
+                                  position: "absolute",
+                                  top: 0,
+                                  left: 0,
+                                  width: "100%",
+                                  transform: `translateY(${virtualItem.start}px)`,
+                                }}
+                              >
+                                {day && day !== prevDay ? (
+                                  <div
+                                    key={`day-${virtualItem.index}-${day}`}
+                                    className="an-day-divider"
+                                  >
+                                    <span>{day}</span>
+                                  </div>
+                                ) : null}
+                                {renderedRows[i]}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
                       })()}
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
@@ -5421,74 +4850,28 @@ export default function App() {
                 </div>
               </div>
             )}
-          </main>
+          </ChannelMainFrame>
 
-          {/* Memory right panel */}
-          {memoryPanelOpen && selectedId && (
-            <div
-              className={
-                isMobile
-                  ? "fixed inset-0 z-[70] flex bg-white"
-                  : "relative flex-shrink-0 flex"
-              }
-              style={{ width: isMobile ? "100%" : memoryWidth }}
-            >
-              {!isMobile && (
-                <div
-                  onMouseDown={onMemoryResize}
-                  className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
-                />
-              )}
-              <MemoryPanel
-                channelId={selectedId}
-                channelName={selectedChannel?.name ?? ""}
-                contextData={contextData}
-                activeLayer={memoryTab ?? undefined}
-                onLayerChange={(l) =>
-                  setMemoryTab(
-                    l as "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO",
-                  )
-                }
-                currentUserId={currentUserId}
-                onFilePreview={(file) =>
-                  openFilePreview({
-                    file_id: file.file_id,
-                    original_filename: file.original_filename ?? undefined,
-                    content_type: file.content_type ?? undefined,
-                    size_bytes: file.size_bytes ?? undefined,
-                  })
-                }
-                onClose={() => setMemoryTab(null)}
-              />
-            </div>
-          )}
-          {/* File preview sidebar */}
-          {filePreviewPanel && (
-            <div
-              className={
-                isMobile
-                  ? "fixed inset-0 z-[70] flex bg-white"
-                  : "relative flex-shrink-0 flex"
-              }
-              style={{ width: isMobile ? "100%" : filePreviewWidth }}
-            >
-              {!isMobile && (
-                <div
-                  onMouseDown={onFilePreviewResize}
-                  className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
-                />
-              )}
-              <FilePreviewSidebar
-                url={filePreviewPanel.url}
-                filename={filePreviewPanel.filename}
-                contentType={filePreviewPanel.contentType}
-                sizeBytes={filePreviewPanel.sizeBytes}
-                onClose={() => setFilePreviewPanel(null)}
-              />
-            </div>
-          )}
+          <ChatSidePanels
+            memoryPanelOpen={memoryPanelOpen}
+            selectedId={selectedId}
+            isMobile={isMobile}
+            memoryWidth={memoryWidth}
+            onMemoryResize={onMemoryResize}
+            channelName={selectedChannel?.name ?? ""}
+            contextData={contextData}
+            memoryTab={memoryTab}
+            onMemoryTabChange={setMemoryTab}
+            currentUserId={currentUserId}
+            onFilePreview={openFilePreview}
+            onCloseMemory={() => setMemoryTab(null)}
+            filePreviewPanel={filePreviewPanel}
+            filePreviewWidth={filePreviewWidth}
+            onFilePreviewResize={onFilePreviewResize}
+            onCloseFilePreview={() => setFilePreviewPanel(null)}
+          />
         </div>
-      </div>
+      </ChatShell>
 
       <ImageLightbox
         src={lightboxSrc}

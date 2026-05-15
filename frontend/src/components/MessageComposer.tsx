@@ -8,7 +8,8 @@ import type {
 } from "react";
 import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
-import { AppIcon, FileTypeIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
+import { FileTypeIcon } from "./icons/FileTypeIcon";
 
 export type MessageComposerKind = "normal" | "secret" | "announcement" | "topic";
 
