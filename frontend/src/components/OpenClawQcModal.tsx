@@ -1,7 +1,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { apiFetch } from "../api";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 import { Modal } from "./Modal";
 
 type QcResult = {

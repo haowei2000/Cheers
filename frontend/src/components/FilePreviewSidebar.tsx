@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MessageMarkdown } from "../MessageMarkdown";
-import { AppIcon, FileTypeIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
+import { FileTypeIcon } from "./icons/FileTypeIcon";
 
 type TextPreviewKind = "markdown" | "text";
 

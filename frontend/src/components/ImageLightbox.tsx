@@ -1,4 +1,4 @@
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 
 interface ImageLightboxProps {
   src: string | null;

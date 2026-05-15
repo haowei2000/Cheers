@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Channel, DM } from "../types";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 
 export type TopicSummary = {
   rootId: string;

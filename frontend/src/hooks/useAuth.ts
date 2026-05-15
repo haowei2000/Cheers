@@ -43,7 +43,7 @@ export interface UseAuthResult {
   logout: () => void;
 }
 
-export function useAuth(devUserId: string): UseAuthResult {
+export function useAuth(): UseAuthResult {
   const [currentUser, setCurrentUserState] = useState<CurrentUser>(readUser);
   const [authToken, setAuthToken] = useState<string | null>(readToken);
 
@@ -86,7 +86,7 @@ export function useAuth(devUserId: string): UseAuthResult {
     setAuthToken(null);
   }, []);
 
-  const currentUserId = currentUser?.user_id || devUserId;
+  const currentUserId = currentUser?.user_id || "";
 
   return {
     currentUser,

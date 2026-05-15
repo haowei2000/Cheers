@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import type { ChannelMember as Member, Friend, BotItem as Bot } from "./types";
-import { AppIcon } from "./components/icons";
+import { AppIcon } from "./components/icons/AppIcon";
 import { SearchPicker } from "./components/SearchPicker";
 
 const API = "/api/v1";

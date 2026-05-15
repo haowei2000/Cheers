@@ -1,7 +1,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import type { CurrentUser } from "../types";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 import { Modal } from "./Modal";
 
 const API = "/api/v1";

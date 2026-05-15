@@ -18,7 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { MessageMarkdown } from "./MessageMarkdown";
-import { AppIcon, type AppIconName } from "./components/icons";
+import { AppIcon, type AppIconName } from "./components/icons/AppIcon";
 import type { MemoryEntryItem, MemberItem, TodoItem } from "./types";
 import { getAuthToken as getStoredToken } from "./api";
 

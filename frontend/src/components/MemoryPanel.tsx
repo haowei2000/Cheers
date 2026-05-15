@@ -5,7 +5,7 @@ import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 import { InviteMemberSearch } from "./InviteMemberSearch";
 
 const API = "/api/v1";

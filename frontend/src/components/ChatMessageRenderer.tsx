@@ -1,9 +1,14 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
-import { renderWithThinkFolding } from "../lib/think";
+import { lazy, Suspense, useState, type CSSProperties, type ReactNode } from "react";
 import type { FileInfo } from "../types";
-import { AppIcon, FileTypeIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
+import { FileTypeIcon } from "./icons/FileTypeIcon";
 
 const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
+const ThinkMarkdownContent = lazy(() =>
+  import("./ThinkMarkdownContent").then((module) => ({
+    default: module.ThinkMarkdownContent,
+  })),
+);
 
 function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return "";
@@ -199,18 +204,23 @@ export function ChatMessageRenderer({
   streaming,
 }: ChatMessageRendererProps) {
   const hasContent = content.trim().length > 0;
+  const markdownFallback = (
+    <span className="whitespace-pre-wrap break-words">{content}</span>
+  );
   const bodyChildren = (
     <>
       {streaming && !hasContent ? (
         <span className="inline-block h-4 w-2 animate-pulse rounded-sm bg-gray-400 align-middle" />
       ) : hasContent ? (
-        renderWithThinkFolding(
-          content,
-          keyPrefix,
-          streaming,
-          onImageClick,
-          onFileClick,
-        )
+        <Suspense fallback={markdownFallback}>
+          <ThinkMarkdownContent
+            content={content}
+            keyPrefix={keyPrefix}
+            streaming={streaming}
+            onImageClick={onImageClick}
+            onFileClick={onFileClick}
+          />
+        </Suspense>
       ) : null}
       {showStreamingCursor && streaming && hasContent && (
         <span
