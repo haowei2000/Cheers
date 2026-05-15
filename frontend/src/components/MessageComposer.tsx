@@ -58,6 +58,7 @@ export interface MessageComposerProps {
   onTitleChange?: (value: string) => void;
   channelBots: ChannelBot[];
   channelUsers: ChannelUser[];
+  currentUserId?: string;
   replyingTo?: Message | null;
   onCancelReply?: () => void;
   pendingFiles?: ComposerPendingFile[];
@@ -98,6 +99,7 @@ export function MessageComposer({
   onTitleChange,
   channelBots,
   channelUsers,
+  currentUserId,
   replyingTo = null,
   onCancelReply,
   pendingFiles = [],
@@ -364,10 +366,19 @@ export function MessageComposer({
             replyingTo.sender_type === "bot"
               ? channelBots.find((bot) => bot.member_id === replyingTo.sender_id)
               : null;
+          const refUser =
+            replyingTo.sender_type === "user"
+              ? channelUsers.find((user) => user.member_id === replyingTo.sender_id)
+              : null;
           const refLabel =
             replyingTo.sender_type === "bot"
               ? refBot?.display_name || refBot?.username || "Bot"
-              : "我";
+              : replyingTo.sender_id === currentUserId
+                ? "我"
+                : replyingTo.sender_name ||
+                  refUser?.display_name ||
+                  refUser?.username ||
+                  "用户";
           const refText =
             parseHelperPayload(replyingTo.content).text || replyingTo.content;
           const refPreview = refText.replace(/\n/g, " ").slice(0, 80);

@@ -127,13 +127,16 @@ class SecretEnvelopeStage(Stage[IngestContext]):
 class PersistStage(Stage[IngestContext]):
     async def run(self, ctx: IngestContext) -> None:
         if ctx.channel is not None and ctx.channel.type == "dm":
-            ctx.in_reply_to_msg_id = None
-            if ctx.msg_type in {"topic", MSG_TYPE_REPLY}:
+            if ctx.msg_type == "topic":
                 ctx.msg_type = MSG_TYPE_NORMAL
+                ctx.in_reply_to_msg_id = None
                 ctx.content_data = None
             if ctx.msg_type == "announcement":
                 ctx.msg_type = MSG_TYPE_NORMAL
+                ctx.in_reply_to_msg_id = None
                 ctx.content_data = None
+            if ctx.msg_type == MSG_TYPE_REPLY and not ctx.in_reply_to_msg_id:
+                ctx.msg_type = MSG_TYPE_NORMAL
         msg_type = ctx.msg_type or (
             MSG_TYPE_REPLY if ctx.in_reply_to_msg_id else MSG_TYPE_NORMAL
         )

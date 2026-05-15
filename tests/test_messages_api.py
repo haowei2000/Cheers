@@ -287,12 +287,12 @@ async def test_list_topic_messages_includes_nested_replies(
 
 
 @pytest.mark.asyncio
-async def test_dm_message_forces_normal_session_shape(
+async def test_dm_message_normalizes_topics_but_preserves_replies(
     monkeypatch,
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """DM 消息不允许产生 topic/reply 结构，始终落成独立 DM session 的普通消息。"""
+    """DM 不生成 topic 结构，但允许普通消息保留回复关系。"""
     import app.api.v1.messages.routes as message_routes
 
     monkeypatch.setattr(
@@ -364,6 +364,25 @@ async def test_dm_message_forces_normal_session_shape(
     assert saved.content_data is None
     await db_session.refresh(parent)
     assert parent.msg_type == "normal"
+
+    reply_resp = await client.post(
+        f"/api/v1/channels/{dm.channel_id}/messages",
+        json={
+            "content": "reply should stay linked",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "msg_type": "reply",
+            "in_reply_to_msg_id": parent.msg_id,
+        },
+    )
+
+    assert reply_resp.status_code == 200
+    reply_id = reply_resp.json()["data"]["msg_id"]
+    reply = await db_session.get(Message, reply_id)
+    assert reply is not None
+    assert reply.msg_type == "reply"
+    assert reply.in_reply_to_msg_id == parent.msg_id
+    assert reply.content_data is None
 
 
 @pytest.mark.asyncio
