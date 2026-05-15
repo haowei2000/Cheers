@@ -130,6 +130,9 @@ App.tsx
 features/
 ├── chat/
 │   ├── ChatWorkspaceView.tsx        # 频道主区域：header、session、消息列表、composer 和空态
+│   ├── hooks/
+│   │   ├── useComposerController.ts # 输入草稿、消息类型、标题、回复和加密模式
+│   │   └── usePendingFiles.ts       # 待发送文件、预览 URL、上传、删除和清理
 │   ├── messages/
 │       ├── AgentBridgeTaskCard.tsx  # Agent Bridge 后台任务消息卡
 │       ├── ChatMessageList.tsx      # 虚拟消息列表、特殊消息卡和话题回复渲染

@@ -1,0 +1,185 @@
+import { useCallback, useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import type { ChangeEvent } from "react";
+import type { AuthFetch } from "../../../api/client";
+import { API } from "../../../lib/app-config";
+
+const PRESIGN_EXTS = new Set([
+  ".txt",
+  ".md",
+  ".docx",
+  ".pdf",
+  ".xlsx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+]);
+
+const CONTENT_TYPE_MAP: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx":
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+
+interface UsePendingFilesOptions {
+  selectedId: string | null;
+  currentUserId: string;
+  authFetch: AuthFetch;
+  onRequireLogin: () => void;
+}
+
+export function usePendingFiles({
+  selectedId,
+  currentUserId,
+  authFetch,
+  onRequireLogin,
+}: UsePendingFilesOptions) {
+  const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
+  const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
+  const [pendingFilePreviews, setPendingFilePreviews] = useState<
+    (string | null)[]
+  >([]);
+
+  const pendingFiles = useMemo(
+    () =>
+      pendingFileNames.map((name, index) => ({
+        name,
+        previewUrl: pendingFilePreviews[index] ?? null,
+      })),
+    [pendingFileNames, pendingFilePreviews],
+  );
+
+  const appendPendingFile = useCallback(
+    (fileId: string, filename: string, previewUrl: string | null) => {
+      setPendingFileIds((prev) => [...prev, fileId]);
+      setPendingFileNames((prev) => [...prev, filename]);
+      setPendingFilePreviews((prev) => [...prev, previewUrl]);
+    },
+    [],
+  );
+
+  const removePendingFile = useCallback((index: number) => {
+    setPendingFileIds((prev) =>
+      prev.filter((_, itemIndex) => itemIndex !== index),
+    );
+    setPendingFileNames((prev) =>
+      prev.filter((_, itemIndex) => itemIndex !== index),
+    );
+    setPendingFilePreviews((prev) => {
+      const removed = prev[index];
+      if (removed) URL.revokeObjectURL(removed);
+      return prev.filter((_, itemIndex) => itemIndex !== index);
+    });
+  }, []);
+
+  const clearPendingFiles = useCallback(() => {
+    setPendingFileIds([]);
+    setPendingFileNames([]);
+    setPendingFilePreviews((prev) => {
+      prev.forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+      return [];
+    });
+  }, []);
+
+  const uploadFileObject = useCallback(
+    async (file: File) => {
+      if (!selectedId) return;
+      if (!currentUserId) {
+        onRequireLogin();
+        toast.error("请先登录后再上传文件");
+        return;
+      }
+      const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+      if (!PRESIGN_EXTS.has(ext)) {
+        toast.error(`不支持的格式：${ext}`);
+        return;
+      }
+      const localPreview = IMAGE_EXTS.has(ext)
+        ? URL.createObjectURL(file)
+        : null;
+      const contentType =
+        file.type || CONTENT_TYPE_MAP[ext] || "application/octet-stream";
+      try {
+        const presignRes = await authFetch(`${API}/files/presign`, {
+          method: "POST",
+          body: JSON.stringify({
+            channel_id: selectedId,
+            uploader_id: currentUserId,
+            filename: file.name,
+            content_type: contentType,
+            size_bytes: file.size,
+          }),
+        });
+        const presignData = await presignRes.json();
+        if (!presignRes.ok || !presignData.data?.upload_url) {
+          toast.error(presignData.detail || "获取上传凭证失败");
+          if (localPreview) URL.revokeObjectURL(localPreview);
+          return;
+        }
+        const {
+          file_id,
+          upload_url,
+          headers: uploadHeaders,
+        } = presignData.data;
+        const putRes = await fetch(upload_url, {
+          method: "PUT",
+          headers: uploadHeaders,
+          body: file,
+        });
+        if (!putRes.ok) {
+          toast.error("文件上传失败，请重试");
+          if (localPreview) URL.revokeObjectURL(localPreview);
+          return;
+        }
+        const confirmRes = await authFetch(`${API}/files/${file_id}/confirm`, {
+          method: "POST",
+        });
+        if (!confirmRes.ok) {
+          console.warn("confirm upload failed", await confirmRes.text());
+        }
+        appendPendingFile(file_id, file.name, localPreview);
+      } catch (err) {
+        toast.error("文件上传出错");
+        if (localPreview) URL.revokeObjectURL(localPreview);
+        console.error(err);
+      }
+    },
+    [appendPendingFile, authFetch, currentUserId, onRequireLogin, selectedId],
+  );
+
+  const uploadFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      event.target.value = "";
+      await uploadFileObject(file);
+    },
+    [uploadFileObject],
+  );
+
+  return {
+    pendingFileIds,
+    pendingFileNames,
+    pendingFilePreviews,
+    pendingFiles,
+    removePendingFile,
+    clearPendingFiles,
+    uploadFileObject,
+    uploadFile,
+  };
+}

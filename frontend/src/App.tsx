@@ -17,14 +17,14 @@ import { HelpModal } from "./components/HelpModal";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChatAttachments } from "./components/ChatMessageRenderer";
 import type { MemoryTab } from "./components/ChannelHeader";
-import { MESSAGE_COMPOSER_KIND_ORDER } from "./components/MessageComposer";
-import type { MessageComposerKind } from "./components/MessageComposer";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { AddBotModal } from "./components/app/AddBotModal";
 import { ChannelMainFrame } from "./components/app/ChannelMainFrame";
 import { ChatShell } from "./components/app/ChatShell";
 import { ChatSidePanels } from "./components/app/ChatSidePanels";
 import { ChatWorkspaceView } from "./features/chat/ChatWorkspaceView";
+import { useComposerController } from "./features/chat/hooks/useComposerController";
+import { usePendingFiles } from "./features/chat/hooks/usePendingFiles";
 import { MessageDetailModal } from "./components/app/MessageDetailModal";
 import { AgentBridgeTaskCard } from "./features/chat/messages/AgentBridgeTaskCard";
 import { apiFetch, buildWsUrl } from "./api";
@@ -158,28 +158,25 @@ export default function App() {
   // Topic viewer: pageTopicId — root msg_id for the full-page view,
   // mirrored to URL query. There is no side-dock panel; opening a topic
   // always replaces the channel stream with the dedicated page.
-  // Composer send-kind: 4 unified types — 普通 / 加密 / 公告 / 主题.
-  // Switchable via Tab / Shift-Tab and the ‹ › buttons flanking the composer.
-  // Always resets to "normal" after each send. "reply" is orthogonal —
-  // replyingTo overrides this. The "secret" kind syncs with the legacy
-  // `secretMode` boolean so downstream code (send payload, render path) keeps
-  // working unchanged.
-  type MsgKind = MessageComposerKind;
-  const [msgKind, setMsgKind] = useState<MsgKind>("normal");
-  // Optional title carried by announcement + topic kinds. Normal messages
-  // ignore it; we clear it whenever kind cycles or a send completes.
-  const [composerTitle, setComposerTitle] = useState<string>("");
-  const composerTitleRef = useRef<HTMLInputElement | null>(null);
-  const cycleMsgKind = (direction: 1 | -1) => {
-    setMsgKind((prev) => {
-      const idx = MESSAGE_COMPOSER_KIND_ORDER.indexOf(prev);
-      const next =
-        (idx + direction + MESSAGE_COMPOSER_KIND_ORDER.length) %
-        MESSAGE_COMPOSER_KIND_ORDER.length;
-      setComposerTitle("");
-      return MESSAGE_COMPOSER_KIND_ORDER[next];
-    });
-  };
+  const {
+    input,
+    inputRevision,
+    inputDraftRef,
+    inputRef,
+    secretInputRef,
+    setComposerInput,
+    handleComposerValueChange,
+    msgKind,
+    setMsgKind,
+    cycleMsgKind,
+    composerTitle,
+    setComposerTitle,
+    composerTitleRef,
+    replyingTo,
+    setReplyingTo,
+    secretMode,
+    resetComposerAfterSend,
+  } = useComposerController();
   const [pageTopicId, setPageTopicId] = useState<string | null>(
     () => chatUrlState.topicId,
   );
@@ -256,17 +253,6 @@ export default function App() {
   const streamDeltaBufferRef = useRef<Record<string, PendingStreamDelta>>({});
   const streamDeltaRafRef = useRef<number | null>(null);
   const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
-  const [input, setInput] = useState("");
-  const [inputRevision, setInputRevision] = useState(0);
-  const inputDraftRef = useRef("");
-  const setComposerInput = useCallback((value: string) => {
-    inputDraftRef.current = value;
-    setInput(value);
-    setInputRevision((revision) => revision + 1);
-  }, []);
-  const handleComposerValueChange = useCallback((value: string) => {
-    inputDraftRef.current = value;
-  }, []);
   const [loading, setLoading] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -351,11 +337,19 @@ export default function App() {
   ]);
 
   const [contextData, setContextData] = useState<ContextData>({});
-  const [pendingFileIds, setPendingFileIds] = useState<string[]>([]);
-  const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
-  const [pendingFilePreviews, setPendingFilePreviews] = useState<
-    (string | null)[]
-  >([]);
+  const {
+    pendingFileIds,
+    pendingFiles,
+    removePendingFile,
+    clearPendingFiles,
+    uploadFileObject,
+    uploadFile,
+  } = usePendingFiles({
+    selectedId,
+    currentUserId,
+    authFetch,
+    onRequireLogin: () => setLoginModalOpen(true),
+  });
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounterRef = useRef(0);
 
@@ -382,7 +376,6 @@ export default function App() {
     string | null
   >(null);
   const [autoAssist, setAutoAssist] = useState(false);
-  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(
     new Set(),
   );
@@ -404,15 +397,6 @@ export default function App() {
 
   const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
   const [channelUsers, setChannelUsers] = useState<ChannelUser[]>([]);
-  // 加密消息状态。Bound to msgKind === "secret" via the effect below — the
-  // 🔒 toolbar button and the kind switcher both flip this through msgKind,
-  // and downstream send/render code keeps reading `secretMode` unchanged.
-  const [secretMode, setSecretMode] = useState(false);
-  useEffect(() => {
-    if (msgKind === "secret" && !secretMode) setSecretMode(true);
-    if (msgKind !== "secret" && secretMode) setSecretMode(false);
-  }, [msgKind, secretMode]);
-
   const [revealedSecrets, setRevealedSecrets] = useState<
     Record<string, string>
   >({});
@@ -470,8 +454,6 @@ export default function App() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const isLoadingOlderRef = useRef(false);
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const secretInputRef = useRef<HTMLInputElement | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastAutoScrollChannelRef = useRef<string | null>(null);
@@ -1489,7 +1471,7 @@ export default function App() {
     const isSecretSend = secretMode;
     // Resolve msg_type: a pending reply-to always wins; otherwise use the
     // user's current msgKind pick from the composer switcher.
-    const effectiveKind: MsgKind | "reply" = isDmSelected
+    const effectiveKind: typeof msgKind | "reply" = isDmSelected
       ? "normal"
       : replyingTo
         ? "reply"
@@ -1513,19 +1495,8 @@ export default function App() {
     } else if (effectiveKind === "topic") {
       body.content_data = titleTrim ? { title: titleTrim } : {};
     }
-    setComposerInput("");
-    setSecretMode(false);
-    setMsgKind("normal");
-    setComposerTitle("");
-    setPendingFileIds([]);
-    setPendingFileNames([]);
-    setPendingFilePreviews((prev) => {
-      prev.forEach((u) => {
-        if (u) URL.revokeObjectURL(u);
-      });
-      return [];
-    });
-    setReplyingTo(null);
+    resetComposerAfterSend();
+    clearPendingFiles();
     authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
@@ -1836,14 +1807,7 @@ export default function App() {
           : upsertMessage(prev, d.data, MAX_LOADED_MESSAGES),
       );
     }
-    setPendingFileIds([]);
-    setPendingFileNames([]);
-    setPendingFilePreviews((prev) => {
-      prev.forEach((url) => {
-        if (url) URL.revokeObjectURL(url);
-      });
-      return [];
-    });
+    clearPendingFiles();
   };
 
   const handleClarifyContinue = (
@@ -1885,137 +1849,6 @@ export default function App() {
       setPendingClarifyReplyMsgId(null);
       toast.error("提交失败，请重试");
     });
-  };
-
-  const PRESIGN_EXTS = new Set([
-    ".txt",
-    ".md",
-    ".docx",
-    ".pdf",
-    ".xlsx",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".webp",
-    ".gif",
-  ]);
-  const CONTENT_TYPE_MAP: Record<string, string> = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-    ".gif": "image/gif",
-    ".pdf": "application/pdf",
-    ".txt": "text/plain",
-    ".md": "text/markdown",
-    ".docx":
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".xlsx":
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  };
-
-  const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
-
-  const uploadFileObject = async (file: File) => {
-    if (!selectedId) return;
-    if (!currentUserId) {
-      setLoginModalOpen(true);
-      toast.error("请先登录后再上传文件");
-      return;
-    }
-    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-    const allowed = [
-      ".txt",
-      ".md",
-      ".docx",
-      ".pdf",
-      ".xlsx",
-      ".png",
-      ".jpg",
-      ".jpeg",
-      ".webp",
-      ".gif",
-    ];
-    if (!allowed.includes(ext)) {
-      toast.error(`不支持的格式：${ext}`);
-      return;
-    }
-    const localPreview = IMAGE_EXTS.has(ext) ? URL.createObjectURL(file) : null;
-    if (PRESIGN_EXTS.has(ext)) {
-      const contentType =
-        file.type || CONTENT_TYPE_MAP[ext] || "application/octet-stream";
-      try {
-        const presignRes = await authFetch(`${API}/files/presign`, {
-          method: "POST",
-          body: JSON.stringify({
-            channel_id: selectedId,
-            uploader_id: currentUserId,
-            filename: file.name,
-            content_type: contentType,
-            size_bytes: file.size,
-          }),
-        });
-        const presignData = await presignRes.json();
-        if (!presignRes.ok || !presignData.data?.upload_url) {
-          toast.error(presignData.detail || "获取上传凭证失败");
-          if (localPreview) URL.revokeObjectURL(localPreview);
-          return;
-        }
-        const {
-          file_id,
-          upload_url,
-          headers: uploadHeaders,
-        } = presignData.data;
-        const putRes = await fetch(upload_url, {
-          method: "PUT",
-          headers: uploadHeaders,
-          body: file,
-        });
-        if (!putRes.ok) {
-          toast.error("文件上传失败，请重试");
-          if (localPreview) URL.revokeObjectURL(localPreview);
-          return;
-        }
-        // confirm upload so backend marks status as "uploaded"
-        const confirmRes = await authFetch(
-          `${API}/files/${file_id}/confirm`,
-          { method: "POST" },
-        );
-        if (!confirmRes.ok) {
-          console.warn("confirm upload failed", await confirmRes.text());
-        }
-        setPendingFileIds((prev) => [...prev, file_id]);
-        setPendingFileNames((prev) => [...prev, file.name]);
-        setPendingFilePreviews((prev) => [...prev, localPreview]);
-      } catch (err) {
-        toast.error("文件上传出错");
-        if (localPreview) URL.revokeObjectURL(localPreview);
-        console.error(err);
-      }
-    } else {
-      fetch(
-        `${API}/files/upload?channel_id=${encodeURIComponent(selectedId)}&uploader_id=${encodeURIComponent(currentUserId)}&filename=${encodeURIComponent(file.name)}`,
-        { method: "POST", body: file },
-      )
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.data?.file_id) {
-            setPendingFileIds((prev) => [...prev, d.data.file_id]);
-            setPendingFileNames((prev) => [...prev, file.name]);
-            setPendingFilePreviews((prev) => [...prev, localPreview]);
-          } else if (localPreview) {
-            URL.revokeObjectURL(localPreview);
-          }
-        })
-        .catch(console.error);
-    }
-  };
-
-  const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    await uploadFileObject(file);
   };
 
   const filePreviewUrl = (fileId: string) => `${API}/files/${fileId}/preview`;
@@ -2493,21 +2326,8 @@ export default function App() {
                 onImageClick: handleMarkdownImageClick,
                 onFileClick: handleMarkdownFileClick,
                 renderAttachments: renderFileAttachments,
-                pendingFiles: pendingFileNames.map((name, index) => ({
-                  name,
-                  previewUrl: pendingFilePreviews[index] ?? null,
-                })),
-                onRemovePendingFile: (index) => {
-                  setPendingFileIds((prev) =>
-                    prev.filter((_, itemIndex) => itemIndex !== index),
-                  );
-                  setPendingFileNames((prev) =>
-                    prev.filter((_, itemIndex) => itemIndex !== index),
-                  );
-                  setPendingFilePreviews((prev) =>
-                    prev.filter((_, itemIndex) => itemIndex !== index),
-                  );
-                },
+                pendingFiles,
+                onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
@@ -2602,21 +2422,8 @@ export default function App() {
                 channelUsers,
                 replyingTo,
                 onCancelReply: () => setReplyingTo(null),
-                pendingFiles: pendingFileNames.map((name, index) => ({
-                  name,
-                  previewUrl: pendingFilePreviews[index] ?? null,
-                })),
-                onRemovePendingFile: (index) => {
-                  setPendingFileIds((prev) =>
-                    prev.filter((_, itemIndex) => itemIndex !== index),
-                  );
-                  setPendingFileNames((prev) =>
-                    prev.filter((_, itemIndex) => itemIndex !== index),
-                  );
-                  setPendingFilePreviews((prev) =>
-                    prev.filter((_, itemIndex) => itemIndex !== index),
-                  );
-                },
+                pendingFiles,
+                onRemovePendingFile: removePendingFile,
                 onUploadFile: uploadFile,
                 keychainEnabled: Boolean(currentUser),
                 keychainOpen: keychainPopupOpen,
