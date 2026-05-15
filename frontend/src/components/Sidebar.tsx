@@ -498,7 +498,9 @@ export function Sidebar({
                   onClick={() => setSelectedId(c.channel_id)}
                   className={`an-rail-row w-full ${isActive ? "active" : ""} pr-7`}
                 >
-                  <span className="an-sigil">#</span>
+                  <span className="an-sigil">
+                    <AppIcon name="channel" />
+                  </span>
                   <span className="an-name">{c.name}</span>
                   {(abbrev ||
                     (!isActive && (c.unread_count ?? 0) > 0)) && (
@@ -612,7 +614,7 @@ export function Sidebar({
                       }
                     >
                       <span className="an-sigil">
-                        {isBot ? "⦿" : isSystem ? "◎" : "@"}
+                        <AppIcon name={isBot ? "bot" : isSystem ? "admin" : "user"} />
                       </span>
                       <span className="an-name">{label}</span>
                       {!isActive && (d.unread_count ?? 0) > 0 && (

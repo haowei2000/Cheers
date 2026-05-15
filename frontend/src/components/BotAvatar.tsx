@@ -1,3 +1,5 @@
+import { AiBrandIcon, resolveAiBrandName } from "./icons";
+
 /* BotAvatar — visual marker for bot senders.
  *
  * Renders a stylized bot face inside a softly-rounded chip so bot replies
@@ -10,6 +12,8 @@ interface BotAvatarProps {
   label: string;
   /** Custom uploaded avatar URL; if set, renders <img> and ignores the SVG. */
   avatarUrl?: string | null;
+  /** Optional model/provider label used to render an AI brand logo fallback. */
+  brandName?: string | null;
   /** Pixel size; the chip is square (size × size). Defaults to 36. */
   size?: number;
   /** Tile background. Defaults to a subtle accent gradient. */
@@ -23,6 +27,7 @@ interface BotAvatarProps {
 export function BotAvatar({
   label,
   avatarUrl,
+  brandName,
   size = 36,
   background,
   color = "#fff",
@@ -36,6 +41,23 @@ export function BotAvatar({
         className={`rounded-xl object-cover ${className ?? ""}`}
         style={{ width: size, height: size }}
       />
+    );
+  }
+
+  const resolvedBrandName = resolveAiBrandName(brandName) ?? resolveAiBrandName(label);
+  if (resolvedBrandName) {
+    const tileSize = Math.round(size * 0.62);
+
+    return (
+      <div
+        role="img"
+        aria-label={label}
+        title={label}
+        className={`rounded-xl flex items-center justify-center select-none flex-shrink-0 border border-gray-200 bg-white shadow-sm ${className ?? ""}`}
+        style={{ width: size, height: size }}
+      >
+        <AiBrandIcon name={resolvedBrandName} size={tileSize} />
+      </div>
     );
   }
 

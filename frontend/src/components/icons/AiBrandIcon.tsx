@@ -27,6 +27,13 @@ export type AiBrandName = keyof typeof aiBrandIconMap;
 const aiBrandAliases: Record<string, AiBrandName> = {
   anthropic: "anthropic",
   claude: "claude",
+  claude35sonnet: "claude",
+  claude37sonnet: "claude",
+  claude3haiku: "claude",
+  claude3opus: "claude",
+  claude3sonnet: "claude",
+  claude4opus: "claude",
+  claude4sonnet: "claude",
   claudesonnet: "claude",
   claudeopus: "claude",
   deepseek: "deepseek",
@@ -36,18 +43,38 @@ const aiBrandAliases: Record<string, AiBrandName> = {
   googleai: "gemini",
   googlegemini: "gemini",
   gpt: "openai",
+  gpt35: "openai",
   gpt4: "openai",
   gpt4o: "openai",
+  gpt4omini: "openai",
   gpt5: "openai",
   hf: "huggingface",
   huggingface: "huggingface",
+  llama: "ollama",
+  llama32: "ollama",
+  llama33: "ollama",
   mistral: "mistral",
+  o1: "openai",
+  o3: "openai",
+  o4mini: "openai",
   ollama: "ollama",
   openai: "openai",
   qwen: "qwen",
   qwenmax: "qwen",
   qwenvl: "qwen",
   tongyi: "qwen",
+};
+
+export const aiBrandColors: Record<AiBrandName, string> = {
+  anthropic: "#D97757",
+  claude: "#D97757",
+  deepseek: "#4D6BFE",
+  gemini: "#1A73E8",
+  huggingface: "#FFCC4D",
+  mistral: "#FA520F",
+  ollama: "#111827",
+  openai: "#111827",
+  qwen: "#615CED",
 };
 
 const aiBrandLabels: Record<AiBrandName, string> = {
@@ -69,7 +96,19 @@ function normalizeIconName(name: string): string {
 export function resolveAiBrandName(name?: string | null): AiBrandName | null {
   if (!name) return null;
   const normalized = normalizeIconName(name);
-  return aiBrandAliases[normalized] ?? null;
+  const exact = aiBrandAliases[normalized];
+  if (exact) return exact;
+
+  if (normalized.includes("anthropic")) return "anthropic";
+  if (normalized.includes("claude")) return "claude";
+  if (normalized.includes("deepseek")) return "deepseek";
+  if (normalized.includes("gemini") || normalized.includes("googleai")) return "gemini";
+  if (normalized.includes("huggingface")) return "huggingface";
+  if (normalized.includes("mistral")) return "mistral";
+  if (normalized.includes("ollama") || normalized.includes("llama")) return "ollama";
+  if (normalized.includes("openai") || normalized.includes("chatgpt") || normalized.includes("gpt")) return "openai";
+  if (normalized.includes("qwen") || normalized.includes("tongyi")) return "qwen";
+  return null;
 }
 
 function fallbackSize(size: number | string): CSSProperties {
@@ -127,7 +166,7 @@ export function AiBrandIcon({
     <Icon
       aria-label={title ?? aiBrandLabels[brandName]}
       className={className}
-      color={color ?? "currentColor"}
+      color={color ?? aiBrandColors[brandName]}
       role="img"
       size={size}
       style={style}

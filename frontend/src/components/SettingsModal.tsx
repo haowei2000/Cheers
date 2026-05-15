@@ -4,7 +4,7 @@ import type { CurrentUser, Friend } from "../types";
 import { apiFetch } from "../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
 import { BotAvatar } from "./BotAvatar";
-import { AppIcon } from "./icons/AppIcon";
+import { AiBrandIcon, AppIcon } from "./icons";
 import { Modal } from "./Modal";
 import { BotSessionsPanel } from "./SessionScopePanel";
 import { SearchPicker } from "./SearchPicker";
@@ -1859,6 +1859,7 @@ function BotListSubPane({
               <BotAvatar
                 label={b.display_name || b.username || "Bot"}
                 avatarUrl={b.avatar_url}
+                brandName={b.model_name || b.display_name || b.username}
                 size={32}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -2272,6 +2273,51 @@ type ModelRow = {
   config?: Record<string, unknown>;
 };
 
+function modelBrandName(model?: {
+  name?: string | null;
+  provider?: string | null;
+  model_name?: string | null;
+} | null): string {
+  if (!model) return "";
+  return [model.provider, model.model_name, model.name].filter(Boolean).join(" ");
+}
+
+function ModelBrandCard({
+  model,
+}: {
+  model?: { name?: string | null; provider?: string | null; model_name?: string | null } | null;
+}) {
+  if (!model) return null;
+
+  return (
+    <div
+      style={{
+        alignItems: "center",
+        background: "var(--bg-0)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        display: "flex",
+        gap: 8,
+        padding: "8px 10px",
+      }}
+    >
+      <AiBrandIcon
+        name={modelBrandName(model)}
+        fallbackLabel={model.provider || model.name || "AI"}
+        size={20}
+      />
+      <div style={{ minWidth: 0 }}>
+        <div className="truncate" style={{ color: "var(--fg-1)", fontSize: 12, fontWeight: 650 }}>
+          {model.name}
+        </div>
+        <div className="truncate" style={{ color: "var(--fg-3)", fontSize: 11 }}>
+          {[model.provider, model.model_name].filter(Boolean).join(" · ")}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ModelListSubPane({ authToken }: { authToken: string | null }) {
   const [items, setItems] = useState<ModelRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2374,6 +2420,25 @@ function ModelListSubPane({ authToken }: { authToken: string | null }) {
               style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}
               onClick={() => setView({ id: m.model_id })}
             >
+              <span
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "var(--bg-0)",
+                  border: "1px solid var(--border)",
+                  display: "inline-grid",
+                  placeItems: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <AiBrandIcon
+                  name={modelBrandName(m)}
+                  fallbackLabel={m.provider}
+                  size={22}
+                  title={`${m.provider} · ${m.model_name}`}
+                />
+              </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="an-rc-title">
                   {m.name}
@@ -2746,6 +2811,7 @@ function BotNewPane({
   // plaintext token returned by the backend so the user can copy it into
   // their provider config before we navigate away.
   const [issued, setIssued] = useState<{ token: string; bot: BotRow } | null>(null);
+  const selectedModel = models.find((m) => m.model_id === modelId);
 
   // Lazy-load models/templates when entering step 2.
   useEffect(() => {
@@ -2985,6 +3051,7 @@ function BotNewPane({
               <BotAvatar
                 label={displayName || username || "Bot"}
                 avatarUrl={avatarUrl}
+                brandName={modelBrandName(selectedModel) || displayName || username}
                 size={36}
               />
               <input
@@ -3009,9 +3076,10 @@ function BotNewPane({
           </Field>
         </div>
 
-	        {bindingType === "http" && (
-	          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-	            <div className="an-rc-title">LLM 模型</div>
+        {bindingType === "http" && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">LLM 模型</div>
+            <ModelBrandCard model={selectedModel} />
             <Field label="AI 模型">
               <select
                 value={modelId}
@@ -3029,8 +3097,8 @@ function BotNewPane({
                 )}
               </select>
             </Field>
-	          </div>
-	        )}
+          </div>
+        )}
 
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">Prompt 模板</div>
@@ -3342,6 +3410,8 @@ function BotEditPane({
   const templateOptions = templateId && !templates.some((t) => t.template_id === templateId)
     ? [{ template_id: templateId, name: bot.template_name || "当前模板" }, ...templates]
     : templates;
+  const selectedModel = modelOptions.find((m) => m.model_id === modelId);
+  const botBrandName = modelBrandName(selectedModel) || bot.model_name || bot.display_name || bot.username;
 
   return (
     <div className="an-pane">
@@ -3350,6 +3420,7 @@ function BotEditPane({
           <BotAvatar
             label={displayName || bot.username}
             avatarUrl={avatarUrl}
+            brandName={botBrandName}
             size={42}
           />
           <div style={{ minWidth: 0 }}>
@@ -3412,6 +3483,7 @@ function BotEditPane({
         {isHttpBot && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
             <div className="an-rc-title">LLM 模型</div>
+            <ModelBrandCard model={selectedModel} />
             {bot.is_builtin && (
               <div className="an-rc-sub">
                 内置 Bot 私聊使用专用 adapter；连通测试不会读取这里的模型绑定。
@@ -3488,6 +3560,7 @@ function BotEditPane({
               <BotAvatar
                 label={displayName || bot.username}
                 avatarUrl={avatarUrl}
+                brandName={botBrandName}
                 size={36}
               />
               <input
