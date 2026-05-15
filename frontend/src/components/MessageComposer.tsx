@@ -10,6 +10,7 @@ import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
+import { MemberIdentity } from "./members";
 
 export type MessageComposerKind = "normal" | "secret" | "announcement" | "topic";
 
@@ -711,47 +712,17 @@ export function MessageComposer({
                   pickMention(item);
                 }}
               >
-                <span
-                  className="an-mi-ico"
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 5,
-                    color: "#fff",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    background:
-                      item.kind === "bot" ? "var(--green)" : "var(--accent)",
+                <MemberIdentity
+                  avatarSize={24}
+                  member={{
+                    ...item,
+                    display_name: item.username,
+                    member_type: item.kind,
                   }}
-                >
-                  {item.username.slice(0, 1).toUpperCase()}
-                </span>
-                <div className="flex flex-col min-w-0 flex-1">
-                  <span
-                    className="font-medium truncate"
-                    style={{ color: "var(--fg-1)" }}
-                  >
-                    @{item.username}
-                  </span>
-                  {item.display_name && (
-                    <span className="an-mi-sub truncate">
-                      {item.display_name}
-                    </span>
-                  )}
-                </div>
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
-                  style={{
-                    background:
-                      item.kind === "bot"
-                        ? "var(--green-muted)"
-                        : "var(--accent-muted)",
-                    color:
-                      item.kind === "bot" ? "var(--green)" : "var(--accent)",
-                  }}
-                >
-                  {item.kind === "bot" ? "Bot" : "用户"}
-                </span>
+                  primaryPrefix="@"
+                  showBadge
+                  sub={item.display_name}
+                />
               </li>
             ))}
           </ul>

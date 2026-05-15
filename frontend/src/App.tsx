@@ -5,6 +5,7 @@ import NotificationPanel from "./NotificationPanel";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
+import { AvatarVisual } from "./components/AvatarVisual";
 import { BotAvatar } from "./components/BotAvatar";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
 import { AppIcon } from "./components/icons/AppIcon";
@@ -3742,23 +3743,16 @@ export default function App() {
                                     size={36}
                                     className="mt-0.5"
                                   />
-                                ) : userAvatarUrl ? (
-                                  <img
-                                    src={userAvatarUrl}
-                                    alt={userLabel}
-                                    className="w-9 h-9 rounded-xl object-cover select-none mt-0.5"
-                                  />
                                 ) : (
-                                  <div
-                                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
-                                    style={{
-                                      background: isOwn
-                                        ? "var(--accent)"
-                                        : "var(--fg-3)",
-                                    }}
-                                  >
-                                    {isOwn ? "我" : userInitials}
-                                  </div>
+                                  <AvatarVisual
+                                    avatarUrl={userAvatarUrl}
+                                    background={isOwn ? "var(--accent)" : "var(--fg-3)"}
+                                    className="mt-0.5"
+                                    fallback={isOwn ? "我" : userInitials}
+                                    label={userLabel}
+                                    radius={12}
+                                    size={36}
+                                  />
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
@@ -4289,32 +4283,12 @@ export default function App() {
                             >
                                 <div className="flex-shrink-0 mt-0.5">
                                   {r.sender_type === "bot" ? (
-                                    rBot?.avatar_url ? (
-                                      <img
-                                        src={rBot.avatar_url}
-                                        alt={rLabel}
-                                        className={
-                                          rFlat
-                                            ? "w-9 h-9 rounded-xl object-cover"
-                                            : "w-8 h-8 rounded-xl object-cover"
-                                        }
-                                      />
-                                    ) : (
-                                      <div
-                                        className={
-                                          rFlat
-                                            ? "w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none"
-                                            : "w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none"
-                                        }
-                                        style={
-                                          rFlat
-                                            ? { background: "var(--fg-3)" }
-                                            : undefined
-                                        }
-                                      >
-                                        {rInitials}
-                                      </div>
-                                    )
+                                    <BotAvatar
+                                      label={rLabel}
+                                      avatarUrl={rBot?.avatar_url}
+                                      brandName={rBot?.display_name || rBot?.username || rLabel}
+                                      size={rFlat ? 36 : 32}
+                                    />
                                   ) : (
                                     <div
                                       className={
@@ -4606,24 +4580,18 @@ export default function App() {
                                 title={titleSummary}
                               >
                                 <span className="an-topic-chip-faces">
-                                  {visibleAvatars.map((p) =>
-                                    p.avatarUrl ? (
-                                      <img
-                                        key={p.key}
-                                        src={p.avatarUrl}
-                                        alt={p.label}
-                                        className="an-topic-chip-face"
-                                      />
-                                    ) : (
-                                      <span
-                                        key={p.key}
-                                        className="an-topic-chip-face"
-                                        style={{ background: p.color }}
-                                      >
-                                        {p.initial}
-                                      </span>
-                                    ),
-                                  )}
+                                  {visibleAvatars.map((p) => (
+                                    <AvatarVisual
+                                      key={p.key}
+                                      avatarUrl={p.avatarUrl}
+                                      background={p.color}
+                                      className="an-topic-chip-face"
+                                      fallback={p.initial}
+                                      label={p.label}
+                                      radius={8}
+                                      size={24}
+                                    />
+                                  ))}
                                   {extraCount > 0 && (
                                     <span
                                       className="an-topic-chip-face"
@@ -4802,17 +4770,13 @@ export default function App() {
                                     className="group/tr flex items-start gap-2 px-3 py-1"
                                   >
                                     {r.sender_type === "bot" ? (
-                                      rBot?.avatar_url ? (
-                                        <img
-                                          src={rBot.avatar_url}
-                                          alt={rLabel}
-                                          className="w-6 h-6 rounded-lg object-cover flex-shrink-0 mt-0.5"
-                                        />
-                                      ) : (
-                                        <div className="w-6 h-6 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5">
-                                          {rInitials}
-                                        </div>
-                                      )
+                                      <BotAvatar
+                                        label={rLabel}
+                                        avatarUrl={rBot?.avatar_url}
+                                        brandName={rBot?.display_name || rBot?.username || rLabel}
+                                        size={24}
+                                        className="mt-0.5"
+                                      />
                                     ) : (
                                       <div
                                         className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5 ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}

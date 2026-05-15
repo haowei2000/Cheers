@@ -1,3 +1,4 @@
+import { AvatarIconPicker } from "./AvatarIconPicker";
 import { Modal, ModalFooter } from "./Modal";
 
 interface CreateWorkspaceModalProps {
@@ -45,15 +46,22 @@ export function CreateWorkspaceModal({
               className="block text-sm font-medium mb-1"
               style={{ color: "var(--fg-2)" }}
             >
-              头像 URL
+              头像
             </label>
-            <input
-              type="url"
-              value={avatarUrl}
-              onChange={(e) => onAvatarUrlChange(e.target.value)}
-              placeholder="https://example.com/workspace.png"
-              className="an-input"
-            />
+            <div className="flex flex-col gap-2">
+              <input
+                type="text"
+                value={avatarUrl}
+                onChange={(e) => onAvatarUrlChange(e.target.value)}
+                placeholder="https://example.com/workspace.png"
+                className="an-input"
+              />
+              <AvatarIconPicker
+                group="workspace"
+                onChange={onAvatarUrlChange}
+                value={avatarUrl}
+              />
+            </div>
           </div>
         )}
         <ModalFooter>

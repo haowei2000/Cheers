@@ -3,8 +3,11 @@ import toast from "react-hot-toast";
 import type { CurrentUser, Friend } from "../types";
 import { apiFetch } from "../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
+import { AvatarIconPicker } from "./AvatarIconPicker";
+import { AvatarVisual } from "./AvatarVisual";
 import { BotAvatar } from "./BotAvatar";
 import { AiBrandIcon, AppIcon } from "./icons";
+import { MemberRow } from "./members";
 import { Modal } from "./Modal";
 import { BotSessionsPanel } from "./SessionScopePanel";
 import { SearchPicker } from "./SearchPicker";
@@ -442,42 +445,19 @@ function AvatarPreview({
   fallback: string;
   size?: number;
 }) {
-  if (avatarUrl) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={label}
-        title={label}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: 8,
-          objectFit: "cover",
-          flexShrink: 0,
-          border: "1px solid var(--border)",
-          background: "var(--surface-soft)",
-        }}
-      />
-    );
-  }
   return (
-    <span
-      title={label}
+    <AvatarVisual
+      avatarUrl={avatarUrl}
+      background="var(--accent)"
+      fallback={fallback}
+      label={label}
+      radius={8}
+      size={size}
       style={{
-        width: size,
-        height: size,
-        borderRadius: 8,
-        background: "var(--accent)",
-        color: "#fff",
-        fontWeight: 700,
-        fontSize: Math.max(12, Math.round(size * 0.42)),
-        display: "inline-grid",
-        placeItems: "center",
-        flexShrink: 0,
+        border: avatarUrl ? "1px solid var(--border)" : undefined,
+        background: avatarUrl ? "var(--surface-soft)" : undefined,
       }}
-    >
-      {fallback}
-    </span>
+    />
   );
 }
 
@@ -774,45 +754,27 @@ function ProfilePane({
             />
           </Field>
           <Field label="头像">
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="url"
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://example.com/avatar.png"
-                className={inputCls}
-                style={{ flex: 1 }}
-              />
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept={AVATAR_ACCEPT}
-                onChange={(e) => uploadProfileAvatar(e.target.files?.[0])}
-                style={{ display: "none" }}
-              />
-              <button
-                type="button"
-                onClick={() => avatarInputRef.current?.click()}
-                disabled={avatarUploading}
-                style={{
-                  padding: "8px 10px",
-                  background: "var(--surface-soft)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  cursor: avatarUploading ? "not-allowed" : "pointer",
-                  opacity: avatarUploading ? 0.6 : 1,
-                  fontFamily: "inherit",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {avatarUploading ? "上传中…" : "上传"}
-              </button>
-              {avatarUrl && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="text"
+                  value={avatarUrl}
+                  onChange={(e) => setAvatarUrl(e.target.value)}
+                  placeholder="https://example.com/avatar.png"
+                  className={inputCls}
+                  style={{ flex: 1 }}
+                />
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept={AVATAR_ACCEPT}
+                  onChange={(e) => uploadProfileAvatar(e.target.files?.[0])}
+                  style={{ display: "none" }}
+                />
                 <button
                   type="button"
-                  onClick={() => setAvatarUrl("")}
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={avatarUploading}
                   style={{
                     padding: "8px 10px",
                     background: "var(--surface-soft)",
@@ -820,14 +782,39 @@ function ProfilePane({
                     borderRadius: 6,
                     fontSize: 12,
                     color: "var(--fg-2)",
-                    cursor: "pointer",
+                    cursor: avatarUploading ? "not-allowed" : "pointer",
+                    opacity: avatarUploading ? 0.6 : 1,
                     fontFamily: "inherit",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  清除
+                  {avatarUploading ? "上传中…" : "上传"}
                 </button>
-              )}
+                {avatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setAvatarUrl("")}
+                    style={{
+                      padding: "8px 10px",
+                      background: "var(--surface-soft)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      color: "var(--fg-2)",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+              <AvatarIconPicker
+                group="user"
+                onChange={setAvatarUrl}
+                value={avatarUrl}
+              />
             </div>
           </Field>
           <Field label="个人简介">
@@ -1287,25 +1274,6 @@ function FriendsPane({
     }
   };
 
-  const rowAvatar = (u: Pick<Friend, "display_name" | "username">, bg = "var(--accent)") => (
-    <span
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: 6,
-        background: bg,
-        color: "#fff",
-        fontWeight: 700,
-        display: "inline-grid",
-        placeItems: "center",
-        fontSize: 13,
-        flexShrink: 0,
-      }}
-    >
-      {(u.display_name || u.username || "?").slice(0, 1).toUpperCase()}
-    </span>
-  );
-
   const smallButton = (label: string, onClick: () => void, danger = false, disabled = false) => (
     <button
       type="button"
@@ -1328,13 +1296,12 @@ function FriendsPane({
   );
 
   const renderPersonRow = (f: Friend, mode: FriendTab) => (
-    <div key={`${mode}-${f.friendship_id || f.user_id}`} className="an-row-card">
-      {rowAvatar(f)}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="an-rc-title">{f.display_name || f.username}</div>
-        <div className="an-rc-sub">@{f.username}</div>
-      </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+    <MemberRow
+      key={`${mode}-${f.friendship_id || f.user_id}`}
+      as="article"
+      member={{ ...f, member_id: f.user_id, member_type: "user" }}
+      action={
+        <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
         {mode === "friends" && (
           <>
             {smallButton("私信", () => onOpenDM?.(f.user_id, "user"))}
@@ -1354,8 +1321,9 @@ function FriendsPane({
         {mode === "blocked" && (
           <PrimaryButton onClick={() => unblockFriend(f.user_id)}>解除</PrimaryButton>
         )}
-      </div>
-    </div>
+        </span>
+      }
+    />
   );
 
   const visibleRows =
@@ -1849,33 +1817,24 @@ function BotListSubPane({
           </div>
         ) : (
           bots.map((b) => (
-            <button
+            <MemberRow
               key={b.bot_id}
-              type="button"
-              className="an-row-card"
-              style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}
+              as="button"
               onClick={() => setView({ botId: b.bot_id })}
-            >
-              <BotAvatar
-                label={b.display_name || b.username || "Bot"}
-                avatarUrl={b.avatar_url}
-                brandName={b.model_name || b.display_name || b.username}
-                size={32}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="an-rc-title">{b.display_name || b.username}</div>
-                <div className="an-rc-sub">
-                  @{b.username} · {(b.binding_type || "http") === "agent_bridge" ? "WebSocket" : "HTTP"}
+              member={{ ...b, member_id: b.bot_id, member_type: "bot" }}
+              badge={<BotOnlineBadge bot={b} />}
+              meta={
+                <>
+                  {(b.binding_type || "http") === "agent_bridge" ? "WebSocket" : "HTTP"}
                   {" · "}
                   {botScopeLabel(b.scope)}
                   {" · "}
                   Owner: {botOwnerLabel(b)}
                   {b.is_builtin ? " · 内置" : ""}
-                </div>
-              </div>
-              <BotOnlineBadge bot={b} />
-              <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
-            </button>
+                </>
+              }
+              action={<span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>}
+            />
           ))
         )}
       </div>
@@ -3046,20 +3005,27 @@ function BotNewPane({
               placeholder="如 频道助手"
             />
           </Field>
-          <Field label="头像 URL">
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <BotAvatar
-                label={displayName || username || "Bot"}
-                avatarUrl={avatarUrl}
-                brandName={modelBrandName(selectedModel) || displayName || username}
-                size={36}
-              />
-              <input
+          <Field label="头像">
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <BotAvatar
+                  label={displayName || username || "Bot"}
+                  avatarUrl={avatarUrl}
+                  brandName={modelBrandName(selectedModel) || displayName || username}
+                  size={36}
+                />
+                <input
+                  value={avatarUrl}
+                  onChange={(e) => setAvatarUrl(e.target.value)}
+                  className={inputCls}
+                  placeholder="https://example.com/bot.png"
+                  style={{ flex: 1 }}
+                />
+              </div>
+              <AvatarIconPicker
+                group="bot"
+                onChange={setAvatarUrl}
                 value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                className={inputCls}
-                placeholder="https://example.com/bot.png"
-                style={{ flex: 1 }}
               />
             </div>
           </Field>
@@ -3556,50 +3522,32 @@ function BotEditPane({
             />
           </Field>
           <Field label="头像">
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <BotAvatar
-                label={displayName || bot.username}
-                avatarUrl={avatarUrl}
-                brandName={botBrandName}
-                size={36}
-              />
-              <input
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                className={inputCls}
-                placeholder="https://example.com/bot.png"
-                style={{ flex: 1 }}
-              />
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept={AVATAR_ACCEPT}
-                onChange={(e) => uploadBotAvatar(e.target.files?.[0])}
-                style={{ display: "none" }}
-              />
-              <button
-                type="button"
-                onClick={() => avatarInputRef.current?.click()}
-                disabled={avatarUploading}
-                style={{
-                  padding: "8px 10px",
-                  background: "var(--surface-soft)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  cursor: avatarUploading ? "not-allowed" : "pointer",
-                  opacity: avatarUploading ? 0.6 : 1,
-                  fontFamily: "inherit",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {avatarUploading ? "上传中…" : "上传"}
-              </button>
-              {avatarUrl && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <BotAvatar
+                  label={displayName || bot.username}
+                  avatarUrl={avatarUrl}
+                  brandName={botBrandName}
+                  size={36}
+                />
+                <input
+                  value={avatarUrl}
+                  onChange={(e) => setAvatarUrl(e.target.value)}
+                  className={inputCls}
+                  placeholder="https://example.com/bot.png"
+                  style={{ flex: 1 }}
+                />
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept={AVATAR_ACCEPT}
+                  onChange={(e) => uploadBotAvatar(e.target.files?.[0])}
+                  style={{ display: "none" }}
+                />
                 <button
                   type="button"
-                  onClick={() => setAvatarUrl("")}
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={avatarUploading}
                   style={{
                     padding: "8px 10px",
                     background: "var(--surface-soft)",
@@ -3607,14 +3555,39 @@ function BotEditPane({
                     borderRadius: 6,
                     fontSize: 12,
                     color: "var(--fg-2)",
-                    cursor: "pointer",
+                    cursor: avatarUploading ? "not-allowed" : "pointer",
+                    opacity: avatarUploading ? 0.6 : 1,
                     fontFamily: "inherit",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  清除
+                  {avatarUploading ? "上传中…" : "上传"}
                 </button>
-              )}
+                {avatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setAvatarUrl("")}
+                    style={{
+                      padding: "8px 10px",
+                      background: "var(--surface-soft)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      color: "var(--fg-2)",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+              <AvatarIconPicker
+                group="bot"
+                onChange={setAvatarUrl}
+                value={avatarUrl}
+              />
             </div>
           </Field>
           <Field label="描述">
