@@ -1,5 +1,6 @@
 /* TopicPage — full-page topic view (displayed in place of the chat stream
  * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
+import { useMemo, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
@@ -21,7 +22,7 @@ export interface TopicPageProps {
   currentUserId: string;
   onBack: () => void;
   onGoToChannel?: () => void;
-  onSendReply: (text: string) => Promise<void> | void;
+  onSendReply: (text: string, inReplyToMsgId?: string) => Promise<void> | void;
   onCopyMessage?: (message: Message) => Promise<void> | void;
   onShowMessageDetails?: (message: Message) => void;
   hasMessageDetails?: (message: Message) => boolean;
@@ -94,11 +95,37 @@ export function TopicPage({
   onCloseKeychain,
   sessionPanel,
 }: TopicPageProps) {
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const messageById = useMemo(() => {
+    const items = [rootMsg, ...replies];
+    return new Map(items.map((item) => [item.msg_id, item]));
+  }, [replies, rootMsg]);
+
   const title =
     stripThinkTags(rootMsg.content || "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 80) || "主题";
+
+  const previewMessage = (m: Message): string =>
+    stripThinkTags(m.content || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || "(无内容)";
+
+  const highlightMessage = (msgId: string) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const origT = el.style.transition;
+    const prevBg = el.style.background;
+    el.style.transition = "background 200ms";
+    el.style.background = "var(--accent-muted)";
+    setTimeout(() => {
+      el.style.background = prevBg;
+      el.style.transition = origT;
+    }, 1200);
+  };
 
   const renderTopicMessage = (m: Message) => {
     const isBot = m.sender_type === "bot";
@@ -114,6 +141,10 @@ export function TopicPage({
     const initial = isOwn ? "我" : label.slice(0, 1).toUpperCase();
     const msgTitle =
       typeof m.content_data?.title === "string" ? m.content_data.title : null;
+    const directParent =
+      m.in_reply_to_msg_id && m.in_reply_to_msg_id !== rootMsg.msg_id
+        ? messageById.get(m.in_reply_to_msg_id) ?? null
+        : null;
 
     return (
       <div
@@ -195,6 +226,25 @@ export function TopicPage({
                 {msgTitle}
               </div>
             ) : null}
+            {directParent ? (
+              <button
+                type="button"
+                className="an-reply-quote"
+                title="跳转到被回复的消息"
+                onClick={() => highlightMessage(directParent.msg_id)}
+              >
+                <span className="an-rq-arrow">↪</span>
+                <span className="an-rq-name">
+                  {resolveWho(
+                    directParent,
+                    channelBots,
+                    channelUsers,
+                    currentUserId,
+                  )}
+                </span>
+                <span className="an-rq-snip">{previewMessage(directParent)}</span>
+              </button>
+            ) : null}
             <div
               style={{
                 fontSize: "var(--fs-chat-body)",
@@ -211,32 +261,39 @@ export function TopicPage({
               />
             </div>
           </div>
-          {(onCopyMessage || onShowMessageDetails) && (
-            <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
-              {onShowMessageDetails && hasMessageDetails?.(m) && (
-                <button
-                  type="button"
-                  title="查看这条 AI 回复的记忆与流式事件"
-                  aria-label="查看这条 AI 回复的记忆与流式事件"
-                  onClick={() => onShowMessageDetails(m)}
-                  className="an-chat-action"
-                >
-                  <AppIcon name="help" className="w-3.5 h-3.5" />
-                </button>
-              )}
-              {onCopyMessage && (
-                <button
-                  type="button"
-                  title="复制消息内容"
-                  aria-label="复制消息内容"
-                  onClick={() => void onCopyMessage(m)}
-                  className="an-chat-action"
-                >
-                  <AppIcon name="copy" className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          )}
+          <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+            {onShowMessageDetails && hasMessageDetails?.(m) && (
+              <button
+                type="button"
+                title="查看这条 AI 回复的记忆与流式事件"
+                aria-label="查看这条 AI 回复的记忆与流式事件"
+                onClick={() => onShowMessageDetails(m)}
+                className="an-chat-action"
+              >
+                <AppIcon name="help" className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onCopyMessage && (
+              <button
+                type="button"
+                title="复制消息内容"
+                aria-label="复制消息内容"
+                onClick={() => void onCopyMessage(m)}
+                className="an-chat-action"
+              >
+                <AppIcon name="copy" className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              type="button"
+              title="回复"
+              aria-label="回复"
+              onClick={() => setReplyingTo(m)}
+              className="an-chat-action"
+            >
+              <AppIcon name="reply" className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -306,7 +363,13 @@ export function TopicPage({
             placeholder={`回复 "${title}"…`}
             channelBots={channelBots}
             channelUsers={channelUsers}
-            onSend={onSendReply}
+            currentUserId={currentUserId}
+            onSend={async (text) => {
+              await onSendReply(text, replyingTo?.msg_id ?? rootMsg.msg_id);
+              setReplyingTo(null);
+            }}
+            replyingTo={replyingTo}
+            onCancelReply={() => setReplyingTo(null)}
             pendingFiles={pendingFiles}
             onRemovePendingFile={onRemovePendingFile}
             onUploadFile={onUploadFile}
