@@ -132,6 +132,7 @@ export function TopicPage({
               <BotAvatar
                 label={label}
                 avatarUrl={avatarUrl}
+                brandName={bot?.display_name || bot?.username || label}
                 size={36}
                 className="mt-0.5"
               />

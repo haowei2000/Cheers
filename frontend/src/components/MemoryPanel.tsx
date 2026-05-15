@@ -5,7 +5,7 @@ import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
-import { AppIcon } from "./icons";
+import { AppIcon, FileTypeIcon } from "./icons";
 import { InviteMemberSearch } from "./InviteMemberSearch";
 
 const API = "/api/v1";
@@ -1269,16 +1269,12 @@ export function MemoryPanel({
                       onFilePreview ? "cursor-pointer" : ""
                     }`}
                   >
-                    <div className="w-8 h-8 rounded-md bg-amber-50 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm">
-                        {typeLabel === "PDF"
-                          ? "\uD83D\uDCC4"
-                          : typeLabel === "Word"
-                            ? "\uD83D\uDCC3"
-                            : typeLabel === "Excel"
-                              ? "\uD83D\uDCCA"
-                              : "\uD83D\uDCC1"}
-                      </span>
+                    <div className="w-8 h-8 rounded-md bg-gray-50 flex items-center justify-center flex-shrink-0">
+                      <FileTypeIcon
+                        contentType={f.content_type}
+                        filename={f.original_filename || f.file_id}
+                        size={26}
+                      />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-gray-800 truncate">
