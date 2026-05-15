@@ -18,7 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { MessageMarkdown } from "./MessageMarkdown";
-import { AppIcon, type AppIconName } from "./components/icons/AppIcon";
+import { AppIcon, FileTypeIcon, type AppIconName } from "./components/icons";
 import type { MemoryEntryItem, MemberItem, TodoItem } from "./types";
 import { getAuthToken as getStoredToken } from "./api";
 
@@ -183,18 +183,6 @@ function parseFilesIndex(md: string): FileCard[] {
     }
     return { filename, fileId, contentType, summary, time };
   });
-}
-
-function fileIcon(ct: string): string {
-  if (ct.includes("pdf")) return "📄";
-  if (ct.includes("word") || ct.includes("doc")) return "📝";
-  if (ct.includes("sheet") || ct.includes("excel") || ct.includes("csv"))
-    return "📊";
-  if (ct.includes("presentation") || ct.includes("ppt")) return "📽️";
-  if (ct.includes("image")) return "🖼️";
-  if (ct.includes("video")) return "🎬";
-  if (ct.includes("audio")) return "🎵";
-  return "📎";
 }
 
 /* ── RECENT helper: parse page XML into timeline items ─────────────────── */
@@ -692,8 +680,12 @@ export default function MemoryPage({
             className="rounded-lg border border-amber-200 bg-white hover:shadow-md transition-shadow overflow-hidden"
           >
             <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border-b border-amber-100">
-              <span className="text-2xl flex-shrink-0">
-                {fileIcon(f.contentType)}
+              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-white">
+                <FileTypeIcon
+                  contentType={f.contentType}
+                  filename={f.filename}
+                  size={30}
+                />
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-800 truncate">

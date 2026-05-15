@@ -117,9 +117,24 @@ export interface AppIconProps extends LucideProps {
   name: AppIconName;
 }
 
-export function AppIcon({ fallback = "file", name, ...props }: AppIconProps) {
+export function AppIcon({
+  absoluteStrokeWidth = true,
+  fallback = "file",
+  name,
+  strokeWidth = 1.85,
+  ...props
+}: AppIconProps) {
   const Icon = appIconMap[name] ?? appIconMap[fallback];
   const ariaLabel = props["aria-label"];
 
-  return <Icon aria-hidden={ariaLabel ? undefined : true} {...props} />;
+  return (
+    <Icon
+      aria-hidden={ariaLabel ? undefined : true}
+      data-app-icon=""
+      focusable="false"
+      absoluteStrokeWidth={absoluteStrokeWidth}
+      strokeWidth={strokeWidth}
+      {...props}
+    />
+  );
 }

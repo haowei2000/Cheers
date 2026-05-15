@@ -3428,6 +3428,7 @@ export default function App() {
                                   <BotAvatar
                                     label={botLabel}
                                     avatarUrl={senderBot?.avatar_url}
+                                    brandName={senderBot?.display_name || senderBot?.username || botLabel}
                                     size={36}
                                     className="mt-0.5"
                                   />
@@ -3707,6 +3708,7 @@ export default function App() {
                                 <BotAvatar
                                   label={botLabel}
                                   avatarUrl={senderBot?.avatar_url}
+                                  brandName={senderBot?.display_name || senderBot?.username || botLabel}
                                   size={32}
                                 />
                               ) : userAvatarUrl ? (

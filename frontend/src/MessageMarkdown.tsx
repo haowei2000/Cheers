@@ -9,6 +9,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { AppIcon, FileTypeIcon } from "./components/icons";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
@@ -26,7 +27,6 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
-import { AppIcon } from "./components/icons/AppIcon";
 
 hljs.registerLanguage("bash", bash);
 hljs.registerLanguage("css", css);
@@ -91,16 +91,6 @@ interface MarkdownImageLoadState {
 type MarkdownImageSnapshot = Pick<MarkdownImageLoadState, "attempt" | "displaySrc" | "failed" | "loaded">;
 
 const markdownImageLoadState = new Map<string, MarkdownImageLoadState>();
-
-function fileIconColors(filename: string): { bg: string; fg: string } {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "pdf") return { bg: "bg-red-50", fg: "text-red-500" };
-  if (["doc", "docx"].includes(ext)) return { bg: "bg-blue-50", fg: "text-blue-500" };
-  if (["xls", "xlsx", "csv"].includes(ext)) return { bg: "bg-green-50", fg: "text-green-600" };
-  if (["md", "txt"].includes(ext)) return { bg: "bg-gray-50", fg: "text-gray-500" };
-  if (IMAGE_EXTS.has(ext)) return { bg: "bg-purple-50", fg: "text-purple-500" };
-  return { bg: "bg-blue-50", fg: "text-blue-500" };
-}
 
 function childrenToText(children: unknown): string {
   if (typeof children === "string") return children;
@@ -322,7 +312,6 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
   const ext = (filename.split(".").pop() ?? "").toLowerCase();
   const isImage = IMAGE_EXTS.has(ext);
   const previewUrl = href.replace(/\/(download|preview)$/, "/preview");
-  const { bg, fg } = fileIconColors(filename);
   const displayName = filename && filename !== previewUrl ? filename : `file-${fileId.slice(0, 8)}`;
 
   const handleClick = () => {
@@ -341,12 +330,8 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
       onClick={handleClick}
       className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm max-w-full hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer my-0.5 align-middle"
     >
-      <span className={`w-7 h-7 rounded-md ${bg} flex items-center justify-center flex-shrink-0`}>
-        {isImage ? (
-          <AppIcon name="image" className={`w-4 h-4 ${fg}`} />
-        ) : (
-          <AppIcon name="file" className={`w-4 h-4 ${fg}`} />
-        )}
+      <span className="w-7 h-7 rounded-md bg-gray-50 flex items-center justify-center flex-shrink-0">
+        <FileTypeIcon filename={displayName} size={22} />
       </span>
       <span className="text-[13px] font-medium text-gray-700 truncate">{displayName}</span>
     </button>
