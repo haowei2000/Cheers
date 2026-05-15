@@ -16,22 +16,17 @@ import { Sidebar } from "./components/Sidebar";
 import { HelpModal } from "./components/HelpModal";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChatAttachments } from "./components/ChatMessageRenderer";
-import { ChannelHeader, type MemoryTab } from "./components/ChannelHeader";
-import {
-  MessageComposer,
-  MESSAGE_COMPOSER_KIND_ORDER,
-} from "./components/MessageComposer";
+import type { MemoryTab } from "./components/ChannelHeader";
+import { MESSAGE_COMPOSER_KIND_ORDER } from "./components/MessageComposer";
 import type { MessageComposerKind } from "./components/MessageComposer";
-import { SessionScopePanel } from "./components/SessionScopePanel";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { AddBotModal } from "./components/app/AddBotModal";
 import { ChannelMainFrame } from "./components/app/ChannelMainFrame";
 import { ChatShell } from "./components/app/ChatShell";
 import { ChatSidePanels } from "./components/app/ChatSidePanels";
-import { LazyPanelFallback } from "./components/app/LazyPanelFallback";
+import { ChatWorkspaceView } from "./features/chat/ChatWorkspaceView";
 import { MessageDetailModal } from "./components/app/MessageDetailModal";
 import { AgentBridgeTaskCard } from "./features/chat/messages/AgentBridgeTaskCard";
-import { ChatMessageList } from "./features/chat/messages/ChatMessageList";
 import { apiFetch, buildWsUrl } from "./api";
 import {
   parseHelperPayload,
@@ -41,8 +36,6 @@ import {
   buildTopicTree,
   isMsgReply,
   mergeMessagesChronologically,
-  formatTs,
-  TOPIC_DISPLAY_THRESHOLD,
 } from "./lib/message";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
 import { API, API_DOCS_URL } from "./lib/app-config";
@@ -102,12 +95,6 @@ const SettingsModal = lazy(() =>
   import("./components/SettingsModal").then((module) => ({
     default: module.SettingsModal,
   })),
-);
-const TaskPage = lazy(() =>
-  import("./components/TaskPage").then((module) => ({ default: module.TaskPage })),
-);
-const TopicPage = lazy(() =>
-  import("./components/TopicPage").then((module) => ({ default: module.TopicPage })),
 );
 
 export default function App() {
@@ -2451,385 +2438,202 @@ export default function App() {
               }
             }}
           >
-            {taskPageOpen &&
-              !isDmSelected &&
-              selectedId &&
-              (() => (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: "var(--bg-0)",
-                    zIndex: 20,
-                    display: "flex",
-                    flexDirection: "column",
-                    minHeight: 0,
-                  }}
-                >
-                  <Suspense fallback={<LazyPanelFallback label="正在加载任务视图..." />}>
-                    <TaskPage
-                      tasks={agentBridgeTaskMessages}
-                      selectedMsgId={pageTaskMsgId}
-                      channel={selectedChannel}
-                      channelBots={channelBots}
-                      onSelectTask={setPageTaskMsgId}
-                      onBack={() => {
-                        setTaskPageOpen(false);
-                        setPageTaskMsgId(null);
-                      }}
-                      onJumpToMessage={(msgId) => {
-                        setTaskPageOpen(false);
-                        setPageTaskMsgId(null);
-                        setTimeout(() => jumpToMessage(msgId), 0);
-                      }}
-                    />
-                  </Suspense>
-                </div>
-              ))()}
-
-            {!taskPageOpen &&
-              !isDmSelected &&
-              pageTopicId &&
-              selectedId &&
-              (() => {
-                const rootMsg = pageTopicSourceMessages.find(
-                  (m) => m.msg_id === pageTopicId,
-                );
-                const rootId = pageTopicId; // narrowed non-null
-                return (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background: "var(--bg-0)",
-                      zIndex: 20,
-                      display: "flex",
-                      flexDirection: "column",
-                      minHeight: 0,
-                    }}
-                  >
-                    {rootMsg ? (
-                      <Suspense fallback={<LazyPanelFallback label="正在加载话题视图..." />}>
-                        <TopicPage
-                          rootMsg={rootMsg}
-                          replies={pageTopicRepliesOf(rootId)}
-                          channel={selectedChannel}
-                          channelBots={channelBots}
-                          channelUsers={channelUsers}
-                          currentUserId={currentUserId}
-                          onBack={() => setPageTopicId(null)}
-                          onGoToChannel={() => setPageTopicId(null)}
-                          onSendReply={(text) =>
-                            sendTopicReply(selectedId, rootId, text)
-                          }
-                          onCopyMessage={copyMessageText}
-                          onShowMessageDetails={setMemoryDetailMessage}
-                          hasMessageDetails={hasBotReplyDetails}
-                          onImageClick={handleMarkdownImageClick}
-                          onFileClick={handleMarkdownFileClick}
-                          renderAttachments={renderFileAttachments}
-                          pendingFiles={pendingFileNames.map((name, index) => ({
-                            name,
-                            previewUrl: pendingFilePreviews[index] ?? null,
-                          }))}
-                          onRemovePendingFile={(index) => {
-                            setPendingFileIds((prev) =>
-                              prev.filter((_, itemIndex) => itemIndex !== index),
-                            );
-                            setPendingFileNames((prev) =>
-                              prev.filter((_, itemIndex) => itemIndex !== index),
-                            );
-                            setPendingFilePreviews((prev) =>
-                              prev.filter((_, itemIndex) => itemIndex !== index),
-                            );
-                          }}
-                          onUploadFile={uploadFile}
-                          keychainEnabled={Boolean(currentUser)}
-                          keychainOpen={keychainPopupOpen}
-                          keychainLoading={keychainPopupLoading}
-                          keychainItems={keychainPopupItems}
-                          onToggleKeychain={openKeychainPopup}
-                          onCloseKeychain={() => setKeychainPopupOpen(false)}
-                          sessionPanel={
-                            <SessionScopePanel
-                              scopeType="topic"
-                              scopeId={rootId}
-                              channelId={selectedId}
-                              title="主题对应 Session"
-                            />
-                          }
-                        />
-                      </Suspense>
-                    ) : (
-                      <div className="an-topic-page">
-                        <div className="an-tpp-top">
-                          <button
-                            type="button"
-                            className="an-tpp-back"
-                            onClick={() => setPageTopicId(null)}
-                          >
-                            ← 返回频道
-                          </button>
-                          <div className="an-tpp-meta">
-                            <div className="an-tpp-crumbs">
-                              <span>
-                                {selectedChannel
-                                  ? `#${selectedChannel.name}`
-                                  : "频道"}
-                              </span>
-                              <span className="an-sep">›</span>
-                              <span>主题</span>
-                            </div>
-                            <div className="an-tpp-title">
-                              {pageTopicError ||
-                                (pageTopicLoading
-                                  ? "正在加载话题消息"
-                                  : "未找到话题消息")}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-            {selectedId ? (
-              <>
-                <ChannelHeader
-                  channel={selectedChannel}
-                  activeDm={
-                    activeDm
-                  }
-                  isMobile={isMobile}
-                  onOpenSidebar={() => setSidebarOpen(true)}
-                  autoAssist={autoAssist}
-                  onOpenChannelSettings={() => setChannelSettingsOpen(true)}
-                  memoryTab={memoryTab}
-                  onSetMemoryTab={(tab) => {
-                    setTaskPageOpen(false);
-                    setPageTaskMsgId(null);
-                    setMemoryTab(tab);
-                  }}
-                  topics={topicRoots
-                    .map((r) => {
-                      const replies = topicRepliesOf(r.msg_id);
-                      // Surface if the user explicitly sent this as a 主题
-                      // (msg_type="topic") OR if a plain message has
-                      // accumulated enough replies to promote implicitly.
-                      const isExplicit = r.msg_type === "topic";
-                      if (
-                        !isExplicit &&
-                        replies.length < TOPIC_DISPLAY_THRESHOLD
-                      ) {
-                        return null;
-                      }
-                      const title =
-                        (r.content || "").replace(/\s+/g, " ").trim().slice(0, 60) ||
-                        "(无标题)";
-                      const last = replies[replies.length - 1];
-                      return {
-                        rootId: r.msg_id,
-                        title,
-                        count: replies.length,
-                        lastTime: last?.created_at
-                          ? formatTs(last.created_at)
-                          : undefined,
-                      };
-                    })
-                    .filter((x): x is NonNullable<typeof x> => x !== null)}
-                  onOpenTopic={(rootId) => {
-                    setTaskPageOpen(false);
-                    setPageTaskMsgId(null);
-                    setPageTopicId(rootId);
-                  }}
-                  onJumpToMessage={jumpToMessage}
-                  taskCount={isDmSelected ? 0 : agentBridgeTaskMessages.length}
-                  taskActive={!isDmSelected && taskPageOpen}
-                  onOpenTasks={
-                    isDmSelected
-                      ? undefined
-                      : () => {
-                          setMemoryTab(null);
-                          setPageTopicId(null);
-                          setPageTaskMsgId(agentBridgeTaskMessages[0]?.msg_id ?? null);
-                          setTaskPageOpen(true);
-                        }
-                  }
-                  onRefreshDmSession={activeBotDm ? refreshDmSession : undefined}
-                  refreshingDmSession={refreshingDmSession}
-                />
-                {activeBotDm && activeDmSessionScopeId ? (
-                  <SessionScopePanel
-                    scopeType="dm"
-                    scopeId={activeDmSessionScopeId}
-                    channelId={selectedId}
-                    botId={activeBotDm.counterparty.member_id}
-                    title="DM 对应 Session"
-                    refreshKey={dmSessionRefreshNonce}
-                  />
-                ) : selectedChannel?.type !== "dm" && (
-                  <SessionScopePanel
-                    scopeType="channel"
-                    scopeId={selectedId}
-                    channelId={selectedId}
-                    title="频道对应 Session"
-                  />
-                )}
-
-                <ChatMessageList
-                  messagesContainerRef={messagesContainerRef}
-                  inputRef={inputRef}
-                  secretInputRef={secretInputRef}
-                  onMessagesScroll={handleMessagesScroll}
-                  loading={loading}
-                  loadingMore={loadingMore}
-                  hasMore={hasMore}
-                  messages={messages}
-                  selectedChannel={selectedChannel}
-                  selectedId={selectedId}
-                  isDmSelected={isDmSelected}
-                  currentUser={currentUser}
-                  currentUserId={currentUserId}
-                  authToken={authToken}
-                  topicRoots={topicRoots}
-                  topicRepliesOf={topicRepliesOf}
-                  virtualItems={virtualItems}
-                  rowVirtualizer={rowVirtualizer}
-                  botById={botById}
-                  botByUsername={botByUsername}
-                  coordinatorBot={coordinatorBot}
-                  userById={userById}
-                  msgById={msgById}
-                  revealedSecrets={revealedSecrets}
-                  secretTokens={secretTokens}
-                  clarifyAnsweredParentIds={clarifyAnsweredParentIds}
-                  pendingClarifyReplyMsgId={pendingClarifyReplyMsgId}
-                  expandedTopics={expandedTopics}
-                  collapsedMessages={collapsedMessages}
-                  processingBots={processingBots}
-                  secretMode={secretMode}
-                  setMessageStore={setMessageStore}
-                  setDMs={setDMs}
-                  setComposerInput={setComposerInput}
-                  setReplyingTo={setReplyingTo}
-                  setPageTopicId={setPageTopicId}
-                  revealSecretMessage={revealSecretMessage}
-                  copyMessageText={copyMessageText}
-                  renderMemoryLoadButton={renderMemoryLoadButton}
-                  renderStopStreamButton={renderStopStreamButton}
-                  renderPartialBadge={renderPartialBadge}
-                  renderBotTraceStatus={renderBotTraceStatus}
-                  renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
-                  renderFileAttachments={renderFileAttachments}
-                  activeAgentBridgeTaskData={activeAgentBridgeTaskData}
-                  handleMarkdownImageClick={handleMarkdownImageClick}
-                  handleMarkdownFileClick={handleMarkdownFileClick}
-                  handleClarifyContinue={handleClarifyContinue}
-                  handleClarifySkip={handleClarifySkip}
-                  toggleTopic={toggleTopic}
-                  toggleMessage={toggleMessage}
-                />
-
-                {/* Input area — visually floating: rounded, drop shadow, a
-                    little margin so the stream slides past the edges. */}
-                <div
-                  className="flex-shrink-0 px-3 sm:px-4 pb-4 pt-2"
-                  style={{
-                    paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
-                  }}
-                >
-                  <MessageComposer
-                    value={input}
-                    valueRevision={inputRevision}
-                    inputRef={inputRef}
-                    onValueChange={handleComposerValueChange}
-                    onSend={send}
-                    canSend={pendingFileIds.length > 0}
-                    canSendPredicate={(value) =>
-                      Boolean(value.trim() || pendingFileIds.length > 0)
-                    }
-                    disabled={isSystemDm}
-                    placeholder={
-                      isSystemDm
-                        ? "好友通知会话用于处理申请，不能直接发送消息…"
-                        : secretMode
-                          ? "输入加密内容（仅 Bot 可读取原文）…"
-                          : isDmSelected
-                            ? `发消息给 ${activeDm?.counterparty.display_name || activeDm?.counterparty.username || "DM"}…`
-                          : msgKind === "announcement"
-                            ? `发布公告到 #${selectedChannel?.name || "频道"}…`
-                            : msgKind === "topic"
-                              ? "开启主题 · 标题将取首行…"
-                              : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`
-                    }
-                    kind={msgKind}
-                    onKindChange={setMsgKind}
-                    onCycleKind={cycleMsgKind}
-                    showKindSwitcher={!replyingTo && !isDmSelected}
-                    enableKindCycling={!replyingTo && !isDmSelected}
-                    titleValue={composerTitle}
-                    titleRef={composerTitleRef}
-                    onTitleChange={setComposerTitle}
-                    channelBots={channelBots}
-                    channelUsers={channelUsers}
-                    replyingTo={replyingTo}
-                    onCancelReply={() => setReplyingTo(null)}
-                    pendingFiles={pendingFileNames.map((name, index) => ({
-                      name,
-                      previewUrl: pendingFilePreviews[index] ?? null,
-                    }))}
-                    onRemovePendingFile={(index) => {
-                      setPendingFileIds((prev) =>
-                        prev.filter((_, itemIndex) => itemIndex !== index),
-                      );
-                      setPendingFileNames((prev) =>
-                        prev.filter((_, itemIndex) => itemIndex !== index),
-                      );
-                      setPendingFilePreviews((prev) =>
-                        prev.filter((_, itemIndex) => itemIndex !== index),
-                      );
-                    }}
-                    onUploadFile={uploadFile}
-                    keychainEnabled={Boolean(currentUser)}
-                    keychainOpen={keychainPopupOpen}
-                    keychainLoading={keychainPopupLoading}
-                    keychainItems={keychainPopupItems}
-                    onToggleKeychain={openKeychainPopup}
-                    onCloseKeychain={() => setKeychainPopupOpen(false)}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="flex-1 flex flex-col">
-                {isMobile && (
-                  <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setSidebarOpen(true)}
-                      className="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 flex-shrink-0"
-                    >
-                      <AppIcon name="menu" className="w-6 h-6" />
-                    </button>
-                    <span className="text-sm font-semibold text-gray-700">
-                      智枢协作
-                    </span>
-                  </div>
-                )}
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
-                    <AppIcon name="messageCircle" className="w-10 h-10 text-gray-300" />
-                  </div>
-                  <p className="text-gray-700 text-[15px] font-semibold">
-                    选择一个频道
-                  </p>
-                  <p className="text-gray-400 text-[13px] mt-1.5">
-                    从左侧选择频道开始对话，或{" "}
-                    <span className="text-[#1264A3]">创建新频道</span>
-                  </p>
-                </div>
-              </div>
-            )}
+            <ChatWorkspaceView
+              selectedId={selectedId}
+              selectedChannel={selectedChannel}
+              activeDm={activeDm}
+              activeBotDm={activeBotDm}
+              activeDmSessionScopeId={activeDmSessionScopeId}
+              dmSessionRefreshNonce={dmSessionRefreshNonce}
+              isMobile={isMobile}
+              isDmSelected={isDmSelected}
+              autoAssist={autoAssist}
+              memoryTab={memoryTab}
+              topicRoots={topicRoots}
+              topicRepliesOf={topicRepliesOf}
+              taskPageOpen={taskPageOpen}
+              agentBridgeTaskMessages={agentBridgeTaskMessages}
+              refreshingDmSession={refreshingDmSession}
+              taskOverlayProps={{
+                open: taskPageOpen,
+                isDmSelected,
+                selectedId,
+                tasks: agentBridgeTaskMessages,
+                selectedMsgId: pageTaskMsgId,
+                channel: selectedChannel,
+                channelBots,
+                onSelectTask: (msgId) => setPageTaskMsgId(msgId),
+                onBack: () => {
+                  setTaskPageOpen(false);
+                  setPageTaskMsgId(null);
+                },
+                onJumpToMessage: (msgId) => {
+                  setTaskPageOpen(false);
+                  setPageTaskMsgId(null);
+                  setTimeout(() => jumpToMessage(msgId), 0);
+                },
+              }}
+              topicOverlayProps={{
+                open: !taskPageOpen && !isDmSelected && Boolean(pageTopicId && selectedId),
+                selectedId,
+                pageTopicId,
+                sourceMessages: pageTopicSourceMessages,
+                repliesOf: pageTopicRepliesOf,
+                channel: selectedChannel,
+                channelBots,
+                channelUsers,
+                currentUserId,
+                pageTopicError,
+                pageTopicLoading,
+                onBack: () => setPageTopicId(null),
+                onSendReply: sendTopicReply,
+                onCopyMessage: copyMessageText,
+                onShowMessageDetails: setMemoryDetailMessage,
+                hasMessageDetails: hasBotReplyDetails,
+                onImageClick: handleMarkdownImageClick,
+                onFileClick: handleMarkdownFileClick,
+                renderAttachments: renderFileAttachments,
+                pendingFiles: pendingFileNames.map((name, index) => ({
+                  name,
+                  previewUrl: pendingFilePreviews[index] ?? null,
+                })),
+                onRemovePendingFile: (index) => {
+                  setPendingFileIds((prev) =>
+                    prev.filter((_, itemIndex) => itemIndex !== index),
+                  );
+                  setPendingFileNames((prev) =>
+                    prev.filter((_, itemIndex) => itemIndex !== index),
+                  );
+                  setPendingFilePreviews((prev) =>
+                    prev.filter((_, itemIndex) => itemIndex !== index),
+                  );
+                },
+                onUploadFile: uploadFile,
+                keychainEnabled: Boolean(currentUser),
+                keychainOpen: keychainPopupOpen,
+                keychainLoading: keychainPopupLoading,
+                keychainItems: keychainPopupItems,
+                onToggleKeychain: openKeychainPopup,
+                onCloseKeychain: () => setKeychainPopupOpen(false),
+              }}
+              messageListProps={{
+                messagesContainerRef,
+                inputRef,
+                secretInputRef,
+                onMessagesScroll: handleMessagesScroll,
+                loading,
+                loadingMore,
+                hasMore,
+                messages,
+                selectedChannel,
+                selectedId,
+                isDmSelected,
+                currentUser,
+                currentUserId,
+                authToken,
+                topicRoots,
+                topicRepliesOf,
+                virtualItems,
+                rowVirtualizer,
+                botById,
+                botByUsername,
+                coordinatorBot,
+                userById,
+                msgById,
+                revealedSecrets,
+                secretTokens,
+                clarifyAnsweredParentIds,
+                pendingClarifyReplyMsgId,
+                expandedTopics,
+                collapsedMessages,
+                processingBots,
+                secretMode,
+                setMessageStore,
+                setDMs,
+                setComposerInput,
+                setReplyingTo,
+                setPageTopicId,
+                revealSecretMessage,
+                copyMessageText,
+                renderMemoryLoadButton,
+                renderStopStreamButton,
+                renderPartialBadge,
+                renderBotTraceStatus,
+                renderAgentBridgeTaskCard,
+                renderFileAttachments,
+                activeAgentBridgeTaskData,
+                handleMarkdownImageClick,
+                handleMarkdownFileClick,
+                handleClarifyContinue,
+                handleClarifySkip,
+                toggleTopic,
+                toggleMessage,
+              }}
+              composerProps={{
+                value: input,
+                valueRevision: inputRevision,
+                inputRef,
+                onValueChange: handleComposerValueChange,
+                onSend: send,
+                canSend: pendingFileIds.length > 0,
+                canSendPredicate: (value) =>
+                  Boolean(value.trim() || pendingFileIds.length > 0),
+                disabled: isSystemDm,
+                placeholder: isSystemDm
+                  ? "好友通知会话用于处理申请，不能直接发送消息…"
+                  : secretMode
+                    ? "输入加密内容（仅 Bot 可读取原文）…"
+                    : isDmSelected
+                      ? `发消息给 ${activeDm?.counterparty.display_name || activeDm?.counterparty.username || "DM"}…`
+                      : msgKind === "announcement"
+                        ? `发布公告到 #${selectedChannel?.name || "频道"}…`
+                        : msgKind === "topic"
+                          ? "开启主题 · 标题将取首行…"
+                          : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`,
+                kind: msgKind,
+                onKindChange: setMsgKind,
+                onCycleKind: cycleMsgKind,
+                showKindSwitcher: !replyingTo && !isDmSelected,
+                enableKindCycling: !replyingTo && !isDmSelected,
+                titleValue: composerTitle,
+                titleRef: composerTitleRef,
+                onTitleChange: setComposerTitle,
+                channelBots,
+                channelUsers,
+                replyingTo,
+                onCancelReply: () => setReplyingTo(null),
+                pendingFiles: pendingFileNames.map((name, index) => ({
+                  name,
+                  previewUrl: pendingFilePreviews[index] ?? null,
+                })),
+                onRemovePendingFile: (index) => {
+                  setPendingFileIds((prev) =>
+                    prev.filter((_, itemIndex) => itemIndex !== index),
+                  );
+                  setPendingFileNames((prev) =>
+                    prev.filter((_, itemIndex) => itemIndex !== index),
+                  );
+                  setPendingFilePreviews((prev) =>
+                    prev.filter((_, itemIndex) => itemIndex !== index),
+                  );
+                },
+                onUploadFile: uploadFile,
+                keychainEnabled: Boolean(currentUser),
+                keychainOpen: keychainPopupOpen,
+                keychainLoading: keychainPopupLoading,
+                keychainItems: keychainPopupItems,
+                onToggleKeychain: openKeychainPopup,
+                onCloseKeychain: () => setKeychainPopupOpen(false),
+              }}
+              setMemoryTab={setMemoryTab}
+              setPageTopicId={setPageTopicId}
+              setPageTaskMsgId={setPageTaskMsgId}
+              setTaskPageOpen={setTaskPageOpen}
+              onOpenSidebar={() => setSidebarOpen(true)}
+              onOpenChannelSettings={() => setChannelSettingsOpen(true)}
+              onJumpToMessage={jumpToMessage}
+              onRefreshDmSession={refreshDmSession}
+            />
           </ChannelMainFrame>
 
           <ChatSidePanels

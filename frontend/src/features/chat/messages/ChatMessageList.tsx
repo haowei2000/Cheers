@@ -38,7 +38,7 @@ import type {
 } from "../../../types";
 import { getSecretSecondsLeft, SecretMessageVeil } from "./SecretMessageVeil";
 
-interface ChatMessageListProps {
+export interface ChatMessageListProps {
   messagesContainerRef: RefObject<HTMLDivElement>;
   inputRef: RefObject<HTMLTextAreaElement>;
   secretInputRef: RefObject<HTMLInputElement>;

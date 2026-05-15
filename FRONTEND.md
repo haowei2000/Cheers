@@ -56,25 +56,28 @@ App.tsx
 │   ├── WorkspaceRail
 │   ├── Sidebar
 │   │   └── SearchPicker
-│   └── ChannelMainFrame
-│       ├── ChannelHeader
-│       ├── ChatMessageList
-│       │   ├── ChatMessageRenderer
-│       │   │   ├── MessageMarkdown
-│       │   │   └── ChatAttachments
-│       │   ├── SecretMessageVeil
-│       │   ├── AgentBridgeTaskCard
-│       │   ├── BotAvatar
-│       │   └── ClarifyInlineBlock
-│       ├── MessageComposer
-│       └── ChatSidePanels
-│           ├── MemoryPanel
-│           │   ├── InviteMemberSearch
-│           │   ├── SearchPicker
-│           │   ├── QuickAddFooter
-│           │   ├── MembersView
-│           │   └── ProjectView
-│           └── FilePreviewSidebar
+│   ├── ChannelMainFrame
+│   │   └── ChatWorkspaceView
+│   │       ├── ChatTaskOverlay
+│   │       ├── ChatTopicOverlay
+│   │       ├── ChannelHeader
+│   │       ├── ChatMessageList
+│   │       │   ├── ChatMessageRenderer
+│   │       │   │   ├── MessageMarkdown
+│   │       │   │   └── ChatAttachments
+│   │       │   ├── SecretMessageVeil
+│   │       │   ├── AgentBridgeTaskCard
+│   │       │   ├── BotAvatar
+│   │       │   └── ClarifyInlineBlock
+│   │       └── MessageComposer
+│   └── ChatSidePanels
+│       ├── MemoryPanel
+│       │   ├── InviteMemberSearch
+│       │   ├── SearchPicker
+│       │   ├── QuickAddFooter
+│       │   ├── MembersView
+│       │   └── ProjectView
+│       └── FilePreviewSidebar
 ├── NotificationPanel
 ├── LoginModal
 ├── CreateWorkspaceModal
@@ -126,10 +129,14 @@ App.tsx
 ```text
 features/
 ├── chat/
-│   └── messages/
+│   ├── ChatWorkspaceView.tsx        # 频道主区域：header、session、消息列表、composer 和空态
+│   ├── messages/
 │       ├── AgentBridgeTaskCard.tsx  # Agent Bridge 后台任务消息卡
 │       ├── ChatMessageList.tsx      # 虚拟消息列表、特殊消息卡和话题回复渲染
 │       └── SecretMessageVeil.tsx    # 加密消息遮罩与过期倒计时 helper
+│   └── overlays/
+│       ├── ChatTaskOverlay.tsx      # TaskPage 懒加载覆盖层
+│       └── ChatTopicOverlay.tsx     # TopicPage 懒加载覆盖层
 ├── memory/
 │   ├── editor/
 │   │   ├── EntryEditor.tsx         # Markdown 条目编辑器，MemoryPage 复用
