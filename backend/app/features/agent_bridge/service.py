@@ -26,6 +26,7 @@ from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
 from app.features.bot_runtime.pipeline.bus import WSEventBus
 from app.features.bot_runtime.pipeline.events import BotTrace, MessageCreated, MessageDone
 from app.features.bot_runtime.pipeline.stream_coalescer import StreamDeltaCoalescer
+from app.services.file_retention import active_file_filter
 
 logger = logging.getLogger("app.features.agent_bridge.service")
 
@@ -272,7 +273,7 @@ async def _broadcast_done(
     file_map = {}
     if file_ids:
         rows = (await session.execute(
-            select(FileRecord).where(FileRecord.file_id.in_(file_ids))
+            select(FileRecord).where(FileRecord.file_id.in_(file_ids), active_file_filter())
         )).scalars().all()
         file_map = {r.file_id: r for r in rows}
     await WSEventBus(msg.channel_id).publish(
@@ -441,7 +442,7 @@ async def finalize_stream(
     file_map = {}
     if msg.file_ids:
         rows = (await session.execute(
-            select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
+            select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids), active_file_filter())
         )).scalars().all()
         file_map = {r.file_id: r for r in rows}
     await WSEventBus(state.channel_id).publish(

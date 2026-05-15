@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ChannelMembership, FileRecord, Message
+from app.services.file_retention import active_file_filter
 
 
 async def check_bot_in_channel(
@@ -32,7 +33,10 @@ async def check_files_in_channel(
     if not file_ids:
         return None
     rows = (await session.execute(
-        select(FileRecord.file_id, FileRecord.channel_id).where(FileRecord.file_id.in_(file_ids))
+        select(FileRecord.file_id, FileRecord.channel_id).where(
+            FileRecord.file_id.in_(file_ids),
+            active_file_filter(),
+        )
     )).all()
     found = {fid: cid for fid, cid in rows}
     missing = [f for f in file_ids if f not in found]

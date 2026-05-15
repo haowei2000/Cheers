@@ -308,6 +308,7 @@ class FileRecord(Base):
     summary_3lines: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     converted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
@@ -315,6 +316,7 @@ class FileRecord(Base):
 
     __table_args__ = (
         Index("ix_file_records_channel_created_at", "channel_id", "created_at"),
+        Index("ix_file_records_expires_at", "expires_at"),
     )
 
 

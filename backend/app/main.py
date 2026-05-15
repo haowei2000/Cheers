@@ -1,7 +1,8 @@
 """FastAPI 应用入口."""
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,10 +22,40 @@ from app.services.storage.bootstrap import initialize_storage, is_storage_enable
 
 logger = logging.getLogger("app.main")
 
+_file_retention_task: asyncio.Task | None = None
+
+
+async def _run_file_retention_cleanup_once() -> int:
+    from app.db.session import async_session_factory
+    from app.services.file_retention import FileRetentionService
+
+    async with async_session_factory() as session:
+        count = await FileRetentionService(session).prune_expired_files()
+        await session.commit()
+        return count
+
+
+async def _file_retention_cleanup_loop() -> None:
+    interval = max(
+        3600,
+        int(getattr(settings, "file_retention_cleanup_interval_seconds", 24 * 60 * 60) or 24 * 60 * 60),
+    )
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            count = await _run_file_retention_cleanup_once()
+            if count:
+                logger.info("file retention cleanup pruned %d expired files", count)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("file retention cleanup failed")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """管理应用生命周期：启动初始化 & 关闭清理."""
+    global _file_retention_task
     setup_logging()
     logger.info("AgentNexus startup")
 
@@ -53,6 +84,16 @@ async def lifespan(app: FastAPI):
     else:
         app.state.storage = None
 
+    try:
+        count = await _run_file_retention_cleanup_once()
+        if count:
+            logger.info("file retention cleanup pruned %d expired files on startup", count)
+    except Exception:
+        logger.exception("file retention startup cleanup failed")
+
+    if int(getattr(settings, "file_retention_cleanup_interval_seconds", 24 * 60 * 60) or 0) > 0:
+        _file_retention_task = asyncio.create_task(_file_retention_cleanup_loop())
+
     if os.environ.get("SEED_DATA", "").strip().lower() in ("1", "true", "yes"):
         try:
             from app.db.seed import run_seed
@@ -67,6 +108,12 @@ async def lifespan(app: FastAPI):
         logger.exception("ensure builtin bot failed: %s", e)
 
     yield
+
+    if _file_retention_task is not None:
+        _file_retention_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _file_retention_task
+        _file_retention_task = None
 
     from app.features.bot_runtime.pipeline.bot.queue import stop_bot_pipeline_workers
     await stop_bot_pipeline_workers()

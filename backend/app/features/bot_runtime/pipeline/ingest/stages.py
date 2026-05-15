@@ -35,6 +35,7 @@ from app.features.bot_runtime.pipeline.events import MessageCreated
 from app.features.bot_runtime.pipeline.ingest.context import IngestContext
 from app.features.bot_runtime.pipeline.stage import Stage
 from app.services.file_processor.service import FileFlowError, FilePipelineService
+from app.services.file_retention import active_file_filter
 from app.services.secret_messages import SECRET_PLACEHOLDER, secret_placeholder_for
 from app.services.storage.base import StorageError
 from app.utils.crypto import encrypt_value
@@ -184,7 +185,7 @@ class PersistStage(Stage[IngestContext]):
         fids = sorted({fid for fid in (msg.file_ids or []) if fid})
         if fids:
             fres = await ctx.session.execute(
-                select(FileRecord).where(FileRecord.file_id.in_(fids))
+                select(FileRecord).where(FileRecord.file_id.in_(fids), active_file_filter())
             )
             for rec in fres.scalars().all():
                 ctx.file_map[rec.file_id] = MessageFileDTO(
@@ -193,6 +194,7 @@ class PersistStage(Stage[IngestContext]):
                     content_type=rec.content_type,
                     size_bytes=rec.size_bytes,
                     status=rec.status,
+                    expires_at=rec.expires_at,
                 )
 
 

@@ -148,3 +148,6 @@ class StorageProvider(ABC):
         scope: str = "uploads",
     ) -> str:
         raise NotImplementedError
+
+    async def delete_object(self, file_id: str, *, scope: str = "uploads") -> None:
+        raise NotImplementedError

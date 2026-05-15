@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     storage_s3_verify_ssl: bool = True
     storage_presign_expires_seconds: int = 900
     file_upload_max_bytes: int = 25 * 1024 * 1024
+    # 文件保存时间：默认 90 天（约 3 个月）；<=0 表示不过期。
+    file_retention_days: int = 90
+    file_retention_cleanup_interval_seconds: int = 24 * 60 * 60
     file_upload_allowed_types: str = (
         "application/pdf,"
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"

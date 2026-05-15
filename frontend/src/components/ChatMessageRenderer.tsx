@@ -10,6 +10,7 @@ import {
 } from "react";
 import toast from "react-hot-toast";
 import type { FileInfo } from "../types";
+import { createProtectedFileObjectUrl, downloadProtectedFile, openProtectedFile } from "../lib/protected-file";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
 
@@ -66,6 +67,7 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
   onForward,
 }: ChatAttachmentCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [imagePreviewSrc, setImagePreviewSrc] = useState<string | null>(null);
   const name = fileName(file);
   const size = formatFileSize(file.size_bytes);
   const type = fileTypeLabel(file);
@@ -73,9 +75,39 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
   const downloadUrl = getDownloadUrl(file);
   const image = isImageFile(file);
 
+  useEffect(() => {
+    if (!image) {
+      setImagePreviewSrc(null);
+      setImageFailed(false);
+      return;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setImageFailed(false);
+    setImagePreviewSrc(null);
+    createProtectedFileObjectUrl(previewUrl)
+      .then((url) => {
+        objectUrl = url;
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setImagePreviewSrc(url);
+      })
+      .catch(() => setImageFailed(true));
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [image, previewUrl]);
+
   const openPreview = () => {
     if (onPreview) onPreview(file);
-    else window.open(previewUrl, "_blank", "noreferrer");
+    else openProtectedFile(previewUrl).catch(() => setImageFailed(true));
+  };
+
+  const handleDownload = () => {
+    downloadProtectedFile(downloadUrl, name).catch(() => setImageFailed(true));
   };
 
   return (
@@ -96,14 +128,19 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
               <AppIcon name="image" className="h-5 w-5 text-gray-300" />
               <span>预览不可用</span>
             </div>
-          ) : (
+          ) : imagePreviewSrc ? (
             <img
-              src={previewUrl}
+              src={imagePreviewSrc}
               alt={name}
               className="block h-36 w-full object-cover"
               loading="lazy"
               onError={() => setImageFailed(true)}
             />
+          ) : (
+            <div className="flex h-32 items-center justify-center gap-2 text-xs text-gray-400">
+              <AppIcon name="image" className="h-5 w-5 text-gray-300" />
+              <span>加载中...</span>
+            </div>
           )}
         </button>
       ) : null}
@@ -143,16 +180,18 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
               <AppIcon name="forward" className="h-4 w-4" />
             </button>
           )}
-          <a
-            href={downloadUrl}
-            download={name}
-            onClick={(event) => event.stopPropagation()}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleDownload();
+            }}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
             title="下载"
             aria-label={`下载 ${name}`}
           >
             <AppIcon name="download" className="h-4 w-4" />
-          </a>
+          </button>
         </div>
       </div>
     </div>
