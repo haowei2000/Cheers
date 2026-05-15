@@ -17,6 +17,7 @@ import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { HelpModal } from "./components/HelpModal";
 import { ImageLightbox } from "./components/ImageLightbox";
+import { ForwardMessageModal } from "./components/ForwardMessageModal";
 import {
   ChatAttachments,
   ChatMessageRenderer,
@@ -176,6 +177,13 @@ function SecretMessageVeil({
     </div>
   );
 }
+
+type ForwardModalState = {
+  mode: "single" | "topic";
+  sourceMessageIds: string[];
+  sourceFileIds: string[];
+  summary: string;
+};
 
 
 
@@ -465,6 +473,13 @@ export default function App() {
   >(null);
   const [autoAssist, setAutoAssist] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [forwardModalState, setForwardModalState] =
+    useState<ForwardModalState | null>(null);
+  const [forwardSelectionMode, setForwardSelectionMode] = useState(false);
+  const [selectedForwardMsgIds, setSelectedForwardMsgIds] = useState<string[]>(
+    [],
+  );
+  const [forwardSubmitting, setForwardSubmitting] = useState(false);
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(
     new Set(),
   );
@@ -2205,6 +2220,15 @@ export default function App() {
     openFilePreviewUrl(url, name);
   };
 
+  function openForwardFile(file: FileInfo) {
+    setForwardModalState({
+      mode: "single",
+      sourceMessageIds: [],
+      sourceFileIds: [file.file_id],
+      summary: `转发文件：${file.original_filename || file.file_id}`,
+    });
+  }
+
   const renderFileAttachments = (msg: Message, alignRight = false) => {
     return (
       <ChatAttachments
@@ -2213,6 +2237,7 @@ export default function App() {
         getPreviewUrl={(file) => filePreviewUrl(file.file_id)}
         getDownloadUrl={(file) => fileDownloadUrl(file.file_id)}
         onPreview={openFilePreview}
+        onForward={openForwardFile}
       />
     );
   };
@@ -2416,6 +2441,220 @@ export default function App() {
     ? getMemoryLoadDetail(selectedDetailMessage)
     : null;
   const selectedBotTraceEvents = selectedDetailMessage?._bot_trace || [];
+  const forwardMessageById = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (const message of mergeMessagesChronologically(
+      messages,
+      pageTopicMessages,
+    )) {
+      map.set(message.msg_id, message);
+    }
+    return map;
+  }, [messages, pageTopicMessages]);
+  const forwardWorkspaceId = selectedWorkspaceId || activeWorkspace?.workspace_id || null;
+
+  const openForwardMessage = (message: Message) => {
+    if (message.is_secret) {
+      toast.error("加密消息不能转发");
+      return;
+    }
+    setForwardModalState({
+      mode: "single",
+      sourceMessageIds: [message.msg_id],
+      sourceFileIds: [],
+      summary: `转发 1 条消息：${messagePreviewText(message)}`,
+    });
+  };
+
+  const toggleForwardSelection = (message: Message) => {
+    if (message.is_secret) {
+      toast.error("加密消息不能转发");
+      return;
+    }
+    setForwardSelectionMode(true);
+    setSelectedForwardMsgIds((prev) =>
+      prev.includes(message.msg_id)
+        ? prev.filter((id) => id !== message.msg_id)
+        : [...prev, message.msg_id],
+    );
+  };
+
+  const cancelForwardSelection = () => {
+    setForwardSelectionMode(false);
+    setSelectedForwardMsgIds([]);
+  };
+
+  const openForwardSelectedTopic = () => {
+    const ids = selectedForwardMsgIds.filter((id) => forwardMessageById.has(id));
+    if (ids.length === 0) {
+      toast.error("请先选择要转发的消息");
+      return;
+    }
+    setForwardModalState({
+      mode: "topic",
+      sourceMessageIds: ids,
+      sourceFileIds: [],
+      summary: `合并转发 ${ids.length} 条消息为主题`,
+    });
+  };
+
+  const insertForwardedMessages = (targetChannelId: string, created: unknown) => {
+    if (selectedIdRef.current !== targetChannelId || !Array.isArray(created)) {
+      return;
+    }
+    setMessageStore((prev) =>
+      created.reduce(
+        (store, item) =>
+          item && typeof item === "object"
+            ? upsertMessage(store, item as Message, MAX_LOADED_MESSAGES)
+            : store,
+        prev,
+      ),
+    );
+  };
+
+  const postForwardToChannel = async (
+    targetChannelId: string,
+    state: ForwardModalState,
+  ) => {
+    const res = await apiFetch(`/channels/${targetChannelId}/messages/forward`, {
+      method: "POST",
+      token: authToken,
+      body: {
+        source_message_ids: state.sourceMessageIds,
+        source_file_ids: state.sourceFileIds,
+        mode: state.mode,
+      },
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data?.status === "error") {
+      throw new Error(data?.detail || data?.message || "转发失败");
+    }
+    insertForwardedMessages(targetChannelId, data?.data?.messages);
+  };
+
+  const submitForwardToChannel = async (targetChannelId: string) => {
+    if (!forwardModalState) return;
+    if (!authToken) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再转发");
+      return;
+    }
+    const state = forwardModalState;
+    setForwardSubmitting(true);
+    try {
+      await postForwardToChannel(targetChannelId, state);
+      toast.success(state.mode === "topic" ? "已合并转发" : "已转发");
+      setForwardModalState(null);
+      cancelForwardSelection();
+      refreshChannels(setChannels, authToken ?? undefined);
+      refreshDMs(setDMs, authToken ?? undefined);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "转发失败");
+    } finally {
+      setForwardSubmitting(false);
+    }
+  };
+
+  const submitForwardToMember = async (
+    memberId: string,
+    memberType: "user" | "bot",
+  ) => {
+    if (!forwardModalState) return;
+    if (!authToken) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再转发");
+      return;
+    }
+    const workspaceId =
+      workspaces.find((workspace) => workspace.kind === "personal")
+        ?.workspace_id ||
+      forwardWorkspaceId ||
+      selectedWorkspaceId;
+    if (!workspaceId) {
+      toast.error("请先选择工作空间");
+      return;
+    }
+    const state = forwardModalState;
+    setForwardSubmitting(true);
+    try {
+      const dmRes = await apiFetch("dms", {
+        method: "POST",
+        token: authToken,
+        body: {
+          workspace_id: workspaceId,
+          member_id: memberId,
+          member_type: memberType,
+        },
+      });
+      const dmData = await dmRes.json().catch(() => null);
+      if (!dmRes.ok || dmData?.status === "error") {
+        throw new Error(dmData?.detail || dmData?.message || "打开私信失败");
+      }
+      const dm = dmData?.data as DM | undefined;
+      if (!dm?.channel_id) throw new Error("打开私信失败");
+      setDMs((prev) =>
+        prev.some((item) => item.channel_id === dm.channel_id)
+          ? prev.map((item) => (item.channel_id === dm.channel_id ? dm : item))
+          : [...prev, dm],
+      );
+      await postForwardToChannel(dm.channel_id, state);
+      toast.success(state.mode === "topic" ? "已合并转发" : "已转发");
+      setForwardModalState(null);
+      cancelForwardSelection();
+      refreshDMs(setDMs, authToken ?? undefined);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "转发失败");
+    } finally {
+      setForwardSubmitting(false);
+    }
+  };
+
+  const renderForwardActionButtons = (
+    message: Message,
+    actionClassName = "an-chat-action",
+    iconClassName = "w-3.5 h-3.5",
+  ) => {
+    const selected = selectedForwardMsgIds.includes(message.msg_id);
+    const selectedStyle = selected
+      ? { background: "var(--accent-muted)", color: "var(--accent)" }
+      : undefined;
+    return (
+      <>
+        <button
+          type="button"
+          title={selected ? "取消选择" : "选择后合并转发"}
+          aria-label={selected ? "取消选择" : "选择后合并转发"}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleForwardSelection(message);
+          }}
+          className={actionClassName}
+          style={selectedStyle}
+        >
+          <AppIcon
+            name={selected ? "checkCircle" : "check"}
+            className={iconClassName}
+          />
+        </button>
+        <button
+          type="button"
+          title="转发"
+          aria-label="转发"
+          onClick={(event) => {
+            event.stopPropagation();
+            openForwardMessage(message);
+          }}
+          className={actionClassName}
+        >
+          <AppIcon name="forward" className={iconClassName} />
+        </button>
+      </>
+    );
+  };
+
+  const actionVisibilityClass = (hoverClass = "group-hover:opacity-100") =>
+    `${forwardSelectionMode ? "opacity-100" : `opacity-0 ${hoverClass}`} focus-within:opacity-100 transition-opacity`;
 
   return (
     <>
@@ -2434,6 +2673,21 @@ export default function App() {
         memoryLoadDetail={selectedMemoryLoadDetail}
         botTraceEvents={selectedBotTraceEvents}
         onClose={() => setMemoryDetailMessage(null)}
+      />
+
+      <ForwardMessageModal
+        open={Boolean(forwardModalState)}
+        channels={channels}
+        dms={dms}
+        token={authToken}
+        workspaceId={forwardWorkspaceId}
+        summary={forwardModalState?.summary || ""}
+        submitting={forwardSubmitting}
+        onClose={() => {
+          if (!forwardSubmitting) setForwardModalState(null);
+        }}
+        onForwardToChannel={submitForwardToChannel}
+        onForwardToMember={submitForwardToMember}
       />
 
       <ChatShell
@@ -2708,6 +2962,10 @@ export default function App() {
                             )
                           }
                           onCopyMessage={copyMessageText}
+                          onForwardMessage={openForwardMessage}
+                          onToggleForwardSelection={toggleForwardSelection}
+                          forwardSelectionMode={forwardSelectionMode}
+                          selectedForwardMsgIds={selectedForwardMsgIds}
                           onShowMessageDetails={setMemoryDetailMessage}
                           hasMessageDetails={hasBotReplyDetails}
                           onImageClick={handleMarkdownImageClick}
@@ -3618,7 +3876,7 @@ export default function App() {
                                   />
                                 )}
                               </div>
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+                              <div className={`${actionVisibilityClass()} self-start flex items-center gap-1 flex-shrink-0`}>
                                 <button
                                   type="button"
                                   title="复制消息内容"
@@ -3627,6 +3885,7 @@ export default function App() {
                                 >
                                   <AppIcon name="copy" className="w-3.5 h-3.5" />
                                 </button>
+                                {renderForwardActionButtons(m)}
                                 {renderMemoryLoadButton(m)}
                                 <button
                                   type="button"
@@ -3660,6 +3919,10 @@ export default function App() {
                               我
                             </div>
                             <div className="flex items-end gap-1.5">
+                              {renderForwardActionButtons(
+                                m,
+                                `${forwardSelectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"} transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1`,
+                              )}
                               <button
                                 type="button"
                                 title="复制消息内容"
@@ -3880,7 +4143,7 @@ export default function App() {
                                 />
                               )}
                             </div>
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
+                            <div className={`${actionVisibilityClass()} self-center flex items-center gap-1 flex-shrink-0`}>
                               <button
                                 type="button"
                                 title="复制消息内容"
@@ -3889,6 +4152,10 @@ export default function App() {
                               >
                                 <AppIcon name="copy" className="w-3.5 h-3.5" />
                               </button>
+                              {renderForwardActionButtons(
+                                m,
+                                "w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0",
+                              )}
                               {renderMemoryLoadButton(m)}
                               <button
                                 type="button"
@@ -3919,7 +4186,7 @@ export default function App() {
                         // user sees the intent reflected immediately. The
                         // 4-reply threshold only gates implicit promotion of
                         // a normal message that's accumulated replies.
-                        const isExplicitTopic = !isDmSelected && m.msg_type === "topic";
+                        const isExplicitTopic = m.msg_type === "topic";
                         // Force expansion when there's nothing to collapse
                         // (0-reply explicit topic) — otherwise the collapsed
                         // preview path would blow up on replies[length-1].
@@ -4197,7 +4464,7 @@ export default function App() {
                                     />
                                   )}
                                 </div>
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+                                <div className={`${actionVisibilityClass()} self-start flex items-center gap-1 flex-shrink-0`}>
                                   <button
                                     type="button"
                                     title="复制消息内容"
@@ -4206,6 +4473,7 @@ export default function App() {
                                   >
                                     <AppIcon name="copy" className="w-3.5 h-3.5" />
                                   </button>
+                                  {renderForwardActionButtons(r)}
                                   {renderMemoryLoadButton(r)}
                                   <button
                                     type="button"
@@ -4689,7 +4957,7 @@ export default function App() {
                                         </>
                                       )}
                                     </div>
-                                    <div className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
+                                    <div className={`${actionVisibilityClass("group-hover/tr:opacity-100")} self-center flex items-center gap-1 flex-shrink-0`}>
                                       <button
                                         type="button"
                                         title="复制消息内容"
@@ -4698,6 +4966,11 @@ export default function App() {
                                       >
                                         <AppIcon name="copy" className="w-3 h-3" />
                                       </button>
+                                      {renderForwardActionButtons(
+                                        r,
+                                        "w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0",
+                                        "w-3 h-3",
+                                      )}
                                       {renderMemoryLoadButton(r)}
                                       <button
                                         type="button"
@@ -4824,6 +5097,30 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                {forwardSelectionMode && (
+                  <div className="absolute bottom-24 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-1)] px-3 py-2 text-sm shadow-lg">
+                    <span className="whitespace-nowrap text-[var(--fg-2)]">
+                      已选择 {selectedForwardMsgIds.length} 条
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded-md px-2 py-1 text-xs text-[var(--fg-3)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--fg-1)]"
+                      onClick={cancelForwardSelection}
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedForwardMsgIds.length === 0}
+                      className="inline-flex items-center gap-1 rounded-md bg-[var(--accent)] px-2.5 py-1 text-xs font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={openForwardSelectedTopic}
+                    >
+                      <AppIcon name="forward" className="h-3.5 w-3.5" />
+                      合并转发
+                    </button>
+                  </div>
+                )}
 
                 {/* Input area — visually floating: rounded, drop shadow, a
                     little margin so the stream slides past the edges. */}

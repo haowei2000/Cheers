@@ -170,8 +170,14 @@ class S3CompatibleStorageService(StorageProvider):
         ref = self.resolve_file_id(file_id, scope=scope)
         return await asyncio.to_thread(self._head_object_sync, ref)
 
+    async def head_object_ref(self, ref: StorageObjectRef) -> StorageObjectHead:
+        return await asyncio.to_thread(self._head_object_sync, ref)
+
     async def get_object(self, file_id: str, *, scope: str = "uploads") -> StorageObject:
         ref = self.resolve_file_id(file_id, scope=scope)
+        return await asyncio.to_thread(self._get_object_sync, ref)
+
+    async def get_object_ref(self, ref: StorageObjectRef) -> StorageObject:
         return await asyncio.to_thread(self._get_object_sync, ref)
 
     async def put_metadata_if_needed(

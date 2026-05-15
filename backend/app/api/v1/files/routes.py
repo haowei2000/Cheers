@@ -72,7 +72,19 @@ async def _load_file_body(rec: FileRecord) -> bytes:
         raise AppError("storage not enabled")
     storage = get_storage_service()
     try:
-        obj = await storage.get_object(rec.file_id, scope=_storage_scope(rec))
+        if rec.object_key:
+            from app.services.storage.base import StorageObjectRef
+
+            obj = await storage.get_object_ref(
+                StorageObjectRef(
+                    file_id=rec.file_id,
+                    bucket=rec.storage_bucket or settings.storage_s3_bucket,
+                    object_key=rec.object_key,
+                    filename=rec.original_filename,
+                )
+            )
+        else:
+            obj = await storage.get_object(rec.file_id, scope=_storage_scope(rec))
     except StorageObjectNotFoundError:
         raise NotFoundError("file not found in storage")
     except Exception as exc:

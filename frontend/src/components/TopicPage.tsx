@@ -24,6 +24,10 @@ export interface TopicPageProps {
   onGoToChannel?: () => void;
   onSendReply: (text: string, inReplyToMsgId?: string) => Promise<void> | void;
   onCopyMessage?: (message: Message) => Promise<void> | void;
+  onForwardMessage?: (message: Message) => void;
+  onToggleForwardSelection?: (message: Message) => void;
+  forwardSelectionMode?: boolean;
+  selectedForwardMsgIds?: string[];
   onShowMessageDetails?: (message: Message) => void;
   hasMessageDetails?: (message: Message) => boolean;
   onImageClick?: (src: string) => void;
@@ -79,6 +83,10 @@ export function TopicPage({
   onGoToChannel,
   onSendReply,
   onCopyMessage,
+  onForwardMessage,
+  onToggleForwardSelection,
+  forwardSelectionMode = false,
+  selectedForwardMsgIds = [],
   onShowMessageDetails,
   hasMessageDetails,
   onImageClick,
@@ -112,6 +120,45 @@ export function TopicPage({
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 80) || "(无内容)";
+
+  const renderForwardActions = (m: Message) => {
+    if (!onForwardMessage && !onToggleForwardSelection) return null;
+    const selected = selectedForwardMsgIds.includes(m.msg_id);
+    return (
+      <>
+        {onToggleForwardSelection && (
+          <button
+            type="button"
+            title={selected ? "取消选择" : "选择后合并转发"}
+            aria-label={selected ? "取消选择" : "选择后合并转发"}
+            onClick={() => onToggleForwardSelection(m)}
+            className="an-chat-action"
+            style={
+              selected
+                ? { background: "var(--accent-muted)", color: "var(--accent)" }
+                : undefined
+            }
+          >
+            <AppIcon
+              name={selected ? "checkCircle" : "check"}
+              className="w-3.5 h-3.5"
+            />
+          </button>
+        )}
+        {onForwardMessage && (
+          <button
+            type="button"
+            title="转发"
+            aria-label="转发"
+            onClick={() => onForwardMessage(m)}
+            className="an-chat-action"
+          >
+            <AppIcon name="forward" className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </>
+    );
+  };
 
   const highlightMessage = (msgId: string) => {
     const el = document.getElementById(`msg-${msgId}`);
@@ -261,7 +308,7 @@ export function TopicPage({
               />
             </div>
           </div>
-          <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+          <div className={`${forwardSelectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"} focus-within:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0`}>
             {onShowMessageDetails && hasMessageDetails?.(m) && (
               <button
                 type="button"
@@ -284,6 +331,7 @@ export function TopicPage({
                 <AppIcon name="copy" className="w-3.5 h-3.5" />
               </button>
             )}
+            {renderForwardActions(m)}
             <button
               type="button"
               title="回复"

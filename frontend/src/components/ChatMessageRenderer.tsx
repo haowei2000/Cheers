@@ -1,4 +1,14 @@
-import { lazy, memo, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  lazy,
+  memo,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import toast from "react-hot-toast";
 import type { FileInfo } from "../types";
 import { createProtectedFileObjectUrl, downloadProtectedFile, openProtectedFile } from "../lib/protected-file";
 import { AppIcon } from "./icons/AppIcon";
@@ -45,6 +55,7 @@ interface ChatAttachmentCardProps {
   getDownloadUrl: (file: FileInfo) => string;
   getPreviewUrl: (file: FileInfo) => string;
   onPreview?: (file: FileInfo) => void;
+  onForward?: (file: FileInfo) => void;
 }
 
 const ChatAttachmentCard = memo(function ChatAttachmentCard({
@@ -53,6 +64,7 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
   getDownloadUrl,
   getPreviewUrl,
   onPreview,
+  onForward,
 }: ChatAttachmentCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [imagePreviewSrc, setImagePreviewSrc] = useState<string | null>(null);
@@ -154,6 +166,20 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
           >
             <AppIcon name="preview" className="h-4 w-4" />
           </button>
+          {onForward && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onForward(file);
+              }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+              title="转发文件"
+              aria-label={`转发 ${name}`}
+            >
+              <AppIcon name="forward" className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={(event) => {
@@ -178,6 +204,7 @@ export interface ChatAttachmentsProps {
   getDownloadUrl: (file: FileInfo) => string;
   getPreviewUrl: (file: FileInfo) => string;
   onPreview?: (file: FileInfo) => void;
+  onForward?: (file: FileInfo) => void;
 }
 
 export const ChatAttachments = memo(function ChatAttachments({
@@ -186,6 +213,7 @@ export const ChatAttachments = memo(function ChatAttachments({
   getDownloadUrl,
   getPreviewUrl,
   onPreview,
+  onForward,
 }: ChatAttachmentsProps) {
   if (!files?.length) return null;
 
@@ -199,6 +227,7 @@ export const ChatAttachments = memo(function ChatAttachments({
           getDownloadUrl={getDownloadUrl}
           getPreviewUrl={getPreviewUrl}
           onPreview={onPreview}
+          onForward={onForward}
         />
       ))}
     </div>
@@ -217,6 +246,7 @@ export interface ChatMessageRendererProps {
   getPreviewUrl?: (file: FileInfo) => string;
   keyPrefix?: string;
   onPreview?: (file: FileInfo) => void;
+  onForwardFile?: (file: FileInfo) => void;
   renderBody?: (children: ReactNode) => ReactNode;
   showStreamingCursor?: boolean;
   streaming?: boolean;
@@ -238,11 +268,96 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
   onFileClick,
   onImageClick,
   onPreview,
+  onForwardFile,
   renderBody,
   showStreamingCursor = true,
   streaming,
 }: ChatMessageRendererProps) {
+  const bodySelectionRef = useRef<HTMLDivElement | null>(null);
+  const [selectionCopy, setSelectionCopy] = useState<{
+    text: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const hasContent = content.trim().length > 0;
+
+  useEffect(() => {
+    if (!hasContent) return;
+    const updateSelection = () => {
+      const container = bodySelectionRef.current;
+      const selection = window.getSelection();
+      if (
+        !container ||
+        !selection ||
+        selection.isCollapsed ||
+        selection.rangeCount === 0 ||
+        !selection.anchorNode ||
+        !selection.focusNode ||
+        !container.contains(selection.anchorNode) ||
+        !container.contains(selection.focusNode)
+      ) {
+        setSelectionCopy(null);
+        return;
+      }
+      const text = selection.toString().trim();
+      if (!text) {
+        setSelectionCopy(null);
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      if (!rect.width && !rect.height) {
+        setSelectionCopy(null);
+        return;
+      }
+      const hostRect = container.getBoundingClientRect();
+      const left = Math.min(
+        Math.max(rect.right - hostRect.left - 36, 4),
+        Math.max(hostRect.width - 40, 4),
+      );
+      const top = Math.max(rect.top - hostRect.top - 32, 4);
+      setSelectionCopy({ text, top, left });
+    };
+    const hideSelectionButton = () => setSelectionCopy(null);
+    const handlePointerDown = (event: PointerEvent) => {
+      const container = bodySelectionRef.current;
+      if (!container || container.contains(event.target as Node)) return;
+      hideSelectionButton();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") hideSelectionButton();
+    };
+
+    document.addEventListener("selectionchange", updateSelection);
+    document.addEventListener("mouseup", updateSelection);
+    document.addEventListener("keyup", updateSelection);
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("scroll", hideSelectionButton, true);
+    window.addEventListener("resize", hideSelectionButton);
+    return () => {
+      document.removeEventListener("selectionchange", updateSelection);
+      document.removeEventListener("mouseup", updateSelection);
+      document.removeEventListener("keyup", updateSelection);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("scroll", hideSelectionButton, true);
+      window.removeEventListener("resize", hideSelectionButton);
+    };
+  }, [hasContent]);
+
+  const copySelectionText = async () => {
+    if (!selectionCopy?.text) return;
+    try {
+      await navigator.clipboard.writeText(selectionCopy.text);
+      toast.success("已复制选中内容");
+      window.getSelection()?.removeAllRanges();
+      setSelectionCopy(null);
+    } catch {
+      toast.error("复制失败");
+    }
+  };
+
   const markdownFallback = (
     <span className="whitespace-pre-wrap break-words">{content}</span>
   );
@@ -289,9 +404,33 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
             getDownloadUrl={getDownloadUrl}
             getPreviewUrl={getPreviewUrl}
             onPreview={onPreview}
+            onForward={onForwardFile}
           />
         ) : null)}
-      {(hasContent || streaming || bodySuffix) ? (renderBody ? renderBody(body) : body) : null}
+      {hasContent || streaming || bodySuffix ? (
+        <div ref={bodySelectionRef} className="relative">
+          {renderBody ? renderBody(body) : body}
+          {selectionCopy && (
+            <button
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.stopPropagation();
+                void copySelectionText();
+              }}
+              className="absolute z-20 inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 shadow-lg transition-colors hover:bg-gray-50 hover:text-gray-900"
+              style={{
+                top: selectionCopy.top,
+                left: selectionCopy.left,
+              }}
+              title="复制选中内容"
+              aria-label="复制选中内容"
+            >
+              <AppIcon name="copy" className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      ) : null}
     </>
   );
 });
