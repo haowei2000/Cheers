@@ -406,7 +406,10 @@ export function ChannelSettingsModal({
                         as="article"
                         member={member}
                         badge={
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+                          <span
+                            className="an-member-badge"
+                            data-tone={member.role === "owner" || member.role === "admin" ? "accent" : "neutral"}
+                          >
                             {roleText(member.role)}
                           </span>
                         }
@@ -415,7 +418,7 @@ export function ChannelSettingsModal({
                           value={member.role || "member"}
                           disabled={!canManage || member.member_id === currentUserId}
                           onChange={(e) => updateRole(member, e.target.value)}
-                          className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:bg-gray-50"
+                          className="an-select h-8 w-32 py-1 text-xs"
                         >
                           <option value="member">成员</option>
                           <option value="admin">管理员</option>
@@ -459,7 +462,7 @@ export function ChannelSettingsModal({
                               ? "Bot 频道模板覆盖"
                               : "只有邀请该 Bot 入频道的人可修改频道模板"
                           }
-                          className="w-44 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:bg-gray-50 disabled:text-gray-400"
+                          className="an-select h-8 w-44 py-1 text-xs"
                         >
                           <option value="">默认模板</option>
                           {templates.map((template) => (

@@ -125,7 +125,7 @@ export function MemberAvatar({
     <AvatarVisual
       avatarUrl={avatarUrl || defaultAvatar}
       background={memberAccent(kind)}
-      className={className}
+      className={`an-member-avatar ${className ?? ""}`}
       fallback={initialsForMember(label)}
       label={label}
       radius={radius ?? (kind === "user" ? 999 : 9)}
@@ -140,14 +140,9 @@ export interface MemberBadgeProps {
 }
 
 export function MemberKindBadge({ kind = "user", label }: MemberBadgeProps) {
+  const tone = kind === "user" ? "accent" : kind === "bot" ? "success" : "neutral";
   return (
-    <span
-      className="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold leading-none"
-      style={{
-        background: memberMutedBackground(kind),
-        color: memberAccent(kind),
-      }}
-    >
+    <span className="an-member-badge" data-tone={tone}>
       {label ?? memberKindLabel(kind)}
     </span>
   );
@@ -161,6 +156,7 @@ export interface MemberIdentityProps {
   kind?: MemberKind;
   member: MemberLike;
   meta?: ReactNode;
+  primary?: ReactNode;
   primaryPrefix?: string;
   showBadge?: boolean;
   sub?: ReactNode;
@@ -174,6 +170,7 @@ export function MemberIdentity({
   kind,
   member,
   meta,
+  primary,
   primaryPrefix,
   showBadge = true,
   sub,
@@ -183,28 +180,28 @@ export function MemberIdentity({
   const subtitle = sub ?? resolveMemberSub(member);
 
   return (
-    <span className={`flex min-w-0 items-center gap-3 ${className}`}>
+    <span className={`an-member-identity ${className}`}>
       <MemberAvatar
         avatarUrl={member.avatar_url}
         kind={resolvedKind}
         label={label}
         size={avatarSize}
       />
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
+      <span className="an-member-main">
+        <span className="an-member-line">
+          <span className="an-member-name">
             {primaryPrefix}
-            {label}
+            {primary ?? label}
           </span>
           {showBadge && (badge ?? <MemberKindBadge kind={resolvedKind} />)}
         </span>
         {!compact && subtitle && (
-          <span className="mt-0.5 block truncate text-xs" style={{ color: "var(--fg-3)" }}>
+          <span className="an-member-sub">
             {subtitle}
           </span>
         )}
         {meta && (
-          <span className="mt-0.5 block truncate text-xs" style={{ color: "var(--fg-2)" }}>
+          <span className="an-member-meta">
             {meta}
           </span>
         )}
@@ -236,16 +233,10 @@ export function MemberRow({
     <>
       {leading}
       <MemberIdentity {...identityProps} />
-      {action && <span className="ml-auto flex shrink-0 items-center gap-2">{action}</span>}
+      {action && <span className="an-member-actions">{action}</span>}
     </>
   );
-  const rowClass = `an-row-card ${active ? "is-active" : ""} ${className}`;
-  const rowStyle = {
-    alignItems: "center",
-    background: active ? "var(--accent-muted)" : undefined,
-    borderColor: active ? "var(--accent)" : undefined,
-    gap: 10,
-  };
+  const rowClass = `an-row-card an-member-row ${active ? "is-active" : ""} ${className}`;
 
   if (as === "button") {
     return (
@@ -253,7 +244,6 @@ export function MemberRow({
         type="button"
         className={`${rowClass} w-full text-left`}
         onClick={onClick}
-        style={rowStyle}
         title={title}
       >
         {body}
@@ -262,20 +252,20 @@ export function MemberRow({
   }
   if (as === "article") {
     return (
-      <article className={rowClass} style={rowStyle} title={title}>
+      <article className={rowClass} title={title}>
         {body}
       </article>
     );
   }
   if (as === "span") {
     return (
-      <span className={`flex min-w-0 items-center gap-2 ${className}`} title={title}>
+      <span className={`an-member-inline ${className}`} title={title}>
         {body}
       </span>
     );
   }
   return (
-    <div className={rowClass} style={rowStyle} title={title} onClick={onClick}>
+    <div className={rowClass} title={title} onClick={onClick}>
       {body}
     </div>
   );
@@ -293,14 +283,14 @@ export function MemberSection({
   title: string;
 }) {
   return (
-    <section className="min-w-0">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--fg-3)" }}>
+    <section className="an-member-section">
+      <div className="an-member-section-head">
+        <h3 className="an-member-section-title">
           {title}
         </h3>
         {typeof count === "number" && <span className="an-chip">{count}</span>}
       </div>
-      {count === 0 && empty ? empty : <div className="space-y-2">{children}</div>}
+      {count === 0 && empty ? empty : <div className="an-member-section-body">{children}</div>}
     </section>
   );
 }

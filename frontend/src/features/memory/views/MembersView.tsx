@@ -1,6 +1,14 @@
 import { useState } from "react";
 import type { MemberItem } from "../../../types";
-import { MemberListItem, colorForIdentity, initialsForIdentity } from "../../../components/members";
+import {
+  MemberAvatar,
+  MemberKindBadge,
+  MemberRow,
+  MemberSection,
+  resolveMemberKind,
+  resolveMemberLabel,
+  sortMembersByKind,
+} from "../../../components/members";
 
 export function MembersView({
   members,
@@ -25,26 +33,15 @@ export function MembersView({
 }) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
 
-  const bots = members.filter((m) => m.member_type === "bot");
-  const users = members
-    .map((member, index) => ({ member, index }))
-    .filter(({ member }) => member.member_type !== "bot")
-    .sort((a, b) => {
-      const aSelf = Boolean(currentUserId && a.member.member_id === currentUserId);
-      const bSelf = Boolean(currentUserId && b.member.member_id === currentUserId);
-      if (aSelf !== bSelf) return aSelf ? -1 : 1;
-      return a.index - b.index;
-    })
-    .map(({ member }) => member);
+  const sortedMembers = sortMembersByKind(members, currentUserId);
+  const bots = sortedMembers.filter((m) => resolveMemberKind(m) === "bot");
+  const users = sortedMembers.filter((m) => resolveMemberKind(m) !== "bot");
 
   if (selected) {
-    const isBot = selected.member_type === "bot";
+    const kind = resolveMemberKind(selected);
+    const isBot = kind === "bot";
     const isSelf = Boolean(currentUserId && selected.member_id === currentUserId && !isBot);
-    const label =
-      selected.display_name ||
-      selected.username ||
-      (isBot ? "Bot" : "用户");
-    const color = colorForIdentity(selected.member_id);
+    const label = resolveMemberLabel(selected, kind);
     return (
       <div className="overflow-y-auto px-3 py-2">
         <div className="an-mem-detail">
@@ -56,35 +53,17 @@ export function MembersView({
             ← 返回成员列表
           </button>
           <div className="an-md-head">
-            <div
+            <MemberAvatar
+              avatarUrl={selected.avatar_url}
               className="an-av"
-              style={{ background: color, borderRadius: isBot ? 9 : 999 }}
-            >
-              {initialsForIdentity(label)}
-            </div>
+              kind={kind}
+              label={label}
+              size={44}
+            />
             <div className="an-info">
               <div className="an-n">
                 {label}
-                <span
-                  className={
-                    "an-tag-pill" + (isBot ? "" : "")
-                  }
-                  style={{
-                    fontSize: 8.5,
-                    fontWeight: 700,
-                    letterSpacing: "0.7px",
-                    padding: "1px 5px",
-                    borderRadius: 4,
-                    border: "1px solid var(--border)",
-                    textTransform: "uppercase",
-                    color: isBot ? "var(--fg-3)" : "var(--accent)",
-                    background: isBot
-                      ? "var(--surface-soft)"
-                      : "var(--accent-muted)",
-                  }}
-                >
-                  {isBot ? "BOT" : "USER"}
-                </span>
+                <MemberKindBadge kind={kind} />
               </div>
               <div className="an-h">
                 {selected.username && (
@@ -102,7 +81,9 @@ export function MembersView({
             <div className="an-md-section">
               <div className="an-lbl">我的频道资料</div>
               {profileLoading ? (
-                <div className="text-xs text-gray-400 py-3">加载中…</div>
+                <div className="py-3 text-xs" style={{ color: "var(--fg-3)" }}>
+                  加载中…
+                </div>
               ) : (
                 <div className="space-y-2">
                   <input
@@ -110,21 +91,21 @@ export function MembersView({
                     onChange={(e) => onProfileNicknameChange(e.target.value)}
                     placeholder="频道昵称"
                     maxLength={64}
-                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                    className="an-input"
                   />
                   <textarea
                     value={profileBio}
                     onChange={(e) => onProfileBioChange(e.target.value)}
                     placeholder="在本频道的身份介绍…"
                     rows={3}
-                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
+                    className="an-textarea"
                   />
                   <div className="flex justify-end">
                     <button
                       type="button"
                       onClick={onSaveMyProfile}
                       disabled={profileSaving}
-                      className="text-[11px] px-2.5 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94] disabled:opacity-50"
+                      className="an-btn an-btn-primary an-btn-sm"
                     >
                       {profileSaving ? "保存中…" : "保存资料"}
                     </button>
@@ -189,54 +170,35 @@ export function MembersView({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="an-members-list min-h-0 flex-1 overflow-y-auto">
         {bots.length > 0 && (
-          <>
-            <div className="an-mem-group">
-              <span>Agents · 智能体</span>
-              <span className="an-ct">{bots.length}</span>
-            </div>
-            {bots.map((m) => {
-              const label = m.display_name || m.username || "Bot";
-              return (
-                <MemberListItem
-                  key={m.member_id}
-                  id={m.member_id}
-                  kind="bot"
-                  username={m.username}
-                  displayName={label}
-                  avatarUrl={m.avatar_url}
-                  variant="panel"
-                  onClick={() => setSelected(m)}
-                />
-              );
-            })}
-          </>
+          <MemberSection title="Agents · 智能体" count={bots.length}>
+            {bots.map((m) => (
+              <MemberRow
+                key={m.member_id}
+                as="button"
+                member={m}
+                onClick={() => setSelected(m)}
+                action={<span className="an-member-chev" aria-hidden="true">›</span>}
+              />
+            ))}
+          </MemberSection>
         )}
         {users.length > 0 && (
-          <>
-            <div className="an-mem-group">
-              <span>People · 成员</span>
-              <span className="an-ct">{users.length}</span>
-            </div>
+          <MemberSection title="People · 成员" count={users.length}>
             {users.map((m) => {
-              const label = m.display_name || m.username || "用户";
               const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
               return (
-                <MemberListItem
+                <MemberRow
                   key={m.member_id}
-                  id={m.member_id}
-                  kind="user"
-                  username={m.username}
-                  displayName={label}
-                  avatarUrl={m.avatar_url}
-                  variant="panel"
-                  self={isSelf}
+                  as="button"
+                  member={m}
                   onClick={() => setSelected(m)}
+                  badge={isSelf ? <span className="an-member-badge" data-tone="accent">我</span> : undefined}
                   title={isSelf ? "我的频道资料" : undefined}
-                  aria-label={isSelf ? "我的频道资料" : label}
+                  action={<span className="an-member-chev" aria-hidden="true">›</span>}
                 />
               );
             })}
-          </>
+          </MemberSection>
         )}
       </div>
     </div>

@@ -87,12 +87,12 @@ App.tsx
 │   ├── CreateChannelModal
 │   ├── ChannelMembersModal
 │   │   ├── SearchPicker
-│   │   └── MemberListItem
+│   │   └── MemberRow
 │   ├── ChannelSettingsModal
-│   │   └── MemberListItem
+│   │   └── MemberRow
 │   ├── OpenClawQcModal
 │   ├── AddBotModal
-│   │   └── MemberListItem
+│   │   └── MemberRow
 │   ├── MessageDetailModal
 │   ├── HelpModal
 │   └── SettingsModal
@@ -108,7 +108,7 @@ App.tsx
 │       │   └── ModelListSubPane
 │       ├── FriendsPane
 │       │   ├── SearchPicker
-│       │   └── MemberListItem
+│       │   └── MemberRow
 │       ├── AccountPane
 │       │   └── ProfilePane
 │       ├── AppearancePane
@@ -218,11 +218,12 @@ components/app/
 
 ```text
 components/members/
-├── MemberListItem.tsx # 统一成员/Bot item
+├── MemberIdentity.tsx # 成员身份基础块、头像、徽标、行/分组封装
+├── MemberListItem.tsx # 兼容旧调用的成员/Bot item，样式仍走同一 token
 └── index.ts           # 统一导出
 ```
 
-`MemberListItem` 是唯一标准成员项，适用于：
+`MemberIdentity` / `MemberRow` 是新 UI 的标准成员项；`MemberListItem` 只作为旧调用兼容层保留，但必须复用同一套 `an-member-*` 样式。适用于：
 
 - 频道成员列表
 - 好友列表
@@ -232,7 +233,7 @@ components/members/
 - 设置页里的成员角色行
 - 记忆面板里的成员列表
 
-禁止在新 UI 中重新手写头像、首字母、Bot 标签、当前用户“我”标识、成员行 hover/selected 状态。需要新形态时扩展 `MemberListItem` props 或样式变体。
+禁止在新 UI 中重新手写头像、首字母、Bot 标签、当前用户“我”标识、成员行 hover/selected 状态。需要新形态时优先扩展 `MemberIdentity` / `MemberRow` props 或 `an-member-*` 样式变体。
 
 ### `components/icons/`
 
@@ -305,7 +306,7 @@ frontend/src/
 └── NotificationPanel.tsx # 通知面板
 ```
 
-页面级组件可以组织完整业务流程，但不应复制共享视觉组件。`MemoryPage` 和 `MemoryPanel` 的成员展示都应走 `MemberListItem`，搜索都应走 `SearchPicker`。
+页面级组件可以组织完整业务流程，但不应复制共享视觉组件。`MemoryPage` 和 `MemoryPanel` 的成员展示都应走 `MemberIdentity` / `MemberRow` 或兼容的 `MemberListItem`，搜索都应走 `SearchPicker`。
 
 ## 统一搜索组件
 
@@ -320,7 +321,7 @@ components/
     ├── SearchFilters.tsx            # 类型筛选 chips
     ├── SearchHighlight.tsx          # 命中文本高亮
     ├── SearchResultGroup.tsx        # 分组标题与列表
-    ├── SearchResultItem.tsx         # 各类型结果行，用户/Bot 复用 MemberListItem
+    ├── SearchResultItem.tsx         # 各类型结果行，用户/Bot 复用 MemberIdentity
     ├── SearchScopeMenu.tsx          # 搜索范围切换菜单
     └── searchResultUtils.ts         # 结果 label、subtitle、key 等纯函数
 ```
@@ -344,15 +345,29 @@ components/
 - 通过 `context` 表达业务场景。
 - 通过 `types` 控制结果类型，如 `users,bots,files,messages`。
 - 通过 `workspace_id`、`channel_id` 控制搜索范围。
-- 搜索结果中的用户/Bot 必须复用 `MemberListItem`。
+- 搜索结果中的用户/Bot 必须复用 `MemberIdentity`，保持头像、主副标题、徽标和 action 布局一致。
 - 文件结果使用 `FileTypeIcon`。
 - 消息结果保留频道、发送人、片段展示。
 
 ## 统一成员项
 
-`MemberListItem` 是成员、好友、Bot 的唯一标准 item。
+`MemberIdentity` / `MemberRow` 是成员、好友、Bot 的标准 item；`MemberListItem` 是旧调用兼容组件。
 
 核心 props：
+
+| Prop | 用途 |
+|------|------|
+| `member` | 标准成员对象，支持 `member_id` / `user_id` / `bot_id` |
+| `kind` | 可覆盖成员类型：`user` / `bot` / `system` |
+| `avatarSize` | 头像尺寸 |
+| `badge` | 额外标签，如状态 chip；默认按成员类型显示 |
+| `meta` | 附加元信息，如 Bot scope/owner |
+| `action` | 右侧按钮或 select |
+| `leading` | 左侧选择框等控件 |
+| `active` | 选中状态 |
+| `as` | `article` / `button` / `div` / `span` |
+
+`MemberListItem` 兼容 props：
 
 | Prop | 用途 |
 |------|------|
@@ -372,6 +387,12 @@ components/
 | `self` | 当前用户态，显示“我”标识 |
 | `variant` | `panel` / `card` |
 | `compact` | 紧凑模式 |
+
+样式要求：
+
+- 头像、成员名、副标题、元信息、徽标、行 hover/focus/active/disabled 都统一走 `an-member-*` 和 `an-row-card`。
+- 成员行内的普通操作使用 `an-btn an-btn-sm`，危险操作使用 `an-btn an-btn-danger an-btn-sm`，select 使用 `an-select`。
+- 搜索弹层里的用户/Bot 行不得单独写头像或 badge，应由 `SearchResultItem` 复用 `MemberIdentity`。
 
 使用规则：
 
@@ -393,6 +414,7 @@ index.css             # Tailwind 入口和全局基础样式
 
 - 优先使用 `design-tokens.css` 中的变量：`--bg-*`、`--fg-*`、`--border`、`--accent` 等。
 - 通用组件样式写入 `design-tokens.css`。
+- 搜索、成员项、按钮、表单控件、弹窗列表必须优先使用 `.an-search-*`、`.an-member-*`、`.an-row-card`、`.an-btn`、`.an-input` / `.an-select`。
 - 只属于单个复杂组件的样式可局部保留，但不要复制已有 token。
 - 避免新增散落的硬编码色值；确需新增时应先判断是否属于设计 token。
 - 不要为了单个按钮、头像或行项新增一套临时 class。
@@ -453,7 +475,7 @@ types/
 1. 是路由页面吗？放 `frontend/src/*Page.tsx`，并在 `main.tsx` 注册。
 2. 是主聊天工作台布局壳吗？放 `components/app/`。
 3. 是完整业务弹窗或业务面板吗？放 `components/`。
-4. 是成员、好友、Bot 行吗？扩展 `components/members/MemberListItem.tsx`。
+4. 是成员、好友、Bot 行吗？扩展 `components/members/MemberIdentity.tsx` / `MemberRow`；旧兼容才改 `MemberListItem.tsx`。
 5. 是搜索框或搜索结果吗？扩展 `components/SearchPicker.tsx`。
 6. 是图标吗？放 `components/icons/` 并从 `components/icons/index.ts` 导出。
 7. 是纯函数、格式化、数据转换吗？放 `lib/`。
@@ -464,10 +486,10 @@ types/
 新增或改造 UI 时按以下优先级复用：
 
 1. `SearchPicker`：所有搜索入口。
-2. `MemberListItem`：所有用户、好友、成员、Bot item。
+2. `MemberIdentity` / `MemberRow`：所有用户、好友、成员、Bot item；旧代码可用兼容的 `MemberListItem`。
 3. `Modal` / `ModalFooter`：所有标准弹窗。
 4. `AppIcon` / `FileTypeIcon`：所有图标。
-5. `BotAvatar`：Bot 头像大尺寸、品牌化展示；普通 Bot 行优先 `MemberListItem`。
+5. `BotAvatar`：Bot 头像大尺寸、品牌化展示；普通 Bot 行优先 `MemberIdentity` / `MemberRow`。
 6. `design-tokens.css`：颜色、间距、状态、按钮、搜索、成员项样式。
 
 ## 禁止事项
