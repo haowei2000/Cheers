@@ -7,7 +7,7 @@ import {
 } from "@heroicons/react/24/solid";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
-import { MessageMarkdown } from "../MessageMarkdown";
+import { ChatMessageRenderer } from "./ChatMessageRenderer";
 import { BotAvatar } from "./BotAvatar";
 import { TopicComposer } from "./TopicComposer";
 import type {
@@ -205,9 +205,9 @@ export function TopicPage({
                 wordWrap: "break-word",
               }}
             >
-              {renderAttachments?.(m)}
-              <MessageMarkdown
-                text={stripThinkTags(m.content || "")}
+              <ChatMessageRenderer
+                attachments={renderAttachments?.(m)}
+                content={stripThinkTags(m.content || "")}
                 onImageClick={onImageClick}
                 onFileClick={onFileClick}
               />
