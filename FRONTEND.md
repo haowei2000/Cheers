@@ -88,11 +88,21 @@ App.tsx
 ├── ImageLightbox
 ├── HelpModal
 └── SettingsModal
-    ├── SearchPicker
+    ├── BotPane
+    │   ├── BotListSubPane
+    │   │   ├── BotAvatar
+    │   │   ├── BotSessionsPanel
+    │   │   └── ModelBrandCard
+    │   ├── TemplateListSubPane
+    │   └── ModelListSubPane
     ├── FriendsPane
-    ├── MemberListItem
-    ├── BotAvatar
-    └── BotSessionsPanel
+    │   ├── SearchPicker
+    │   └── MemberListItem
+    ├── AccountPane
+    │   └── ProfilePane
+    ├── AppearancePane
+    ├── BulletinPane
+    └── KeychainPane
 ```
 
 `App.tsx` 可以继续负责状态聚合、路由同步、WebSocket、消息窗口和跨面板协调。新 UI 代码如果可以独立复用，应优先放到 `components/app/` 或 `components/`，不要继续扩大 `App.tsx`。
@@ -108,8 +118,20 @@ App.tsx
 ```text
 features/
 └── settings/
+    ├── account/
+    │   └── AccountPane.tsx         # 账户资料、头像上传、密码修改、钥匙链
+    ├── appearance/
+    │   └── AppearancePane.tsx      # 主题和界面密度
+    ├── bulletin/
+    │   └── BulletinPane.tsx        # 留言板 Issue 列表、创建、状态切换
+    ├── bots/
+    │   └── BotPane.tsx             # Bot 列表、新建、编辑、在线检测、模型/模板 tab
     ├── friends/
     │   └── FriendsPane.tsx          # 好友列表、申请、黑名单、添加好友
+    ├── models/
+    │   └── ModelListSubPane.tsx     # LLM 模型列表、创建、编辑、删除、模型品牌卡
+    ├── templates/
+    │   └── TemplateListSubPane.tsx  # Prompt 模板列表、创建、编辑、删除
     └── shared/
         └── SettingsControls.tsx     # 设置页共享 Field/Button/input 样式
 ```
@@ -119,6 +141,9 @@ features/
 - 只放有明确业务域的组件、hooks、api 和局部类型。
 - 一个 feature 可以复用 `shared`/`components` 的通用 UI，但不要反向依赖别的 feature 内部实现。
 - 从大文件迁移时优先切出完整业务闭环，如 `settings/friends`、`settings/bots`、`memory/files`。
+- `SettingsModal` 是设置页壳层：只持有顶层导航、Bot 列表加载、主题密度状态，不内联具体 pane 实现。
+- `settings/bots` 拥有 Bot 设置入口和 `BotRow` 类型；`SettingsModal` 只负责加载 Bot 列表并把数据传入 `BotPane`。
+- `settings/models` 拥有模型管理闭环，并导出 `ModelBrandCard` / `modelBrandName` 给 Bot 创建与编辑复用。
 - feature 内如果出现第二个可跨 feature 复用的组件，应再下沉到 `components/` 或未来的 `shared/ui/`。
 
 ### `components/app/`
