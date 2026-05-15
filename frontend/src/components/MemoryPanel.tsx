@@ -4,6 +4,7 @@ import { MessageMarkdown } from "../MessageMarkdown";
 import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
+import { downloadProtectedFile } from "../lib/protected-file";
 import { getAuthToken as getStoredToken } from "../api";
 import { AppIcon, FileTypeIcon } from "./icons";
 import { InviteMemberSearch } from "./InviteMemberSearch";
@@ -1293,14 +1294,20 @@ export function MemoryPanel({
                         </p>
                       )}
                     </div>
-                    <a
-                      href={`${API}/files/${f.file_id}/download`}
-                      onClick={(event) => event.stopPropagation()}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        downloadProtectedFile(
+                          `${API}/files/${f.file_id}/download`,
+                          f.original_filename || f.file_id,
+                        ).catch(() => toast.error("文件下载失败"));
+                      }}
                       className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
                       title="下载文件"
                     >
                       <AppIcon name="download" className="w-4 h-4" />
-                    </a>
+                    </button>
                   </div>
                 );
               })}

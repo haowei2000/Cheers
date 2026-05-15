@@ -102,8 +102,8 @@ class HttpBotAdapter(BotAdapter):
             if attachment.get("file_id"):
                 attrs += f' file_id="{attachment["file_id"]}"'
             lines = [f"  <file {attrs}>"]
-            if attachment.get("download_url"):
-                lines.append(f"    <download_url>{attachment['download_url']}</download_url>")
+            if attachment.get("preview_url"):
+                lines.append(f"    <preview_url>{attachment['preview_url']}</preview_url>")
             if attachment.get("summary"):
                 lines.append(f"    <summary>{attachment['summary']}</summary>")
             content = attachment.get("content") or ""
