@@ -127,11 +127,15 @@ export function ChannelHeader({
           {activeDm ? (
             <>
               <span className="an-hash">
-                {activeDm.counterparty.member_type === "bot"
-                  ? "⦿"
-                  : activeDm.counterparty.member_type === "system"
-                    ? "◎"
-                    : "@"}
+                <AppIcon
+                  name={
+                    activeDm.counterparty.member_type === "bot"
+                      ? "bot"
+                      : activeDm.counterparty.member_type === "system"
+                        ? "admin"
+                        : "user"
+                  }
+                />
               </span>
               <span>
                 {activeDm.counterparty.display_name ||
@@ -141,7 +145,9 @@ export function ChannelHeader({
             </>
           ) : (
             <>
-              <span className="an-hash">#</span>
+              <span className="an-hash">
+                <AppIcon name="channel" />
+              </span>
               <span>{channel?.name || ""}</span>
             </>
           )}

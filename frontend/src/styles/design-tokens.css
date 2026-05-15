@@ -220,6 +220,13 @@
 .an-mem-cluster .an-mc-btn:hover { color: var(--fg-1); background: var(--surface-soft); }
 .an-mem-cluster .an-mc-btn.on { color: var(--accent); background: var(--accent-muted); }
 .an-mem-cluster .an-mc-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+.an-head [data-app-icon],
+.an-rail-row [data-app-icon],
+.an-rail-foot [data-app-icon],
+.an-menu-item [data-app-icon] {
+  stroke-width: 1.85;
+  color: currentColor;
+}
 .an-mem-cluster .an-mc-btn .an-mc-n { font-size: 10px; font-weight: 600; opacity: 0.75; }
 .an-mem-cluster .an-mc-btn .an-mc-label { font-weight: 500; }
 
@@ -838,10 +845,12 @@
 .an-rail-row .an-sigil {
   width: 14px;
   color: var(--fg-3);
-  text-align: center;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 14px;
 }
+.an-rail-row .an-sigil svg { width: 13px; height: 13px; }
 .an-rail-row.active .an-sigil { color: var(--accent); }
 .an-rail-row .an-name {
   flex: 1;
@@ -943,10 +952,16 @@
   color: var(--fg-1);
   letter-spacing: -0.01em;
   display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
 }
-.an-head .an-title .an-hash { color: var(--fg-3); font-weight: 400; }
+.an-head .an-title .an-hash {
+  color: var(--fg-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.an-head .an-title .an-hash svg { width: 16px; height: 16px; }
 .an-head .an-sub { font-size: 12px; color: var(--fg-3); }
 
 /* ——— Modal shell (used by Settings modal) ——— */
