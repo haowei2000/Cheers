@@ -58,10 +58,12 @@ App.tsx
 │   │   └── SearchPicker
 │   └── ChannelMainFrame
 │       ├── ChannelHeader
-│       ├── ChatMessageRenderer
-│       │   ├── MessageMarkdown
-│       │   ├── ChatAttachments
+│       ├── ChatMessageList
+│       │   ├── ChatMessageRenderer
+│       │   │   ├── MessageMarkdown
+│       │   │   └── ChatAttachments
 │       │   ├── SecretMessageVeil
+│       │   ├── AgentBridgeTaskCard
 │       │   ├── BotAvatar
 │       │   └── ClarifyInlineBlock
 │       ├── MessageComposer
@@ -126,6 +128,7 @@ features/
 ├── chat/
 │   └── messages/
 │       ├── AgentBridgeTaskCard.tsx  # Agent Bridge 后台任务消息卡
+│       ├── ChatMessageList.tsx      # 虚拟消息列表、特殊消息卡和话题回复渲染
 │       └── SecretMessageVeil.tsx    # 加密消息遮罩与过期倒计时 helper
 ├── memory/
 │   ├── editor/
