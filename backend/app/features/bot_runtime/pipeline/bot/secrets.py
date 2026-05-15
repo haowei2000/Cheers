@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import KeychainItem
 from app.utils.crypto import decrypt_value
 
-# 匹配 $secret{name} 语法
+# Match $secret{name} syntax.
 _SECRET_REF_PATTERN = re.compile(r'\$secret\{([^}]+)\}')
 
 
@@ -23,7 +23,7 @@ def replace_secret_refs(text: str, secrets: Dict[str, str]) -> str:
         name = match.group(1)
         if name in secrets:
             return secrets[name]
-        return match.group(0)  # 如果密钥不存在，保留原样
+        return match.group(0)  # Preserve the original text when the key does not exist.
 
     return _SECRET_REF_PATTERN.sub(_replacer, text)
 

@@ -17,8 +17,8 @@ from app.db.models import BotAccount
 from app.services.auth.password_utils import hash_password, verify_password
 
 _TOKEN_PREFIX = "agb_"
-_PREFIX_LEN = 8            # 索引前缀长度（含 "agb_"）
-_TOKEN_BYTES = 32          # 不含前缀的熵（≈43 chars base64url）
+_PREFIX_LEN = 8            # Indexed prefix length, including "agb_".
+_TOKEN_BYTES = 32          # Entropy excluding the prefix, roughly 43 base64url chars.
 
 
 def generate_bot_token() -> str:

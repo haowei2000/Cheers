@@ -1,4 +1,4 @@
-"""文件解析能力：支持 txt / md / html / docx / pdf，供文件推理链路复用。"""
+"""File parsing support for txt / md / html / docx / pdf inference flows."""
 from __future__ import annotations
 
 import io
@@ -29,12 +29,12 @@ SUPPORTED_IMAGE_TYPES: dict[str, set[str]] = {
     ".gif":  {"image/gif"},
 }
 
-# 所有支持类型合集，用于 presign 校验
+# Combined supported types for presign validation.
 ALL_SUPPORTED_TYPES: dict[str, set[str]] = {**SUPPORTED_DOCUMENT_TYPES, **SUPPORTED_IMAGE_TYPES}
 
 
 def is_image_type(content_type_or_suffix: str) -> bool:
-    """判断 MIME 类型或文件扩展名是否为图片类型。"""
+    """Return whether a MIME type or file extension is an image type."""
     s = content_type_or_suffix.lower()
     return s in SUPPORTED_IMAGE_TYPES or s in {
         mime for mimes in SUPPORTED_IMAGE_TYPES.values() for mime in mimes
@@ -42,16 +42,16 @@ def is_image_type(content_type_or_suffix: str) -> bool:
 
 
 class FileParseError(Exception):
-    """文件解析失败。"""
+    """File parsing failed."""
 
 
 class UnsupportedFileTypeError(FileParseError):
-    """文件类型不支持。"""
+    """File type is unsupported."""
 
 
 @dataclass(frozen=True)
 class ParsedDocument:
-    """统一的文件解析结果。"""
+    """Unified file parsing result."""
 
     text: str
     summary: str
@@ -67,7 +67,7 @@ def parse_document_bytes(
     content_type: str | None = None,
     max_chars: int = 12000,
 ) -> ParsedDocument:
-    """将上传文件解析为纯文本，必要时进行长度截断。"""
+    """Parse an uploaded file into plain text and truncate it when needed."""
 
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_DOCUMENT_TYPES:
@@ -111,7 +111,7 @@ def parse_document_bytes(
 
 
 def to_markdown(file_path: str | Path, *, max_chars: int = 12000) -> str:
-    """兼容旧接口：从本地路径读取后解析为纯文本。"""
+    """Compatibility API: parse a local path into plain text."""
 
     path = Path(file_path)
     if not path.exists():

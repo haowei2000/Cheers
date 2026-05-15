@@ -66,7 +66,7 @@ async def websocket_user(websocket: WebSocket, user_id: str) -> None:
         logger.info("ws.connect user_id=%s", user_id)
         try:
             while True:
-                # 客户端一般不会主动给用户通道发消息，保持接收仅用于心跳/空转。
+                # Clients usually do not send on user channels; keep receive open for heartbeat/idle traffic.
                 await websocket.receive_text()
         except WebSocketDisconnect:
             logger.info("ws.disconnect user_id=%s", user_id)

@@ -13,7 +13,7 @@ def get_http_client() -> httpx.AsyncClient:
 async def init_http_client() -> None:
     global _client
     _client = httpx.AsyncClient(
-        timeout=None,  # 由调用方按请求传入 timeout
+        timeout=None,  # Callers pass per-request timeouts.
         limits=httpx.Limits(
             max_connections=100,
             max_keepalive_connections=20,

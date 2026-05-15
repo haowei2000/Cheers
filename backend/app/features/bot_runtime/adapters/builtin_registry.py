@@ -14,9 +14,9 @@ from app.features.bot_runtime.adapters.base import BotAdapter
 from app.features.bot_runtime.adapters.coordinator import ChannelBotAdapter
 from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 
-# 工厂必须零参：内置 Bot 运行时不读取 DB 中的 AIModel / PromptTemplate。
+# Factories must be zero-argument; built-in bots do not read AIModel/PromptTemplate from the DB at runtime.
 BUILTIN_BOT_ADAPTERS: dict[str, Callable[[], BotAdapter]] = {
-    # @Helper —— 帮助 / 协作 / 记忆管理三合一（adapter 类名保留历史命名 ChannelBotAdapter）
+    # @Helper combines help, collaboration, and memory management; the adapter class keeps its legacy name.
     HELPER_BOT_ID: ChannelBotAdapter,
 }
 

@@ -1,4 +1,4 @@
-"""MemoryManager / Context Store 单测."""
+"""Unit tests for MemoryManager / Context Store."""
 from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
@@ -15,7 +15,7 @@ from app.features.memory.manager import build_system_prompt_prefix
 
 @pytest.mark.asyncio
 async def test_context_store_init_and_read_write() -> None:
-    # 强制重置全局状态以确保测试隔离
+    # Force-reset global state to keep the test isolated.
     with (
         patch("app.config.settings.context_db_url", new="sqlite+aiosqlite:///:memory:"),
         patch("app.features.memory.context_store._engine", new=None),

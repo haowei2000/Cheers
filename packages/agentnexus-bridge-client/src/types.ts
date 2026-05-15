@@ -1,8 +1,10 @@
 /**
- * AgentNexus bridge WebSocket protocol —— 与 backend/app/api/v1/agent_bridge/routes.py
- * 保持对齐。如果服务端协议变化，这里的类型也要同步更新。
+ * AgentNexus bridge WebSocket protocol. Keep this aligned with
+ * backend/app/api/v1/agent_bridge/routes.py. Update these types whenever the
+ * server protocol changes.
  *
- * Bot 的每个 WS 连接（control / data）只代表一个 AgentNexus bot_id；鉴权用 bot token。
+ * Each bot WebSocket connection (control / data) represents exactly one
+ * AgentNexus bot_id and authenticates with the bot token.
  */
 
 // ============ Close codes ============
@@ -253,7 +255,7 @@ export interface DeltaFrame {
  *
  *  `file_ids` lets the plugin attach binary outputs (uploaded via the
  *  /agent-bridge/files/upload-binary HTTP route while the stream was in
- *  flight) to the same finalized message — so a "正在打字 → 文件浮现" UX
+ *  flight) to the same finalized message — so a typing-to-file-reveal UX
  *  shows up as a single bot reply, not text + a separate media message. */
 export interface DoneFrame {
   type: "done";

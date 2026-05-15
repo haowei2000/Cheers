@@ -7,7 +7,7 @@ const stub = `${here}test/sdk-stubs.ts`;
 export default defineConfig({
   resolve: {
     alias: {
-      // OpenClaw SDK 在运行时由 CLI 的 node_modules 提供；测试里给最小空实现
+      // The OpenClaw SDK is provided by the CLI node_modules at runtime; tests use a minimal stub.
       "openclaw/plugin-sdk/channel-core": stub,
       "openclaw/plugin-sdk/conversation-runtime": stub,
     },

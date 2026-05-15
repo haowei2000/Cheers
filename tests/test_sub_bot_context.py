@@ -66,7 +66,7 @@ def _make_run_ctx(*, memory_context: dict[str, str], adapter: BotAdapter) -> Bot
 @pytest.mark.asyncio
 async def test_call_bot_passes_memory_context():
     """验证 call_bot 工具正确传递四层记忆给子 Bot。"""
-    # 模拟完整的四层记忆上下文
+    # Mock the full four-layer memory context.
     memory_context = {
         "anchor": "项目目标：构建协作平台",
         "decisions": "决策 1: 使用 SQLite\n决策 2: 采用四层记忆架构",
@@ -92,7 +92,7 @@ async def test_call_bot_passes_memory_context():
     assert len(sub_adapter.payloads) == 1
     call_args = sub_adapter.payloads[0]
 
-    # 验证四层记忆被正确传递给子 Bot
+    # Verify the four-layer memory context is passed to the sub-bot.
     assert isinstance(call_args, AgentPayload)
     assert call_args.memory_context == memory_context
     assert call_args.memory_context["anchor"] == "项目目标：构建协作平台"
@@ -100,7 +100,7 @@ async def test_call_bot_passes_memory_context():
     assert call_args.memory_context["files_index"] == "file-001: 需求文档.md - 系统需求规格说明"
     assert call_args.memory_context["recent"] == "用户 A: 怎么创建项目？\nBot: 点击左上角 + 号..."
 
-    # 验证返回结果包含子 Bot 的回复
+    # Verify the result contains the sub-bot reply.
     assert "@codebot 回复：" in result
     assert "基于项目锚点" in result
 
@@ -150,7 +150,7 @@ async def test_http_bot_receives_memory_as_template_vars():
     from app.db.models import AIModel, BotAccount, PromptTemplate
     from app.features.bot_runtime.adapters.http_bot import HttpBotAdapter
 
-    # 创建测试 Bot（使用记忆变量的模板）
+    # Create a test bot that uses a template with the memory variable.
     model = AIModel(
         model_id="model-test",
         name="Test Model",
@@ -177,7 +177,7 @@ async def test_http_bot_receives_memory_as_template_vars():
 
     adapter = HttpBotAdapter(bot)
 
-    # 准备带四层记忆的 payload
+    # Prepare a payload with four-layer memory.
     memory_context = {
         "anchor": "锚点内容",
         "decisions": "决策内容",
@@ -185,7 +185,7 @@ async def test_http_bot_receives_memory_as_template_vars():
         "recent": "近期动态内容",
     }
 
-    # 验证_build_messages 会通过 {{memory}} 渲染记忆
+    # Verify _build_messages renders memory through {{memory}}.
     from app.features.bot_runtime.adapters.prompt_template import render_memory_context
 
     messages = adapter._build_messages("你好", {"memory": render_memory_context(memory_context)})

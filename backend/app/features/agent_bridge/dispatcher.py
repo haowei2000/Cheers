@@ -24,8 +24,8 @@ _QUEUE_MAXSIZE = 100
 @dataclass(eq=False)
 class _Subscriber:
     queue: asyncio.Queue
-    # None = 接收全部（内部/调试用）；frozenset = 仅接收这些 bot_id 的事件；
-    # 空集合 = 不接收任何事件（可用于 WS 握手中间态）。
+    # None receives everything for internal/debug use; frozenset receives only those bot_ids.
+    # An empty set receives no events and can be used during WS handshake setup.
     bot_ids: frozenset[str] | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 

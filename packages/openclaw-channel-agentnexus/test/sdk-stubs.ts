@@ -1,7 +1,8 @@
 /**
- * Vitest 运行时用的 SDK 最小桩 —— tsc 用 src/openclaw-sdk.d.ts 的 ambient
- * 类型就够了，但 vitest 通过 esbuild 实际要解析模块；生产运行时由 openclaw CLI
- * 的 node_modules 提供真 SDK，测试里给个空壳即可让模块图解析成功。
+ * Minimal SDK stub for Vitest runtime. tsc only needs the ambient types from
+ * src/openclaw-sdk.d.ts, but Vitest resolves modules through esbuild. Production
+ * runtime gets the real SDK from the OpenClaw CLI node_modules; tests only need
+ * an empty shell so the module graph resolves.
  */
 export function createChannelPluginBase<T>(opts: unknown): T {
   return opts as T;

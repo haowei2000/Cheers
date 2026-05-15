@@ -19,7 +19,7 @@ from app.db.session import async_session_factory
 from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS, HELPER_BOT_ID
 from app.services.auth.password_utils import hash_password, verify_password
 
-# 固定 ID，便于文档与脚本引用
+# Stable IDs make documentation and scripts easier to reference.
 WORKSPACE_ID = "ws-default-001"
 CHANNEL_ID = "ch-seed-001"
 ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
@@ -203,12 +203,12 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
 
 
 async def _seed_memberships(session: AsyncSession) -> bool:
-    """创建频道成员关系（内置 Bot + 管理员）."""
+    """Create channel memberships for built-in bots and the administrator."""
     did_write = False
 
-    # session 配置为 autoflush=False，先手动 flush 一次，
-    # 让前面已 session.add 的 membership 对下面的 SELECT 可见，
-    # 否则会造成同一事务内重复插入 → UniqueViolation → 整个 seed 回滚
+    # The session uses autoflush=False, so flush once manually.
+    # This makes previously added memberships visible to later SELECT statements.
+    # Otherwise duplicate inserts in the same transaction can trigger UniqueViolation and roll back the seed.
     await session.flush()
 
     default_members = [(bot_id, "bot") for bot_id in BUILTIN_BOT_IDS] + [(ADMIN_USER_ID, "user")]
@@ -259,8 +259,8 @@ async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
         )
     ).all()
     for membership, channel in dm_builtin_rows:
-        # 保留用户主动创建的一对一 Bot DM，例如 user <-> Coordinator；
-        # 只移除自动注入到其他 DM 的内置 Bot。
+        # Keep one-to-one bot DMs explicitly created by users, such as user <-> Coordinator.
+        # Only remove built-in bots that were automatically injected into other DMs.
         if membership.member_id not in _dm_name_members(channel.name):
             await session.delete(membership)
 
@@ -336,7 +336,7 @@ async def ensure_builtin_bot() -> None:
             await _seed_helper_bot(session)
             await _sync_admin_credentials(session)
 
-            # 确保内置 Bot 只补齐到普通频道；DM 私聊不自动添加 Coordinator。
+            # Only backfill built-in bots into regular channels; DMs do not automatically receive Coordinator.
             await _ensure_builtin_bot_memberships(session)
 
             await session.commit()

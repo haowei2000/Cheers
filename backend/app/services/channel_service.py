@@ -381,14 +381,14 @@ class ChannelService:
 
         added_user_ids = set()
         if type in WORKSPACE_CHANNEL_TYPES:
-            # 内置 Bot 自动加入工作空间频道；私有频道和 DM 不自动注入 Helper。
+            # Built-in bots automatically join workspace channels; private channels and DMs do not receive Helper.
             from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
 
             for bot_id in BUILTIN_BOT_IDS:
                 if not await self.repo.get_membership(ch.channel_id, bot_id):
                     await self.repo.add_member(ch.channel_id, bot_id, "bot")
 
-            # 工作空间所有成员自动加入 workspace 频道。
+            # All workspace members automatically join workspace channels.
             ws_members = await self.ws_repo.list_members(workspace_id)
             for wm in ws_members:
                 if not await self.repo.get_membership(ch.channel_id, wm.user_id):
@@ -402,7 +402,7 @@ class ChannelService:
                     await self.repo.add_member(ch.channel_id, wm.user_id, "user", role=role)
                 added_user_ids.add(wm.user_id)
 
-        # 若创建者不在工作空间成员中
+        # If the creator is not currently a workspace member.
         if creator and creator.user_id not in added_user_ids:
             if not await self.repo.get_membership(ch.channel_id, creator.user_id):
                 role = "owner" if type != "dm" else "member"
@@ -423,14 +423,15 @@ class ChannelService:
 
     async def delete(self, channel_id: str, current_user: User) -> None:
         ch = await self.get_or_404(channel_id)
-        # 仅工作空间 owner/admin 可删除频道
+        # Only workspace owners/admins may delete channels.
         wm = await self.ws_repo.get_membership(ch.workspace_id, current_user.user_id)
         if not is_admin(current_user) and (not wm or wm.role not in ("owner", "admin")):
             raise ForbiddenError("只有工作空间管理员可以删除频道")
 
-        # 频道删除要先清理所有带 channels 外键的附属数据。Postgres 会严格
-        # 拒绝删除仍被 AgentNexus session binding / todo / profile 等引用的
-        # 频道；这里保持删除入口自己兜底，而不依赖每张表都配置 DB cascade。
+        # Channel deletion first removes dependent rows that reference channels.
+        # PostgreSQL strictly rejects deletes while session bindings, todos, profiles,
+        # or similar rows still reference the channel, so this endpoint handles cleanup
+        # instead of relying on every table to define database cascades.
         binding_condition = or_(
             AgentNexusSessionBinding.channel_id == channel_id,
             and_(
@@ -464,8 +465,9 @@ class ChannelService:
                 )
             )
 
-        # 这些表没有全部挂 channels 外键，但属于频道运行态/记忆态数据；
-        # 不清理会导致搜索、后台任务、记忆页看到已删除频道的残影。
+        # Some of these tables do not have channel foreign keys, but they still belong
+        # to channel runtime/memory state. Leaving them would leak deleted channels into
+        # search, background tasks, and memory pages.
         await self.session.execute(
             delete(BotRun).where(BotRun.channel_id == channel_id)
         )
@@ -490,7 +492,7 @@ class ChannelService:
             delete(ChannelUnreadCount).where(ChannelUnreadCount.channel_id == channel_id)
         )
 
-        # 级联删除成员、消息、文件记录
+        # Cascade-delete memberships, messages, and file records.
         for membership in await self.repo.list_memberships(channel_id):
             await self.session.delete(membership)
         msgs = await self.session.execute(select(Message).where(Message.channel_id == channel_id))

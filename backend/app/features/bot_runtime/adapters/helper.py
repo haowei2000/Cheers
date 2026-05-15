@@ -17,12 +17,12 @@ logger = logging.getLogger("app.features.bot_runtime.adapters.help_bot")
 HISTORY_MSG_COUNT = 20
 HISTORY_MSG_MAX_CHARS = 500
 
-# 项目根目录（backend/app/services/adapters/ -> backend/app/services/ -> backend/app/ -> backend/ -> AgentNexus/）
+# Project root path from this adapter module.
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
-# docs/help/ 在项目根目录下（backend/ -> AgentNexus/ -> docs/help/）
+# docs/help lives under the project root.
 _DOCS_DIR = _BACKEND_ROOT / "docs" / "help"
 
-# 缓存加载的文档内容
+# Cache loaded documentation content.
 _cached_docs: str | None = None
 
 
@@ -69,7 +69,7 @@ def _get_llm_config() -> dict | None:
         cfg = get_provider_for_scope(scope)
         if cfg and cfg.get("base_url") and cfg.get("model"):
             return cfg
-    # 回退到 helper_llm_* 环境变量（无需管理界面配置即可使用）
+    # Fall back to helper_llm_* environment variables when admin settings are absent.
     if settings.helper_llm_base_url and settings.helper_llm_model:
         return {
             "base_url": settings.helper_llm_base_url.rstrip("/"),
@@ -233,10 +233,10 @@ class HelpBotAdapter(BotAdapter):
         trigger_msg_id = trigger_meta.get("msg_id")
         sender_id = payload.message.sender_id
 
-        # ── 加载帮助文档 ────────────────────────────────────────────────────────
+        # Load help documents.
         docs_content = get_help_docs()
 
-        # ── 构建 System Prompt ────────────────────────────────────────────────
+        # Build the system prompt.
         system_prompt = "\n\n".join(
             [
                 (
@@ -292,7 +292,7 @@ class HelpBotAdapter(BotAdapter):
             ]
         )
 
-        # ── 加载历史消息 ──────────────────────────────────────────────────────
+        # Load message history.
         chat_history: list = []
         current_user_name = ""
 
@@ -300,7 +300,7 @@ class HelpBotAdapter(BotAdapter):
             try:
                 import asyncio
 
-                # _fetch_user_display_name 定义在文件底部，Python 运行时查找不影响调用
+                # _fetch_user_display_name is defined later; runtime lookup still resolves it.
                 results = await asyncio.gather(
                     _fetch_recent_history(db_session, channel_id, trigger_msg_id),
                     _fetch_user_display_name(db_session, sender_id),
@@ -311,13 +311,13 @@ class HelpBotAdapter(BotAdapter):
             except Exception:
                 logger.warning("help_bot: context fetch failed channel=%s", channel_id)
 
-        # ── 构建用户消息 ───────────────────────────────────────────────────────
+        # Build the user message.
         if current_user_name:
             user_content = f"[{current_user_name}]: {user_text}"
         else:
             user_content = user_text
 
-        # ── 调用 LLM (stream Delta tokens directly) ────────────────────────────
+        # Call the LLM and stream delta tokens directly.
         full_content = ""
         async for delta_text, final_text in _stream_llm(system_prompt, user_content, history=chat_history):
             if delta_text:

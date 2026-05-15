@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-前后端 API 一致性检查脚本。
+Frontend/backend API consistency checker.
 
-用法:
+Usage:
     cd backend && uv run python ../scripts/check_api_consistency.py
 
-原理:
-    1. 导入 FastAPI app，调用 app.openapi() 获取全部后端路由
-    2. 正则扫描 frontend/src/*.tsx 提取全部 fetch/authFetch 调用
-    3. 路径规范化后交叉比对，输出不一致项
+Approach:
+    1. Import the FastAPI app and call app.openapi() to collect backend routes.
+    2. Scan frontend/src/*.tsx with regexes to extract fetch/authFetch calls.
+    3. Normalize paths, compare both sides, and report inconsistencies.
 
-退出码: 0 = 全部通过, 1 = 存在问题
+Exit code: 0 = all checks passed, 1 = issues found.
 """
 from __future__ import annotations
 
@@ -19,40 +19,41 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# ── 路径常量 ──────────────────────────────────────────────────────────────────
+# ── Path constants ───────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BACKEND_DIR = PROJECT_ROOT / "backend"
 FRONTEND_SRC = PROJECT_ROOT / "frontend" / "src"
 
 
-# ── 路径规范化 ────────────────────────────────────────────────────────────────
+# ── Path normalization ───────────────────────────────────────────────────────
 
 def normalize_path(path: str) -> str:
-    """将路径规范化，用于前后端比对。
+    """Normalize a path for frontend/backend comparisons.
 
-    - 去掉 query string
-    - 去掉尾部 /
-    - 将所有参数占位符统一为 {_}
-      (后端: {channel_id}  前端: ${channelId} / ${todo.todo_id})
+    - Remove query strings.
+    - Remove trailing slashes.
+    - Normalize all parameter placeholders to {_}
+      (backend: {channel_id}; frontend: ${channelId} / ${todo.todo_id}).
     """
     path = path.split("?")[0]
     path = path.rstrip("/")
-    # JS 模板变量 ${...}
+    # JS template variables: ${...}
     path = re.sub(r"\$\{[^}]+\}", "{_}", path)
-    # OpenAPI 路径参数 {param}
+    # OpenAPI path parameters: {param}
     path = re.sub(r"\{[^}]+\}", "{_}", path)
     return path
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 后端路由提取
+# Backend route extraction
 # ══════════════════════════════════════════════════════════════════════════════
 
 def extract_backend_routes() -> set[tuple[str, str]]:
-    """从 FastAPI app.openapi() + app.routes 提取全部后端路由。
+    """Extract all backend routes from FastAPI app.openapi() and app.routes.
 
-    返回 set of (METHOD, path)，如 ("GET", "/api/v1/channels/{channel_id}/members")
+    Return a set of (METHOD, path), such as
+    ("GET", "/api/v1/channels/{channel_id}/members").
     """
     sys.path.insert(0, str(BACKEND_DIR))
 
@@ -68,14 +69,14 @@ def extract_backend_routes() -> set[tuple[str, str]]:
             if m in ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"):
                 routes.add((m, path))
 
-    # 2) WebSocket 路由（OpenAPI 不包含）
+    # 2) WebSocket routes, which OpenAPI does not include.
     from starlette.routing import WebSocketRoute  # type: ignore[import-untyped]
 
     def _walk_routes(route_list):
         for route in route_list:
             if isinstance(route, WebSocketRoute):
                 routes.add(("WEBSOCKET", route.path))
-            # Mount / Router 嵌套
+            # Nested Mount / Router entries.
             if hasattr(route, "routes"):
                 _walk_routes(route.routes)
 
@@ -85,12 +86,12 @@ def extract_backend_routes() -> set[tuple[str, str]]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 前端 API 调用提取
+# Frontend API call extraction
 # ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class FrontendCall:
-    file: str       # 相对于项目根的路径
+    file: str       # Path relative to the project root.
     line: int
     method: str     # GET / POST / PUT / PATCH / DELETE / WEBSOCKET
     raw_url: str
@@ -98,52 +99,52 @@ class FrontendCall:
     is_dynamic: bool = False
 
 
-# 提取 fetch/authFetch 的模板字面量 URL
+# Extract template literal URLs from fetch/authFetch calls.
 _RE_FETCH_TEMPLATE = re.compile(
     r"(?:auth)?[Ff]etch\(\s*`([^`]*)`", re.DOTALL
 )
-# 提取 fetch/authFetch 的普通字符串 URL
+# Extract regular string URLs from fetch/authFetch calls.
 _RE_FETCH_STRING = re.compile(
     r'(?:auth)?[Ff]etch\(\s*"([^"]*)"'
 )
-# 提取 new WebSocket 的模板字面量 URL
+# Extract template literal URLs from new WebSocket calls.
 _RE_WS = re.compile(
     r"new\s+WebSocket\(\s*`([^`]*)`"
 )
-# 提取 HTTP 方法
+# Extract HTTP methods.
 _RE_METHOD = re.compile(
     r'method:\s*["\'](\w+)["\']'
 )
-# 提取文件级 API 常量
+# Extract file-level API constants.
 _RE_API_CONST = re.compile(
     r'const\s+API\s*=\s*["\']([^"\']+)["\']'
 )
 
 
 def _resolve_api_const(content: str) -> str:
-    """解析文件中 const API = "..." 的值，默认 /api/v1。"""
+    """Resolve const API = "..." from the file; default to /api/v1."""
     m = _RE_API_CONST.search(content)
     return m.group(1) if m else "/api/v1"
 
 
 def _resolve_url(raw: str, api_base: str) -> tuple[str, bool]:
-    """将原始 URL 字符串解析为 (resolved_url, is_dynamic)。"""
-    # 替换 ${API} / ${WS_BASE} 等已知前缀
+    """Resolve a raw URL string into (resolved_url, is_dynamic)."""
+    # Replace known prefixes such as ${API} / ${WS_BASE}.
     resolved = raw.replace("${API}", api_base)
-    # WS_BASE 替换为空（我们只关心路径部分）
+    # Replace WS_BASE with an empty prefix because only the path matters here.
     resolved = re.sub(r"\$\{WS_BASE\}", "", resolved)
 
-    # 先去掉 query string（query 中的模板变量不影响路由匹配）
+    # Drop the query string first; query template variables do not affect routing.
     path_part = resolved.split("?")[0]
 
-    # 将路径中的 JS 模板变量替换为占位符
+    # Replace JS template variables in the path with placeholders.
     remaining = re.sub(r"\$\{[^}]+\}", "{_}", path_part)
 
-    # 如果路径不以 / 开头 → 纯动态
+    # Paths that do not start with / are fully dynamic.
     if not remaining.startswith("/"):
         return raw, True
 
-    # 检测路径段中混合了静态和动态的模式（如 /api/v1{_}）→ 纯动态
+    # Mixed static/dynamic path segments, such as /api/v1{_}, are fully dynamic.
     for part in remaining.split("/"):
         if part and "{_}" in part and part != "{_}":
             return raw, True
@@ -152,12 +153,13 @@ def _resolve_url(raw: str, api_base: str) -> tuple[str, bool]:
 
 
 def _extract_method_from_context(content: str, match_start: int) -> str:
-    """在 fetch 调用附近查找 method 声明。
+    """Look for a method declaration near a fetch call.
 
-    从 match_start 往后搜索不超过 300 个字符（一般足够覆盖 options 对象）。
+    Search a small window after match_start, which is usually enough to cover
+    the options object.
     """
     window = content[match_start : match_start + 400]
-    # 确保在同一个 fetch 调用内（找到下一个同级 fetch 或语句结尾之前）
+    # Keep this within the same fetch call window.
     m = _RE_METHOD.search(window)
     if m:
         return m.group(1).upper()
@@ -165,7 +167,7 @@ def _extract_method_from_context(content: str, match_start: int) -> str:
 
 
 def extract_frontend_calls() -> list[FrontendCall]:
-    """扫描前端 .tsx 文件，提取全部 API 调用。"""
+    """Scan frontend .tsx files and extract all API calls."""
     calls: list[FrontendCall] = []
 
     for tsx_path in sorted(FRONTEND_SRC.glob("*.tsx")):
@@ -240,7 +242,7 @@ def extract_frontend_calls() -> list[FrontendCall]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 比对逻辑
+# Comparison logic
 # ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -261,13 +263,13 @@ def check_consistency(
     result.backend_count = len(backend_routes)
     result.frontend_count = len(frontend_calls)
 
-    # 构建后端路由索引: normalized_path -> set of methods
+    # Build backend route index: normalized_path -> set of methods.
     backend_index: dict[str, set[str]] = {}
     for method, path in backend_routes:
         normed = normalize_path(path)
         backend_index.setdefault(normed, set()).add(method)
 
-    seen: set[tuple[str, str, int]] = set()  # 去重 (file, normalized, line)
+    seen: set[tuple[str, str, int]] = set()  # Deduplicate by (file, normalized, line).
 
     for call in frontend_calls:
         if call.is_dynamic:
@@ -283,7 +285,7 @@ def check_consistency(
         if call.normalized not in backend_index:
             result.missing.append(call)
         elif call.method not in backend_index[call.normalized]:
-            # 路径存在但方法不匹配
+            # The path exists, but the method does not match.
             backend_methods = ", ".join(sorted(backend_index[call.normalized]))
             result.method_mismatch.append((call, backend_methods))
 
@@ -291,7 +293,7 @@ def check_consistency(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 报告输出
+# Report output
 # ══════════════════════════════════════════════════════════════════════════════
 
 _RED = "\033[91m"
@@ -302,7 +304,7 @@ _RESET = "\033[0m"
 
 
 def print_report(result: CheckResult) -> int:
-    """输出检查报告，返回退出码。"""
+    """Print the check report and return the exit code."""
     print()
     print("=" * 60)
     print("  API Consistency Report")

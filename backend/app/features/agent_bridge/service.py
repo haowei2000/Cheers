@@ -179,7 +179,7 @@ async def finalize_bot_reply(
     if channel is not None and channel.type == "dm":
         in_reply_to_msg_id = None
 
-    # 没有占位（超时兜底、或 plugin 主动发起的频道消息）：新建一条
+    # No placeholder exists for timeout fallback or plugin-initiated channel messages, so create one.
     msg = Message(
         channel_id=channel_id,
         sender_id=bot_id,

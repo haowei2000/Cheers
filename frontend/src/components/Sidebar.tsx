@@ -13,6 +13,7 @@ import {
 } from "./SearchPicker";
 import { MemberAvatar, type MemberKind } from "./members";
 import type { SearchSelection } from "../types";
+import { LanguageSwitcher } from "../i18n";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
 import { Modal } from "./Modal";
 
@@ -1061,7 +1062,7 @@ export function Sidebar({
 
       </div>
 
-      {/* .me footer — avatar + name + status + cog (matches design's .me) */}
+      {/* Account footer: avatar, online state, language switcher, and settings. */}
       <div className="an-rail-foot">
         {currentUser ? (
           <>
@@ -1079,12 +1080,13 @@ export function Sidebar({
               <div className="an-n truncate">{currentUser.display_name}</div>
               <div className="an-s">online</div>
             </div>
+            <LanguageSwitcher compact />
             <button
               type="button"
-              className="an-cog ml-auto"
+              className="an-cog"
               onClick={onOpenSettings}
-              title="设置"
-              aria-label="设置"
+              title="Settings"
+              aria-label="Settings"
             >
               <AppIcon name="settings" className="w-4 h-4" />
             </button>
@@ -1096,7 +1098,7 @@ export function Sidebar({
             className="w-full text-left px-2 py-1.5 rounded hover:bg-[var(--surface-soft)] transition-colors text-[13px]"
             style={{ color: "var(--fg-2)" }}
           >
-            登录
+            Sign in
           </button>
         )}
       </div>

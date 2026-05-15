@@ -36,8 +36,8 @@ from app.services.admin.settings_store import get_provider_for_scope
 logger = logging.getLogger("app.features.bot_runtime.adapters.channel_bot")
 
 MAX_LOOP_ITERATIONS = 8
-HISTORY_MSG_COUNT = 30  # 注入 LLM 的历史消息条数上限
-HISTORY_MSG_MAX_CHARS = 600  # 单条历史消息截断长度
+HISTORY_MSG_COUNT = 30  # Maximum number of history messages injected into the LLM.
+HISTORY_MSG_MAX_CHARS = 600  # Maximum characters retained from each history message.
 _CLARIFY_PREFIX = "@channel bot 澄清回答："
 
 _DEFAULT_REPLY = (
@@ -141,7 +141,7 @@ def _format_call_bot_xml_prompt(*, username: str, message: str, run_ctx: Any) ->
     return "\n".join(lines)
 
 
-# ─── LLM 配置 ─────────────────────────────────────────────────────────────────
+# LLM configuration.
 
 
 def _get_llm_config() -> dict | None:
@@ -151,7 +151,7 @@ def _get_llm_config() -> dict | None:
         if cfg and cfg.get("base_url") and cfg.get("model"):
             return cfg
 
-    # 回退到 helper_llm_* 环境变量（无需管理界面配置即可使用）
+    # Fall back to helper_llm_* environment variables when admin settings are absent.
     from app.config import settings
 
     if settings.helper_llm_base_url and settings.helper_llm_model:
@@ -182,7 +182,7 @@ def _make_llm(cfg: dict) -> ChatOpenAI:
     return ChatOpenAI(**kwargs)
 
 
-# ─── 工具标签 ──────────────────────────────────────────────────────────────────
+# Tool labels.
 
 
 def _tool_label(tool_name: str, args: dict) -> str:
@@ -218,7 +218,7 @@ def _tool_label(tool_name: str, args: dict) -> str:
             return tool_name
 
 
-# ─── 工具工厂 ──────────────────────────────────────────────────────────────────
+# Tool factories.
 
 
 def _make_tools(ctx: dict) -> list:
@@ -367,7 +367,7 @@ def _make_tools(ctx: dict) -> list:
         if not username or not message:
             return "错误：需要提供 username 和 message"
 
-        # 增强容错：处理 options 可能是 JSON 字符串的情况
+        # Be tolerant of options arriving as a JSON string.
         if isinstance(options, str) and options.strip().startswith("["):
             try:
                 parsed = json.loads(options)
@@ -376,13 +376,13 @@ def _make_tools(ctx: dict) -> list:
             except (json.JSONDecodeError, TypeError):
                 pass
         elif isinstance(options, str) and options.strip():
-            # 单个字符串作为选项（虽然通常不推荐，但增强健壮性）
+            # Accept a single string option for robustness, though it is not recommended.
             options = [options.strip()]
 
         mention_prefix = f"@{username} {message}"
 
         if not options:
-            # 仅 @通知，无选择题
+            # Mention-only notification without a multiple-choice question.
             return mention_prefix
 
         if len(options) < 2:
@@ -474,7 +474,7 @@ def _make_tools(ctx: dict) -> list:
             channel_id,
         )
 
-        # 收集 file_id，最终会关联到 bot 回复消息上
+        # Collect file_ids so they can be attached to the final bot reply.
         ctx.setdefault("_created_file_ids", []).append(file_id)
 
         return f"文件已创建：[{original_filename}]({preview_url})\n\n预览链接：`{preview_url}`"
@@ -743,7 +743,7 @@ def _make_tools(ctx: dict) -> list:
     ]
 
 
-# ─── 附件处理 ──────────────────────────────────────────────────────────────────
+# Attachment handling.
 
 
 def _build_file_refs_note(attachments: list[dict[str, str]] | None) -> str:
@@ -817,7 +817,7 @@ def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str,
     return "\n\n".join(part for part in sections if part).strip()
 
 
-# ─── 历史消息加载 ─────────────────────────────────────────────────────────────
+# History loading.
 
 _UI_BLOCK_RE = re.compile(
     r"```(?:helper-clarify|helper-form)[^`]*```",
@@ -893,7 +893,7 @@ async def _fetch_reply_context(session, replied_msg_id: str) -> str:
     if len(quoted) > 300:
         quoted = quoted[:300] + "…"
 
-    # 解析发送者名称
+    # Resolve sender names.
     sender_label = ""
     if msg.sender_type == "user":
         ur = await session.execute(select(User).where(User.user_id == msg.sender_id))
@@ -938,7 +938,7 @@ async def _fetch_recent_history(
     q = q.order_by(MsgModel.created_at.desc()).limit(limit)
     result = await session.execute(q)
     msgs = list(result.scalars().all())
-    msgs.reverse()  # 转为时间正序
+    msgs.reverse()  # Convert to chronological order.
 
     display_names = await _resolve_display_names(session, msgs)
 
@@ -1142,11 +1142,11 @@ class ChannelBotAdapter(BotAdapter):
         user_text = payload.message.text
         all_attachments = payload.context.attachments or []
 
-        # 分离图片与文档附件
+        # Split image and document attachments.
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
         doc_attachments = [a for a in all_attachments if a.get("is_image") != "true"]
 
-        # 文档附件：只注入文件引用，正文由 Agent 按需调用 read_file 工具获取
+        # Document attachments only inject file references; agents call read_file on demand for body text.
         file_refs = _build_file_refs_note(doc_attachments)
         if file_refs:
             user_text = (user_text.strip() + "\n\n" + file_refs) if user_text.strip() else file_refs
@@ -1158,7 +1158,7 @@ class ChannelBotAdapter(BotAdapter):
         bot_details: dict = pconfig.channel_bot_details
         sender_id = payload.message.sender_id
 
-        # ── 1. 构建 System Prompt ──────────────────────────────────────────────
+        # 1. Build the system prompt.
         members_lines: list[str] = []
         for uname in channel_bots:
             detail = bot_details.get(uname) or {}
@@ -1207,7 +1207,7 @@ class ChannelBotAdapter(BotAdapter):
             ]
         )
 
-        # ── 2. 澄清回答自动存入 decisions ─────────────────────────────────────
+        # 2. Store clarification answers into decisions automatically.
         if user_text.startswith(_CLARIFY_PREFIX):
             answer_body = user_text[len(_CLARIFY_PREFIX) :].strip()
             if answer_body:
@@ -1224,7 +1224,7 @@ class ChannelBotAdapter(BotAdapter):
                 memory["decisions"] = new_decisions
                 logger.info("channel_bot: clarify answer saved to decisions channel=%s", channel_id)
 
-        # ── 3. 工具上下文 ──────────────────────────────────────────────────────
+        # 3. Tool context.
         # Tools mostly read run_ctx (see call_bot) or task-specific fields;
         # the loose closures (_pre_create_bot_msg, _adapter_factory, etc.)
         # that used to live here moved into BotMessageWriter / dispatch_one.
@@ -1243,7 +1243,7 @@ class ChannelBotAdapter(BotAdapter):
             "_run_ctx": pconfig.run_ctx,
         }
 
-        # ── 4. 加载历史消息 / 用户信息 / 回复上下文 ──────────────────────────
+        # 4. Load history, user info, and reply context.
         chat_history: list = []
         db_session = pconfig.db_session
         trigger_meta = payload.trigger_message or {}
@@ -1285,24 +1285,24 @@ class ChannelBotAdapter(BotAdapter):
                     channel_id,
                 )
 
-        # 澄清回答：剥去 "@channel bot 澄清回答：" 前缀，跳过 reply_prefix
-        # （原始问题已在 system_prompt 的「当前澄清上下文」中，无需重复引用 helper-clarify 消息）
+        # Clarification answers strip the "@channel bot clarification answer:" prefix and skip reply_prefix.
+        # The original question is already in the system prompt clarification context.
         _is_clarify = user_text.startswith(_CLARIFY_PREFIX)
         if _is_clarify:
             user_text = user_text[len(_CLARIFY_PREFIX) :].strip()
-            reply_prefix = ""  # helper-clarify 消息对 LLM 无意义，不引用
+            reply_prefix = ""  # helper-clarify messages are not useful to the LLM.
 
-        # 把回复上下文和发送者标识注入到当前用户消息
+        # Inject reply context and sender identity into the current user message.
         if reply_prefix:
             user_text = reply_prefix + user_text
         if current_user_name:
             user_text = f"[{current_user_name}]: {user_text}"
 
-        # ── 5. Agent（支持 Vision 多模态）─────────────────────────────────────
+        # 5. Agent execution with multimodal Vision support.
         cfg = _get_llm_config()
         supports_vision = (cfg or {}).get("supports_vision", True) if cfg else True
 
-        # 若有图片附件，将 file_id 注入到文本，便于 LLM 引用附件上下文。
+        # When images are attached, inject file_id into text so the LLM can reference attachment context.
         if image_attachments:
             img_ids_note = "\n\n[系统提示] 用户本次上传了以下图片附件：\n" + "\n".join(
                 f"- file_id: {a['file_id']}  文件名: {a.get('filename') or a.get('file_id')}"
@@ -1334,7 +1334,7 @@ class ChannelBotAdapter(BotAdapter):
 
         content = agent_final.content if agent_final else ""
 
-        # ── 5. 关键词兜底（LLM 不可用时） ─────────────────────────────────────
+        # 5. Keyword fallback when the LLM is unavailable.
         if not content:
             content = (
                 _build_attachment_fallback_reply(user_text, payload.context.attachments)

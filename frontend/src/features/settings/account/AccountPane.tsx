@@ -626,7 +626,7 @@ export function KeychainPane({ authToken }: { authToken: string }) {
   );
 }
 
-/** AccountPane — bundles 编辑资料 + 退出登录 as cards on a single pane.
+/** AccountPane bundles profile editing and logout cards on a single pane.
  *  Profile editing is inline; logout is a separate destructive card at
  *  the bottom. */
 export function AccountPane({

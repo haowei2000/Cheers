@@ -154,7 +154,7 @@ class BotSessionRegistry:
         sess = self._sessions.get(bot_id)
         if sess is None or sess.data_ws is None:
             return False
-        # 先分配 seq 并持久化，保证 send 到 WS 的 payload 总是带 seq
+        # Allocate and persist seq first so payloads sent to WS always include seq.
         from app.features.agent_bridge.event_log import record_event
 
         seq = await record_event(bot_id, "data", event)

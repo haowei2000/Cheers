@@ -7,14 +7,14 @@ import jwt
 
 logger = logging.getLogger("app.services.auth.jwt_utils")
 
-# 延迟导入 settings 避免循环，同时支持运行时读取（测试可覆盖）
+# Import settings lazily to avoid cycles and allow runtime overrides in tests.
 _runtime_secret: str | None = None
 
 
 def _get_secret() -> str:
     """返回 JWT 签名密钥；若未配置则自动生成随机密钥（进程内有效）。"""
     global _runtime_secret
-    from app.config import settings  # 延迟导入
+    from app.config import settings  # Lazy import.
     key = (settings.jwt_secret_key or "").strip()
     if key:
         return key

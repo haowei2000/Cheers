@@ -1,4 +1,4 @@
-"""SkillHub FastAPI 主入口"""
+"""SkillHub FastAPI entrypoint."""
 import logging
 from contextlib import asynccontextmanager
 
@@ -9,19 +9,19 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.api.v1.skillhub.routes import router as skillhub_router
 
-# 配置日志
+# Configure logging.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("skillhub")
 
-# 最大上传文件大小：50MB
+# Maximum upload size: 50 MB.
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 
 
 async def upload_size_middleware(request: Request, call_next):
-    """限制请求体大小，防止大文件上传耗尽磁盘"""
+    """Limit request body size to prevent large uploads from exhausting disk."""
     if request.method == "POST" and "multipart/form-data" in request.headers.get("content-type", ""):
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > MAX_UPLOAD_SIZE:
@@ -34,7 +34,7 @@ async def upload_size_middleware(request: Request, call_next):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用启动/关闭事件"""
+    """Application startup/shutdown lifecycle."""
     logger.info(f"SkillHub starting on {settings.host}:{settings.port}")
     logger.info(f"Skills directory: {settings.skills_local_dir}")
     yield
@@ -48,7 +48,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - 支持所有本地端口
+# CORS: support all local ports.
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:[0-9]+)?",
@@ -57,16 +57,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 上传大小限制中间件
+# Upload size limit middleware.
 app.middleware("http")(upload_size_middleware)
 
-# 注册路由
+# Register routes.
 app.include_router(skillhub_router)
 
 
 @app.get("/")
 async def root():
-    """根路径"""
+    """Root path."""
     return {
         "name": "SkillHub",
         "version": "1.0.0",
@@ -77,7 +77,7 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """健康检查"""
+    """Health check."""
     return {"status": "ok"}
 
 

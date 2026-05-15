@@ -49,7 +49,7 @@ class MessageRepository:
                 )
         query = query.order_by(Message.created_at.desc(), Message.msg_id.desc()).limit(limit)
         result = await self.session.execute(query)
-        # 数据库查出来是逆序（最新的在前面），返回给前端通常希望是正序
+        # Database rows are fetched newest-first; frontend callers usually expect chronological order.
         messages = list(result.scalars().all())
         messages.reverse()
         return messages

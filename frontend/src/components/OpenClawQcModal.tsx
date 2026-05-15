@@ -94,7 +94,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
     >
       <div className="max-h-[70vh] overflow-y-auto">
           {!qcResult ? (
-            /* ── 表单 ── */
+            /* Form. */
             <div className="space-y-4">
               {qcError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">
@@ -205,7 +205,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
               )}
             </div>
           ) : (
-            /* ── 结果展示 ── */
+            /* Result display. */
             <div className="space-y-4">
               {/* Connection status */}
               <div

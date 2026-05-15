@@ -11,11 +11,11 @@
  * instead of hand-rolling overlay + escape-handler + focus-trap logic.
  *
  * Usage:
- *   <Modal open={isOpen} onClose={() => setOpen(false)} title="标题">
+ *   <Modal open={isOpen} onClose={() => setOpen(false)} title="Title">
  *     <p>body…</p>
  *     <ModalFooter>
- *       <button …>取消</button>
- *       <button …>确认</button>
+ *       <button …>Cancel</button>
+ *       <button …>Confirm</button>
  *     </ModalFooter>
  *   </Modal>
  */

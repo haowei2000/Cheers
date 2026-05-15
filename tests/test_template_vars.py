@@ -107,7 +107,7 @@ def _make_call_bot_run_ctx(
     return ctx
 
 
-# ── _apply_user_template 单元测试 ────────────────────────────────────────────
+# _apply_user_template unit tests.
 
 class TestApplyUserTemplate:
     """直接测试 _apply_user_template 渲染逻辑。"""
@@ -190,7 +190,7 @@ class TestApplyUserTemplate:
             "todos": "TD",
         }
         result = adapter._apply_user_template("问题", ctx)
-        # 不应残留任何 {{xxx}} 占位符
+        # No {{xxx}} placeholders should remain.
         assert "{{" not in result
         assert "}}" not in result
         assert "bot=助手" in result
@@ -206,7 +206,7 @@ class TestApplyUserTemplate:
         assert "hi" in result
 
 
-# ── HttpBotAdapter.execute 集成测试（模拟 HTTP） ──────────────────────────────
+# HttpBotAdapter.execute integration tests with mocked HTTP.
 
 UNRENDERED_VAR_PATTERN = re.compile(r"\{\{(\w+)\}\}")
 
@@ -308,7 +308,7 @@ async def test_execute_renders_all_context_vars() -> None:
 
     captured_body = await _execute_and_capture_body(adapter, payload)
 
-    # 直接调用（非子 bot）应包含 system prompt
+    # Direct calls, not sub-bot calls, should include the system prompt.
     messages = captured_body.get("messages", [])
     assert len(messages) == 2, f"直接调用应有 system + user 两条消息，实际 {len(messages)}"
     assert messages[0]["role"] == "system"
@@ -317,11 +317,11 @@ async def test_execute_renders_all_context_vars() -> None:
     user_content = messages[1]["content"]
     assert isinstance(user_content, str)
 
-    # 所有已知变量都不应残留为 {{xxx}}
+    # No known variables should remain as {{xxx}}.
     unrendered = UNRENDERED_VAR_PATTERN.findall(user_content)
     assert unrendered == [], f"未渲染的模板变量: {unrendered}"
 
-    # 验证具体值
+    # Verify concrete values.
     assert "测试频道" in user_content, "channel_name 未渲染"
     assert "王五" in user_content, "sender_name 未渲染"
     assert "测试Bot" in user_content, "bot_name 未渲染"
@@ -543,17 +543,17 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
     result = await call_bot_tool.ainvoke({"username": "child_bot", "message": "帮我分析一下"})
     assert "子bot回复" in result
 
-    # 验证子 payload
+    # Verify sub-payload.
     assert len(captured_payload) == 1
     sub = captured_payload[0]
 
-    # process_config 应包含 channel_name、sender_name 和 skip_system_prompt
+    # process_config should include channel_name, sender_name, and skip_system_prompt.
     pc = sub.process_config
     assert pc.channel_name == "协作频道", f"channel_name 缺失或不正确: {pc}"
     assert pc.sender_name == "赵六", f"sender_name 缺失或不正确: {pc}"
     assert pc.skip_system_prompt is True, f"skip_system_prompt 应为 True: {pc}"
 
-    # trigger_message 应包含 sender_name 和非空 timestamp
+    # trigger_message should include sender_name and a non-empty timestamp.
     tm = sub.trigger_message or {}
     assert tm.get("sender_name") == "赵六", f"trigger_message.sender_name 缺失: {tm}"
     assert tm.get("timestamp"), f"trigger_message.timestamp 为空: {tm}"
@@ -567,12 +567,12 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
     assert root.find("./channel_memory/layer[@name='anchor']").text == "锚点内容"
     assert root.find("./channel_memory/layer[@name='progress']").text == "进度内容"
 
-    # memory 应透传
+    # memory should pass through unchanged.
     assert sub.memory_context.get("anchor") == "锚点内容"
     assert sub.memory_context.get("progress") == "进度内容"
 
 
-# ── orchestrator process_config 一致性测试 ──────────────────────────────────
+# Orchestrator process_config consistency tests.
 #
 # Phase 5: process_config is now a typed ProcessConfig dataclass; the
 # legacy meta-test that grepped service.py for ``process_config={...}``
@@ -584,7 +584,7 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
 # (Removed test_orchestrator_process_config_has_template_keys.)
 
 
-# ── call_bot → HttpBotAdapter 端到端 XML 委托渲染 ──────────────────────────────
+# End-to-end XML delegation rendering from call_bot to HttpBotAdapter.
 
 @pytest.mark.asyncio
 async def test_call_bot_end_to_end_renders_delegated_xml() -> None:
@@ -664,7 +664,7 @@ async def test_call_bot_end_to_end_renders_delegated_xml() -> None:
 
     assert "子bot执行成功" in result
 
-    # 子 bot 调用不应有 system prompt
+    # Sub-bot calls should not include a system prompt.
     messages = captured_body.get("messages", [])
     assert len(messages) == 1, f"子 bot 调用应只有 user 消息，实际 {len(messages)} 条: {[m['role'] for m in messages]}"
     assert messages[0]["role"] == "user", "子 bot 调用的唯一消息应为 user role"

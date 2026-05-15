@@ -1,14 +1,19 @@
 /**
- * BotSession：一个 OpenClaw account = 一个 AgentNexus bot = 一对 (control, data) WS。
+ * BotSession: one OpenClaw account = one AgentNexus bot = one pair of
+ * (control, data) WebSockets.
  *
- * 职责：
- *   - 建立并维护 control + data 两条 WS（通过 ReconnectingClient）
- *   - control 流：处理 hello 快照 + channel_joined/left 事件，维护 membership 集合
- *   - data 流：
- *       · 收到 message 帧 → 调用外部 onMessage callback（上层把它翻译成 OpenClaw 消息）
- *       · 发送 reply / send 帧，按 client_msg_id 记录 inflight，等 send_ack
- *       · 重连后自动 resume（last_event_seq 本地持久 —— 这里先存内存）
- *   - heartbeat：每 N 秒发 ping，服务器回 pong
+ * Responsibilities:
+ *   - Establish and maintain the control + data WebSockets through
+ *     ReconnectingClient.
+ *   - Control stream: process the hello snapshot and channel_joined/left
+ *     events, then maintain the membership set.
+ *   - Data stream:
+ *       · Receive message frames and call the external onMessage callback.
+ *       · Send reply / send frames, track inflight requests by client_msg_id,
+ *         and wait for send_ack.
+ *       · Resume automatically after reconnect. last_event_seq is currently
+ *         persisted in memory.
+ *   - Heartbeat: send ping every N seconds and wait for server pong.
  */
 import { randomUUID } from "node:crypto";
 
@@ -50,9 +55,9 @@ export interface SessionConfig {
 }
 
 export interface InboundMessage {
-  /** 原始 AgentNexus message frame（可用于回复时 reply_to_msg_id） */
+  /** Original AgentNexus message frame, usable as reply_to_msg_id when replying. */
   event: MessageEvent;
-  /** 便于上层使用的归一字段 */
+  /** Normalized fields for callers. */
   channelId: string;
   senderId: string | undefined;
   senderName: string | undefined;
@@ -70,21 +75,22 @@ export interface MembershipSnapshot {
 
 export interface SessionEvents {
   onReady?: () => void;
-  /** 收到 AgentNexus 派发的用户消息 */
+  /** Called when AgentNexus dispatches a user message. */
   onMessage?: (m: InboundMessage) => void | Promise<void>;
-  /** 成员加入新频道（bot 被邀请时） */
+  /** Called when a member joins a new channel, including bot invitations. */
   onChannelJoined?: (channel: ChannelInfo, invitedBy: string | null) => void;
-  /** 成员被移除 */
+  /** Called when a member is removed. */
   onChannelLeft?: (channelId: string, reason: string) => void;
-  /** 用户在前端点击 ⏹ 取消正在生成的 bot 回复。`msgId` = 占位消息 id
-   *  (= sendText/sendMedia 在 sendXxx ctx.to 用到的 taskId 对应的 placeholder)。
-   *  Plugin 应停止为该消息推送 delta，并 best-effort 中止背后的 LLM/agent 调用。
-   *  服务端在收到 cancel 那一刻就已经本地 finalize 了 partial，所以这里 plugin
-   *  即便不发 done 也不会卡死前端 —— done 只是为了让 plugin 自己日志好看。 */
+  /** Called when the user clicks stop on a streaming bot reply. `msgId` is the
+   *  placeholder message id. The plugin should stop pushing deltas for this
+   *  message and best-effort abort the underlying LLM/agent call. The server
+   *  already finalizes the partial reply when it receives cancel, so omitting a
+   *  done frame will not leave the frontend stuck; done is only useful for
+   *  cleaner plugin logs. */
   onCancel?: (msgId: string, reason?: string) => void;
   onError?: (err: unknown) => void;
   onFatal?: (reason: string) => void;
-  /** control/data 连接状态变更（observability） */
+  /** Control/data connection state changes for observability. */
   onConnectionChange?: (stream: "control" | "data", state: "open" | "closed") => void;
 }
 
@@ -98,7 +104,7 @@ export interface SendResult {
   code?: string;
 }
 
-const MAX_INFLIGHT = 500; // 软上限，超过则拒绝新 send
+const MAX_INFLIGHT = 500; // Soft cap; reject new sends above this limit.
 
 export class BotSession {
   public readonly membership: MembershipSnapshot = {
@@ -108,7 +114,7 @@ export class BotSession {
 
   public botId: string | null = null;
   public sessionId: string | null = null;
-  /** 本地跟踪的最后一次已处理 data 事件 seq；重连后作为 resume 起点 */
+  /** Last locally processed data event seq; used as the resume point after reconnect. */
   public lastProcessedSeq = 0;
 
   private control: ReconnectingClient;
@@ -119,9 +125,9 @@ export class BotSession {
   private stopped = false;
   private readyPromise: Promise<void>;
   private resolveReady!: () => void;
-  /** control hello 已到 */
+  /** Control hello has arrived. */
   private controlReady = false;
-  /** data hello 已到 */
+  /** Data hello has arrived. */
   private dataReady = false;
 
   private readonly reconnectBaseMs: number;
@@ -179,7 +185,7 @@ export class BotSession {
     await Promise.all([this.control.stop(), this.data.stop()]);
   }
 
-  /** 等待 control hello 到达（ready 即 membership 快照已就位）。超时则 reject。 */
+  /** Wait until both hellos arrive and membership is ready; reject on timeout. */
   waitReady(timeoutMs = 10000): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const t = setTimeout(() => reject(new Error("waitReady timeout")), timeoutMs);
@@ -196,13 +202,13 @@ export class BotSession {
     });
   }
 
-  /** control 或 data 的致命 close code：整个 session 自动 stop，并 emit onFatal。 */
+  /** Fatal close code on control or data: stop the whole session and emit onFatal. */
   private onFatalEscalate(stream: "control" | "data", reason: string): void {
     this.events.onFatal?.(`${stream}: ${reason}`);
     void this.stop();
   }
 
-  /** 两条流都 hello 后才算 ready；onReady 只触发一次。 */
+  /** Ready only after both streams receive hello; onReady fires once. */
   private firedReady = false;
   private maybeResolveReady(): void {
     if (!this.controlReady || !this.dataReady) return;
@@ -228,7 +234,7 @@ export class BotSession {
         case "hello": {
           this.botId = frame.bot_id;
           this.sessionId = frame.session_id;
-          // Hello 是 membership 的权威快照：替换本地状态
+          // Hello is the authoritative membership snapshot, so replace local state.
           this.membership.channelIds.clear();
           this.membership.byId.clear();
           for (const ch of frame.memberships || []) {
@@ -253,8 +259,8 @@ export class BotSession {
           break;
         }
         case "cancel": {
-          // 用户在前端点了 ⏹。后端已本地 finalize 了 partial，发 cancel 只是
-          // 告诉我们停止继续生成。
+          // The user stopped generation. The backend already finalized the
+          // partial locally; cancel only tells us to stop producing more output.
           if (typeof frame.msg_id === "string" && frame.msg_id) {
             this.events.onCancel?.(frame.msg_id, frame.reason);
           }
@@ -276,7 +282,7 @@ export class BotSession {
   private onDataOpen(): void {
     this.events.onConnectionChange?.("data", "open");
     this.startHeartbeat("data");
-    // 断线重连后立即 resume 漏收的事件
+    // Resume missed events immediately after reconnect.
     if (this.lastProcessedSeq > 0) {
       this.data.send({ type: "resume", last_event_seq: this.lastProcessedSeq });
     }
@@ -288,15 +294,16 @@ export class BotSession {
     try {
       switch (frame.type) {
         case "hello":
-          // data hello 给 last_event_seq，首次连接时 lastProcessedSeq=0，
-          // 不主动 resume；等 agent 自己说它处理到哪了。
+          // Data hello includes last_event_seq. On the first connection
+          // lastProcessedSeq=0, so we do not resume until the agent reports how
+          // far it has processed.
           this.dataReady = true;
           this.maybeResolveReady();
           break;
         case "message": {
           const ev = frame as MessageEvent;
-          // 更新本地 seq；允许上层在处理完业务逻辑后再 bumpSeq 来做 exactly-once。
-          // 这里先用宽松策略：一见即更新。
+          // Update local seq. Callers may bump after business logic for stricter
+          // exactly-once handling; this permissive path updates on sight.
           if (typeof ev.seq === "number" && ev.seq > this.lastProcessedSeq) {
             this.lastProcessedSeq = ev.seq;
           }
@@ -326,7 +333,7 @@ export class BotSession {
           break;
         }
         case "resume_ack":
-          // Phase D：重放已结束，后续是实时事件
+          // Phase D: replay has ended; following frames are live events.
           break;
         case "pong":
           break;
@@ -357,8 +364,9 @@ export class BotSession {
   // =================== outbound ===================
 
   /**
-   * 回复一条派发给 Bot 的消息：finalize 占位。推荐用法——上层收到 onMessage 后，
-   * 产出结果调用 reply({ source: m, text: ... }).
+   * Reply to a message dispatched to the bot and finalize the placeholder.
+   * Recommended use: callers receive onMessage, produce a result, then call
+   * reply({ source: m, text: ... }).
    */
   async reply(args: {
     source: InboundMessage;
@@ -378,8 +386,9 @@ export class BotSession {
   }
 
   // ============== streaming reply: delta / done / error ==================
-  // Fire-and-forget: 服务端不回 send_ack（这些帧被设计为高频 / 容错），
-  // 直接把 frame 推上 data WS。返回 boolean 表示 WS 是否在线 / 写入是否成功。
+  // Fire-and-forget: the server does not send send_ack for these high-frequency,
+  // fault-tolerant frames. Push directly to data WS and return whether the WS is
+  // online and accepted the write.
 
   /** Push a single token / chunk into a streaming reply identified by `msgId`. */
   streamDelta(args: { msgId: string; seq: number; delta: string }): boolean {
@@ -421,7 +430,7 @@ export class BotSession {
     return this.data.send(frame);
   }
 
-  /** 非响应式主动发一条消息到频道（例如定时提醒）。 */
+  /** Proactively send a message to a channel, for example a scheduled reminder. */
   async send(args: {
     channelId: string;
     text: string;

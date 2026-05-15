@@ -126,7 +126,7 @@ export type Message = {
   is_secret?: boolean;
   secret_token?: string;
   /** True when the bot reply was finalized mid-stream (cancel/error).
-   *  Renders a "已取消" / "已中断" badge. */
+   *  Renders a canceled / interrupted badge. */
   is_partial?: boolean;
   _bot_status?: string;
   _bot_trace?: BotTraceEvent[];

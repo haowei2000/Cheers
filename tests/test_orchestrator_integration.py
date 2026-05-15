@@ -95,7 +95,7 @@ async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: As
         },
     )
     assert resp.status_code == 200
-    # 等待后台 orchestrator 任务完成（MockAdapter 无 IO，应立即完成）
+    # Wait for the background orchestrator task; MockAdapter has no IO and should finish immediately.
     await asyncio.sleep(0.2)
 
     list_resp = await client.get(f"/api/v1/channels/{ch.channel_id}/messages")
@@ -106,7 +106,7 @@ async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: As
     bot_msg = next((m for m in messages if m["sender_type"] == "bot"), None)
     assert user_msg is not None and "你好" in user_msg["content"]
     assert bot_msg is not None
-    # adapter_resolver 对 is_enabled=False 的模型返回 MockBotAdapter
+    # adapter_resolver returns MockBotAdapter for models with is_enabled=False.
     assert "MockBot" in bot_msg["content"] or "模型已禁用" in bot_msg["content"]
 
 

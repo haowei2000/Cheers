@@ -1,4 +1,4 @@
-// Skill 详情页面 - 马卡龙生机风格 + 编辑分类
+// Skill detail page with the macaron vitality style and category editing.
 import { useState, useEffect } from 'react';
 import { Skill, fetchSkill, getDownloadUrl, updateSkillCategory } from '../../api';
 
@@ -108,7 +108,7 @@ export default function SkillDetail({ skillId, onBack }: Props) {
 
   return (
     <div className="skill-detail">
-      {/* 顶部彩色 banner */}
+      {/* Top color banner. */}
       <div className="detail-top-banner">
         <span className="detail-bg-emoji">{getEmoji(skill.category)}</span>
         <span className="detail-front-emoji">{getEmoji(skill.category)}</span>
@@ -123,7 +123,7 @@ export default function SkillDetail({ skillId, onBack }: Props) {
         <div className="detail-badges">
           <span className="detail-version">✨ v{skill.version}</span>
 
-          {/* 分类编辑 */}
+          {/* Category editing. */}
           {editingCategory ? (
             <div className="category-edit">
               <select

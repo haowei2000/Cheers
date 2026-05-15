@@ -134,7 +134,7 @@ class HttpBotAdapter(BotAdapter):
         )
 
         if msg_type == "reply" and topic_chain:
-            # 规则2/3：回复消息，携带祖先链
+            # Rules 2/3: reply messages include the ancestor chain.
             return (
                 "--- 主题上下文（从旧到新）---\n"
                 + self._format_topic_messages(topic_chain)
@@ -142,14 +142,14 @@ class HttpBotAdapter(BotAdapter):
                 + user_text
             )
         if msg_type == "topic" and child_replies:
-            # 规则4：主题根，携带已有子回复
+            # Rule 4: topic roots include existing child replies.
             return (
                 "--- 此主题的已有回复 ---\n"
                 + self._format_topic_messages(child_replies)
                 + "\n--- 当前用户消息 ---\n"
                 + user_text
             )
-        # 规则1：普通消息，直接传原始内容
+        # Rule 1: normal messages pass the original content directly.
         return user_text
 
     def _get_api_config(self) -> dict[str, Any]:
@@ -293,8 +293,7 @@ class HttpBotAdapter(BotAdapter):
         pconfig = payload.runtime
         delegated_task_xml = bool(pconfig.delegated_task_xml)
 
-        # 解密：将 $secret{name} 引用替换为实际密钥值，
-        # 并将加密消息占位符替换为解密后的原文
+        # Decrypt $secret{name} references into actual key values and replace secret-message placeholders.
         user_secrets = payload.runtime.user_secrets
         if user_secrets:
             encrypted_msg = user_secrets.get("_encrypted_msg")
@@ -302,16 +301,16 @@ class HttpBotAdapter(BotAdapter):
                 user_text = replace_secret_placeholder(user_text, encrypted_msg)
             user_text = replace_secret_refs(user_text, user_secrets)
 
-        # 分离图片与文档附件
+        # Split image and document attachments.
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
         doc_attachments = [a for a in all_attachments if a.get("is_image") != "true"]
 
-        # 文档附件合并到文本。call_bot 的 XML 委托提示已包含附件索引，
-        # 这里不再把 <attachments> 追加到 XML 根节点外。
+        # Merge document attachments into text. call_bot XML delegation already includes the attachment index,
+        # so do not append <attachments> outside the XML root here.
         if not delegated_task_xml:
             user_text = self._merge_attachments_into_message(user_text, doc_attachments)
 
-        # 注入主题上下文（4条规则）
+        # Inject topic context using the four topic-context rules.
         trigger_meta = payload.trigger_message or {}
         if not delegated_task_xml:
             user_text = self._apply_topic_context(trigger_meta, user_text)
@@ -336,10 +335,10 @@ class HttpBotAdapter(BotAdapter):
             memory_context=payload.context.memory,
         )
 
-        # 子 bot 调用（call_bot）时跳过 system prompt，父 bot 的 message 已包含任务描述
+        # Skip the system prompt for sub-bot call_bot execution; the parent bot message already contains the task.
         skip_system_prompt = pconfig.skip_system_prompt
 
-        # Vision 路径：模型支持且有图片时，构建多模态消息
+        # Vision path: build multimodal messages when the model supports images.
         supports_vision = (self.model.config or {}).get("supports_vision", True)
         if delegated_task_xml:
             # XML delegation is a complete prompt document. Do not wrap it in
@@ -374,8 +373,8 @@ class HttpBotAdapter(BotAdapter):
             if key in api_config:
                 body[key] = api_config[key]
 
-        # 重要：如果模型配置中有 stream=true，必须忽略它，由代码根据 stream_token_cb 决定是否流式
-        # 否则 LLM 会返回流式响应，导致非流式处理的 response.json() 挂起
+        # Ignore stream=true from model config; code decides streaming from stream_token_cb.
+        # Otherwise the LLM returns a stream and non-streaming response.json() may hang.
         if api_config.get("stream"):
             logger.warning("http_bot: model config has stream=true, ignoring it")
 
@@ -391,7 +390,7 @@ class HttpBotAdapter(BotAdapter):
             for idx, msg in enumerate(messages):
                 role = msg.get("role", "?")
                 content = msg.get("content", "")
-                # 多模态消息的 content 可能是列表，只摘要显示
+                # Multimodal message content may be a list, so log only a summary.
                 if isinstance(content, list):
                     parts_summary = ", ".join(
                         p.get("type", "?") for p in content if isinstance(p, dict)

@@ -83,7 +83,7 @@ export default function App() {
 
   const [loginModalOpen, setLoginModalOpen] = useState(false);
 
-  // 前��错误上报（best-effort, 不抛异常）
+  // Best-effort client error reporting; never throw from this path.
   const reportClientError = useCallback(
     (method: string, url: string, status: number, detail: string) => {
       fetch(`${API}/debug/client-error`, {
@@ -100,7 +100,7 @@ export default function App() {
     [],
   );
 
-  // 全局未捕获 Promise 错误上报
+  // Report globally unhandled promise rejections.
   useEffect(() => {
     const handler = (e: PromiseRejectionEvent) => {
       reportClientError("UNCAUGHT", window.location.href, 0, String(e.reason));
@@ -109,7 +109,7 @@ export default function App() {
     return () => window.removeEventListener("unhandledrejection", handler);
   }, [reportClientError]);
 
-  // 初始化时检查登录状态
+  // Open the login modal during startup when no user is available.
   useEffect(() => {
     if (!currentUser) {
       setLoginModalOpen(true);
@@ -368,7 +368,7 @@ export default function App() {
   const [revealedSecrets, setRevealedSecrets] = useState<
     Record<string, string>
   >({});
-  const [secretTokens, setSecretTokens] = useState<Record<string, string>>({}); // msg_id -> token（仅发送方当次 session 持有）
+  const [secretTokens, setSecretTokens] = useState<Record<string, string>>({}); // msg_id -> token, held only by the sender's current session.
   const [forwardModalState, setForwardModalState] =
     useState<ForwardModalState | null>(null);
   const [forwardSelectionMode, setForwardSelectionMode] = useState(false);
@@ -396,7 +396,7 @@ export default function App() {
     handleMarkdownFileClick,
     renderFileAttachments,
   } = useFilePreviewController({ onForwardFile: openForwardFile });
-  // 可伸缩面板宽度
+  // Resizable panel widths.
   const [leftWidth, onLeftResize] = useResize(256, 160, 480, "right");
   const [memoryWidth, onMemoryResize] = useResize(288, 200, 600, "left");
   const [filePreviewWidth, onFilePreviewResize] = useResize(
@@ -582,7 +582,7 @@ export default function App() {
     })
       .then((r) => r.json())
       .then((d) => {
-        // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
+        // User messages normally arrive through WebSocket broadcasts; this is only a deduplicated fallback insert.
         if (d.data && selectedIdRef.current === targetChannelId) {
           setMessageStore((prev) =>
             prev.byId[d.data.msg_id]
@@ -660,15 +660,15 @@ export default function App() {
     })
       .then((r) => r.json())
       .then((d) => {
-        // 用户消息由 WebSocket 广播接收，这里仅作兜底去重插入
-        // 仅在用户仍停留在发送消息的频道时才插入，避免跨频道串消息
+        // User messages normally arrive through WebSocket broadcasts; this is only a deduplicated fallback insert.
+        // Insert only while the user is still in the sending channel to avoid cross-channel leakage.
         if (d.data && selectedIdRef.current === targetChannelId) {
           setMessageStore((prev) =>
             prev.byId[d.data.msg_id]
               ? prev
               : upsertMessage(prev, d.data, MAX_LOADED_MESSAGES),
           );
-          // 保存 secret_token（仅发送方当次 session 持有，不通过 WS 广播）
+          // Keep the secret token only in the sender's current session; it is never broadcast over WebSocket.
           if (d.data.secret_token) {
             setSecretTokens((prev) => ({
               ...prev,

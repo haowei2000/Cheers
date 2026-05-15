@@ -56,7 +56,7 @@ async def test_dispatcher_publish_filters_by_bot_ids() -> None:
     d = BridgeDispatcher()
     sub_a = await d.subscribe(bot_ids=["bot-A"])
     sub_b = await d.subscribe(bot_ids=["bot-B"])
-    sub_all = await d.subscribe(bot_ids=None)  # 调试/内部：收全量
+    sub_all = await d.subscribe(bot_ids=None)  # Debug/internal mode receives all events.
 
     delivered = await d.publish({"type": "dispatch", "bot_id": "bot-A"})
     assert delivered == 2  # sub_a + sub_all
@@ -185,7 +185,7 @@ async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound(
     try:
         adapter = AgentBridgeBotAdapter(_fake_bot())
         payload = _payload("t-ws-001")
-        # 模拟 orchestrator：把占位 msg_id 放到 process_config
+        # Mock orchestrator behavior by putting the placeholder msg_id into process_config.
         payload.process_config.placeholder_msg_id = "placeholder-123"
 
         resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
@@ -202,14 +202,14 @@ async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound(
         assert event["placeholder_msg_id"] == "placeholder-123"
         assert event["binding_config"] == {"agent_id": "agent-x"}
 
-        # adapter 预登记了 pending（便于 plugin 秒回时定位）
+        # The adapter pre-registered pending state so a fast plugin reply can be located.
         pending = await pending_replies.peek_by_msg("placeholder-123")
         assert pending is not None
         assert pending.bot_id == "bot-ws-001"
         assert pending.channel_id == "c-001"
     finally:
         await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
-        # 清理：pop 掉预登记的 pending
+        # Cleanup: pop the pre-registered pending entry.
         await pending_replies.pop_by_msg("placeholder-123")
 
 
@@ -346,7 +346,7 @@ async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
     assert resp.dispatched_async is False
     assert resp.error_message == "no_plugin_subscribers"
     assert "Alpha" in resp.content
-    # 失败路径应回滚预登记
+    # Failure path should roll back pre-registration.
     assert await pending_replies.peek_by_msg("placeholder-fail-001") is None
 
 
@@ -475,7 +475,7 @@ async def test_pending_registry_register_and_resolve_by_msg() -> None:
     assert got is p
     assert reg.count() == 0
 
-    # 再次 resolve 应为 None
+    # A second resolve should return None.
     got2 = await reg.resolve(task_id=None, bot_id="b1", msg_id="m1")
     assert got2 is None
 
@@ -497,11 +497,11 @@ async def test_pending_registry_rejects_cross_bot_resolve_by_msg() -> None:
     reg = PendingReplyRegistry()
     p = PendingReply(task_id="t1", bot_id="bot-A", channel_id="c1", msg_id="m1")
     await reg.register(p)
-    # bot-B 试图用 m1 resolve → 应返回 None 且不删除
+    # bot-B resolving m1 should return None without deleting it.
     got = await reg.resolve(task_id=None, bot_id="bot-B", msg_id="m1")
     assert got is None
     assert reg.count() == 1
-    # bot-A 自己来 resolve 仍正常
+    # bot-A can still resolve its own pending entry.
     got = await reg.resolve(task_id=None, bot_id="bot-A", msg_id="m1")
     assert got is p
     assert reg.count() == 0
@@ -513,7 +513,7 @@ async def test_pending_registry_cancels_timeout_on_resolve() -> None:
     fired = asyncio.Event()
     loop = asyncio.get_event_loop()
     p = PendingReply(task_id="t1", bot_id="b1", channel_id="c1", msg_id="m1")
-    p.timeout_handle = loop.call_later(10, lambda: fired.set())  # 很长，不会触发
+    p.timeout_handle = loop.call_later(10, lambda: fired.set())  # Long enough not to fire.
     await reg.register(p)
 
     got = await reg.resolve(task_id=None, bot_id="b1", msg_id="m1")

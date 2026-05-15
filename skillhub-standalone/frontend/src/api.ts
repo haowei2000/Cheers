@@ -1,4 +1,4 @@
-// SkillHub API 服务
+// SkillHub API service.
 const API_BASE = '/api/v1/skillhub';
 
 export interface Skill {
@@ -55,7 +55,7 @@ export function getDownloadUrl(skillId: string): string {
 export async function uploadSkill(file: File | File[], category: string): Promise<ImportResult> {
   const formData = new FormData();
 
-  // 统一使用 'file' 字段发送
+  // Always send files with the 'file' field.
   if (Array.isArray(file)) {
     for (const f of file) {
       formData.append('file', f);
@@ -70,10 +70,10 @@ export async function uploadSkill(file: File | File[], category: string): Promis
     body: formData,
   });
 
-  // 先获取文本，再尝试解析 JSON
+  // Read text first, then try to parse JSON.
   const text = await resp.text();
   if (!resp.ok) {
-    // 尝试解析为 JSON，如果失败则使用原始文本
+    // Try to parse JSON; fall back to raw text on failure.
     try {
       const errorData = JSON.parse(text);
       throw new Error(errorData.detail || errorData.message || text || 'Upload failed');

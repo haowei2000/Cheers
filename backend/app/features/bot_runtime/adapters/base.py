@@ -81,7 +81,7 @@ class BotContext:
 
     memory: dict[str, str] = field(default_factory=dict)
     attachments: list[dict[str, str]] = field(default_factory=list)
-    # 澄清场景：原问题文本，供引导 Bot 合并上下文后生成最终回答
+    # Clarification flow: original question text used by the guide bot to merge context before final response.
     original_question_text: str | None = None
 
 
@@ -169,10 +169,10 @@ class AgentResponse:
     success: bool = True
     error_message: str | None = None
     file_ids: list[str] = field(default_factory=list)
-    # True 表示 Bot 执行为异步派发（如 Agent Bridge Bot 交给外部 provider），
-    # content 不会被 Bot pipeline 写入占位消息，回复通过 bridge 回推后再落盘。
+    # True means bot execution was dispatched asynchronously, such as Agent Bridge bots handled by external providers.
+    # The bot pipeline does not write content to the placeholder; replies are persisted after bridge callbacks.
     dispatched_async: bool = False
-    # True 表示用户取消了这次 Bot 回复。content 保留取消前已产生的部分内容。
+    # True means the user cancelled this bot reply; content keeps the partial text produced before cancellation.
     cancelled: bool = False
 
 

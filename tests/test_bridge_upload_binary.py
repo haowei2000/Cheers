@@ -93,7 +93,7 @@ async def test_upload_binary_happy_path(
     assert rec.size_bytes == len(body)
     assert rec.status == "ready"
 
-    # 文件落到 data_dir/generated/{channel_id}/{file_id}.png
+    # The file lands in data_dir/generated/{channel_id}/{file_id}.png.
     on_disk = tmp_path / "generated" / ch_id / f"{data['file_id']}.png"
     assert on_disk.exists()
     assert on_disk.read_bytes() == body
@@ -128,7 +128,7 @@ async def test_upload_binary_rejects_bot_not_in_channel(
     monkeypatch.setattr(settings, "agent_bridge_enabled", True)
 
     _, _, token = await _seed_bot_in_channel(db_session)
-    # 另一个频道，bot 不是成员
+    # Another channel where the bot is not a member.
     other_ws = f"ws-{uuid.uuid4().hex[:8]}"
     other_ch = f"ch-{uuid.uuid4().hex[:8]}"
     db_session.add(Workspace(workspace_id=other_ws, name="OW"))
@@ -194,7 +194,7 @@ async def test_upload_binary_rejects_oversize(
     )
     assert resp.status_code == 413
 
-    # FileRecord 应该没被创建（写到一半被回滚/unlink）
+    # FileRecord should not be created after mid-write rollback/unlink.
     rows = (await db_session.execute(
         select(FileRecord).where(FileRecord.channel_id == ch_id)
     )).scalars().all()

@@ -75,17 +75,17 @@ export default function ChannelMembersModal({
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"members" | "invite" | "invite_by_id" | "invite_bot">("members");
 
-  // 邀请相关状态
+  // Invitation state.
   const [inviteLoading, setInviteLoading] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState<Set<string>>(new Set());
 
-  // Bot 邀请状态
+  // Bot invitation state.
   const [addingBotId, setAddingBotId] = useState<string | null>(null);
 
-  // 提示词模板
+  // Prompt templates.
   const [allTemplates, setAllTemplates] = useState<PromptTemplateItem[]>([]);
 
-  // 加载频道成员
+  // Load channel members.
   const loadMembers = async () => {
     setLoading(true);
     try {
@@ -101,7 +101,7 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 加载可邀请的好友
+  // Load friends that can be invited.
   const loadFriendsToInvite = async () => {
     try {
       const res = await fetch(
@@ -117,7 +117,7 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 邀请单个好友
+  // Invite one friend.
   const inviteFriend = async (friendId: string) => {
     setInviteLoading(true);
     try {
@@ -149,7 +149,7 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 批量邀请好友
+  // Invite selected friends in bulk.
   const inviteSelectedFriends = async () => {
     if (selectedFriends.size === 0) {
       toast.error("请先选择好友");
@@ -193,10 +193,10 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 移除成员
+  // Remove a member.
   const removeMember = async (memberId: string, memberType: string) => {
     if (memberType === "bot") {
-      // Bot 保留原有的移除逻辑
+      // Preserve the existing removal flow for bots.
       if (!confirm("确定要移除这个 Bot 吗？")) return;
     } else {
       if (!confirm("确定要移除这个成员吗？")) return;
@@ -220,7 +220,7 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 加载所有提示词模板
+  // Load all prompt templates.
   const loadTemplates = async () => {
     try {
       const res = await fetch(`${API}/templates`, { headers: authHeaders });
@@ -233,7 +233,7 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 更新 Bot 的频道级提示词模板
+  // Update the bot's channel-level prompt template.
   const updateBotTemplate = async (memberId: string, templateId: string | null) => {
     try {
       const res = await fetch(
@@ -256,7 +256,7 @@ export default function ChannelMembersModal({
     }
   };
 
-  // 添加 Bot 到频道
+  // Add a bot to the channel.
   const addBot = async (botId: string) => {
     setAddingBotId(botId);
     try {
@@ -347,7 +347,7 @@ export default function ChannelMembersModal({
         {/* Content */}
         <div className="p-4 max-h-[60vh] overflow-y-auto">
           {activeTab === "members" && (
-            // 成员列表
+            // Member list.
             loading ? (
               <div className="text-center py-8 text-gray-500">
                 <div className="animate-spin w-6 h-6 border-2 border-[#1264A3] border-t-transparent rounded-full mx-auto mb-2"></div>
@@ -403,7 +403,7 @@ export default function ChannelMembersModal({
                               </button>
                             }
                           />
-                          {/* 提示词模板选择 */}
+                          {/* Prompt template selector. */}
                           <div className="ml-11 flex items-center gap-2">
                             <label className="text-xs text-gray-500 whitespace-nowrap">提示词模板:</label>
                             <select
@@ -438,7 +438,7 @@ export default function ChannelMembersModal({
           )}
 
           {activeTab === "invite" && (
-            // 邀请好友
+            // Invite friends.
             <div>
               {friends.length === 0 ? (
                 <div className="text-center py-8">

@@ -1,13 +1,13 @@
 /**
- * 测试用的 mock AgentNexus bridge —— 一对本地 WS server 对应 `/control` 与 `/data`
- * 两条流，模拟后端协议。
+ * Mock AgentNexus bridge for tests. A local WebSocket server pair maps to
+ * `/control` and `/data` streams and simulates the backend protocol.
  *
- * 支持：
- *   - Bearer token 校验（缺失 / 不匹配 → close code 4401）
- *   - 可配置的 hello 首帧（membership 快照）
- *   - control: 手动推 channel_joined / channel_left / bot_revoked
- *   - data: 推 message / 收 reply 并回 send_ack / 收 resume 后回指定重放
- *   - 暴露 `supersede()` 模拟 4402 踢旧连接
+ * Supports:
+ *   - Bearer token validation; missing or mismatched tokens close with 4401.
+ *   - Configurable first hello frame with membership snapshot.
+ *   - control: manually push channel_joined / channel_left / bot_revoked.
+ *   - data: push message, receive reply and send send_ack, replay after resume.
+ *   - Exposes supersede() to simulate 4402 old-connection eviction.
  */
 import http from "node:http";
 import { AddressInfo } from "node:net";
@@ -17,15 +17,15 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { ChannelInfo, MessageEvent } from "../src/types.js";
 
 export interface MockBridgeOptions {
-  /** 期望的 bot token（Bearer）。不匹配时关闭连接。 */
+  /** Expected bot token (Bearer); mismatches close the connection. */
   botToken: string;
-  /** hello 首帧使用的 botId */
+  /** botId used by the first hello frame. */
   botId?: string;
-  /** hello 首帧使用的 botUsername */
+  /** botUsername used by the first hello frame. */
   botUsername?: string;
-  /** hello 首帧下发的成员列表 */
+  /** Membership list sent by the first hello frame. */
   initialMemberships?: ChannelInfo[];
-  /** data hello 首帧的 last_event_seq */
+  /** last_event_seq used by the first data hello frame. */
   dataLastEventSeq?: number;
 }
 
@@ -48,7 +48,7 @@ export class MockBridge {
   public receivedResumes: Array<Record<string, unknown>> = [];
   public receivedPings = 0;
 
-  /** 注入：当收到 reply / send 时自动回的 send_ack。默认 ok=true，message_id 随机。 */
+  /** Test injection: auto-send send_ack for reply / send. Defaults to ok=true with random message_id. */
   public autoAckReply: boolean = true;
 
   constructor(private opts: MockBridgeOptions) {}
@@ -133,7 +133,7 @@ export class MockBridge {
         }
         if (frame.type === "resume") {
           this.receivedResumes.push(frame);
-          // 测试按需重放：默认回 resume_ack{replayed:0}
+          // Test on-demand replay; default to resume_ack{replayed:0}.
           ws.send(JSON.stringify({
             type: "resume_ack",
             replayed: 0,
@@ -142,14 +142,14 @@ export class MockBridge {
           return;
         }
       }
-      // control: ready 等 —— 忽略
+      // Ignore control frames such as ready.
     });
 
     ws.on("close", () => {
       this.conns.delete(info);
     });
 
-    // 首帧 hello
+    // First hello frame.
     if (stream === "control") {
       ws.send(JSON.stringify({
         type: "hello",
@@ -197,7 +197,7 @@ export class MockBridge {
     this.broadcast("data", full);
   }
 
-  /** 模拟后端把当前连接以 4402 踢下线（新连接上来了）。 */
+  /** Simulate the backend kicking the current connection with 4402 because a new connection arrived. */
   supersede(stream: "control" | "data"): void {
     for (const c of Array.from(this.conns)) {
       if (c.stream === stream) {

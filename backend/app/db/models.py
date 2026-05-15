@@ -26,71 +26,71 @@ class Base(DeclarativeBase):
 
 
 class AIModel(Base):
-    """AI 模型配置：管理可用的 LLM 模型。"""
+    """AI model configuration for available LLM models."""
     __tablename__ = "ai_models"
 
     model_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    name: Mapped[str] = mapped_column(String(64), nullable=False)  # 显示名称，如 "GPT-4o"
+    name: Mapped[str] = mapped_column(String(64), nullable=False)  # Display name, for example "GPT-4o".
     provider: Mapped[str] = mapped_column(String(32), nullable=False)  # openai, ollama, anthropic, etc.
-    model_name: Mapped[str] = mapped_column(String(64), nullable=False)  # API 使用的模型名，如 "gpt-4o"
+    model_name: Mapped[str] = mapped_column(String(64), nullable=False)  # API model name, for example "gpt-4o".
     base_url: Mapped[str] = mapped_column(String(512), nullable=False)  # API Base URL
-    api_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # API Key（可选，本地模型可为空）
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 模型描述
-    is_enabled: Mapped[bool] = mapped_column(default=True)  # 是否启用
-    is_builtin: Mapped[bool] = mapped_column(default=False)  # 是否内置（不可删除）
-    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1", default=True)  # 公开/私有
-    config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)  # 额外配置（temperature 等）
-    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # 创建者 user_id
+    api_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # Optional API key; local models may leave it empty.
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Model description.
+    is_enabled: Mapped[bool] = mapped_column(default=True)  # Whether the model is enabled.
+    is_builtin: Mapped[bool] = mapped_column(default=False)  # Built-in models cannot be deleted.
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1", default=True)  # Public or private visibility.
+    config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)  # Extra config such as temperature.
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # Creator user_id.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class PromptTemplate(Base):
-    """提示词模板：可复用的 System Prompt + User Template。"""
+    """Reusable prompt template made from a system prompt and user template."""
     __tablename__ = "prompt_templates"
 
     template_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # 模板名称，如 "代码审查"
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 描述
-    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)  # 系统提示词
-    user_template: Mapped[str] = mapped_column(Text, nullable=False, default=DEFAULT_USER_TEMPLATE)  # 用户消息模板
-    variables: Mapped[list] = mapped_column(JSON, nullable=True, default=list)  # 变量列表，如 ["message"]
-    is_builtin: Mapped[bool] = mapped_column(default=False)  # 是否内置模板（不可删除）
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # Template name, for example "Code review".
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Description.
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)  # System prompt.
+    user_template: Mapped[str] = mapped_column(Text, nullable=False, default=DEFAULT_USER_TEMPLATE)  # User-message template.
+    variables: Mapped[list] = mapped_column(JSON, nullable=True, default=list)  # Variable list, for example ["message"].
+    is_builtin: Mapped[bool] = mapped_column(default=False)  # Built-in templates cannot be deleted.
     created_by: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("users.user_id"), nullable=True, default=None
-    )  # 模板创建者，为空表示系统/管理员创建
+    )  # Template creator; empty means system/admin-created.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class BotAccount(Base):
-    """Bot 账户：由模型 + 提示词模板组成。"""
+    """Bot account composed from a model and prompt template."""
     __tablename__ = "bot_accounts"
 
     bot_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # @ 用的名字
-    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # 显示名称
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Bot 描述
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # Name used for @mentions.
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Display name.
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Bot description.
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
-    # 关联模型和模板（内置 Bot 可为 None）
+    # Associated model and template; built-in bots may leave these empty.
     model_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("ai_models.model_id"), nullable=True)
     template_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("prompt_templates.template_id"), nullable=True)
 
-    # 可选：自定义覆盖
-    custom_system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 覆盖模板的 system_prompt
+    # Optional custom overrides.
+    custom_system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Overrides the template system_prompt.
 
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="online")  # online | offline | busy
     scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default="friend", default="friend")
     intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: capabilities, description
-    # 绑定类型：'http'=OpenAI 兼容 HTTP（默认，HttpBotAdapter）；
-    #           'agent_bridge'=经 Agent Bridge 异步回推
+    # Binding type: 'http'=OpenAI-compatible HTTP via HttpBotAdapter;
+    #               'agent_bridge'=async callback through Agent Bridge.
     binding_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default="http", default="http")
     bridge_provider: Mapped[str] = mapped_column(String(32), nullable=False, server_default="generic", default="generic")
     binding_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # e.g. {"agent_id": "...", "gateway": "..."}
-    # Agent Bridge Bot 凭证：明文 token 仅在创建/轮换时返回一次，此后只存哈希
+    # Agent Bridge credentials; plaintext tokens are only returned during create/rotate, then only hashes are stored.
     bot_token_hash: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     bot_token_prefix: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
     bot_token_rotated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # 创建者 user_id
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # Creator user_id.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     # Relationships
@@ -99,7 +99,7 @@ class BotAccount(Base):
 
 
 class Workspace(Base):
-    """工作区（顶层组织单元）."""
+    """Workspace as the top-level organization unit."""
     __tablename__ = "workspaces"
 
     workspace_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -174,7 +174,7 @@ class EmailCode(Base):
 
 
 class ChannelMembership(Base):
-    """频道成员关系（用户或 Bot）."""
+    """Channel membership relation for users and bots."""
     __tablename__ = "channel_memberships"
 
     channel_id: Mapped[str] = mapped_column(
@@ -184,15 +184,15 @@ class ChannelMembership(Base):
     member_type: Mapped[str] = mapped_column(String(16), nullable=False)
     role: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="member", default="member"
-    )  # "owner" | "admin" | "member"；仅用户成员参与频道管理权限
+    )  # "owner" | "admin" | "member"; only user members participate in channel-management permissions.
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     added_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    # 频道级提示词模板覆盖（仅 bot 成员有效，为空时使用 BotAccount 默认模板）
+    # Channel-level prompt-template override; valid for bot members only.
     template_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("prompt_templates.template_id"), nullable=True, default=None
     )
-    # 用户阅读游标：最近一次点开频道并标记已读的时间戳；NULL 表示从未标记。
-    # 用于在 /channels 列表接口里派生 unread_count。
+    # User read cursor: timestamp for the latest read mark; NULL means never marked.
+    # Used to derive unread_count in the /channels list endpoint.
     last_read_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
@@ -468,14 +468,14 @@ class MemoryEntry(Base):
 
 
 class KeychainItem(Base):
-    """用户密钥链：存储个人敏感凭据。"""
+    """User keychain item for personal sensitive credentials."""
     __tablename__ = "keychain_items"
 
     key_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
     owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.user_id"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(128), nullable=False)  # 用户定义的密钥名称
-    value: Mapped[str] = mapped_column(Text, nullable=False)  # 加密存储的密钥值
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 可选描述
+    name: Mapped[str] = mapped_column(String(128), nullable=False)  # User-defined key name.
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # Encrypted key value.
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Optional description.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -1,11 +1,13 @@
 /**
- * agentnexus channel plugin —— OpenClaw 官方 SDK 契约版（channel-core）
+ * agentnexus channel plugin using the official OpenClaw SDK contract
+ * (channel-core).
  *
- * 按 docs.openclaw.ai/plugins/sdk-channel-plugins 的 createChatChannelPlugin
- * + createChannelPluginBase 模式构建；entry 文件里 registerFull 注册 HTTP 路由，
- * WS 入站时自 loopback 到该路由进入 gateway-request-scope，合法调用
- * api.runtime.subagent.run。agent 产出经 outbound.sendText 回推 → session.reply
- * 原地 finalize AgentNexus 侧占位消息。
+ * Built with the createChatChannelPlugin + createChannelPluginBase pattern from
+ * docs.openclaw.ai/plugins/sdk-channel-plugins. The entry file registers an
+ * HTTP route in registerFull. WebSocket inbound messages loop back to that route
+ * to enter gateway-request-scope, where api.runtime.subagent.run is allowed.
+ * Agent output returns through outbound.sendText and session.reply finalizes the
+ * AgentNexus placeholder message in place.
  */
 import { randomUUID } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
@@ -35,8 +37,9 @@ const INBOUND_CACHE_MAX = 1000;
 const DEFAULT_OPENCLAW_TIMEOUT_MS = 10 * 60 * 1000;
 
 // ============================================================================
-// 附件正文 hydration —— 用 bot token 向 AgentNexus 的 bridge 读出 markdown，
-// 注入到 subagent.run 的 message 前置，解决 "agent 只能看 3 行摘要" 的问题
+// Attachment body hydration: use the bot token to read Markdown from the
+// AgentNexus bridge and prepend it to the subagent.run message so agents are not
+// limited to short attachment summaries.
 // ============================================================================
 
 function deriveHttpBase(wsUrl: string): string {
@@ -55,7 +58,7 @@ interface FileContentFetchResult {
   truncated: boolean;
 }
 
-/** backend 卡住不应把 WS 消息环节顶住，设一个上限超时。 */
+/** Bound bridge fetches so backend stalls do not block WebSocket message handling. */
 const BRIDGE_FETCH_TIMEOUT_MS = 10_000;
 
 async function fetchFileContentForBot(
@@ -97,7 +100,7 @@ async function fetchFileContentForBot(
   }
 }
 
-/** agent 回复超过此字符阈值时，自动把正文上传为 .md 附件挂到 reply 上。 */
+/** Auto-upload long agent replies as .md attachments above this threshold. */
 const AUTO_ATTACH_THRESHOLD_CHARS = 4000;
 
 interface OutputFallbackConfig {
@@ -153,7 +156,7 @@ function resolveOutputFallbackConfig(raw?: RawOutputFallbackConfig): OutputFallb
   };
 }
 
-/** 入站到 OpenClaw agent 前追加的交付契约：防止模型只回“正在生成…”。 */
+/** Delivery contract prepended before inbound OpenClaw agent calls. */
 const AGENTNEXUS_RESPONSE_CONTRACT = `
 
 <agentnexus_response_contract>
@@ -181,7 +184,7 @@ async function uploadBotMarkdownFile(
   filename: string,
   content: string,
 ): Promise<string | null> {
-  // 复用同一条 file_upload 帧：把 markdown 文本当二进制发，contentType=text/markdown。
+  // Reuse the same file_upload frame by sending Markdown text as binary with contentType=text/markdown.
   try {
     const safeName = filename.endsWith(".md") ? filename : `${filename}.md`;
     const ack = await session.uploadFile({
@@ -233,7 +236,7 @@ async function buildMessageWithAttachments(
 }
 
 // ============================================================================
-// ResolvedAccount —— 由 config 解析得出，供 gateway / outbound 等 adapter 使用
+// ResolvedAccount is derived from config and used by gateway / outbound adapters.
 // ============================================================================
 
 export interface ResolvedAccount {
@@ -276,7 +279,7 @@ function resolveAccount(cfg: OpenClawConfig, accountId?: string | null): Resolve
   const id = accountId ?? Object.keys(accounts)[0] ?? null;
   const raw = (id && accounts[id]) || undefined;
   if (!raw) {
-    // 找不到账号时返回一个"占位"账号；SDK 会按 inspectAccount 去校验是否 configured
+    // Return a placeholder account when none is found; the SDK checks configured via inspectAccount.
     return {
       accountId: id,
       enabled: false,
@@ -321,16 +324,16 @@ function inspectAccount(cfg: OpenClawConfig, accountId?: string | null): unknown
 }
 
 // ============================================================================
-// SessionRegistry —— 每个 live account 的 BotSession + inbound 消息缓存
+// SessionRegistry stores the BotSession and inbound message cache for each live account.
 // ============================================================================
 
 interface AccountRuntime {
   session: BotSession;
   account: ResolvedAccount;
-  /** sessionKey → 最近一次 inbound（独立模式 / 调试时仍可用） */
+  /** sessionKey -> latest inbound message, still useful in standalone/debug mode. */
   lastInboundBySessionKey: Map<string, InboundMessage>;
-  /** taskId → inbound。session-binding 把 conversationId=taskId 绑到 sessionKey，
-   *  deliver 回来时 ctx.to === taskId，据此找回源消息做 session.reply。 */
+  /** taskId -> inbound. Session binding maps conversationId=taskId to sessionKey;
+   *  when deliver returns with ctx.to === taskId, this recovers the source for session.reply. */
   lastInboundByTaskId: Map<string, InboundMessage>;
   /** conversation/task/child id → AgentNexus reply target.
    *
@@ -338,9 +341,9 @@ interface AccountRuntime {
    * child conversation id rather than the original AgentNexus task_id. This
    * map keeps all of those aliases pinned to the original placeholder. */
   replyTargets: Map<string, ReplyTarget>;
-  /** SessionBindingAdapter 的内存 store（sessionKey → records） */
+  /** In-memory store for SessionBindingAdapter: sessionKey -> records. */
   bindingStore: Map<string, SessionBindingRecord[]>;
-  /** 给 stopAccount 解除注册用 */
+  /** Kept so stopAccount can unregister it. */
   bindingAdapter: SessionBindingAdapter;
 }
 
@@ -843,15 +846,15 @@ function emitInboundTrace(
 }
 
 // ============================================================================
-// Plugin API 共享 —— registerFull 里把 api 存到这里，onMessage 里通过 fetch
-// 把消息 bounce 到 api.registerHttpRoute 注册的路由，从而进入 request scope
+// Shared plugin API. registerFull stores api here; onMessage bounces messages
+// through fetch into the api.registerHttpRoute route to enter request scope.
 // ============================================================================
 
 interface SharedApiRef {
   api: OpenClawPluginApi | null;
   gatewayPort: number | null;
-  internalToken: string | null;  // 自 loopback 的防护 token
-  gatewayToken: string | null;   // OpenClaw gateway 外层 token-auth
+  internalToken: string | null;  // Protection token for self-loopback requests.
+  gatewayToken: string | null;   // Outer OpenClaw gateway token auth.
 }
 
 const sharedApi: SharedApiRef = {
@@ -903,9 +906,9 @@ async function startAccount(rawCtx: unknown): Promise<void> {
   const replyTargets = new Map<string, ReplyTarget>();
   const bindingStore = new Map<string, SessionBindingRecord[]>();
 
-  // 注册 SessionBindingAdapter：deliver:true 靠这个把 sessionKey 路由到
-  // {channel, accountId, conversationId}。conversationId 我们用 taskId，
-  // 这样每条入站消息独占一个 conversation；outbound.sendText 拿到的 ctx.to 就是 taskId。
+  // Register SessionBindingAdapter. deliver:true uses this to route sessionKey to
+  // {channel, accountId, conversationId}. We use taskId as conversationId so each
+  // inbound message owns one conversation and outbound.sendText receives ctx.to as taskId.
   const bindingAdapter: SessionBindingAdapter = {
     channel: PLUGIN_ID,
     accountId,
@@ -1001,7 +1004,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
     {
       onReady: () => {
         log.info?.(`agentnexus: ${accountId} ready bot_id=${session.botId} memberships=${session.membership.channelIds.size}`);
-        // ChannelAccountSnapshot 形状 —— gateway health monitor 依据这些字段判断是否需要重启
+        // ChannelAccountSnapshot shape; the gateway health monitor uses these fields for restart decisions.
         ctx.setStatus?.({
           accountId,
           enabled: true,
@@ -1039,8 +1042,8 @@ async function startAccount(rawCtx: unknown): Promise<void> {
           data: { attachments: m.attachments.length },
         });
 
-        // 自 loopback 到 api.registerHttpRoute 的路由：那个 handler 运行在
-        // gateway-request-scope，可以合法调 api.runtime.subagent.run
+        // Self-loopback into the api.registerHttpRoute route. That handler runs
+        // in gateway-request-scope and may legally call api.runtime.subagent.run.
         const ref = getSharedApi();
         if (!ref.api || !ref.gatewayPort || !ref.internalToken) {
           log.warn?.(
@@ -1053,7 +1056,7 @@ async function startAccount(rawCtx: unknown): Promise<void> {
           return;
         }
 
-        // 附件正文 hydration：在进入 subagent.run 前把每个文档正文拼进 message
+        // Attachment body hydration: append each document body before subagent.run.
         const httpBase = deriveHttpBase(account.dataUrl);
         if (m.attachments.length > 0) {
           emitInboundTrace(session, accountId, sk, m, {
@@ -1183,9 +1186,10 @@ async function startAccount(rawCtx: unknown): Promise<void> {
     bindingAdapter,
   });
 
-  // gateway 把 startAccount 的 Promise 视作"账号生命周期"，只要它 resolve/reject
-  // 就认为账号停了，立刻按指数退避 auto-restart。所以这里必须一直 await 直到
-  // ctx.abortSignal 触发（= stopAccount 被调用 / gateway 关闭）。
+  // The gateway treats the startAccount promise as the account lifecycle. If it
+  // resolves or rejects, the account is considered stopped and auto-restarts
+  // with exponential backoff. Keep awaiting until ctx.abortSignal fires, which
+  // means stopAccount was called or the gateway is closing.
   await new Promise<void>((resolve) => {
     const onAbort = () => {
       log.info?.(`agentnexus: ${accountId} abortSignal; stopping`);
@@ -1225,22 +1229,23 @@ async function stopAccount(rawCtx: unknown): Promise<void> {
 // Outbound: OpenClaw agent → sendText / sendMedia → session.reply / send
 // ============================================================================
 //
-// OpenClaw gateway (deliver-BNvlWd4P.js) 对 MEDIA: 协议的处理是在 gateway
-// 侧先抽出 MEDIA 行，然后按 handler.sendMedia(caption, mediaUrl, overrides)
-// 串行调用 —— caption 只在 index=0 的首次调用里非空，其余调用 caption=""。
-// 纯文本 payload 走 handler.sendText(text) 分片发送，不走 sendMedia。
+// The OpenClaw gateway handles the MEDIA: protocol by extracting MEDIA lines,
+// then serially calling handler.sendMedia(caption, mediaUrl, overrides). caption
+// is non-empty only for the first call at index=0; later calls use caption="".
+// Plain text payloads are sent as chunks through handler.sendText(text), not sendMedia.
 //
-// 关键合约（gateway 读 delivery.messageId）：
-//   sendMedia / sendText 必须返回 { channel, messageId, chatId? }，
-//   返回 undefined 会导致 gateway "Cannot read properties of undefined".
+// Key contract: the gateway reads delivery.messageId. sendMedia / sendText must
+// return { channel, messageId, chatId? }; returning undefined makes the gateway
+// throw "Cannot read properties of undefined".
 //
-// 我们的策略：
-//   - sendMedia 上传到 AgentNexus bridge 拿 file_id，按 `to`（= taskId）
-//     累积到 pendingMediaByTo，记录首次调用的 caption；
-//   - 每次 sendMedia 重新 arm 一个短 debounce（500ms）；最后一次 sendMedia
-//     之后 debounce 触发，一次性 session.reply/send(text=caption, fileIds=all)；
-//   - gateway 的 await 链不等我们 debounce 触发即可返回，因此每次立即返回
-//     合成的 messageId（真实 msg_id 由 bridge broadcast 时生成）。
+// Strategy:
+//   - sendMedia uploads to the AgentNexus bridge to obtain file_id, accumulates
+//     files by `to` (= taskId) in pendingMediaByTo, and records the first caption.
+//   - Each sendMedia arms a short debounce (500ms); after the last sendMedia,
+//     the debounce flushes one session.reply/send(text=caption, fileIds=all).
+//   - The gateway await chain does not wait for the debounce, so each call
+//     immediately returns a synthetic messageId. The real msg_id is generated by
+//     the bridge broadcast.
 
 interface SendTextCtx {
   to: string;
@@ -1252,10 +1257,10 @@ interface SendTextCtx {
 
 interface SendMediaCtx {
   to: string;
-  /** gateway 运行时传 mediaUrl；旧 docs 写作 filePath，兼容二者。 */
+  /** Gateway runtime passes mediaUrl; older docs use filePath, so support both. */
   mediaUrl?: string;
   filePath?: string;
-  /** sendMediaWithLeadingCaption 在 i=0 传 caption；i>0 传 undefined/"". */
+  /** sendMediaWithLeadingCaption passes caption at i=0 and undefined/"" for i>0. */
   text?: string;
   caption?: string;
   contentType?: string;
@@ -1271,18 +1276,19 @@ interface SendTextResult {
   chatId?: string;
 }
 
-/** sendMedia 的 debounce：最后一个 mediaUrl 之后等这么久再统一 flush 成一条 reply. */
+/** sendMedia debounce delay before flushing accumulated media into one reply. */
 const PENDING_MEDIA_DEBOUNCE_MS = 500;
 
-/** 每条逻辑回复最多挂多少媒体附件，防 agent 一次刷屏。 */
+/** Maximum media attachments per logical reply to prevent noisy bursts. */
 const PENDING_MEDIA_CAP = 20;
 
-/** sendText 流式聚合的 debounce：最后一个 chunk 之后等这么久再发 done。
- *  gateway 调 sendText 是同步串行的，相邻调用通常 < 50ms；500ms 既能撑过
- *  网络抖动，也能让 LLM 自然停顿后及时收尾。 */
+/** sendText streaming debounce before done after the last chunk.
+ *  Gateway sendText calls are synchronous and serial, usually less than 50ms
+ *  apart. 500ms covers network jitter while still closing promptly after a
+ *  natural LLM pause. */
 const STREAM_DONE_DEBOUNCE_MS = 500;
 
-/** 单条流式回复最多累积多少字符，防 agent 一次性写一本小说。超过即自动收尾 + 截断。 */
+/** Maximum characters per streaming reply before forced done and truncation. */
 const STREAM_TEXT_CAP_CHARS = 200_000;
 
 function latestRequestTail(text: string): string {
@@ -1673,45 +1679,44 @@ function clearOutputFallbackWatchersForAccount(accountId: string): void {
 }
 
 interface PendingStreamSlot {
-  /** 触发该 stream 的 inbound message —— 用于回滚 fallback 到 session.reply */
+  /** Inbound message that triggered this stream; used for fallback to session.reply. */
   source: InboundMessage;
-  /** 服务端要的占位 msg_id；为 null 则 stream 不可用，直接降级到 reply 路径 */
+  /** Placeholder msg_id required by the server; null means stream is unavailable. */
   placeholderMsgId: string | null;
-  /** 累积字符数，达到 STREAM_TEXT_CAP_CHARS 后强制 done */
+  /** Accumulated character count; forces done at STREAM_TEXT_CAP_CHARS. */
   totalChars: number;
-  /** 单调递增的 delta seq */
+  /** Monotonically increasing delta seq. */
   seq: number;
-  /** 用户已点 ⏹ 取消 → 后续 sendText 不再推 delta，也不发 done */
+  /** User has canceled; later sendText calls push no delta and no done. */
   cancelled: boolean;
-  /** 至少推过一次 delta —— 决定 done debounce 何时启动；
-   *  也用于"sendText 全空也要发 done"这类边角 case 的判断 */
+  /** Whether at least one delta was pushed. This controls done debounce startup
+   *  and edge cases such as sending done for all-empty sendText calls. */
   hasDeltas: boolean;
-  /** sendMedia 期间累积的 file_ids；done 帧把它们一并交给 server,
-   *  让 server 的 finalize_stream 把它们合并进占位消息的 file_ids 字段. */
+  /** file_ids accumulated during sendMedia. The done frame sends them to the
+   *  server so finalize_stream merges them into the placeholder file_ids. */
   fileIds: string[];
-  /** 首段疑似“正在生成…”的进度句。确认有真正正文/文件前不推给频道。 */
+  /** First progress-like status text held until real body text or files appear. */
   heldStatusText: string;
   doneTimer: ReturnType<typeof setTimeout> | null;
 }
 
-/** key = ctx.to（deliver 路径下等于 taskId）。流式聚合 + 取消查找都走这里。 */
+/** key = ctx.to, which equals taskId on the deliver path. Used for stream aggregation and cancel lookup. */
 const pendingStreamByTo = new Map<string, PendingStreamSlot>();
 
-/** key = placeholderMsgId → ctx.to。control WS 推 cancel 帧时只知道 msg_id，
- *  需要据此反查到 stream 槽位。 */
+/** key = placeholderMsgId -> ctx.to. Control WS cancel frames only know msg_id, so this maps back to the stream slot. */
 const taskByPlaceholder = new Map<string, string>();
 
 interface PendingMediaSlot {
   fileIds: string[];
-  /** 首次 sendMedia 调用里 caption 非空时抓到的 payload 文本 */
+  /** Payload text captured from the first sendMedia call with non-empty caption. */
   caption: string;
-  /** 上传时解析出的 channelId，flush 时复用，无需再次 resolve */
+  /** channelId resolved during upload and reused during flush. */
   channelId: string;
   timer: ReturnType<typeof setTimeout> | null;
 }
 
-/** key = ctx.to（deliver 路径下等于 taskId）。AccountRuntime 没这个字段，
- *  所以放模块级；不同 account 的 `to` (= taskId) 全局唯一，碰不上。 */
+/** key = ctx.to, which equals taskId on the deliver path. AccountRuntime does not
+ *  carry this field, so it lives at module scope. `to` (= taskId) is globally unique across accounts. */
 const pendingMediaByTo = new Map<string, PendingMediaSlot>();
 
 async function uploadBotBinaryFile(
@@ -1721,7 +1726,7 @@ async function uploadBotBinaryFile(
   data: Uint8Array,
   contentType?: string,
 ): Promise<string | null> {
-  // 走 data WS 内嵌 file_upload 帧，不再依赖 HTTP /files/upload-binary。
+  // Use embedded file_upload frames on data WS instead of HTTP /files/upload-binary.
   try {
     const ack = await session.uploadFile({
       channelId, filename, data, contentType,
@@ -1733,7 +1738,7 @@ async function uploadBotBinaryFile(
   }
 }
 
-/** filePath 可以是本地路径或 http(s) URL。返回 (bytes, filename, contentType)；失败返 null。 */
+/** Read filePath as a local path or http(s) URL. Return bytes, filename, and contentType, or null on failure. */
 async function readMediaSource(
   filePath: string, explicitFilename?: string, explicitContentType?: string,
 ): Promise<{ bytes: Uint8Array; filename: string; contentType: string } | null> {
@@ -1758,7 +1763,7 @@ async function readMediaSource(
       return null;
     }
   }
-  // 本地路径
+  // Local path.
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
   try {
@@ -1792,7 +1797,7 @@ function resolveActiveEntry(accountId?: string | null): { accountId: string; ent
   return { accountId: resolvedId, entry };
 }
 
-/** Debounce flush：把 `to` 上累积的 fileIds + caption 一次性发成 reply/send。 */
+/** Debounced flush that sends accumulated fileIds + caption for `to` as one reply/send. */
 async function flushPendingMedia(to: string, entry: AccountRuntime): Promise<void> {
   const slot = pendingMediaByTo.get(to);
   if (!slot) return;
@@ -1809,7 +1814,7 @@ async function flushPendingMedia(to: string, entry: AccountRuntime): Promise<voi
     await session.reply({ source, text: slot.caption, fileIds: slot.fileIds });
     return;
   }
-  // source 已被别的流程消费；尝试主动 send 到解析好的 channel（需是 bot 成员）
+  // Source was consumed by another flow; try proactive send to the resolved channel if the bot is a member.
   if (session.membership.channelIds.has(slot.channelId)) {
     await session.send({ channelId: slot.channelId, text: slot.caption, fileIds: slot.fileIds });
   }
@@ -1821,14 +1826,14 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
   const target = resolveReplyTarget(entry, ctx.to);
   const streamKey = target?.taskId ?? ctx.to;
 
-  // gateway 运行时传 mediaUrl；旧 docs 示例用 filePath，兼容二者
+  // Gateway runtime passes mediaUrl; older docs use filePath, so support both.
   const mediaUrl = ctx.mediaUrl || ctx.filePath || "";
-  // sendMediaWithLeadingCaption: index=0 传 caption（= payload text）,
-  // index>0 传 undefined/""。我们抓第一个非空的作为最终 reply text。
+  // sendMediaWithLeadingCaption passes caption (= payload text) at index=0 and
+  // undefined/"" after that. Capture the first non-empty caption as final reply text.
   const caption = ((ctx.text ?? ctx.caption) ?? "").toString();
 
-  // 解析 channelId 而**不**消费 inbound source —— 上传可能失败，
-  // 失败时不能让 source 丢失（否则后续 sendText/sendMedia 也走不到流式）。
+  // Resolve channelId without consuming inbound source. Upload may fail, and
+  // losing source would prevent later sendText/sendMedia from using streaming.
   const existingSlot = pendingStreamByTo.get(streamKey);
   const peekedSource = existingSlot ? null : sourceForReplyTarget(entry, target, ctx.to);
   const channelId = existingSlot?.source.channelId
@@ -1877,13 +1882,13 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
     if (placeholder) taskByPlaceholder.set(placeholder, streamKey);
   }
 
-  // ── 主路径：把 fileId 投到流式 slot，与 sendText 的 deltas 共用一个 done ──
+  // Main path: add fileId to the stream slot and share one done with sendText deltas.
   if (slot && slot.placeholderMsgId && !slot.cancelled) {
     if (slot.fileIds.length < PENDING_MEDIA_CAP) slot.fileIds.push(fileId);
-    // 首个 sendMedia 的 caption（= 整段文本）：如果还没有任何 sendText delta，
-    // 把它作为单个 delta 推一次，让前端能即时把文字显示出来再补文件。
-    // 已经流过 sendText 的情况下不要重复推 —— gateway 这时给的 caption 会
-    // 跟 sendText 的总和重复。
+    // First sendMedia caption (= full text): if no sendText delta has streamed,
+    // push it as one delta so the frontend can show text before adding files.
+    // Do not duplicate it after sendText has already streamed; gateway caption
+    // would duplicate the sendText total.
     if (caption && !slot.hasDeltas) {
       slot.seq += 1;
       slot.totalChars += caption.length;
@@ -1898,7 +1903,7 @@ async function sendMedia(ctx: SendMediaCtx): Promise<SendTextResult> {
     };
   }
 
-  // ── 兜底：source-less 广播 / 流式槽不可用 → 老的 pendingMediaByTo debounce ──
+  // Fallback: source-less broadcast or unavailable stream slot -> old pendingMediaByTo debounce.
   let mslot = pendingMediaByTo.get(ctx.to);
   if (!mslot) {
     mslot = { fileIds: [], caption: "", channelId, timer: null };
@@ -1976,17 +1981,17 @@ async function flushStreamDone(to: string, entry: AccountRuntime): Promise<void>
   stopOutputFallbackWatcher(accountId, slot.source.event.task_id);
 }
 
-/** sendText 主路径：把每次调用当作一个 delta 推到服务端，debounce 之后发 done。
+/** Main sendText path: push each call as one delta and send done after debounce.
  *
- *  Why this works: gateway deliver:true 模式会把 agent 的输出按 chunk 多次调
- *  sendText（典型间隔 < 50ms），相比一次性 reply：
- *    - 用户能在浏览器里看到 token-by-token 渲染
- *    - 用户点 ⏹ 时控制 WS 推 cancel，我们立即停止后续 delta 推送
- *    - 服务端在 cancel 那一刻就用当前 buffer finalize 了 partial，所以即使
- *      agent 还在跑也不会再影响前端
+ *  Why this works: gateway deliver:true calls sendText repeatedly with agent
+ *  output chunks, typically less than 50ms apart. Compared with one-shot reply:
+ *    - Users see token-by-token rendering in the browser.
+ *    - When the user clicks stop, control WS pushes cancel and we stop deltas.
+ *    - The server finalizes the partial reply from the current buffer at cancel
+ *      time, so a still-running agent no longer affects the frontend.
  *
- *  Fallback: 如果 inbound source / placeholderMsgId 拿不到，或 data WS 不
- *  可写，则降级回老的 session.reply 一次性整段路径，行为等同于流式前。 */
+ *  Fallback: if inbound source / placeholderMsgId is unavailable or data WS is
+ *  not writable, fall back to the old one-shot session.reply path. */
 async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
   const { accountId, entry } = resolveActiveEntry(ctx.accountId);
   const { session, lastInboundBySessionKey, lastInboundByTaskId } = entry;
@@ -2001,7 +2006,7 @@ async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
     // turns out to be unusable).
     const source = sourceForReplyTarget(entry, target, ctx.to);
     if (!source) {
-      // 非响应式 send：保留原行为（主动 send 到 channel），不走流式
+      // Non-reactive send: keep the previous proactive channel send behavior instead of streaming.
       const channelId = ctx.to;
       if (!session.membership.channelIds.has(channelId)) {
         throw new Error(`agentnexus: bot not in channel ${channelId} (to=${ctx.to})`);
@@ -2069,9 +2074,10 @@ async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
     const heldCandidate = `${slot.heldStatusText}${incoming}`;
     if (shouldHoldStatusOnlyOutput(slot.source.text, heldCandidate)) {
       slot.heldStatusText = heldCandidate.slice(0, 2000);
-      // 状态句不是最终回复。这里静默挂起，让 AgentNexus 后端的前台等待
-      // timer 把占位消息转成后台 task；OpenClaw 后续迟到的正文或 MEDIA
-      // 仍会继续写入同一个 stream slot 并最终更新该 task 消息。
+      // Status text is not a final reply. Hold silently so the AgentNexus
+      // foreground wait timer can turn the placeholder into a background task.
+      // Later OpenClaw body text or MEDIA still writes to the same stream slot
+      // and eventually updates that task message.
       return {
         channel: PLUGIN_ID,
         messageId: `${slot.placeholderMsgId}-held-status`,
@@ -2126,7 +2132,7 @@ async function sendText(ctx: SendTextCtx): Promise<SendTextResult> {
 }
 
 // ============================================================================
-// Plugin 对象
+// Plugin object.
 // ============================================================================
 
 const base = createChannelPluginBase<ResolvedAccount>({
@@ -2155,15 +2161,15 @@ const base = createChannelPluginBase<ResolvedAccount>({
   },
 });
 
-// base 不直接接 gateway，我们用 spread 把它合回来
+// base does not connect to gateway directly, so spread it back in here.
 const baseWithGateway: ChannelPlugin<ResolvedAccount> = {
   ...base,
   gateway: {
     startAccount,
     stopAccount,
-    // 注意：resolveGatewayAuthBypassPaths 只对 bundled 插件生效。外部 linked
-    // 插件的自 loopback 用 api.config.gateway.auth.token 过 gateway 层 auth，
-    // 然后由 handler 里自己的 internalToken 做防伪（见 index.ts）。
+    // resolveGatewayAuthBypassPaths only applies to bundled plugins. External
+    // linked plugins use api.config.gateway.auth.token for self-loopback gateway
+    // auth, then the handler's internalToken provides forgery protection.
   },
 };
 
@@ -2179,20 +2185,22 @@ const chatPlugin = createChatChannelPlugin<ResolvedAccount>({
   },
   threading: { topLevelReplyToMode: "reply" },
   outbound: {
-    // 参照 @openclaw/synology-chat 等官方 channel plugin：直接把 sendText 放在
-    // outbound 顶层，deliveryMode 用 "gateway"。官方 docs 里的 attachedResults
-    // 是另一个高阶 API（返回 messageId 给 attachment binding），不是 deliver 路径。
+    // Follow official channel plugins such as @openclaw/synology-chat: put
+    // sendText directly at outbound top level with deliveryMode="gateway".
+    // attachedResults in official docs is a higher-level API for returning
+    // messageId to attachment binding, not the deliver path.
     deliveryMode: "gateway",
     sendText,
     sendMedia,
-    // sdk-channel-plugins.md 官例把 sendMedia 放在 outbound.base；为了兼容
-    // 不同版本的 gateway 查找路径，同时在顶层和 base 里各声明一遍。
+    // Official sdk-channel-plugins examples place sendMedia under outbound.base.
+    // Declare it both at top level and under base for gateway lookup compatibility.
     base: { sendMedia },
   },
 });
 
-// 追加 status 适配器：gateway 的 health monitor 会用这个判断是否应该 auto-restart。
-// 默认实现会把自管 WS 的长连接当成 "stale socket" 误判为故障 —— 直接 opt out。
+// Add a status adapter used by the gateway health monitor for auto-restart
+// decisions. The default implementation treats self-managed long-lived WS
+// connections as stale sockets, so opt out directly.
 (chatPlugin as { status?: unknown }).status = {
   skipStaleSocketHealthCheck: true,
   defaultRuntime: {

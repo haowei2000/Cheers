@@ -49,7 +49,7 @@ class AIModelInResponse(BaseModel):
     is_public: bool = True
     config: dict[str, Any] | None = None
     created_at: datetime | None = None
-    # API Key 掩码显示
+    # Masked API-key display.
     api_key_masked: str | None = None
 
 
@@ -96,7 +96,7 @@ class BotCreate(BaseModel):
     username: str = Field(..., min_length=1, max_length=64, description="@ 用的名字")
     display_name: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, description="Bot 描述")
-    # HTTP Bot 必填；Agent Bridge Bot 不使用 model，但可使用 template 渲染发送给 plugin 的任务
+    # Required for HTTP bots; Agent Bridge bots do not use a model, but may use a template for plugin tasks.
     model_id: str | None = Field(default=None, description="关联的 AI 模型 ID（HTTP Bot 必填）")
     template_id: str | None = Field(default=None, description="关联的提示词模板 ID")
     custom_system_prompt: str | None = Field(default=None, description="可选：覆盖模板的系统提示词")
@@ -160,22 +160,22 @@ class BotInResponse(BaseModel):
     bridge_provider: str = "generic"
     binding_config: dict | None = None
     is_builtin: bool = False
-    # Agent Bridge Bot token 元信息：常规响应只回前缀与轮换时间，明文 bot_token
-    # 只在 create / rotate 接口一次性返回
+    # Agent Bridge token metadata; regular responses only include prefix/rotation data.
+    # The plaintext bot_token is returned once by create/rotate endpoints.
     bot_token_prefix: str | None = None
     bot_token_rotated_at: datetime | None = None
-    bot_token: str | None = None  # 仅 create / rotate 响应里有值；其它接口永远为 None
+    bot_token: str | None = None  # Only create/rotate responses include a value.
     connection_status: str = "not_required"
     is_online: bool = True
     control_connected: bool | None = None
     data_connected: bool | None = None
 
-    # 关联信息（Agent Bridge Bot 可能没有）
+    # Associated metadata; Agent Bridge bots may omit it.
     model_id: str | None = None
     template_id: str | None = None
     model_name: str | None = None  # AIModel.name
     template_name: str | None = None  # PromptTemplate.name
-    created_by: str | None = None  # 创建者 user_id
+    created_by: str | None = None  # Creator user_id.
     owner: BotOwnerInResponse | None = None
     can_manage: bool = False
 
@@ -250,8 +250,8 @@ class ChannelInResponse(BaseModel):
     can_manage: bool = False
     can_invite_members: bool = False
     can_add_bots: bool = False
-    # 用户在该频道未读的消息数（由 channel_memberships.last_read_at 派生）。
-    # 未登录或非成员时保持 None。
+    # Number of unread messages for the user in this channel, derived from channel_memberships.last_read_at.
+    # Remains None for anonymous users or non-members.
     unread_count: int | None = None
 
 
@@ -297,7 +297,7 @@ class SearchChannelHit(BaseModel):
     channel_id: str
     name: str
     workspace_id: str
-    type: str  # 实际值排除了 "dm"（dm 单独通过 people/bot 搜索进入）
+    type: str  # Actual values exclude "dm"; DMs are entered through people/bot search.
 
 
 class SearchWorkspaceHit(BaseModel):
@@ -338,8 +338,8 @@ class SearchMessageHit(BaseModel):
     msg_id: str
     channel_id: str
     channel_name: str
-    sender_label: str                 # 显示名（或 @username / "me"）
-    snippet: str                      # 正文片段（已截断，高亮可客户端处理）
+    sender_label: str                 # Display name, @username, or "me".
+    snippet: str                      # Truncated body snippet; clients may add highlighting.
     created_at: datetime | None = None
 
 
@@ -432,17 +432,17 @@ class AnnouncementContentData(BaseModel):
 class RoutingPick(BaseModel):
     """Coordinator 给出的一个候选 agent 以及评分/理由。"""
     agent: str                    # bot username
-    score: str | None = None      # freeform: "0.92" / "high" / 等
+    score: str | None = None      # Freeform values such as "0.92" or "high".
     why: str | None = None
-    picked: bool | None = None    # True 表示最终选中
-    secondary: bool | None = None  # True 表示作为次要候选
+    picked: bool | None = None    # True means this candidate was selected.
+    secondary: bool | None = None  # True means this was a secondary candidate.
 
 
 class RoutingContentData(BaseModel):
     """路由卡片的结构化数据。由 coordinator 在派发任务时产出。"""
-    q: str | None = None          # 被路由的请求（通常是用户的原始消息摘要）
+    q: str | None = None          # Routed request, usually a summary of the user's original message.
     picks: list[RoutingPick] = Field(default_factory=list)
-    plan: str | None = None       # 一句话的执行计划
+    plan: str | None = None       # One-sentence execution plan.
 
 
 class PermissionContentData(BaseModel):
@@ -509,7 +509,7 @@ class PermissionMessageCreate(_MessageCreateBase):
     content_data: PermissionContentData | None = None
 
 
-# 统一入口：兼容旧客户端（不含 msg_type 时含 in_reply_to_msg_id 自动推断）
+# Unified entry point for legacy clients; msg_type is inferred from in_reply_to_msg_id when omitted.
 class MessageCreate(BaseModel):
     """发送消息（兼容入口，自动推断 msg_type）。"""
     content: str
@@ -543,7 +543,7 @@ class ForwardMessageResponse(BaseModel):
     messages: list[dict[str, Any]] = Field(default_factory=list)
 
 
-# Discriminated union（供新客户端使用）
+# Discriminated union for newer clients.
 AnyMessageCreate = Annotated[
     NormalMessageCreate | ReplyMessageCreate | TopicMessageCreate | AnnouncementMessageCreate | RoutingMessageCreate | PermissionMessageCreate,
     Field(discriminator="msg_type"),
@@ -626,7 +626,7 @@ class PermissionResolveRequest(BaseModel):
     resolution: Literal["allow", "deny"]
 
 
-# 保持向后兼容：统一响应类（含全部字段）
+# Backward-compatible unified response type with all fields.
 class MessageInResponse(_MessageResponseBase):
     """消息响应（统一格式，兼容旧接口）。"""
     msg_type: str = "normal"
@@ -656,6 +656,6 @@ class KeychainItemInResponse(BaseModel):
     owner_id: str
     name: str
     description: str | None = None
-    value_masked: str | None = None  # 掩码显示，如 "****abcd"
+    value_masked: str | None = None  # Masked display value, for example "****abcd".
     created_at: datetime | None = None
     updated_at: datetime | None = None

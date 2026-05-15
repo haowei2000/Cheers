@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
-# 匹配 @username 或 @botname（字母、数字、下划线、连字符、单引号、中文等，不含空格）
+# Match @username or @botname, allowing letters, digits, underscores, hyphens, apostrophes, CJK chars, and no spaces.
 MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_\-'一-鿿]+)")
 _NAME_CHAR = re.compile(r"[a-zA-Z0-9_\-'一-鿿]")
 _WS_CHARS = " \t"
@@ -71,19 +71,19 @@ def extract_mentions(text: str, known_space_names: list[str] | None = None) -> l
     result: list[str] = []
     n = len(text)
     pos = _skip_leading_quote_block(text)
-    # 跳过前导空白
+    # Skip leading whitespace.
     while pos < n and text[pos] in _WS_CHARS:
         pos += 1
 
     while pos < n and text[pos] == "@":
         matched_name: str | None = None
 
-        # 优先匹配含空格的 Bot 名（长名优先）
+        # Prefer bot names that contain spaces, with longer names first.
         for sp in space_names:
             target = f"@{sp}"
             if text.startswith(target, pos):
                 end = pos + len(target)
-                # 确认右边界：串尾，或后续不再是名字字符
+                # Confirm the right boundary: end-of-string or a following non-name character.
                 if end == n or not _NAME_CHAR.match(text[end]):
                     matched_name = sp
                     pos = end
@@ -100,7 +100,7 @@ def extract_mentions(text: str, known_space_names: list[str] | None = None) -> l
             seen.add(matched_name)
             result.append(matched_name)
 
-        # 消耗 mention 之后的空白，继续尝试下一个 @
+        # Consume whitespace after the mention, then continue trying the next @.
         while pos < n and text[pos] in _WS_CHARS:
             pos += 1
 

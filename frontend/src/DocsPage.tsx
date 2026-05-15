@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AppIcon } from "./components/icons/AppIcon";
 
-const API = "/api";  // docs 端点由 manual_routes 提供，路径不含 /v1
+const API = "/api";  // Docs endpoints are provided by manual_routes and omit /v1.
 
 type DocFile = { name: string; stem: string; size: number; category?: string };
 

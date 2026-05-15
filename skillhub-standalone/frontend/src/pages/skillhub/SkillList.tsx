@@ -1,4 +1,4 @@
-// Skill 列表页面 - 马卡龙生机风格 + 导入弹窗
+// Skill list page with the macaron vitality style and import modal.
 import { useState, useEffect, useRef } from 'react';
 import { Skill, fetchSkills, getDownloadUrl, uploadSkill, deleteSkill, syncFromGitFox } from '../../api';
 
@@ -7,37 +7,37 @@ interface Props {
   onRefresh: () => void;
 }
 
-// 所有图标汇总到一个池子里，每个 skill 随机分配一个
+// Pool all icons so each skill can receive a stable pseudo-random icon.
 const EMOJI_POOL = [
-  // 森林动物
+  // Woodland icons.
   '🦊', '🐼', '🦁', '🐺', '🐻', '🐨', '🦄', '🦓', '🦌', '🦬',
   '🦆', '🦅', '🦉', '🦇', '🐸', '🐢', '🦎', '🐍', '🦖', '🦕',
   '🦋', '🐛', '🐝', '🐞', '🦜', '🦩', '🦚', '🦔', '🐾', '🦡',
-  // 植物花草
+  // Plant and floral icons.
   '🌲', '🌳', '🌴', '🌵', '🌸', '🌺', '🌻', '🌼', '🌷', '🌹',
   '💐', '💮', '🏵️', '🪷', '🪻', '🌾', '🍂', '🍃', '🌱', '🪴',
   '🍀', '🌿', '☘️', '🌈', '✨', '💫', '⭐', '🌟', '💎', '🔮',
-  // 自然现象
+  // Nature icons.
   '🌧️', '⛈️', '🌩️', '🌪️', '🌈', '🌤️', '⛅', '🌙', '🌛', '🌜️',
-  // 工具科技
+  // Tool and technology icons.
   '📱', '⌨️', '🖥️',
   '📷', '🎥', '📺', '📻', '🎙️', '🎚️', '🎛️', '🔌',, '🧲',
-  // 办公物品
+  // Office item icons.
   '📜', '🗃️', '📋',
   '📌', '📍', '✂️', '🖊️', '🖋️', '✏️', '📎',  '🖇️',
-  // 容器礼物
+  // Gift and container icons.
    '🎁', '🎀', '🎈', '🎊', '🎉', '🎆', '🎇', '🏆', '🎖️', '🎗️', '🎟️', '🎫', '💰', '🪙', '💎', '💵',
-  // 生物相关
+  // Creature-related icons.
   '🤖', '👾', '🕹️', '🎲', '🎯', '🎳',  '🧩', '🃏',
-  // 食物
+  // Food icons.
   '🍎', '🍊', '🍋', '🍓', '🍇', '🍉', '🍑', '🍒', '🥝', '🍍',
   '🥥', '🥑', '🥦', '🥬', '🌽', '🌶️', '🍄', '🥜', '🌰', '🍯',
-  // 更多装饰
+  // Additional decorative icons.
    '🎨', '🎬', '🎤', '🎧', '🎵', '🎶', '🎹', '🎸', '🎺',
   '🎷', '🎻', '🪘', '🎼', '📯',  '💐', '🌺', '🏵️', '🔔',
 ];
 
-// 根据 skill id 生成稳定的随机索引，同一个 skill 始终显示同一个图标
+// Generate a stable pseudo-random index from skill id so the same skill keeps the same icon.
 function getSkillEmoji(skillId: string): string {
   let hash = 0;
   for (let i = 0; i < skillId.length; i++) {
@@ -49,7 +49,7 @@ function getSkillEmoji(skillId: string): string {
   return EMOJI_POOL[index] || '🌸';
 }
 
-// 默认分类选项
+// Default category options.
 const DEFAULT_CATEGORIES = [
   { value: 'development', label: '🦊 开发工具' },
   { value: 'document', label: '🦋 文档处理' },
@@ -61,7 +61,7 @@ const DEFAULT_CATEGORIES = [
   { value: 'imported', label: '🎁 其他' },
 ];
 
-// 卡片背景渐变色
+// Card background gradients.
 const CARD_COLORS = [
   'linear-gradient(135deg, #B8E6D4 0%, #D4F1E8 100%)',
   'linear-gradient(135deg, #FFDAB9 0%, #FFE8D6 100%)',
@@ -75,15 +75,15 @@ function getCardColor(index: number): string {
   return CARD_COLORS[index % CARD_COLORS.length];
 }
 
-// 根据 skill 的分类获取对应的默认分类名称
+// Resolve the default category label for a skill category.
 function getCategoryLabel(skillCategory: string): { value: string; label: string } {
   const found = DEFAULT_CATEGORIES.find(c => c.value === skillCategory);
   if (found) return found;
-  // 没有找到时返回对应的默认分类（如果 skill 没有分类，默认是 general）
+  // Fall back to the imported category when no matching category is found.
   return DEFAULT_CATEGORIES.find(c => c.value === 'imported') || { value: 'imported', label: '🎁 其他' };
 }
 
-// 导入弹窗组件
+// Import modal component.
 function UploadModal({
   isOpen,
   onClose,
@@ -98,7 +98,7 @@ function UploadModal({
   const [customCategory, setCustomCategory] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(false); // 加载选择的文件
+  const [loading, setLoading] = useState(false); // Loading selected files.
   const [error, setError] = useState('');
   const [selectedType, setSelectedType] = useState<'file' | 'folder'>('file');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -141,7 +141,7 @@ function UploadModal({
     if (fileList) {
       setLoading(true);
       setError('');
-      // 使用 setTimeout 让 UI 有时间更新
+      // Use setTimeout so the UI has time to update.
       setTimeout(() => {
         setFiles(Array.from(fileList));
         setLoading(false);
@@ -299,9 +299,9 @@ function UploadModal({
   );
 }
 
-// 花瓣emoji池
+// Flower emoji pool.
 const FLOWER_EMOJIS = ['🌸', '🌺', '🌻', '🌷', '🌼', '💐', '🌹', '🪻', '🌱', '🍀', '✨', '💫'];
-// 星星emoji池
+// Star emoji pool.
 const STAR_EMOJIS = ['⭐', '🌟', '✨', '💫', '⭐', '🌟', '✨', '💫'];
 
 interface FlowerParticle {
@@ -341,7 +341,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     loadData();
   }, [category]);
 
-  // 从 GitFox 同步 Skills
+  // Sync skills from GitFox.
   async function handleSync() {
     if (syncing) return;
 
@@ -352,7 +352,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
       const result = await syncFromGitFox();
       if (result.success) {
         setUploadMessage({ type: 'success', text: result.message });
-        // 重新加载数据
+        // Reload data.
         await loadData();
         onRefresh?.();
       } else {
@@ -365,7 +365,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     setSyncing(false);
   }
 
-  // 生成随机方向的粒子
+  // Spawn particles in random directions.
   function spawnParticles(count: number = 3): FlowerParticle[] {
     const newParticles: FlowerParticle[] = [];
     for (let i = 0; i < count; i++) {
@@ -385,16 +385,16 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     return newParticles;
   }
 
-  // 鼠标进入
+  // Mouse enter.
   function handleMouseEnter() {
     const initial = spawnParticles(8);
     setParticles(prev => [...prev, ...initial]);
 
-    // 持续生成粒子
+    // Keep spawning particles.
     intervalRef.current = setInterval(() => {
       setParticles(prev => {
         const spawned = spawnParticles(4);
-        // 1.5秒后自动移除旧粒子
+        // Remove old particles automatically after 1.5 seconds.
         setTimeout(() => {
           setParticles(p => p.filter(pp => !spawned.some(s => s.id === pp.id)));
         }, 1500);
@@ -403,17 +403,17 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     }, 150);
   }
 
-  // 鼠标离开
+  // Mouse leave.
   function handleMouseLeave() {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    // 延迟清除粒子
+    // Clear particles after a short delay.
     setTimeout(() => setParticles([]), 100);
   }
 
-  // 生成星星粒子
+  // Spawn star particles.
   function spawnStars(count: number = 3): StarParticle[] {
     const newParticles: StarParticle[] = [];
     for (let i = 0; i < count; i++) {
@@ -433,12 +433,12 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     return newParticles;
   }
 
-  // 更新按钮鼠标进入
+  // Update button mouse enter.
   function handleStarMouseEnter() {
     const initial = spawnStars(6);
     setStarParticles(prev => [...prev, ...initial]);
 
-    // 持续生成星星
+    // Keep spawning stars.
     starIntervalRef.current = setInterval(() => {
       setStarParticles(prev => {
         const spawned = spawnStars(3);
@@ -450,7 +450,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     }, 120);
   }
 
-  // 更新按钮鼠标离开
+  // Update button mouse leave.
   function handleStarMouseLeave() {
     if (starIntervalRef.current) {
       clearInterval(starIntervalRef.current);
@@ -521,7 +521,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
 
   return (
     <div className="skill-list">
-      {/* 浮动装饰 */}
+      {/* Floating decorations. */}
       <div className="floating-decorations">
         <span className="floating-deco deco-1">🌸</span>
         <span className="floating-deco deco-2">🦋</span>
@@ -554,7 +554,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
             >
-              {/* 粒子 */}
+              {/* Particles. */}
               {particles.map(p => (
                 <span
                   key={p.id}
@@ -629,7 +629,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
             onMouseEnter={handleStarMouseEnter}
             onMouseLeave={handleStarMouseLeave}
           >
-            {/* 星星粒子 */}
+            {/* Star particles. */}
             {starParticles.map(p => (
               <span
                 key={p.id}
@@ -707,7 +707,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
         </div>
       )}
 
-      {/* 导入弹窗 */}
+      {/* Import modal. */}
       <UploadModal
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}

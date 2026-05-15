@@ -123,7 +123,7 @@ class WorkspaceService:
 
     async def delete(self, workspace_id: str, current_user: User) -> None:
         ws = await self.get_or_404(workspace_id)
-        # 只有 owner 或全局 admin 能删除
+        # Only owners or global admins can delete workspaces.
         await self._check_workspace_permission(workspace_id, current_user, allowed_roles=("owner",))
         await self.repo.delete(ws)
 
@@ -211,7 +211,7 @@ class WorkspaceService:
         self, workspace_id: str, user_id: str, current_user: User
     ) -> None:
         await self.get_or_404(workspace_id)
-        # 允许管理员操作，或者允许用户自己退出工作空间（如果不是最后一个 owner）
+        # Allow admin operations, or let users leave a workspace if they are not the last owner.
         if user_id != current_user.user_id:
             await self._check_workspace_permission(workspace_id, current_user)
 

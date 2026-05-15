@@ -1,4 +1,4 @@
-"""FastAPI 应用入口."""
+"""FastAPI application entrypoint."""
 import asyncio
 import logging
 import os
@@ -54,7 +54,7 @@ async def _file_retention_cleanup_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理应用生命周期：启动初始化 & 关闭清理."""
+    """Manage application lifecycle startup initialization and shutdown cleanup."""
     global _file_retention_task
     setup_logging()
     logger.info("AgentNexus startup")
@@ -175,14 +175,14 @@ async def unhandled_exception(request, exc: Exception) -> JSONResponse:
     )
 
 
-# v1 架构路由（/api/v1/...）
+# v1 architecture routes (/api/v1/...).
 app.include_router(v1_router)
 
-# WebSocket 路由（/ws/channels/{id}，nginx location /ws 需要 upgrade 头）
+# WebSocket routes (/ws/channels/{id}); nginx location /ws needs upgrade headers.
 app.include_router(ws_router)
 app.include_router(agent_bridge_ws_router)
 
-# 静态功能路由（不含业务逻辑，保持不变）
+# Static feature routes without business logic.
 app.include_router(manual_router)
 app.include_router(public_router)
 app.include_router(agent_bridge_docs_router)

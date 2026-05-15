@@ -1,10 +1,12 @@
 /**
- * WS 指数退避 + jitter 的通用重连器。
+ * Generic WebSocket reconnect client with exponential backoff and jitter.
  *
- * 行为：
- *   - 连接失败或异常关闭后，按 base*(2^n) 退避，叠加 50%-100% jitter，上限 max
- *   - 某些 close code（4401 鉴权失败 / 4403 bot 不可用）视为致命，不重连
- *   - connect 成功一段时间（默认 30s）后重置重试计数器
+ * Behavior:
+ *   - After connection failure or abnormal close, backs off by base*(2^n)
+ *     with 50%-100% jitter and a maximum cap.
+ *   - Certain close codes (4401 auth failure / 4403 bot unavailable) are fatal.
+ *   - Resets the retry counter after the connection stays healthy for a while
+ *     (30s by default).
  */
 import WebSocket from "ws";
 
@@ -17,27 +19,28 @@ import {
 export interface ReconnectOptions {
   baseMs: number;
   maxMs: number;
-  /** connect 后稳定运行多久视为"这次连接成功"，重置重试计数 */
+  /** How long a connection must stay healthy before the retry counter resets. */
   resetAfterMs: number;
 }
 
 export interface ReconnectingClientCallbacks {
-  /** 成功建连时调用（accept 之后、首帧前） */
+  /** Called after the connection opens and before the first frame. */
   onOpen: (ws: WebSocket) => void | Promise<void>;
-  /** 收到任一 JSON 帧时调用 */
+  /** Called for each received JSON frame. */
   onFrame: (frame: unknown) => void | Promise<void>;
-  /** 正常断开（后续会 schedule 重连） */
+  /** Called on normal close; reconnect will be scheduled afterward. */
   onClose: (code: number, reason: string) => void;
-  /** 致命错误，循环终止 */
+  /** Called on fatal errors that terminate the reconnect loop. */
   onFatal: (reason: string) => void;
 }
 
-/** 判断 close code 是否致命：不应再重连。
+/** Return whether a close code is fatal and should not reconnect.
  *
- *  - 4401 (auth fail)：token 无效 / 已轮换 —— 立刻重连只会继续被拒
- *  - 4402 (superseded)：另一个连接用同 token 接管了我们；自动重连会把对方也踢
- *    下线，造成 ping-pong 死循环
- *  - 4403 (bot unavailable)：bot.status != online，需要人为介入
+ *  - 4401 (auth fail): token is invalid or rotated, so immediate reconnects
+ *    would only be rejected again.
+ *  - 4402 (superseded): another connection with the same token took over; an
+ *    automatic reconnect would kick it offline and create a ping-pong loop.
+ *  - 4403 (bot unavailable): bot.status != online and needs manual intervention.
  */
 export function isFatalCloseCode(code: number): boolean {
   return (
@@ -106,7 +109,7 @@ export class ReconnectingClient {
     this.ws = ws;
 
     ws.on("open", () => {
-      // 连接稳定 resetAfterMs 后，认为 attempt 可以重置
+      // Reset attempts after the connection stays healthy for resetAfterMs.
       this.resetTimer = setTimeout(() => {
         this.attempt = 0;
       }, this.opts.resetAfterMs);
@@ -140,7 +143,7 @@ export class ReconnectingClient {
     });
 
     ws.on("error", (_err) => {
-      // 'close' 会紧随而来；这里不做动作
+      // The 'close' event follows shortly; no action is needed here.
     });
   }
 

@@ -35,7 +35,7 @@ async def get_adapter_for_bot(
     Args:
         template_override: 频道级提示词模板覆盖，优先于 BotAccount 上的默认模板。
     """
-    # 内置 Bot：不依赖 DB 中的 AIModel / PromptTemplate
+    # Built-in bots do not depend on AIModel/PromptTemplate rows in the DB.
     builtin = get_builtin_adapter(bot_id)
     if builtin is not None:
         logger.info("adapter_resolver: bot_id=%s -> %s (builtin)", bot_id, type(builtin).__name__)
@@ -49,7 +49,7 @@ async def get_adapter_for_bot(
     if not bot:
         return MockBotAdapter(reply="[未知 Bot] 已收到消息。")
 
-    # Agent Bridge Bot：经外部 provider 异步回推；同样使用 PromptTemplate 渲染入站消息
+    # Agent Bridge bots callback asynchronously through external providers and still use PromptTemplate rendering.
     binding_type = (getattr(bot, "binding_type", None) or "http").lower()
     if binding_type == "agent_bridge":
         if bot.status != "online":
@@ -79,7 +79,7 @@ async def get_adapter_for_bot(
         logger.warning("adapter_resolver: bot_id=%s model is disabled", bot_id)
         return MockBotAdapter(reply=f"[{bot.display_name or bot.username}] 模型已禁用")
 
-    # 检查 Bot 状态
+    # Check bot status.
     if bot.status != "online":
         logger.warning(
             "adapter_resolver: bot_id=%s username=%s status=%s (not 'online'), returning mock",

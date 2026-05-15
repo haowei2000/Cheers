@@ -26,7 +26,7 @@ async def test_update_anchor_persists_content() -> None:
     channel_id = "test-ch-anchor-001"
     anchor_content = "项目目标：构建多智能体协作平台，2026 Q2 上线。"
 
-    # 创建内存数据库和 session
+    # Create an in-memory database and session.
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.execute(text(
@@ -46,7 +46,7 @@ async def test_update_anchor_persists_content() -> None:
         ))
     test_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    # 模拟 LLM 返回工具调用，然后返回最终文本
+    # Mock the LLM returning a tool call and then final text.
     mock_llm = MagicMock()
     res1 = MagicMock()
     res1.content = ""
@@ -74,7 +74,7 @@ async def test_update_anchor_persists_content() -> None:
         assert resp.success is True
         assert "锚点" in resp.content or "已为你更新" in resp.content
 
-        # 验证锚点层已持久化到 memory_entries 表
+        # Verify the anchor layer was persisted to memory_entries.
         async with test_session_factory() as session:
             result = await session.execute(
                 select(MemoryEntry).where(

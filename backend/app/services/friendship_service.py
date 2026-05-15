@@ -112,7 +112,7 @@ class FriendshipService:
                     raise BadRequestError("好友申请已发送")
                 raise BadRequestError("对方已发送好友申请，请在收到申请中同意或拒绝")
 
-            # rejected 关系允许重新发起，方向以最新申请为准。
+            # Rejected relationships can be reopened; the latest request defines the direction.
             await self.repo.update(
                 existing,
                 user_id=current_user.user_id,

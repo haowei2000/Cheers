@@ -5,7 +5,7 @@ it to decide which sub-bots to fan out to after the coordinator's reply.
 """
 import re
 
-# 匹配 "建议 @xxx" 或 "建议@xxx"
+# Match "suggest @xxx" patterns, including the legacy Chinese variants.
 SUGGEST_PATTERN = re.compile(r"建议\s*@([a-zA-Z0-9_一-鿿]+)")
 
 

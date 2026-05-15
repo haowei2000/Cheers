@@ -183,8 +183,8 @@ class BotService:
                 raise BadRequestError("HTTP Bot 必须指定 model_id 与 template_id")
             await self._validate_model_and_template(model_id, template_id, current_user)
         elif binding_type == "agent_bridge":
-            # Agent Bridge Bot 由外部 provider 提供能力，不依赖内置 AIModel，
-            # 但仍可通过 PromptTemplate 渲染发送给 plugin 的任务文本。
+            # Agent Bridge bots are powered by external providers and do not depend on an AIModel.
+            # They can still use PromptTemplate to render task text sent to the plugin.
             model_id = None
             if template_id:
                 await self._validate_template(template_id)

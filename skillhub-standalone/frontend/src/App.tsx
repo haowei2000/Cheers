@@ -1,4 +1,4 @@
-// SkillHub 主应用 - 马卡龙生机风格
+// SkillHub main app with the macaron vitality style.
 import { useState } from 'react';
 import SkillList from './pages/skillhub/SkillList';
 import SkillDetail from './pages/skillhub/SkillDetail';

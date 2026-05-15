@@ -163,7 +163,7 @@
   color: color-mix(in oklab, var(--orange) 70%, var(--fg-3));
 }
 
-/* ── Kind switcher: "‹ 普通 / 加密 / 公告 / 主题 ›" bar above the composer ── */
+/* Kind switcher: the Normal / Encrypted / Announcement / Topic bar above the composer. */
 .an-msgkind-switcher {
   display: flex;
   align-items: center;

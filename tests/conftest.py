@@ -80,7 +80,7 @@ async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncCli
     async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
-    # 测试用 system_admin 用户（跳过认证，并写入 DB 以满足 FK 约束）
+    # Test system_admin user; auth is bypassed and the row satisfies FK constraints.
     TEST_USER_ID = "a0000000-0000-0000-0000-000000000099"
     test_user = User(
         user_id=TEST_USER_ID,

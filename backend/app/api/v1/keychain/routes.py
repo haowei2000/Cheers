@@ -35,7 +35,7 @@ async def list_keychain_items(
 
     response_items = []
     for item in items:
-        # 解密获取掩码显示
+        # Decrypt only to produce a masked display value.
         decrypted = decrypt_value(item.value) or ""
         item_dict = {
             "key_id": item.key_id,
@@ -58,7 +58,7 @@ async def create_keychain_item(
     db: AsyncSession = Depends(get_session)
 ):
     """创建新的密钥项。"""
-    # 检查名称是否已存在
+    # Check whether the name already exists.
     stmt = select(KeychainItem).where(
         KeychainItem.owner_id == current_user.user_id,
         KeychainItem.name == item_in.name
@@ -67,7 +67,7 @@ async def create_keychain_item(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail=f"密钥名称 '{item_in.name}' 已存在")
 
-    # 加密存储
+    # Store the encrypted value.
     encrypted_value = encrypt_value(item_in.value)
 
     item = KeychainItem(
@@ -126,7 +126,7 @@ async def update_keychain_item(
     if not item or item.owner_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="密钥项不存在")
 
-    # 如果更新名称，检查是否与其他密钥冲突
+    # If the name changes, check for conflicts with other keys.
     if item_in.name is not None and item_in.name != item.name:
         stmt = select(KeychainItem).where(
             KeychainItem.owner_id == current_user.user_id,

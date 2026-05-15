@@ -99,7 +99,7 @@ router = APIRouter(prefix="/agent-bridge", tags=["agent-bridge"])
 
 
 # ============================================================================
-# 鉴权
+# Authentication.
 # ============================================================================
 
 def _require_bridge_enabled_and_token(token: str | None) -> None:
@@ -141,7 +141,7 @@ class DMSessionRefreshIn(BaseModel):
 
 
 # ============================================================================
-# HTTP 路由
+# HTTP routes.
 # ============================================================================
 
 @router.get("/status", response_model=APIResponse[dict])
@@ -268,7 +268,7 @@ async def refresh_dm_session(
 
 
 def _validator_http_status(code: str) -> int:
-    # 把 validators 的错误码映射成 HTTP 状态
+    # Map validator error codes to HTTP statuses.
     if code in ("file_not_found", "reply_target_not_found"):
         return 404
     return 403
@@ -307,7 +307,7 @@ async def bridge_post_reply(
     session: AsyncSession = Depends(get_session),
     _: None = Depends(verify_bridge_token),
 ) -> APIResponse:
-    # 1) Bot 存在 + 类型 agent_bridge + 在线
+    # 1) Bot exists, is agent_bridge type, and is online.
     bot = (await session.execute(
         select(BotAccount).where(BotAccount.bot_id == body.bot_id)
     )).scalar_one_or_none()
@@ -324,15 +324,15 @@ async def bridge_post_reply(
             detail=f"Bot {body.bot_id} 状态为 {bot.status}，不接受消息",
         )
 
-    # 2) Bot 必须是目标频道成员
+    # 2) Bot must be a member of the target channel.
     await _assert_bot_in_channel(session, bot_id=body.bot_id, channel_id=body.channel_id)
 
-    # 3) 附件必须在目标频道
+    # 3) Attachments must belong to the target channel.
     if body.file_ids:
         await _assert_files_in_channel(session, file_ids=body.file_ids, channel_id=body.channel_id)
 
-    # 4) in_reply_to_msg_id 必须指向同频道消息（仅新建消息路径相关，
-    #    finalize 占位消息时 in_reply_to 已在 pre_create 时设好，此字段被忽略）
+    # 4) in_reply_to_msg_id must point to a same-channel message. This only matters
+    #    for new-message paths; placeholder finalization already has in_reply_to set by pre_create.
     if body.in_reply_to_msg_id:
         await _assert_in_reply_same_channel(
             session, msg_id=body.in_reply_to_msg_id, channel_id=body.channel_id,
@@ -391,11 +391,11 @@ async def bridge_list_channel_bots(
 
 
 # ============================================================================
-# per-bot-token 文件读取（agent 侧 read_file 支持）
+# Per-bot-token file read support for agent-side read_file.
 # ============================================================================
 
-# agent 读取文件正文时的内联大小上限；超过则截断并标记 truncated=true。
-# 做上限的目的是防一个 200MB 的 PDF 直接塞进 agent 的 system prompt。
+# Inline body-size limit for agent-side file reads; oversized content is truncated and marked truncated=true.
+# This prevents large files such as 200MB PDFs from being injected into agent prompts.
 _FILE_CONTENT_MAX_CHARS = 200_000
 _FILE_BINARY_MAX_BYTES = int(settings.file_upload_max_bytes)
 
@@ -497,7 +497,7 @@ async def bridge_read_file_content(
             detail="该文件是图片，文本接口不支持；请使用 Vision 能力处理图片附件",
         )
 
-    # 触发一次转换（若 md cache 已就绪会直接命中缓存），然后裁剪到上限
+    # Trigger conversion once, hitting the md cache when available, then trim to the limit.
     try:
         attachments = await FilePipelineService().prepare_attachments(
             session,
@@ -572,10 +572,10 @@ async def bridge_read_file_binary(
 
 
 # ============================================================================
-# per-bot-token 文件上传（agent 侧 attach-file 支持）
+# Per-bot-token file upload support for agent-side attach-file.
 # ============================================================================
 
-# 单次上传 markdown 正文的大小上限，防一条失控的长回复灌爆对象存储。
+# Per-upload markdown body-size limit to protect storage from runaway long replies.
 _FILE_UPLOAD_MAX_BYTES = 2 * 1024 * 1024  # 2 MiB
 
 
@@ -618,7 +618,7 @@ async def bridge_upload_markdown_file(
     gen_dir = resolve_data_dir() / "generated" / body.channel_id
     gen_dir.mkdir(parents=True, exist_ok=True)
     md_path = gen_dir / f"{file_id}.md"
-    # path traversal guard：body.channel_id 不是受信任输入，确保写入不越出 gen_dir
+    # Path traversal guard: body.channel_id is untrusted, so keep writes within gen_dir.
     if not md_path.resolve().is_relative_to(gen_dir.resolve()):
         raise HTTPException(status_code=400, detail="invalid channel_id path")
     md_path.write_text(text, encoding="utf-8")
@@ -649,12 +649,12 @@ async def bridge_upload_markdown_file(
 
 
 # ============================================================================
-# per-bot-token 二进制文件上传（agent 侧 sendMedia 支持）
+# Per-bot-token binary upload support for agent-side sendMedia.
 # ============================================================================
 
-# 单次二进制上传的大小上限；对齐 settings.file_upload_max_bytes。
-# MEDIA: 协议里 gateway 会把本地媒体文件直接交给 plugin；plugin 再把它传上来
-# 落成 FileRecord，作为消息附件。
+# Per-binary-upload size limit aligned with settings.file_upload_max_bytes.
+# MEDIA: the gateway passes local media files to the plugin, which uploads them here
+# as FileRecord attachments.
 def _sanitize_filename(raw: str) -> str:
     safe = re.sub(r"[^\w\-. ]", "_", raw.strip())
     return safe or "media"
@@ -694,11 +694,11 @@ async def bridge_upload_binary_file(
     gen_dir = resolve_data_dir() / "generated" / x_channel_id
     gen_dir.mkdir(parents=True, exist_ok=True)
     dst = gen_dir / f"{file_id}{suffix}"
-    # path traversal guard：x_channel_id 不是受信任输入
+    # Path traversal guard: x_channel_id is untrusted input.
     if not dst.resolve().is_relative_to(gen_dir.resolve()):
         raise HTTPException(status_code=400, detail="invalid channel_id path")
 
-    # 流式落盘，超限立即截断；避免把 25MB body 全部装进内存
+    # Stream to disk and stop immediately on size limit to avoid loading the whole body into memory.
     total = 0
     try:
         with open(dst, "wb") as fh:
@@ -726,7 +726,7 @@ async def bridge_upload_binary_file(
         raise HTTPException(status_code=400, detail="文件不能为空")
 
     import mimetypes as _mimetypes
-    # Content-Type 没传或是 application/octet-stream 时，从扩展名猜
+    # Infer content type from extension when missing or application/octet-stream.
     header_ctype = (content_type or "").split(";")[0].strip()
     if not header_ctype or header_ctype == "application/octet-stream":
         header_ctype = _mimetypes.guess_type(raw_name)[0] or "application/octet-stream"
@@ -756,7 +756,7 @@ async def bridge_upload_binary_file(
 
 
 # ============================================================================
-# WebSocket 路由
+# WebSocket routes.
 # ============================================================================
 
 ws_router = APIRouter()
@@ -860,7 +860,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
     await websocket.accept()
     outbox = _BridgeOutboundWriter(websocket)
     outbox.start()
-    # 初始订阅为空集合：plugin 在发出 subscribe 之前不会收到任何事件（默认拒绝）。
+    # Start with an empty subscription so plugins receive no events until they subscribe.
     sub = await bridge_dispatcher.subscribe(bot_ids=[])
     await outbox.send({
         "type": "hello",
@@ -872,7 +872,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
 
     consumer_task: asyncio.Task | None = None
     try:
-        # 第一步：握手 —— 要求 plugin 在 N 秒内发 subscribe 帧
+        # Step 1: handshake; require the plugin to send a subscribe frame within N seconds.
         try:
             raw = await asyncio.wait_for(
                 websocket.receive_text(), timeout=_SUBSCRIBE_TIMEOUT_SECONDS,
@@ -896,7 +896,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
             await websocket.close(code=1003, reason="subscribe.bot_ids must be string[]")
             return
 
-        # 校验 bot_ids 存在且 binding_type=agent_bridge
+        # Validate bot_ids existence and binding_type=agent_bridge.
         from app.db.session import async_session_factory
         async with async_session_factory() as session:
             accepted, rejected = await _resolve_subscribable_bot_ids(session, requested)
@@ -912,7 +912,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
             len(accepted), len(rejected),
         )
 
-        # 第二步：后台消费派发事件 → 发给 WS；主循环消费 plugin 的后续消息（如 re-subscribe、ping）
+        # Step 2: consume dispatched events in the background and read plugin messages in the main loop.
         async def _consume() -> None:
             while True:
                 event = await sub.queue.get()
@@ -943,7 +943,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
                     })
             elif ftype == "ping":
                 await outbox.send({"type": "pong"})
-            # 其他类型暂不处理
+            # Other frame types are ignored for now.
     except WebSocketDisconnect:
         logger.info("agent bridge ws: disconnected")
     except _BridgeOutboundQueueFull:
@@ -958,13 +958,13 @@ async def bridge_websocket(websocket: WebSocket) -> None:
 
 
 # ============================================================================
-# 新 control WS（Phase B）：per-bot token 鉴权 + membership hello 快照 + 定向事件
+# New control WS, Phase B: per-bot-token auth, membership hello snapshot, and targeted events.
 # ============================================================================
 
 # Close codes per design doc:
-_WS_CLOSE_AUTH_FAIL = 4401        # token 缺失 / 不匹配 / 已撤销
-_WS_CLOSE_SUPERSEDED = 4402       # 同一 bot 的新连接接管了旧连接
-_WS_CLOSE_BOT_UNAVAILABLE = 4403  # binding_type 不对或 status != online
+_WS_CLOSE_AUTH_FAIL = 4401        # Token missing, mismatched, or revoked.
+_WS_CLOSE_SUPERSEDED = 4402       # A newer connection for the same bot superseded this one.
+_WS_CLOSE_BOT_UNAVAILABLE = 4403  # Invalid binding_type or status != online.
 
 
 def _extract_bearer_token(websocket: WebSocket) -> str | None:
@@ -989,7 +989,7 @@ async def control_websocket(websocket: WebSocket) -> None:
         await websocket.close(code=_WS_CLOSE_AUTH_FAIL, reason="missing bearer token")
         return
 
-    # 解析 token → bot
+    # Resolve token to bot.
     async with async_session_factory() as s:
         bot = await resolve_bot_by_token(s, token)
         if bot is None:
@@ -1005,14 +1005,14 @@ async def control_websocket(websocket: WebSocket) -> None:
     await websocket.accept()
     sess, old_ws = await bot_session_registry.bind_control(bot.bot_id, websocket)
 
-    # 踢掉旧连接（如果有）
+    # Supersede the old connection, if any.
     if old_ws is not None:
         try:
             await old_ws.close(code=_WS_CLOSE_SUPERSEDED, reason="superseded by a new connection")
         except Exception:  # noqa: BLE001
             pass
 
-    # 首帧 hello：下发完整 membership 快照
+    # First hello frame sends the full membership snapshot.
     await websocket.send_json({
         "type": "hello",
         "bot_id": bot.bot_id,
@@ -1044,7 +1044,7 @@ async def control_websocket(websocket: WebSocket) -> None:
                     "control_ws: ready bot_id=%s plugin_version=%s",
                     bot.bot_id, frame.get("plugin_version"),
                 )
-            # 其他类型忽略
+            # Ignore other frame types.
     except WebSocketDisconnect:
         logger.info("control_ws: disconnected bot_id=%s", bot.bot_id)
     except Exception as exc:  # noqa: BLE001
@@ -1054,7 +1054,7 @@ async def control_websocket(websocket: WebSocket) -> None:
 
 
 # ============================================================================
-# data WS（Phase C）：消息流 + reply/send 回推 + send_ack
+# Data WS, Phase C: message stream, reply/send callbacks, and send_ack.
 # ============================================================================
 
 async def _send_send_ack_err(websocket: WebSocket, client_msg_id: str | None, code: str, detail: str) -> None:
@@ -1090,16 +1090,15 @@ async def _handle_data_reply(
         await _send_send_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids 必须是 string[]")
         return
 
-    # 允许 text 为空，但必须至少有 file_ids——这样 sendMedia（纯媒体）也能兜底发一条消息
+    # Text may be empty, but file_ids must be present so pure-media sendMedia can still create a message.
     if not text and not file_ids:
         await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 和 file_ids 不能同时为空")
         return
 
-    # 定位目标频道：
-    #   1) plugin 显式传 channel_id（最推荐，从 message 事件里直接带回来）
-    #   2) 按 reply_to_msg_id / task_id 从 pending 内存里 peek（适用于 orchestrator
-    #      会话尚未 commit、DB 里还看不到占位消息的竞态窗口）
-    #   3) 最后回落到 DB 查占位消息（适用于进程重启后的兜底路径）
+    # Resolve the target channel:
+    #   1) plugin explicitly sends channel_id, preferably echoed from the message event.
+    #   2) peek pending state by reply_to_msg_id/task_id for orchestrator commit race windows.
+    #   3) fall back to DB placeholder lookup after process restarts.
     channel_id = frame.get("channel_id")
     if not channel_id and reply_to_msg_id:
         pending = await pending_replies.peek_by_msg(reply_to_msg_id)
@@ -1325,7 +1324,7 @@ async def _handle_data_send(
         await _send_send_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids 必须是 string[]")
         return
 
-    # 允许 text 为空，但必须至少有 file_ids
+    # Text may be empty, but file_ids must be present.
     if not text and not file_ids:
         await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 和 file_ids 不能同时为空")
         return
@@ -1573,7 +1572,7 @@ async def data_websocket(websocket: WebSocket) -> None:
             elif ftype == "ping":
                 await websocket.send_json({"type": "pong"})
             elif ftype == "typing":
-                # 可选：未来广播 typing 状态；现在忽略
+                # Optional future typing broadcast; ignored for now.
                 pass
             elif ftype == "resume":
                 from app.features.agent_bridge.event_log import (
@@ -1599,7 +1598,7 @@ async def data_websocket(websocket: WebSocket) -> None:
                     "data_ws: resume bot_id=%s from_seq=%d replayed=%d up_to=%d",
                     bot.bot_id, last_seen, len(events), up_to,
                 )
-            # 其他类型忽略
+            # Ignore other frame types.
     except WebSocketDisconnect:
         logger.info("data_ws: disconnected bot_id=%s", bot.bot_id)
     except Exception as exc:  # noqa: BLE001

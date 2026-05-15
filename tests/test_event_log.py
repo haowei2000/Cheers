@@ -1,8 +1,9 @@
-"""Per-bot data stream 事件日志 + seq 计数 + resume 回放单测。
+"""Unit tests for per-bot data stream event logs, seq counters, and resume replay.
 
-这些测试需要真实 DB（事件写入 agent_bridge_events 表）。
-跑前设 TEST_DATABASE_URL 指向 docker postgres，或依赖 conftest 的 db_engine
-fixture（创建临时 schema）。为避免跨测试相互影响，用 uuid 前缀隔离 bot_id。
+These tests need a real database because events are written to the
+agent_bridge_events table. Set TEST_DATABASE_URL to Docker Postgres before
+running, or rely on the db_engine fixture from conftest to create a temporary
+schema. UUID prefixes isolate bot_id values across tests.
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ async def test_seq_is_per_bot_stream(db_engine) -> None:
     await record_event(a, "data", {"x": 1})
     await record_event(a, "data", {"x": 2})
     await record_event(b, "data", {"x": 1})
-    # 各自独立的 seq
+    # Each bot has an independent seq.
     assert await current_seq(a, "data") == 2
     assert await current_seq(b, "data") == 1
 
@@ -52,7 +53,7 @@ async def test_events_since_replays_in_order(db_engine) -> None:
 
     events = await events_since(bot_id, "data", last_seq=2)
     assert [e["idx"] for e in events] == [3, 4, 5]
-    # seq 字段被附加
+    # The seq field is attached.
     assert all("seq" in e for e in events)
 
     all_events = await events_since(bot_id, "data", last_seq=0)
@@ -64,7 +65,7 @@ async def test_events_since_replays_in_order(db_engine) -> None:
 
 @pytest.mark.asyncio
 async def test_seq_bootstraps_from_db_for_new_counter(db_engine) -> None:
-    """模拟进程重启：DB 中已有 seq=3，新 counter 实例应接着 4。"""
+    """Simulate process restart: DB has seq=3, so a fresh counter continues at 4."""
     bot_id = _uniq("bot-boot")
     for _ in range(3):
         await record_event(bot_id, "data", {"x": 1})

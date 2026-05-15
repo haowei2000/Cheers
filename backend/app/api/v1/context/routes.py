@@ -19,7 +19,7 @@ from app.services.channel_service import ChannelService
 
 router = APIRouter(prefix="/channels", tags=["context"])
 
-# 仍然允许 PUT 覆盖派生层（向后兼容，前端仍可能用到）
+# Still allow PUT to overwrite derived layers for backward compatibility.
 _PUT_VALID_LAYERS = {"FILES_INDEX", "RECENT"}
 
 

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import (
 from app.config import settings
 from app.db.models import Base
 
-# 默认使用 SQLAlchemy 默认连接池配置，适合 PostgreSQL
+# Use SQLAlchemy's default pool settings, which are suitable for PostgreSQL.
 async_engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,

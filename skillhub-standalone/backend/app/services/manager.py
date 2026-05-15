@@ -1,4 +1,4 @@
-"""Skill 管理核心逻辑"""
+"""Core skill management logic."""
 import json
 import logging
 import os
@@ -14,15 +14,15 @@ from app.models import SkillInfo
 
 logger = logging.getLogger("skillhub.manager")
 
-# 缓存
+# Cache.
 _skills_cache: list[SkillInfo] | None = None
 
-# 支持的压缩格式
+# Supported archive formats.
 SUPPORTED_ARCHIVES = {'.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz'}
 
 
 def _is_archive(filename: str) -> bool:
-    """判断是否为支持的压缩文件"""
+    """Return whether the file is a supported archive."""
     lower = filename.lower()
     for ext in SUPPORTED_ARCHIVES:
         if lower.endswith(ext):
@@ -31,7 +31,7 @@ def _is_archive(filename: str) -> bool:
 
 
 def _get_archive_type(filename: str) -> str:
-    """获取压缩文件类型"""
+    """Return the archive type."""
     lower = filename.lower()
     if lower.endswith('.zip'):
         return 'zip'
@@ -47,7 +47,7 @@ def _get_archive_type(filename: str) -> str:
 
 
 def _generate_skill_json(skill_id: str, name: str, category: str, files: list) -> dict:
-    """生成默认 skill.json"""
+    """Generate the default skill.json."""
     import datetime
     return {
         "id": skill_id,
@@ -65,8 +65,8 @@ def _generate_skill_json(skill_id: str, name: str, category: str, files: list) -
 
 def _safe_extract(archive_path: Path, extract_to: Path) -> bool:
     """
-    安全解压：防止路径穿越攻击
-    检查每个文件路径，确保不会写到目标目录之外
+    Extract safely and prevent path traversal attacks.
+    Check every file path to ensure writes stay inside the target directory.
     """
     archive_type = _get_archive_type(str(archive_path))
     extract_funcs = {
@@ -85,21 +85,21 @@ def _safe_extract(archive_path: Path, extract_to: Path) -> bool:
 
 
 def _extract_zip_safe(archive_path: Path, extract_to: Path) -> bool:
-    """安全解压 ZIP，防止路径穿越"""
+    """Extract a ZIP safely and prevent path traversal."""
     with zipfile.ZipFile(archive_path, 'r') as zf:
         for info in zf.infolist():
-            # 规范化路径并检查是否在目标目录内
+            # Normalize the path and ensure it stays inside the target directory.
             member_path = (extract_to / info.filename).resolve()
             if not str(member_path).startswith(str(extract_to.resolve())):
                 logger.warning(f"Blocked path traversal: {info.filename}")
                 return False
-        # 所有路径安全，解压
+        # All paths are safe; extract.
         zf.extractall(extract_to)
     return True
 
 
 def _extract_tar_safe(archive_path: Path, extract_to: Path) -> bool:
-    """安全解压 TAR，防止路径穿越"""
+    """Extract a TAR safely and prevent path traversal."""
     mode_map = {
         'tar.gz': 'r:gz',
         'tar.bz2': 'r:bz2',
@@ -116,31 +116,30 @@ def _extract_tar_safe(archive_path: Path, extract_to: Path) -> bool:
     with tarfile.open(archive_path, mode) as tf:
         for member in tf.getmembers():
             if member.isfile() or member.isdir():
-                # 规范化路径并检查
-                # tar 文件的 name 可能包含路径
+                # Normalize and check the path; tar member names may contain paths.
                 member_path = (extract_to / member.name).resolve()
                 if not str(member_path).startswith(str(extract_to.resolve())):
                     logger.warning(f"Blocked tar path traversal: {member.name}")
                     return False
-        # 所有路径安全，解压
+        # All paths are safe; extract.
         tf.extractall(extract_to)
     return True
 
 
 def _extract_and_find_skill(archive_path: Path, extract_to: Path) -> tuple[Path | None, str]:
     """
-    解压压缩包并查找 skill.json 所在目录
-    返回: (skill_dir, skill_id) 如果失败则返回 (None, error_msg)
+    Extract the archive and find the directory that contains skill.json.
+    Return (skill_dir, skill_id), or (None, error_msg) on failure.
     """
     temp_extract = extract_to / "__temp_extract__"
     temp_extract.mkdir(exist_ok=True)
 
     try:
-        # 安全解压
+        # Extract safely.
         if not _safe_extract(archive_path, temp_extract):
             return None, "压缩包包含非法路径，已被阻止"
 
-        # 查找 skill.json
+        # Find skill.json.
         skill_dir = None
 
         for root, dirs, files in os.walk(temp_extract):
@@ -150,30 +149,30 @@ def _extract_and_find_skill(archive_path: Path, extract_to: Path) -> tuple[Path 
                 break
 
         if not skill_dir:
-            # 没有 skill.json，用解压后的第一个目录作为 skill 目录
+            # Without skill.json, use the first extracted directory as skill_dir.
             for item in temp_extract.iterdir():
                 if item.is_dir():
                     skill_dir = item
                     break
             if not skill_dir:
-                # 如果只有文件，用 temp_extract 本身
+                # If there are only files, use temp_extract itself.
                 skill_dir = temp_extract
 
-        # 确定 skill_id（目录名）
+        # Resolve skill_id from the directory name.
         skill_id = skill_dir.name
         if skill_id == "__temp_extract__":
-            # 用压缩包名作为 skill_id
+            # Use the archive name as skill_id.
             skill_id = archive_path.stem
-            # 去掉可能的 .tar 等后缀
+            # Remove possible suffixes such as .tar.
             for ext in ['.tar', '.gz', '.bz2', '.xz']:
                 if skill_id.endswith(ext):
                     skill_id = skill_id.replace(ext, '')
             skill_id = skill_id.replace('-', '_').replace(' ', '_')
 
-        # 移动内容到目标目录
+        # Move content into the target directory.
         target_dir = extract_to / skill_id
 
-        # 如果目标已存在，生成新的唯一目录名（不覆盖，保留旧版本）
+        # If the target exists, generate a unique directory and keep the old version.
         if target_dir.exists():
             import uuid
             new_id = f"{skill_id}_{uuid.uuid4().hex[:6]}"
@@ -181,10 +180,10 @@ def _extract_and_find_skill(archive_path: Path, extract_to: Path) -> tuple[Path 
             skill_id = new_id
             logger.info(f"Target exists, created new skill ID: {skill_id}")
 
-        # 创建目标目录
+        # Create the target directory.
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        # 复制所有内容（跳过临时目录本身）
+        # Copy all content, excluding the temp directory itself.
         for item in skill_dir.iterdir():
             dest = target_dir / item.name
             if item.is_dir():
@@ -198,16 +197,16 @@ def _extract_and_find_skill(archive_path: Path, extract_to: Path) -> tuple[Path 
         logger.error(f"解压失败: {e}")
         return None, str(e)
     finally:
-        # 清理临时目录
+        # Clean up the temp directory.
         if temp_extract.exists():
             shutil.rmtree(temp_extract, ignore_errors=True)
 
 
 def _parse_skill_md(skill_md_path: Path) -> dict | None:
-    """解析 SKILL.md 文件的 YAML frontmatter"""
+    """Parse YAML frontmatter from a SKILL.md file."""
     try:
         content = skill_md_path.read_text(encoding="utf-8")
-        # 匹配 YAML frontmatter (--- ... ---)
+        # Match YAML frontmatter (--- ... ---).
         match = re.match(r'^---\s*\n(.*?)\n---', content, re.DOTALL)
         if not match:
             return None
@@ -215,7 +214,7 @@ def _parse_skill_md(skill_md_path: Path) -> dict | None:
         yaml_content = match.group(1)
         data = {}
 
-        # 改进的 YAML 解析：支持值中包含冒号
+        # Improved YAML parsing: support values that contain colons.
         yaml_pattern = re.compile(r'^([^:]+):\s*(.*)$')
         for line in yaml_content.split('\n'):
             line = line.strip()
@@ -225,7 +224,7 @@ def _parse_skill_md(skill_md_path: Path) -> dict | None:
             if match:
                 key = match.group(1).strip()
                 value = match.group(2).strip()
-                # 去除引号
+                # Remove wrapping quotes.
                 if value.startswith('"') and value.endswith('"'):
                     value = value[1:-1]
                 elif value.startswith("'") and value.endswith("'"):
@@ -239,7 +238,7 @@ def _parse_skill_md(skill_md_path: Path) -> dict | None:
 
 
 def _scan_skills_dir() -> list[SkillInfo]:
-    """扫描 skills-local 目录，解析所有 skill.json 或 SKILL.md"""
+    """Scan skills-local and parse all skill.json or SKILL.md files."""
     skills = []
     skills_dir = settings.skills_local_dir
 
@@ -254,7 +253,7 @@ def _scan_skills_dir() -> list[SkillInfo]:
         skill_json = item / "skill.json"
         skill_md = item / "SKILL.md"
 
-        # 优先使用 skill.json，否则尝试 SKILL.md
+        # Prefer skill.json, otherwise try SKILL.md.
         if skill_json.exists():
             skill_info = SkillInfo.from_json(skill_json)
             if skill_info:
@@ -272,7 +271,7 @@ def _scan_skills_dir() -> list[SkillInfo]:
 
 
 def get_all_skills(force_refresh: bool = False) -> list[dict[str, Any]]:
-    """获取所有 Skill 列表"""
+    """Return all skills."""
     global _skills_cache
 
     if _skills_cache is None or force_refresh:
@@ -282,11 +281,11 @@ def get_all_skills(force_refresh: bool = False) -> list[dict[str, Any]]:
 
 
 def get_skill_by_id(skill_id: str) -> dict[str, Any] | None:
-    """获取单个 Skill 详情"""
+    """Return one skill detail by id."""
     skills = get_all_skills()
     for skill in skills:
         if skill["id"] == skill_id:
-            # 附加 README 内容
+            # Attach README content.
             skill_dir = settings.skills_local_dir / skill_id
             readme_path = skill_dir / "README.md"
             if readme_path.exists():
@@ -295,7 +294,7 @@ def get_skill_by_id(skill_id: str) -> dict[str, Any] | None:
                 except Exception:
                     skill["readme"] = ""
 
-            # 尝试读取 SKILL.md（某些 skill 用这个文件名）
+            # Try SKILL.md because some skills use this filename.
             if not skill.get("readme"):
                 skill_md = skill_dir / "SKILL.md"
                 if skill_md.exists():
@@ -304,11 +303,11 @@ def get_skill_by_id(skill_id: str) -> dict[str, Any] | None:
                     except Exception:
                         pass
 
-            # 扫描实际文件
+            # Scan actual files.
             actual_files = []
             if skill_dir.exists():
                 for root, dirs, files in os.walk(skill_dir):
-                    # 跳过隐藏目录
+                    # Skip hidden directories.
                     dirs[:] = [d for d in dirs if not d.startswith('.')]
                     for f in files:
                         if not f.startswith('.'):
@@ -322,7 +321,7 @@ def get_skill_by_id(skill_id: str) -> dict[str, Any] | None:
 
 
 def get_skill_path(skill_id: str) -> Path | None:
-    """获取 Skill 目录路径"""
+    """Return the skill directory path."""
     skill_dir = settings.skills_local_dir / skill_id
     if skill_dir.exists() and skill_dir.is_dir():
         return skill_dir
@@ -330,7 +329,7 @@ def get_skill_path(skill_id: str) -> Path | None:
 
 
 def package_skill_to_zip(skill_id: str) -> Path | None:
-    """将 Skill 打包为 ZIP（使用临时文件防止中途失败）"""
+    """Package a skill as ZIP, using a temp file to tolerate mid-write failure."""
     skill_dir = get_skill_path(skill_id)
     if not skill_dir:
         return None
@@ -339,10 +338,10 @@ def package_skill_to_zip(skill_id: str) -> Path | None:
     temp_zip_path = settings.skills_local_dir / f"__{skill_id}_temp.zip"
 
     try:
-        # 先打包到临时文件
+        # Package into a temp file first.
         with zipfile.ZipFile(temp_zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(skill_dir):
-                # 跳过隐藏目录
+                # Skip hidden directories.
                 dirs[:] = [d for d in dirs if not d.startswith('.')]
                 for file in files:
                     if file.startswith('.'):
@@ -351,7 +350,7 @@ def package_skill_to_zip(skill_id: str) -> Path | None:
                     arcname = file_path.relative_to(skill_dir)
                     zf.write(file_path, arcname)
 
-        # 打包成功，替换旧文件
+        # Packaging succeeded; replace the old file.
         if zip_path.exists():
             zip_path.unlink()
         temp_zip_path.rename(zip_path)
@@ -360,7 +359,7 @@ def package_skill_to_zip(skill_id: str) -> Path | None:
         return zip_path
     except Exception as e:
         logger.error(f"Failed to package skill {skill_id}: {e}")
-        # 清理临时文件
+        # Clean up the temp file.
         if temp_zip_path.exists():
             temp_zip_path.unlink()
         return None
@@ -368,32 +367,32 @@ def package_skill_to_zip(skill_id: str) -> Path | None:
 
 def import_skill(file_content: bytes, filename: str, category: str = "imported") -> dict:
     """
-    导入 Skill 文件/压缩包
-    参数:
-        file_content: 文件内容
-        filename: 原文件名
-        category: 分类（可选）
-    返回: {"success": bool, "skill_id": str, "message": str}
+    Import a skill file or archive.
+    Args:
+        file_content: File content.
+        filename: Original filename.
+        category: Optional category.
+    Returns: {"success": bool, "skill_id": str, "message": str}
     """
     global _skills_cache
 
     skills_dir = settings.skills_local_dir
     skills_dir.mkdir(parents=True, exist_ok=True)
 
-    # 生成临时文件
+    # Generate a temp file.
     safe_filename = filename.replace('/', '_').replace('\\', '_')
     temp_path = skills_dir / f"__temp_{safe_filename}"
 
     try:
-        # 写入临时文件
+        # Write the temp file.
         with open(temp_path, 'wb') as f:
             f.write(file_content)
 
         if not _is_archive(filename):
-            # 不是压缩包，可能是文件夹内容
+            # Not an archive; it may be folder upload content.
             return _process_folder_upload(temp_path, filename, category, skills_dir)
 
-        # 解压并查找 skill 目录
+        # Extract and find the skill directory.
         skill_dir, result = _extract_and_find_skill(temp_path, skills_dir)
 
         if skill_dir is None:
@@ -405,31 +404,30 @@ def import_skill(file_content: bytes, filename: str, category: str = "imported")
         logger.error(f"Import failed: {e}")
         return {"success": False, "skill_id": "", "message": f"导入失败: {str(e)}"}
     finally:
-        # 清理临时文件
+        # Clean up the temp file.
         if temp_path.exists():
             temp_path.unlink()
 
 
 def _process_folder_upload(file_path: Path, original_name: str, category: str, skills_dir: Path) -> dict:
     """
-    处理文件夹上传（从 webkitdirectory 上传的多个文件）
-    通过文件路径判断它们是否属于同一个 skill
+    Process folder uploads from multiple webkitdirectory files.
+    Use file paths to determine whether they belong to the same skill.
     """
     global _skills_cache
 
-    # webkitdirectory 上传的文件会保留相对路径结构
-    # 例如：skill-name/skill.json, skill-name/README.md
-    # 我们需要解析相对路径来判断文件属于哪个 skill
+    # webkitdirectory uploads preserve relative path structure, for example
+    # skill-name/skill.json or skill-name/README.md. Parse the relative path to
+    # determine which skill owns the file.
 
     try:
         content = file_path.read_bytes()
 
-        # 解析文件路径，确定 skill_id
-        # 文件路径格式可能是：skill-name/skill.json 或 skill-name/README.md
-        relative_path = file_path.name  # 使用文件名作为相对路径
+        # Parse the file path and resolve skill_id. The path may look like
+        # skill-name/skill.json or skill-name/README.md.
+        relative_path = file_path.name  # Use filename as the relative path.
 
-        # 尝试从文件名获取 skill_id
-        # 如果文件名是 skill.json，从内容中获取 ID
+        # Try to get skill_id from the filename; for skill.json, read it from content.
         skill_id = None
 
         if file_path.name == 'skill.json':
@@ -437,32 +435,32 @@ def _process_folder_upload(file_path: Path, original_name: str, category: str, s
                 data = json.loads(content)
                 skill_id = data.get('id', '')
                 if not skill_id:
-                    # 尝试用文件名作为 ID
+                    # Try the filename as the ID.
                     skill_id = file_path.stem
             except:
                 skill_id = file_path.stem
         elif file_path.name in ['README.md', 'SKILL.md', 'main.py', '__init__.py']:
-            # 这些文件通常与 skill.json 同目录
+            # These files usually live beside skill.json.
             skill_id = file_path.stem
         else:
-            # 其他文件，用文件名作为 skill_id
+            # For other files, use the filename as skill_id.
             skill_id = file_path.stem
 
         if not skill_id or skill_id in ['__temp__', '__temp']:
             skill_id = original_name.replace('.', '_').replace('-', '_')
 
-        # 生成唯一 ID
+        # Generate a unique ID.
         import uuid
         final_skill_id = f"{skill_id}_{uuid.uuid4().hex[:6]}"
         skill_dir = skills_dir / final_skill_id
         skill_dir.mkdir(parents=True, exist_ok=True)
 
-        # 根据文件类型处理
+        # Handle by file type.
         if file_path.name == 'skill.json':
-            # skill.json 直接复制
+            # Copy skill.json directly.
             (skill_dir / 'skill.json').write_bytes(content)
 
-            # 更新分类
+            # Update category.
             try:
                 data = json.loads(content)
                 data['category'] = category
@@ -471,13 +469,13 @@ def _process_folder_upload(file_path: Path, original_name: str, category: str, s
             except:
                 pass
         else:
-            # 其他文件：md, json, py, txt 等直接复制
+            # Copy other files such as md, json, py, and txt directly.
             dest_file = skill_dir / file_path.name
             dest_file.write_bytes(content)
 
-            # 如果没有 skill.json，创建一个默认的
+            # Create a default skill.json if missing.
             if not (skill_dir / 'skill.json').exists():
-                # 获取文件列表
+                # Collect the file list.
                 files_list = [f.name for f in skill_dir.iterdir() if f.is_file()]
                 default_json = _generate_skill_json(
                     final_skill_id,
@@ -501,16 +499,16 @@ def _process_folder_upload(file_path: Path, original_name: str, category: str, s
 
 
 def _save_skill(skill_dir: Path, category: str, skills_dir: Path) -> dict:
-    """保存 skill 到目录并更新分类"""
+    """Save a skill to the directory and update its category."""
     global _skills_cache
 
     skill_id = skill_dir.name
 
-    # 安全检查：确保目录存在
+    # Safety check: ensure the directory exists.
     if not skill_dir.exists():
         return {"success": False, "skill_id": "", "message": f"技能目录不存在: {skill_id}"}
 
-    # 扫描实际文件
+    # Scan actual files.
     actual_files = []
     for root, dirs, files_list in os.walk(skill_dir):
         dirs[:] = [d for d in dirs if not d.startswith('.')]
@@ -520,11 +518,11 @@ def _save_skill(skill_dir: Path, category: str, skills_dir: Path) -> dict:
                 rel_path = full_path.relative_to(skill_dir)
                 actual_files.append(str(rel_path))
 
-    # 更新或创建 skill.json
+    # Update or create skill.json.
     skill_json = skill_dir / "skill.json"
 
     if skill_json.exists():
-        # 更新现有 skill.json 的分类
+        # Update the existing skill.json category.
         try:
             with open(skill_json, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -534,13 +532,13 @@ def _save_skill(skill_dir: Path, category: str, skills_dir: Path) -> dict:
         except Exception as e:
             logger.warning(f"更新 skill.json 失败: {e}")
     else:
-        # 创建新的 skill.json
+        # Create a new skill.json.
         name = skill_id.replace('-', ' ').replace('_', ' ').title()
         default_json = _generate_skill_json(skill_id, name, category, actual_files)
         with open(skill_json, 'w', encoding='utf-8') as f:
             json.dump(default_json, f, ensure_ascii=False, indent=2)
 
-    # 清除缓存
+    # Clear cache.
     _skills_cache = None
 
     logger.info(f"Imported skill: {skill_id} with category: {category}")
@@ -552,7 +550,7 @@ def _save_skill(skill_dir: Path, category: str, skills_dir: Path) -> dict:
 
 
 def update_skill_category(skill_id: str, category: str) -> dict:
-    """更新 Skill 的分类"""
+    """Update a skill category."""
     global _skills_cache
 
     skill_dir = get_skill_path(skill_id)
@@ -563,7 +561,7 @@ def update_skill_category(skill_id: str, category: str) -> dict:
     skill_md = skill_dir / "SKILL.md"
 
     if skill_json.exists():
-        # 更新 skill.json
+        # Update skill.json.
         try:
             with open(skill_json, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -573,18 +571,18 @@ def update_skill_category(skill_id: str, category: str) -> dict:
         except Exception as e:
             return {"success": False, "message": f"更新 skill.json 失败: {e}"}
     elif skill_md.exists():
-        # 更新 SKILL.md 的 YAML frontmatter
+        # Update SKILL.md YAML frontmatter.
         try:
             content = skill_md.read_text(encoding='utf-8')
             match = re.match(r'^(---)(.*?)(---\s*\n)', content, re.DOTALL)
             if match:
-                # 提取现有的 frontmatter 行
+                # Extract existing frontmatter lines.
                 existing_lines = [l.strip() for l in match.group(2).split('\n') if l.strip()]
-                # 移除现有的 category 行（如果有）
+                # Remove existing category lines, if any.
                 existing_lines = [l for l in existing_lines if not l.startswith('category:')]
-                # 添加新的 category 行
+                # Add the new category line.
                 existing_lines.append(f'category: {category}')
-                # 重建 frontmatter
+                # Rebuild frontmatter.
                 frontmatter = '---\n' + '\n'.join(existing_lines) + '\n---\n'
                 new_content = frontmatter + content[match.end(3):]
                 skill_md.write_text(new_content, encoding='utf-8')
@@ -600,10 +598,10 @@ def update_skill_category(skill_id: str, category: str) -> dict:
 
 
 def delete_skill(skill_id: str) -> dict:
-    """删除 Skill"""
+    """Delete a skill."""
     global _skills_cache
 
-    # 安全检查：确保 skill_id 不包含路径穿越字符
+    # Safety check: ensure skill_id has no path traversal characters.
     if '..' in skill_id or '/' in skill_id or '\\' in skill_id:
         logger.warning(f"Invalid skill_id: {skill_id}")
         return {"success": False, "message": "无效的技能 ID"}
@@ -623,6 +621,6 @@ def delete_skill(skill_id: str) -> dict:
 
 
 def clear_cache():
-    """清除缓存，强制重新扫描"""
+    """Clear cache and force a rescan."""
     global _skills_cache
     _skills_cache = None

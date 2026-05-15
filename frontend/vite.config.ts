@@ -4,8 +4,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   build: {
-    // 业务入口和路由 chunk 已拆小；Mermaid 11.15 的按需渲染引擎自身
-    // 会超过 Vite 默认 500 kB 阈值，但不进入首屏主包。
+    // App entry and route chunks are already split. Mermaid 11.15's on-demand
+    // rendering engine exceeds Vite's default 500 kB warning but is not in the
+    // first-screen bundle.
     chunkSizeWarningLimit: 650,
   },
   server: {

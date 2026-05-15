@@ -18,7 +18,7 @@ database_url = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus",
 )
-# 确保使用异步驱动 URL
+# Ensure the URL uses the async driver.
 if database_url.startswith("postgresql") and "+asyncpg" not in database_url:
     database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 

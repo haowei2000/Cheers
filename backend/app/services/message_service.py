@@ -106,7 +106,7 @@ class MessageService:
         file_ids = file_ids or []
         mention_bot_ids = mention_bot_ids or []
 
-        # 校验文件属于本频道且状态正常
+        # Validate that each file belongs to this channel and has a usable status.
         if file_ids:
             records = await self.file_repo.get_many_by_ids(file_ids)
             for fid in file_ids:
@@ -116,7 +116,7 @@ class MessageService:
                 if rec.channel_id != channel_id:
                     raise BadRequestError(f"file {fid} does not belong to this channel")
 
-        # 加密消息处理
+        # Secret-message handling.
         if is_secret:
             encrypted = encrypt_value(content)
             stored_content = SECRET_PLACEHOLDER

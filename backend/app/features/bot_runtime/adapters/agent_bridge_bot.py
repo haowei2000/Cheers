@@ -83,13 +83,13 @@ class AgentBridgeBotAdapter(BotAdapter):
         return trigger_meta
 
     async def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
-        # 延迟导入以避免 import 时拉起 bridge 依赖
+        # Import lazily to avoid loading bridge dependencies at module import time.
         from app.features.agent_bridge.pending import PendingReply, pending_replies
         from app.features.agent_bridge.registry import bot_session_registry
         from app.features.agent_bridge.service import register_stream
         from app.features.agent_bridge.streams import stream_registry
 
-        # Bot pipeline 将占位 bot_msg.msg_id 放在 runtime 里传下来
+        # The bot pipeline passes the placeholder bot_msg.msg_id through runtime.
         placeholder_msg_id = payload.runtime.placeholder_msg_id
 
         sess = bot_session_registry.get(self.bot.bot_id)
@@ -115,10 +115,9 @@ class AgentBridgeBotAdapter(BotAdapter):
             )
             session_payload = session_resolution.to_event_payload()
 
-        # 先把 pending 登记到内存（不附 timeout），确保 plugin 秒回时
-        # `/ws/agent-bridge/data` 的 reply handler 能从 pending 里 peek 到 channel_id /
-        # finalize 正确的占位消息。timeout 由 Bot pipeline 在确认 dispatched_async
-        # 之后补登记（避免同步路径也被 arm）。
+        # Register pending state in memory first, without timeout, so a fast plugin reply
+        # can let the /ws/agent-bridge/data reply handler peek channel_id and finalize the
+        # correct placeholder. The bot pipeline arms timeout only after dispatched_async is confirmed.
         preregistered = False
         if placeholder_msg_id:
             await pending_replies.register(PendingReply(
@@ -178,7 +177,7 @@ class AgentBridgeBotAdapter(BotAdapter):
         )
 
         if not delivered:
-            # 没 plugin 在线：回滚预登记，让 Bot pipeline 走原同步 finalize 路径
+            # No plugin is online: roll back pending state so the bot pipeline uses the synchronous finalize path.
             if preregistered and placeholder_msg_id:
                 await pending_replies.pop_by_msg(placeholder_msg_id)
                 await stream_registry.pop(placeholder_msg_id)

@@ -1,13 +1,13 @@
 /**
- * 运行时 demo：以独立 Node 进程身份接入 AgentNexus bridge，echo 收到的消息。
+ * Runtime demo: connect to AgentNexus bridge as an independent Node process and echo received messages.
  *
- * 用法：
+ * Usage:
  *   export AGENTNEXUS_BOT_TOKEN=agb_xxxxx
  *   export AGENTNEXUS_CONTROL_URL=ws://localhost:8002/ws/agent-bridge/control
  *   export AGENTNEXUS_DATA_URL=ws://localhost:8002/ws/agent-bridge/data
  *   npm run demo
  *
- * 绕开 OpenClaw SDK，直接用 BotSession 类，便于在没有 SDK 的环境里验证 bridge 协议。
+ * Bypasses the OpenClaw SDK and uses BotSession directly to verify the bridge protocol without the SDK.
  */
 import { BotSession } from "./session.js";
 

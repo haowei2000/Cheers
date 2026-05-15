@@ -15,7 +15,7 @@ def _resolve_log_dir() -> Path | None:
         return None
     p = Path(settings.log_dir.strip())
     if not p.is_absolute():
-        # 相对路径：相对于 backend 目录
+        # Relative paths are resolved from the backend directory.
         base = Path(__file__).resolve().parent.parent
         p = (base / p).resolve()
     return p
@@ -86,7 +86,7 @@ def setup_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
 
-    # 控制台
+    # Console handler.
     has_console = any(
         getattr(h, "stream", None) == sys.stderr for h in root.handlers
     )
@@ -112,7 +112,7 @@ def setup_logging() -> None:
     max_bytes = settings.log_max_bytes or 0
     backup_count = max(0, settings.log_backup_count)
 
-    # 通用日志（INFO 及以上）
+    # General log file for INFO and above.
     try:
         if max_bytes > 0 and backup_count > 0:
             from logging.handlers import RotatingFileHandler
@@ -134,7 +134,7 @@ def setup_logging() -> None:
     except OSError:
         pass
 
-    # 错误专用日志（ERROR 及以上，便于排查）
+    # Error-only log file for troubleshooting.
     try:
         if max_bytes > 0 and backup_count > 0:
             from logging.handlers import RotatingFileHandler

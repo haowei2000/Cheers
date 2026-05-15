@@ -766,7 +766,7 @@ async def resolve_permission(
 
     cd = dict(msg.content_data or {})
     if cd.get("resolved"):
-        # 已处理过的请求直接回传当前状态。
+        # Previously processed requests return the current state directly.
         return APIResponse.ok(_serialize(msg, {}))
 
     cd["resolved"] = True

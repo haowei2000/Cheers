@@ -1,15 +1,16 @@
 /**
- * outbound.sendMedia + sendText 行为单测。
+ * Unit tests for outbound.sendMedia and sendText behavior.
  *
- * OpenClaw gateway (deliver-BNvlWd4P.js) 的调用合约：
- *   - 纯文本 payload → 串行调 handler.sendText(chunk)
- *   - 含 media payload → 仅 handler.sendMedia(caption, mediaUrl, overrides) 串行
- *     循环；caption 只在 index=0 非空，其后为 ""
- *   - 两者返回值都要有 { channel, messageId, chatId? } —— undefined 会让
- *     gateway 抛 "Cannot read properties of undefined (reading 'messageId')"
+ * OpenClaw gateway (deliver-BNvlWd4P.js) call contract:
+ *   - text-only payloads call handler.sendText(chunk) serially
+ *   - media payloads only call handler.sendMedia(caption, mediaUrl, overrides)
+ *     serially; caption is non-empty only at index=0 and "" afterwards
+ *   - both return values must include { channel, messageId, chatId? }; undefined
+ *     makes the gateway throw "Cannot read properties of undefined (reading 'messageId')"
  *
- * 插件策略：sendMedia 上传二进制并按 `to` 累计 fileIds，debounce 500ms 后
- * 一次性 session.reply(caption, fileIds) flush；每次 sendMedia 立刻返回合成 id。
+ * Plugin strategy: sendMedia uploads binary data and accumulates fileIds by `to`.
+ * After a 500ms debounce it flushes one session.reply(caption, fileIds). Each
+ * sendMedia returns a synthetic id immediately.
  */
 import { writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -80,7 +81,7 @@ function installFakeEntry(taskId: string, channelId: string, opts: { placeholder
     streamDone: vi.fn(() => true),
     streamError: vi.fn(() => true),
     // Default: upload fails — individual tests override via mockResolvedValueOnce.
-    // This keeps the "upload 失败" test honest without per-test wiring.
+    // This keeps the "upload failed" test honest without per-test wiring.
     uploadFile: vi.fn(async () => ({
       type: "file_upload_ack", client_file_id: null, ok: false,
       code: "no_mock", error: "uploadFile not mocked in this test",
@@ -177,7 +178,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
       channelId: "C1", filename: "chart.png",
     });
 
-    // caption 走 streamDelta，文件存进 stream slot；不再走老 reply 路径
+    // Caption goes through streamDelta and files are stored in the stream slot; the legacy reply path is skipped.
     expect(session.reply).not.toHaveBeenCalled();
     expect(session.streamDelta).toHaveBeenCalledTimes(1);
     expect(session.streamDelta.mock.calls[0][0]).toMatchObject({
@@ -211,7 +212,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     await sendMedia({ to: "task-2", text: "",        mediaUrl: f2, accountId: ACCOUNT_ID });
     await sendMedia({ to: "task-2",                  mediaUrl: f3, accountId: ACCOUNT_ID });
 
-    // 循环中只有一个 caption delta，而且没有 done 也没有 reply
+    // The loop has one caption delta and no done/reply yet.
     expect(session.reply).not.toHaveBeenCalled();
     expect(session.streamDone).not.toHaveBeenCalled();
     expect(session.streamDelta).toHaveBeenCalledTimes(1);
@@ -241,7 +242,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     expect(res.channel).toBe("agentnexus");
     expect(res.messageId).toBe("");
     expect(pendingMediaByTo.get("task-3")).toBeUndefined();
-    // 上传失败时不能为空槽，inbound source 也不能被消费
+    // Failed uploads must not leave empty slots or consume the inbound source.
     expect(pendingStreamByTo.get("task-3")).toBeUndefined();
   });
 
@@ -262,7 +263,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
       mediaUrl: "https://example.com/report.pdf", accountId: ACCOUNT_ID,
     });
 
-    // 现在走流式槽，messageId 形如 `${placeholder}-f1`
+    // The streaming slot path now returns messageId like `${placeholder}-f1`.
     expect(res.messageId).toBe("ph-task-4-f1");
     expect(fetchMock).toHaveBeenCalledTimes(1);    // download only
     expect(session.uploadFile).toHaveBeenCalledTimes(1);
@@ -297,7 +298,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     await sendText({ to: "task-6", text: "好", accountId: ACCOUNT_ID });
     await sendText({ to: "task-6", text: "吗", accountId: ACCOUNT_ID });
 
-    // reply 不被调用 —— 全程靠 streamDelta
+    // reply is not called because the whole path uses streamDelta.
     expect(session.reply).not.toHaveBeenCalled();
     expect(session.streamDelta).toHaveBeenCalledTimes(3);
     const deltaArgs = session.streamDelta.mock.calls.map((c) => c[0]);
@@ -305,13 +306,13 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     expect(deltaArgs[1]).toMatchObject({ msgId: "ph-task-6", seq: 2, delta: "好" });
     expect(deltaArgs[2]).toMatchObject({ msgId: "ph-task-6", seq: 3, delta: "吗" });
 
-    // done 还在 debounce 中
+    // done is still waiting on debounce.
     expect(session.streamDone).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(600);
     expect(session.streamDone).toHaveBeenCalledTimes(1);
     expect(session.streamDone.mock.calls[0][0]).toEqual({ msgId: "ph-task-6" });
 
-    // 槽位清干净
+    // The slot is cleaned up.
     expect(pendingStreamByTo.get("task-6")).toBeUndefined();
     expect(taskByPlaceholder.get("ph-task-6")).toBeUndefined();
   });
@@ -570,7 +571,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     session.streamDelta.mockReturnValueOnce(false);  // WS 写失败
 
     const res = await sendText({ to: "task-7", text: "断了", accountId: ACCOUNT_ID });
-    // 一次 reply 兜底，return 真实 messageId
+    // One reply fallback returns the real messageId.
     expect(session.reply).toHaveBeenCalledTimes(1);
     expect(res.messageId).toBe("msg-reply");
     expect(pendingStreamByTo.get("task-7")).toBeUndefined();
@@ -592,7 +593,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
     await sendText({ to: "task-9", text: "first", accountId: ACCOUNT_ID });
     expect(session.streamDelta).toHaveBeenCalledTimes(1);
 
-    // 模拟 control WS 推 cancel：直接打 slot.cancelled = true
+    // Simulate control WS cancel by setting slot.cancelled = true directly.
     const slot = pendingStreamByTo.get("task-9");
     expect(slot).toBeDefined();
     slot!.cancelled = true;
@@ -601,12 +602,12 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
       slot!.doneTimer = null;
     }
 
-    // 后续 chunk：不再推 delta
+    // Later chunks no longer push deltas.
     await sendText({ to: "task-9", text: "second", accountId: ACCOUNT_ID });
     await sendText({ to: "task-9", text: "third", accountId: ACCOUNT_ID });
     expect(session.streamDelta).toHaveBeenCalledTimes(1);
 
-    // debounce 触发 —— 也不能发 done（服务端已 finalize partial）
+    // Debounce fires, but done must not be sent because the server already finalized the partial response.
     await vi.advanceTimersByTimeAsync(600);
     expect(session.streamDone).not.toHaveBeenCalled();
   });
@@ -621,18 +622,18 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
       type: "file_upload_ack", client_file_id: "cMix", ok: true, file_id: "fMix",
     });
 
-    // 先流 token
+    // Stream text tokens first.
     await sendText({ to: "task-mix", text: "Here ", accountId: ACCOUNT_ID });
     await sendText({ to: "task-mix", text: "you go.", accountId: ACCOUNT_ID });
-    // 然后 sendMedia 带空 caption（混合模式下 caption 不应被作为 delta 重推）
+    // Then sendMedia with an empty caption; mixed mode should not push caption as another delta.
     await sendMedia({ to: "task-mix", text: "", mediaUrl: f1, accountId: ACCOUNT_ID });
 
-    // 只有 sendText 的两次 delta，sendMedia 因为已经有 deltas 不再推 caption
+    // Only the two sendText deltas are emitted; sendMedia skips caption because deltas already exist.
     expect(session.streamDelta).toHaveBeenCalledTimes(2);
 
     await vi.advanceTimersByTimeAsync(600);
 
-    // 只有一个 done，同时带文本 deltas 累积的文件
+    // Only one done is emitted, including files accumulated with the text deltas.
     expect(session.streamDone).toHaveBeenCalledTimes(1);
     expect(session.streamDone.mock.calls[0][0]).toEqual({
       msgId: "ph-task-mix", fileIds: ["fMix"],
@@ -642,7 +643,7 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
 
   it("source-less 广播：bot 主动发 channel 文件 → 走老 pendingMediaByTo + session.send 兜底", async () => {
     const session = installFakeEntry("task-bcast", "C1");
-    // 模拟 source 已被消费完毕（bot 主动发，没有触发它的入站消息）
+    // Simulate an already consumed source for bot-initiated sends without an inbound trigger.
     sessionRegistry.get(ACCOUNT_ID)!.lastInboundByTaskId.clear();
 
     const dir = await mkdtemp(join(tmpdir(), "agentnexus-media-"));
@@ -652,19 +653,19 @@ describe("outbound.sendMedia + sendText (gateway deliver contract)", () => {
       type: "file_upload_ack", client_file_id: "cBC", ok: true, file_id: "fBC",
     });
 
-    // ctx.to 直接传 channelId（bot 是 channel 成员），走 source-less 兜底
+    // ctx.to passes channelId directly; the bot is a channel member, so use source-less fallback.
     const res = await sendMedia({
       to: "C1", text: "hi all", mediaUrl: fp, accountId: ACCOUNT_ID,
     });
 
     expect(res.messageId).toMatch(/^pending-media-/);
     expect(pendingMediaByTo.get("C1")?.fileIds).toEqual(["fBC"]);
-    // 不会污染流式槽
+    // The streaming slot remains untouched.
     expect(pendingStreamByTo.get("C1")).toBeUndefined();
 
     await vi.advanceTimersByTimeAsync(600);
 
-    // 走 session.send，不走 streamDelta/streamDone
+    // Use session.send rather than streamDelta/streamDone.
     expect(session.send).toHaveBeenCalledTimes(1);
     expect(session.send.mock.calls[0][0]).toMatchObject({
       channelId: "C1", text: "hi all", fileIds: ["fBC"],

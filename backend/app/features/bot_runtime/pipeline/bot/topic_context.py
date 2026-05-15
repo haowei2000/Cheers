@@ -32,15 +32,15 @@ MSG_TYPE_ANNOUNCEMENT = "announcement"
 MSG_TYPE_ROUTING = "routing"
 MSG_TYPE_PERMISSION = "permission"
 
-# msg_type 值中可以成为 topic 根的集合——非这些的 kind（如 routing /
-# permission / announcement）即便带了 in_reply_to_msg_id 也不应被提升为
-# topic。实际使用中这些类型都不会设置 in_reply_to_msg_id，但显式列出作为
-# 文档。
+# msg_type values that may become topic roots. Other kinds such as routing,
+# permission, or announcement should not be promoted to topics even if they carry
+# in_reply_to_msg_id. They do not set in_reply_to_msg_id in practice, but the
+# explicit list documents the contract.
 _PROMOTABLE_PARENT_KINDS = {MSG_TYPE_NORMAL, MSG_TYPE_REPLY, MSG_TYPE_TOPIC}
 
-# 一条普通消息升级为 topic 根所需的最少回复数。低于这个数量只当成"父消息 +
-# 少量 inline 回复"来展示，不包裹成主题。改动时前端
-# frontend/src/lib/message.ts 里的 TOPIC_DISPLAY_THRESHOLD 需要同步。
+# Minimum number of replies required to promote a normal message to a topic root.
+# Below this threshold, the UI displays a parent message with a few inline replies
+# instead of wrapping it as a topic. Keep frontend/src/lib/message.ts in sync.
 TOPIC_PROMOTE_THRESHOLD = 4
 
 _MAX_DEPTH = 10
@@ -215,7 +215,7 @@ async def gather_topic_context(
         (topic_chain, child_replies)
     """
     if trigger_msg.msg_type == MSG_TYPE_REPLY and trigger_msg.in_reply_to_msg_id:
-        # 规则2/3：沿 in_reply_to_msg_id 链向上收集祖先消息
+        # Rules 2/3: collect ancestor messages along the in_reply_to_msg_id chain.
         msgs_in_chain: list[Message] = []
         current_id: str | None = trigger_msg.in_reply_to_msg_id
         visited: set[str] = set()
@@ -234,7 +234,7 @@ async def gather_topic_context(
         return [_to_dict(m, name_map.get(m.sender_id, "")) for m in msgs_in_chain], []
 
     if trigger_msg.msg_type == MSG_TYPE_TOPIC:
-        # 规则4：当前消息是主题根，拉取已有子回复作为上下文
+        # Rule 4: current message is a topic root, so fetch existing child replies as context.
         r = await session.execute(
             select(Message)
             .where(Message.in_reply_to_msg_id == trigger_msg.msg_id)

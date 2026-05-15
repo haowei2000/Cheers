@@ -1213,7 +1213,7 @@ export function ChatMessageList({
                         );
 
                         // ── topic card ───────────────────────────────────────
-                        // An explicit 主题 (msg_type="topic") should render
+                        // An explicit topic message (msg_type="topic") should render
                         // as a topic card regardless of reply count, so the
                         // user sees the intent reflected immediately. The
                         // 4-reply threshold only gates implicit promotion of
@@ -1233,7 +1233,7 @@ export function ChatMessageList({
                         }
 
                         // 1–3 replies on a plain message — inline render, no
-                        // topic chrome. Explicit 主题 messages fall through
+                        // topic chrome. Explicit topic messages fall through
                         // to the topic-card branch below regardless of count.
                         if (
                           !isExplicitTopic &&

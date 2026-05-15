@@ -42,7 +42,7 @@ async def test_list_channels_empty(client: AsyncClient, db_session: AsyncSession
 @pytest.mark.asyncio
 async def test_create_channel(client: AsyncClient, db_session: AsyncSession) -> None:
     """POST /api/channels 创建频道，需 workspace_id、name."""
-    # 先创建 workspace
+    # Create the workspace first.
     ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000001", name="Default")
     db_session.add(ws)
     await db_session.commit()

@@ -34,7 +34,7 @@ def test_apply_token_to_bot_populates_fields() -> None:
     assert plaintext.startswith("agb_")
     assert bot.bot_token_prefix == plaintext[:8]
     assert bot.bot_token_hash is not None
-    # 哈希不是明文
+    # The hash must not be plaintext.
     assert plaintext not in bot.bot_token_hash
     assert bot.bot_token_rotated_at is not None
 

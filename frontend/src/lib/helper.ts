@@ -1,7 +1,7 @@
 import type { ClarifySchema } from "../types";
 
 export const HELPER_CLARIFY_BLOCK = /```helper-clarify\n([\s\S]*?)```/;
-/** Legacy "动态表单" block; the feature is removed but we still strip the
+/** Legacy dynamic-form block; the feature is removed but we still strip the
  * fenced JSON if any old message in history happens to carry one, so the
  * raw payload doesn't leak into the rendered text. */
 const HELPER_FORM_BLOCK_LEGACY = /```helper-form\n[\s\S]*?```/;
@@ -35,7 +35,7 @@ export function isClarifyReplyUserMessage(content: string): boolean {
   return (
     t.startsWith("@Helper 澄清回答：") ||
     t.startsWith("@Coordinator 澄清回答：") ||
-    t.startsWith("@channel bot 澄清回答：") || // 历史名兜底
+    t.startsWith("@channel bot 澄清回答：") || // Legacy-name fallback.
     t.includes("用户选择跳过澄清")
   );
 }

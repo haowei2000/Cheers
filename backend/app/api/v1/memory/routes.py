@@ -81,7 +81,7 @@ async def create_entry(
     if layer_upper not in _VALID_LAYERS:
         raise HTTPException(400, f"invalid layer, must be one of: {', '.join(sorted(_VALID_LAYERS))}")
 
-    # 获取该层当前最大 sort_order
+    # Read the current maximum sort_order for this layer.
     max_order = await db.scalar(
         select(func.max(MemoryEntry.sort_order))
         .where(MemoryEntry.channel_id == channel_id, MemoryEntry.layer == layer_upper)

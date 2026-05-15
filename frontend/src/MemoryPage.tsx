@@ -1,13 +1,14 @@
 /**
- * MemoryPage — 频道记忆全屏独立页面
+ * MemoryPage — full-screen channel memory page.
  *
- * 特性：
- * - 左侧导航栏 + 右侧内容区的双栏布局
- * - 结构化层（ANCHOR/DECISIONS/PROGRESS）：卡片式条目 + Markdown 渲染 + 内联编辑器（写/预览双栏）
- * - FILES_INDEX：文件卡片网格（图标、类型、摘要）
- * - RECENT：时间线视图
- * - MEMBERS：成员卡片
- * - TODO：任务看板
+ * Features:
+ * - Two-column layout with navigation on the left and content on the right.
+ * - Structured layers (ANCHOR/DECISIONS/PROGRESS): card entries, Markdown
+ *   rendering, and an inline write/preview editor.
+ * - FILES_INDEX: file card grid with icon, type, and summary.
+ * - RECENT: timeline view.
+ * - MEMBERS: member cards.
+ * - TODO: task board.
  */
 import {
   createElement,

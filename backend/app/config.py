@@ -1,25 +1,25 @@
-"""应用配置，从环境变量加载。"""
+"""Application configuration loaded from environment variables."""
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-# backend 根目录（app/config.py -> app -> backend）
+# Backend root directory (app/config.py -> app -> backend).
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    """全局配置."""
+    """Global configuration."""
 
-    # 主业务数据库（PostgreSQL）
+    # Main business database (PostgreSQL).
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus"
 
-    # Context Store 数据库（四层记忆；默认同主库）
+    # Context Store database for memory layers; defaults to the main database.
     context_db_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # 高并发控制
+    # High-concurrency controls.
     orchestrator_queue_backend: str = "redis"  # redis | memory
     orchestrator_worker_concurrency: int = 4
     orchestrator_bot_concurrency_per_message: int = 3
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     unread_fanout_concurrency: int = 64
     recent_debounce_seconds: float = 5.0
 
-    # 数据目录（相对项目根或绝对路径）
+    # Data directory, relative to project root or absolute.
     data_dir: str = "data"
 
     # S3-compatible object storage (RustFS / MinIO / AWS S3 / Cloudflare R2)
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     storage_s3_verify_ssl: bool = True
     storage_presign_expires_seconds: int = 900
     file_upload_max_bytes: int = 25 * 1024 * 1024
-    # 文件保存时间：默认 90 天（约 3 个月）；<=0 表示不过期。
+    # File retention: default 90 days, roughly 3 months; <=0 disables expiry.
     file_retention_days: int = 90
     file_retention_cleanup_interval_seconds: int = 24 * 60 * 60
     file_upload_allowed_types: str = (
@@ -65,24 +65,24 @@ class Settings(BaseSettings):
     avatar_upload_max_bytes: int = 2 * 1024 * 1024
     avatar_upload_allowed_types: str = "image/png,image/jpeg,image/webp,image/gif"
 
-    # JWT 认证
-    jwt_secret_key: str = ""  # 留空则启动时自动生成（非持久化），建议在 .env 中配置
+    # JWT authentication.
+    jwt_secret_key: str = ""  # Empty means generated at startup and not persisted; prefer setting it in .env.
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 1440  # 24 小时
+    jwt_access_token_expire_minutes: int = 1440  # 24 hours
 
-    # API Key 加密存储（Fernet 对称加密）
-    api_key_encryption_key: str = ""  # Base64 Fernet 密钥；留空则自动生成并持久化到 data/.encryption_key
+    # API key encrypted storage with Fernet symmetric encryption.
+    api_key_encryption_key: str = ""  # Base64 Fernet key; empty means generated and persisted to data/.encryption_key.
 
-    # 调试
+    # Debug.
     debug: bool = False
 
-    # 日志目录（相对项目根或绝对路径）；留空则仅控制台
+    # Log directory, relative to project root or absolute; empty means console only.
     log_dir: str = "data/logs"
-    # 单日志文件最大字节，0 表示不轮转
+    # Maximum bytes per log file; 0 disables rotation.
     log_max_bytes: int = 5 * 1024 * 1024  # 5MB
     log_backup_count: int = 3
 
-    # Helper Bot 使用的 LLM（可选；不配置则用关键词匹配）
+    # LLM used by the Helper Bot; keyword matching is used when unset.
     helper_llm_base_url: str = ""
     helper_llm_model: str = ""
     helper_llm_api_key: str = ""
@@ -90,46 +90,46 @@ class Settings(BaseSettings):
     helper_llm_max_tokens: int = 1000
     llm_localhost_alias: str = ""
 
-    # 系统 LLM（RECENT 压缩、文件摘要等；不配置则简单截断）
+    # System LLM for RECENT compression, file summaries, and similar tasks; simple truncation is used when unset.
     system_llm_api_key: str = ""
-    system_llm_base_url: str = ""  # OpenAI 兼容
+    system_llm_base_url: str = ""  # OpenAI-compatible
     system_llm_model: str = ""
 
-    # 后端记忆分页与近期上下文（不影响前端消息列表分页）
+    # Backend memory pagination and recent context; does not affect frontend message-list pagination.
     memory_history_page_max_chars: int = 50000
     memory_recent_direct_message_count: int = 30
     memory_recent_summary_max_chars: int = 1500
 
-    # 邮件 SMTP 配置（留空则仅打印验证码到日志，适合开发环境）
+    # SMTP email settings; when empty, verification codes are only logged for development.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
     smtp_password: str = ""
-    smtp_from: str = ""          # 发件人地址，留空则用 smtp_username
-    smtp_use_tls: bool = True    # True=STARTTLS(587)；False=SSL(465) 时建议改 smtp_port=465
-    smtp_ssl: bool = False       # True 时用 SSL 直连（465端口）
+    smtp_from: str = ""          # Sender address; defaults to smtp_username when empty.
+    smtp_use_tls: bool = True    # True=STARTTLS(587); for SSL(465), set False and use smtp_ssl=True.
+    smtp_ssl: bool = False       # Use direct SSL, usually on port 465.
 
 
-    # Web 搜索引擎：bing_cn（必应国内版）/ baidu（百度）/ duckduckgo
+    # Web search engine: bing_cn, baidu, or duckduckgo.
     web_search_engine: str = "bing_cn"
-    # Web 搜索 / web_fetch 代理（留空则直连）
+    # Proxy for web search and web_fetch; empty means direct connection.
     web_search_proxy: str = ""
 
-    # CORS 允许的前端 origin 列表（逗号分隔或直接配置为列表）
+    # Allowed frontend origins for CORS, either comma-separated or configured as a list.
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-    # 日志格式（True = JSON 结构化日志；False = 人类可读文本）
+    # Log format; True emits structured JSON and False emits human-readable text.
     log_json: bool = False
 
-    # 种子数据：初始管理员账号
+    # Seed data: initial administrator account.
     admin_username: str = "admin"
     admin_password: str = "admin#Nexus2024"
     admin_display_name: str = "系统管理员"
 
     # ===== Agent Bridge =====
     agent_bridge_enabled: bool = True
-    agent_bridge_token: str = ""  # 空 = 未配置，bridge 路由返回 503
-    # 异步 Bot 前台等待阈值：超时后只把占位消息转成后台 task，不终止 provider 任务。
+    agent_bridge_token: str = ""  # Empty means bridge routes return 503.
+    # Foreground wait threshold for async bots; after timeout, only the placeholder becomes a background task.
     agent_bridge_timeout_seconds: int = 600
 
     model_config = {

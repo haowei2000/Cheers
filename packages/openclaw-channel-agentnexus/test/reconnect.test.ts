@@ -38,7 +38,7 @@ describe("computeBackoff", () => {
 
 describe("isFatalCloseCode", () => {
   it("flags auth fail, bot-unavailable, and supersede as fatal", () => {
-    // 4402 supersede 也视为致命：我们是被踢下线的旧连接，自动重连会 ping-pong
+    // 4402 supersede is fatal because this old connection was kicked off; reconnecting would ping-pong.
     expect(isFatalCloseCode(WS_CLOSE_AUTH_FAIL)).toBe(true);
     expect(isFatalCloseCode(WS_CLOSE_BOT_UNAVAILABLE)).toBe(true);
     expect(isFatalCloseCode(WS_CLOSE_SUPERSEDED)).toBe(true);

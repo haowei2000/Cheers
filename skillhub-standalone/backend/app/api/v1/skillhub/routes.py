@@ -1,4 +1,4 @@
-"""SkillHub API 路由"""
+"""SkillHub API routes."""
 import logging
 import hashlib
 import json
@@ -22,10 +22,10 @@ router = APIRouter(prefix="/api/v1/skillhub", tags=["skillhub"])
 
 @router.get("/skills")
 async def list_skills(
-    category: str | None = Query(None, description="按分类筛选"),
-    search: str | None = Query(None, description="搜索关键词"),
+    category: str | None = Query(None, description="Filter by category"),
+    search: str | None = Query(None, description="Search keyword"),
 ):
-    """获取所有 Skill 列表"""
+    """List all skills."""
     skills = get_all_skills()
 
     if category:
@@ -45,7 +45,7 @@ async def list_skills(
 
 @router.get("/skills/{skill_id}")
 async def get_skill_detail(skill_id: str):
-    """获取单个 Skill 详情"""
+    """Get one skill detail."""
     skill = get_skill_by_id(skill_id)
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
@@ -54,7 +54,7 @@ async def get_skill_detail(skill_id: str):
 
 @router.get("/skills/{skill_id}/download")
 async def download_skill(skill_id: str):
-    """下载 Skill (ZIP 格式)"""
+    """Download a skill as ZIP."""
     zip_path = package_skill_to_zip(skill_id)
     if not zip_path or not zip_path.exists():
         raise HTTPException(status_code=404, detail=f"Failed to package skill '{skill_id}'")
@@ -67,18 +67,18 @@ async def download_skill(skill_id: str):
 
 
 @router.post("/skills/upload")
-async def upload_skill(request: Request, category: str = Query("imported", description="分类")):
-    """上传并导入 Skill（支持压缩包或文件夹）"""
+async def upload_skill(request: Request, category: str = Query("imported", description="Category")):
+    """Upload and import a skill from an archive or folder."""
     try:
         results = []
 
-        # 获取上传的文件
+        # Get uploaded files.
         form = await request.form()
         files_to_process = []
 
-        # 从表单中获取所有文件
+        # Get all files from the form.
         for key, value in form.items():
-            # value 是一个 UploadFile 对象
+            # value is an UploadFile object.
             if hasattr(value, 'filename') and hasattr(value, 'read'):
                 filename = value.filename
                 if filename:
@@ -92,7 +92,7 @@ async def upload_skill(request: Request, category: str = Query("imported", descr
             result = import_skill(content, filename, category)
             results.append(result)
 
-        # 检查是否全部成功
+        # Check whether every import succeeded.
         success_count = sum(1 for r in results if r["success"])
         if success_count == len(results):
             return results[0] if len(results) == 1 else {
@@ -101,7 +101,7 @@ async def upload_skill(request: Request, category: str = Query("imported", descr
                 "message": f"成功导入 {success_count} 个技能"
             }
         else:
-            # 部分成功
+            # Partial success.
             return {
                 "success": True,
                 "skill_id": ",".join([r["skill_id"] for r in results if r["success"]]),
@@ -110,13 +110,13 @@ async def upload_skill(request: Request, category: str = Query("imported", descr
 
     except Exception as e:
         logger.error(f"Upload error: {e}")
-        # 返回纯文本错误信息，方便前端调试
+        # Return plain error details for easier frontend debugging.
         return {"success": False, "message": str(e)}
 
 
 @router.put("/skills/{skill_id}/category")
-async def update_category(skill_id: str, category: str = Query(..., description="新分类")):
-    """更新 Skill 分类"""
+async def update_category(skill_id: str, category: str = Query(..., description="New category")):
+    """Update skill category."""
     result = update_skill_category(skill_id, category)
     if result["success"]:
         clear_cache()
@@ -127,7 +127,7 @@ async def update_category(skill_id: str, category: str = Query(..., description=
 
 @router.delete("/skills/{skill_id}")
 async def remove_skill(skill_id: str):
-    """删除 Skill"""
+    """Delete a skill."""
     result = delete_skill(skill_id)
     if result["success"]:
         clear_cache()
@@ -138,34 +138,34 @@ async def remove_skill(skill_id: str):
 
 @router.get("/update")
 async def update_skills():
-    """从 GitFox 仓库更新 Skills（使用 git fetch + rebase）"""
+    """Update skills from the GitFox repository with git fetch + rebase."""
     result = update_skills_from_gitfox()
     return result.to_dict()
 
 
 @router.get("/status")
 async def get_status():
-    """获取同步状态"""
+    """Get sync status."""
     return get_sync_status()
 
 
 @router.get("/categories")
 async def get_categories():
-    """获取所有分类"""
+    """Get all categories."""
     skills = get_all_skills()
     categories = sorted(set(s.get("category", "general") for s in skills))
     return {"categories": categories}
 
 
 # ============================================================
-# OpenClaw 专用接口 - 只读、安全、快速
+# OpenClaw-specific read-only, safe, fast API.
 # ============================================================
 
 def _verify_api_key(request: Request) -> bool:
-    """验证 API Key"""
+    """Verify API Key."""
     api_key = settings.openclaw_api_key
 
-    # 从请求头获取 API Key
+    # Get API Key from request headers.
     auth_header = request.headers.get("Authorization", "")
     if not auth_header:
         return False
@@ -175,7 +175,7 @@ def _verify_api_key(request: Request) -> bool:
 
     token = auth_header[7:]
     if not api_key:
-        # 没有配置 API Key，拒绝访问（安全优先）
+        # Reject access when no API Key is configured; security first.
         logger.warning("API Key not configured, rejecting request")
         return False
 
@@ -183,22 +183,22 @@ def _verify_api_key(request: Request) -> bool:
 
 
 def _generate_checksum(data: str) -> str:
-    """生成数据的 SHA256 校验和"""
+    """Generate SHA256 checksum for data."""
     return hashlib.sha256(data.encode()).hexdigest()[:16]
 
 
 @router.get("/openclaw/skills")
 async def openclaw_list_skills(request: Request):
     """
-    OpenClaw 获取所有可用 Skills（只读接口）
-    返回格式专为 OpenClaw 设计：轻量、标准化、易解析
+    OpenClaw reads all available skills through this read-only endpoint.
+    The response is lightweight, standardized, and easy for OpenClaw to parse.
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
 
     skills = get_all_skills()
 
-    # 精简响应，只包含 OpenClaw 需要的信息
+    # Keep the response compact and only include information OpenClaw needs.
     result = {
         "version": "1.0",
         "count": len(skills),
@@ -224,8 +224,8 @@ async def openclaw_list_skills(request: Request):
 @router.get("/openclaw/skills/{skill_id}")
 async def openclaw_get_skill(request: Request, skill_id: str):
     """
-    OpenClaw 获取单个 Skill 详情（只读接口）
-    返回 Skill 的完整元数据和文件列表
+    OpenClaw reads one skill detail through this read-only endpoint.
+    Return full metadata and file list.
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -234,7 +234,7 @@ async def openclaw_get_skill(request: Request, skill_id: str):
     if not skill:
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
 
-    # 精简响应
+    # Compact response.
     return {
         "id": skill["id"],
         "name": skill["name"],
@@ -252,8 +252,8 @@ async def openclaw_get_skill(request: Request, skill_id: str):
 @router.get("/openclaw/skills/{skill_id}/manifest")
 async def openclaw_get_skill_manifest(request: Request, skill_id: str):
     """
-    OpenClaw 获取 Skill 的 manifest 文件（只读接口）
-    直接返回 skill.json 的完整内容，方便直接使用
+    OpenClaw reads a skill manifest through this read-only endpoint.
+    Return the full skill.json content directly for immediate use.
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -268,14 +268,14 @@ async def openclaw_get_skill_manifest(request: Request, skill_id: str):
 @router.get("/openclaw/categories")
 async def openclaw_get_categories(request: Request):
     """
-    OpenClaw 获取所有分类及每个分类下的 skill 数量（只读接口）
+    OpenClaw reads all categories and skill counts through this read-only endpoint.
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
 
     skills = get_all_skills()
 
-    # 按分类统计
+    # Count by category.
     category_stats = {}
     for s in skills:
         cat = s.get("category", "general")
@@ -293,29 +293,29 @@ async def openclaw_get_categories(request: Request):
 @router.get("/openclaw/search")
 async def openclaw_search_skills(
     request: Request,
-    q: str = Query(..., description="搜索关键词"),
-    category: str | None = Query(None, description="按分类筛选"),
-    limit: int = Query(10, description="返回数量限制"),
+    q: str = Query(..., description="Search keyword"),
+    category: str | None = Query(None, description="Filter by category"),
+    limit: int = Query(10, description="Result limit"),
 ):
     """
-    OpenClaw 搜索 Skills（只读接口）
-    支持按关键词搜索和分类筛选
+    OpenClaw searches skills through this read-only endpoint.
+    Supports keyword search and category filtering.
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
 
     skills = get_all_skills()
 
-    # 搜索过滤
+    # Search filtering.
     results = []
     keyword = q.lower()
 
     for s in skills:
-        # 分类过滤
+        # Category filtering.
         if category and s.get("category") != category:
             continue
 
-        # 关键词匹配
+        # Keyword matching.
         if keyword in s.get("name", "").lower():
             results.append(s)
         elif keyword in s.get("description", "").lower():
@@ -323,7 +323,7 @@ async def openclaw_search_skills(
         elif any(keyword in tag.lower() for tag in s.get("tags", [])):
             results.append(s)
 
-        # 达到限制
+        # Limit reached.
         if len(results) >= limit:
             break
 
@@ -347,8 +347,8 @@ async def openclaw_search_skills(
 @router.get("/openclaw/paths")
 async def openclaw_get_skill_paths(request: Request):
     """
-    OpenClaw 获取所有 Skills 的本地路径（只读接口）
-    返回本地路径，OpenClaw 可直接使用，无需下载
+    OpenClaw reads all local skill paths through this read-only endpoint.
+    Return local paths so OpenClaw can use them without downloading.
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -362,7 +362,7 @@ async def openclaw_get_skill_paths(request: Request):
             {
                 "id": s["id"],
                 "name": s["name"],
-                "files": s.get("files", [])[:5],  # 只返回前5个文件作为预览
+                "files": s.get("files", [])[:5],  # Return the first 5 files as a preview.
             }
             for s in skills
         ]
@@ -372,7 +372,7 @@ async def openclaw_get_skill_paths(request: Request):
 @router.get("/openclaw/paths/{skill_id}")
 async def openclaw_get_skill_path(request: Request, skill_id: str):
     """
-    OpenClaw 获取单个 Skill 的本地路径（只读接口）
+    OpenClaw reads one skill local path through this read-only endpoint.
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -381,7 +381,7 @@ async def openclaw_get_skill_path(request: Request, skill_id: str):
     if not skill_path.exists():
         raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
 
-    # 获取文件列表
+    # Get file list.
     files = []
     if skill_path.is_dir():
         for item in skill_path.rglob("*"):
@@ -402,7 +402,7 @@ async def openclaw_get_skill_path(request: Request, skill_id: str):
 @router.get("/openclaw/config")
 async def openclaw_get_config(request: Request):
     """
-    OpenClaw 获取 SkillHub 配置信息（只读接口）
+    OpenClaw reads SkillHub configuration through this read-only endpoint.
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")

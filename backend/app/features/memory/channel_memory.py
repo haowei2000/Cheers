@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import FileRecord, MemoryEntry, TodoItem
 from app.services.file_retention import active_file_filter
 
-# 支持结构化 CRUD 的层
+# Layers that support structured CRUD.
 ENTRY_LAYERS = ("ANCHOR", "DECISIONS", "PROGRESS")
 
 
@@ -46,16 +46,16 @@ class MemoryItem:
 class ChannelMemory:
     """频道完整记忆快照，用于注入 prompt 或导出。"""
     channel_id: str
-    # 结构化层：list of items
+    # Structured layers: list of items.
     anchor: list[MemoryItem] = field(default_factory=list)
     decisions: list[MemoryItem] = field(default_factory=list)
     progress: list[MemoryItem] = field(default_factory=list)
-    # 派生层：渲染后的文本
+    # Derived layers: rendered text.
     files_index: str = ""
     recent: str = ""
     todos: str = ""
 
-    # ── 加载 ──────────────────────────────────────────────────────────────────
+    # Loading.
 
     ALL_LAYERS = frozenset({
         "anchor", "decisions", "progress", "files_index", "recent", "todos",
@@ -78,7 +78,7 @@ class ChannelMemory:
         """
         mem = cls(channel_id=channel_id)
 
-        # 1) 结构化层 — memory_entries 表（按需筛选 layer 列）
+        # 1) Structured layers from memory_entries, optionally filtered by layer.
         wanted_entry_layers: list[str] = []
         if "anchor" in layers:
             wanted_entry_layers.append("ANCHOR")
@@ -105,7 +105,7 @@ class ChannelMemory:
                 elif layer_name == "PROGRESS":
                     mem.progress.append(item)
 
-        # 2) 派生层（按需）
+        # 2) Derived layers, when requested.
         if "files_index" in layers:
             mem.files_index = await cls._render_files_index(channel_id, session)
         if "recent" in layers:
@@ -115,7 +115,7 @@ class ChannelMemory:
 
         return mem
 
-    # ── 导出为 dict（兼容现有 memory_context 接口）────────────────────────────
+    # Export as dict for compatibility with the existing memory_context API.
 
     def to_context_dict(self) -> dict[str, str]:
         """导出为 flat dict，兼容现有 payload.memory_context 格式。"""
@@ -128,7 +128,7 @@ class ChannelMemory:
             "todos": self.todos,
         }
 
-    # ── 单层导出 ──────────────────────────────────────────────────────────────
+    # Single-layer export.
 
     def _get_items(self, layer: str) -> list[MemoryItem]:
         layer = layer.upper()
@@ -179,7 +179,7 @@ class ChannelMemory:
         lines.append(f"</{tag}>")
         return "\n".join(lines)
 
-    # ── 全量导出 ──────────────────────────────────────────────────────────────
+    # Full export.
 
     def export_md(self) -> str:
         """导出频道全部记忆为 Markdown 文档。"""
@@ -223,7 +223,7 @@ class ChannelMemory:
         lines.append("</project_memory>")
         return "\n".join(lines)
 
-    # ── 派生层渲染 ────────────────────────────────────────────────────────────
+    # Derived-layer rendering.
 
     @staticmethod
     async def _render_files_index(channel_id: str, session: AsyncSession) -> str:

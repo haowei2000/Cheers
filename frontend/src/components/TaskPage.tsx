@@ -61,7 +61,7 @@ export function TaskPage({
         </button>
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold truncate">
-            #{channel?.name || "频道"} Tasks
+            <span aria-hidden="true">#</span>{channel?.name || "频道"} Tasks
           </div>
           <div className="text-[11px]" style={{ color: "var(--fg-3)" }}>
             {tasks.length} 个后台任务

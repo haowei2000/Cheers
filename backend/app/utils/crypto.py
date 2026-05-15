@@ -4,10 +4,10 @@ from pathlib import Path
 
 logger = logging.getLogger("app.utils.crypto")
 
-# Fernet 加密前缀标记，用于区分密文和旧版明文
+# Fernet prefix marker used to distinguish ciphertext from legacy plaintext.
 _CIPHER_PREFIX = "enc:"
 
-# 全局 Fernet 实例（延迟初始化）
+# Global Fernet instance, initialized lazily.
 _fernet = None
 
 
@@ -30,7 +30,7 @@ def _get_fernet():
         except Exception:
             logger.warning("API_KEY_ENCRYPTION_KEY 格式无效，将自动生成新密钥")
 
-    # 未配置或无效：尝试从持久化文件读取，否则生成新密钥
+    # Missing or invalid config: read from the persisted key file or generate a new key.
     _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
     key_file = _BACKEND_ROOT / settings.data_dir / ".encryption_key"
     if not key_file.is_absolute():
@@ -44,7 +44,7 @@ def _get_fernet():
         except Exception:
             logger.warning("加密密钥文件损坏，将重新生成")
 
-    # 生成新密钥并持久化
+    # Generate and persist a new key.
     new_key = Fernet.generate_key()
     try:
         key_file.parent.mkdir(parents=True, exist_ok=True)
@@ -76,7 +76,7 @@ def decrypt_value(value: str) -> str:
     if not value:
         return value
     if not value.startswith(_CIPHER_PREFIX):
-        # 旧版明文，原样返回（调用方应负责回写加密）
+        # Legacy plaintext is returned as-is; callers are responsible for writing back encrypted data.
         return value
     ciphertext = value[len(_CIPHER_PREFIX):]
     fernet = _get_fernet()

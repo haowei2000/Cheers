@@ -17,7 +17,7 @@ DEFAULT_ORCHESTRATOR_SETTINGS = {
 AI_MODEL_PROVIDER_PREFIX = "ai-model:"
 
 _SETTINGS_DB_KEY = "admin_settings"
-# 旧 JSON 路径（仅用于一次性数据迁移）
+# Legacy JSON path used only for one-time data migration.
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
 _LEGACY_JSON_PATHS = [
     _BACKEND_ROOT / settings.data_dir / "admin_settings.json",
@@ -278,20 +278,20 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
     data = load_admin_settings()
     _ensure_llm_structures(data)
 
-    # channel_bot：频道助手统一 scope（兼容旧版 assistant_bot / builtin_llm）
+    # channel_bot: unified scope for the channel assistant, compatible with legacy assistant_bot/builtin_llm.
     if scope in ("channel_bot", "assistant_bot"):
-        # 1. 旧版 builtin_llm 直接配置优先（向后兼容，界面已迁移到绑定方式）
+        # 1. Prefer legacy builtin_llm direct config for backward compatibility.
         builtin = data.get("builtin_llm", {})
         if builtin.get("base_url") or builtin.get("model"):
             return _normalize_provider_config(builtin)
-        # 2. 新版 channel_bot 绑定
+        # 2. New channel_bot binding.
         bindings = data.get("llm_bindings") or {}
         pid = bindings.get("channel_bot")
         if pid:
             p = _get_provider_by_id(pid)
             if p:
                 return _normalize_provider_config(p)
-        # 3. 回退到 helper_llm_* 环境变量（无需管理界面配置即可使用）
+        # 3. Fall back to helper_llm_* environment variables.
         if settings.helper_llm_base_url and settings.helper_llm_model:
             return {
                 "base_url": settings.helper_llm_base_url.rstrip("/"),

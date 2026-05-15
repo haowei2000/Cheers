@@ -143,13 +143,16 @@ class FilePipelineService:
         channel_id: str,
         file_ids: list[str],
     ) -> list[dict[str, str]]:
-        """完整加载附件（含正文）。文档优先读取磁盘缓存，避免重复下载解析。"""
+        """Fully load attachments, including body text.
+
+        Documents prefer the disk cache to avoid repeated download and parsing.
+        """
         records = await self._load_records(session, channel_id=channel_id, file_ids=file_ids)
         attachments: list[dict[str, str]] = []
         for record in records:
             record.status = "processing"
 
-            # 图片文件：读取字节并 base64 编码，供 Vision LLM 使用
+            # Image file: read bytes and base64-encode them for Vision LLM use.
             if is_image_type(record.content_type or ""):
                 await self._ensure_object_ready(record)
                 image_b64 = ""
@@ -176,7 +179,7 @@ class FilePipelineService:
                 })
                 continue
 
-            # 文档文件：优先读取磁盘缓存（首次解析后由 _persist_parsed_cache 写入）
+            # Document file: prefer disk cache written by _persist_parsed_cache.
             if record.md_path:
                 try:
                     cache_path = Path(record.md_path)
@@ -200,7 +203,7 @@ class FilePipelineService:
                 except Exception:
                     logger.warning("prepare_attachments: cache read failed file_id=%s, falling back to storage", record.file_id)
 
-            # 缓存未命中：从存储下载并解析
+            # Cache miss: download from storage and parse.
             try:
                 await self._ensure_object_ready(record)
                 obj = await self._load_record_object(record)
@@ -258,17 +261,18 @@ class FilePipelineService:
         channel_id: str,
         file_ids: list[str],
     ) -> list[dict[str, str]]:
-        """轻量元信息加载，供 Orchestrator 构建文件引用提示用。
+        """Load lightweight metadata for orchestrator file reference prompts.
 
-        - 图片：完整处理（Vision LLM 需要 base64）
-        - 文档：仅读取 DB 元数据（filename、content_type、summary_3lines），不下载文件正文
-          → 减少存储 I/O 与 token 占用；Agent 按需通过 read_file 工具获取正文
+        - Images are fully processed because Vision LLMs need base64.
+        - Documents only read DB metadata (filename, content_type, summary_3lines)
+          and do not download body text. This reduces storage I/O and token use;
+          agents can fetch body text on demand through the read_file tool.
         """
         records = await self._load_records(session, channel_id=channel_id, file_ids=file_ids)
         attachments: list[dict[str, str]] = []
         for record in records:
             if is_image_type(record.content_type or ""):
-                # 图片仍需完整处理（Vision LLM 需要 base64）
+                # Images still need full processing because Vision LLMs need base64.
                 record.status = "processing"
                 image_b64 = ""
                 try:
@@ -294,7 +298,7 @@ class FilePipelineService:
                     "truncated": "false",
                 })
             else:
-                # 文档：只返回 DB 元数据，不下载正文
+                # Documents return DB metadata only and do not download body text.
                 attachments.append({
                     "file_id": record.file_id,
                     "filename": record.original_filename or record.file_id,
@@ -401,7 +405,7 @@ class FilePipelineService:
     async def _ensure_remote_object_ready(self, record: FileRecord) -> StorageObjectHead:
         if self.storage is None:
             raise FileFlowError("对象存储未初始化，无法读取上传文件", status_code=503)
-        # 根据 object_key 前缀推断 scope（generated/ 或 uploads/）
+        # Infer scope from the object_key prefix: generated/ or uploads/.
         scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
         try:
             if record.object_key:

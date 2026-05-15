@@ -1,7 +1,7 @@
 import type { Message } from "../types";
 
 /**
- * A conversation only becomes a "topic" (主题) once this many direct
+ * A conversation only becomes a topic once this many direct
  * replies have accumulated under the root. Below the threshold, replies
  * render as plain inline messages under the root — no dock, no topic
  * card. Keep this in sync with the backend constant
@@ -138,9 +138,9 @@ export function formatTs(ts?: string): string {
 
 /**
  * Stable label for a day divider in the message stream:
- * - "今天" for today
- * - "昨天" for yesterday
- * - "YYYY年M月D日" otherwise (local timezone)
+ * - today label for the current day
+ * - yesterday label for the previous day
+ * - localized date otherwise
  *
  * Returns "" for missing / unparseable timestamps so the caller can
  * skip inserting a divider.
