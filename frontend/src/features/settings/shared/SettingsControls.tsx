@@ -90,3 +90,27 @@ export function DangerButton({
     </button>
   );
 }
+
+export function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      style={{
+        alignItems: "center",
+        alignSelf: "flex-start",
+        background: "transparent",
+        border: 0,
+        color: "var(--fg-3)",
+        cursor: "pointer",
+        display: "inline-flex",
+        fontFamily: "inherit",
+        fontSize: 12,
+        gap: 6,
+        padding: "4px 2px",
+      }}
+    >
+      ← {label}
+    </button>
+  );
+}
