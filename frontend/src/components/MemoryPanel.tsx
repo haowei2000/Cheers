@@ -1,16 +1,11 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import {
-  ArrowDownTrayIcon,
-  CheckCircleIcon,
-  PencilSquareIcon,
-  UsersIcon,
-} from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
 import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
+import { AppIcon } from "./icons";
 import { InviteMemberSearch } from "./InviteMemberSearch";
 
 const API = "/api/v1";
@@ -934,7 +929,7 @@ export function MemoryPanel({
           </div>
         ) : members.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-28 text-gray-400 gap-2 text-center px-4">
-            <UsersIcon className="w-8 h-8 opacity-30" />
+            <AppIcon name="users" className="w-8 h-8 opacity-30" />
             <p className="text-xs text-gray-500">暂无成员</p>
           </div>
         ) : (
@@ -1167,7 +1162,7 @@ export function MemoryPanel({
                 </div>
               ) : todos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-20 text-gray-400 gap-1 text-center px-4">
-                  <CheckCircleIcon className="w-6 h-6 opacity-30" />
+                  <AppIcon name="checkCircle" className="w-6 h-6 opacity-30" />
                   <p className="text-xs text-gray-400">暂无待办</p>
                 </div>
               ) : (
@@ -1308,7 +1303,7 @@ export function MemoryPanel({
                       className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
                       title="下载文件"
                     >
-                      <ArrowDownTrayIcon className="w-4 h-4" />
+                      <AppIcon name="download" className="w-4 h-4" />
                     </a>
                   </div>
                 );
@@ -1714,7 +1709,7 @@ function MembersView({
                   )}
                   {isSelf && (
                     <span className="an-self-edit" aria-hidden="true">
-                      <PencilSquareIcon />
+                      <AppIcon name="pencil" />
                     </span>
                   )}
                 </div>

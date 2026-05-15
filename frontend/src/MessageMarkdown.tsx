@@ -7,10 +7,10 @@ import {
   useState,
   type ImgHTMLAttributes,
 } from "react";
-import { DocumentIcon, PhotoIcon } from "@heroicons/react/24/solid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import hljs from "highlight.js";
+import { AppIcon } from "./components/icons";
 
 // ── @mention preprocessing ───────────────────────────────────────────────────
 
@@ -207,7 +207,7 @@ function MarkdownImage({ src, alt, onImageClick, ...props }: MarkdownImageProps)
       role={failed ? "img" : "status"}
       aria-label={failed ? alt || "image preview failed" : "image preview loading"}
     >
-      <PhotoIcon className="h-5 w-5 flex-shrink-0 text-gray-300" />
+      <AppIcon name="image" className="h-5 w-5 flex-shrink-0 text-gray-300" />
       <span className="min-w-0 truncate">
         {failed ? "图片预览不可用" : `图片预览加载中 (${attempt}/${MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS})`}
       </span>
@@ -271,9 +271,9 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
     >
       <span className={`w-7 h-7 rounded-md ${bg} flex items-center justify-center flex-shrink-0`}>
         {isImage ? (
-          <PhotoIcon className={`w-4 h-4 ${fg}`} />
+          <AppIcon name="image" className={`w-4 h-4 ${fg}`} />
         ) : (
-          <DocumentIcon className={`w-4 h-4 ${fg}`} />
+          <AppIcon name="file" className={`w-4 h-4 ${fg}`} />
         )}
       </span>
       <span className="text-[13px] font-medium text-gray-700 truncate">{displayName}</span>

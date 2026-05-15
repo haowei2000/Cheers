@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { UsersIcon } from "@heroicons/react/24/solid";
 import type { ChannelMember as Member, Friend, BotItem as Bot } from "./types";
+import { AppIcon } from "./components/icons";
 import { SearchPicker } from "./components/SearchPicker";
 
 const API = "/api/v1";
@@ -462,7 +462,7 @@ export default function ChannelMembersModal({
 
                 {members.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    <UsersIcon className="w-10 h-10 mx-auto mb-2 text-gray-400" />
+                    <AppIcon name="users" className="w-10 h-10 mx-auto mb-2 text-gray-400" />
                     <p>暂无成员</p>
                   </div>
                 )}

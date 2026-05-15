@@ -1,14 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
-import {
-  ArrowDownTrayIcon,
-  EyeIcon,
-} from "@heroicons/react/24/outline";
-import {
-  DocumentIcon,
-  PhotoIcon,
-} from "@heroicons/react/24/solid";
 import { renderWithThinkFolding } from "../lib/think";
 import type { FileInfo } from "../types";
+import { AppIcon, FileTypeIcon } from "./icons";
 
 const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
 
@@ -83,7 +76,7 @@ function ChatAttachmentCard({
         >
           {imageFailed ? (
             <div className="flex h-32 items-center justify-center gap-2 text-xs text-gray-400">
-              <PhotoIcon className="h-5 w-5 text-gray-300" />
+              <AppIcon name="image" className="h-5 w-5 text-gray-300" />
               <span>预览不可用</span>
             </div>
           ) : (
@@ -99,12 +92,8 @@ function ChatAttachmentCard({
       ) : null}
 
       <div className="flex items-center gap-2 px-2.5 py-2">
-        <span
-          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${
-            image ? "bg-purple-50 text-purple-500" : "bg-blue-50 text-blue-500"
-          }`}
-        >
-          {image ? <PhotoIcon className="h-5 w-5" /> : <DocumentIcon className="h-5 w-5" />}
+        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-gray-50">
+          <FileTypeIcon contentType={file.content_type} filename={name} size={28} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium text-gray-800">{name}</div>
@@ -121,7 +110,7 @@ function ChatAttachmentCard({
             title="预览"
             aria-label={`预览 ${name}`}
           >
-            <EyeIcon className="h-4 w-4" />
+            <AppIcon name="preview" className="h-4 w-4" />
           </button>
           <a
             href={downloadUrl}
@@ -131,7 +120,7 @@ function ChatAttachmentCard({
             title="下载"
             aria-label={`下载 ${name}`}
           >
-            <ArrowDownTrayIcon className="h-4 w-4" />
+            <AppIcon name="download" className="h-4 w-4" />
           </a>
         </div>
       </div>

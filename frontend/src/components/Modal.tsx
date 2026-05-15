@@ -27,7 +27,7 @@ import {
   Transition,
   TransitionChild,
 } from "@headlessui/react";
-import { XMarkIcon } from "@heroicons/react/24/outline";
+import { AppIcon } from "./icons";
 import { cn } from "../lib/cn";
 
 interface ModalProps {
@@ -131,7 +131,7 @@ export function Modal({
                         style={{ color: "var(--fg-3)" }}
                         aria-label="关闭"
                       >
-                        <XMarkIcon className="w-5 h-5" />
+                        <AppIcon name="close" className="w-5 h-5" />
                       </button>
                     )}
                   </div>

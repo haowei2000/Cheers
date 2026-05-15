@@ -4,21 +4,10 @@ import NotificationPanel from "./NotificationPanel";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
-import {
-  ArrowUturnLeftIcon,
-  Bars3Icon,
-  ChatBubbleLeftIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  DocumentDuplicateIcon,
-  DocumentIcon,
-  LockClosedIcon,
-  QuestionMarkCircleIcon,
-} from "@heroicons/react/24/solid";
-import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
 import { BotAvatar } from "./components/BotAvatar";
 import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
+import { AppIcon } from "./components/icons";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { LoginModal } from "./components/LoginModal";
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
@@ -1846,7 +1835,7 @@ export default function App() {
         title="查看这条 AI 回复的记忆与流式事件"
         className="an-chat-action"
       >
-        <QuestionMarkCircleIcon className="h-3.5 w-3.5" />
+        <AppIcon name="help" className="h-3.5 w-3.5" />
       </button>
     );
   };
@@ -2060,7 +2049,7 @@ export default function App() {
               color: "var(--accent)",
             }}
           >
-            <DocumentIcon className="w-3.5 h-3.5" />
+            <AppIcon name="file" className="w-3.5 h-3.5" />
           </span>
           <span className="text-[13px] font-semibold">{title}</span>
           <span
@@ -3733,7 +3722,7 @@ export default function App() {
 
                         // ── helpers shared by root & replies ──────────────────
                         const replyIcon = (
-                          <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+                          <AppIcon name="reply" className="w-3.5 h-3.5" />
                         );
 
                         // ── root message ───────────────────────────────────────
@@ -3942,7 +3931,7 @@ export default function App() {
                                   {isSecretExpired ? (
                                     <div className="an-secret-veil is-expired">
                                       <span className="an-secret-veil-icon">
-                                        <LockClosedIcon className="w-5 h-5" />
+                                        <AppIcon name="lock" className="w-5 h-5" />
                                       </span>
                                       <div className="an-secret-veil-body">
                                         <span className="an-secret-veil-label">
@@ -3956,7 +3945,7 @@ export default function App() {
                                   ) : isSecretUnrevealed ? (
                                     <div className="an-secret-veil">
                                       <span className="an-secret-veil-icon">
-                                        <LockClosedIcon className="w-5 h-5" />
+                                        <AppIcon name="lock" className="w-5 h-5" />
                                       </span>
                                       <div className="an-secret-veil-body">
                                         <span className="an-secret-veil-label">
@@ -4039,7 +4028,7 @@ export default function App() {
                                   onClick={() => copyMessageText(m)}
                                   className="an-chat-action"
                                 >
-                                  <DocumentDuplicateIcon className="w-3.5 h-3.5" />
+                                  <AppIcon name="copy" className="w-3.5 h-3.5" />
                                 </button>
                                 {renderMemoryLoadButton(m)}
                                 <button
@@ -4141,7 +4130,7 @@ export default function App() {
                                 {isSecretExpired ? (
                                   <div className="an-secret-veil is-expired">
                                     <span className="an-secret-veil-icon">
-                                      <LockClosedIcon className="w-5 h-5" />
+                                      <AppIcon name="lock" className="w-5 h-5" />
                                     </span>
                                     <div className="an-secret-veil-body">
                                       <span className="an-secret-veil-label">
@@ -4155,7 +4144,7 @@ export default function App() {
                                 ) : isSecretUnrevealed ? (
                                   <div className="an-secret-veil">
                                     <span className="an-secret-veil-icon">
-                                      <LockClosedIcon className="w-5 h-5" />
+                                      <AppIcon name="lock" className="w-5 h-5" />
                                     </span>
                                     <div className="an-secret-veil-body">
                                       <span className="an-secret-veil-label">
@@ -4285,7 +4274,7 @@ export default function App() {
                                 {isSecretExpired ? (
                                   <div className="an-secret-veil is-expired">
                                     <span className="an-secret-veil-icon">
-                                      <LockClosedIcon className="w-5 h-5" />
+                                      <AppIcon name="lock" className="w-5 h-5" />
                                     </span>
                                     <div className="an-secret-veil-body">
                                       <span className="an-secret-veil-label">
@@ -4299,7 +4288,7 @@ export default function App() {
                                 ) : isSecretUnrevealed ? (
                                   <div className="an-secret-veil">
                                     <span className="an-secret-veil-icon">
-                                      <LockClosedIcon className="w-5 h-5" />
+                                      <AppIcon name="lock" className="w-5 h-5" />
                                     </span>
                                     <div className="an-secret-veil-body">
                                       <span className="an-secret-veil-label">
@@ -4689,7 +4678,7 @@ export default function App() {
                                     onClick={() => copyMessageText(r)}
                                     className="an-chat-action"
                                   >
-                                    <DocumentDuplicateIcon className="w-3.5 h-3.5" />
+                                    <AppIcon name="copy" className="w-3.5 h-3.5" />
                                   </button>
                                   {renderMemoryLoadButton(r)}
                                   <button
@@ -4709,7 +4698,7 @@ export default function App() {
                                     }}
                                     className="an-chat-action"
                                   >
-                                    <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+                                    <AppIcon name="reply" className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </div>
@@ -4887,7 +4876,7 @@ export default function App() {
                             {/* Topic header */}
                             <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
                               <div className="flex items-center gap-1.5">
-                                <ChatBubbleLeftIcon className="w-3.5 h-3.5 text-[#1264A3]" />
+                                <AppIcon name="messageCircle" className="w-3.5 h-3.5 text-[#1264A3]" />
                                 <span className="text-[12px] font-medium text-[#1264A3]">
                                   主题 · {replies.length + 1} 条消息
                                 </span>
@@ -4899,7 +4888,7 @@ export default function App() {
                                   className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#1264A3] px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
                                   title="以独立页打开主题"
                                 >
-                                  <ArrowTopRightOnSquareIcon className="w-3 h-3" />
+                                  <AppIcon name="externalLink" className="w-3 h-3" />
                                   独立页打开
                                 </button>
                                 <button
@@ -4907,7 +4896,7 @@ export default function App() {
                                   onClick={() => toggleTopic(m.msg_id)}
                                   className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
                                 >
-                                  <ChevronUpIcon className="w-3 h-3" />
+                                  <AppIcon name="chevronUp" className="w-3 h-3" />
                                   收起
                                 </button>
                               </div>
@@ -5087,9 +5076,9 @@ export default function App() {
                                           title={rCollapsed ? "展开" : "折叠"}
                                         >
                                           {rCollapsed ? (
-                                            <ChevronDownIcon className="w-3 h-3" />
+                                            <AppIcon name="chevronDown" className="w-3 h-3" />
                                           ) : (
-                                            <ChevronUpIcon className="w-3 h-3" />
+                                            <AppIcon name="chevronUp" className="w-3 h-3" />
                                           )}
                                         </button>
                                       </div>
@@ -5217,7 +5206,7 @@ export default function App() {
                                         }}
                                         className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
                                       >
-                                        <ArrowUturnLeftIcon className="w-3 h-3" />
+                                        <AppIcon name="reply" className="w-3 h-3" />
                                       </button>
                                     </div>
                                   </div>
@@ -5231,7 +5220,7 @@ export default function App() {
                                 onClick={() => toggleTopic(m.msg_id)}
                                 className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded hover:bg-gray-100 transition-colors"
                               >
-                                <ChevronUpIcon className="w-3 h-3" />
+                                <AppIcon name="chevronUp" className="w-3 h-3" />
                                 收起主题
                               </button>
                             </div>
@@ -5409,7 +5398,7 @@ export default function App() {
                       onClick={() => setSidebarOpen(true)}
                       className="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 flex-shrink-0"
                     >
-                      <Bars3Icon className="w-6 h-6" />
+                      <AppIcon name="menu" className="w-6 h-6" />
                     </button>
                     <span className="text-sm font-semibold text-gray-700">
                       智枢协作
@@ -5418,7 +5407,7 @@ export default function App() {
                 )}
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
                   <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center mb-5">
-                    <ChatBubbleLeftIcon className="w-10 h-10 text-gray-300" />
+                    <AppIcon name="messageCircle" className="w-10 h-10 text-gray-300" />
                   </div>
                   <p className="text-gray-700 text-[15px] font-semibold">
                     选择一个频道

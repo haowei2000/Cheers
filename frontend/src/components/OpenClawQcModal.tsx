@@ -1,7 +1,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { BoltIcon, CheckIcon, XMarkIcon } from "@heroicons/react/24/solid";
 import { apiFetch } from "../api";
+import { AppIcon } from "./icons";
 import { Modal } from "./Modal";
 
 type QcResult = {
@@ -85,7 +85,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
       title={
         <span className="flex items-center gap-3">
           <span className="w-9 h-9 rounded-xl bg-[#4A154B] flex items-center justify-center flex-shrink-0">
-            <BoltIcon className="w-5 h-5 text-white" />
+            <AppIcon name="zap" className="w-5 h-5 text-white" />
           </span>
           <span>接入 OpenClaw</span>
         </span>
@@ -212,9 +212,9 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${qcResult.probe.connected ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}
               >
                 {qcResult.probe.connected ? (
-                  <CheckIcon className="w-4 h-4 flex-shrink-0" />
+                  <AppIcon name="check" className="w-4 h-4 flex-shrink-0" />
                 ) : (
-                  <XMarkIcon className="w-4 h-4 flex-shrink-0" />
+                  <AppIcon name="close" className="w-4 h-4 flex-shrink-0" />
                 )}
                 {qcResult.probe.connected
                   ? `已连接 · Bot @${qcResult.bot.username} 创建成功`
@@ -269,7 +269,7 @@ export function OpenClawQcModal({ open, onClose, channelId, channelName }: OpenC
                   </>
                 ) : (
                   <>
-                    <BoltIcon className="w-3.5 h-3.5" />
+                    <AppIcon name="zap" className="w-3.5 h-3.5" />
                     连接并探测
                   </>
                 )}
