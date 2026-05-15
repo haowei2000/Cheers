@@ -78,42 +78,43 @@ App.tsx
 │       │   ├── MembersView
 │       │   └── ProjectView
 │       └── FilePreviewSidebar
-├── NotificationPanel
-├── LoginModal
-├── CreateWorkspaceModal
-├── InviteWorkspaceMemberModal
-│   └── SearchPicker
-├── CreateChannelModal
-├── ChannelMembersModal
-│   ├── SearchPicker
-│   └── MemberListItem
-├── ChannelSettingsModal
-│   └── MemberListItem
-├── OpenClawQcModal
-├── AddBotModal
-│   └── MemberListItem
-├── MessageDetailModal
+├── AppModals
+│   ├── NotificationPanel
+│   ├── LoginModal
+│   ├── CreateWorkspaceModal
+│   ├── InviteWorkspaceMemberModal
+│   │   └── SearchPicker
+│   ├── CreateChannelModal
+│   ├── ChannelMembersModal
+│   │   ├── SearchPicker
+│   │   └── MemberListItem
+│   ├── ChannelSettingsModal
+│   │   └── MemberListItem
+│   ├── OpenClawQcModal
+│   ├── AddBotModal
+│   │   └── MemberListItem
+│   ├── MessageDetailModal
+│   ├── HelpModal
+│   └── SettingsModal
+│       ├── BotPane
+│       │   ├── BotListSubPane
+│       │   │   ├── BotAvatar
+│       │   │   ├── BotSessionsPanel
+│       │   │   └── ModelBrandCard
+│       │   ├── BotNewPane
+│       │   ├── BotEditPane
+│       │   ├── BotShared
+│       │   ├── TemplateListSubPane
+│       │   └── ModelListSubPane
+│       ├── FriendsPane
+│       │   ├── SearchPicker
+│       │   └── MemberListItem
+│       ├── AccountPane
+│       │   └── ProfilePane
+│       ├── AppearancePane
+│       ├── BulletinPane
+│       └── KeychainPane
 ├── ImageLightbox
-├── HelpModal
-└── SettingsModal
-    ├── BotPane
-    │   ├── BotListSubPane
-    │   │   ├── BotAvatar
-    │   │   ├── BotSessionsPanel
-    │   │   └── ModelBrandCard
-    │   ├── BotNewPane
-    │   ├── BotEditPane
-    │   ├── BotShared
-    │   ├── TemplateListSubPane
-    │   └── ModelListSubPane
-    ├── FriendsPane
-    │   ├── SearchPicker
-    │   └── MemberListItem
-    ├── AccountPane
-    │   └── ProfilePane
-    ├── AppearancePane
-    ├── BulletinPane
-    └── KeychainPane
 ```
 
 `App.tsx` 可以继续负责状态聚合、路由同步、WebSocket、消息窗口和跨面板协调。新 UI 代码如果可以独立复用，应优先放到 `components/app/` 或 `components/`，不要继续扩大 `App.tsx`。
@@ -193,6 +194,7 @@ features/
 
 ```text
 components/app/
+├── AppModals.tsx         # 顶层弹窗组合，集中承接 App 的 modal 渲染
 ├── ChatShell.tsx          # 工作区栏 + 频道侧栏 + 主区域布局
 ├── ChannelMainFrame.tsx   # 频道主内容容器，包含拖拽上传覆盖层
 ├── ChatSidePanels.tsx     # 记忆侧栏、文件预览侧栏

@@ -1,23 +1,15 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import NotificationPanel from "./NotificationPanel";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
 import { AppIcon } from "./components/icons/AppIcon";
-import { LoginModal } from "./components/LoginModal";
-import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
-import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
-import { CreateChannelModal } from "./components/CreateChannelModal";
-import { OpenClawQcModal } from "./components/OpenClawQcModal";
-import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
 import { Sidebar } from "./components/Sidebar";
-import { HelpModal } from "./components/HelpModal";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { ChatAttachments } from "./components/ChatMessageRenderer";
 import type { MemoryTab } from "./components/ChannelHeader";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { AddBotModal } from "./components/app/AddBotModal";
+import { AppModals } from "./components/app/AppModals";
 import { ChannelMainFrame } from "./components/app/ChannelMainFrame";
 import { ChatShell } from "./components/app/ChatShell";
 import { ChatSidePanels } from "./components/app/ChatSidePanels";
@@ -27,7 +19,6 @@ import { useChannelParticipants } from "./features/chat/hooks/useChannelParticip
 import { useChatRealtime } from "./features/chat/hooks/useChatRealtime";
 import { useComposerController } from "./features/chat/hooks/useComposerController";
 import { usePendingFiles } from "./features/chat/hooks/usePendingFiles";
-import { MessageDetailModal } from "./components/app/MessageDetailModal";
 import { AgentBridgeTaskCard } from "./features/chat/messages/AgentBridgeTaskCard";
 import { apiFetch, buildWsUrl } from "./api";
 import { parseHelperPayload } from "./lib/helper";
@@ -66,12 +57,6 @@ import type {
   MemoryLoadDetail,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
-
-const SettingsModal = lazy(() =>
-  import("./components/SettingsModal").then((module) => ({
-    default: module.SettingsModal,
-  })),
-);
 
 export default function App() {
   const { isDark, setTheme } = useTheme();
@@ -1350,21 +1335,80 @@ export default function App() {
 
   return (
     <>
-      <LoginModal
-        open={loginModalOpen}
+      <AppModals
+        loginModalOpen={loginModalOpen}
         currentUser={currentUser}
-        onClose={() => setLoginModalOpen(false)}
-        onSuccess={(user, token) => {
+        onCloseLogin={() => setLoginModalOpen(false)}
+        onLoginSuccess={(user, token) => {
           setAuth(user, token);
           setLoginModalOpen(false);
         }}
-      />
-
-      <MessageDetailModal
-        message={selectedDetailMessage}
-        memoryLoadDetail={selectedMemoryLoadDetail}
-        botTraceEvents={selectedBotTraceEvents}
-        onClose={() => setMemoryDetailMessage(null)}
+        selectedDetailMessage={selectedDetailMessage}
+        selectedMemoryLoadDetail={selectedMemoryLoadDetail}
+        selectedBotTraceEvents={selectedBotTraceEvents}
+        onCloseMessageDetail={() => setMemoryDetailMessage(null)}
+        helpOpen={helpOpen}
+        onCloseHelp={() => setHelpOpen(false)}
+        apiDocsUrl={API_DOCS_URL}
+        settingsOpen={settingsOpen}
+        onCloseSettings={() => setSettingsOpen(false)}
+        isDark={isDark}
+        setTheme={setTheme}
+        authToken={authToken}
+        onProfileUpdated={(data) => {
+          if (!currentUser) return;
+          setCurrentUser({
+            ...currentUser,
+            display_name: data.display_name,
+            bio: data.bio ?? currentUser.bio,
+            avatar_url: data.avatar_url ?? null,
+          });
+        }}
+        onOpenDM={openDirectMessage}
+        onLogout={handleLogout}
+        qcOpen={qcOpen}
+        onCloseQc={() => setQcOpen(false)}
+        selectedId={selectedId}
+        selectedChannel={selectedChannel}
+        createWsOpen={createWsOpen}
+        newWorkspaceName={newWorkspaceName}
+        setNewWorkspaceName={setNewWorkspaceName}
+        newWorkspaceAvatarUrl={newWorkspaceAvatarUrl}
+        setNewWorkspaceAvatarUrl={setNewWorkspaceAvatarUrl}
+        onCreateWorkspace={handleCreateWorkspace}
+        onCloseCreateWorkspace={() => setCreateWsOpen(false)}
+        inviteWsMemberOpen={inviteWsMemberOpen}
+        inviteWsIdentifier={inviteWsIdentifier}
+        selectedWorkspaceId={selectedWorkspaceId}
+        setInviteWsIdentifier={setInviteWsIdentifier}
+        onInviteWorkspaceMember={handleInviteWsMember}
+        onPickWorkspaceUser={inviteWorkspaceMember}
+        onCloseInviteWorkspaceMember={() => setInviteWsMemberOpen(false)}
+        createChannelOpen={createChannelOpen}
+        workspaces={workspaces}
+        setSelectedWorkspaceId={setSelectedWorkspaceId}
+        newChannelName={newChannelName}
+        setNewChannelName={setNewChannelName}
+        onCreateChannel={handleCreateChannel}
+        onCloseCreateChannel={() => setCreateChannelOpen(false)}
+        addBotOpen={addBotOpen}
+        channelBots={channelBots}
+        allBots={allBots}
+        selectedBotIds={selectedBotIds}
+        setSelectedBotIds={setSelectedBotIds}
+        addingBots={addingBots}
+        setAddingBots={setAddingBots}
+        onCloseAddBot={() => setAddBotOpen(false)}
+        onRemoveBot={removeBotFromChannel}
+        onAddBotToChannel={addBotToChannel}
+        notifPanelOpen={notifPanelOpen}
+        onCloseNotifications={() => setNotifPanelOpen(false)}
+        onNotificationNavigate={handleNotifNavigate}
+        channelSettingsOpen={channelSettingsOpen}
+        currentUserId={currentUserId}
+        onCloseChannelSettings={() => setChannelSettingsOpen(false)}
+        setChannels={setChannels}
+        setAutoAssist={setAutoAssist}
       />
 
       <ChatShell
@@ -1404,130 +1448,6 @@ export default function App() {
           />
         }
       >
-
-        <HelpModal
-          open={helpOpen}
-          onClose={() => setHelpOpen(false)}
-          apiDocsUrl={API_DOCS_URL}
-        />
-
-        {settingsOpen && (
-          <Suspense fallback={null}>
-            <SettingsModal
-              open={settingsOpen}
-              onClose={() => setSettingsOpen(false)}
-              isDark={isDark}
-              setTheme={setTheme}
-              authToken={authToken}
-              currentUser={currentUser}
-              onProfileUpdated={(data) => {
-                if (!currentUser) return;
-                setCurrentUser({
-                  ...currentUser,
-                  display_name: data.display_name,
-                  bio: data.bio ?? currentUser.bio,
-                  avatar_url: data.avatar_url ?? null,
-                });
-              }}
-              onOpenDM={openDirectMessage}
-              onLogout={handleLogout}
-            />
-          </Suspense>
-        )}
-
-        <OpenClawQcModal
-          open={qcOpen}
-          onClose={() => setQcOpen(false)}
-          channelId={selectedId}
-          channelName={selectedChannel?.name}
-        />
-
-        <CreateWorkspaceModal
-          open={createWsOpen}
-          value={newWorkspaceName}
-          onChange={setNewWorkspaceName}
-          avatarUrl={newWorkspaceAvatarUrl}
-          onAvatarUrlChange={setNewWorkspaceAvatarUrl}
-          onSubmit={handleCreateWorkspace}
-          onClose={() => setCreateWsOpen(false)}
-        />
-
-        <InviteWorkspaceMemberModal
-          open={inviteWsMemberOpen}
-          value={inviteWsIdentifier}
-          authToken={authToken}
-          workspaceId={selectedWorkspaceId}
-          onChange={setInviteWsIdentifier}
-          onSubmit={handleInviteWsMember}
-          onPickUser={inviteWorkspaceMember}
-          onClose={() => setInviteWsMemberOpen(false)}
-        />
-
-        <CreateChannelModal
-          open={createChannelOpen}
-          workspaces={workspaces}
-          selectedWorkspaceId={selectedWorkspaceId}
-          onSelectWorkspace={setSelectedWorkspaceId}
-          channelName={newChannelName}
-          onChannelNameChange={setNewChannelName}
-          onSubmit={handleCreateChannel}
-          onClose={() => setCreateChannelOpen(false)}
-        />
-
-        <AddBotModal
-          open={addBotOpen}
-          selectedChannelId={selectedId}
-          channelBots={channelBots}
-          allBots={allBots}
-          selectedBotIds={selectedBotIds}
-          addingBots={addingBots}
-          onClose={() => setAddBotOpen(false)}
-          onRemoveBot={removeBotFromChannel}
-          onToggleBot={(botId) =>
-            setSelectedBotIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(botId)) next.delete(botId);
-              else next.add(botId);
-              return next;
-            })
-          }
-          onAddSelected={async () => {
-            setAddingBots(true);
-            try {
-              await Promise.all([...selectedBotIds].map((id) => addBotToChannel(id)));
-              setSelectedBotIds(new Set());
-            } finally {
-              setAddingBots(false);
-            }
-          }}
-        />
-
-        {/* 通知面板 */}
-        <NotificationPanel
-          isOpen={notifPanelOpen}
-          onClose={() => setNotifPanelOpen(false)}
-          userToken={authToken ?? undefined}
-          onNavigate={handleNotifNavigate}
-        />
-
-        {/* 频道设置 */}
-        {selectedId && (
-          <ChannelSettingsModal
-            open={channelSettingsOpen}
-            channel={selectedChannel}
-            currentUserId={currentUserId}
-            userToken={authToken}
-            onClose={() => setChannelSettingsOpen(false)}
-            onSaved={(updated) => {
-              setChannels((prev) =>
-                prev.map((c) =>
-                  c.channel_id === updated.channel_id ? { ...c, ...updated } : c,
-                ),
-              );
-              setAutoAssist(Boolean(updated.auto_assist));
-            }}
-          />
-        )}
 
         <div className="flex-1 flex min-w-0">
           <ChannelMainFrame
