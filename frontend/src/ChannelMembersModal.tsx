@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import type { ChannelMember as Member, Friend, BotItem as Bot } from "./types";
 import { AppIcon } from "./components/icons/AppIcon";
+import { MemberRow, MemberSection } from "./components/members";
 import { SearchPicker } from "./components/SearchPicker";
 
 const API = "/api/v1";
@@ -354,89 +355,56 @@ export default function ChannelMembersModal({
               </div>
             ) : (
               <div className="space-y-4">
-                {/* 用户列表 */}
                 {userMembers.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      用户 ({userMembers.length})
-                    </h3>
-                    <div className="space-y-1">
-                      {userMembers.map((member) => (
-                        <div
-                          key={member.member_id}
-                          className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-[#1264A3] flex items-center justify-center text-white text-sm font-bold">
-                              {(member.display_name || member.username || "?").charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <p className="font-medium text-sm text-gray-900">
-                                {member.display_name || member.username || "未知用户"}
-                              </p>
-                              {member.username && (
-                                <p className="text-xs text-gray-500">@{member.username}</p>
-                              )}
-                            </div>
-                          </div>
-                          {member.member_id !== currentUserId && (
+                  <MemberSection title="用户" count={userMembers.length}>
+                    {userMembers.map((member) => (
+                      <MemberRow
+                        key={member.member_id}
+                        as="article"
+                        member={member}
+                        badge={
+                          member.member_id === currentUserId ? (
+                            <span className="an-tag-pill self">我</span>
+                          ) : undefined
+                        }
+                        action={
+                          member.member_id !== currentUserId && (
                             <button
                               onClick={() => removeMember(member.member_id, member.member_type)}
                               className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
                             >
                               移除
                             </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                          )
+                        }
+                      />
+                    ))}
+                  </MemberSection>
                 )}
 
-                {/* Bot 列表 */}
                 {botMembers.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                      Bot ({botMembers.length})
-                    </h3>
-                    <div className="space-y-1">
-                      {botMembers.map((member) => {
-                        const canEditTemplate =
-                          member.can_manage_template ?? member.added_by === currentUserId;
-                        return (
-                        <div
-                          key={member.member_id}
-                          className="p-2 bg-green-50 rounded-lg"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded bg-[#2EB67D] flex items-center justify-center text-white text-sm font-bold">
-                                {(member.display_name || member.username || "B").charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <p className="font-medium text-sm text-gray-900">
-                                  {member.display_name || member.username || "未知 Bot"}
-                                </p>
-                                {member.username && (
-                                  <p className="text-xs text-gray-500">@{member.username}</p>
-                                )}
-                                <p className="text-xs text-gray-400">
-                                  {botScopeText(member.scope)} · Owner: {botOwnerText(member)}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <BotOnlinePill bot={member} />
+                  <MemberSection title="Bot" count={botMembers.length}>
+                    {botMembers.map((member) => {
+                      const canEditTemplate =
+                        member.can_manage_template ?? member.added_by === currentUserId;
+                      return (
+                        <div key={member.member_id} className="space-y-2">
+                          <MemberRow
+                            as="article"
+                            member={member}
+                            badge={<BotOnlinePill bot={member} />}
+                            meta={`${botScopeText(member.scope)} · Owner: ${botOwnerText(member)}`}
+                            action={
                               <button
                                 onClick={() => removeMember(member.member_id, member.member_type)}
                                 className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
                               >
                                 移除
                               </button>
-                            </div>
-                          </div>
+                            }
+                          />
                           {/* 提示词模板选择 */}
-                          <div className="mt-2 ml-11 flex items-center gap-2">
+                          <div className="ml-11 flex items-center gap-2">
                             <label className="text-xs text-gray-500 whitespace-nowrap">提示词模板:</label>
                             <select
                               value={member.template_id || ""}
@@ -454,10 +422,9 @@ export default function ChannelMembersModal({
                             </select>
                           </div>
                         </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                      );
+                    })}
+                  </MemberSection>
                 )}
 
                 {members.length === 0 && (

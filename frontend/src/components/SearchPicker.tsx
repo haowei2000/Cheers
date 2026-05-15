@@ -14,6 +14,7 @@ import type {
   SearchSelection,
 } from "../types";
 import { AppIcon } from "./icons/AppIcon";
+import { MemberIdentity } from "./members";
 
 export type SearchPickerHandle = {
   focus: (select?: boolean) => void;
@@ -413,17 +414,35 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
                       className={`an-search-hit ${rich ? "is-rich" : ""}`}
                       onClick={() => choose(selection)}
                     >
-                      <span className="an-search-sigil">{sigilFor(selection.type)}</span>
-                      <span className="an-search-main">
-                        <span className="an-search-name">{labelFor(selection)}</span>
-                        {sub && <span className="an-search-sub">{sub}</span>}
-                        {selection.type === "task" && selection.item.snippet && (
-                          <span className="an-search-meta">{selection.item.snippet}</span>
-                        )}
-                        {selection.type === "message" && (
-                          <span className="an-search-meta">{selection.item.snippet}</span>
-                        )}
-                      </span>
+                      {selection.type === "user" || selection.type === "bot" ? (
+                        <MemberIdentity
+                          avatarSize={28}
+                          member={{
+                            ...selection.item,
+                            member_type: selection.type,
+                            member_id:
+                              selection.type === "user"
+                                ? selection.item.user_id
+                                : selection.item.bot_id,
+                          }}
+                          sub={sub}
+                          showBadge
+                        />
+                      ) : (
+                        <>
+                          <span className="an-search-sigil">{sigilFor(selection.type)}</span>
+                          <span className="an-search-main">
+                            <span className="an-search-name">{labelFor(selection)}</span>
+                            {sub && <span className="an-search-sub">{sub}</span>}
+                            {selection.type === "task" && selection.item.snippet && (
+                              <span className="an-search-meta">{selection.item.snippet}</span>
+                            )}
+                            {selection.type === "message" && (
+                              <span className="an-search-meta">{selection.item.snippet}</span>
+                            )}
+                          </span>
+                        </>
+                      )}
                       {action && <span className="an-search-action">{action}</span>}
                     </button>
                   );

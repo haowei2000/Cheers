@@ -7,6 +7,15 @@ import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
 import { AppIcon, FileTypeIcon } from "./icons";
 import { InviteMemberSearch } from "./InviteMemberSearch";
+import {
+  MemberAvatar,
+  MemberKindBadge,
+  MemberRow,
+  MemberSection,
+  resolveMemberKind,
+  resolveMemberLabel,
+  sortMembersByKind,
+} from "./members";
 
 const API = "/api/v1";
 
@@ -1418,29 +1427,6 @@ function QuickAddFooter({
 // with back navigation, status, and quick actions.
 // ═════════════════════════════════════════════════════════════════════════════
 
-const MEM_COLORS = [
-  "#7c6cf5",
-  "#3ecf8e",
-  "#56a7ff",
-  "#f5a623",
-  "#f05454",
-  "#9586ff",
-  "#5b8dff",
-];
-
-function colorForMember(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return MEM_COLORS[Math.abs(h) % MEM_COLORS.length];
-}
-
-function initialsFor(label: string): string {
-  const parts = label.trim().split(/\s+/);
-  const first = parts[0]?.[0] || "";
-  const second = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + second).toUpperCase() || label.slice(0, 1).toUpperCase();
-}
-
 function MembersView({
   members,
   currentUserId,
@@ -1464,26 +1450,15 @@ function MembersView({
 }) {
   const [selected, setSelected] = useState<MemberItem | null>(null);
 
-  const bots = members.filter((m) => m.member_type === "bot");
-  const users = members
-    .map((member, index) => ({ member, index }))
-    .filter(({ member }) => member.member_type !== "bot")
-    .sort((a, b) => {
-      const aSelf = Boolean(currentUserId && a.member.member_id === currentUserId);
-      const bSelf = Boolean(currentUserId && b.member.member_id === currentUserId);
-      if (aSelf !== bSelf) return aSelf ? -1 : 1;
-      return a.index - b.index;
-    })
-    .map(({ member }) => member);
+  const sortedMembers = sortMembersByKind(members, currentUserId);
+  const bots = sortedMembers.filter((m) => resolveMemberKind(m) === "bot");
+  const users = sortedMembers.filter((m) => resolveMemberKind(m) !== "bot");
 
   if (selected) {
-    const isBot = selected.member_type === "bot";
+    const kind = resolveMemberKind(selected);
+    const isBot = kind === "bot";
     const isSelf = Boolean(currentUserId && selected.member_id === currentUserId && !isBot);
-    const label =
-      selected.display_name ||
-      selected.username ||
-      (isBot ? "Bot" : "用户");
-    const color = colorForMember(selected.member_id);
+    const label = resolveMemberLabel(selected, kind);
     return (
       <div className="overflow-y-auto px-3 py-2">
         <div className="an-mem-detail">
@@ -1495,35 +1470,17 @@ function MembersView({
             ← 返回成员列表
           </button>
           <div className="an-md-head">
-            <div
+            <MemberAvatar
+              avatarUrl={selected.avatar_url}
               className="an-av"
-              style={{ background: color, borderRadius: isBot ? 9 : 999 }}
-            >
-              {initialsFor(label)}
-            </div>
+              kind={kind}
+              label={label}
+              size={44}
+            />
             <div className="an-info">
               <div className="an-n">
                 {label}
-                <span
-                  className={
-                    "an-tag-pill" + (isBot ? "" : "")
-                  }
-                  style={{
-                    fontSize: 8.5,
-                    fontWeight: 700,
-                    letterSpacing: "0.7px",
-                    padding: "1px 5px",
-                    borderRadius: 4,
-                    border: "1px solid var(--border)",
-                    textTransform: "uppercase",
-                    color: isBot ? "var(--fg-3)" : "var(--accent)",
-                    background: isBot
-                      ? "var(--surface-soft)"
-                      : "var(--accent-muted)",
-                  }}
-                >
-                  {isBot ? "BOT" : "USER"}
-                </span>
+                <MemberKindBadge kind={kind} />
               </div>
               <div className="an-h">
                 {selected.username && (
@@ -1626,106 +1583,38 @@ function MembersView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="an-members-list min-h-0 flex-1 overflow-y-auto">
-      {bots.length > 0 && (
-        <>
-          <div className="an-mem-group">
-            <span>Agents · 智能体</span>
-            <span className="an-ct">{bots.length}</span>
-          </div>
-          {bots.map((m) => {
-            const label = m.display_name || m.username || "Bot";
-            const color = colorForMember(m.member_id);
-            return (
-              <button
+      <div className="an-members-list min-h-0 flex-1 overflow-y-auto px-3 py-2">
+        {bots.length > 0 && (
+          <MemberSection title="Agents · 智能体" count={bots.length}>
+            {bots.map((m) => (
+              <MemberRow
                 key={m.member_id}
-                type="button"
-                className="an-mem-row"
+                as="button"
+                member={m}
                 onClick={() => setSelected(m)}
-              >
-                <div className="an-av-wrap">
-                  <div
-                    className="an-av bot"
-                    style={{ background: color }}
-                  >
-                    {initialsFor(label)}
-                  </div>
-                </div>
-                <div className="an-r-main">
-                  <div className="an-r-name">
-                    {label}
-                    <span className="an-tag-pill">Bot</span>
-                  </div>
-                  {m.username && m.username !== label && (
-                    <div className="an-r-sub">@{m.username}</div>
-                  )}
-                </div>
-                <span className="an-chev" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
-      {users.length > 0 && (
-        <>
-          <div className="an-mem-group">
-            <span>People · 成员</span>
-            <span className="an-ct">{users.length}</span>
-          </div>
-          {users.map((m) => {
-            const label = m.display_name || m.username || "用户";
-            const color = colorForMember(m.member_id);
-            const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
-            return (
-              <button
-                key={m.member_id}
-                type="button"
-                className={`an-mem-row ${isSelf ? "self" : ""}`}
-                onClick={() => setSelected(m)}
-                title={isSelf ? "我的频道资料" : undefined}
-                aria-label={isSelf ? "我的频道资料" : label}
-              >
-                <div className="an-av-wrap">
-                  {m.avatar_url ? (
-                    <img
-                      src={m.avatar_url}
-                      alt={label}
-                      className="an-av"
-                      style={{ borderRadius: 999 }}
-                    />
-                  ) : (
-                    <div
-                      className="an-av"
-                      style={{ background: color, borderRadius: 999 }}
-                    >
-                      {initialsFor(label)}
-                    </div>
-                  )}
-                  {isSelf && (
-                    <span className="an-self-edit" aria-hidden="true">
-                      <AppIcon name="pencil" />
-                    </span>
-                  )}
-                </div>
-                <div className="an-r-main">
-                  <div className="an-r-name">
-                    {label}
-                    {isSelf && <span className="an-tag-pill self">我</span>}
-                  </div>
-                  {m.username && m.username !== label && (
-                    <div className="an-r-sub">@{m.username}</div>
-                  )}
-                </div>
-                <span className="an-chev" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
+                action={<span className="an-chev" aria-hidden="true">›</span>}
+              />
+            ))}
+          </MemberSection>
+        )}
+        {users.length > 0 && (
+          <MemberSection title="People · 成员" count={users.length}>
+            {users.map((m) => {
+              const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
+              return (
+                <MemberRow
+                  key={m.member_id}
+                  as="button"
+                  member={m}
+                  onClick={() => setSelected(m)}
+                  badge={isSelf ? <span className="an-tag-pill self">我</span> : undefined}
+                  title={isSelf ? "我的频道资料" : undefined}
+                  action={<span className="an-chev" aria-hidden="true">›</span>}
+                />
+              );
+            })}
+          </MemberSection>
+        )}
       </div>
     </div>
   );

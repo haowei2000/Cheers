@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { apiFetch } from "../api";
 import type { Channel, ChannelMember } from "../types";
 import { AppIcon } from "./icons/AppIcon";
+import { MemberRow } from "./members";
 import { Modal, ModalFooter } from "./Modal";
 
 type TabId = "channel" | "admins" | "bots";
@@ -25,10 +26,6 @@ function roleText(role?: string | null): string {
   if (role === "workspace_admin") return "工作空间管理员";
   if (role === "system_admin") return "系统管理员";
   return "成员";
-}
-
-function initials(label: string): string {
-  return (label.trim()[0] || "?").toUpperCase();
 }
 
 function normalizeScope(value?: string | null): ChannelScope {
@@ -403,27 +400,17 @@ export function ChannelSettingsModal({
                     暂无用户成员
                   </div>
                 ) : (
-                  userMembers.map((member) => {
-                    const label =
-                      member.display_name || member.username || member.member_id;
-                    return (
-                      <div
-                        key={member.member_id}
-                        className="flex items-center gap-3 px-3 py-2.5"
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#1264A3] text-sm font-semibold text-white">
-                          {initials(label)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-gray-900">
-                            {label}
-                          </div>
-                          <div className="truncate text-xs text-gray-500">
-                            {member.username
-                              ? `@${member.username}`
-                              : member.member_id}
-                          </div>
-                        </div>
+                  userMembers.map((member) => (
+                    <div key={member.member_id} className="px-2 py-1.5">
+                      <MemberRow
+                        as="article"
+                        member={member}
+                        badge={
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+                            {roleText(member.role)}
+                          </span>
+                        }
+                        action={
                         <select
                           value={member.role || "member"}
                           disabled={!canManage || member.member_id === currentUserId}
@@ -434,9 +421,10 @@ export function ChannelSettingsModal({
                           <option value="admin">管理员</option>
                           <option value="owner">所有者</option>
                         </select>
-                      </div>
-                    );
-                  })
+                        }
+                      />
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -452,29 +440,16 @@ export function ChannelSettingsModal({
                   </div>
                 ) : (
                   botMembers.map((member) => {
-                    const label =
-                      member.display_name || member.username || member.member_id;
                     const canEditTemplate =
                       member.can_manage_template ??
                       (member.added_by === currentUserId || myRole === "system_admin");
                     return (
-                      <div
-                        key={member.member_id}
-                        className="flex items-center gap-3 px-3 py-2.5"
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#2EB67D] text-sm font-semibold text-white">
-                          {initials(label)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-gray-900">
-                            {label}
-                          </div>
-                          <div className="truncate text-xs text-gray-500">
-                            {member.username
-                              ? `@${member.username}`
-                              : member.member_id}
-                          </div>
-                        </div>
+                      <div key={member.member_id} className="px-2 py-1.5">
+                        <MemberRow
+                          as="article"
+                          member={member}
+                          meta={member.template_name ? `当前模板：${member.template_name}` : "默认模板"}
+                          action={
                         <select
                           value={member.template_id || ""}
                           disabled={!canEditTemplate}
@@ -496,6 +471,8 @@ export function ChannelSettingsModal({
                             </option>
                           ))}
                         </select>
+                          }
+                        />
                       </div>
                     );
                   })

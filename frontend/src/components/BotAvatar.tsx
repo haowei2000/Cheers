@@ -1,4 +1,5 @@
 import { AiBrandIcon, resolveAiBrandName } from "./icons";
+import { AvatarVisual } from "./AvatarVisual";
 
 /* BotAvatar — visual marker for bot senders.
  *
@@ -35,11 +36,12 @@ export function BotAvatar({
 }: BotAvatarProps) {
   if (avatarUrl) {
     return (
-      <img
-        src={avatarUrl}
-        alt={label}
-        className={`rounded-xl object-cover ${className ?? ""}`}
-        style={{ width: size, height: size }}
+      <AvatarVisual
+        avatarUrl={avatarUrl}
+        className={className}
+        label={label}
+        radius={12}
+        size={size}
       />
     );
   }
