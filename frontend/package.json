@@ -11,15 +11,19 @@
   "dependencies": {
     "@headlessui/react": "^2.2.10",
     "@heroicons/react": "^2.2.0",
+    "@lobehub/icons": "^1.80.0",
     "clsx": "^2.1.1",
     "highlight.js": "^11.11.1",
+    "lucide-react": "^1.16.0",
     "mermaid": "^11.13.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-file-icon": "^1.6.0",
     "react-hot-toast": "^2.4.1",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.1",
     "remark-gfm": "^4.0.1",
+    "simple-icons": "^16.19.0",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
