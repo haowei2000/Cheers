@@ -1529,9 +1529,9 @@ export default function App() {
       sender_type: "user",
       file_ids: [] as string[],
       mention_bot_ids: botMentionIdsForChannel(targetChannelId),
-      msg_type: isDmSelected ? "normal" : inReplyToMsgId ? "reply" : "normal",
+      msg_type: inReplyToMsgId ? "reply" : "normal",
     };
-    if (inReplyToMsgId && !isDmSelected) body.in_reply_to_msg_id = inReplyToMsgId;
+    if (inReplyToMsgId) body.in_reply_to_msg_id = inReplyToMsgId;
     return authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
       body: JSON.stringify(body),
@@ -1571,10 +1571,10 @@ export default function App() {
     const isSecretSend = secretMode;
     // Resolve msg_type: a pending reply-to always wins; otherwise use the
     // user's current msgKind pick from the composer switcher.
-    const effectiveKind: MsgKind | "reply" = isDmSelected
-      ? "normal"
-      : replyingTo
-        ? "reply"
+    const effectiveKind: MsgKind | "reply" = replyingTo
+      ? "reply"
+      : isDmSelected
+        ? "normal"
         : msgKind;
     const body: Record<string, unknown> = {
       content,
@@ -1585,7 +1585,7 @@ export default function App() {
       is_secret: isSecretSend,
       msg_type: effectiveKind,
     };
-    if (replyingTo && !isDmSelected) body.in_reply_to_msg_id = replyingTo.msg_id;
+    if (replyingTo) body.in_reply_to_msg_id = replyingTo.msg_id;
     const titleTrim = composerTitle.trim() || null;
     if (effectiveKind === "announcement") {
       body.content_data = {
@@ -2337,6 +2337,50 @@ export default function App() {
     () => new Map(messages.map((message) => [message.msg_id, message])),
     [messages],
   );
+  const messageSenderLabel = (message: Message): string => {
+    if (message.sender_name) return message.sender_name;
+    if (message.sender_type === "bot") {
+      const bot = botById.get(message.sender_id);
+      return bot?.display_name || bot?.username || "Bot";
+    }
+    if (message.sender_id === currentUserId) return "我";
+    const user = userById.get(message.sender_id);
+    return user?.display_name || user?.username || "用户";
+  };
+  const messagePreviewText = (message: Message): string =>
+    stripLeadingQuotePrefixes(
+      parseHelperPayload(message.content || "").text || message.content || "",
+    )
+      .replace(/<think>[\s\S]*?<\/think>/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || "(无内容)";
+  const highlightMessage = (msgId: string) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const origT = el.style.transition;
+    const prevBg = el.style.background;
+    el.style.transition = "background 200ms";
+    el.style.background = "var(--accent-muted)";
+    setTimeout(() => {
+      el.style.background = prevBg;
+      el.style.transition = origT;
+    }, 1200);
+  };
+  const renderReplyTargetQuote = (parent: Message | null) =>
+    parent ? (
+      <button
+        type="button"
+        className="an-reply-quote"
+        title="跳转到被回复的消息"
+        onClick={() => highlightMessage(parent.msg_id)}
+      >
+        <span className="an-rq-arrow">↪</span>
+        <span className="an-rq-name">{messageSenderLabel(parent)}</span>
+        <span className="an-rq-snip">{messagePreviewText(parent)}</span>
+      </button>
+    ) : null;
   const clarifyAnsweredParentIds = useMemo(() => {
     const ids = new Set<string>();
     for (const message of messages) {
@@ -2656,8 +2700,12 @@ export default function App() {
                           currentUserId={currentUserId}
                           onBack={() => setPageTopicId(null)}
                           onGoToChannel={() => setPageTopicId(null)}
-                          onSendReply={(text) =>
-                            sendTopicReply(selectedId, rootId, text)
+                          onSendReply={(text, inReplyToMsgId) =>
+                            sendTopicReply(
+                              selectedId,
+                              inReplyToMsgId ?? rootId,
+                              text,
+                            )
                           }
                           onCopyMessage={copyMessageText}
                           onShowMessageDetails={setMemoryDetailMessage}
@@ -3390,6 +3438,10 @@ export default function App() {
                               minute: "2-digit",
                             })
                           : "";
+                        const directReplyParent =
+                          isDMRender && m.in_reply_to_msg_id
+                            ? msgById.get(m.in_reply_to_msg_id) ?? null
+                            : null;
 
                         const secretSecsLeft =
                           m.is_secret && !revealedContent && m.created_at
@@ -3608,28 +3660,34 @@ export default function App() {
                               我
                             </div>
                             <div className="flex items-end gap-1.5">
-                              {!isDmSelected && (
-                                <button
-                                  type="button"
-                                  title="回复"
-                                  onClick={() => {
-                                    setReplyingTo(m);
-                                    const mention =
-                                      m.sender_type === "bot" &&
-                                      senderBot?.username
-                                        ? `@${senderBot.username} `
-                                        : "";
-                                    if (mention) setComposerInput(mention);
-                                    (secretMode
-                                      ? secretInputRef.current
-                                      : inputRef.current
-                                    )?.focus();
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1"
-                                >
-                                  {replyIcon}
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                title="复制消息内容"
+                                onClick={() => copyMessageText(m)}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1"
+                              >
+                                <AppIcon name="copy" className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title="回复"
+                                onClick={() => {
+                                  setReplyingTo(m);
+                                  const mention =
+                                    m.sender_type === "bot" &&
+                                    senderBot?.username
+                                      ? `@${senderBot.username} `
+                                      : "";
+                                  if (mention) setComposerInput(mention);
+                                  (secretMode
+                                    ? secretInputRef.current
+                                    : inputRef.current
+                                  )?.focus();
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1"
+                              >
+                                {replyIcon}
+                              </button>
                               <div className="flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
                                 <div className="flex items-baseline gap-1.5 mb-1 justify-end">
                                   {!isDmSelected && m.msg_type === "topic" && (
@@ -3646,6 +3704,7 @@ export default function App() {
                                     {m.content_data.title as string}
                                   </div>
                                 ) : null}
+                                {renderReplyTargetQuote(directReplyParent)}
                                 {renderFileAttachments(m, true)}
                                 {/* If this user message starts with a "> [X]: ..."
                                     quote prefix (set when the user used the
@@ -3749,6 +3808,7 @@ export default function App() {
                                   {m.content_data.title as string}
                                 </div>
                               ) : null}
+                              {renderReplyTargetQuote(directReplyParent)}
                               {(() => {
                                 const cq = parseQuotePrefix(text);
                                 if (!cq) return null;
@@ -3821,28 +3881,34 @@ export default function App() {
                               )}
                             </div>
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                title="复制消息内容"
+                                onClick={() => copyMessageText(m)}
+                                className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                              >
+                                <AppIcon name="copy" className="w-3.5 h-3.5" />
+                              </button>
                               {renderMemoryLoadButton(m)}
-                              {!isDmSelected && (
-                                <button
-                                  type="button"
-                                  title="回复"
-                                  onClick={() => {
-                                    setReplyingTo(m);
-                                    const mention =
-                                      m.sender_type === "bot" && senderBot?.username
-                                        ? `@${senderBot.username} `
-                                        : "";
-                                    if (mention) setComposerInput(mention);
-                                    (secretMode
-                                      ? secretInputRef.current
-                                      : inputRef.current
-                                    )?.focus();
-                                  }}
-                                  className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                >
-                                  {replyIcon}
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                title="回复"
+                                onClick={() => {
+                                  setReplyingTo(m);
+                                  const mention =
+                                    m.sender_type === "bot" && senderBot?.username
+                                      ? `@${senderBot.username} `
+                                      : "";
+                                  if (mention) setComposerInput(mention);
+                                  (secretMode
+                                    ? secretInputRef.current
+                                    : inputRef.current
+                                  )?.focus();
+                                }}
+                                className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                              >
+                                {replyIcon}
+                              </button>
                             </div>
                           </div>
                         );
@@ -4624,6 +4690,14 @@ export default function App() {
                                       )}
                                     </div>
                                     <div className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
+                                      <button
+                                        type="button"
+                                        title="复制消息内容"
+                                        onClick={() => copyMessageText(r)}
+                                        className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                      >
+                                        <AppIcon name="copy" className="w-3 h-3" />
+                                      </button>
                                       {renderMemoryLoadButton(r)}
                                       <button
                                         type="button"
@@ -4793,6 +4867,7 @@ export default function App() {
                     onTitleChange={setComposerTitle}
                     channelBots={channelBots}
                     channelUsers={channelUsers}
+                    currentUserId={currentUserId}
                     replyingTo={replyingTo}
                     onCancelReply={() => setReplyingTo(null)}
                     pendingFiles={pendingFileNames.map((name, index) => ({
