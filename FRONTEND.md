@@ -61,6 +61,7 @@ App.tsx
 │       ├── ChatMessageRenderer
 │       │   ├── MessageMarkdown
 │       │   ├── ChatAttachments
+│       │   ├── SecretMessageVeil
 │       │   ├── BotAvatar
 │       │   └── ClarifyInlineBlock
 │       ├── MessageComposer
@@ -122,6 +123,10 @@ App.tsx
 
 ```text
 features/
+├── chat/
+│   └── messages/
+│       ├── AgentBridgeTaskCard.tsx  # Agent Bridge 后台任务消息卡
+│       └── SecretMessageVeil.tsx    # 加密消息遮罩与过期倒计时 helper
 ├── memory/
 │   ├── editor/
 │   │   ├── EntryEditor.tsx         # Markdown 条目编辑器，MemoryPage 复用
@@ -176,6 +181,7 @@ components/app/
 ├── ChannelMainFrame.tsx   # 频道主内容容器，包含拖拽上传覆盖层
 ├── ChatSidePanels.tsx     # 记忆侧栏、文件预览侧栏
 ├── AddBotModal.tsx        # 频道 Bot 管理弹窗
+├── LazyPanelFallback.tsx  # 懒加载面板统一 loading 占位
 └── MessageDetailModal.tsx # 消息详情弹窗
 ```
 
