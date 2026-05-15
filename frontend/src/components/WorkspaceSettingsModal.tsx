@@ -3,6 +3,8 @@ import toast from "react-hot-toast";
 import type { Workspace } from "../types";
 import { apiFetch } from "../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
+import { AvatarIconPicker } from "./AvatarIconPicker";
+import { AvatarVisual } from "./AvatarVisual";
 import { Modal, ModalFooter } from "./Modal";
 
 const inputCls =
@@ -16,40 +18,17 @@ function WorkspaceAvatarPreview({
   avatarUrl?: string | null;
 }) {
   const initials = [...(name.trim() || "?")].slice(0, 4).join("").toUpperCase();
-  if (avatarUrl) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={name}
-        style={{
-          width: 52,
-          height: 52,
-          borderRadius: 10,
-          objectFit: "cover",
-          border: "1px solid var(--border)",
-          background: "var(--surface-soft)",
-          flexShrink: 0,
-        }}
-      />
-    );
-  }
   return (
-    <span
+    <AvatarVisual
+      avatarUrl={avatarUrl}
+      fallback={initials}
+      label={name}
+      radius={10}
+      size={52}
       style={{
-        width: 52,
-        height: 52,
-        borderRadius: 10,
-        display: "inline-grid",
-        placeItems: "center",
-        background: "var(--accent)",
-        color: "#fff",
-        fontSize: initials.length >= 4 ? 12 : 18,
-        fontWeight: 700,
-        flexShrink: 0,
+        border: avatarUrl ? "1px solid var(--border)" : undefined,
       }}
-    >
-      {initials}
-    </span>
+    />
   );
 }
 
@@ -167,30 +146,37 @@ export function WorkspaceSettingsModal({
           <label className="block text-sm font-medium mb-1" style={{ color: "var(--fg-2)" }}>
             头像
           </label>
-          <div className="flex items-center gap-2">
-            <input
-              type="url"
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                placeholder="https://example.com/workspace.png"
+                className={inputCls}
+              />
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept={AVATAR_ACCEPT}
+                onChange={(e) => uploadWorkspaceAvatar(e.target.files?.[0])}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                className="an-btn an-btn-ghost"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                {avatarUploading ? "上传中…" : "上传"}
+              </button>
+            </div>
+            <AvatarIconPicker
+              group="workspace"
+              onChange={setAvatarUrl}
               value={avatarUrl}
-              onChange={(e) => setAvatarUrl(e.target.value)}
-              placeholder="https://example.com/workspace.png"
-              className={inputCls}
             />
-            <input
-              ref={avatarInputRef}
-              type="file"
-              accept={AVATAR_ACCEPT}
-              onChange={(e) => uploadWorkspaceAvatar(e.target.files?.[0])}
-              style={{ display: "none" }}
-            />
-            <button
-              type="button"
-              onClick={() => avatarInputRef.current?.click()}
-              disabled={avatarUploading}
-              className="an-btn an-btn-ghost"
-              style={{ whiteSpace: "nowrap" }}
-            >
-              {avatarUploading ? "上传中…" : "上传"}
-            </button>
           </div>
           {avatarUrl && (
             <button

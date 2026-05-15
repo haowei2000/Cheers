@@ -6,6 +6,7 @@
  * with their letter tiles, and a "+" tile at the bottom opens the
  * create-workspace modal. */
 import type { Workspace } from "../types";
+import { AvatarVisual } from "./AvatarVisual";
 
 export interface WorkspaceRailProps {
   workspaces: Workspace[];
@@ -63,11 +64,15 @@ function Tile({
         fontSize,
       }}
     >
-      {avatarUrl ? (
-        <img src={avatarUrl} alt={label} className="an-wsr-img" />
-      ) : (
-        initials
-      )}
+      <AvatarVisual
+        avatarUrl={avatarUrl}
+        background="transparent"
+        className={avatarUrl ? "an-wsr-img" : ""}
+        fallback={initials}
+        label={label}
+        radius={round ? 999 : 12}
+        size={40}
+      />
     </button>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiFetch } from "../api";
+import { MemberIdentity } from "./members";
 
 type ApiEnvelope<T> = { status?: string; data?: T; detail?: string; message?: string };
 
@@ -9,11 +10,13 @@ type SearchPayload = {
     user_id: string;
     username: string;
     display_name?: string | null;
+    avatar_url?: string | null;
   }[];
   bots: {
     bot_id: string;
     username: string;
     display_name?: string | null;
+    avatar_url?: string | null;
     scope?: "private" | "friend" | "everyone";
     owner?: {
       username: string;
@@ -27,6 +30,8 @@ type InviteHit = {
   id: string;
   label: string;
   sub: string;
+  username?: string;
+  avatar_url?: string | null;
 };
 
 async function parseEnvelope<T>(res: Response): Promise<T> {
@@ -115,6 +120,8 @@ export function InviteMemberSearch({
                   id: user.user_id,
                   label: user.display_name || user.username,
                   sub: `@${user.username}`,
+                  username: user.username,
+                  avatar_url: user.avatar_url,
                 })),
             );
           }
@@ -129,6 +136,8 @@ export function InviteMemberSearch({
                     id: bot.bot_id,
                     label: bot.display_name || bot.username,
                     sub: `@${bot.username} · ${botScopeText(bot.scope)} · ${owner}`,
+                    username: bot.username,
+                    avatar_url: bot.avatar_url,
                   };
                 }),
             );
@@ -242,9 +251,17 @@ export function InviteMemberSearch({
                     onClick={() => selectHit(hit)}
                     role="option"
                   >
-                    <span className="an-search-sigil">{hit.kind === "bot" ? "⦿" : "@"}</span>
-                    <span className="an-search-name">{hit.label}</span>
-                    <span className="an-search-sub">{hit.sub}</span>
+                    <MemberIdentity
+                      avatarSize={28}
+                      member={{
+                        member_id: hit.id,
+                        member_type: hit.kind,
+                        username: hit.username,
+                        display_name: hit.label,
+                        avatar_url: hit.avatar_url || undefined,
+                      }}
+                      sub={hit.sub}
+                    />
                   </button>
                 ))}
               </>

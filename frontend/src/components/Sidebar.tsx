@@ -3,7 +3,9 @@ import toast from "react-hot-toast";
 import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
+import { AvatarVisual } from "./AvatarVisual";
 import { AppIcon } from "./icons/AppIcon";
+import { MemberAvatar, type MemberKind } from "./members";
 import { SearchPicker, type SearchPickerHandle, type SearchScopeOption } from "./SearchPicker";
 import type { SearchSelection } from "../types";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
@@ -296,11 +298,14 @@ export function Sidebar({
                     : wsColor(workspace.workspace_id),
                 }}
               >
-                {workspace.avatar_url ? (
-                  <img src={workspace.avatar_url} alt={workspace.name} />
-                ) : (
-                  workspaceInitials(workspace)
-                )}
+                <AvatarVisual
+                  avatarUrl={workspace.avatar_url}
+                  background="transparent"
+                  fallback={workspaceInitials(workspace)}
+                  label={workspace.name}
+                  radius={10}
+                  size={38}
+                />
               </button>
             );
           })}
@@ -327,21 +332,16 @@ export function Sidebar({
           className="flex items-center gap-2 flex-1 min-w-0 relative"
           ref={wsMenuRef}
         >
-          {currentWsAvatarUrl ? (
-            <img
-              src={currentWsAvatarUrl}
-              alt={currentWsLabel}
-              className="an-ws-letter"
-              style={{ objectFit: "cover", background: "var(--surface-soft)" }}
-            />
-          ) : (
-            <span
-              className="an-ws-letter"
-              style={{ background: currentWsAccent }}
-            >
-              {currentWsLetter}
-            </span>
-          )}
+          <AvatarVisual
+            avatarUrl={currentWsAvatarUrl}
+            background={currentWsAccent}
+            className="an-ws-letter"
+            fallback={currentWsLetter}
+            label={currentWsLabel}
+            radius={5}
+            size={22}
+            style={{ background: currentWsAvatarUrl ? "var(--surface-soft)" : currentWsAccent }}
+          />
           <span
             className="truncate flex-1"
             style={{
@@ -597,6 +597,7 @@ export function Sidebar({
                   (cp.member_type === "bot" ? "Bot" : cp.member_type === "system" ? "系统" : "用户");
                 const isBot = cp.member_type === "bot";
                 const isSystem = cp.member_type === "system";
+                const memberKind: MemberKind = isBot ? "bot" : isSystem ? "system" : "user";
                 return (
                   <li
                     key={d.channel_id}
@@ -614,7 +615,12 @@ export function Sidebar({
                       }
                     >
                       <span className="an-sigil">
-                        <AppIcon name={isBot ? "bot" : isSystem ? "admin" : "user"} />
+                        <MemberAvatar
+                          avatarUrl={cp.avatar_url}
+                          kind={memberKind}
+                          label={label}
+                          size={16}
+                        />
                       </span>
                       <span className="an-name">{label}</span>
                       {!isActive && (d.unread_count ?? 0) > 0 && (
@@ -679,18 +685,16 @@ export function Sidebar({
       <div className="an-rail-foot">
         {currentUser ? (
           <>
-            {currentUser.avatar_url ? (
-              <img
-                src={currentUser.avatar_url}
-                alt={currentUser.display_name || currentUser.username}
-                className="an-av"
-                style={{ objectFit: "cover", background: "var(--surface-soft)" }}
-              />
-            ) : (
-              <div className="an-av" style={{ background: userColor }}>
-                {userInitial}
-              </div>
-            )}
+            <AvatarVisual
+              avatarUrl={currentUser.avatar_url}
+              background={userColor}
+              className="an-av"
+              fallback={userInitial}
+              label={currentUser.display_name || currentUser.username}
+              radius={6}
+              size={28}
+              style={{ background: currentUser.avatar_url ? "var(--surface-soft)" : userColor }}
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="an-n truncate">{currentUser.display_name}</div>
               <div className="an-s">online</div>

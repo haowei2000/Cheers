@@ -4,6 +4,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { ChatMessageRenderer } from "./ChatMessageRenderer";
+import { AvatarVisual } from "./AvatarVisual";
 import { BotAvatar } from "./BotAvatar";
 import { AppIcon } from "./icons/AppIcon";
 import { TopicComposer } from "./TopicComposer";
@@ -136,21 +137,16 @@ export function TopicPage({
                 size={36}
                 className="mt-0.5"
               />
-            ) : avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt={label}
-                className="w-9 h-9 rounded-xl object-cover select-none mt-0.5"
-              />
             ) : (
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
-                style={{
-                  background: isOwn ? "var(--accent)" : "var(--fg-3)",
-                }}
-              >
-                {initial}
-              </div>
+              <AvatarVisual
+                avatarUrl={avatarUrl}
+                background={isOwn ? "var(--accent)" : "var(--fg-3)"}
+                className="mt-0.5"
+                fallback={initial}
+                label={label}
+                radius={12}
+                size={36}
+              />
             )}
           </div>
           <div className="flex-1 min-w-0">
