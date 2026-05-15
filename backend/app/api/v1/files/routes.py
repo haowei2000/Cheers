@@ -15,12 +15,14 @@ from app.core.dependencies import get_current_user, get_session
 from app.core.exceptions import AppError, NotFoundError
 from app.core.responses import APIResponse
 from app.db.models import FileRecord, User
+from app.services.channel_service import ChannelService
 from app.services.file_processor.convert import (
     FileParseError,
     UnsupportedFileTypeError,
     is_image_type,
     parse_document_bytes,
 )
+from app.services.file_retention import active_file_filter
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -37,6 +39,24 @@ def _inline_disposition(content_type: str) -> bool:
 
 def _storage_scope(rec: FileRecord) -> str:
     return "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
+
+
+async def _load_active_file_or_404(session: AsyncSession, file_id: str) -> FileRecord:
+    result = await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id, active_file_filter())
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise NotFoundError("file not found")
+    return rec
+
+
+async def _require_file_access(
+    session: AsyncSession,
+    rec: FileRecord,
+    current_user: User,
+) -> None:
+    await ChannelService(session).require_channel_member(rec.channel_id, current_user)
 
 
 async def _load_file_body(rec: FileRecord) -> bytes:
@@ -111,24 +131,27 @@ async def get_download_url(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    from app.services.file_service import FileService
-    svc = FileService(session)
-    url = await svc.get_download_url(file_id)
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
+    url = f"/api/v1/files/{file_id}/download"
     return APIResponse.ok({"url": url})
 
 
 @router.get("/by-channel/{channel_id}", response_model=APIResponse[list])
 async def list_channel_files(
     channel_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     """列出频道下所有非图片文件（与资料索引一致）。"""
     from sqlalchemy import asc
+    await ChannelService(session).require_channel_member(channel_id, current_user)
     result = await session.execute(
         select(FileRecord)
         .where(
             FileRecord.channel_id == channel_id,
             FileRecord.content_type.notlike("image/%"),
+            active_file_filter(),
         )
         .order_by(asc(FileRecord.created_at))
     )
@@ -142,6 +165,7 @@ async def list_channel_files(
             "status": r.status,
             "summary_3lines": r.summary_3lines,
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            "expires_at": r.expires_at.isoformat() if r.expires_at else None,
         }
         for r in records
     ])
@@ -151,12 +175,15 @@ async def list_channel_files(
 async def file_status(
     file_id: str,
     channel_id: str = Query(...),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
+    await ChannelService(session).require_channel_member(channel_id, current_user)
     result = await session.execute(
         select(FileRecord).where(
             FileRecord.file_id == file_id,
             FileRecord.channel_id == channel_id,
+            active_file_filter(),
         )
     )
     rec = result.scalar_one_or_none()
@@ -170,6 +197,7 @@ async def file_status(
         "size_bytes": rec.size_bytes,
         "status": rec.status,
         "uploaded_at": rec.uploaded_at.isoformat() if rec.uploaded_at else None,
+        "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
         "last_error": rec.last_error,
     })
 
@@ -177,14 +205,11 @@ async def file_status(
 @router.get("/{file_id}/preview")
 async def file_preview(
     file_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    result = await session.execute(
-        select(FileRecord).where(FileRecord.file_id == file_id)
-    )
-    rec = result.scalar_one_or_none()
-    if not rec:
-        raise NotFoundError("file not found")
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
 
     content_type = rec.content_type or "application/octet-stream"
     filename = rec.original_filename or file_id
@@ -199,7 +224,7 @@ async def file_preview(
         media_type=content_type,
         headers={
             "Content-Disposition": disposition,
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "private, max-age=3600",
         },
     )
 
@@ -207,15 +232,12 @@ async def file_preview(
 @router.get("/{file_id}/content", response_model=APIResponse[dict])
 async def file_preview_content(
     file_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     """返回适合预览窗口展示的文本/Markdown 内容。"""
-    result = await session.execute(
-        select(FileRecord).where(FileRecord.file_id == file_id)
-    )
-    rec = result.scalar_one_or_none()
-    if not rec:
-        raise NotFoundError("file not found")
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
 
     filename = rec.original_filename or file_id
     content_type = rec.content_type or "application/octet-stream"
@@ -228,6 +250,7 @@ async def file_preview_content(
             "content": "",
             "truncated": False,
             "summary": rec.summary_3lines,
+            "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
         })
 
     if rec.md_path:
@@ -241,6 +264,7 @@ async def file_preview_content(
                 "content": cache_path.read_text(encoding="utf-8", errors="replace"),
                 "truncated": False,
                 "summary": rec.summary_3lines,
+                "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
             })
 
     try:
@@ -259,6 +283,7 @@ async def file_preview_content(
             "content": "",
             "truncated": False,
             "summary": rec.summary_3lines,
+            "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
             "error": str(exc),
         })
     except FileParseError as exc:
@@ -276,20 +301,18 @@ async def file_preview_content(
         "content": parsed.text,
         "truncated": parsed.truncated,
         "summary": parsed.summary,
+        "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
     })
 
 
 @router.get("/{file_id}/download")
 async def file_download(
     file_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    result = await session.execute(
-        select(FileRecord).where(FileRecord.file_id == file_id)
-    )
-    rec = result.scalar_one_or_none()
-    if not rec:
-        raise NotFoundError("file not found")
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
 
     filename = rec.original_filename or file_id
     body = await _load_file_body(rec)
@@ -298,6 +321,6 @@ async def file_download(
         media_type=rec.content_type or "application/octet-stream",
         headers={
             "Content-Disposition": _content_disposition(filename),
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "private, max-age=3600",
         },
     )

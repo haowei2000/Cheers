@@ -91,6 +91,7 @@ from app.features.bot_runtime.bot_events.queue import enqueue_bot_event_job
 from app.services.channel_service import ChannelService
 from app.services.file_processor.convert import is_image_type
 from app.services.file_processor.service import FileFlowError, FilePipelineService
+from app.services.file_retention import active_file_filter, file_expires_at
 
 logger = logging.getLogger("app.api.v1.agent_bridge")
 
@@ -483,7 +484,7 @@ async def bridge_read_file_content(
     bot = await _resolve_bot_by_bearer(session, authorization)
 
     record = (await session.execute(
-        select(FileRecord).where(FileRecord.file_id == file_id)
+        select(FileRecord).where(FileRecord.file_id == file_id, active_file_filter())
     )).scalar_one_or_none()
     if record is None:
         raise HTTPException(status_code=404, detail=f"file {file_id} 不存在")
@@ -541,7 +542,7 @@ async def bridge_read_file_binary(
     bot = await _resolve_bot_by_bearer(session, authorization)
 
     record = (await session.execute(
-        select(FileRecord).where(FileRecord.file_id == file_id)
+        select(FileRecord).where(FileRecord.file_id == file_id, active_file_filter())
     )).scalar_one_or_none()
     if record is None:
         raise HTTPException(status_code=404, detail=f"file {file_id} 不存在")
@@ -635,6 +636,7 @@ async def bridge_upload_markdown_file(
         status="ready",
         uploaded_at=now,
         converted_at=now,
+        expires_at=file_expires_at(now),
     )
     session.add(record)
     await session.commit()
@@ -740,6 +742,7 @@ async def bridge_upload_binary_file(
         size_bytes=total,
         status="ready",
         uploaded_at=now,
+        expires_at=file_expires_at(now),
     )
     session.add(record)
     await session.commit()
@@ -1474,6 +1477,7 @@ async def _handle_data_file_upload(
             size_bytes=len(raw),
             status="ready",
             uploaded_at=now,
+            expires_at=file_expires_at(now),
         )
         s.add(record)
         await s.commit()
