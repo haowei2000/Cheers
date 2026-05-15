@@ -7,7 +7,7 @@ import {
   introSummary,
 } from "../../lib/bot-display";
 import { AppIcon } from "../icons/AppIcon";
-import { MemberListItem } from "../members";
+import { MemberRow, MemberSection } from "../members";
 import { Modal, ModalFooter } from "../Modal";
 
 interface AddBotModalProps {
@@ -96,35 +96,24 @@ export function AddBotModal({
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
         <section className="min-w-0">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--fg-3)" }}>
-                已加入
-              </h3>
-              <p className="mt-1 text-xs" style={{ color: "var(--fg-3)" }}>
-                {channelBots.length} 个 Bot 在此频道
-              </p>
-            </div>
-            <span className="an-chip accent">{channelBots.length}</span>
-          </div>
-          <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
-            {channelBots.length === 0 ? (
-              <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                暂无 Bot。可以从右侧列表选择并加入。
-              </div>
-            ) : (
-              channelBots.map((bot) => (
-                <MemberListItem
+          <div className="max-h-[48vh] overflow-y-auto pr-1">
+            <MemberSection
+              title={`${channelBots.length} 个 Bot 在此频道`}
+              count={channelBots.length}
+              empty={
+                <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
+                  暂无 Bot。可以从右侧列表选择并加入。
+                </div>
+              }
+            >
+              {channelBots.map((bot) => (
+                <MemberRow
                   key={bot.member_id}
-                  id={bot.member_id}
-                  kind="bot"
-                  username={bot.username}
-                  displayName={bot.display_name || bot.username}
-                  avatarUrl={bot.avatar_url}
-                  variant="card"
+                  as="article"
+                  member={{ ...bot, member_type: "bot" }}
+                  badge={<StatusChip bot={bot} />}
                   meta={<BotMetaLine bot={bot} />}
-                  badges={<StatusChip bot={bot} />}
-                  actions={
+                  action={
                     <button
                       type="button"
                       onClick={() => onRemoveBot(bot.member_id)}
@@ -134,21 +123,13 @@ export function AddBotModal({
                     </button>
                   }
                 />
-              ))
-            )}
+              ))}
+            </MemberSection>
           </div>
         </section>
 
         <section className="min-w-0">
-          <div className="mb-2 flex items-end justify-between gap-3">
-            <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--fg-3)" }}>
-                可添加
-              </h3>
-              <p className="mt-1 text-xs" style={{ color: "var(--fg-3)" }}>
-                {filteredBots.length}/{availableBots.length} 个可用 Bot
-              </p>
-            </div>
+          <div className="mb-2 flex items-end justify-end gap-3">
             <div className="an-field m-0 w-48 max-w-[55%]">
               <div className="relative">
                 <AppIcon
@@ -165,50 +146,46 @@ export function AddBotModal({
               </div>
             </div>
           </div>
-          <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
-            {filteredBots.length === 0 ? (
-              <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                {availableBots.length === 0 ? "暂无可添加 Bot。" : "没有匹配的 Bot。"}
-              </div>
-            ) : (
-              filteredBots.map((bot) => {
+          <div className="max-h-[48vh] overflow-y-auto pr-1">
+            <MemberSection
+              title={`${filteredBots.length}/${availableBots.length} 个可用 Bot`}
+              count={filteredBots.length}
+              empty={
+                <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
+                  {availableBots.length === 0 ? "暂无可添加 Bot。" : "没有匹配的 Bot。"}
+                </div>
+              }
+            >
+              {filteredBots.map((bot) => {
                 const checked = selectedBotIds.has(bot.bot_id);
                 const summary = introSummary(bot.intro);
                 return (
-                  <MemberListItem
+                  <MemberRow
                     key={bot.bot_id}
-                    id={bot.bot_id}
-                    kind="bot"
-                    username={bot.username}
-                    displayName={bot.display_name || bot.username}
-                    avatarUrl={bot.avatar_url}
-                    variant="card"
-                    selected={checked}
-                    asButton
+                    as="button"
                     onClick={() => onToggleBot(bot.bot_id)}
+                    active={checked}
+                    member={{ ...bot, member_type: "bot" }}
+                    badge={<StatusChip bot={bot} />}
+                    meta={
+                      <>
+                        <BotMetaLine bot={bot} />
+                        {summary && (
+                          <span className="ml-1" style={{ color: "var(--fg-2)" }}>
+                            · {summary}
+                          </span>
+                        )}
+                      </>
+                    }
                     leading={
-                      <span
-                        className="mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border"
-                        style={{
-                          borderColor: checked ? "var(--accent)" : "var(--border)",
-                          color: "var(--accent)",
-                        }}
-                      >
+                      <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border" style={{ borderColor: checked ? "var(--accent)" : "var(--border)", color: "var(--accent)" }}>
                         {checked && <AppIcon name="check" className="h-3.5 w-3.5" />}
                       </span>
                     }
-                    meta={<BotMetaLine bot={bot} />}
-                    badges={<StatusChip bot={bot} />}
-                  >
-                    {summary && (
-                      <span className="block truncate text-xs" style={{ color: "var(--fg-2)" }}>
-                        {summary}
-                      </span>
-                    )}
-                  </MemberListItem>
+                  />
                 );
-              })
-            )}
+              })}
+            </MemberSection>
           </div>
         </section>
       </div>

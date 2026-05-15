@@ -24,6 +24,7 @@ from app.services.file_processor.convert import (
     is_image_type,
     parse_document_bytes,
 )
+from app.services.file_retention import active_file_filter, file_expires_at
 from app.services.storage.base import (
     StorageClientInitError,
     StorageObject,
@@ -101,6 +102,7 @@ class FilePipelineService:
             content_type=normalized_type,
             size_bytes=size_bytes,
             status="pending_upload",
+            expires_at=file_expires_at(),
         )
         metadata = {
             "channel_id": channel_id,
@@ -293,19 +295,6 @@ class FilePipelineService:
                 })
             else:
                 # 文档：只返回 DB 元数据，不下载正文
-                # 生成临时下载链接，供子 Bot 按需访问原始文件
-                download_url = ""
-                if self.storage is not None:
-                    try:
-                        scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
-                        download_url = self.storage.create_presigned_get_url(
-                            record.file_id, scope=scope,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "prepare_metadata_only: failed to generate presigned GET URL file_id=%s",
-                            record.file_id, exc_info=True,
-                        )
                 attachments.append({
                     "file_id": record.file_id,
                     "filename": record.original_filename or record.file_id,
@@ -314,7 +303,8 @@ class FilePipelineService:
                     "summary": record.summary_3lines or "",
                     "content": "",
                     "truncated": "false",
-                    "download_url": download_url,
+                    "preview_url": f"/api/v1/files/{record.file_id}/preview",
+                    "download_url": f"/api/v1/files/{record.file_id}/download",
                 })
         return attachments
 
@@ -387,6 +377,7 @@ class FilePipelineService:
             select(FileRecord).where(
                 FileRecord.channel_id == channel_id,
                 FileRecord.file_id.in_(unique_ids),
+                active_file_filter(),
             )
         )
         by_id = {record.file_id: record for record in result.scalars().all()}
@@ -413,7 +404,20 @@ class FilePipelineService:
         # 根据 object_key 前缀推断 scope（generated/ 或 uploads/）
         scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
         try:
-            head = await self.storage.head_object(record.file_id, scope=scope)
+            if record.object_key:
+                from app.config import settings
+                from app.services.storage.base import StorageObjectRef
+
+                head = await self.storage.head_object_ref(
+                    StorageObjectRef(
+                        file_id=record.file_id,
+                        bucket=record.storage_bucket or settings.storage_s3_bucket,
+                        object_key=record.object_key,
+                        filename=record.original_filename,
+                    )
+                )
+            else:
+                head = await self.storage.head_object(record.file_id, scope=scope)
         except StorageObjectNotFoundError as exc:
             record.status = "pending_upload"
             record.last_error = "object not found"
@@ -481,6 +485,18 @@ class FilePipelineService:
             if self.storage is None:
                 raise FileFlowError("对象存储未初始化，无法读取上传文件", status_code=503)
             scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
+            if record.object_key:
+                from app.config import settings
+                from app.services.storage.base import StorageObjectRef
+
+                return await self.storage.get_object_ref(
+                    StorageObjectRef(
+                        file_id=record.file_id,
+                        bucket=record.storage_bucket or settings.storage_s3_bucket,
+                        object_key=record.object_key,
+                        filename=record.original_filename,
+                    )
+                )
             return await self.storage.get_object(record.file_id, scope=scope)
         return await self._load_local_object(record)
 

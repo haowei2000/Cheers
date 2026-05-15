@@ -13,21 +13,15 @@ import {
   createElement,
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { AppIcon, FileTypeIcon, type AppIconName } from "./components/icons";
-import { MemberBadge, MemberListItem } from "./components/members";
+import { MemberRow, sortMembersByKind } from "./components/members";
 import type { MemoryEntryItem, MemberItem, TodoItem } from "./types";
 import { getAuthToken as getStoredToken } from "./api";
-import { EntryEditor } from "./features/memory/editor/EntryEditor";
-import {
-  formatRange,
-  parseFilesIndex,
-  parseRecentXml,
-  relativeTime,
-} from "./features/memory/parsers";
 
 const ico = (name: AppIconName): ReactNode =>
   createElement(AppIcon, { className: "w-full h-full", name });
@@ -40,6 +34,17 @@ function authHeaders(): Record<string, string> {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = Date.now();
+  const diff = now - d.getTime();
+  if (diff < 60000) return "刚刚";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+  return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }
 
 /* ── Layer definitions ─────────────────────────────────────────────────────── */
@@ -131,6 +136,196 @@ const LAYER_META: Record<
     readonly: true,
   },
 };
+
+/* ── File card helper: parse FILES_INDEX markdown into cards ────────────── */
+
+type FileCard = {
+  filename: string;
+  fileId: string;
+  contentType: string;
+  summary: string;
+  time: string;
+};
+
+function parseFilesIndex(md: string): FileCard[] {
+  if (!md.trim()) return [];
+  const blocks = md
+    .split(/\n---\n/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+  return blocks.map((block) => {
+    const lines = block.split("\n");
+    const filename = (lines[0] || "").replace(/^###\s*/, "");
+    let fileId = "",
+      contentType = "",
+      summary = "",
+      time = "";
+    for (const line of lines.slice(1)) {
+      const m = line.match(/^-\s*file_id:\s*`([^`]+)`/);
+      if (m) {
+        fileId = m[1];
+        continue;
+      }
+      const m2 = line.match(/^-\s*类型:\s*(.+)/);
+      if (m2) {
+        contentType = m2[1].trim();
+        continue;
+      }
+      const m3 = line.match(/^-\s*摘要:\s*(.+)/);
+      if (m3) {
+        summary = m3[1].trim();
+        continue;
+      }
+      const m4 = line.match(/^-\s*登记时间:\s*(.+)/);
+      if (m4) {
+        time = m4[1].trim();
+        continue;
+      }
+    }
+    return { filename, fileId, contentType, summary, time };
+  });
+}
+
+/* ── RECENT helper: parse page XML into timeline items ─────────────────── */
+
+type TimelineItem = {
+  pageId: string;
+  from: string;
+  to: string;
+  summary: string;
+};
+
+function parseRecentXml(xml: string): TimelineItem[] {
+  if (!xml.trim()) return [];
+  const items: TimelineItem[] = [];
+  const re =
+    /<page\s+id="([^"]*)"[^>]*from="([^"]*)"[^>]*to="([^"]*)">([\s\S]*?)<\/page>/g;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    items.push({ pageId: m[1], from: m[2], to: m[3], summary: m[4] });
+  }
+  return items;
+}
+
+function formatRange(from: string, to: string): string {
+  try {
+    const a = new Date(from);
+    const b = new Date(to);
+    const df = a.toLocaleDateString("zh-CN", {
+      month: "short",
+      day: "numeric",
+    });
+    const tf = a.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const tb = b.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return `${df} ${tf} — ${tb}`;
+  } catch {
+    return `${from} — ${to}`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   EntryEditor — 内联 Markdown 编辑器，左写右预览
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+function EntryEditor({
+  initialTitle,
+  initialContent,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  initialTitle: string;
+  initialContent: string;
+  onSave: (title: string, content: string) => void;
+  onCancel: () => void;
+  saving?: boolean;
+}) {
+  const [title, setTitle] = useState(initialTitle);
+  const [content, setContent] = useState(initialContent);
+  const [previewMode, setPreviewMode] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  return (
+    <div className="border border-blue-200 rounded-lg overflow-hidden bg-white shadow-sm">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="标题（可选）"
+          className="flex-1 text-sm font-medium bg-transparent border-none outline-none placeholder-gray-400"
+        />
+        <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+          <button
+            onClick={() => setPreviewMode(false)}
+            className={`text-xs px-2 py-1 rounded ${!previewMode ? "bg-white shadow-sm text-gray-700" : "text-gray-400 hover:text-gray-600"}`}
+          >
+            编辑
+          </button>
+          <button
+            onClick={() => setPreviewMode(true)}
+            className={`text-xs px-2 py-1 rounded ${previewMode ? "bg-white shadow-sm text-gray-700" : "text-gray-400 hover:text-gray-600"}`}
+          >
+            预览
+          </button>
+        </div>
+      </div>
+      {/* Content */}
+      <div className="min-h-[160px]">
+        {previewMode ? (
+          <div className="p-4 prose prose-sm max-w-none text-sm">
+            {content.trim() ? (
+              <MessageMarkdown text={content} />
+            ) : (
+              <p className="text-gray-400 italic">暂无内容</p>
+            )}
+          </div>
+        ) : (
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="支持 Markdown 格式…"
+            className="w-full min-h-[160px] p-4 text-sm font-mono leading-relaxed resize-y border-none outline-none"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                onSave(title, content);
+            }}
+          />
+        )}
+      </div>
+      {/* Actions */}
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-100">
+        <span className="text-[11px] text-gray-400">Ctrl+Enter 保存</span>
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="text-xs px-3 py-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
+          >
+            取消
+          </button>
+          <button
+            onClick={() => onSave(title, content)}
+            disabled={saving || !content.trim()}
+            className="text-xs px-3 py-1.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94] disabled:opacity-50"
+          >
+            {saving ? "保存中…" : "保存"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ══════════════════════════════════════════════════════════════════════════════
    MemoryPage — 全屏记忆页面
@@ -580,39 +775,12 @@ export default function MemoryPage({
         </div>
       );
     }
-    const sorted = members
-      .map((member, index) => ({ member, index }))
-      .sort((a, b) => {
-        const aSelf = Boolean(currentUserId && a.member.member_id === currentUserId);
-        const bSelf = Boolean(currentUserId && b.member.member_id === currentUserId);
-        if (aSelf !== bSelf) return aSelf ? -1 : 1;
-        const aRank = a.member.member_type === "bot" ? 0 : 1;
-        const bRank = b.member.member_type === "bot" ? 0 : 1;
-        if (aRank !== bRank) return aRank - bRank;
-        return a.index - b.index;
-      })
-      .map(({ member }) => member);
+    const sorted = sortMembersByKind(members, currentUserId);
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {sorted.map((m) => {
-          const isBot = m.member_type === "bot";
-          const isSelf = Boolean(currentUserId && m.member_id === currentUserId && !isBot);
-          const label =
-            m.display_name || m.username || (isBot ? "Bot" : "用户");
-          return (
-            <MemberListItem
-              key={m.member_id}
-              id={m.member_id}
-              kind={isBot ? "bot" : "user"}
-              username={m.username}
-              displayName={label}
-              avatarUrl={m.avatar_url}
-              self={isSelf}
-              variant="card"
-              badges={!isBot ? <MemberBadge>用户</MemberBadge> : undefined}
-            />
-          );
-        })}
+        {sorted.map((m) => (
+          <MemberRow key={m.member_id} as="article" member={m} />
+        ))}
       </div>
     );
   };

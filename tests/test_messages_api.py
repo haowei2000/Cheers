@@ -287,12 +287,12 @@ async def test_list_topic_messages_includes_nested_replies(
 
 
 @pytest.mark.asyncio
-async def test_dm_message_forces_normal_session_shape(
+async def test_dm_message_normalizes_topics_but_preserves_replies(
     monkeypatch,
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """DM 消息不允许产生 topic/reply 结构，始终落成独立 DM session 的普通消息。"""
+    """DM 不生成 topic 结构，但允许普通消息保留回复关系。"""
     import app.api.v1.messages.routes as message_routes
 
     monkeypatch.setattr(
@@ -364,6 +364,25 @@ async def test_dm_message_forces_normal_session_shape(
     assert saved.content_data is None
     await db_session.refresh(parent)
     assert parent.msg_type == "normal"
+
+    reply_resp = await client.post(
+        f"/api/v1/channels/{dm.channel_id}/messages",
+        json={
+            "content": "reply should stay linked",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "msg_type": "reply",
+            "in_reply_to_msg_id": parent.msg_id,
+        },
+    )
+
+    assert reply_resp.status_code == 200
+    reply_id = reply_resp.json()["data"]["msg_id"]
+    reply = await db_session.get(Message, reply_id)
+    assert reply is not None
+    assert reply.msg_type == "reply"
+    assert reply.in_reply_to_msg_id == parent.msg_id
+    assert reply.content_data is None
 
 
 @pytest.mark.asyncio
@@ -662,6 +681,282 @@ async def test_create_message_with_file_metadata(client: AsyncClient, db_session
     data = resp.json()["data"]
     assert data["file_ids"] == [record.file_id]
     assert data["files"][0]["original_filename"] == "note.txt"
+
+
+@pytest.mark.asyncio
+async def test_forward_single_message_to_channel_clones_attachments(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000071", name="W71")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000071",
+        workspace_id=ws.workspace_id,
+        name="source-forward",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000072",
+        workspace_id=ws.workspace_id,
+        name="target-forward",
+        type="public",
+    )
+    file_path = tmp_path / "forward-note.txt"
+    file_path.write_text("forward attachment", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000071",
+        channel_id=source_ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000071",
+        original_path=str(file_path),
+        original_filename="forward-note.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    source_msg = Message(
+        msg_id="m1000000-0000-0000-0000-000000000071",
+        channel_id=source_ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000071",
+        sender_type="user",
+        content="source text",
+        file_ids=[record.file_id],
+    )
+    db_session.add_all([ws, source_ch, target_ch, record, source_msg])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages/forward",
+        json={
+            "source_message_ids": [source_msg.msg_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 200
+    created = resp.json()["data"]["messages"]
+    assert len(created) == 1
+    forwarded = created[0]
+    assert forwarded["channel_id"] == target_ch.channel_id
+    assert forwarded["sender_id"] == "a0000000-0000-0000-0000-000000000099"
+    assert forwarded["msg_type"] == "normal"
+    assert "转发自" in forwarded["content"]
+    assert "source text" in forwarded["content"]
+    assert len(forwarded["file_ids"]) == 1
+    assert forwarded["file_ids"][0] != record.file_id
+
+    clone = await db_session.get(FileRecord, forwarded["file_ids"][0])
+    assert clone is not None
+    assert clone.channel_id == target_ch.channel_id
+    assert clone.uploader_id == "a0000000-0000-0000-0000-000000000099"
+    assert clone.original_path == record.original_path
+    assert clone.original_filename == record.original_filename
+
+
+@pytest.mark.asyncio
+async def test_forward_single_message_to_dm(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000073", name="W73")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000073",
+        workspace_id=ws.workspace_id,
+        name="source-to-dm",
+        type="public",
+    )
+    dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000074",
+        workspace_id=ws.workspace_id,
+        name="dm:test:forward",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000073",
+        username="forward_dm_bot",
+        display_name="Forward DM Bot",
+        status="online",
+    )
+    source_msg = Message(
+        msg_id="m1000000-0000-0000-0000-000000000073",
+        channel_id=source_ch.channel_id,
+        sender_id=current_user_id,
+        sender_type="user",
+        content="forward into dm",
+    )
+    db_session.add_all([
+        ws,
+        source_ch,
+        dm,
+        bot,
+        ChannelMembership(channel_id=dm.channel_id, member_id=current_user_id, member_type="user"),
+        ChannelMembership(channel_id=dm.channel_id, member_id=bot.bot_id, member_type="bot"),
+        source_msg,
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{dm.channel_id}/messages/forward",
+        json={
+            "source_message_ids": [source_msg.msg_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 200
+    forwarded = resp.json()["data"]["messages"][0]
+    assert forwarded["channel_id"] == dm.channel_id
+    assert forwarded["sender_id"] == current_user_id
+    assert "forward into dm" in forwarded["content"]
+
+
+@pytest.mark.asyncio
+async def test_forward_topic_preserves_selected_order(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000075", name="W75")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000075",
+        workspace_id=ws.workspace_id,
+        name="topic-source",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000076",
+        workspace_id=ws.workspace_id,
+        name="topic-target",
+        type="public",
+    )
+    first = Message(
+        msg_id="m1000000-0000-0000-0000-000000000075",
+        channel_id=source_ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000075",
+        sender_type="user",
+        content="first selected second",
+    )
+    second = Message(
+        msg_id="m1000000-0000-0000-0000-000000000076",
+        channel_id=source_ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000075",
+        sender_type="user",
+        content="second selected first",
+    )
+    db_session.add_all([ws, source_ch, target_ch, first, second])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages/forward",
+        json={
+            "source_message_ids": [second.msg_id, first.msg_id],
+            "mode": "topic",
+        },
+    )
+
+    assert resp.status_code == 200
+    created = resp.json()["data"]["messages"]
+    assert len(created) == 3
+    root, reply_one, reply_two = created
+    assert root["msg_type"] == "topic"
+    assert root["content_data"]["kind"] == "forward_bundle"
+    assert reply_one["msg_type"] == "reply"
+    assert reply_one["in_reply_to_msg_id"] == root["msg_id"]
+    assert "second selected first" in reply_one["content"]
+    assert reply_two["in_reply_to_msg_id"] == root["msg_id"]
+    assert "first selected second" in reply_two["content"]
+
+
+@pytest.mark.asyncio
+async def test_forward_single_file_without_message(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000077", name="W77")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000077",
+        workspace_id=ws.workspace_id,
+        name="file-source",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000078",
+        workspace_id=ws.workspace_id,
+        name="file-target",
+        type="public",
+    )
+    file_path = tmp_path / "only-file.txt"
+    file_path.write_text("file only", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000077",
+        channel_id=source_ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000077",
+        original_path=str(file_path),
+        original_filename="only-file.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, source_ch, target_ch, record])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages/forward",
+        json={
+            "source_file_ids": [record.file_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 200
+    forwarded = resp.json()["data"]["messages"][0]
+    assert forwarded["content"] == "转发文件：only-file.txt"
+    assert len(forwarded["file_ids"]) == 1
+    clone = await db_session.get(FileRecord, forwarded["file_ids"][0])
+    assert clone is not None
+    assert clone.channel_id == target_ch.channel_id
+    assert clone.original_path == record.original_path
+
+
+@pytest.mark.asyncio
+async def test_forward_secret_message_is_rejected(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000079", name="W79")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000079",
+        workspace_id=ws.workspace_id,
+        name="secret-source",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000080",
+        workspace_id=ws.workspace_id,
+        name="secret-target",
+        type="public",
+    )
+    secret_msg = Message(
+        msg_id="m1000000-0000-0000-0000-000000000079",
+        channel_id=source_ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000079",
+        sender_type="user",
+        content="secret",
+        is_secret=True,
+    )
+    db_session.add_all([ws, source_ch, target_ch, secret_msg])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages/forward",
+        json={
+            "source_message_ids": [secret_msg.msg_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 400
 
 
 @pytest.mark.asyncio

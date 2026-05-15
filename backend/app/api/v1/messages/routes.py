@@ -8,18 +8,22 @@ from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.chat.message_assembler import MessageAssembler
 from app.contracts.messages import MessageDTO
 from app.core.dependencies import get_current_user
+from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.responses import APIResponse
 from app.core.schemas import (
+    ForwardMessageRequest,
+    ForwardMessageResponse,
     MessageCreate,
     MessageStreamCreate,
     PermissionResolveRequest,
 )
-from app.db.models import Message, User
+from app.db.models import BotAccount, Channel, FileRecord, Message, User
 from app.db.session import async_session_factory, get_session
 from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_for_bot
 from app.features.bot_runtime.pipeline.bot.queue import enqueue_bot_pipeline_job
@@ -235,6 +239,309 @@ async def _handle_send_message(
             )
 
     return ctx.payload, ctx.secret_token
+
+
+async def _load_forward_sources(
+    session: AsyncSession,
+    *,
+    body: ForwardMessageRequest,
+    current_user: User,
+) -> tuple[list[Message], list[FileRecord]]:
+    message_ids = list(dict.fromkeys(mid.strip() for mid in body.source_message_ids if mid and mid.strip()))
+    file_ids = list(dict.fromkeys(fid.strip() for fid in body.source_file_ids if fid and fid.strip()))
+    if not message_ids and not file_ids:
+        raise BadRequestError("source_message_ids 和 source_file_ids 不能同时为空")
+    if body.mode == "single" and len(message_ids) > 1:
+        raise BadRequestError("single 模式只能转发一条消息")
+    if body.mode == "topic" and not message_ids:
+        raise BadRequestError("topic 模式至少需要一条源消息")
+
+    messages: list[Message] = []
+    if message_ids:
+        rows = (
+            await session.execute(select(Message).where(Message.msg_id.in_(message_ids)))
+        ).scalars().all()
+        by_id = {msg.msg_id: msg for msg in rows}
+        missing = [msg_id for msg_id in message_ids if msg_id not in by_id]
+        if missing:
+            raise NotFoundError(f"message not found: {missing[0]}")
+        messages = [by_id[msg_id] for msg_id in message_ids]
+        for msg in messages:
+            if msg.is_secret:
+                raise BadRequestError("加密消息不能转发")
+            await ChannelService(session).require_channel_member(msg.channel_id, current_user)
+
+    files: list[FileRecord] = []
+    if file_ids:
+        rows = (
+            await session.execute(select(FileRecord).where(FileRecord.file_id.in_(file_ids)))
+        ).scalars().all()
+        by_id = {rec.file_id: rec for rec in rows}
+        missing = [file_id for file_id in file_ids if file_id not in by_id]
+        if missing:
+            raise NotFoundError(f"file not found: {missing[0]}")
+        files = [by_id[file_id] for file_id in file_ids]
+        for rec in files:
+            await ChannelService(session).require_channel_member(rec.channel_id, current_user)
+
+    return messages, files
+
+
+async def _load_file_records_by_ids(
+    session: AsyncSession,
+    file_ids: list[str],
+) -> list[FileRecord]:
+    normalized = list(dict.fromkeys(fid.strip() for fid in file_ids if fid and fid.strip()))
+    if not normalized:
+        return []
+    rows = (
+        await session.execute(select(FileRecord).where(FileRecord.file_id.in_(normalized)))
+    ).scalars().all()
+    by_id = {rec.file_id: rec for rec in rows}
+    missing = [file_id for file_id in normalized if file_id not in by_id]
+    if missing:
+        raise NotFoundError(f"file not found: {missing[0]}")
+    return [by_id[file_id] for file_id in normalized]
+
+
+def _dedupe_file_records(records: list[FileRecord]) -> list[FileRecord]:
+    out: list[FileRecord] = []
+    seen: set[str] = set()
+    for rec in records:
+        if rec.file_id in seen:
+            continue
+        seen.add(rec.file_id)
+        out.append(rec)
+    return out
+
+
+async def _clone_files_to_channel(
+    session: AsyncSession,
+    *,
+    records: list[FileRecord],
+    target_channel_id: str,
+    current_user: User,
+) -> list[str]:
+    cloned_ids: list[str] = []
+    for rec in records:
+        clone = FileRecord(
+            channel_id=target_channel_id,
+            uploader_id=current_user.user_id,
+            original_path=rec.original_path,
+            object_key=rec.object_key,
+            storage_bucket=rec.storage_bucket,
+            original_filename=rec.original_filename,
+            content_type=rec.content_type,
+            size_bytes=rec.size_bytes,
+            md_path=rec.md_path,
+            status=rec.status,
+            summary_3lines=rec.summary_3lines,
+            last_error=rec.last_error,
+            uploaded_at=rec.uploaded_at,
+            converted_at=rec.converted_at,
+        )
+        session.add(clone)
+        await session.flush()
+        cloned_ids.append(clone.file_id)
+    return cloned_ids
+
+
+async def _sender_labels(
+    session: AsyncSession,
+    messages: list[Message],
+) -> dict[tuple[str, str], str]:
+    user_ids = [m.sender_id for m in messages if m.sender_type == "user"]
+    bot_ids = [m.sender_id for m in messages if m.sender_type == "bot"]
+    labels: dict[tuple[str, str], str] = {}
+    if user_ids:
+        users = (
+            await session.execute(select(User).where(User.user_id.in_(set(user_ids))))
+        ).scalars().all()
+        for user in users:
+            labels[("user", user.user_id)] = user.display_name or user.username or "用户"
+    if bot_ids:
+        bots = (
+            await session.execute(select(BotAccount).where(BotAccount.bot_id.in_(set(bot_ids))))
+        ).scalars().all()
+        for bot in bots:
+            labels[("bot", bot.bot_id)] = bot.display_name or bot.username or "Bot"
+    return labels
+
+
+async def _channel_labels(
+    session: AsyncSession,
+    channel_ids: list[str],
+) -> dict[str, str]:
+    if not channel_ids:
+        return {}
+    rows = (
+        await session.execute(select(Channel).where(Channel.channel_id.in_(set(channel_ids))))
+    ).scalars().all()
+    return {row.channel_id: row.name for row in rows}
+
+
+def _format_forwarded_message(
+    msg: Message,
+    *,
+    sender_label: str,
+    channel_label: str,
+) -> str:
+    created = msg.created_at.isoformat(sep=" ", timespec="minutes") if msg.created_at else ""
+    source = f"{channel_label} · {sender_label}"
+    if created:
+        source = f"{source} · {created}"
+    body = (msg.content or "").strip() or "(无文本内容)"
+    return f"转发自 {source}\n\n{body}"
+
+
+async def _create_forward_message(
+    session: AsyncSession,
+    *,
+    channel_id: str,
+    current_user: User,
+    content: str,
+    file_ids: list[str] | None = None,
+    msg_type: str = "normal",
+    in_reply_to_msg_id: str | None = None,
+    content_data: dict | None = None,
+) -> MessageDTO:
+    ctx = IngestContext(
+        channel_id=channel_id,
+        bus=WSEventBus(channel_id),
+        session=session,
+        sender_id=current_user.user_id,
+        sender_type="user",
+        content=content,
+        file_ids=file_ids or [],
+        mention_bot_ids=[],
+        in_reply_to_msg_id=in_reply_to_msg_id,
+        msg_type=msg_type,
+        content_data=content_data,
+    )
+    await run_message_workflow(ctx, bot_trigger="none")
+    assert ctx.msg is not None and ctx.payload is not None
+    return ctx.payload
+
+
+@router.post("/forward", response_model=APIResponse[dict])
+async def forward_messages(
+    channel_id: str,
+    body: ForwardMessageRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """把消息或文件转发到目标频道/DM。"""
+    channel_service = ChannelService(session)
+    await channel_service.require_can_send_message(channel_id, current_user)
+    source_messages, source_files = await _load_forward_sources(
+        session,
+        body=body,
+        current_user=current_user,
+    )
+    sender_labels = await _sender_labels(session, source_messages)
+    channel_labels = await _channel_labels(
+        session,
+        list(dict.fromkeys(msg.channel_id for msg in source_messages)),
+    )
+    created: list[dict] = []
+
+    if body.mode == "single":
+        if source_messages:
+            source = source_messages[0]
+            attached_records = await _load_file_records_by_ids(
+                session,
+                list(source.file_ids or []),
+            )
+            cloned_file_ids = await _clone_files_to_channel(
+                session,
+                records=_dedupe_file_records(attached_records + source_files),
+                target_channel_id=channel_id,
+                current_user=current_user,
+            )
+            payload = await _create_forward_message(
+                session,
+                channel_id=channel_id,
+                current_user=current_user,
+                content=_format_forwarded_message(
+                    source,
+                    sender_label=sender_labels.get((source.sender_type, source.sender_id), "未知发送者"),
+                    channel_label=channel_labels.get(source.channel_id, "未知会话"),
+                ),
+                file_ids=cloned_file_ids,
+            )
+        else:
+            cloned_file_ids = await _clone_files_to_channel(
+                session,
+                records=source_files,
+                target_channel_id=channel_id,
+                current_user=current_user,
+            )
+            if len(source_files) == 1:
+                filename = source_files[0].original_filename or source_files[0].file_id
+                content = f"转发文件：{filename}"
+            else:
+                content = f"转发文件：{len(source_files)} 个文件"
+            payload = await _create_forward_message(
+                session,
+                channel_id=channel_id,
+                current_user=current_user,
+                content=content,
+                file_ids=cloned_file_ids,
+            )
+        created.append(payload.to_wire())
+    else:
+        root_files = await _clone_files_to_channel(
+            session,
+            records=source_files,
+            target_channel_id=channel_id,
+            current_user=current_user,
+        )
+        title = f"合并转发 {len(source_messages)} 条消息"
+        if source_files:
+            title = f"{title}及 {len(source_files)} 个文件"
+        root_payload = await _create_forward_message(
+            session,
+            channel_id=channel_id,
+            current_user=current_user,
+            content=title,
+            file_ids=root_files,
+            msg_type="topic",
+            content_data={
+                "kind": "forward_bundle",
+                "title": title,
+                "source_count": len(source_messages),
+                "source_file_count": len(source_files),
+            },
+        )
+        created.append(root_payload.to_wire())
+        for source in source_messages:
+            attached_records = await _load_file_records_by_ids(
+                session,
+                list(source.file_ids or []),
+            )
+            cloned_file_ids = await _clone_files_to_channel(
+                session,
+                records=attached_records,
+                target_channel_id=channel_id,
+                current_user=current_user,
+            )
+            reply_payload = await _create_forward_message(
+                session,
+                channel_id=channel_id,
+                current_user=current_user,
+                content=_format_forwarded_message(
+                    source,
+                    sender_label=sender_labels.get((source.sender_type, source.sender_id), "未知发送者"),
+                    channel_label=channel_labels.get(source.channel_id, "未知会话"),
+                ),
+                file_ids=cloned_file_ids,
+                msg_type="reply",
+                in_reply_to_msg_id=root_payload.msg_id,
+            )
+            created.append(reply_payload.to_wire())
+
+    _schedule_recent_update(channel_id)
+    return APIResponse.ok(ForwardMessageResponse(messages=created).model_dump())
 
 
 @router.post("", response_model=APIResponse[dict])

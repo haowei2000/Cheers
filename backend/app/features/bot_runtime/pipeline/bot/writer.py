@@ -33,6 +33,7 @@ from app.features.bot_runtime.pipeline.events import (
     MessageCreated,
     MessageDone,
 )
+from app.services.file_retention import active_file_filter
 
 if TYPE_CHECKING:
     from app.features.bot_runtime.pipeline.bot.context import BotRunContext
@@ -118,7 +119,7 @@ class BotMessageWriter:
         file_map = {}
         if msg.file_ids:
             result = await ctx.session.execute(
-                select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
+                select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids), active_file_filter())
             )
             file_map = {r.file_id: r for r in result.scalars().all()}
         await ctx.session.commit()

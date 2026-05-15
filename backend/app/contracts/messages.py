@@ -28,6 +28,7 @@ class MessageFileDTO(BaseModel):
     content_type: str | None = None
     size_bytes: int | None = None
     status: str = "ready"
+    expires_at: datetime | None = None
 
 
 class MessageDTO(BaseModel):

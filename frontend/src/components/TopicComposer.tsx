@@ -3,7 +3,7 @@
  * message mode: no secret, announcement, or new-topic switching. */
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import type { ChannelBot, ChannelUser } from "../types";
+import type { ChannelBot, ChannelUser, Message } from "../types";
 import {
   MessageComposer,
   type ComposerKeychainItem,
@@ -14,7 +14,10 @@ export interface TopicComposerProps {
   placeholder: string;
   channelBots: ChannelBot[];
   channelUsers: ChannelUser[];
+  currentUserId?: string;
   onSend: (text: string) => Promise<void> | void;
+  replyingTo?: Message | null;
+  onCancelReply?: () => void;
   pendingFiles?: ComposerPendingFile[];
   onRemovePendingFile?: (index: number) => void;
   onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -30,7 +33,10 @@ export function TopicComposer({
   placeholder,
   channelBots,
   channelUsers,
+  currentUserId,
   onSend,
+  replyingTo = null,
+  onCancelReply,
   pendingFiles = [],
   onRemovePendingFile,
   onUploadFile,
@@ -73,6 +79,9 @@ export function TopicComposer({
       enableKindCycling={false}
       channelBots={channelBots}
       channelUsers={channelUsers}
+      currentUserId={currentUserId}
+      replyingTo={replyingTo}
+      onCancelReply={onCancelReply}
       pendingFiles={pendingFiles}
       onRemovePendingFile={onRemovePendingFile}
       onUploadFile={onUploadFile}

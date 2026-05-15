@@ -8,3 +8,4 @@ export type {
   MemberListItemKind,
   MemberListItemVariant,
 } from "./MemberListItem";
+export * from "./MemberIdentity";

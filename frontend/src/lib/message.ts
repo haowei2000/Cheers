@@ -74,13 +74,6 @@ export function buildTopicTree(
   topicRoots: Message[];
   topicRepliesOf: (rootId: string) => Message[];
 } {
-  if (isDmSelected) {
-    return {
-      topicRoots: messages,
-      topicRepliesOf: (): Message[] => [],
-    };
-  }
-
   const msgIdSet = new Set(messages.map((x) => x.msg_id));
   const msgById = new Map(messages.map((x) => [x.msg_id, x]));
   const rootIdCache = new Map<string, string>();
@@ -101,6 +94,8 @@ export function buildTopicTree(
   for (const m of messages) {
     const rootId = getRootId(m.msg_id);
     if (rootId !== m.msg_id) {
+      const root = msgById.get(rootId);
+      if (isDmSelected && root?.msg_type !== "topic") continue;
       replySet.add(m.msg_id);
       const arr = replyMap.get(rootId) ?? [];
       arr.push(m);

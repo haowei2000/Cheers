@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { apiFetch } from "../api";
 import type { Channel, ChannelMember } from "../types";
 import { AppIcon } from "./icons/AppIcon";
-import { MemberListItem } from "./members";
+import { MemberRow } from "./members";
 import { Modal, ModalFooter } from "./Modal";
 
 type TabId = "channel" | "admins" | "bots";
@@ -400,37 +400,31 @@ export function ChannelSettingsModal({
                     暂无用户成员
                   </div>
                 ) : (
-                  userMembers.map((member) => {
-                    const label =
-                      member.display_name || member.username || member.member_id;
-                    return (
-                      <MemberListItem
-                        key={member.member_id}
-                        id={member.member_id}
-                        kind="user"
-                        username={member.username}
-                        displayName={label}
-                        avatarUrl={member.avatar_url}
-                        subtitle={member.username ? `@${member.username}` : member.member_id}
-                        self={member.member_id === currentUserId}
-                        variant="panel"
-                        compact
-                        className="rounded-none px-3 py-2.5"
-                        actions={
-                          <select
-                            value={member.role || "member"}
-                            disabled={!canManage || member.member_id === currentUserId}
-                            onChange={(e) => updateRole(member, e.target.value)}
-                            className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:bg-gray-50"
-                          >
-                            <option value="member">成员</option>
-                            <option value="admin">管理员</option>
-                            <option value="owner">所有者</option>
-                          </select>
+                  userMembers.map((member) => (
+                    <div key={member.member_id} className="px-2 py-1.5">
+                      <MemberRow
+                        as="article"
+                        member={member}
+                        badge={
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+                            {roleText(member.role)}
+                          </span>
+                        }
+                        action={
+                        <select
+                          value={member.role || "member"}
+                          disabled={!canManage || member.member_id === currentUserId}
+                          onChange={(e) => updateRole(member, e.target.value)}
+                          className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:bg-gray-50"
+                        >
+                          <option value="member">成员</option>
+                          <option value="admin">管理员</option>
+                          <option value="owner">所有者</option>
+                        </select>
                         }
                       />
-                    );
-                  })
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -446,47 +440,40 @@ export function ChannelSettingsModal({
                   </div>
                 ) : (
                   botMembers.map((member) => {
-                    const label =
-                      member.display_name || member.username || member.member_id;
                     const canEditTemplate =
                       member.can_manage_template ??
                       (member.added_by === currentUserId || myRole === "system_admin");
                     return (
-                      <MemberListItem
-                        key={member.member_id}
-                        id={member.member_id}
-                        kind="bot"
-                        username={member.username}
-                        displayName={label}
-                        avatarUrl={member.avatar_url}
-                        subtitle={member.username ? `@${member.username}` : member.member_id}
-                        variant="panel"
-                        compact
-                        className="rounded-none px-3 py-2.5"
-                        actions={
-                          <select
-                            value={member.template_id || ""}
-                            disabled={!canEditTemplate}
-                            onChange={(e) => updateBotTemplate(member, e.target.value || null)}
-                            title={
-                              canEditTemplate
-                                ? "Bot 频道模板覆盖"
-                                : "只有邀请该 Bot 入频道的人可修改频道模板"
-                            }
-                            className="w-44 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:bg-gray-50 disabled:text-gray-400"
-                          >
-                            <option value="">默认模板</option>
-                            {templates.map((template) => (
-                              <option
-                                key={template.template_id}
-                                value={template.template_id}
-                              >
-                                {template.name}
-                              </option>
-                            ))}
-                          </select>
-                        }
-                      />
+                      <div key={member.member_id} className="px-2 py-1.5">
+                        <MemberRow
+                          as="article"
+                          member={member}
+                          meta={member.template_name ? `当前模板：${member.template_name}` : "默认模板"}
+                          action={
+                        <select
+                          value={member.template_id || ""}
+                          disabled={!canEditTemplate}
+                          onChange={(e) => updateBotTemplate(member, e.target.value || null)}
+                          title={
+                            canEditTemplate
+                              ? "Bot 频道模板覆盖"
+                              : "只有邀请该 Bot 入频道的人可修改频道模板"
+                          }
+                          className="w-44 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:bg-gray-50 disabled:text-gray-400"
+                        >
+                          <option value="">默认模板</option>
+                          {templates.map((template) => (
+                            <option
+                              key={template.template_id}
+                              value={template.template_id}
+                            >
+                              {template.name}
+                            </option>
+                          ))}
+                        </select>
+                          }
+                        />
+                      </div>
                     );
                   })
                 )}

@@ -43,6 +43,7 @@ class MessageService:
                 content_type=rec.content_type,
                 size_bytes=rec.size_bytes,
                 status=rec.status,
+                expires_at=rec.expires_at,
             )
             for fid, rec in records.items()
         }
@@ -79,6 +80,7 @@ class MessageService:
                 content_type=rec.content_type,
                 size_bytes=rec.size_bytes,
                 status=rec.status,
+                expires_at=rec.expires_at,
             )
             for fid, rec in records.items()
         }
@@ -148,6 +150,7 @@ class MessageService:
                 content_type=rec.content_type,
                 size_bytes=rec.size_bytes,
                 status=rec.status,
+                expires_at=rec.expires_at,
             )
             for fid, rec in records.items()
         }
