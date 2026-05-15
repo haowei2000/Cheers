@@ -13,7 +13,6 @@ import {
   DocumentDuplicateIcon,
   DocumentIcon,
   LockClosedIcon,
-  PhotoIcon,
   QuestionMarkCircleIcon,
 } from "@heroicons/react/24/solid";
 import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
@@ -36,6 +35,10 @@ import {
 } from "./components/SettingsModal";
 import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
+import {
+  ChatAttachments,
+  ChatMessageRenderer,
+} from "./components/ChatMessageRenderer";
 import { ChannelHeader, type MemoryTab } from "./components/ChannelHeader";
 import {
   MessageComposer,
@@ -63,7 +66,6 @@ import {
   formatDayLabel,
   TOPIC_DISPLAY_THRESHOLD,
 } from "./lib/message";
-import { renderWithThinkFolding } from "./lib/think";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
 import type {
   Channel,
@@ -2295,24 +2297,8 @@ export default function App() {
     await uploadFileObject(file);
   };
 
-  // ── 文件附件渲染辅助 ──────────────────────────────────────────────────────
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes || bytes <= 0) return "";
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const fileTypeLabel = (ct?: string) => {
-    if (!ct) return "文件";
-    if (ct.includes("pdf")) return "PDF";
-    if (ct.includes("wordprocessingml") || ct.includes("docx")) return "Word";
-    if (ct.includes("text/plain")) return "文本";
-    if (ct.startsWith("image/")) return "图片";
-    return "文件";
-  };
-
   const filePreviewUrl = (fileId: string) => `${API}/files/${fileId}/preview`;
+  const fileDownloadUrl = (fileId: string) => `${API}/files/${fileId}/download`;
 
   const openFilePreview = (file: FileInfo) => {
     setFilePreviewPanel({
@@ -2348,68 +2334,14 @@ export default function App() {
   };
 
   const renderFileAttachments = (msg: Message, alignRight = false) => {
-    const files = msg.files;
-    if (!files || files.length === 0) return null;
-    const images = files.filter((f) =>
-      (f.content_type || "").startsWith("image/"),
-    );
-    const docs = files.filter(
-      (f) => !(f.content_type || "").startsWith("image/"),
-    );
-    if (images.length === 0 && docs.length === 0) return null;
     return (
-      <div
-        className={`mb-1.5 space-y-1.5 ${alignRight ? "flex flex-col items-end" : ""}`}
-      >
-        {images.map((f) => (
-          <div
-            key={f.file_id}
-            className="cursor-pointer rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-shadow inline-block"
-            onClick={() => openFilePreview(f)}
-          >
-            <img
-              src={filePreviewUrl(f.file_id)}
-              alt={f.original_filename || "image"}
-              className="max-w-[280px] max-h-[200px] object-cover block"
-              loading="lazy"
-            />
-            {f.original_filename && (
-              <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5">
-                <PhotoIcon className="w-3 h-3 text-gray-400" />
-                <span className="truncate max-w-[200px]">
-                  {f.original_filename}
-                </span>
-                {f.size_bytes ? (
-                  <span className="text-gray-400">
-                    {formatFileSize(f.size_bytes)}
-                  </span>
-                ) : null}
-              </div>
-            )}
-          </div>
-        ))}
-        {docs.map((f) => (
-          <button
-            key={f.file_id}
-            type="button"
-            onClick={() => openFilePreview(f)}
-            className="flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[300px] hover:bg-gray-50 transition-colors cursor-pointer no-underline"
-          >
-            <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-              <DocumentIcon className="w-5 h-5 text-blue-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-medium text-gray-700 truncate">
-                {f.original_filename || f.file_id}
-              </div>
-              <div className="text-[11px] text-gray-400">
-                {fileTypeLabel(f.content_type)}
-                {f.size_bytes ? ` \u00B7 ${formatFileSize(f.size_bytes)}` : ""}
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
+      <ChatAttachments
+        align={alignRight ? "right" : "left"}
+        files={msg.files}
+        getPreviewUrl={(file) => filePreviewUrl(file.file_id)}
+        getDownloadUrl={(file) => fileDownloadUrl(file.file_id)}
+        onPreview={openFilePreview}
+      />
     );
   };
 
@@ -4051,18 +3983,21 @@ export default function App() {
                                   ) : activeAgentBridgeTaskData(m) ? (
                                     renderAgentBridgeTaskCard(m)
                                   ) : (
-                                    renderWithThinkFolding(
-                                      // Strip the `> [Author]: …\n\n` prefix
-                                      // (rendered separately as .an-reply-quote
-                                      // above) so the body shows only the
-                                      // actual content.
-                                      parseQuotePrefix(displayContent)?.rest ??
-                                        displayContent,
-                                      `${m.msg_id}-`,
-                                      !!m._streaming,
-                                      handleMarkdownImageClick,
-                                      handleMarkdownFileClick,
-                                    )
+                                    <ChatMessageRenderer
+                                      content={
+                                        // Strip the `> [Author]: …\n\n` prefix
+                                        // (rendered separately as .an-reply-quote
+                                        // above) so the body shows only the
+                                        // actual content.
+                                        parseQuotePrefix(displayContent)?.rest ??
+                                        displayContent
+                                      }
+                                      keyPrefix={`${m.msg_id}-`}
+                                      streaming={!!m._streaming}
+                                      showStreamingCursor={false}
+                                      onImageClick={handleMarkdownImageClick}
+                                      onFileClick={handleMarkdownFileClick}
+                                    />
                                   )}
                                   {m._streaming &&
                                     !!(parseHelperPayload(displayContent).text ||
@@ -4393,13 +4328,14 @@ export default function App() {
                                 ) : m._streaming && !text ? (
                                   <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                 ) : (
-                                  renderWithThinkFolding(
-                                    parseQuotePrefix(text)?.rest ?? text,
-                                    `${m.msg_id}-`,
-                                    !!m._streaming,
-                                    handleMarkdownImageClick,
-                                    handleMarkdownFileClick,
-                                  )
+                                  <ChatMessageRenderer
+                                    content={parseQuotePrefix(text)?.rest ?? text}
+                                    keyPrefix={`${m.msg_id}-`}
+                                    streaming={!!m._streaming}
+                                    showStreamingCursor={false}
+                                    onImageClick={handleMarkdownImageClick}
+                                    onFileClick={handleMarkdownFileClick}
+                                  />
                                 )}
                                 {!isSecretUnrevealed &&
                                   m._streaming &&
@@ -4707,17 +4643,20 @@ export default function App() {
                                     ) : r._streaming && !rTextRaw ? (
                                       <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                     ) : (
-                                      renderWithThinkFolding(
-                                        // Drop the `> [Author]: …\n\n` prefix
-                                        // (now rendered above as an
-                                        // .an-reply-quote) so the body shows
-                                        // only the actual content.
-                                        parseQuotePrefix(rDisplay)?.rest ?? rDisplay,
-                                        `${r.msg_id}-`,
-                                        !!r._streaming,
-                                        handleMarkdownImageClick,
-                                        handleMarkdownFileClick,
-                                      )
+                                      <ChatMessageRenderer
+                                        content={
+                                          // Drop the `> [Author]: …\n\n` prefix
+                                          // (now rendered above as an
+                                          // .an-reply-quote) so the body shows
+                                          // only the actual content.
+                                          parseQuotePrefix(rDisplay)?.rest ?? rDisplay
+                                        }
+                                        keyPrefix={`${r.msg_id}-`}
+                                        streaming={!!r._streaming}
+                                        showStreamingCursor={false}
+                                        onImageClick={handleMarkdownImageClick}
+                                        onFileClick={handleMarkdownFileClick}
+                                      />
                                     )}
                                     {r._streaming && !!rTextRaw && (
                                       <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
@@ -5220,13 +5159,14 @@ export default function App() {
                                             {r._streaming && !rTextRaw ? (
                                               <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
                                             ) : (
-                                              renderWithThinkFolding(
-                                                rDisplay,
-                                                `${r.msg_id}-t-`,
-                                                !!r._streaming,
-                                                handleMarkdownImageClick,
-                                                handleMarkdownFileClick,
-                                              )
+                                              <ChatMessageRenderer
+                                                content={rDisplay}
+                                                keyPrefix={`${r.msg_id}-t-`}
+                                                streaming={!!r._streaming}
+                                                showStreamingCursor={false}
+                                                onImageClick={handleMarkdownImageClick}
+                                                onFileClick={handleMarkdownFileClick}
+                                              />
                                             )}
                                             {r._streaming && !!rTextRaw && (
                                               <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
