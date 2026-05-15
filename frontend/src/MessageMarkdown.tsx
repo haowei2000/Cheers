@@ -1,4 +1,12 @@
-import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ImgHTMLAttributes,
+} from "react";
 import { DocumentIcon, PhotoIcon } from "@heroicons/react/24/solid";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -28,6 +36,20 @@ function preprocessMentions(text: string): string {
 const FILE_URL_RE = /(?:https?:\/\/[^/]+)?\/api\/(?:v1\/)?files\/([^/]+)\/(preview|download)/;
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
+const MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS = 5;
+
+interface MarkdownImageLoadState {
+  attempt: number;
+  displaySrc?: string;
+  failed: boolean;
+  inFlight: boolean;
+  listeners: Set<() => void>;
+  loaded: boolean;
+}
+
+type MarkdownImageSnapshot = Pick<MarkdownImageLoadState, "attempt" | "displaySrc" | "failed" | "loaded">;
+
+const markdownImageLoadState = new Map<string, MarkdownImageLoadState>();
 
 function fileIconColors(filename: string): { bg: string; fg: string } {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
@@ -43,6 +65,177 @@ function childrenToText(children: unknown): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map((c) => childrenToText(c)).join("");
   return "";
+}
+
+function withRetryParam(src: string, attempt: number): string {
+  if (attempt <= 1) return src;
+  try {
+    const base = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+    const url = new URL(src, base);
+    url.searchParams.set("_preview_retry", String(attempt));
+    return src.startsWith("/") ? `${url.pathname}${url.search}${url.hash}` : url.toString();
+  } catch {
+    const joiner = src.includes("?") ? "&" : "?";
+    return `${src}${joiner}_preview_retry=${attempt}`;
+  }
+}
+
+function createMarkdownImageState(): MarkdownImageLoadState {
+  return {
+    attempt: 1,
+    failed: false,
+    inFlight: false,
+    listeners: new Set(),
+    loaded: false,
+  };
+}
+
+function pruneMarkdownImageStateCache() {
+  while (markdownImageLoadState.size > 200) {
+    let pruned = false;
+    for (const [key, state] of markdownImageLoadState) {
+      if (!state.inFlight && state.listeners.size === 0) {
+        markdownImageLoadState.delete(key);
+        pruned = true;
+        break;
+      }
+    }
+    if (!pruned) break;
+  }
+}
+
+function getRememberedImageState(src: string): MarkdownImageLoadState {
+  let state = markdownImageLoadState.get(src);
+  if (!state) {
+    state = createMarkdownImageState();
+    markdownImageLoadState.set(src, state);
+    pruneMarkdownImageStateCache();
+  }
+  return state;
+}
+
+function snapshotMarkdownImageState(src: string): MarkdownImageSnapshot {
+  const { attempt, displaySrc, failed, loaded } = getRememberedImageState(src);
+  return { attempt, displaySrc, failed, loaded };
+}
+
+function notifyMarkdownImageState(state: MarkdownImageLoadState) {
+  state.listeners.forEach((listener) => listener());
+}
+
+function subscribeMarkdownImageState(src: string, listener: () => void): () => void {
+  const state = getRememberedImageState(src);
+  state.listeners.add(listener);
+  return () => {
+    state.listeners.delete(listener);
+  };
+}
+
+function loadMarkdownImagePreview(src: string) {
+  if (typeof window === "undefined") return;
+
+  const state = getRememberedImageState(src);
+  if (state.loaded || state.failed || state.inFlight) return;
+
+  state.inFlight = true;
+  notifyMarkdownImageState(state);
+
+  const attempt = state.attempt;
+  const displaySrc = withRetryParam(src, attempt);
+  const image = new Image();
+
+  image.onload = () => {
+    state.displaySrc = displaySrc;
+    state.failed = false;
+    state.inFlight = false;
+    state.loaded = true;
+    notifyMarkdownImageState(state);
+  };
+
+  image.onerror = () => {
+    state.inFlight = false;
+    state.loaded = false;
+    if (attempt >= MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS) {
+      state.failed = true;
+    } else {
+      state.attempt = attempt + 1;
+    }
+    notifyMarkdownImageState(state);
+    loadMarkdownImagePreview(src);
+  };
+
+  image.src = displaySrc;
+}
+
+interface MarkdownImageProps
+  extends Omit<
+    ImgHTMLAttributes<HTMLImageElement>,
+    "alt" | "onClick" | "onError" | "onLoad" | "src"
+  > {
+  src?: string;
+  alt?: string;
+  onImageClick?: (src: string) => void;
+}
+
+function MarkdownImage({ src, alt, onImageClick, ...props }: MarkdownImageProps) {
+  const safe = src && (src.startsWith("/") || src.startsWith("http://") || src.startsWith("https://"));
+  const safeSrc = safe ? src : "";
+  const [loadState, setLoadState] = useState<MarkdownImageSnapshot>(() =>
+    safeSrc ? snapshotMarkdownImageState(safeSrc) : { attempt: 1, failed: true, loaded: false }
+  );
+
+  useEffect(() => {
+    if (!safeSrc) {
+      setLoadState({ attempt: 1, failed: true, loaded: false });
+      return;
+    }
+
+    const sync = () => setLoadState(snapshotMarkdownImageState(safeSrc));
+    const unsubscribe = subscribeMarkdownImageState(safeSrc, sync);
+    sync();
+    loadMarkdownImagePreview(safeSrc);
+    return unsubscribe;
+  }, [safeSrc]);
+
+  const attempt = loadState.attempt;
+  const failed = !safeSrc || loadState.failed;
+  const displaySrc = loadState.displaySrc ?? "";
+
+  const placeholder = (
+    <span
+      className="my-2 flex min-h-[96px] w-full max-w-[320px] items-center gap-2 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-400"
+      role={failed ? "img" : "status"}
+      aria-label={failed ? alt || "image preview failed" : "image preview loading"}
+    >
+      <PhotoIcon className="h-5 w-5 flex-shrink-0 text-gray-300" />
+      <span className="min-w-0 truncate">
+        {failed ? "图片预览不可用" : `图片预览加载中 (${attempt}/${MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS})`}
+      </span>
+    </span>
+  );
+
+  if (!safeSrc || failed) return placeholder;
+  if (!loadState.loaded || !displaySrc) return placeholder;
+
+  return (
+    <span className="my-2 inline-block max-w-full align-top">
+      <img
+        {...props}
+        src={displaySrc}
+        alt={alt || "image"}
+        className="block max-h-[400px] max-w-full rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+        loading="lazy"
+        onError={() => {
+          const state = getRememberedImageState(safeSrc);
+          state.failed = true;
+          state.inFlight = false;
+          state.loaded = false;
+          notifyMarkdownImageState(state);
+        }}
+        onClick={safeSrc && onImageClick ? () => onImageClick(safeSrc) : undefined}
+      />
+    </span>
+  );
 }
 
 interface FileChipProps {
@@ -416,15 +609,11 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         img({ src, alt, ...props }: any) {
-          const safe = src && (src.startsWith("/") || src.startsWith("http://") || src.startsWith("https://"));
-          const safeSrc = safe ? src : "";
           return (
-            <img
-              src={safeSrc}
-              alt={alt || "image"}
-              className="max-w-full max-h-[400px] rounded-lg my-2 border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
-              loading="lazy"
-              onClick={safeSrc && onImageClick ? () => onImageClick(safeSrc) : undefined}
+            <MarkdownImage
+              src={src}
+              alt={alt}
+              onImageClick={onImageClick}
               {...props}
             />
           );
