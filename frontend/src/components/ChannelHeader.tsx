@@ -71,8 +71,6 @@ interface ChannelHeaderProps {
   taskCount?: number;
   taskActive?: boolean;
   onOpenTasks?: () => void;
-  onRefreshDmSession?: () => void;
-  refreshingDmSession?: boolean;
   sessionAction?: ReactNode;
 }
 
@@ -91,8 +89,6 @@ export function ChannelHeader({
   taskCount = 0,
   taskActive = false,
   onOpenTasks,
-  onRefreshDmSession,
-  refreshingDmSession = false,
   sessionAction,
 }: ChannelHeaderProps) {
   const dmDisplayName =
@@ -175,19 +171,6 @@ export function ChannelHeader({
 
       {/* Tasks + memory button group */}
       <div className="an-mem-cluster" role="group" aria-label="频道工具">
-        {activeDm?.counterparty.member_type === "bot" && onRefreshDmSession && (
-          <button
-            type="button"
-            className="an-mc-btn"
-            onClick={onRefreshDmSession}
-            disabled={refreshingDmSession}
-            title="刷新 DM Session"
-            aria-label="刷新 DM Session"
-          >
-            <AppIcon name="refresh" className={refreshingDmSession ? "animate-spin" : ""} />
-            <span className="an-mc-label hidden sm:inline">Session</span>
-          </button>
-        )}
         {onOpenTasks && (
           <button
             type="button"

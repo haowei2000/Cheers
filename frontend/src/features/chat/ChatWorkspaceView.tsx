@@ -144,8 +144,6 @@ export function ChatWorkspaceView({
                     setTaskPageOpen(true);
                   }
             }
-            onRefreshDmSession={activeBotDm ? onRefreshDmSession : undefined}
-            refreshingDmSession={refreshingDmSession}
             sessionAction={
               activeBotDm && activeDmSessionScopeId ? (
                 <SessionScopePanel
@@ -156,6 +154,8 @@ export function ChatWorkspaceView({
                   title="DM 对应 Session"
                   refreshKey={dmSessionRefreshNonce}
                   variant="toolbar"
+                  onRefresh={onRefreshDmSession}
+                  refreshing={refreshingDmSession}
                 />
               ) : (
                 selectedChannel?.type !== "dm" && (
