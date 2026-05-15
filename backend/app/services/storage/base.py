@@ -99,9 +99,24 @@ class StorageProvider(ABC):
     async def head_object(self, file_id: str, *, scope: str = "uploads") -> StorageObjectHead:
         raise NotImplementedError
 
+    async def head_object_ref(self, ref: StorageObjectRef) -> StorageObjectHead:
+        """Read object metadata by a persisted storage reference.
+
+        Implementations that can address objects by exact object_key should
+        override this. The default preserves compatibility with older providers
+        that derive keys from file_id.
+        """
+        scope = "generated" if ref.object_key.startswith("generated/") else "uploads"
+        return await self.head_object(ref.file_id, scope=scope)
+
     @abstractmethod
     async def get_object(self, file_id: str, *, scope: str = "uploads") -> StorageObject:
         raise NotImplementedError
+
+    async def get_object_ref(self, ref: StorageObjectRef) -> StorageObject:
+        """Read an object by a persisted storage reference."""
+        scope = "generated" if ref.object_key.startswith("generated/") else "uploads"
+        return await self.get_object(ref.file_id, scope=scope)
 
     @abstractmethod
     async def put_metadata_if_needed(
