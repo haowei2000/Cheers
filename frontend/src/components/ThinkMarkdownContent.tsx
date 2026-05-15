@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { renderWithThinkFolding } from "../lib/think";
 
 export interface ThinkMarkdownContentProps {
@@ -8,22 +9,24 @@ export interface ThinkMarkdownContentProps {
   streaming?: boolean;
 }
 
-export function ThinkMarkdownContent({
+export const ThinkMarkdownContent = memo(function ThinkMarkdownContent({
   content,
   keyPrefix,
   onFileClick,
   onImageClick,
   streaming,
 }: ThinkMarkdownContentProps) {
-  return (
-    <>
-      {renderWithThinkFolding(
+  const rendered = useMemo(
+    () =>
+      renderWithThinkFolding(
         content,
         keyPrefix,
         streaming,
         onImageClick,
         onFileClick,
-      )}
-    </>
+      ),
+    [content, keyPrefix, onFileClick, onImageClick, streaming],
   );
-}
+
+  return <>{rendered}</>;
+});
