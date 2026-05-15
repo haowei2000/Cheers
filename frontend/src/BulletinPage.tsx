@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeftIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { AppIcon } from "./components/icons";
 
 const API = "/api/v1";
 
@@ -174,7 +174,7 @@ export default function BulletinPage() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4">
         <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
-          <ArrowLeftIcon className="w-4 h-4" />
+          <AppIcon name="arrowLeft" className="w-4 h-4" />
           返回
         </Link>
         <h1 className="text-lg font-semibold text-gray-800">公共留言板</h1>
@@ -301,7 +301,7 @@ export default function BulletinPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <h2 className="font-semibold text-gray-800">新建 Issue</h2>
               <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600">
-                <XMarkIcon className="w-5 h-5" />
+                <AppIcon name="close" className="w-5 h-5" />
               </button>
             </div>
             <div className="px-5 py-4 space-y-4">
@@ -392,7 +392,7 @@ export default function BulletinPage() {
                 </div>
               </div>
               <button onClick={() => setDetailIssue(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
-                <XMarkIcon className="w-5 h-5" />
+                <AppIcon name="close" className="w-5 h-5" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">

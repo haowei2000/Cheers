@@ -1,10 +1,6 @@
-import {
-  ArrowLeftIcon,
-  ArrowTopRightOnSquareIcon,
-  ClipboardDocumentListIcon,
-} from "@heroicons/react/24/outline";
 import type { BotTraceEvent, Channel, ChannelBot, Message, AgentBridgeTaskContentData } from "../types";
 import { formatTs } from "../lib/message";
+import { AppIcon } from "./icons";
 import { SessionScopePanel } from "./SessionScopePanel";
 
 type TaskMessage = Message & {
@@ -61,7 +57,7 @@ export function TaskPage({
           className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-[var(--surface-soft)]"
           title="返回频道"
         >
-          <ArrowLeftIcon className="w-4 h-4" />
+          <AppIcon name="arrowLeft" className="w-4 h-4" />
         </button>
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold truncate">
@@ -104,7 +100,7 @@ export function TaskPage({
                     }}
                   >
                     <div className="flex items-center gap-2">
-                      <ClipboardDocumentListIcon className="w-4 h-4 flex-shrink-0" />
+                      <AppIcon name="task" className="w-4 h-4 flex-shrink-0" />
                       <span className="text-[13px] font-medium truncate">{taskTitle(task)}</span>
                     </div>
                     <div className="mt-1 text-[11px] truncate" style={{ color: "var(--fg-3)" }}>
@@ -123,7 +119,7 @@ export function TaskPage({
               className="h-full flex flex-col items-center justify-center gap-2 text-sm"
               style={{ color: "var(--fg-3)" }}
             >
-              <ClipboardDocumentListIcon className="w-6 h-6" />
+              <AppIcon name="task" className="w-6 h-6" />
               <span>当前频道没有后台任务。</span>
             </div>
           ) : (
@@ -131,7 +127,7 @@ export function TaskPage({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <ClipboardDocumentListIcon className="w-5 h-5" style={{ color: "var(--accent)" }} />
+                    <AppIcon name="task" className="w-5 h-5" style={{ color: "var(--accent)" }} />
                     <h2 className="text-lg font-semibold">{taskTitle(selected)}</h2>
                   </div>
                   <p className="mt-1 text-sm leading-relaxed" style={{ color: "var(--fg-2)" }}>
@@ -144,7 +140,7 @@ export function TaskPage({
                   className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs hover:bg-[var(--surface-soft)]"
                   style={{ borderColor: "var(--border)", color: "var(--fg-2)" }}
                 >
-                  <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="externalLink" className="w-3.5 h-3.5" />
                   消息
                 </button>
               </div>

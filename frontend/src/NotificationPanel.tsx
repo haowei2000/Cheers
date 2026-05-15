@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  ChatBubbleLeftIcon,
-  CheckCircleIcon,
-  UserPlusIcon,
-} from "@heroicons/react/24/solid";
-import { Square2StackIcon } from "@heroicons/react/24/outline";
+import { AppIcon } from "./components/icons";
 
 const API = "/api/v1";
 
@@ -139,13 +134,13 @@ function Section({
               <div className="flex items-start gap-3">
                 <span className="flex-shrink-0 mt-0.5">
                   {n.notif_type === "mention" ? (
-                    <ChatBubbleLeftIcon className="w-5 h-5 text-[#1264A3]" />
+                    <AppIcon name="messageCircle" className="w-5 h-5 text-[#1264A3]" />
                   ) : n.notif_type === "friend_request" ? (
-                    <UserPlusIcon className="w-5 h-5 text-[#2EB67D]" />
+                    <AppIcon name="userPlus" className="w-5 h-5 text-[#2EB67D]" />
                   ) : n.todo_status === "completed" ? (
-                    <CheckCircleIcon className="w-5 h-5 text-[#2EB67D]" />
+                    <AppIcon name="checkCircle" className="w-5 h-5 text-[#2EB67D]" />
                   ) : (
-                    <Square2StackIcon className="w-5 h-5 text-gray-400" />
+                    <AppIcon name="copy" className="w-5 h-5 text-gray-400" />
                   )}
                 </span>
                 <div className="min-w-0 flex-1">

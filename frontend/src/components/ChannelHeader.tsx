@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Bars3Icon,
-  BriefcaseIcon,
-  ArrowPathIcon,
-  CheckCircleIcon,
-  ChatBubbleLeftEllipsisIcon,
-  ClipboardDocumentListIcon,
-  Cog6ToothIcon,
-  DocumentTextIcon,
-  UsersIcon,
-} from "@heroicons/react/24/outline";
 import type { Channel, DM } from "../types";
+import { AppIcon } from "./icons";
 
 export type TopicSummary = {
   rootId: string;
@@ -30,28 +20,28 @@ export const MEMORY_TABS: {
     id: "PROJECT",
     label: "Project",
     icon: (
-      <BriefcaseIcon />
+      <AppIcon name="briefcase" />
     ),
   },
   {
     id: "FILES_INDEX",
     label: "Files",
     icon: (
-      <DocumentTextIcon />
+      <AppIcon name="file" />
     ),
   },
   {
     id: "MEMBERS",
     label: "Members",
     icon: (
-      <UsersIcon />
+      <AppIcon name="users" />
     ),
   },
   {
     id: "TODO",
     label: "Todos",
     icon: (
-      <CheckCircleIcon />
+      <AppIcon name="checkCircle" />
     ),
   },
 ];
@@ -127,7 +117,7 @@ export function ChannelHeader({
           className="w-8 h-8 flex items-center justify-center rounded-md flex-shrink-0 hover:bg-[var(--surface-soft)] transition-colors"
           style={{ color: "var(--fg-2)" }}
         >
-          <Bars3Icon className="w-6 h-6" />
+          <AppIcon name="menu" className="w-6 h-6" />
         </button>
       )}
 
@@ -172,7 +162,7 @@ export function ChannelHeader({
             title="刷新 DM Session"
             aria-label="刷新 DM Session"
           >
-            <ArrowPathIcon className={refreshingDmSession ? "animate-spin" : ""} />
+            <AppIcon name="refresh" className={refreshingDmSession ? "animate-spin" : ""} />
             <span className="an-mc-label hidden sm:inline">Session</span>
           </button>
         )}
@@ -185,7 +175,7 @@ export function ChannelHeader({
             aria-label={`频道后台任务，${taskCount} 个`}
             aria-pressed={taskActive}
           >
-            <ClipboardDocumentListIcon />
+            <AppIcon name="task" />
             <span className="an-mc-label hidden sm:inline">Tasks</span>
             <span className="an-mc-n">{taskCount}</span>
           </button>
@@ -217,7 +207,7 @@ export function ChannelHeader({
             onClick={() => setTopicsOpen((v) => !v)}
             title="频道主题"
           >
-            <ChatBubbleLeftEllipsisIcon className="w-4 h-4" />
+            <AppIcon name="messageCircle" className="w-4 h-4" />
             <span className="hidden sm:inline">主题</span>
             <span className="an-tb-n">{topics.length}</span>
           </button>
@@ -270,7 +260,7 @@ export function ChannelHeader({
           className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
           style={{ color: "var(--fg-3)" }}
         >
-          <Cog6ToothIcon className="w-4 h-4" />
+          <AppIcon name="settings" className="w-4 h-4" />
         </button>
       )}
     </div>

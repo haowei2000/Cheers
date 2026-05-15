@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import toast from "react-hot-toast";
-import { ChatBubbleLeftIcon } from "@heroicons/react/24/solid";
 import type { CurrentUser, Friend } from "../types";
 import { apiFetch } from "../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
 import { BotAvatar } from "./BotAvatar";
+import { AppIcon } from "./icons";
 import { Modal } from "./Modal";
 import { BotSessionsPanel } from "./SessionScopePanel";
 import { SearchPicker } from "./SearchPicker";
@@ -268,7 +268,7 @@ export function SettingsModal({
     { id: "appearance", ico: "◐", label: "外观" },
     {
       id: "bulletin",
-      ico: <ChatBubbleLeftIcon className="inline-block w-3.5 h-3.5 align-text-bottom" />,
+      ico: <AppIcon name="messageCircle" className="inline-block w-3.5 h-3.5 align-text-bottom" />,
       label: "留言板",
     },
     { id: "other", ico: "⌘", label: "其他" },

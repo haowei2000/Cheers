@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { ArrowLeftIcon, Bars3Icon } from "@heroicons/react/24/solid";
+import { AppIcon } from "./components/icons";
 
 const API = "/api";  // docs 端点由 manual_routes 提供，路径不含 /v1
 
@@ -276,7 +276,7 @@ export default function DocsPage() {
     <div className="flex h-screen flex-col bg-gray-50 font-sans text-gray-900 overflow-hidden">
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4 flex-shrink-0">
         <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
-          <ArrowLeftIcon className="w-4 h-4" />
+          <AppIcon name="arrowLeft" className="w-4 h-4" />
           返回
         </Link>
         <h1 className="text-lg font-semibold text-gray-800">文档</h1>
@@ -363,7 +363,7 @@ export default function DocsPage() {
                 <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                   {isMobile && (
                     <button onClick={() => setSidebarOpen(true)} className="p-1 -ml-1 text-gray-400 hover:text-gray-600">
-                      <Bars3Icon className="w-6 h-6" />
+                      <AppIcon name="menu" className="w-6 h-6" />
                     </button>
                   )}
                   <h1 className="text-base font-semibold text-gray-900 truncate">

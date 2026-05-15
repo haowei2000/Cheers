@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.10",
-    "@heroicons/react": "^2.2.0",
     "@lobehub/icons": "^1.80.0",
     "clsx": "^2.1.1",
     "highlight.js": "^11.11.1",

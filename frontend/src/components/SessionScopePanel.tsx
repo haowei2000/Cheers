@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowPathIcon, ClipboardDocumentIcon } from "@heroicons/react/24/outline";
 import { apiFetch } from "../api";
 import type { AgentBridgeSession } from "../types";
+import { AppIcon } from "./icons";
 
 type ScopeType = "channel" | "dm" | "topic" | "task";
 
@@ -135,7 +135,7 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
               cursor: "pointer",
             }}
           >
-            <ClipboardDocumentIcon style={{ width: 15, height: 15 }} />
+            <AppIcon name="copy" style={{ width: 15, height: 15 }} />
           </button>
         </div>
 
@@ -371,7 +371,7 @@ export function BotSessionsPanel({
             opacity: loading ? 0.6 : 1,
           }}
         >
-          <ArrowPathIcon style={{ width: 15, height: 15 }} />
+          <AppIcon name="refresh" style={{ width: 15, height: 15 }} />
         </button>
       </div>
 

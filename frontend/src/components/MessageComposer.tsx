@@ -1,16 +1,3 @@
-import {
-  ChatBubbleLeftEllipsisIcon,
-  ChatBubbleLeftIcon,
-  DocumentIcon,
-  KeyIcon,
-  LinkIcon,
-  LockClosedIcon,
-  MegaphoneIcon,
-  PhotoIcon,
-  PlusIcon,
-  QuestionMarkCircleIcon,
-  XMarkIcon,
-} from "@heroicons/react/24/solid";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
@@ -21,6 +8,7 @@ import type {
 } from "react";
 import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
+import { AppIcon, FileTypeIcon } from "./icons";
 
 export type MessageComposerKind = "normal" | "secret" | "announcement" | "topic";
 
@@ -347,13 +335,13 @@ export function MessageComposer({
             title="Tab 切换 · Shift+Tab 反向"
           >
             {displayKind === "secret" ? (
-              <LockClosedIcon className="w-3.5 h-3.5" />
+              <AppIcon name="lock" className="w-3.5 h-3.5" />
             ) : displayKind === "announcement" ? (
-              <MegaphoneIcon className="w-3.5 h-3.5" />
+              <AppIcon name="announcement" className="w-3.5 h-3.5" />
             ) : displayKind === "topic" ? (
-              <ChatBubbleLeftEllipsisIcon className="w-3.5 h-3.5" />
+              <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
             ) : (
-              <ChatBubbleLeftIcon className="w-3.5 h-3.5" />
+              <AppIcon name="message" className="w-3.5 h-3.5" />
             )}
             {MESSAGE_COMPOSER_KIND_LABEL[displayKind]}
           </span>
@@ -397,7 +385,7 @@ export function MessageComposer({
                 style={{ color: "var(--fg-3)" }}
                 title="取消回复"
               >
-                <XMarkIcon className="w-3 h-3" />
+                <AppIcon name="close" className="w-3 h-3" />
               </button>
             </div>
           );
@@ -417,7 +405,7 @@ export function MessageComposer({
                   className="max-w-[180px] max-h-[140px] object-cover block"
                 />
                 <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5 max-w-[180px]">
-                  <PhotoIcon className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                  <AppIcon name="image" className="w-3 h-3 text-gray-400 flex-shrink-0" />
                   <span className="truncate">{file.name}</span>
                 </div>
                 <button
@@ -434,7 +422,7 @@ export function MessageComposer({
                 className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[240px]"
               >
                 <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <DocumentIcon className="w-5 h-5 text-blue-500" />
+                  <FileTypeIcon filename={file.name} size={20} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-medium text-gray-700 truncate">
@@ -540,7 +528,7 @@ export function MessageComposer({
                     }
                     title="插入密钥链"
                   >
-                    <KeyIcon className="w-4 h-4" />
+                    <AppIcon name="key" className="w-4 h-4" />
                   </button>
                   {keychainOpen && (
                     <div
@@ -576,7 +564,7 @@ export function MessageComposer({
                             className="an-menu-item"
                           >
                             <span className="an-mi-ico">
-                              <QuestionMarkCircleIcon className="w-3.5 h-3.5" />
+                              <AppIcon name="help" className="w-3.5 h-3.5" />
                             </span>
                             <span className="font-mono truncate">
                               {item.name}
@@ -608,7 +596,7 @@ export function MessageComposer({
                       }
                       title="上传文件和图片"
                     >
-                      <PlusIcon className="w-[18px] h-[18px]" />
+                      <AppIcon name="plus" className="w-[18px] h-[18px]" />
                     </button>
                     {uploadMenuOpen && (
                       <div
@@ -624,7 +612,7 @@ export function MessageComposer({
                           }}
                         >
                           <span className="an-mi-ico">
-                            <LinkIcon className="w-4 h-4" />
+                            <AppIcon name="link" className="w-4 h-4" />
                           </span>
                           <span>上传文件和图片</span>
                         </button>
@@ -676,7 +664,7 @@ export function MessageComposer({
                     (displayKind === "secret" ? " is-secret-on" : "")
                   }
                 >
-                  <LockClosedIcon className="w-4 h-4" />
+                  <AppIcon name="lock" className="w-4 h-4" />
                 </button>
               )}
 

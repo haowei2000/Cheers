@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import {
-  Cog6ToothIcon,
-  CpuChipIcon,
-  ShieldCheckIcon,
-  UsersIcon,
-} from "@heroicons/react/24/outline";
 import { apiFetch } from "../api";
 import type { Channel, ChannelMember } from "../types";
+import { AppIcon } from "./icons";
 import { Modal, ModalFooter } from "./Modal";
 
 type TabId = "channel" | "admins" | "bots";
@@ -202,9 +197,9 @@ export function ChannelSettingsModal({
   };
 
   const tabs: { id: TabId; label: string; icon: JSX.Element }[] = [
-    { id: "channel", label: "频道", icon: <Cog6ToothIcon /> },
-    { id: "admins", label: "管理员", icon: <UsersIcon /> },
-    { id: "bots", label: "Bot 模板", icon: <CpuChipIcon /> },
+    { id: "channel", label: "频道", icon: <AppIcon name="settings" /> },
+    { id: "admins", label: "管理员", icon: <AppIcon name="users" /> },
+    { id: "bots", label: "Bot 模板", icon: <AppIcon name="model" /> },
   ];
   const userMembers = members
     .map((member, index) => ({ member, index }))
@@ -252,7 +247,7 @@ export function ChannelSettingsModal({
           ))}
           <div className="mt-4 rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-500">
             <div className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
-              <ShieldCheckIcon className="h-4 w-4" />
+              <AppIcon name="shieldCheck" className="h-4 w-4" />
               {canManage ? "可管理" : canInviteMembers || canAddBots ? "可邀请" : "只读"}
             </div>
             邀请成员和添加 Bot 可在频道中配置。
