@@ -33,7 +33,13 @@ import { AddBotModal } from "./components/app/AddBotModal";
 import { ChannelMainFrame } from "./components/app/ChannelMainFrame";
 import { ChatShell } from "./components/app/ChatShell";
 import { ChatSidePanels } from "./components/app/ChatSidePanels";
+import { LazyPanelFallback } from "./components/app/LazyPanelFallback";
 import { MessageDetailModal } from "./components/app/MessageDetailModal";
+import { AgentBridgeTaskCard } from "./features/chat/messages/AgentBridgeTaskCard";
+import {
+  getSecretSecondsLeft,
+  SecretMessageVeil,
+} from "./features/chat/messages/SecretMessageVeil";
 import { apiFetch, buildWsUrl } from "./api";
 import {
   parseHelperPayload,
@@ -54,6 +60,8 @@ import { API, API_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
 import {
   AGENT_BRIDGE_TASK_KIND,
+  getActiveAgentBridgeTaskData,
+  getAgentBridgeTaskData,
   type AgentBridgeTaskMessage,
 } from "./lib/agent-bridge";
 import {
@@ -112,72 +120,6 @@ const TaskPage = lazy(() =>
 const TopicPage = lazy(() =>
   import("./components/TopicPage").then((module) => ({ default: module.TopicPage })),
 );
-
-function LazyPanelFallback({ label = "加载中..." }: { label?: string }) {
-  return (
-    <div className="flex h-full min-h-24 items-center justify-center text-sm text-[var(--fg-3)]">
-      {label}
-    </div>
-  );
-}
-
-function getSecretSecondsLeft(createdAt?: string | null, now = Date.now()): number | null {
-  if (!createdAt) return null;
-  const createdMs = new Date(createdAt).getTime();
-  if (!Number.isFinite(createdMs)) return null;
-  return Math.max(0, 60 - Math.floor((now - createdMs) / 1000));
-}
-
-function SecretMessageVeil({
-  canReveal,
-  createdAt,
-  onReveal,
-}: {
-  canReveal: boolean;
-  createdAt?: string | null;
-  onReveal: () => void;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  const secondsLeft = getSecretSecondsLeft(createdAt, now);
-  const expired = secondsLeft !== null && secondsLeft <= 0;
-
-  useEffect(() => {
-    if (secondsLeft === null || secondsLeft <= 0) return;
-    const timer = setTimeout(() => setNow(Date.now()), 1000);
-    return () => clearTimeout(timer);
-  }, [secondsLeft]);
-
-  return (
-    <div className={`an-secret-veil${expired ? " is-expired" : ""}`}>
-      <span className="an-secret-veil-icon">
-        <AppIcon name="lock" className="w-5 h-5" />
-      </span>
-      <div className="an-secret-veil-body">
-        <span className="an-secret-veil-label">
-          {expired ? "加密消息已过期" : "加密消息"}
-        </span>
-        <span className="an-secret-veil-meta">
-          {expired
-            ? "一次性查看窗口已关闭"
-            : secondsLeft !== null
-              ? `剩余 ${secondsLeft}s · 仅 Bot 可读`
-              : "仅 Bot 可读"}
-        </span>
-      </div>
-      {!expired && canReveal && (
-        <button
-          type="button"
-          className="an-secret-veil-reveal"
-          onClick={onReveal}
-        >
-          查看
-        </button>
-      )}
-    </div>
-  );
-}
-
-
 
 export default function App() {
   const { isDark, setTheme } = useTheme();
@@ -1816,27 +1758,11 @@ export default function App() {
   };
 
   const activeAgentBridgeTaskData = (m: Message): AgentBridgeTaskContentData | null => {
-    if (isDmSelected) return null;
-    const data = m.content_data;
-    return data?.kind === AGENT_BRIDGE_TASK_KIND
-      ? (data as AgentBridgeTaskContentData)
-      : null;
+    return getActiveAgentBridgeTaskData(m, isDmSelected);
   };
 
   const agentBridgeTaskData = (m: Message): AgentBridgeTaskContentData | null => {
-    const activeTask = activeAgentBridgeTaskData(m);
-    if (activeTask) return activeTask;
-    if (m._agent_bridge_task) return m._agent_bridge_task;
-    if (m._bot_trace?.length) {
-      return {
-        kind: AGENT_BRIDGE_TASK_KIND,
-        status: m._streaming ? "running" : "done",
-        title: "Agent Bridge 过程",
-        message: m._streaming ? "provider 正在执行。" : "任务已完成。",
-        task_id: m.task_id || null,
-      };
-    }
-    return null;
+    return getAgentBridgeTaskData(m, isDmSelected);
   };
 
   const agentBridgeTaskMessages = useMemo(
@@ -1887,69 +1813,16 @@ export default function App() {
   const renderAgentBridgeTaskCard = (m: Message) => {
     const task = activeAgentBridgeTaskData(m);
     if (!task) return null;
-    const title =
-      typeof task.title === "string" ? task.title : "后台任务进行中";
-    const message =
-      typeof task.message === "string"
-        ? task.message
-        : "Agent Bridge 已接收任务，完成后会自动更新这条回复。";
-    const taskId =
-      typeof task.task_id === "string" ? task.task_id : m.task_id || null;
-    const timeout =
-      typeof task.timeout_seconds === "number"
-        ? Math.round(task.timeout_seconds)
-        : null;
     return (
-      <button
-        type="button"
-        onClick={() => {
+      <AgentBridgeTaskCard
+        message={m}
+        task={task}
+        onOpen={(messageId) => {
           setPageTopicId(null);
-          setPageTaskMsgId(m.msg_id);
+          setPageTaskMsgId(messageId);
           setTaskPageOpen(true);
         }}
-        className="my-1.5 block w-full max-w-[min(560px,100%)] rounded-md border px-3 py-2 text-left transition-colors hover:bg-[var(--surface-strong)]"
-        style={{
-          borderColor: "var(--border)",
-          background: "var(--surface-soft)",
-          color: "var(--fg-1)",
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <span
-            className="inline-flex w-5 h-5 items-center justify-center rounded"
-            style={{
-              background: "var(--accent-muted)",
-              color: "var(--accent)",
-            }}
-          >
-            <AppIcon name="file" className="w-3.5 h-3.5" />
-          </span>
-          <span className="text-[13px] font-semibold">{title}</span>
-          <span
-            className="inline-flex items-center gap-1 text-[11px]"
-            style={{ color: "var(--fg-3)" }}
-          >
-            <span
-              className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
-              style={{ background: "var(--accent)" }}
-            />
-            running
-          </span>
-        </div>
-        <div
-          className="mt-1 text-[12px] leading-relaxed"
-          style={{ color: "var(--fg-2)" }}
-        >
-          {message}
-        </div>
-        <div
-          className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px]"
-          style={{ color: "var(--fg-3)" }}
-        >
-          {timeout !== null && <span>等待超过 {timeout}s</span>}
-          {taskId && <span>task {taskId.slice(0, 8)}</span>}
-        </div>
-      </button>
+      />
     );
   };
 
