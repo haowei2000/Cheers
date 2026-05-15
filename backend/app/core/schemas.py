@@ -311,6 +311,18 @@ class SearchBotHit(BaseModel):
     owner: BotOwnerInResponse | None = None
 
 
+class SearchFileHit(BaseModel):
+    file_id: str
+    channel_id: str
+    channel_name: str
+    original_filename: str | None = None
+    content_type: str | None = None
+    size_bytes: int | None = None
+    status: str
+    snippet: str = ""
+    created_at: datetime | None = None
+
+
 class SearchMessageHit(BaseModel):
     msg_id: str
     channel_id: str
@@ -353,6 +365,7 @@ class SearchResults(BaseModel):
     channels: list[SearchChannelHit] = Field(default_factory=list)
     users: list[SearchUserHit] = Field(default_factory=list)
     bots: list[SearchBotHit] = Field(default_factory=list)
+    files: list[SearchFileHit] = Field(default_factory=list)
     todos: list[SearchTodoHit] = Field(default_factory=list)
     tasks: list[SearchTaskHit] = Field(default_factory=list)
     messages: list[SearchMessageHit] = Field(default_factory=list)

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import type { ChannelMember as Member, Friend, BotItem as Bot } from "./types";
 import { AppIcon } from "./components/icons/AppIcon";
+import { MemberListItem } from "./components/members";
 import { SearchPicker } from "./components/SearchPicker";
 
 const API = "/api/v1";
@@ -288,6 +289,17 @@ export default function ChannelMembersModal({
 
   const botMembers = members.filter((m) => m.member_type === "bot");
   const userMembers = members.filter((m) => m.member_type === "user");
+  const toggleFriendSelection = (friendId: string) => {
+    setSelectedFriends((prev) => {
+      const next = new Set(prev);
+      if (next.has(friendId)) {
+        next.delete(friendId);
+      } else {
+        next.add(friendId);
+      }
+      return next;
+    });
+  };
 
   if (!isOpen) return null;
 
@@ -362,32 +374,27 @@ export default function ChannelMembersModal({
                     </h3>
                     <div className="space-y-1">
                       {userMembers.map((member) => (
-                        <div
+                        <MemberListItem
                           key={member.member_id}
-                          className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-[#1264A3] flex items-center justify-center text-white text-sm font-bold">
-                              {(member.display_name || member.username || "?").charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <p className="font-medium text-sm text-gray-900">
-                                {member.display_name || member.username || "未知用户"}
-                              </p>
-                              {member.username && (
-                                <p className="text-xs text-gray-500">@{member.username}</p>
-                              )}
-                            </div>
-                          </div>
-                          {member.member_id !== currentUserId && (
-                            <button
-                              onClick={() => removeMember(member.member_id, member.member_type)}
-                              className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
-                            >
-                              移除
-                            </button>
-                          )}
-                        </div>
+                          id={member.member_id}
+                          kind="user"
+                          username={member.username}
+                          displayName={member.display_name || member.username || "未知用户"}
+                          avatarUrl={member.avatar_url}
+                          self={member.member_id === currentUserId}
+                          variant="card"
+                          compact
+                          actions={
+                            member.member_id !== currentUserId ? (
+                              <button
+                                onClick={() => removeMember(member.member_id, member.member_type)}
+                                className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
+                              >
+                                移除
+                              </button>
+                            ) : null
+                          }
+                        />
                       ))}
                     </div>
                   </div>
@@ -404,56 +411,45 @@ export default function ChannelMembersModal({
                         const canEditTemplate =
                           member.can_manage_template ?? member.added_by === currentUserId;
                         return (
-                        <div
-                          key={member.member_id}
-                          className="p-2 bg-green-50 rounded-lg"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded bg-[#2EB67D] flex items-center justify-center text-white text-sm font-bold">
-                                {(member.display_name || member.username || "B").charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <p className="font-medium text-sm text-gray-900">
-                                  {member.display_name || member.username || "未知 Bot"}
-                                </p>
-                                {member.username && (
-                                  <p className="text-xs text-gray-500">@{member.username}</p>
-                                )}
-                                <p className="text-xs text-gray-400">
-                                  {botScopeText(member.scope)} · Owner: {botOwnerText(member)}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <BotOnlinePill bot={member} />
-                              <button
-                                onClick={() => removeMember(member.member_id, member.member_type)}
-                                className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
+                          <MemberListItem
+                            key={member.member_id}
+                            id={member.member_id}
+                            kind="bot"
+                            username={member.username}
+                            displayName={member.display_name || member.username || "未知 Bot"}
+                            avatarUrl={member.avatar_url}
+                            variant="card"
+                            meta={`${botScopeText(member.scope)} · Owner: ${botOwnerText(member)}`}
+                            actions={
+                              <>
+                                <BotOnlinePill bot={member} />
+                                <button
+                                  onClick={() => removeMember(member.member_id, member.member_type)}
+                                  className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
+                                >
+                                  移除
+                                </button>
+                              </>
+                            }
+                          >
+                            <div className="mt-2 flex items-center gap-2">
+                              <label className="text-xs text-gray-500 whitespace-nowrap">提示词模板:</label>
+                              <select
+                                value={member.template_id || ""}
+                                onChange={(e) => updateBotTemplate(member.member_id, e.target.value || null)}
+                                disabled={!canEditTemplate}
+                                title={canEditTemplate ? "Bot 频道模板覆盖" : "只有邀请该 Bot 入频道的人可修改频道模板"}
+                                className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded bg-white text-gray-700 focus:outline-none focus:border-[#2EB67D] focus:ring-1 focus:ring-[#2EB67D] disabled:bg-gray-50 disabled:text-gray-400"
                               >
-                                移除
-                              </button>
+                                <option value="">默认 (Bot 自带)</option>
+                                {allTemplates.map((t) => (
+                                  <option key={t.template_id} value={t.template_id}>
+                                    {t.name}
+                                  </option>
+                                ))}
+                              </select>
                             </div>
-                          </div>
-                          {/* 提示词模板选择 */}
-                          <div className="mt-2 ml-11 flex items-center gap-2">
-                            <label className="text-xs text-gray-500 whitespace-nowrap">提示词模板:</label>
-                            <select
-                              value={member.template_id || ""}
-                              onChange={(e) => updateBotTemplate(member.member_id, e.target.value || null)}
-                              disabled={!canEditTemplate}
-                              title={canEditTemplate ? "Bot 频道模板覆盖" : "只有邀请该 Bot 入频道的人可修改频道模板"}
-                              className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded bg-white text-gray-700 focus:outline-none focus:border-[#2EB67D] focus:ring-1 focus:ring-[#2EB67D] disabled:bg-gray-50 disabled:text-gray-400"
-                            >
-                              <option value="">默认 (Bot 自带)</option>
-                              {allTemplates.map((t) => (
-                                <option key={t.template_id} value={t.template_id}>
-                                  {t.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
+                          </MemberListItem>
                         );
                       })}
                     </div>
@@ -499,52 +495,41 @@ export default function ChannelMembersModal({
                     {friends.map((friend) => {
                       const isSelected = selectedFriends.has(friend.user_id);
                       return (
-                        <div
+                        <MemberListItem
                           key={friend.user_id}
-                          onClick={() => {
-                            setSelectedFriends((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(friend.user_id)) {
-                                next.delete(friend.user_id);
-                              } else {
-                                next.add(friend.user_id);
-                              }
-                              return next;
-                            });
-                          }}
-                          className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
-                            isSelected ? "bg-blue-50 border border-[#1264A3]/30" : "bg-gray-50 hover:bg-gray-100"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
+                          id={friend.user_id}
+                          kind="user"
+                          username={friend.username}
+                          displayName={friend.display_name || friend.username}
+                          avatarUrl={friend.avatar_url}
+                          selected={isSelected}
+                          variant="card"
+                          onClick={() => toggleFriendSelection(friend.user_id)}
+                          leading={
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              onChange={() => {}}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                toggleFriendSelection(friend.user_id);
+                              }}
                               onClick={(e) => e.stopPropagation()}
                               className="accent-[#1264A3]"
                             />
-                            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-sm font-bold">
-                              {(friend.display_name || friend.username).charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <p className="font-medium text-sm text-gray-900">
-                                {friend.display_name || friend.username}
-                              </p>
-                              <p className="text-xs text-gray-500">@{friend.username}</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              inviteFriend(friend.user_id);
-                            }}
-                            disabled={inviteLoading}
-                            className="px-2 py-1 text-xs bg-[#1264A3] text-white rounded hover:bg-[#0f5a94] disabled:opacity-50"
-                          >
-                            邀请
-                          </button>
-                        </div>
+                          }
+                          actions={
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                inviteFriend(friend.user_id);
+                              }}
+                              disabled={inviteLoading}
+                              className="px-2 py-1 text-xs bg-[#1264A3] text-white rounded hover:bg-[#0f5a94] disabled:opacity-50"
+                            >
+                              邀请
+                            </button>
+                          }
+                        />
                       );
                     })}
                   </div>
@@ -563,6 +548,7 @@ export default function ChannelMembersModal({
                   context="channel_invite_user"
                   token={userToken}
                   channelId={channelId}
+                  types={["users"]}
                   modal
                   placeholder="搜索用户"
                   actionLabel={inviteLoading ? "邀请中" : "邀请"}
@@ -579,6 +565,7 @@ export default function ChannelMembersModal({
               context="channel_invite_bot"
               token={userToken}
               channelId={channelId}
+              types={["bots"]}
               modal
               placeholder="搜索 Bot"
               actionLabel={(selection) => {

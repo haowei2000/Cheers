@@ -19,6 +19,7 @@ import {
 } from "react";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { AppIcon, FileTypeIcon, type AppIconName } from "./components/icons";
+import { MemberBadge, MemberListItem } from "./components/members";
 import type { MemoryEntryItem, MemberItem, TodoItem } from "./types";
 import { getAuthToken as getStoredToken } from "./api";
 
@@ -790,35 +791,21 @@ export default function MemoryPage({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {sorted.map((m) => {
           const isBot = m.member_type === "bot";
+          const isSelf = Boolean(currentUserId && m.member_id === currentUserId && !isBot);
           const label =
             m.display_name || m.username || (isBot ? "Bot" : "用户");
-          const initial = label.slice(0, 1).toUpperCase();
           return (
-            <div
+            <MemberListItem
               key={m.member_id}
-              className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 hover:shadow-sm transition-shadow"
-            >
-              <div
-                className={`w-10 h-10 ${isBot ? "rounded-lg bg-[#2EB67D]" : "rounded-full bg-[#1264A3]"} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}
-              >
-                {initial}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-800 truncate">
-                  {label}
-                </p>
-                {m.username && m.username !== m.display_name && (
-                  <p className="text-xs text-gray-400 truncate">
-                    @{m.username}
-                  </p>
-                )}
-              </div>
-              <span
-                className={`text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium ${isBot ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"}`}
-              >
-                {isBot ? "Bot" : "用户"}
-              </span>
-            </div>
+              id={m.member_id}
+              kind={isBot ? "bot" : "user"}
+              username={m.username}
+              displayName={label}
+              avatarUrl={m.avatar_url}
+              self={isSelf}
+              variant="card"
+              badges={!isBot ? <MemberBadge>用户</MemberBadge> : undefined}
+            />
           );
         })}
       </div>

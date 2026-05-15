@@ -75,5 +75,6 @@ tmp_pytest/
 outputs
 artifacts
 !AGENTS.md
+!FRONTEND.md
 !CLAUDE.md
 !README.md

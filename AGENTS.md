@@ -313,6 +313,23 @@ GUIDE_LLM_MODEL=llama3.2
 
 ## Key Development Conventions
 
+### 前端统一组件约定
+
+#### 统一搜索框
+
+- 所有成员搜索、好友搜索、Bot 搜索、文件搜索、聊天记录搜索、频道/工作区搜索等入口，优先复用 `frontend/src/components/SearchPicker.tsx`。
+- 后端搜索入口统一走 `GET /api/v1/search`，通过 `context` 表达业务场景，通过 `types` 限定返回分组，通过 `workspace_id` / `channel_id` 限定范围。
+- 不要为新场景另写独立搜索框、独立下拉结果样式或独立搜索 API；确有差异时先扩展 `SearchPicker` 和 `/api/v1/search` 的通用能力。
+- 搜索结果展示应保持统一分组与交互：加载态、空状态、筛选条件、结果高亮、结果点击行为、文件预览、消息跳转等都应沿用统一组件。
+- 旧接口或旧组件只作为兼容保留，新 UI 不再新增对 `friends/search` 这类专用搜索入口的依赖。
+
+#### 统一 Members Item
+
+- 成员、好友、Bot、邀请候选人、频道成员列表、好友列表、成员管理弹窗等场景中的人员条目，应复用统一 members item 组件或同一渲染封装。
+- members item 应统一头像/首字母、显示名、`@username`、Bot 标识、关系/权限/在线状态、主操作和危险操作的布局，不要在各页面重复手写一套 row/card。
+- 新增成员类列表时，先抽象或复用现有统一 members item；只有业务字段明显不同，才通过 props 扩展，不要复制 Tailwind/inline style 片段。
+- 统一 members item 的交互状态必须一致：hover、focus、disabled、loading、selected、danger action、移动端换行和长文本截断都要统一处理。
+
 ### Bot 架构（新）
 
 **核心理念：Bot = AIModel + PromptTemplate**

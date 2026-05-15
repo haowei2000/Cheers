@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import type { Channel, DM, Workspace, CurrentUser } from "../types";
+import type { Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
 import { apiFetch } from "../api";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
 import { AppIcon } from "./icons/AppIcon";
-import { SearchPicker, type SearchPickerHandle, type SearchScopeOption } from "./SearchPicker";
+import {
+  SearchPicker,
+  type SearchPickerHandle,
+  type SearchScopeOption,
+  type SearchTypeFilterOption,
+} from "./SearchPicker";
 import type { SearchSelection } from "../types";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
 
@@ -39,6 +44,7 @@ interface SidebarProps {
   onOpenInviteWsMember: () => void;
   onOpenCreateChannel: () => void;
   onOpenSettings: () => void;
+  onOpenFilePreview?: (file: FileInfo) => void;
 }
 
 const WS_LETTER_COLORS = ["#7c6cf5", "#3ecf8e", "#f5a623", "#56a7ff", "#f05454", "#9586ff"];
@@ -72,6 +78,7 @@ export function Sidebar({
   onOpenInviteWsMember,
   onOpenCreateChannel,
   onOpenSettings,
+  onOpenFilePreview,
 }: SidebarProps) {
   const currentWs = workspaces.find((w) => w.workspace_id === selectedWorkspaceId);
   const currentWsLabel = currentWs ? currentWs.name : "全部工作空间";
@@ -114,6 +121,19 @@ export function Sidebar({
       }),
     ],
     [workspaces],
+  );
+  const searchTypeOptions = useMemo<SearchTypeFilterOption[]>(
+    () => [
+      { type: "workspaces", label: "空间" },
+      { type: "channels", label: "频道" },
+      { type: "users", label: "成员" },
+      { type: "bots", label: "Bot" },
+      { type: "files", label: "文件" },
+      { type: "messages", label: "消息" },
+      { type: "todos", label: "待办" },
+      { type: "tasks", label: "任务" },
+    ],
+    [],
   );
 
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
@@ -251,6 +271,18 @@ export function Sidebar({
     }
     if (selection.type === "bot") {
       openDmWith(selection.item.bot_id, "bot");
+      return;
+    }
+    if (selection.type === "file") {
+      onOpenFilePreview?.({
+        file_id: selection.item.file_id,
+        original_filename: selection.item.original_filename || undefined,
+        content_type: selection.item.content_type || undefined,
+        size_bytes: selection.item.size_bytes || undefined,
+        status: selection.item.status,
+      });
+      resetSearch();
+      if (isMobile) setSidebarOpen(false);
       return;
     }
     if (selection.type === "message") {
@@ -446,9 +478,10 @@ export function Sidebar({
         context="global_nav"
         token={authToken}
         workspaceId={searchWorkspaceId || undefined}
-        placeholder="搜索消息 / 频道 / 成员 / Bot"
+        placeholder="搜索消息 / 文件 / 频道 / 成员 / Bot"
         keyboardHint="⌘K"
         enableShortcut
+        typeOptions={searchTypeOptions}
         scopeLabel={searchScopeLabel}
         scopeTitle={searchScopeTitle}
         scopeValue={searchWorkspaceId}

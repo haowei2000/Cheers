@@ -6,8 +6,8 @@ import {
   botScopeText,
   introSummary,
 } from "../../lib/bot-display";
-import { BotAvatar } from "../BotAvatar";
 import { AppIcon } from "../icons/AppIcon";
+import { MemberListItem } from "../members";
 import { Modal, ModalFooter } from "../Modal";
 
 interface AddBotModalProps {
@@ -114,29 +114,26 @@ export function AddBotModal({
               </div>
             ) : (
               channelBots.map((bot) => (
-                <article key={bot.member_id} className="an-row-card">
-                  <BotAvatar
-                    label={bot.display_name || bot.username}
-                    avatarUrl={bot.avatar_url}
-                    size={34}
-                  />
-                  <div className="an-rc-main min-w-0">
-                    <div className="an-rc-title">
-                      <span className="truncate">@{bot.username}</span>
-                      <StatusChip bot={bot} />
-                    </div>
-                    <div className="an-rc-sub">
-                      <BotMetaLine bot={bot} />
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onRemoveBot(bot.member_id)}
-                    className="an-btn an-btn-danger an-btn-sm"
-                  >
-                    移除
-                  </button>
-                </article>
+                <MemberListItem
+                  key={bot.member_id}
+                  id={bot.member_id}
+                  kind="bot"
+                  username={bot.username}
+                  displayName={bot.display_name || bot.username}
+                  avatarUrl={bot.avatar_url}
+                  variant="card"
+                  meta={<BotMetaLine bot={bot} />}
+                  badges={<StatusChip bot={bot} />}
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => onRemoveBot(bot.member_id)}
+                      className="an-btn an-btn-danger an-btn-sm"
+                    >
+                      移除
+                    </button>
+                  }
+                />
               ))
             )}
           </div>
@@ -178,39 +175,37 @@ export function AddBotModal({
                 const checked = selectedBotIds.has(bot.bot_id);
                 const summary = introSummary(bot.intro);
                 return (
-                  <button
+                  <MemberListItem
                     key={bot.bot_id}
-                    type="button"
+                    id={bot.bot_id}
+                    kind="bot"
+                    username={bot.username}
+                    displayName={bot.display_name || bot.username}
+                    avatarUrl={bot.avatar_url}
+                    variant="card"
+                    selected={checked}
+                    asButton
                     onClick={() => onToggleBot(bot.bot_id)}
-                    className="an-row-card w-full text-left"
-                    style={{
-                      borderColor: checked ? "var(--accent)" : "var(--border)",
-                      background: checked ? "var(--accent-muted)" : undefined,
-                    }}
+                    leading={
+                      <span
+                        className="mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border"
+                        style={{
+                          borderColor: checked ? "var(--accent)" : "var(--border)",
+                          color: "var(--accent)",
+                        }}
+                      >
+                        {checked && <AppIcon name="check" className="h-3.5 w-3.5" />}
+                      </span>
+                    }
+                    meta={<BotMetaLine bot={bot} />}
+                    badges={<StatusChip bot={bot} />}
                   >
-                    <span className="mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border" style={{ borderColor: checked ? "var(--accent)" : "var(--border)", color: "var(--accent)" }}>
-                      {checked && <AppIcon name="check" className="h-3.5 w-3.5" />}
-                    </span>
-                    <BotAvatar
-                      label={bot.display_name || bot.username}
-                      avatarUrl={bot.avatar_url}
-                      size={34}
-                    />
-                    <span className="an-rc-main min-w-0">
-                      <span className="an-rc-title">
-                        <span className="truncate">@{bot.username}</span>
-                        <StatusChip bot={bot} />
+                    {summary && (
+                      <span className="block truncate text-xs" style={{ color: "var(--fg-2)" }}>
+                        {summary}
                       </span>
-                      <span className="an-rc-sub">
-                        <BotMetaLine bot={bot} />
-                      </span>
-                      {summary && (
-                        <span className="mt-1 block truncate text-xs" style={{ color: "var(--fg-2)" }}>
-                          {summary}
-                        </span>
-                      )}
-                    </span>
-                  </button>
+                    )}
+                  </MemberListItem>
                 );
               })
             )}
