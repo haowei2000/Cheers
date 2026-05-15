@@ -23,6 +23,7 @@ import { ChatShell } from "./components/app/ChatShell";
 import { ChatSidePanels } from "./components/app/ChatSidePanels";
 import { ChatWorkspaceView } from "./features/chat/ChatWorkspaceView";
 import { useChannelMessages } from "./features/chat/hooks/useChannelMessages";
+import { useChannelParticipants } from "./features/chat/hooks/useChannelParticipants";
 import { useChatRealtime } from "./features/chat/hooks/useChatRealtime";
 import { useComposerController } from "./features/chat/hooks/useComposerController";
 import { usePendingFiles } from "./features/chat/hooks/usePendingFiles";
@@ -61,9 +62,6 @@ import type {
   ContextData,
   ClarifySchema,
   ClarifyAnswers,
-  ChannelBot,
-  ChannelUser,
-  BotItem,
   AgentBridgeTaskContentData,
   MemoryLoadDetail,
 } from "./types";
@@ -335,7 +333,6 @@ export default function App() {
   const [pendingClarifyReplyMsgId, setPendingClarifyReplyMsgId] = useState<
     string | null
   >(null);
-  const [autoAssist, setAutoAssist] = useState(false);
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(
     new Set(),
   );
@@ -355,8 +352,6 @@ export default function App() {
       return next;
     });
 
-  const [channelBots, setChannelBots] = useState<ChannelBot[]>([]);
-  const [channelUsers, setChannelUsers] = useState<ChannelUser[]>([]);
   const [revealedSecrets, setRevealedSecrets] = useState<
     Record<string, string>
   >({});
@@ -402,9 +397,26 @@ export default function App() {
   const [inviteWsMemberOpen, setInviteWsMemberOpen] = useState(false);
   const [inviteWsIdentifier, setInviteWsIdentifier] = useState("");
   const [newChannelName, setNewChannelName] = useState("");
-  const [allBots, setAllBots] = useState<BotItem[]>([]);
-  const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
-  const [addingBots, setAddingBots] = useState(false);
+  const {
+    autoAssist,
+    setAutoAssist,
+    channelBots,
+    channelUsers,
+    allBots,
+    selectedBotIds,
+    setSelectedBotIds,
+    addingBots,
+    setAddingBots,
+    addBotToChannel,
+    removeBotFromChannel,
+  } = useChannelParticipants({
+    selectedId,
+    channels,
+    addBotOpen,
+    authToken,
+    authFetch,
+    selectedIdRef,
+  });
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const pendingScrollMsgIdRef = useRef<string | null>(null);
@@ -660,85 +672,10 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedId) {
-      setChannelBots([]);
-      setChannelUsers([]);
       setProcessingBots({});
-      setAutoAssist(false);
       setReplyingTo(null);
-      return;
     }
-    const targetChannelId = selectedId;
-    const controller = new AbortController();
-    const ch = channels.find((c) => c.channel_id === targetChannelId);
-    setAutoAssist(ch?.auto_assist ?? false);
-
-    authFetch(`${API}/channels/${targetChannelId}/members?with_username=1`, {
-      signal: controller.signal,
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (controller.signal.aborted || selectedIdRef.current !== targetChannelId) return;
-        if (d.data) {
-          const bots: ChannelBot[] = d.data
-            .filter(
-              (m: { member_type: string; username?: string }) =>
-                m.member_type === "bot" && m.username,
-            )
-            .map(
-              (m: {
-                member_id: string;
-                username: string;
-                avatar_url?: string;
-                display_name?: string;
-                scope?: BotItem["scope"];
-                owner?: BotItem["owner"];
-              }) => ({
-                member_id: m.member_id,
-                username: m.username,
-                avatar_url: m.avatar_url,
-                display_name: m.display_name,
-                scope: m.scope,
-                owner: m.owner,
-              }),
-            );
-          setChannelBots(bots);
-          const users: ChannelUser[] = d.data
-            .filter(
-              (m: { member_type: string; username?: string }) =>
-                m.member_type === "user" && m.username,
-            )
-            .map(
-              (m: {
-                member_id: string;
-                username: string;
-                avatar_url?: string;
-                display_name?: string;
-                scope?: BotItem["scope"];
-                owner?: BotItem["owner"];
-              }) => ({
-                member_id: m.member_id,
-                username: m.username,
-                avatar_url: m.avatar_url,
-                display_name: m.display_name,
-                scope: m.scope,
-                owner: m.owner,
-              }),
-          );
-          setChannelUsers(users);
-        } else {
-          setChannelBots([]);
-          setChannelUsers([]);
-        }
-      })
-      .catch((error) => {
-        if ((error as { name?: string }).name === "AbortError") return;
-        if (selectedIdRef.current !== targetChannelId) return;
-        setChannelBots([]);
-        setChannelUsers([]);
-      });
-
-    return () => controller.abort();
-  }, [authFetch, channels, selectedId, setReplyingTo]);
+  }, [selectedId, setReplyingTo]);
 
   useChatRealtime({
     selectedId,
@@ -835,120 +772,6 @@ export default function App() {
         .catch(console.error);
     }
   }, [authFetch, memoryPanelOpen, selectedId]);
-
-  useEffect(() => {
-    if (addBotOpen) {
-      const headers: Record<string, string> = authToken
-        ? { Authorization: `Bearer ${authToken}` }
-        : {};
-      fetch(`${API}/bots`, { headers })
-        .then((r) => r.json())
-        .then((d) => setAllBots(d.data || []))
-        .catch(() => setAllBots([]));
-      setSelectedBotIds(new Set());
-    }
-  }, [addBotOpen, authToken]);
-
-  const addBotToChannel = (botId: string): Promise<void> => {
-    if (!selectedId) return Promise.resolve();
-    return authFetch(`${API}/channels/${selectedId}/members`, {
-      method: "POST",
-      body: JSON.stringify({ member_id: botId, member_type: "bot" }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success") {
-          authFetch(`${API}/channels/${selectedId}/members?with_username=1`)
-            .then((res) => res.json())
-            .then((res) => {
-              if (res.data) {
-                const bots: ChannelBot[] = res.data
-                  .filter(
-                    (m: { member_type: string; username?: string }) =>
-                      m.member_type === "bot" && m.username,
-                  )
-                  .map(
-                    (m: {
-                      member_id: string;
-                      username: string;
-                      avatar_url?: string;
-                      display_name?: string;
-                      scope?: BotItem["scope"];
-                      owner?: BotItem["owner"];
-                    }) => ({
-                      member_id: m.member_id,
-                      username: m.username,
-                      avatar_url: m.avatar_url,
-                      display_name: m.display_name,
-                      scope: m.scope,
-                      owner: m.owner,
-                    }),
-                  );
-                setChannelBots(bots);
-                const users: ChannelUser[] = res.data
-                  .filter(
-                    (m: { member_type: string; username?: string }) =>
-                      m.member_type === "user" && m.username,
-                  )
-                  .map(
-                    (m: {
-                      member_id: string;
-                      username: string;
-                      avatar_url?: string;
-                      display_name?: string;
-                    }) => ({
-                      member_id: m.member_id,
-                      username: m.username,
-                      avatar_url: m.avatar_url,
-                      display_name: m.display_name,
-                    }),
-                  );
-                setChannelUsers(users);
-              }
-            });
-        }
-      })
-      .catch(console.error);
-  };
-
-  const removeBotFromChannel = (memberId: string) => {
-    if (!selectedId) return;
-    authFetch(
-      `${API}/channels/${selectedId}/members/${encodeURIComponent(memberId)}`,
-      { method: "DELETE" },
-    )
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.status === "success") {
-          setChannelBots((prev) =>
-            prev.filter((b) => b.member_id !== memberId),
-          );
-        }
-      })
-      .catch(console.error);
-  };
-
-  useEffect(() => {
-    if (!pendingClarifyReplyMsgId) return;
-    // 在澄清表单消息之后找到用户的答复，再之后有 Bot 回复则视为已完成
-    const clarifyIdx = messages.findIndex(
-      (m) => m.msg_id === pendingClarifyReplyMsgId,
-    );
-    if (clarifyIdx === -1) return;
-    const afterClarify = messages.slice(clarifyIdx + 1);
-    const userReplyIdx = afterClarify.findIndex(
-      (m) => m.sender_type === "user",
-    );
-    if (userReplyIdx === -1) return;
-    const afterUserReply = afterClarify.slice(userReplyIdx + 1);
-    if (afterUserReply.some((m) => m.sender_type === "bot")) {
-      setPendingClarifyReplyMsgId(null);
-    }
-  }, [pendingClarifyReplyMsgId, messages]);
-
-  useEffect(() => {
-    setPendingClarifyReplyMsgId(null);
-  }, [selectedId]);
 
   const sendUserMessage = (
     content: string,

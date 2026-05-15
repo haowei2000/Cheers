@@ -132,6 +132,7 @@ features/
 │   ├── ChatWorkspaceView.tsx        # 频道主区域：header、session、消息列表、composer 和空态
 │   ├── hooks/
 │   │   ├── useChannelMessages.ts   # 消息 store、加载、分页、滚动、虚拟列表和 topic 派生
+│   │   ├── useChannelParticipants.ts # 频道用户/Bot、Bot 候选、添加/移除和 autoAssist
 │   │   ├── useChatRealtime.ts      # 频道 WebSocket、流式增量、trace 和 message_done 合并
 │   │   ├── useComposerController.ts # 输入草稿、消息类型、标题、回复和加密模式
 │   │   └── usePendingFiles.ts       # 待发送文件、预览 URL、上传、删除和清理
