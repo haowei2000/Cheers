@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Channel, DM } from "../types";
 import { AppIcon } from "./icons/AppIcon";
 
@@ -73,6 +73,7 @@ interface ChannelHeaderProps {
   onOpenTasks?: () => void;
   onRefreshDmSession?: () => void;
   refreshingDmSession?: boolean;
+  sessionAction?: ReactNode;
 }
 
 export function ChannelHeader({
@@ -92,8 +93,25 @@ export function ChannelHeader({
   onOpenTasks,
   onRefreshDmSession,
   refreshingDmSession = false,
+  sessionAction,
 }: ChannelHeaderProps) {
-  const subtitle = autoAssist ? "自动接管已开启" : "";
+  const dmDisplayName =
+    activeDm?.counterparty.display_name ||
+    activeDm?.counterparty.username ||
+    "DM";
+  const dmChatTitle = activeDm?.chat_title?.trim() || activeDm?.title?.trim() || "";
+  const dmProjectTitle = activeDm?.project_title?.trim() || "";
+  const dmContextTitle =
+    dmProjectTitle && dmChatTitle
+      ? `${dmProjectTitle} · ${dmChatTitle}`
+      : dmProjectTitle || dmChatTitle;
+  const subtitle = activeDm
+    ? dmContextTitle && dmContextTitle !== dmDisplayName
+      ? dmContextTitle
+      : ""
+    : autoAssist
+      ? "自动接管已开启"
+      : "";
   const [topicsOpen, setTopicsOpen] = useState(false);
   const popRef = useRef<HTMLDivElement | null>(null);
 
@@ -138,9 +156,7 @@ export function ChannelHeader({
                 />
               </span>
               <span>
-                {activeDm.counterparty.display_name ||
-                  activeDm.counterparty.username ||
-                  "DM"}
+                {dmDisplayName}
               </span>
             </>
           ) : (
@@ -258,6 +274,7 @@ export function ChannelHeader({
           )}
         </div>
       )}
+      {sessionAction}
       {!activeDm && channel && (
         <button
           type="button"

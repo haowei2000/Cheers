@@ -6,6 +6,8 @@ export type MemberItem = {
   username?: string;
   display_name?: string;
   avatar_url?: string;
+  status?: string;
+  is_online?: boolean;
 };
 
 export type ChannelMember = MemberItem & {
