@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     file_upload_allowed_types: str = (
         "application/pdf,"
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
-        "text/plain,"
+        "text/html,text/plain,"
         "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000

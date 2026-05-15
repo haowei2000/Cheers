@@ -70,6 +70,8 @@ export function useChannelMessages({
     }
     const targetChannelId = selectedId;
     const controller = new AbortController();
+    stickToBottomRef.current = true;
+    lastAutoScrollChannelRef.current = null;
     setLoading(true);
 
     authFetch(`${API}/channels/${targetChannelId}/messages`, {
@@ -177,8 +179,15 @@ export function useChannelMessages({
     if (!container) return;
 
     const updateMetrics = () => {
+      const wasStuckToBottom = stickToBottomRef.current;
       stickToBottomRef.current =
         container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+      if (wasStuckToBottom && !isLoadingOlderRef.current) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
+          stickToBottomRef.current = true;
+        });
+      }
     };
 
     updateMetrics();
@@ -209,18 +218,6 @@ export function useChannelMessages({
       }
     }, 100);
   }, [loading, messages, pendingScrollMsgIdRef]);
-
-  useEffect(() => {
-    if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
-    const container = messagesContainerRef.current;
-    const channelChanged = lastAutoScrollChannelRef.current !== selectedId;
-    lastAutoScrollChannelRef.current = selectedId ?? null;
-    if (!channelChanged && !stickToBottomRef.current) return;
-    requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-      stickToBottomRef.current = true;
-    });
-  }, [selectedId, messages.length]);
 
   useEffect(() => {
     const msgIdSet = new Set(messages.map((message) => message.msg_id));
@@ -275,6 +272,23 @@ export function useChannelMessages({
     getItemKey: (index) => topicRoots[index]?.msg_id ?? index,
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
+
+  useEffect(() => {
+    if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
+    if (!selectedId || topicRoots.length === 0) return;
+    const container = messagesContainerRef.current;
+    const channelChanged = lastAutoScrollChannelRef.current !== selectedId;
+    lastAutoScrollChannelRef.current = selectedId;
+    if (!channelChanged && !stickToBottomRef.current) return;
+
+    requestAnimationFrame(() => {
+      rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+        stickToBottomRef.current = true;
+      });
+    });
+  }, [messages.length, rowVirtualizer, selectedId, topicRoots.length]);
 
   const pageTopicSourceMessages = useMemo(
     () => mergeMessagesChronologically(messages, pageTopicMessages),

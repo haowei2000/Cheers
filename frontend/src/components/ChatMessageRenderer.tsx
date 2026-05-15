@@ -32,6 +32,7 @@ function fileTypeLabel(file: FileInfo): string {
   const contentType = file.content_type ?? "";
   const ext = (file.original_filename?.split(".").pop() ?? "").toLowerCase();
   if (contentType.includes("pdf") || ext === "pdf") return "PDF";
+  if (contentType.includes("html") || ["html", "htm"].includes(ext)) return "HTML";
   if (contentType.includes("wordprocessingml") || ["doc", "docx"].includes(ext)) return "Word";
   if (contentType.includes("spreadsheetml") || ["xls", "xlsx", "csv"].includes(ext)) return "表格";
   if (contentType.includes("text/") || ["md", "txt"].includes(ext)) return "文本";

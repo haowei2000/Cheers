@@ -222,7 +222,7 @@ class FilePipelineService:
                 raise FileFlowError("对象存储中找不到已上传文件，请重新上传后再试") from exc
             except UnsupportedFileTypeError as exc:
                 await self._mark_failed(session, record, str(exc))
-                raise FileFlowError("当前仅支持 pdf / docx / txt / md 文件") from exc
+                raise FileFlowError("当前仅支持 pdf / docx / xlsx / txt / md / html 文件") from exc
             except FileParseError as exc:
                 await self._mark_failed(
                     session,
@@ -329,7 +329,7 @@ class FilePipelineService:
             raise FileFlowError("文件名不能为空")
         suffix = Path(normalized_name).suffix.lower()
         if suffix not in ALL_SUPPORTED_TYPES:
-            raise FileFlowError("当前仅支持 pdf / docx / txt / md / png / jpg / jpeg / webp / gif 文件")
+            raise FileFlowError("当前仅支持 pdf / docx / xlsx / txt / md / html / png / jpg / jpeg / webp / gif 文件")
 
         # allowed_mime_types = self.allowed_mime_types
         normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
@@ -520,6 +520,8 @@ class FilePipelineService:
             return "text/plain"
         if suffix.endswith(".md"):
             return "text/markdown"
+        if suffix.endswith(".html") or suffix.endswith(".htm"):
+            return "text/html"
         if suffix.endswith(".docx"):
             return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         if suffix.endswith(".pdf"):
@@ -531,6 +533,8 @@ class FilePipelineService:
             return "text/plain"
         if suffix == ".md":
             return "text/markdown"
+        if suffix in {".html", ".htm"}:
+            return "text/html"
         if suffix == ".docx":
             return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         if suffix == ".pdf":
