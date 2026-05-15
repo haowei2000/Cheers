@@ -1001,9 +1001,9 @@ async def test_file_preview_content_parses_local_html(
     db_session: AsyncSession,
     tmp_path,
 ) -> None:
-    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000035", name="W35")
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000091", name="W91")
     ch = Channel(
-        channel_id="e1000000-0000-0000-0000-000000000035",
+        channel_id="e1000000-0000-0000-0000-000000000091",
         workspace_id=ws.workspace_id,
         name="preview-html-ch",
         type="public",
