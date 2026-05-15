@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import NotificationPanel from "./NotificationPanel";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
 import { BotAvatar } from "./components/BotAvatar";
-import { FilePreviewSidebar } from "./components/FilePreviewSidebar";
 import { ClarifyInlineBlock } from "./components/ClarifyInlineBlock";
-import { AppIcon } from "./components/icons";
-import { MemoryPanel } from "./components/MemoryPanel";
+import { AppIcon } from "./components/icons/AppIcon";
 import { LoginModal } from "./components/LoginModal";
 import { CreateWorkspaceModal } from "./components/CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "./components/InviteWorkspaceMemberModal";
@@ -17,12 +15,6 @@ import { OpenClawQcModal } from "./components/OpenClawQcModal";
 import { ChannelSettingsModal } from "./components/ChannelSettingsModal";
 import { Sidebar } from "./components/Sidebar";
 import { HelpModal } from "./components/HelpModal";
-import {
-  SettingsModal,
-  applyDensity,
-  getStoredDensity,
-} from "./components/SettingsModal";
-import { DragOverlay } from "./components/DragOverlay";
 import { ImageLightbox } from "./components/ImageLightbox";
 import {
   ChatAttachments,
@@ -34,12 +26,13 @@ import {
   MESSAGE_COMPOSER_KIND_ORDER,
 } from "./components/MessageComposer";
 import type { MessageComposerKind } from "./components/MessageComposer";
-import { TopicPage } from "./components/TopicPage";
-import { TaskPage } from "./components/TaskPage";
 import { SessionScopePanel } from "./components/SessionScopePanel";
-import { Modal } from "./components/Modal";
-import { WorkspaceRail } from "./components/WorkspaceRail";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { AddBotModal } from "./components/app/AddBotModal";
+import { ChannelMainFrame } from "./components/app/ChannelMainFrame";
+import { ChatShell } from "./components/app/ChatShell";
+import { ChatSidePanels } from "./components/app/ChatSidePanels";
+import { MessageDetailModal } from "./components/app/MessageDetailModal";
 import { apiFetch, buildWsUrl } from "./api";
 import {
   parseHelperPayload,
@@ -56,6 +49,30 @@ import {
   TOPIC_DISPLAY_THRESHOLD,
 } from "./lib/message";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "./lib/refresh";
+import { API, API_DOCS_URL } from "./lib/app-config";
+import { applyDensity, getStoredDensity } from "./lib/density";
+import {
+  AGENT_BRIDGE_TASK_KIND,
+  type AgentBridgeTaskMessage,
+} from "./lib/agent-bridge";
+import {
+  botTraceStatusText,
+  makeClientStreamTrace,
+  trimBotTraceEvents,
+} from "./lib/bot-trace";
+import {
+  buildChatPath,
+  buildChatSearch,
+  readChatUrlState,
+  type ChatRouteParams,
+} from "./lib/chat-routing";
+import {
+  getVirtualMessageWindow,
+  MAX_LOADED_MESSAGES,
+  trimToRecentMessages,
+  VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
+  type PendingStreamDelta,
+} from "./lib/message-window";
 import type {
   Channel,
   DM,
@@ -73,233 +90,26 @@ import type {
   MemoryLoadDetail,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
-
-const API = "/api/v1";
-const DEV_USER_ID = "a0000000-0000-0000-0000-000000000001";
-const AGENT_BRIDGE_TASK_KIND = "agent_bridge_background_task";
-type AgentBridgeTaskMessage = Message & {
-  content_data: AgentBridgeTaskContentData;
-};
-const API_DOCS_URL = "/docs";
-const CLIENT_STREAM_TRACE = "agentnexus_client";
-const MAX_BOT_TRACE_EVENTS = 160;
 const STREAM_DELTA_FLUSH_MS = 50;
-const MAX_LOADED_MESSAGES = 800;
-const VIRTUAL_MESSAGE_MIN_ROWS = 120;
-const VIRTUAL_MESSAGE_ESTIMATED_HEIGHT = 118;
-const VIRTUAL_MESSAGE_OVERSCAN_ROWS = 12;
-const MEMORY_TAB_VALUES: MemoryTab[] = ["PROJECT", "FILES_INDEX", "MEMBERS", "TODO"];
 
-type ChatRouteParams = {
-  workspaceId?: string;
-  channelId?: string;
-};
+const SettingsModal = lazy(() =>
+  import("./components/SettingsModal").then((module) => ({
+    default: module.SettingsModal,
+  })),
+);
+const TaskPage = lazy(() =>
+  import("./components/TaskPage").then((module) => ({ default: module.TaskPage })),
+);
+const TopicPage = lazy(() =>
+  import("./components/TopicPage").then((module) => ({ default: module.TopicPage })),
+);
 
-type ChatUrlState = {
-  topicId: string | null;
-  taskOpen: boolean;
-  taskMsgId: string | null;
-  memoryTab: MemoryTab | null;
-};
-
-function isMemoryTab(value: string | null): value is MemoryTab {
-  return Boolean(value && MEMORY_TAB_VALUES.includes(value as MemoryTab));
-}
-
-function readChatUrlState(search: string, hash: string): ChatUrlState {
-  const params = new URLSearchParams(search);
-  const topicFromSearch = params.get("topic");
-  const topicFromHash = /#topic=([^&]+)/.exec(hash || "")?.[1];
-  const topicId = topicFromSearch || (topicFromHash ? decodeURIComponent(topicFromHash) : null);
-  const view = params.get("view");
-  const panel = params.get("panel");
-
-  return {
-    topicId,
-    taskOpen: !topicId && view === "tasks",
-    taskMsgId: params.get("task"),
-    memoryTab: isMemoryTab(panel) ? panel : null,
-  };
-}
-
-function buildChatPath(workspaceId: string, channelId: string | null): string {
-  if (!workspaceId) return "/";
-  const encodedWorkspaceId = encodeURIComponent(workspaceId);
-  if (!channelId) return `/workspaces/${encodedWorkspaceId}`;
-  return `/workspaces/${encodedWorkspaceId}/channels/${encodeURIComponent(channelId)}`;
-}
-
-function buildChatSearch(state: ChatUrlState): string {
-  const params = new URLSearchParams();
-  if (state.topicId) {
-    params.set("topic", state.topicId);
-  } else if (state.taskOpen) {
-    params.set("view", "tasks");
-    if (state.taskMsgId) params.set("task", state.taskMsgId);
-  }
-  if (state.memoryTab) params.set("panel", state.memoryTab);
-  return params.toString();
-}
-
-type PendingStreamDelta = {
-  delta: string;
-  chunks: number;
-};
-
-type VirtualMessageWindow = {
-  enabled: boolean;
-  startIndex: number;
-  endIndex: number;
-  paddingTop: number;
-  paddingBottom: number;
-};
-
-function trimToRecentMessages(messages: Message[]): Message[] {
-  if (messages.length <= MAX_LOADED_MESSAGES) return messages;
-  return messages.slice(-MAX_LOADED_MESSAGES);
-}
-
-function getVirtualMessageWindow(
-  rowCount: number,
-  scrollTop: number,
-  viewportHeight: number,
-): VirtualMessageWindow {
-  if (rowCount <= VIRTUAL_MESSAGE_MIN_ROWS) {
-    return {
-      enabled: false,
-      startIndex: 0,
-      endIndex: rowCount,
-      paddingTop: 0,
-      paddingBottom: 0,
-    };
-  }
-  const visibleRows = Math.max(
-    1,
-    Math.ceil(Math.max(viewportHeight, VIRTUAL_MESSAGE_ESTIMATED_HEIGHT) / VIRTUAL_MESSAGE_ESTIMATED_HEIGHT),
+function LazyPanelFallback({ label = "加载中..." }: { label?: string }) {
+  return (
+    <div className="flex h-full min-h-24 items-center justify-center text-sm text-[var(--fg-3)]">
+      {label}
+    </div>
   );
-  const windowRows = visibleRows + VIRTUAL_MESSAGE_OVERSCAN_ROWS * 2;
-  const maxStartIndex = Math.max(0, rowCount - windowRows);
-  const startIndex = Math.min(
-    maxStartIndex,
-    Math.max(
-      0,
-      Math.floor(Math.max(0, scrollTop) / VIRTUAL_MESSAGE_ESTIMATED_HEIGHT) - VIRTUAL_MESSAGE_OVERSCAN_ROWS,
-    ),
-  );
-  const endIndex = Math.min(rowCount, startIndex + windowRows);
-  return {
-    enabled: true,
-    startIndex,
-    endIndex,
-    paddingTop: startIndex * VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
-    paddingBottom: Math.max(0, rowCount - endIndex) * VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
-  };
-}
-
-function trimBotTraceEvents(events: BotTraceEvent[]): BotTraceEvent[] {
-  return events.slice(-MAX_BOT_TRACE_EVENTS);
-}
-
-function traceTimeLabel(ts?: number): string {
-  if (!ts) return "";
-  const ms = ts > 1_000_000_000_000 ? ts : ts > 1_000_000_000 ? ts * 1000 : ts;
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-function streamTraceLabel(trace: BotTraceEvent): string {
-  if (trace.stream !== CLIENT_STREAM_TRACE) return botTraceStatusText(trace);
-  const phase = trace.phase || "";
-  const labels: Record<string, string> = {
-    placeholder: "创建 Bot 回复占位",
-    message_stream: "收到流式片段",
-    message_done: "流式回复完成",
-    message_done_partial: "流式回复中断",
-    message_done_error: "流式回复出错",
-  };
-  return [labels[phase] || trace.title || "流式事件", trace.message]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-function makeClientStreamTrace(
-  message: Pick<Message, "msg_id" | "task_id" | "sender_id">,
-  phase: string,
-  title: string,
-  data?: Record<string, unknown>,
-  messageText?: string,
-): BotTraceEvent {
-  return {
-    msg_id: message.msg_id,
-    task_id: message.task_id || null,
-    bot_id: message.sender_id,
-    stream: CLIENT_STREAM_TRACE,
-    phase,
-    title,
-    message: messageText,
-    ts: Date.now(),
-    data,
-  };
-}
-
-function botInlineStatus(bot: Pick<BotItem, "binding_type" | "connection_status" | "is_online" | "status">) {
-  if ((bot.binding_type || "http") !== "agent_bridge") {
-    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 已启用";
-  }
-  if (bot.connection_status === "online" && bot.is_online) return "Bridge 在线";
-  if (bot.connection_status === "partial") return "Bridge 部分连接";
-  return "Bridge 离线";
-}
-
-function botTraceStatusText(trace: BotTraceEvent): string {
-  const stream = trace.stream || "trace";
-  const phase = trace.phase || "";
-  const title = trace.title || "";
-  const message = trace.message || "";
-  if (stream === "agentnexus_plugin") {
-    const labels: Record<string, string> = {
-      received: "插件已收到消息",
-      hydrating_attachments: "正在读取附件",
-      attachments_ready: "附件已准备好",
-      loopback_start: "正在启动 provider",
-      loopback_accepted: "provider 已接收任务",
-      loopback_error: "provider 路由异常",
-      subagent_run_started: "provider run 已启动",
-      subagent_run_error: "provider run 启动失败",
-    };
-    return [labels[phase] || title || "插件处理中", message].filter(Boolean).join(" · ");
-  }
-  if (stream === "lifecycle") {
-    if (phase === "start") return "provider 开始执行";
-    if (phase === "end") return "provider 执行完成";
-    if (phase === "error") return message || "provider 执行异常";
-    return [title || "provider 生命周期", message].filter(Boolean).join(" · ");
-  }
-  if (stream === "assistant") return message ? `正在生成回复 · ${message}` : "正在生成回复";
-  if (stream === "thinking") return message ? `思考中 · ${message}` : "思考中";
-  if (stream === "plan") return title ? `更新计划 · ${title}` : "更新计划";
-  if (stream === "tool" || stream === "item") {
-    return [title || "正在调用工具", trace.status || message].filter(Boolean).join(" · ");
-  }
-  if (stream === "command_output") return [title || "命令执行中", message].filter(Boolean).join(" · ");
-  if (stream === "approval") return [title || "等待审批", trace.status || message].filter(Boolean).join(" · ");
-  if (stream === "error") return message || title || "provider 内部错误";
-  return [title || stream, message].filter(Boolean).join(" · ");
-}
-
-function botScopeText(scope?: BotItem["scope"]) {
-  if (scope === "private") return "Private";
-  if (scope === "everyone") return "Everyone";
-  return "Friend";
-}
-
-function botOwnerText(bot: Pick<BotItem, "owner">) {
-  return bot.owner?.display_name || bot.owner?.username || "系统";
 }
 
 
@@ -322,7 +132,7 @@ export default function App() {
   }, []);
 
   const { currentUser, authToken, currentUserId, authFetch, setAuth, setCurrentUser, logout: clearAuth } =
-    useAuth(DEV_USER_ID);
+    useAuth();
 
   const [loginModalOpen, setLoginModalOpen] = useState(false);
 
@@ -799,18 +609,6 @@ export default function App() {
       .catch(() => toast.error("创建失败"));
   };
 
-  function introSummary(intro: string | undefined): string {
-    if (!intro) return "";
-    try {
-      const o = JSON.parse(intro);
-      if (o.description) return o.description;
-      if (Array.isArray(o.capabilities)) return o.capabilities.join(", ");
-      return intro.slice(0, 50) + (intro.length > 50 ? "…" : "");
-    } catch {
-      return intro.slice(0, 50) + (intro.length > 50 ? "…" : "");
-    }
-  }
-
   useEffect(() => {
     refreshChannels(setChannels, authToken ?? undefined);
     refreshDMs(setDMs, authToken ?? undefined);
@@ -914,17 +712,25 @@ export default function App() {
       setMessages([]);
       setHasMore(true);
       setChannelBots([]);
+      setChannelUsers([]);
       setProcessingBots({});
       setAutoAssist(false);
       setReplyingTo(null);
+      setLoading(false);
       return;
     }
-    const ch = channels.find((c) => c.channel_id === selectedId);
+    const targetChannelId = selectedId;
+    const controller = new AbortController();
+    const ch = channels.find((c) => c.channel_id === targetChannelId);
     setAutoAssist(ch?.auto_assist ?? false);
     setLoading(true);
-    authFetch(`${API}/channels/${selectedId}/members?with_username=1`)
+
+    authFetch(`${API}/channels/${targetChannelId}/members?with_username=1`, {
+      signal: controller.signal,
+    })
       .then((r) => r.json())
       .then((d) => {
+        if (controller.signal.aborted || selectedIdRef.current !== targetChannelId) return;
         if (d.data) {
           const bots: ChannelBot[] = d.data
             .filter(
@@ -977,23 +783,40 @@ export default function App() {
           setChannelUsers([]);
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        if ((error as { name?: string }).name === "AbortError") return;
+        if (selectedIdRef.current !== targetChannelId) return;
         setChannelBots([]);
+        setChannelUsers([]);
       });
-    authFetch(`${API}/channels/${selectedId}/messages`)
+
+    authFetch(`${API}/channels/${targetChannelId}/messages`, {
+      signal: controller.signal,
+    })
       .then((r) => r.json())
       .then((d) => {
+        if (controller.signal.aborted || selectedIdRef.current !== targetChannelId) return;
         const data = d.data || [];
         const visibleData = trimToRecentMessages(data);
         setMessages(visibleData);
         setHasMore(
           Boolean(d.meta?.has_more ?? data.length >= 30) &&
-            visibleData.length < MAX_LOADED_MESSAGES,
+          visibleData.length < MAX_LOADED_MESSAGES,
         );
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [selectedId]);
+      .catch((error) => {
+        if ((error as { name?: string }).name === "AbortError") return;
+        if (selectedIdRef.current !== targetChannelId) return;
+        console.error(error);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && selectedIdRef.current === targetChannelId) {
+          setLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [authFetch, authToken, channels, selectedId]);
 
   // ── 上划加载更多历史消息 ──────────────────────────────────────────────────
   const loadMoreMessages = useCallback(async () => {
@@ -1644,6 +1467,11 @@ export default function App() {
     inReplyToMsgId?: string,
   ): Promise<void> => {
     if (!selectedId || !content.trim()) return Promise.resolve();
+    if (!currentUserId) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再发送消息");
+      return Promise.resolve();
+    }
     if (isSystemDm) {
       toast.error("好友通知会话不能直接发送消息");
       return Promise.resolve();
@@ -1679,6 +1507,11 @@ export default function App() {
     const rawContent =
       draftValue ?? inputDraftRef.current ?? inputRef.current?.value ?? input;
     if (!selectedId || (!rawContent.trim() && pendingFileIds.length === 0)) return;
+    if (!currentUserId) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再发送消息");
+      return;
+    }
     if (isSystemDm) {
       toast.error("好友通知会话不能直接发送消息");
       return;
@@ -2087,6 +1920,11 @@ export default function App() {
   ) => {
     const attachedFileIds = [...pendingFileIds];
     if (!text.trim() && attachedFileIds.length === 0) return;
+    if (!currentUserId) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再发送回复");
+      return;
+    }
     const body: Record<string, unknown> = {
       content: text.trim(),
       sender_id: currentUserId,
@@ -2191,6 +2029,11 @@ export default function App() {
 
   const uploadFileObject = async (file: File) => {
     if (!selectedId) return;
+    if (!currentUserId) {
+      setLoginModalOpen(true);
+      toast.error("请先登录后再上传文件");
+      return;
+    }
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
     const allowed = [
       ".txt",
@@ -2473,217 +2316,49 @@ export default function App() {
         }}
       />
 
-      <Modal
-        open={!!memoryDetailMessage}
+      <MessageDetailModal
+        message={selectedDetailMessage}
+        memoryLoadDetail={selectedMemoryLoadDetail}
+        botTraceEvents={selectedBotTraceEvents}
         onClose={() => setMemoryDetailMessage(null)}
-        title="AI 回复详情"
-        description={
-          selectedMemoryLoadDetail
-            ? `触发消息 ${selectedMemoryLoadDetail.trigger_msg_id || "-"} · ${selectedMemoryLoadDetail.trigger_msg_type || "normal"}`
-            : selectedDetailMessage
-              ? `消息 ${selectedDetailMessage.msg_id}`
-              : undefined
-        }
-        maxWidth="max-w-4xl"
-      >
-        <div className="max-h-[72vh] space-y-5 overflow-y-auto pr-1">
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
-                调用记忆
-              </h3>
-              {selectedMemoryLoadDetail && (
-                <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-                  {selectedMemoryLoadDetail.total_chars ?? 0} chars
-                </span>
-              )}
-            </div>
-            {selectedMemoryLoadDetail ? (
-              <>
-                <div
-                  className="grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-3"
-                  style={{ borderColor: "var(--border)" }}
-                >
-                  <div>
-                    <div style={{ color: "var(--fg-3)" }}>加载策略</div>
-                    <div className="mt-0.5 font-mono break-all">
-                      {selectedMemoryLoadDetail.strategy || "-"}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--fg-3)" }}>请求层</div>
-                    <div className="mt-0.5">
-                      {(selectedMemoryLoadDetail.requested_layers || []).join(", ") || "-"}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--fg-3)" }}>触发类型</div>
-                    <div className="mt-0.5">
-                      {selectedMemoryLoadDetail.trigger_msg_type || "normal"}
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  {(selectedMemoryLoadDetail.layers || []).map((layer) => (
-                    <div
-                      key={layer.source}
-                      className="rounded-lg border p-3"
-                      style={{ borderColor: "var(--border)" }}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold">
-                          {layer.label || layer.source}
-                        </span>
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px]"
-                          style={{
-                            background: layer.requested
-                              ? "var(--accent-muted)"
-                              : "var(--surface-soft)",
-                            color: layer.requested ? "var(--accent)" : "var(--fg-3)",
-                          }}
-                        >
-                          {layer.requested ? "已请求" : "未请求"}
-                        </span>
-                        <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-                          {layer.chars || 0} chars
-                        </span>
-                        <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
-                          {layer.loader || layer.source}
-                        </span>
-                      </div>
-                      {layer.preview ? (
-                        <pre
-                          className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md p-2 text-[11px] leading-relaxed"
-                          style={{
-                            background: "var(--surface-soft)",
-                            color: "var(--fg-2)",
-                          }}
-                        >
-                          {layer.preview}
-                        </pre>
-                      ) : (
-                        <div className="mt-2 text-xs" style={{ color: "var(--fg-3)" }}>
-                          {layer.requested ? "这一层没有可用内容。" : "这一层未参与本次加载。"}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                这条消息没有可展示的记忆加载信息。
-              </div>
-            )}
-          </section>
+      />
 
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
-                流式事件过程
-              </h3>
-              <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-                {selectedBotTraceEvents.length} events
-              </span>
-            </div>
-            {selectedBotTraceEvents.length ? (
-              <div className="space-y-2">
-                {selectedBotTraceEvents.map((event, index) => {
-                  const eventData = event.data || {};
-                  return (
-                    <div
-                      key={`${event.stream || "trace"}-${event.phase || "event"}-${event.seq ?? index}-${event.ts ?? index}`}
-                      className="rounded-lg border p-3"
-                      style={{ borderColor: "var(--border)" }}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-mono"
-                          style={{
-                            background: "var(--surface-soft)",
-                            color: "var(--fg-3)",
-                          }}
-                        >
-                          #{index + 1}
-                        </span>
-                        {event.ts && (
-                          <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
-                            {traceTimeLabel(event.ts)}
-                          </span>
-                        )}
-                        <span className="text-xs font-semibold" style={{ color: "var(--fg-1)" }}>
-                          {streamTraceLabel(event)}
-                        </span>
-                        <span className="text-[11px] font-mono" style={{ color: "var(--fg-3)" }}>
-                          {event.stream || "trace"}
-                          {event.phase ? `/${event.phase}` : ""}
-                        </span>
-                      </div>
-                      {Object.keys(eventData).length > 0 && (
-                        <pre
-                          className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded-md p-2 text-[11px] leading-relaxed"
-                          style={{
-                            background: "var(--surface-soft)",
-                            color: "var(--fg-2)",
-                          }}
-                        >
-                          {JSON.stringify(eventData, null, 2)}
-                        </pre>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                当前页面会话还没有捕获到这条回复的流式事件。
-              </div>
-            )}
-          </section>
-        </div>
-      </Modal>
-
-      <div className="flex h-dvh" style={{ background: "var(--bg-0)" }}>
-        {isMobile && sidebarOpen && (
-          <div
-            className="fixed inset-0 bg-black/50 z-[55]"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-        {!isMobile && (
-          <WorkspaceRail
+      <ChatShell
+        isMobile={isMobile}
+        sidebarOpen={sidebarOpen}
+        onCloseSidebar={() => setSidebarOpen(false)}
+        workspaces={workspaces}
+        selectedWorkspaceId={selectedWorkspaceId}
+        onSelectWorkspace={setSelectedWorkspaceId}
+        onCreateWorkspace={() => setCreateWsOpen(true)}
+        sidebar={
+          <Sidebar
+            isMobile={isMobile}
+            sidebarOpen={sidebarOpen}
+            leftWidth={leftWidth}
+            onLeftResize={onLeftResize}
+            currentUser={currentUser}
+            authToken={authToken}
+            onLoginClick={() => setLoginModalOpen(true)}
             workspaces={workspaces}
+            setWorkspaces={setWorkspaces}
             selectedWorkspaceId={selectedWorkspaceId}
-            onSelect={setSelectedWorkspaceId}
-            onCreate={() => setCreateWsOpen(true)}
+            setSelectedWorkspaceId={setSelectedWorkspaceId}
+            isPersonalWorkspace={isPersonalWorkspace}
+            channels={channels}
+            setChannels={setChannels}
+            dms={dms}
+            setDMs={setDMs}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            setSidebarOpen={setSidebarOpen}
+            onOpenCreateWorkspace={() => setCreateWsOpen(true)}
+            onOpenInviteWsMember={() => setInviteWsMemberOpen(true)}
+            onOpenCreateChannel={() => setCreateChannelOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
-        )}
-        <Sidebar
-          isMobile={isMobile}
-          sidebarOpen={sidebarOpen}
-          leftWidth={leftWidth}
-          onLeftResize={onLeftResize}
-          currentUser={currentUser}
-          authToken={authToken}
-          onLoginClick={() => setLoginModalOpen(true)}
-          workspaces={workspaces}
-          setWorkspaces={setWorkspaces}
-          selectedWorkspaceId={selectedWorkspaceId}
-          setSelectedWorkspaceId={setSelectedWorkspaceId}
-          isPersonalWorkspace={isPersonalWorkspace}
-          channels={channels}
-          setChannels={setChannels}
-          dms={dms}
-          setDMs={setDMs}
-          selectedId={selectedId}
-          setSelectedId={setSelectedId}
-          setSidebarOpen={setSidebarOpen}
-          onOpenCreateWorkspace={() => setCreateWsOpen(true)}
-          onOpenInviteWsMember={() => setInviteWsMemberOpen(true)}
-          onOpenCreateChannel={() => setCreateChannelOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
+        }
+      >
 
         <HelpModal
           open={helpOpen}
@@ -2691,25 +2366,29 @@ export default function App() {
           apiDocsUrl={API_DOCS_URL}
         />
 
-        <SettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          isDark={isDark}
-          setTheme={setTheme}
-          authToken={authToken}
-          currentUser={currentUser}
-          onProfileUpdated={(data) => {
-            if (!currentUser) return;
-            setCurrentUser({
-              ...currentUser,
-              display_name: data.display_name,
-              bio: data.bio ?? currentUser.bio,
-              avatar_url: data.avatar_url ?? null,
-            });
-          }}
-          onOpenDM={openDirectMessage}
-          onLogout={handleLogout}
-        />
+        {settingsOpen && (
+          <Suspense fallback={null}>
+            <SettingsModal
+              open={settingsOpen}
+              onClose={() => setSettingsOpen(false)}
+              isDark={isDark}
+              setTheme={setTheme}
+              authToken={authToken}
+              currentUser={currentUser}
+              onProfileUpdated={(data) => {
+                if (!currentUser) return;
+                setCurrentUser({
+                  ...currentUser,
+                  display_name: data.display_name,
+                  bio: data.bio ?? currentUser.bio,
+                  avatar_url: data.avatar_url ?? null,
+                });
+              }}
+              onOpenDM={openDirectMessage}
+              onLogout={handleLogout}
+            />
+          </Suspense>
+        )}
 
         <OpenClawQcModal
           open={qcOpen}
@@ -2750,169 +2429,33 @@ export default function App() {
           onClose={() => setCreateChannelOpen(false)}
         />
 
-        {addBotOpen && selectedId && (
-          <div
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40"
-            onClick={() => setAddBotOpen(false)}
-            aria-modal="true"
-            role="dialog"
-          >
-            <div
-              className="bg-white rounded-xl shadow-2xl max-w-xl w-full mx-4 p-6 text-left max-h-[90vh] overflow-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold text-gray-900">
-                  管理频道 Bot
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setAddBotOpen(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl"
-                  aria-label="关闭"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    已加入的 Bot
-                  </h3>
-                  {channelBots.length === 0 ? (
-                    <p className="text-sm text-gray-400">暂无</p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {channelBots.map((b) => (
-                        <li
-                          key={b.member_id}
-                          className="flex items-center justify-between py-2 px-3 bg-[#F8F8F8] rounded-lg text-sm"
-                        >
-                          <div className="min-w-0">
-                            <span className="font-medium text-gray-800">
-                              @{b.username}
-                            </span>
-                            <div className="text-[11px] text-gray-500">
-                              {botInlineStatus(b)}
-                            </div>
-                            <div className="text-[11px] text-gray-500">
-                              {botScopeText(b.scope)} · Owner: {botOwnerText(b)}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeBotFromChannel(b.member_id)}
-                            className="text-red-500 text-xs hover:text-red-700"
-                          >
-                            移除
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    可添加的 Bot
-                  </h3>
-                  {(() => {
-                    const inChannelIds = new Set(
-                      channelBots.map((c) => c.member_id),
-                    );
-                    const available = allBots.filter(
-                      (b) => !inChannelIds.has(b.bot_id),
-                    );
-                    if (available.length === 0)
-                      return (
-                        <p className="text-sm text-gray-400">
-                          暂无或已全部加入
-                        </p>
-                      );
-                    return (
-                      <ul className="space-y-1">
-                        {available.map((b) => {
-                          const checked = selectedBotIds.has(b.bot_id);
-                          return (
-                            <li
-                              key={b.bot_id}
-                              className={`flex items-start gap-2 py-2 px-3 rounded-lg text-sm cursor-pointer transition-colors select-none ${checked ? "bg-blue-50 border border-[#1264A3]/30" : "bg-[#F8F8F8] hover:bg-gray-100"}`}
-                              onClick={() =>
-                                setSelectedBotIds((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(b.bot_id)) next.delete(b.bot_id);
-                                  else next.add(b.bot_id);
-                                  return next;
-                                })
-                              }
-                            >
-                              <input
-                                type="checkbox"
-                                className="mt-0.5 accent-[#1264A3] shrink-0"
-                                checked={checked}
-                                onChange={() => {}}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-medium text-gray-800">
-                                  @{b.username}
-                                </span>
-                                <span className="text-[11px] text-gray-500">
-                                  {botInlineStatus(b)}
-                                </span>
-                                <span className="text-[11px] text-gray-500">
-                                  {botScopeText(b.scope)} · Owner: {botOwnerText(b)}
-                                </span>
-                                {introSummary(b.intro) && (
-                                  <span
-                                    className="text-xs text-gray-500 truncate"
-                                    title={b.intro}
-                                  >
-                                    {introSummary(b.intro)}
-                                  </span>
-                                )}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    );
-                  })()}
-                </div>
-              </div>
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAddBotOpen(false)}
-                  className="px-4 py-2 bg-[#F8F8F8] text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
-                >
-                  关闭
-                </button>
-                {selectedBotIds.size > 0 && (
-                  <button
-                    type="button"
-                    disabled={addingBots}
-                    onClick={async () => {
-                      setAddingBots(true);
-                      try {
-                        await Promise.all(
-                          [...selectedBotIds].map((id) => addBotToChannel(id)),
-                        );
-                        setSelectedBotIds(new Set());
-                      } finally {
-                        setAddingBots(false);
-                      }
-                    }}
-                    className="px-4 py-2 bg-[#1264A3] text-white rounded-lg hover:bg-[#0f5a94] text-sm font-medium disabled:opacity-60"
-                  >
-                    {addingBots
-                      ? "添加中…"
-                      : `添加选中 (${selectedBotIds.size})`}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        <AddBotModal
+          open={addBotOpen}
+          selectedChannelId={selectedId}
+          channelBots={channelBots}
+          allBots={allBots}
+          selectedBotIds={selectedBotIds}
+          addingBots={addingBots}
+          onClose={() => setAddBotOpen(false)}
+          onRemoveBot={removeBotFromChannel}
+          onToggleBot={(botId) =>
+            setSelectedBotIds((prev) => {
+              const next = new Set(prev);
+              if (next.has(botId)) next.delete(botId);
+              else next.add(botId);
+              return next;
+            })
+          }
+          onAddSelected={async () => {
+            setAddingBots(true);
+            try {
+              await Promise.all([...selectedBotIds].map((id) => addBotToChannel(id)));
+              setSelectedBotIds(new Set());
+            } finally {
+              setAddingBots(false);
+            }
+          }}
+        />
 
         {/* 通知面板 */}
         <NotificationPanel
@@ -2942,9 +2485,10 @@ export default function App() {
         )}
 
         <div className="flex-1 flex min-w-0">
-          <main
-            className="flex-1 flex flex-col min-w-0 relative"
-            style={{ background: "var(--bg-0)" }}
+          <ChannelMainFrame
+            selectedId={selectedId}
+            isDark={isDark}
+            isDraggingOver={isDraggingOver}
             onDragEnter={(e) => {
               if (!selectedId || !e.dataTransfer.types.includes("Files"))
                 return;
@@ -2975,11 +2519,6 @@ export default function App() {
               }
             }}
           >
-            <DragOverlay
-              visible={isDraggingOver && !!selectedId}
-              isDark={isDark}
-            />
-
             {taskPageOpen &&
               !isDmSelected &&
               selectedId &&
@@ -2995,22 +2534,24 @@ export default function App() {
                     minHeight: 0,
                   }}
                 >
-                  <TaskPage
-                    tasks={agentBridgeTaskMessages}
-                    selectedMsgId={pageTaskMsgId}
-                    channel={selectedChannel}
-                    channelBots={channelBots}
-                    onSelectTask={setPageTaskMsgId}
-                    onBack={() => {
-                      setTaskPageOpen(false);
-                      setPageTaskMsgId(null);
-                    }}
-                    onJumpToMessage={(msgId) => {
-                      setTaskPageOpen(false);
-                      setPageTaskMsgId(null);
-                      setTimeout(() => jumpToMessage(msgId), 0);
-                    }}
-                  />
+                  <Suspense fallback={<LazyPanelFallback label="正在加载任务视图..." />}>
+                    <TaskPage
+                      tasks={agentBridgeTaskMessages}
+                      selectedMsgId={pageTaskMsgId}
+                      channel={selectedChannel}
+                      channelBots={channelBots}
+                      onSelectTask={setPageTaskMsgId}
+                      onBack={() => {
+                        setTaskPageOpen(false);
+                        setPageTaskMsgId(null);
+                      }}
+                      onJumpToMessage={(msgId) => {
+                        setTaskPageOpen(false);
+                        setPageTaskMsgId(null);
+                        setTimeout(() => jumpToMessage(msgId), 0);
+                      }}
+                    />
+                  </Suspense>
                 </div>
               ))()}
 
@@ -3036,55 +2577,57 @@ export default function App() {
                     }}
                   >
                     {rootMsg ? (
-                      <TopicPage
-                        rootMsg={rootMsg}
-                        replies={pageTopicRepliesOf(rootId)}
-                        channel={selectedChannel}
-                        channelBots={channelBots}
-                        channelUsers={channelUsers}
-                        currentUserId={currentUserId}
-                        onBack={() => setPageTopicId(null)}
-                        onGoToChannel={() => setPageTopicId(null)}
-                        onSendReply={(text) =>
-                          sendTopicReply(selectedId, rootId, text)
-                        }
-                        onCopyMessage={copyMessageText}
-                        onShowMessageDetails={setMemoryDetailMessage}
-                        hasMessageDetails={hasBotReplyDetails}
-                        onImageClick={handleMarkdownImageClick}
-                        onFileClick={handleMarkdownFileClick}
-                        renderAttachments={renderFileAttachments}
-                        pendingFiles={pendingFileNames.map((name, index) => ({
-                          name,
-                          previewUrl: pendingFilePreviews[index] ?? null,
-                        }))}
-                        onRemovePendingFile={(index) => {
-                          setPendingFileIds((prev) =>
-                            prev.filter((_, itemIndex) => itemIndex !== index),
-                          );
-                          setPendingFileNames((prev) =>
-                            prev.filter((_, itemIndex) => itemIndex !== index),
-                          );
-                          setPendingFilePreviews((prev) =>
-                            prev.filter((_, itemIndex) => itemIndex !== index),
-                          );
-                        }}
-                        onUploadFile={uploadFile}
-                        keychainEnabled={Boolean(currentUser)}
-                        keychainOpen={keychainPopupOpen}
-                        keychainLoading={keychainPopupLoading}
-                        keychainItems={keychainPopupItems}
-                        onToggleKeychain={openKeychainPopup}
-                        onCloseKeychain={() => setKeychainPopupOpen(false)}
-                        sessionPanel={
-                          <SessionScopePanel
-                            scopeType="topic"
-                            scopeId={rootId}
-                            channelId={selectedId}
-                            title="主题对应 Session"
-                          />
-                        }
-                      />
+                      <Suspense fallback={<LazyPanelFallback label="正在加载话题视图..." />}>
+                        <TopicPage
+                          rootMsg={rootMsg}
+                          replies={pageTopicRepliesOf(rootId)}
+                          channel={selectedChannel}
+                          channelBots={channelBots}
+                          channelUsers={channelUsers}
+                          currentUserId={currentUserId}
+                          onBack={() => setPageTopicId(null)}
+                          onGoToChannel={() => setPageTopicId(null)}
+                          onSendReply={(text) =>
+                            sendTopicReply(selectedId, rootId, text)
+                          }
+                          onCopyMessage={copyMessageText}
+                          onShowMessageDetails={setMemoryDetailMessage}
+                          hasMessageDetails={hasBotReplyDetails}
+                          onImageClick={handleMarkdownImageClick}
+                          onFileClick={handleMarkdownFileClick}
+                          renderAttachments={renderFileAttachments}
+                          pendingFiles={pendingFileNames.map((name, index) => ({
+                            name,
+                            previewUrl: pendingFilePreviews[index] ?? null,
+                          }))}
+                          onRemovePendingFile={(index) => {
+                            setPendingFileIds((prev) =>
+                              prev.filter((_, itemIndex) => itemIndex !== index),
+                            );
+                            setPendingFileNames((prev) =>
+                              prev.filter((_, itemIndex) => itemIndex !== index),
+                            );
+                            setPendingFilePreviews((prev) =>
+                              prev.filter((_, itemIndex) => itemIndex !== index),
+                            );
+                          }}
+                          onUploadFile={uploadFile}
+                          keychainEnabled={Boolean(currentUser)}
+                          keychainOpen={keychainPopupOpen}
+                          keychainLoading={keychainPopupLoading}
+                          keychainItems={keychainPopupItems}
+                          onToggleKeychain={openKeychainPopup}
+                          onCloseKeychain={() => setKeychainPopupOpen(false)}
+                          sessionPanel={
+                            <SessionScopePanel
+                              scopeType="topic"
+                              scopeId={rootId}
+                              channelId={selectedId}
+                              title="主题对应 Session"
+                            />
+                          }
+                        />
+                      </Suspense>
                     ) : (
                       <div className="an-topic-page">
                         <div className="an-tpp-top">
@@ -5419,74 +4962,28 @@ export default function App() {
                 </div>
               </div>
             )}
-          </main>
+          </ChannelMainFrame>
 
-          {/* Memory right panel */}
-          {memoryPanelOpen && selectedId && (
-            <div
-              className={
-                isMobile
-                  ? "fixed inset-0 z-[70] flex bg-white"
-                  : "relative flex-shrink-0 flex"
-              }
-              style={{ width: isMobile ? "100%" : memoryWidth }}
-            >
-              {!isMobile && (
-                <div
-                  onMouseDown={onMemoryResize}
-                  className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
-                />
-              )}
-              <MemoryPanel
-                channelId={selectedId}
-                channelName={selectedChannel?.name ?? ""}
-                contextData={contextData}
-                activeLayer={memoryTab ?? undefined}
-                onLayerChange={(l) =>
-                  setMemoryTab(
-                    l as "PROJECT" | "FILES_INDEX" | "MEMBERS" | "TODO",
-                  )
-                }
-                currentUserId={currentUserId}
-                onFilePreview={(file) =>
-                  openFilePreview({
-                    file_id: file.file_id,
-                    original_filename: file.original_filename ?? undefined,
-                    content_type: file.content_type ?? undefined,
-                    size_bytes: file.size_bytes ?? undefined,
-                  })
-                }
-                onClose={() => setMemoryTab(null)}
-              />
-            </div>
-          )}
-          {/* File preview sidebar */}
-          {filePreviewPanel && (
-            <div
-              className={
-                isMobile
-                  ? "fixed inset-0 z-[70] flex bg-white"
-                  : "relative flex-shrink-0 flex"
-              }
-              style={{ width: isMobile ? "100%" : filePreviewWidth }}
-            >
-              {!isMobile && (
-                <div
-                  onMouseDown={onFilePreviewResize}
-                  className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-gray-300 transition-colors z-10"
-                />
-              )}
-              <FilePreviewSidebar
-                url={filePreviewPanel.url}
-                filename={filePreviewPanel.filename}
-                contentType={filePreviewPanel.contentType}
-                sizeBytes={filePreviewPanel.sizeBytes}
-                onClose={() => setFilePreviewPanel(null)}
-              />
-            </div>
-          )}
+          <ChatSidePanels
+            memoryPanelOpen={memoryPanelOpen}
+            selectedId={selectedId}
+            isMobile={isMobile}
+            memoryWidth={memoryWidth}
+            onMemoryResize={onMemoryResize}
+            channelName={selectedChannel?.name ?? ""}
+            contextData={contextData}
+            memoryTab={memoryTab}
+            onMemoryTabChange={setMemoryTab}
+            currentUserId={currentUserId}
+            onFilePreview={openFilePreview}
+            onCloseMemory={() => setMemoryTab(null)}
+            filePreviewPanel={filePreviewPanel}
+            filePreviewWidth={filePreviewWidth}
+            onFilePreviewResize={onFilePreviewResize}
+            onCloseFilePreview={() => setFilePreviewPanel(null)}
+          />
         </div>
-      </div>
+      </ChatShell>
 
       <ImageLightbox
         src={lightboxSrc}

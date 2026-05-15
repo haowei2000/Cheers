@@ -1,7 +1,9 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { AppIcon } from "./components/icons";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { AppIcon } from "./components/icons/AppIcon";
 
 const API = "/api";  // docs 端点由 manual_routes 提供，路径不含 /v1
 
@@ -12,136 +14,15 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-// ── Minimal markdown → HTML renderer (no external library) ───────────────────
-function renderMarkdown(md: string): string {
-  const lines = md.split("\n");
-  const out: string[] = [];
-  let inCode = false;
-  let codeBuf: string[] = [];
-  let inList = false;
-  let listOrdered = false;
-
-  const esc = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-  const inline = (s: string): string =>
-    esc(s)
-      .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 rounded text-sm font-mono">$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
-      .replace(
-        /\[([^\]]+)\]\(([^)]+)\)/g,
-        '<a href="$2" target="_blank" rel="noreferrer" class="text-blue-600 underline hover:text-blue-800">$1</a>'
-      );
-
-  const flushList = () => {
-    if (inList) {
-      out.push(listOrdered ? "</ol>" : "</ul>");
-      inList = false;
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-
-    // Fenced code block
-    if (raw.startsWith("```")) {
-      if (!inCode) {
-        flushList();
-        inCode = true;
-        codeBuf = [];
-      } else {
-        out.push(
-          `<pre class="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto my-3 text-sm font-mono leading-relaxed"><code>${esc(codeBuf.join("\n"))}</code></pre>`
-        );
-        inCode = false;
-        codeBuf = [];
-      }
-      continue;
-    }
-    if (inCode) {
-      codeBuf.push(raw);
-      continue;
-    }
-
-    // Horizontal rule
-    if (/^---+$/.test(raw.trim()) || /^\*\*\*+$/.test(raw.trim())) {
-      flushList();
-      out.push('<hr class="my-4 border-gray-300" />');
-      continue;
-    }
-
-    // Headings
-    const h = raw.match(/^(#{1,6})\s+(.*)/);
-    if (h) {
-      flushList();
-      const level = h[1].length;
-      const text = inline(h[2]);
-      const sizes = ["text-2xl", "text-xl", "text-lg", "text-base", "text-sm", "text-xs"];
-      const weights = level <= 2 ? "font-bold" : "font-semibold";
-      const margins = level === 1 ? "mt-6 mb-3" : level === 2 ? "mt-5 mb-2" : "mt-4 mb-1";
-      const border = level === 1 ? " pb-2 border-b border-gray-200" : level === 2 ? " pb-1 border-b border-gray-100" : "";
-      out.push(`<h${level} class="${sizes[level - 1]} ${weights} ${margins} text-gray-900${border}">${text}</h${level}>`);
-      continue;
-    }
-
-    // Blockquote
-    if (raw.startsWith("> ")) {
-      flushList();
-      out.push(
-        `<blockquote class="border-l-4 border-blue-400 bg-blue-50 pl-4 pr-2 py-1 my-2 text-gray-700 italic text-sm">${inline(raw.slice(2))}</blockquote>`
-      );
-      continue;
-    }
-
-    // Ordered list
-    const ol = raw.match(/^(\d+)\.\s+(.*)/);
-    if (ol) {
-      if (!inList || !listOrdered) {
-        flushList();
-        out.push('<ol class="list-decimal pl-6 my-2 space-y-0.5 text-gray-800 text-sm">');
-        inList = true;
-        listOrdered = true;
-      }
-      out.push(`<li>${inline(ol[2])}</li>`);
-      continue;
-    }
-
-    // Unordered list
-    const ul = raw.match(/^[-*+]\s+(.*)/);
-    if (ul) {
-      if (!inList || listOrdered) {
-        flushList();
-        out.push('<ul class="list-disc pl-6 my-2 space-y-0.5 text-gray-800 text-sm">');
-        inList = true;
-        listOrdered = false;
-      }
-      out.push(`<li>${inline(ul[1])}</li>`);
-      continue;
-    }
-
-    // Empty line
-    if (raw.trim() === "") {
-      flushList();
-      out.push('<div class="my-1"></div>');
-      continue;
-    }
-
-    // Paragraph
-    flushList();
-    out.push(`<p class="text-sm text-gray-800 leading-relaxed my-1">${inline(raw)}</p>`);
-  }
-
-  if (inCode && codeBuf.length) {
-    out.push(`<pre class="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto my-3 text-sm font-mono"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
-  }
-  flushList();
-  return out.join("\n");
-}
-
 // ── Table of Contents extractor ───────────────────────────────────────────────
 type TocEntry = { level: number; text: string; id: string };
+
+function slugifyHeading(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^\w\u4e00-\u9fff-]/g, "");
+}
 
 function extractToc(md: string): TocEntry[] {
   const entries: TocEntry[] = [];
@@ -149,11 +30,34 @@ function extractToc(md: string): TocEntry[] {
     const m = line.match(/^(#{1,3})\s+(.*)/);
     if (m) {
       const text = m[2].replace(/\*\*|__|`/g, "").trim();
-      const id = text.toLowerCase().replace(/\s+/g, "-").replace(/[^\w\u4e00-\u9fff-]/g, "");
+      const id = slugifyHeading(text);
       entries.push({ level: m[1].length, text, id });
     }
   }
   return entries;
+}
+
+function childrenToText(children: ReactNode): string {
+  if (typeof children === "string" || typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(childrenToText).join("");
+  if (children && typeof children === "object" && "props" in children) {
+    return childrenToText((children as { props?: { children?: ReactNode } }).props?.children);
+  }
+  return "";
+}
+
+function sanitizeMarkdownUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("#")) return trimmed;
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+    if (["http:", "https:", "mailto:"].includes(parsed.protocol)) return trimmed;
+  } catch {
+    /* fall through */
+  }
+  if (/^(\/(?!\/)|\.{1,2}\/)/.test(trimmed)) return trimmed;
+  return "";
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -269,7 +173,6 @@ export default function DocsPage() {
   });
 
   const toc = content ? extractToc(content) : [];
-  const htmlContent = content ? renderMarkdown(content) : "";
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
   return (
@@ -446,8 +349,92 @@ export default function DocsPage() {
                     <div
                       ref={previewRef}
                       className="flex-1 overflow-y-auto px-6 sm:px-10 py-6 min-w-0 scroll-smooth"
-                      dangerouslySetInnerHTML={{ __html: htmlContent }}
-                    />
+                    >
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        urlTransform={sanitizeMarkdownUrl}
+                        components={{
+                          code({ className, children, ...props }) {
+                            const inline = !className && !String(children).includes("\n");
+                            return inline ? (
+                              <code className="bg-gray-100 px-1 rounded text-sm font-mono" {...props}>
+                                {children}
+                              </code>
+                            ) : (
+                              <pre className="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto my-3 text-sm font-mono leading-relaxed">
+                                <code className={className}>{children}</code>
+                              </pre>
+                            );
+                          },
+                          a({ href, children, ...props }) {
+                            const safeHref = sanitizeMarkdownUrl(href || "");
+                            const external = /^https?:\/\//i.test(safeHref);
+                            return (
+                              <a
+                                href={safeHref || "#"}
+                                target={external ? "_blank" : undefined}
+                                rel={external ? "noreferrer" : undefined}
+                                className="text-blue-600 underline hover:text-blue-800"
+                                {...props}
+                              >
+                                {children}
+                              </a>
+                            );
+                          },
+                          h1({ children, ...props }) {
+                            return (
+                              <h1 id={slugifyHeading(childrenToText(children))} className="text-2xl font-bold mt-6 mb-3 text-gray-900 pb-2 border-b border-gray-200" {...props}>
+                                {children}
+                              </h1>
+                            );
+                          },
+                          h2({ children, ...props }) {
+                            return (
+                              <h2 id={slugifyHeading(childrenToText(children))} className="text-xl font-bold mt-5 mb-2 text-gray-900 pb-1 border-b border-gray-100" {...props}>
+                                {children}
+                              </h2>
+                            );
+                          },
+                          h3({ children, ...props }) {
+                            return (
+                              <h3 id={slugifyHeading(childrenToText(children))} className="text-lg font-semibold mt-4 mb-1 text-gray-900" {...props}>
+                                {children}
+                              </h3>
+                            );
+                          },
+                          h4({ children, ...props }) {
+                            return <h4 className="text-base font-semibold mt-4 mb-1 text-gray-900" {...props}>{children}</h4>;
+                          },
+                          h5({ children, ...props }) {
+                            return <h5 className="text-sm font-semibold mt-4 mb-1 text-gray-900" {...props}>{children}</h5>;
+                          },
+                          h6({ children, ...props }) {
+                            return <h6 className="text-xs font-semibold mt-4 mb-1 text-gray-900" {...props}>{children}</h6>;
+                          },
+                          p({ children, ...props }) {
+                            return <p className="text-sm text-gray-800 leading-relaxed my-1" {...props}>{children}</p>;
+                          },
+                          ul({ children, ...props }) {
+                            return <ul className="list-disc pl-6 my-2 space-y-0.5 text-gray-800 text-sm" {...props}>{children}</ul>;
+                          },
+                          ol({ children, ...props }) {
+                            return <ol className="list-decimal pl-6 my-2 space-y-0.5 text-gray-800 text-sm" {...props}>{children}</ol>;
+                          },
+                          blockquote({ children, ...props }) {
+                            return (
+                              <blockquote className="border-l-4 border-blue-400 bg-blue-50 pl-4 pr-2 py-1 my-2 text-gray-700 italic text-sm" {...props}>
+                                {children}
+                              </blockquote>
+                            );
+                          },
+                          hr() {
+                            return <hr className="my-4 border-gray-300" />;
+                          },
+                        }}
+                      >
+                        {content}
+                      </ReactMarkdown>
+                    </div>
 
                     {/* Table of Contents panel */}
                     {tocOpen && toc.length > 0 && (

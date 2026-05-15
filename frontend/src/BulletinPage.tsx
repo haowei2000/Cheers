@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AppIcon } from "./components/icons";
+import { AppIcon } from "./components/icons/AppIcon";
 
 const API = "/api/v1";
 

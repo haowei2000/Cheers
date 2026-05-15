@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 import { SearchPicker, type SearchPickerHandle, type SearchScopeOption } from "./SearchPicker";
 import type { SearchSelection } from "../types";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";

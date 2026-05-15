@@ -5,7 +5,7 @@ import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { ChatMessageRenderer } from "./ChatMessageRenderer";
 import { BotAvatar } from "./BotAvatar";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 import { TopicComposer } from "./TopicComposer";
 import type {
   ComposerKeychainItem,

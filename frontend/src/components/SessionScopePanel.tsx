@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import type { AgentBridgeSession } from "../types";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 
 type ScopeType = "channel" | "dm" | "topic" | "task";
 

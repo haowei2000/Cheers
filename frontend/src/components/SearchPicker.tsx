@@ -13,7 +13,7 @@ import type {
   SearchResultsPayload,
   SearchSelection,
 } from "../types";
-import { AppIcon } from "./icons";
+import { AppIcon } from "./icons/AppIcon";
 
 export type SearchPickerHandle = {
   focus: (select?: boolean) => void;
@@ -164,6 +164,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
     const [scopeOpen, setScopeOpen] = useState(false);
     const inputRef = useRef<HTMLInputElement | null>(null);
     const wrapRef = useRef<HTMLDivElement | null>(null);
+    const requestSeqRef = useRef(0);
     const canSwitchScope = Boolean(onScopeChange && scopeOptions.length > 1);
 
     useImperativeHandle(ref, () => ({
@@ -218,12 +219,15 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
 
     useEffect(() => {
       const needle = q.trim();
+      requestSeqRef.current += 1;
+      const requestSeq = requestSeqRef.current;
       if (!needle) {
         setResults(null);
         setBusy(false);
         return;
       }
       setBusy(true);
+      const controller = new AbortController();
       const timer = setTimeout(() => {
         const params = new URLSearchParams({
           q: needle,
@@ -232,13 +236,30 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
         });
         if (workspaceId) params.set("workspace_id", workspaceId);
         if (channelId) params.set("channel_id", channelId);
-        apiFetch(`search?${params.toString()}`, { token: token ?? undefined })
+        apiFetch(`search?${params.toString()}`, {
+          signal: controller.signal,
+          token: token ?? undefined,
+        })
           .then((r) => r.json())
-          .then((d) => setResults(normalizeResults(d?.data)))
-          .catch(() => setResults(normalizeResults(null)))
-          .finally(() => setBusy(false));
+          .then((d) => {
+            if (requestSeqRef.current === requestSeq) {
+              setResults(normalizeResults(d?.data));
+            }
+          })
+          .catch((error) => {
+            if ((error as { name?: string }).name === "AbortError") return;
+            if (requestSeqRef.current === requestSeq) {
+              setResults(normalizeResults(null));
+            }
+          })
+          .finally(() => {
+            if (requestSeqRef.current === requestSeq) setBusy(false);
+          });
       }, 150);
-      return () => clearTimeout(timer);
+      return () => {
+        controller.abort();
+        clearTimeout(timer);
+      };
     }, [q, context, limit, token, workspaceId, channelId]);
 
     const groups = useMemo(() => {

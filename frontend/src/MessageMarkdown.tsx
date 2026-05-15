@@ -9,8 +9,47 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import hljs from "highlight.js";
-import { AppIcon } from "./components/icons";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import css from "highlight.js/lib/languages/css";
+import diff from "highlight.js/lib/languages/diff";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import http from "highlight.js/lib/languages/http";
+import ini from "highlight.js/lib/languages/ini";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import plaintext from "highlight.js/lib/languages/plaintext";
+import python from "highlight.js/lib/languages/python";
+import shell from "highlight.js/lib/languages/shell";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
+import { AppIcon } from "./components/icons/AppIcon";
+
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("diff", diff);
+hljs.registerLanguage("dockerfile", dockerfile);
+hljs.registerLanguage("http", http);
+hljs.registerLanguage("ini", ini);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("plaintext", plaintext);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("shell", shell);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("yaml", yaml);
+hljs.registerAliases(["js", "jsx", "mjs", "cjs"], { languageName: "javascript" });
+hljs.registerAliases(["ts", "tsx"], { languageName: "typescript" });
+hljs.registerAliases(["py"], { languageName: "python" });
+hljs.registerAliases(["sh", "zsh"], { languageName: "bash" });
+hljs.registerAliases(["html", "svg"], { languageName: "xml" });
+hljs.registerAliases(["yml"], { languageName: "yaml" });
 
 // ── @mention preprocessing ───────────────────────────────────────────────────
 
@@ -302,9 +341,159 @@ interface MermaidDisplayState {
 }
 
 const MERMAID_RENDER_CACHE_LIMIT = 100;
+const MERMAID_MAX_SOURCE_CHARS = 20_000;
+const MERMAID_RENDER_TIMEOUT_MS = 3_000;
+const MERMAID_RENDER_ENABLED = import.meta.env.VITE_ENABLE_MERMAID !== "0";
+const MERMAID_SAFE_TAGS = new Set([
+  "a",
+  "circle",
+  "defs",
+  "desc",
+  "ellipse",
+  "g",
+  "line",
+  "linearGradient",
+  "marker",
+  "path",
+  "polygon",
+  "polyline",
+  "rect",
+  "span",
+  "stop",
+  "svg",
+  "text",
+  "textPath",
+  "title",
+  "tspan",
+]);
+const MERMAID_SAFE_ATTRS = new Set([
+  "aria-describedby",
+  "aria-label",
+  "class",
+  "clip-path",
+  "cx",
+  "cy",
+  "d",
+  "dominant-baseline",
+  "dx",
+  "dy",
+  "fill",
+  "fill-opacity",
+  "font-family",
+  "font-size",
+  "font-style",
+  "font-weight",
+  "gradientUnits",
+  "height",
+  "href",
+  "id",
+  "markerHeight",
+  "marker-end",
+  "marker-start",
+  "markerWidth",
+  "offset",
+  "opacity",
+  "orient",
+  "points",
+  "preserveAspectRatio",
+  "r",
+  "refX",
+  "refY",
+  "role",
+  "rx",
+  "ry",
+  "spreadMethod",
+  "stroke",
+  "stroke-dasharray",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-opacity",
+  "stroke-width",
+  "text-anchor",
+  "transform",
+  "version",
+  "viewBox",
+  "width",
+  "x",
+  "x1",
+  "x2",
+  "xlink:href",
+  "xmlns",
+  "xmlns:xlink",
+  "y",
+  "y1",
+  "y2",
+]);
 const mermaidRenderCache = new Map<string, MermaidRenderCacheEntry>();
 const mermaidRenderPromises = new Map<string, Promise<MermaidRenderCacheEntry>>();
 const emptyMermaidDisplayState: MermaidDisplayState = { svg: null, error: null };
+
+function isSafeSvgUrl(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed.startsWith("#") ||
+    /^https?:\/\//i.test(trimmed) ||
+    /^mailto:/i.test(trimmed)
+  );
+}
+
+function sanitizeMermaidSvg(svg: string): string | null {
+  if (typeof DOMParser === "undefined" || typeof XMLSerializer === "undefined") return null;
+  const document = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (document.querySelector("parsererror")) return null;
+
+  const walker = document.createTreeWalker(
+    document.documentElement,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT,
+  );
+  const nodesToRemove: Node[] = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.nodeType === Node.COMMENT_NODE) {
+      nodesToRemove.push(node);
+      continue;
+    }
+    if (!(node instanceof Element)) continue;
+    if (!MERMAID_SAFE_TAGS.has(node.tagName)) {
+      nodesToRemove.push(node);
+      continue;
+    }
+    for (const attr of Array.from(node.attributes)) {
+      const name = attr.name;
+      const lowerName = name.toLowerCase();
+      const value = attr.value;
+      if (
+        lowerName.startsWith("on") ||
+        lowerName === "style" ||
+        !MERMAID_SAFE_ATTRS.has(name)
+      ) {
+        node.removeAttribute(name);
+        continue;
+      }
+      if ((lowerName === "href" || lowerName === "xlink:href") && !isSafeSvgUrl(value)) {
+        node.removeAttribute(name);
+      }
+    }
+  }
+  nodesToRemove.forEach((node) => node.parentNode?.removeChild(node));
+  return new XMLSerializer().serializeToString(document.documentElement);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Mermaid 渲染超时")), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 function stripTrailingSemicolon(value: string): string {
   return value.trim().replace(/;\s*$/, "");
@@ -468,10 +657,23 @@ async function renderMermaidWithCache(renderCode: string, theme: MermaidTheme): 
   const templateId = `mermaid-cache-${hashMermaidCacheKey(key)}`;
   const promise = (async () => {
     try {
+      if (!MERMAID_RENDER_ENABLED) {
+        throw new Error("Mermaid 渲染已关闭");
+      }
+      if (renderCode.length > MERMAID_MAX_SOURCE_CHARS) {
+        throw new Error("Mermaid 图表过大，已跳过渲染");
+      }
       const mermaid = (await import("mermaid")).default;
-      mermaid.initialize({ startOnLoad: false, theme });
-      const { svg: rendered } = await mermaid.render(templateId, renderCode);
-      const entry: MermaidRenderCacheEntry = { templateId, svg: rendered, error: null };
+      mermaid.initialize({ securityLevel: "strict", startOnLoad: false, theme });
+      const { svg: rendered } = await withTimeout(
+        mermaid.render(templateId, renderCode),
+        MERMAID_RENDER_TIMEOUT_MS,
+      );
+      const sanitizedSvg = sanitizeMermaidSvg(rendered);
+      if (!sanitizedSvg) {
+        throw new Error("Mermaid SVG 清洗失败");
+      }
+      const entry: MermaidRenderCacheEntry = { templateId, svg: sanitizedSvg, error: null };
       rememberMermaidRender(key, entry);
       return entry;
     } catch (e) {
