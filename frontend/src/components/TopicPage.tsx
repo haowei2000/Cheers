@@ -1,14 +1,11 @@
 /* TopicPage — full-page topic view (displayed in place of the chat stream
  * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
 import type { ChangeEvent, ReactNode } from "react";
-import {
-  DocumentDuplicateIcon,
-  QuestionMarkCircleIcon,
-} from "@heroicons/react/24/solid";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
 import { ChatMessageRenderer } from "./ChatMessageRenderer";
 import { BotAvatar } from "./BotAvatar";
+import { AppIcon } from "./icons";
 import { TopicComposer } from "./TopicComposer";
 import type {
   ComposerKeychainItem,
@@ -223,7 +220,7 @@ export function TopicPage({
                   onClick={() => onShowMessageDetails(m)}
                   className="an-chat-action"
                 >
-                  <QuestionMarkCircleIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="help" className="w-3.5 h-3.5" />
                 </button>
               )}
               {onCopyMessage && (
@@ -234,7 +231,7 @@ export function TopicPage({
                   onClick={() => void onCopyMessage(m)}
                   className="an-chat-action"
                 >
-                  <DocumentDuplicateIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="copy" className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>

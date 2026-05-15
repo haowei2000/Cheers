@@ -1,15 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import {
-  Cog6ToothIcon,
-  MinusIcon,
-  TrashIcon,
-  UserPlusIcon,
-  XMarkIcon,
-} from "@heroicons/react/24/solid";
 import type { Channel, DM, Workspace, CurrentUser } from "../types";
 import { apiFetch } from "../api";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
+import { AppIcon } from "./icons";
 import { SearchPicker, type SearchPickerHandle, type SearchScopeOption } from "./SearchPicker";
 import type { SearchSelection } from "../types";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
@@ -387,7 +381,7 @@ export function Sidebar({
                 }}
               >
                 <span className="an-mi-ico inline-flex w-4 h-4">
-                  <Cog6ToothIcon className="w-full h-full" />
+                  <AppIcon name="settings" className="w-full h-full" />
                 </span>
                 <span>编辑工作空间</span>
               </button>
@@ -400,7 +394,7 @@ export function Sidebar({
                 }}
               >
                 <span className="an-mi-ico inline-flex w-4 h-4">
-                  <UserPlusIcon className="w-full h-full" />
+                  <AppIcon name="userPlus" className="w-full h-full" />
                 </span>
                 <span>邀请成员</span>
               </button>
@@ -437,7 +431,7 @@ export function Sidebar({
                   className="an-mi-ico inline-flex w-4 h-4"
                   style={{ color: "var(--red)" }}
                 >
-                  <XMarkIcon className="w-full h-full" />
+                  <AppIcon name="close" className="w-full h-full" />
                 </span>
                 <span>删除工作空间</span>
               </button>
@@ -543,7 +537,7 @@ export function Sidebar({
                   className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                   style={{ color: "var(--fg-3)" }}
                 >
-                  <TrashIcon className="w-3 h-3" />
+                  <AppIcon name="trash" className="w-3 h-3" />
                 </button>
               </li>
             );
@@ -665,7 +659,7 @@ export function Sidebar({
                       className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                       style={{ color: "var(--fg-3)" }}
                     >
-                      <MinusIcon className="w-3 h-3" />
+                      <AppIcon name="minus" className="w-3 h-3" />
                     </button>
                     )}
                   </li>
@@ -706,7 +700,7 @@ export function Sidebar({
               title="设置"
               aria-label="设置"
             >
-              <Cog6ToothIcon className="w-4 h-4" />
+              <AppIcon name="settings" className="w-4 h-4" />
             </button>
           </>
         ) : (
