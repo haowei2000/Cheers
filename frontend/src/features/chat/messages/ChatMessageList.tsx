@@ -913,7 +913,7 @@ export function ChatMessageList({
                                   />
                                 )}
                               </div>
-                              <div className={`${actionVisibilityClass()} self-start flex items-center gap-1 flex-shrink-0`}>
+                              <div className={`${actionVisibilityClass()} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
                                 <button
                                   type="button"
                                   title="复制消息内容"
@@ -983,7 +983,7 @@ export function ChatMessageList({
                                   {replyIcon}
                                 </button>
                               )}
-                              <div className="flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
+                              <div className="an-dm-bubble-stack flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
                                 <div className="flex items-baseline gap-1.5 mb-1 justify-end">
                                   {!isDmSelected && m.msg_type === "topic" && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
@@ -1076,7 +1076,7 @@ export function ChatMessageList({
                                 </div>
                               )}
                             </div>
-                            <div className="flex flex-col max-w-[85%] sm:max-w-[72%]">
+                            <div className="an-dm-bubble-stack flex flex-col max-w-[85%] sm:max-w-[72%]">
                               <div className="flex items-baseline gap-1.5 mb-1">
                                 <span className="font-semibold text-[13px] text-gray-900 leading-none">
                                   {m.sender_type === "bot"
@@ -1173,7 +1173,7 @@ export function ChatMessageList({
                                 />
                               )}
                             </div>
-                            <div className={`${actionVisibilityClass()} self-center flex items-center gap-1 flex-shrink-0`}>
+                            <div className={`${actionVisibilityClass()} an-msg-actions self-center flex items-center gap-1 flex-shrink-0`}>
                               {renderForwardActionButtons?.(
                                 m,
                                 "w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0",
@@ -1365,7 +1365,7 @@ export function ChatMessageList({
                                   className={
                                     rFlat
                                       ? "flex-1 min-w-0 flex flex-col"
-                                      : `flex flex-col max-w-[85%] sm:max-w-[72%] ${rIsOwn ? "items-end" : ""}`
+                                      : `an-dm-bubble-stack flex flex-col max-w-[85%] sm:max-w-[72%] ${rIsOwn ? "items-end" : ""}`
                                   }
                                 >
                                   <div
@@ -1489,7 +1489,7 @@ export function ChatMessageList({
                                     />
                                   )}
                                 </div>
-                                <div className={`${actionVisibilityClass()} self-start flex items-center gap-1 flex-shrink-0`}>
+                                <div className={`${actionVisibilityClass()} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
                                   <button
                                     type="button"
                                     title="复制消息内容"
@@ -1982,7 +1982,7 @@ export function ChatMessageList({
                                         </>
                                       )}
                                     </div>
-                                    <div className={`${actionVisibilityClass("group-hover/tr:opacity-100")} self-center flex items-center gap-1 flex-shrink-0`}>
+                                    <div className={`${actionVisibilityClass("group-hover/tr:opacity-100")} an-msg-actions self-center flex items-center gap-1 flex-shrink-0`}>
                                       {renderForwardActionButtons?.(
                                         r,
                                         "w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0",

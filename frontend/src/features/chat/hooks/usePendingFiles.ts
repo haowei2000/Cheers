@@ -7,6 +7,8 @@ import { API } from "../../../lib/app-config";
 const PRESIGN_EXTS = new Set([
   ".txt",
   ".md",
+  ".html",
+  ".htm",
   ".docx",
   ".pdf",
   ".xlsx",
@@ -26,6 +28,8 @@ const CONTENT_TYPE_MAP: Record<string, string> = {
   ".pdf": "application/pdf",
   ".txt": "text/plain",
   ".md": "text/markdown",
+  ".html": "text/html",
+  ".htm": "text/html",
   ".docx":
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx":
