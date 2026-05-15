@@ -308,6 +308,8 @@ async def file_preview_content(
         "preview_type": (
             "markdown"
             if filename.lower().endswith((".md", ".markdown", ".xlsx"))
+            else "html"
+            if filename.lower().endswith((".html", ".htm"))
             else "text"
         ),
         "content": parsed.text,

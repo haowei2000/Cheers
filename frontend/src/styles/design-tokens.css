@@ -2646,6 +2646,7 @@ kbd {
     max-width: none;
     margin-left: 0;
     margin-right: 0;
+    position: relative;
   }
   .an-chat-msg.pl-16 {
     padding-left: 1rem !important;
@@ -2656,6 +2657,20 @@ kbd {
   }
   .an-chat-msg.px-4 {
     padding-left: 0.75rem !important;
+  }
+  .an-chat-msg .an-dm-bubble-stack {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 2.75rem) !important;
+  }
+  .an-chat-msg .an-msg-actions {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    z-index: 20;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--surface) 92%, transparent);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
   }
   .an-topic-chip {
     max-width: calc(100vw - 24px);

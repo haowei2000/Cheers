@@ -1,13 +1,17 @@
-"""文件解析能力：支持 txt / md / docx / pdf，供文件推理链路复用。"""
+"""文件解析能力：支持 txt / md / html / docx / pdf，供文件推理链路复用。"""
 from __future__ import annotations
 
 import io
 from dataclasses import dataclass
 from pathlib import Path
 
+from bs4 import BeautifulSoup
+
 SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
     ".txt": {"text/plain"},
     ".md": {"text/markdown", "text/plain"},
+    ".html": {"text/html", "text/plain"},
+    ".htm": {"text/html", "text/plain"},
     ".docx": {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     },
@@ -81,6 +85,8 @@ def parse_document_bytes(
 
     if suffix in (".txt", ".md"):
         text = _parse_text(payload)
+    elif suffix in (".html", ".htm"):
+        text = _parse_html(payload)
     elif suffix == ".docx":
         text = _parse_docx(payload)
     elif suffix == ".pdf":
@@ -113,6 +119,8 @@ def to_markdown(file_path: str | Path, *, max_chars: int = 12000) -> str:
     suffix = path.suffix.lower()
     if suffix in {".txt", ".md"}:
         return _normalize_text(path.read_text(encoding="utf-8", errors="replace"))
+    if suffix in {".html", ".htm"}:
+        return _normalize_text(_parse_html(path.read_bytes()))
     if suffix == ".docx":
         return _normalize_text(_parse_docx(path.read_bytes()))
     if suffix == ".pdf":
@@ -136,6 +144,13 @@ def _parse_text(payload: bytes) -> str:
         except UnicodeDecodeError:
             continue
     return payload.decode("utf-8", errors="replace")
+
+
+def _parse_html(payload: bytes) -> str:
+    soup = BeautifulSoup(_parse_text(payload), "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    return soup.get_text("\n")
 
 
 def _parse_docx(payload: bytes) -> str:

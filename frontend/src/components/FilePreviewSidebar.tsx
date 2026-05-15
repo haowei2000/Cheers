@@ -9,7 +9,7 @@ import {
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
 
-type TextPreviewKind = "markdown" | "text";
+type TextPreviewKind = "html" | "markdown" | "text";
 
 function swapFileAction(url: string, action: "preview" | "download" | "content") {
   const [base, query] = url.split("?");
@@ -39,6 +39,10 @@ export function FilePreviewSidebar({
     normalizedType.startsWith("image/") ||
     ["png", "jpg", "jpeg", "webp", "gif"].includes(ext);
   const isPdf = normalizedType.includes("pdf") || ext === "pdf";
+  const isHtml =
+    normalizedType === "text/html" ||
+    normalizedType === "application/xhtml+xml" ||
+    ["html", "htm"].includes(ext);
   const isMarkdown =
     normalizedType === "text/markdown" || ext === "md" || ext === "markdown";
   const isPlainText = normalizedType.startsWith("text/") || ext === "txt";
@@ -46,7 +50,7 @@ export function FilePreviewSidebar({
     ["docx", "xlsx"].includes(ext) ||
     normalizedType.includes("wordprocessingml") ||
     normalizedType.includes("spreadsheetml");
-  const shouldLoadText = !isImage && !isPdf && (isMarkdown || isPlainText || isExtractedPreview);
+  const shouldLoadText = !isImage && !isPdf && !isHtml && (isMarkdown || isPlainText || isExtractedPreview);
   const sizeLabel =
     sizeBytes && sizeBytes > 0
       ? sizeBytes < 1024
@@ -58,7 +62,7 @@ export function FilePreviewSidebar({
 
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textKind, setTextKind] = useState<TextPreviewKind>(
-    isMarkdown || ext === "xlsx" ? "markdown" : "text",
+    isHtml ? "html" : isMarkdown || ext === "xlsx" ? "markdown" : "text",
   );
   const [textLoading, setTextLoading] = useState(false);
   const [textError, setTextError] = useState<string | null>(null);
@@ -104,7 +108,7 @@ export function FilePreviewSidebar({
   }, [contentUrl, isExtractedPreview, isMarkdown, previewUrl, shouldLoadText]);
 
   useEffect(() => {
-    if (!isImage && !isPdf) {
+    if (!isImage && !isPdf && !isHtml) {
       setBinaryPreviewUrl(null);
       setBinaryError(null);
       setBinaryLoading(false);
@@ -135,7 +139,7 @@ export function FilePreviewSidebar({
       revoked = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [isImage, isPdf, previewUrl]);
+  }, [isHtml, isImage, isPdf, previewUrl]);
 
   const handleDownload = () => {
     downloadProtectedFile(downloadUrl, filename).catch((e) => {
@@ -208,7 +212,7 @@ export function FilePreviewSidebar({
               />
             ) : null}
           </div>
-        ) : isPdf ? (
+        ) : isPdf || isHtml ? (
           binaryLoading ? (
             <div className="flex items-center justify-center h-full text-sm text-gray-400">
               加载中...
@@ -222,6 +226,8 @@ export function FilePreviewSidebar({
               key={binaryPreviewUrl}
               src={binaryPreviewUrl}
               title={filename}
+              sandbox={isHtml ? "" : undefined}
+              referrerPolicy={isHtml ? "no-referrer" : undefined}
               className="w-full h-full border-0"
             />
           ) : null

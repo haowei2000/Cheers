@@ -6,9 +6,11 @@ import {
   useRef,
   useState,
   type ImgHTMLAttributes,
+  type ReactNode,
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import toast from "react-hot-toast";
 import { AppIcon, FileTypeIcon } from "./components/icons";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
@@ -102,6 +104,67 @@ function childrenToText(children: unknown): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map((c) => childrenToText(c)).join("");
   return "";
+}
+
+async function copyMarkdownComponentText(text: string) {
+  const value = text.trimEnd();
+  if (!value.trim()) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success("已复制此块");
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand("copy");
+    textarea.remove();
+    if (ok) toast.success("已复制此块");
+    else toast.error("复制失败");
+  }
+}
+
+interface CopyableMarkdownBlockProps {
+  children: ReactNode;
+  className?: string;
+  copyText?: string;
+  title?: string;
+}
+
+function CopyableMarkdownBlock({
+  children,
+  className = "",
+  copyText,
+  title = "复制此块",
+}: CopyableMarkdownBlockProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const handleCopy = () => {
+    const text = copyText ?? contentRef.current?.innerText ?? "";
+    void copyMarkdownComponentText(text);
+  };
+
+  return (
+    <div className={`group/an-md-copy relative ${className}`}>
+      <div ref={contentRef}>{children}</div>
+      <button
+        type="button"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={(event) => {
+          event.stopPropagation();
+          handleCopy();
+        }}
+        className="absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 bg-white/95 text-gray-500 opacity-0 shadow-sm transition-opacity hover:bg-gray-50 hover:text-gray-900 focus:opacity-100 group-hover/an-md-copy:opacity-100"
+        title={title}
+        aria-label={title}
+      >
+        <AppIcon name="copy" className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
 }
 
 function rememberHighlightedCode(key: string, value: string): string {
@@ -783,29 +846,33 @@ const MermaidBlock = memo(function MermaidBlock({ code, streaming }: MermaidBloc
 
   if (streaming || (!svg && !error)) {
     return (
-      <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
-        <code>{code}</code>
-      </pre>
+      <CopyableMarkdownBlock copyText={code} title="复制 Mermaid 源码">
+        <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
+          <code>{code}</code>
+        </pre>
+      </CopyableMarkdownBlock>
     );
   }
 
   if (error) {
     return (
-      <div className="my-2">
+      <CopyableMarkdownBlock className="my-2" copyText={code} title="复制 Mermaid 源码">
         <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 text-xs font-mono overflow-x-auto leading-relaxed">
           <code>{code}</code>
         </pre>
         <p className="text-xs text-red-500 mt-1">Mermaid 渲染错误: {error}</p>
-      </div>
+      </CopyableMarkdownBlock>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="my-2 overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: svg! }}
-    />
+    <CopyableMarkdownBlock className="my-2" copyText={code} title="复制 Mermaid 源码">
+      <div
+        ref={containerRef}
+        className="overflow-x-auto"
+        dangerouslySetInnerHTML={{ __html: svg! }}
+      />
+    </CopyableMarkdownBlock>
   );
 });
 
@@ -843,12 +910,14 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           if (!inline) {
             const highlighted = highlightCode(codeText, lang);
             return (
-              <pre className="bg-gray-900 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
-                <code
-                  className={`hljs${lang ? ` language-${lang}` : ""}`}
-                  dangerouslySetInnerHTML={{ __html: highlighted }}
-                />
-              </pre>
+              <CopyableMarkdownBlock copyText={codeText} title="复制代码块">
+                <pre className="bg-gray-900 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
+                  <code
+                    className={`hljs${lang ? ` language-${lang}` : ""}`}
+                    dangerouslySetInnerHTML={{ __html: highlighted }}
+                  />
+                </pre>
+              </CopyableMarkdownBlock>
             );
           }
 
@@ -913,62 +982,68 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         p({ children, ...props }: any) {
           return (
-            <p className="text-sm text-gray-800 leading-relaxed my-0.5" {...props}>
-              {children}
-            </p>
+            <CopyableMarkdownBlock title="复制段落">
+              <p className="text-sm text-gray-800 leading-relaxed my-0.5 pr-7" {...props}>
+                {children}
+              </p>
+            </CopyableMarkdownBlock>
           );
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h1({ children, ...props }: any) {
-          return <h1 className="text-lg font-bold mt-4 mb-1 text-gray-900 border-b border-gray-200 pb-1" {...props}>{children}</h1>;
+          return <CopyableMarkdownBlock title="复制标题"><h1 className="text-lg font-bold mt-4 mb-1 text-gray-900 border-b border-gray-200 pb-1 pr-7" {...props}>{children}</h1></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h2({ children, ...props }: any) {
-          return <h2 className="text-base font-bold mt-3 mb-1 text-gray-900 border-b border-gray-200 pb-1" {...props}>{children}</h2>;
+          return <CopyableMarkdownBlock title="复制标题"><h2 className="text-base font-bold mt-3 mb-1 text-gray-900 border-b border-gray-200 pb-1 pr-7" {...props}>{children}</h2></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h3({ children, ...props }: any) {
-          return <h3 className="text-sm font-semibold mt-2 mb-0.5 text-gray-900" {...props}>{children}</h3>;
+          return <CopyableMarkdownBlock title="复制标题"><h3 className="text-sm font-semibold mt-2 mb-0.5 text-gray-900 pr-7" {...props}>{children}</h3></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h4({ children, ...props }: any) {
-          return <h4 className="text-sm font-semibold text-gray-900" {...props}>{children}</h4>;
+          return <CopyableMarkdownBlock title="复制标题"><h4 className="text-sm font-semibold text-gray-900 pr-7" {...props}>{children}</h4></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h5({ children, ...props }: any) {
-          return <h5 className="text-xs font-semibold text-gray-900" {...props}>{children}</h5>;
+          return <CopyableMarkdownBlock title="复制标题"><h5 className="text-xs font-semibold text-gray-900 pr-7" {...props}>{children}</h5></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h6({ children, ...props }: any) {
-          return <h6 className="text-xs font-semibold text-gray-900" {...props}>{children}</h6>;
+          return <CopyableMarkdownBlock title="复制标题"><h6 className="text-xs font-semibold text-gray-900 pr-7" {...props}>{children}</h6></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ul({ children, ...props }: any) {
-          return <ul className="list-disc pl-5 my-1 space-y-0.5 text-sm text-gray-800" {...props}>{children}</ul>;
+          return <CopyableMarkdownBlock title="复制列表"><ul className="list-disc pl-5 pr-7 my-1 space-y-0.5 text-sm text-gray-800" {...props}>{children}</ul></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ol({ children, ...props }: any) {
-          return <ol className="list-decimal pl-5 my-1 space-y-0.5 text-sm text-gray-800" {...props}>{children}</ol>;
+          return <CopyableMarkdownBlock title="复制列表"><ol className="list-decimal pl-5 pr-7 my-1 space-y-0.5 text-sm text-gray-800" {...props}>{children}</ol></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         blockquote({ children, ...props }: any) {
           return (
-            <blockquote
-              className="border-l-4 border-blue-300 bg-blue-50 pl-3 py-0.5 my-1 text-gray-600 text-sm italic"
-              {...props}
-            >
-              {children}
-            </blockquote>
+            <CopyableMarkdownBlock title="复制引用">
+              <blockquote
+                className="border-l-4 border-blue-300 bg-blue-50 pl-3 pr-7 py-0.5 my-1 text-gray-600 text-sm italic"
+                {...props}
+              >
+                {children}
+              </blockquote>
+            </CopyableMarkdownBlock>
           );
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         table({ children, ...props }: any) {
           return (
-            <div className="overflow-x-auto my-2">
-              <table className="border-collapse text-sm text-gray-800 w-full" {...props}>
-                {children}
-              </table>
-            </div>
+            <CopyableMarkdownBlock className="my-2" title="复制表格">
+              <div className="overflow-x-auto">
+                <table className="border-collapse text-sm text-gray-800 w-full" {...props}>
+                  {children}
+                </table>
+              </div>
+            </CopyableMarkdownBlock>
           );
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

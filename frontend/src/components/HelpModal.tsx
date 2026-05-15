@@ -40,7 +40,7 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
         </li>
         <li>
           上传文件：频道内输入框旁 <strong>上传</strong>
-          （.txt/.md/.docx/.pdf/.xlsx/.png/.jpg 等）
+          （.txt/.md/.html/.docx/.pdf/.xlsx/.png/.jpg 等）
         </li>
         <li>
           频道上下文：选中频道后点击 <strong>频道上下文</strong>

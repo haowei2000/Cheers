@@ -394,9 +394,9 @@ async def test_create_message_survives_bot_pipeline_enqueue_failure(
     """Bot 调度失败不能让已发送用户消息回滚或让 REST 失败。"""
     import app.api.v1.messages.routes as message_routes
 
-    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000032", name="W32")
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000035", name="W35")
     ch = Channel(
-        channel_id="e1000000-0000-0000-0000-000000000032",
+        channel_id="e1000000-0000-0000-0000-000000000035",
         workspace_id=ws.workspace_id,
         name="enqueue-failure-ch",
         type="public",
@@ -996,6 +996,48 @@ async def test_file_preview_content_returns_local_markdown(
 
 
 @pytest.mark.asyncio
+async def test_file_preview_content_parses_local_html(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000091", name="W91")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000091",
+        workspace_id=ws.workspace_id,
+        name="preview-html-ch",
+        type="public",
+    )
+    file_path = tmp_path / "preview.html"
+    file_path.write_text(
+        "<!doctype html><html><head><style>.x{color:red}</style></head>"
+        "<body><h1>HTML 预览</h1><p>Hello html preview</p>"
+        "<script>alert('skip me')</script></body></html>",
+        encoding="utf-8",
+    )
+    record = FileRecord(
+        file_id="file-preview-html",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="preview.html",
+        content_type="text/html",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/files/{record.file_id}/content")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["preview_type"] == "html"
+    assert "Hello html preview" in data["content"]
+    assert "skip me" not in data["content"]
+
+
+@pytest.mark.asyncio
 async def test_file_preview_content_parses_local_xlsx(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1086,6 +1128,20 @@ async def test_create_presigned_upload_returns_file_record(
     assert record.original_filename == "report.txt"
     assert record.status == "pending_upload"
     assert record.object_key == data["object_key"]
+
+    html_resp = await client.post(
+        "/api/v1/files/presign",
+        json={
+            "channel_id": ch.channel_id,
+            "uploader_id": "a0000000-0000-0000-0000-000000000011",
+            "filename": "preview.html",
+            "content_type": "text/html",
+            "size": 256,
+        },
+    )
+    assert html_resp.status_code == 200
+    html_data = html_resp.json()["data"]
+    assert html_data["headers"]["Content-Type"] == "text/html"
 
 
 @pytest.mark.asyncio
