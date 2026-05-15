@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChevronDownIcon, MagnifyingGlassIcon } from "@heroicons/react/24/solid";
 import { apiFetch } from "../api";
 import type {
   SearchBotHit,
@@ -14,6 +13,7 @@ import type {
   SearchResultsPayload,
   SearchSelection,
 } from "../types";
+import { AppIcon } from "./icons";
 
 export type SearchPickerHandle = {
   focus: (select?: boolean) => void;
@@ -304,7 +304,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
         {scopeLabel ? (
           <div className="an-search-shell">
             <span className="an-search-ico" aria-hidden="true">
-              <MagnifyingGlassIcon />
+              <AppIcon name="search" />
             </span>
             <button
               type="button"
@@ -325,7 +325,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
                 <span className="an-search-scope-marker">{currentScope.marker}</span>
               )}
               <span className="an-search-scope-value">{scopeLabel}</span>
-              {canSwitchScope && <ChevronDownIcon className="an-search-scope-chevron" />}
+              {canSwitchScope && <AppIcon name="chevronDown" className="an-search-scope-chevron" />}
             </button>
             {input}
             {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}

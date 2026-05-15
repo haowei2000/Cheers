@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
-import {
-  ArrowDownTrayIcon,
-  ArrowTopRightOnSquareIcon,
-  DocumentIcon,
-  XMarkIcon,
-} from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
+import { AppIcon, FileTypeIcon } from "./icons";
 
 type TextPreviewKind = "markdown" | "text";
 
@@ -103,7 +98,7 @@ export function FilePreviewSidebar({
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
         <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-          <DocumentIcon className="w-4 h-4 text-blue-500" />
+          <FileTypeIcon contentType={contentType} filename={filename} size={18} />
         </div>
         <span className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0">
           {filename}
@@ -120,7 +115,7 @@ export function FilePreviewSidebar({
             className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             title="下载文件"
           >
-            <ArrowDownTrayIcon className="w-4 h-4" />
+            <AppIcon name="download" className="w-4 h-4" />
           </a>
           <a
             href={previewUrl}
@@ -129,7 +124,7 @@ export function FilePreviewSidebar({
             className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             title="在新标签页打开"
           >
-            <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+            <AppIcon name="externalLink" className="w-4 h-4" />
           </a>
           <button
             type="button"
@@ -137,7 +132,7 @@ export function FilePreviewSidebar({
             className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none transition-colors"
             title="关闭"
           >
-            <XMarkIcon className="w-4 h-4" />
+            <AppIcon name="close" className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -181,14 +176,14 @@ export function FilePreviewSidebar({
           )
         ) : (
           <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500">
-            <DocumentIcon className="w-10 h-10 text-gray-300" />
+            <FileTypeIcon contentType={contentType} filename={filename} size={40} />
             <p>当前文件类型无法直接预览</p>
             <a
               href={downloadUrl}
               download={filename}
               className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-700 transition-colors"
             >
-              <ArrowDownTrayIcon className="w-4 h-4" />
+              <AppIcon name="download" className="w-4 h-4" />
               下载文件
             </a>
           </div>

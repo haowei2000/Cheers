@@ -1,7 +1,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { UsersIcon } from "@heroicons/react/24/solid";
 import type { CurrentUser } from "../types";
+import { AppIcon } from "./icons";
 import { Modal } from "./Modal";
 
 const API = "/api/v1";
@@ -195,7 +195,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
             className="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-3"
             style={{ background: "var(--accent)" }}
           >
-            <UsersIcon className="w-7 h-7 text-white" />
+            <AppIcon name="users" className="w-7 h-7 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900">
             {authMode === "login"
