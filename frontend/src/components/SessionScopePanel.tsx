@@ -222,6 +222,8 @@ export function SessionScopePanel({
   title = "对应 Session",
   refreshKey = 0,
   variant = "block",
+  onRefresh,
+  refreshing = false,
 }: {
   scopeType: ScopeType;
   scopeId: string;
@@ -230,6 +232,8 @@ export function SessionScopePanel({
   title?: string;
   refreshKey?: number;
   variant?: "block" | "toolbar";
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -284,7 +288,7 @@ export function SessionScopePanel({
   if (variant === "toolbar") {
     const summary = loading ? "…" : String(sessions.length);
     return (
-      <div className="an-session-control" ref={wrapRef}>
+      <div className={`an-session-control ${onRefresh ? "has-refresh" : ""}`} ref={wrapRef}>
         <button
           type="button"
           className={`an-topics-btn an-session-btn ${open ? "on" : ""}`}
@@ -297,6 +301,18 @@ export function SessionScopePanel({
           <span className="hidden sm:inline">Session</span>
           <span className="an-tb-n">{summary}</span>
         </button>
+        {onRefresh && (
+          <button
+            type="button"
+            className="an-session-refresh-btn"
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="刷新 DM Session"
+            aria-label="刷新 DM Session"
+          >
+            <AppIcon name="refresh" className={refreshing ? "animate-spin" : ""} />
+          </button>
+        )}
         {open && (
           <div className="an-topics-pop an-session-pop">
             <div className="an-hd">{title}</div>

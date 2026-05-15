@@ -271,10 +271,43 @@
 .an-topics-btn.on .an-tb-n { color: var(--accent); background: #fff2; }
 .an-session-control {
   position: relative;
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
 }
 .an-session-btn {
   white-space: nowrap;
+}
+.an-session-control.has-refresh .an-session-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: 0;
+}
+.an-session-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--fg-3);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 0 14px 14px 0;
+  cursor: pointer;
+  transition: all var(--motion-fast);
+}
+.an-session-refresh-btn:hover:not(:disabled) {
+  color: var(--fg-1);
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+.an-session-refresh-btn:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.an-session-refresh-btn svg {
+  width: 13px;
+  height: 13px;
 }
 .an-session-pop {
   right: 0;
