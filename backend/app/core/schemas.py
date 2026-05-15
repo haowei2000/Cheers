@@ -389,6 +389,7 @@ class MessageFileInResponse(BaseModel):
     content_type: str | None = None
     size_bytes: int | None = None
     status: str
+    expires_at: datetime | None = None
 
 
 # ==================== content_data schemas (per msg_type) ====================

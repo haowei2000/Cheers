@@ -117,8 +117,8 @@ def _format_call_bot_xml_prompt(*, username: str, message: str, run_ctx: Any) ->
             lines.append(f"    <attachment {' '.join(attrs)}>")
             if attachment.get("summary"):
                 lines.append(f"      <summary>{_xml_text(attachment.get('summary'))}</summary>")
-            if attachment.get("download_url"):
-                lines.append(f"      <download_url>{_xml_text(attachment.get('download_url'))}</download_url>")
+            if attachment.get("preview_url"):
+                lines.append(f"      <preview_url>{_xml_text(attachment.get('preview_url'))}</preview_url>")
             lines.append("    </attachment>")
         lines.append("  </attachments>")
 
@@ -425,6 +425,7 @@ def _make_tools(ctx: dict) -> list:
 
         from app.config import settings
         from app.db.models import FileRecord
+        from app.services.file_retention import file_expires_at
 
         file_id = str(uuid.uuid4())
         channel_id = ctx["channel_id"]
@@ -453,6 +454,7 @@ def _make_tools(ctx: dict) -> list:
             status="ready",
             uploaded_at=now,
             converted_at=now,
+            expires_at=file_expires_at(now),
         )
         db_session = ctx.get("_db_session")
         if db_session:

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.chat.message_assembler import MessageAssembler
 from app.db.models import BotAccount, Channel, FileRecord, Message
+from app.services.file_retention import active_file_filter
 from app.features.agent_bridge.pending import PendingReply, pending_replies
 from app.features.agent_bridge.streams import StreamState, stream_registry
 from app.features.bot_runtime.pipeline.bot.mention import resolve_user_mentions
@@ -272,7 +273,7 @@ async def _broadcast_done(
     file_map = {}
     if file_ids:
         rows = (await session.execute(
-            select(FileRecord).where(FileRecord.file_id.in_(file_ids))
+            select(FileRecord).where(FileRecord.file_id.in_(file_ids), active_file_filter())
         )).scalars().all()
         file_map = {r.file_id: r for r in rows}
     await WSEventBus(msg.channel_id).publish(
@@ -441,7 +442,7 @@ async def finalize_stream(
     file_map = {}
     if msg.file_ids:
         rows = (await session.execute(
-            select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids))
+            select(FileRecord).where(FileRecord.file_id.in_(msg.file_ids), active_file_filter())
         )).scalars().all()
         file_map = {r.file_id: r for r in rows}
     await WSEventBus(state.channel_id).publish(
