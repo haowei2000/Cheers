@@ -27,6 +27,11 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
+import {
+  createProtectedFileObjectUrl,
+  isAgentNexusFileUrl,
+  openProtectedFile,
+} from "./lib/protected-file";
 
 hljs.registerLanguage("bash", bash);
 hljs.registerLanguage("css", css);
@@ -86,6 +91,7 @@ interface MarkdownImageLoadState {
   inFlight: boolean;
   listeners: Set<() => void>;
   loaded: boolean;
+  objectUrl?: string;
 }
 
 type MarkdownImageSnapshot = Pick<MarkdownImageLoadState, "attempt" | "displaySrc" | "failed" | "loaded">;
@@ -157,6 +163,7 @@ function pruneMarkdownImageStateCache() {
     let pruned = false;
     for (const [key, state] of markdownImageLoadState) {
       if (!state.inFlight && state.listeners.size === 0) {
+        if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
         markdownImageLoadState.delete(key);
         pruned = true;
         break;
@@ -204,6 +211,32 @@ function loadMarkdownImagePreview(src: string) {
 
   const attempt = state.attempt;
   const displaySrc = withRetryParam(src, attempt);
+
+  if (isAgentNexusFileUrl(displaySrc)) {
+    createProtectedFileObjectUrl(displaySrc)
+      .then((objectUrl) => {
+        if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+        state.objectUrl = objectUrl;
+        state.displaySrc = objectUrl;
+        state.failed = false;
+        state.inFlight = false;
+        state.loaded = true;
+        notifyMarkdownImageState(state);
+      })
+      .catch(() => {
+        state.inFlight = false;
+        state.loaded = false;
+        if (attempt >= MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS) {
+          state.failed = true;
+        } else {
+          state.attempt = attempt + 1;
+        }
+        notifyMarkdownImageState(state);
+        loadMarkdownImagePreview(src);
+      });
+    return;
+  }
+
   const image = new Image();
 
   image.onload = () => {
@@ -320,7 +353,7 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
     } else if (isImage && onImageClick) {
       onImageClick(previewUrl);
     } else {
-      window.open(previewUrl, "_blank", "noreferrer");
+      openProtectedFile(previewUrl).catch(() => {});
     }
   };
 

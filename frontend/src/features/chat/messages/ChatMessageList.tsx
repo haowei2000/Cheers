@@ -94,6 +94,12 @@ export interface ChatMessageListProps {
   handleClarifySkip: (msgId: string) => void;
   toggleTopic: (rootId: string) => void;
   toggleMessage: (msgId: string) => void;
+  forwardSelectionMode?: boolean;
+  renderForwardActionButtons?: (
+    message: Message,
+    actionClassName?: string,
+    iconClassName?: string,
+  ) => ReactNode;
 }
 
 export function ChatMessageList({
@@ -148,7 +154,12 @@ export function ChatMessageList({
   handleClarifySkip,
   toggleTopic,
   toggleMessage,
+  forwardSelectionMode = false,
+  renderForwardActionButtons,
 }: ChatMessageListProps) {
+  const actionVisibilityClass = (hoverClass = "group-hover:opacity-100") =>
+    `${forwardSelectionMode ? "opacity-100" : `opacity-0 ${hoverClass}`} focus-within:opacity-100 transition-opacity`;
+
   return (
                 <div
                   ref={messagesContainerRef}
@@ -902,7 +913,7 @@ export function ChatMessageList({
                                   />
                                 )}
                               </div>
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+                              <div className={`${actionVisibilityClass()} self-start flex items-center gap-1 flex-shrink-0`}>
                                 <button
                                   type="button"
                                   title="复制消息内容"
@@ -911,6 +922,7 @@ export function ChatMessageList({
                                 >
                                   <AppIcon name="copy" className="w-3.5 h-3.5" />
                                 </button>
+                                {renderForwardActionButtons?.(m)}
                                 {renderMemoryLoadButton(m)}
                                 <button
                                   type="button"
@@ -944,6 +956,11 @@ export function ChatMessageList({
                               我
                             </div>
                             <div className="flex items-end gap-1.5">
+                              {renderForwardActionButtons?.(
+                                m,
+                                `${actionVisibilityClass()} w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1`,
+                                "w-3.5 h-3.5",
+                              )}
                               {!isDmSelected && (
                                 <button
                                   type="button"
@@ -961,7 +978,7 @@ export function ChatMessageList({
                                       : inputRef.current
                                     )?.focus();
                                   }}
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1"
+                                  className={`${actionVisibilityClass()} w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1`}
                                 >
                                   {replyIcon}
                                 </button>
@@ -1156,7 +1173,12 @@ export function ChatMessageList({
                                 />
                               )}
                             </div>
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
+                            <div className={`${actionVisibilityClass()} self-center flex items-center gap-1 flex-shrink-0`}>
+                              {renderForwardActionButtons?.(
+                                m,
+                                "w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0",
+                                "w-3.5 h-3.5",
+                              )}
                               {renderMemoryLoadButton(m)}
                               {!isDmSelected && (
                                 <button
@@ -1467,7 +1489,7 @@ export function ChatMessageList({
                                     />
                                   )}
                                 </div>
-                                <div className="opacity-0 group-hover:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0">
+                                <div className={`${actionVisibilityClass()} self-start flex items-center gap-1 flex-shrink-0`}>
                                   <button
                                     type="button"
                                     title="复制消息内容"
@@ -1476,6 +1498,7 @@ export function ChatMessageList({
                                   >
                                     <AppIcon name="copy" className="w-3.5 h-3.5" />
                                   </button>
+                                  {renderForwardActionButtons?.(r)}
                                   {renderMemoryLoadButton(r)}
                                   <button
                                     type="button"
@@ -1959,7 +1982,12 @@ export function ChatMessageList({
                                         </>
                                       )}
                                     </div>
-                                    <div className="opacity-0 group-hover/tr:opacity-100 transition-opacity self-center flex items-center gap-1 flex-shrink-0">
+                                    <div className={`${actionVisibilityClass("group-hover/tr:opacity-100")} self-center flex items-center gap-1 flex-shrink-0`}>
+                                      {renderForwardActionButtons?.(
+                                        r,
+                                        "w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0",
+                                        "w-3 h-3",
+                                      )}
                                       {renderMemoryLoadButton(r)}
                                       <button
                                         type="button"

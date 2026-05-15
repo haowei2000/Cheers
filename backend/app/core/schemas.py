@@ -402,6 +402,7 @@ class MessageFileInResponse(BaseModel):
     content_type: str | None = None
     size_bytes: int | None = None
     status: str
+    expires_at: datetime | None = None
 
 
 # ==================== content_data schemas (per msg_type) ====================
@@ -515,6 +516,20 @@ class MessageCreate(BaseModel):
         if self.msg_type is None:
             self.msg_type = "reply" if self.in_reply_to_msg_id else "normal"
         return self
+
+
+class ForwardMessageRequest(BaseModel):
+    """转发消息或文件到目标频道/DM。"""
+
+    source_message_ids: list[str] = Field(default_factory=list)
+    source_file_ids: list[str] = Field(default_factory=list)
+    mode: Literal["single", "topic"] = "single"
+
+
+class ForwardMessageResponse(BaseModel):
+    """转发结果。"""
+
+    messages: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # Discriminated union（供新客户端使用）

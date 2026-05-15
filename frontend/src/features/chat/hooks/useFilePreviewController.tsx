@@ -3,7 +3,11 @@ import { ChatAttachments } from "../../../components/ChatMessageRenderer";
 import { API } from "../../../lib/app-config";
 import type { FileInfo, Message } from "../../../types";
 
-export function useFilePreviewController() {
+export function useFilePreviewController({
+  onForwardFile,
+}: {
+  onForwardFile?: (file: FileInfo) => void;
+} = {}) {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null);
   const [filePreviewPanel, setFilePreviewPanel] = useState<{
@@ -56,6 +60,7 @@ export function useFilePreviewController() {
       getPreviewUrl={(file) => filePreviewUrl(file.file_id)}
       getDownloadUrl={(file) => fileDownloadUrl(file.file_id)}
       onPreview={openFilePreview}
+      onForward={onForwardFile}
     />
   );
 

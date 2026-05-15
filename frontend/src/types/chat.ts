@@ -46,6 +46,7 @@ export type FileInfo = {
   content_type?: string;
   size_bytes?: number;
   status?: string;
+  expires_at?: string | null;
 };
 
 export type BotTraceEvent = {

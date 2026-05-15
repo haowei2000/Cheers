@@ -10,6 +10,7 @@ import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
+import { MemberIdentity } from "./members";
 
 export type MessageComposerKind = "normal" | "secret" | "announcement" | "topic";
 
@@ -58,6 +59,7 @@ export interface MessageComposerProps {
   onTitleChange?: (value: string) => void;
   channelBots: ChannelBot[];
   channelUsers: ChannelUser[];
+  currentUserId?: string;
   replyingTo?: Message | null;
   onCancelReply?: () => void;
   pendingFiles?: ComposerPendingFile[];
@@ -98,6 +100,7 @@ export function MessageComposer({
   onTitleChange,
   channelBots,
   channelUsers,
+  currentUserId,
   replyingTo = null,
   onCancelReply,
   pendingFiles = [],
@@ -364,10 +367,19 @@ export function MessageComposer({
             replyingTo.sender_type === "bot"
               ? channelBots.find((bot) => bot.member_id === replyingTo.sender_id)
               : null;
+          const refUser =
+            replyingTo.sender_type === "user"
+              ? channelUsers.find((user) => user.member_id === replyingTo.sender_id)
+              : null;
           const refLabel =
             replyingTo.sender_type === "bot"
               ? refBot?.display_name || refBot?.username || "Bot"
-              : "我";
+              : replyingTo.sender_id === currentUserId
+                ? "我"
+                : replyingTo.sender_name ||
+                  refUser?.display_name ||
+                  refUser?.username ||
+                  "用户";
           const refText =
             parseHelperPayload(replyingTo.content).text || replyingTo.content;
           const refPreview = refText.replace(/\n/g, " ").slice(0, 80);
@@ -700,47 +712,17 @@ export function MessageComposer({
                   pickMention(item);
                 }}
               >
-                <span
-                  className="an-mi-ico"
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 5,
-                    color: "#fff",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    background:
-                      item.kind === "bot" ? "var(--green)" : "var(--accent)",
+                <MemberIdentity
+                  avatarSize={24}
+                  member={{
+                    ...item,
+                    display_name: item.username,
+                    member_type: item.kind,
                   }}
-                >
-                  {item.username.slice(0, 1).toUpperCase()}
-                </span>
-                <div className="flex flex-col min-w-0 flex-1">
-                  <span
-                    className="font-medium truncate"
-                    style={{ color: "var(--fg-1)" }}
-                  >
-                    @{item.username}
-                  </span>
-                  {item.display_name && (
-                    <span className="an-mi-sub truncate">
-                      {item.display_name}
-                    </span>
-                  )}
-                </div>
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
-                  style={{
-                    background:
-                      item.kind === "bot"
-                        ? "var(--green-muted)"
-                        : "var(--accent-muted)",
-                    color:
-                      item.kind === "bot" ? "var(--green)" : "var(--accent)",
-                  }}
-                >
-                  {item.kind === "bot" ? "Bot" : "用户"}
-                </span>
+                  primaryPrefix="@"
+                  showBadge
+                  sub={item.display_name}
+                />
               </li>
             ))}
           </ul>

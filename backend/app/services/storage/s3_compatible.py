@@ -170,8 +170,14 @@ class S3CompatibleStorageService(StorageProvider):
         ref = self.resolve_file_id(file_id, scope=scope)
         return await asyncio.to_thread(self._head_object_sync, ref)
 
+    async def head_object_ref(self, ref: StorageObjectRef) -> StorageObjectHead:
+        return await asyncio.to_thread(self._head_object_sync, ref)
+
     async def get_object(self, file_id: str, *, scope: str = "uploads") -> StorageObject:
         ref = self.resolve_file_id(file_id, scope=scope)
+        return await asyncio.to_thread(self._get_object_sync, ref)
+
+    async def get_object_ref(self, ref: StorageObjectRef) -> StorageObject:
         return await asyncio.to_thread(self._get_object_sync, ref)
 
     async def put_metadata_if_needed(
@@ -197,6 +203,10 @@ class S3CompatibleStorageService(StorageProvider):
         ref = self.resolve_file_id(file_id, scope=scope)
         await asyncio.to_thread(self._put_object_sync, ref, data, content_type)
         return ref
+
+    async def delete_object(self, file_id: str, *, scope: str = "uploads") -> None:
+        ref = self.resolve_file_id(file_id, scope=scope)
+        await asyncio.to_thread(self._delete_object_sync, ref)
 
     def create_presigned_get_url(
         self,
@@ -359,6 +369,16 @@ class S3CompatibleStorageService(StorageProvider):
         except self._client_errors() as exc:
             raise StorageClientInitError(
                 f"failed to write metadata sidecar for file_id={ref.file_id}: {exc}"
+            ) from exc
+
+    def _delete_object_sync(self, ref: StorageObjectRef) -> None:
+        client = self._get_client()
+        try:
+            client.delete_object(Bucket=ref.bucket, Key=ref.object_key)
+            client.delete_object(Bucket=ref.bucket, Key=ref.object_key + ".meta.json")
+        except self._client_errors() as exc:
+            raise StorageClientInitError(
+                f"failed to delete object for file_id={ref.file_id}: {exc}"
             ) from exc
 
     def _is_not_found_error(self, exc: BaseException) -> bool:

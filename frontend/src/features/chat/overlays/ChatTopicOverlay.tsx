@@ -29,6 +29,10 @@ export interface ChatTopicOverlayProps {
   onBack: () => void;
   onSendReply: (channelId: string, rootMsgId: string, text: string) => Promise<void> | void;
   onCopyMessage: (message: Message) => Promise<void> | void;
+  onForwardMessage?: (message: Message) => void;
+  onToggleForwardSelection?: (message: Message) => void;
+  forwardSelectionMode?: boolean;
+  selectedForwardMsgIds?: string[];
   onShowMessageDetails: (message: Message) => void;
   hasMessageDetails: (message: Message) => boolean;
   onImageClick: (src: string) => void;
@@ -60,6 +64,10 @@ export function ChatTopicOverlay({
   onBack,
   onSendReply,
   onCopyMessage,
+  onForwardMessage,
+  onToggleForwardSelection,
+  forwardSelectionMode = false,
+  selectedForwardMsgIds = [],
   onShowMessageDetails,
   hasMessageDetails,
   onImageClick,
@@ -103,8 +111,14 @@ export function ChatTopicOverlay({
             currentUserId={currentUserId || ""}
             onBack={onBack}
             onGoToChannel={onBack}
-            onSendReply={(text) => onSendReply(selectedId, rootId, text)}
+            onSendReply={(text, inReplyToMsgId) =>
+              onSendReply(selectedId, inReplyToMsgId ?? rootId, text)
+            }
             onCopyMessage={onCopyMessage}
+            onForwardMessage={onForwardMessage}
+            onToggleForwardSelection={onToggleForwardSelection}
+            forwardSelectionMode={forwardSelectionMode}
+            selectedForwardMsgIds={selectedForwardMsgIds}
             onShowMessageDetails={onShowMessageDetails}
             hasMessageDetails={hasMessageDetails}
             onImageClick={onImageClick}

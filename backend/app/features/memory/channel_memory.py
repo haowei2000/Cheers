@@ -8,6 +8,7 @@ from sqlalchemy import asc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import FileRecord, MemoryEntry, TodoItem
+from app.services.file_retention import active_file_filter
 
 # 支持结构化 CRUD 的层
 ENTRY_LAYERS = ("ANCHOR", "DECISIONS", "PROGRESS")
@@ -232,6 +233,7 @@ class ChannelMemory:
             .where(
                 FileRecord.channel_id == channel_id,
                 FileRecord.content_type.notlike("image/%"),
+                active_file_filter(),
             )
             .order_by(asc(FileRecord.created_at))
         )

@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
 import { MessageMarkdown } from "../MessageMarkdown";
+import { apiFetch } from "../api/client";
+import {
+  createProtectedFileObjectUrl,
+  downloadProtectedFile,
+  openProtectedFile,
+} from "../lib/protected-file";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
 
@@ -56,6 +62,9 @@ export function FilePreviewSidebar({
   );
   const [textLoading, setTextLoading] = useState(false);
   const [textError, setTextError] = useState<string | null>(null);
+  const [binaryPreviewUrl, setBinaryPreviewUrl] = useState<string | null>(null);
+  const [binaryLoading, setBinaryLoading] = useState(false);
+  const [binaryError, setBinaryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!shouldLoadText) {
@@ -69,7 +78,7 @@ export function FilePreviewSidebar({
     setTextLoading(true);
     setTextContent(null);
     setTextError(null);
-    fetch(sourceUrl)
+    apiFetch(sourceUrl)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return isExtractedPreview ? r.json() : r.text();
@@ -94,6 +103,52 @@ export function FilePreviewSidebar({
       });
   }, [contentUrl, isExtractedPreview, isMarkdown, previewUrl, shouldLoadText]);
 
+  useEffect(() => {
+    if (!isImage && !isPdf) {
+      setBinaryPreviewUrl(null);
+      setBinaryError(null);
+      setBinaryLoading(false);
+      return;
+    }
+
+    let revoked = false;
+    let objectUrl: string | null = null;
+    setBinaryLoading(true);
+    setBinaryError(null);
+    setBinaryPreviewUrl(null);
+    createProtectedFileObjectUrl(previewUrl)
+      .then((url) => {
+        objectUrl = url;
+        if (revoked) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setBinaryPreviewUrl(url);
+        setBinaryLoading(false);
+      })
+      .catch((e) => {
+        setBinaryError(e instanceof Error ? e.message : String(e));
+        setBinaryLoading(false);
+      });
+
+    return () => {
+      revoked = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [isImage, isPdf, previewUrl]);
+
+  const handleDownload = () => {
+    downloadProtectedFile(downloadUrl, filename).catch((e) => {
+      setBinaryError(e instanceof Error ? e.message : String(e));
+    });
+  };
+
+  const handleOpen = () => {
+    openProtectedFile(previewUrl).catch((e) => {
+      setBinaryError(e instanceof Error ? e.message : String(e));
+    });
+  };
+
   return (
     <aside className="w-full border-l border-gray-200 bg-white flex flex-col">
       {/* Header */}
@@ -110,23 +165,22 @@ export function FilePreviewSidebar({
           </span>
         )}
         <div className="flex items-center gap-0.5 flex-shrink-0">
-          <a
-            href={downloadUrl}
-            download={filename}
+          <button
+            type="button"
+            onClick={handleDownload}
             className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             title="下载文件"
           >
             <AppIcon name="download" className="w-4 h-4" />
-          </a>
-          <a
-            href={previewUrl}
-            target="_blank"
-            rel="noreferrer"
+          </button>
+          <button
+            type="button"
+            onClick={handleOpen}
             className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             title="在新标签页打开"
           >
             <AppIcon name="externalLink" className="w-4 h-4" />
-          </a>
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -142,19 +196,35 @@ export function FilePreviewSidebar({
       <div className="flex-1 overflow-y-auto">
         {isImage ? (
           <div className="min-h-full flex items-center justify-center bg-gray-50 p-4">
-            <img
-              src={previewUrl}
-              alt={filename}
-              className="max-w-full max-h-full object-contain rounded-md shadow-sm"
-            />
+            {binaryLoading ? (
+              <span className="text-sm text-gray-400">加载中...</span>
+            ) : binaryError ? (
+              <span className="text-sm text-red-400">{binaryError}</span>
+            ) : binaryPreviewUrl ? (
+              <img
+                src={binaryPreviewUrl}
+                alt={filename}
+                className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+              />
+            ) : null}
           </div>
         ) : isPdf ? (
-          <iframe
-            key={previewUrl}
-            src={previewUrl}
-            title={filename}
-            className="w-full h-full border-0"
-          />
+          binaryLoading ? (
+            <div className="flex items-center justify-center h-full text-sm text-gray-400">
+              加载中...
+            </div>
+          ) : binaryError ? (
+            <div className="flex items-center justify-center h-full text-sm text-red-400">
+              {binaryError}
+            </div>
+          ) : binaryPreviewUrl ? (
+            <iframe
+              key={binaryPreviewUrl}
+              src={binaryPreviewUrl}
+              title={filename}
+              className="w-full h-full border-0"
+            />
+          ) : null
         ) : shouldLoadText ? (
           textLoading ? (
             <div className="flex items-center justify-center h-full text-sm text-gray-400">
@@ -179,14 +249,14 @@ export function FilePreviewSidebar({
           <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500">
             <FileTypeIcon contentType={contentType} filename={filename} size={40} />
             <p>当前文件类型无法直接预览</p>
-            <a
-              href={downloadUrl}
-              download={filename}
+            <button
+              type="button"
+              onClick={handleDownload}
               className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-700 transition-colors"
             >
               <AppIcon name="download" className="w-4 h-4" />
               下载文件
-            </a>
+            </button>
           </div>
         )}
       </div>

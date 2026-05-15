@@ -5,6 +5,8 @@ import { useAuth } from "./hooks/useAuth";
 import { useResize } from "./hooks/useResize";
 import { Sidebar } from "./components/Sidebar";
 import { ImageLightbox } from "./components/ImageLightbox";
+import { ForwardMessageModal } from "./components/ForwardMessageModal";
+import { AppIcon } from "./components/icons/AppIcon";
 import type { MemoryTab } from "./components/ChannelHeader";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { AppModals } from "./components/app/AppModals";
@@ -24,6 +26,7 @@ import { apiFetch } from "./api";
 import { parseHelperPayload } from "./lib/helper";
 import { API, API_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
+import { refreshChannels, refreshDMs } from "./lib/refresh";
 import {
   buildChatPath,
   buildChatSearch,
@@ -40,8 +43,16 @@ import type {
   ContextData,
   ClarifySchema,
   ClarifyAnswers,
+  FileInfo,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
+
+type ForwardModalState = {
+  mode: "single" | "topic";
+  sourceMessageIds: string[];
+  sourceFileIds: string[];
+  summary: string;
+};
 
 export default function App() {
   const { isDark, setTheme } = useTheme();
@@ -323,6 +334,21 @@ export default function App() {
     Record<string, string>
   >({});
   const [secretTokens, setSecretTokens] = useState<Record<string, string>>({}); // msg_id -> token（仅发送方当次 session 持有）
+  const [forwardModalState, setForwardModalState] =
+    useState<ForwardModalState | null>(null);
+  const [forwardSelectionMode, setForwardSelectionMode] = useState(false);
+  const [selectedForwardMsgIds, setSelectedForwardMsgIds] = useState<string[]>(
+    [],
+  );
+  const [forwardSubmitting, setForwardSubmitting] = useState(false);
+  const openForwardFile = useCallback((file: FileInfo) => {
+    setForwardModalState({
+      mode: "single",
+      sourceMessageIds: [],
+      sourceFileIds: [file.file_id],
+      summary: `转发文件：${file.original_filename || file.file_id}`,
+    });
+  }, []);
   const {
     lightboxSrc,
     lightboxFileId,
@@ -334,7 +360,7 @@ export default function App() {
     handleMarkdownImageClick,
     handleMarkdownFileClick,
     renderFileAttachments,
-  } = useFilePreviewController();
+  } = useFilePreviewController({ onForwardFile: openForwardFile });
   // 可伸缩面板宽度
   const [leftWidth, onLeftResize] = useResize(256, 160, 480, "right");
   const [memoryWidth, onMemoryResize] = useResize(288, 200, 600, "left");
@@ -832,6 +858,252 @@ export default function App() {
     ? getMemoryLoadDetail(selectedDetailMessage)
     : null;
   const selectedBotTraceEvents = selectedDetailMessage?._bot_trace || [];
+  const messagePreviewText = useCallback((message: Message): string => {
+    const raw = parseHelperPayload(message.content || "").text || message.content || "";
+    return (
+      raw
+        .replace(/<think>[\s\S]*?<\/think>/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 80) || "(无内容)"
+    );
+  }, []);
+  const forwardMessageById = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (const message of pageTopicSourceMessages) {
+      map.set(message.msg_id, message);
+    }
+    return map;
+  }, [pageTopicSourceMessages]);
+  const forwardWorkspaceId = selectedWorkspaceId || selectedIdWorkspaceId || null;
+
+  const openForwardMessage = useCallback(
+    (message: Message) => {
+      if (message.is_secret) {
+        toast.error("加密消息不能转发");
+        return;
+      }
+      setForwardModalState({
+        mode: "single",
+        sourceMessageIds: [message.msg_id],
+        sourceFileIds: [],
+        summary: `转发 1 条消息：${messagePreviewText(message)}`,
+      });
+    },
+    [messagePreviewText],
+  );
+
+  const toggleForwardSelection = useCallback((message: Message) => {
+    if (message.is_secret) {
+      toast.error("加密消息不能转发");
+      return;
+    }
+    setForwardSelectionMode(true);
+    setSelectedForwardMsgIds((prev) =>
+      prev.includes(message.msg_id)
+        ? prev.filter((id) => id !== message.msg_id)
+        : [...prev, message.msg_id],
+    );
+  }, []);
+
+  const cancelForwardSelection = useCallback(() => {
+    setForwardSelectionMode(false);
+    setSelectedForwardMsgIds([]);
+  }, []);
+
+  const openForwardSelectedTopic = useCallback(() => {
+    const ids = selectedForwardMsgIds.filter((id) => forwardMessageById.has(id));
+    if (ids.length === 0) {
+      toast.error("请先选择要转发的消息");
+      return;
+    }
+    setForwardModalState({
+      mode: "topic",
+      sourceMessageIds: ids,
+      sourceFileIds: [],
+      summary: `合并转发 ${ids.length} 条消息为主题`,
+    });
+  }, [forwardMessageById, selectedForwardMsgIds]);
+
+  const insertForwardedMessages = useCallback(
+    (targetChannelId: string, created: unknown) => {
+      if (selectedIdRef.current !== targetChannelId || !Array.isArray(created)) {
+        return;
+      }
+      setMessageStore((prev) =>
+        created.reduce(
+          (store, item) =>
+            item && typeof item === "object"
+              ? upsertMessage(store, item as Message, MAX_LOADED_MESSAGES)
+              : store,
+          prev,
+        ),
+      );
+    },
+    [selectedIdRef, setMessageStore],
+  );
+
+  const postForwardToChannel = useCallback(
+    async (targetChannelId: string, state: ForwardModalState) => {
+      const res = await apiFetch(`/channels/${targetChannelId}/messages/forward`, {
+        method: "POST",
+        token: authToken,
+        body: {
+          source_message_ids: state.sourceMessageIds,
+          source_file_ids: state.sourceFileIds,
+          mode: state.mode,
+        },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.status === "error") {
+        throw new Error(data?.detail || data?.message || "转发失败");
+      }
+      insertForwardedMessages(targetChannelId, data?.data?.messages);
+    },
+    [authToken, insertForwardedMessages],
+  );
+
+  const submitForwardToChannel = useCallback(
+    async (targetChannelId: string) => {
+      if (!forwardModalState) return;
+      if (!authToken) {
+        setLoginModalOpen(true);
+        toast.error("请先登录后再转发");
+        return;
+      }
+      const state = forwardModalState;
+      setForwardSubmitting(true);
+      try {
+        await postForwardToChannel(targetChannelId, state);
+        toast.success(state.mode === "topic" ? "已合并转发" : "已转发");
+        setForwardModalState(null);
+        cancelForwardSelection();
+        refreshChannels(setChannels, authToken);
+        refreshDMs(setDMs, authToken);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "转发失败");
+      } finally {
+        setForwardSubmitting(false);
+      }
+    },
+    [
+      authToken,
+      cancelForwardSelection,
+      forwardModalState,
+      postForwardToChannel,
+      setChannels,
+      setDMs,
+    ],
+  );
+
+  const submitForwardToMember = useCallback(
+    async (memberId: string, memberType: "user" | "bot") => {
+      if (!forwardModalState) return;
+      if (!authToken) {
+        setLoginModalOpen(true);
+        toast.error("请先登录后再转发");
+        return;
+      }
+      const workspaceId =
+        workspaces.find((workspace) => workspace.kind === "personal")
+          ?.workspace_id ||
+        forwardWorkspaceId ||
+        selectedWorkspaceId;
+      if (!workspaceId) {
+        toast.error("请先选择工作空间");
+        return;
+      }
+      const state = forwardModalState;
+      setForwardSubmitting(true);
+      try {
+        const dmRes = await apiFetch("dms", {
+          method: "POST",
+          token: authToken,
+          body: {
+            workspace_id: workspaceId,
+            member_id: memberId,
+            member_type: memberType,
+          },
+        });
+        const dmData = await dmRes.json().catch(() => null);
+        if (!dmRes.ok || dmData?.status === "error") {
+          throw new Error(dmData?.detail || dmData?.message || "打开私信失败");
+        }
+        const dm = dmData?.data;
+        if (!dm?.channel_id) throw new Error("打开私信失败");
+        setDMs((prev) =>
+          prev.some((item) => item.channel_id === dm.channel_id)
+            ? prev.map((item) => (item.channel_id === dm.channel_id ? dm : item))
+            : [...prev, dm],
+        );
+        await postForwardToChannel(dm.channel_id, state);
+        toast.success(state.mode === "topic" ? "已合并转发" : "已转发");
+        setForwardModalState(null);
+        cancelForwardSelection();
+        refreshDMs(setDMs, authToken);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "转发失败");
+      } finally {
+        setForwardSubmitting(false);
+      }
+    },
+    [
+      authToken,
+      cancelForwardSelection,
+      forwardModalState,
+      forwardWorkspaceId,
+      postForwardToChannel,
+      selectedWorkspaceId,
+      setDMs,
+      workspaces,
+    ],
+  );
+
+  const renderForwardActionButtons = useCallback(
+    (
+      message: Message,
+      actionClassName = "an-chat-action",
+      iconClassName = "w-3.5 h-3.5",
+    ) => {
+      const selected = selectedForwardMsgIds.includes(message.msg_id);
+      const selectedStyle = selected
+        ? { background: "var(--accent-muted)", color: "var(--accent)" }
+        : undefined;
+      return (
+        <>
+          <button
+            type="button"
+            title={selected ? "取消选择" : "选择后合并转发"}
+            aria-label={selected ? "取消选择" : "选择后合并转发"}
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleForwardSelection(message);
+            }}
+            className={actionClassName}
+            style={selectedStyle}
+          >
+            <AppIcon
+              name={selected ? "checkCircle" : "check"}
+              className={iconClassName}
+            />
+          </button>
+          <button
+            type="button"
+            title="转发"
+            aria-label="转发"
+            onClick={(event) => {
+              event.stopPropagation();
+              openForwardMessage(message);
+            }}
+            className={actionClassName}
+          >
+            <AppIcon name="forward" className={iconClassName} />
+          </button>
+        </>
+      );
+    },
+    [openForwardMessage, selectedForwardMsgIds, toggleForwardSelection],
+  );
 
   return (
     <>
@@ -909,6 +1181,21 @@ export default function App() {
         onCloseChannelSettings={() => setChannelSettingsOpen(false)}
         setChannels={setChannels}
         setAutoAssist={setAutoAssist}
+      />
+
+      <ForwardMessageModal
+        open={Boolean(forwardModalState)}
+        channels={channels}
+        dms={dms}
+        token={authToken}
+        workspaceId={forwardWorkspaceId}
+        summary={forwardModalState?.summary || ""}
+        submitting={forwardSubmitting}
+        onClose={() => {
+          if (!forwardSubmitting) setForwardModalState(null);
+        }}
+        onForwardToChannel={submitForwardToChannel}
+        onForwardToMember={submitForwardToMember}
       />
 
       <ChatShell
@@ -1034,6 +1321,10 @@ export default function App() {
                 onBack: () => setPageTopicId(null),
                 onSendReply: sendTopicReply,
                 onCopyMessage: copyMessageText,
+                onForwardMessage: openForwardMessage,
+                onToggleForwardSelection: toggleForwardSelection,
+                forwardSelectionMode,
+                selectedForwardMsgIds,
                 onShowMessageDetails: setMemoryDetailMessage,
                 hasMessageDetails: hasBotReplyDetails,
                 onImageClick: handleMarkdownImageClick,
@@ -1101,7 +1392,34 @@ export default function App() {
                 handleClarifySkip,
                 toggleTopic,
                 toggleMessage,
+                forwardSelectionMode,
+                renderForwardActionButtons,
               }}
+              forwardSelectionBar={
+                forwardSelectionMode ? (
+                  <div className="absolute bottom-24 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-1)] px-3 py-2 text-sm shadow-lg">
+                    <span className="whitespace-nowrap text-[var(--fg-2)]">
+                      已选择 {selectedForwardMsgIds.length} 条
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded-md px-2 py-1 text-xs text-[var(--fg-3)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--fg-1)]"
+                      onClick={cancelForwardSelection}
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedForwardMsgIds.length === 0}
+                      className="inline-flex items-center gap-1 rounded-md bg-[var(--accent)] px-2.5 py-1 text-xs font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={openForwardSelectedTopic}
+                    >
+                      <AppIcon name="forward" className="h-3.5 w-3.5" />
+                      合并转发
+                    </button>
+                  </div>
+                ) : null
+              }
               composerProps={{
                 value: input,
                 valueRevision: inputRevision,

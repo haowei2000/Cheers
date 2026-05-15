@@ -35,6 +35,7 @@ from app.features.bot_runtime.pipeline.events import MessageCreated
 from app.features.bot_runtime.pipeline.ingest.context import IngestContext
 from app.features.bot_runtime.pipeline.stage import Stage
 from app.services.file_processor.service import FileFlowError, FilePipelineService
+from app.services.file_retention import active_file_filter
 from app.services.secret_messages import SECRET_PLACEHOLDER, secret_placeholder_for
 from app.services.storage.base import StorageError
 from app.utils.crypto import encrypt_value
@@ -127,13 +128,21 @@ class SecretEnvelopeStage(Stage[IngestContext]):
 class PersistStage(Stage[IngestContext]):
     async def run(self, ctx: IngestContext) -> None:
         if ctx.channel is not None and ctx.channel.type == "dm":
-            ctx.in_reply_to_msg_id = None
-            if ctx.msg_type in {"topic", MSG_TYPE_REPLY}:
+            keep_dm_topic = (
+                ctx.msg_type == "topic"
+                and isinstance(ctx.content_data, dict)
+                and ctx.content_data.get("kind") == "forward_bundle"
+            )
+            if ctx.msg_type == "topic" and not keep_dm_topic:
                 ctx.msg_type = MSG_TYPE_NORMAL
+                ctx.in_reply_to_msg_id = None
                 ctx.content_data = None
             if ctx.msg_type == "announcement":
                 ctx.msg_type = MSG_TYPE_NORMAL
+                ctx.in_reply_to_msg_id = None
                 ctx.content_data = None
+            if ctx.msg_type == MSG_TYPE_REPLY and not ctx.in_reply_to_msg_id:
+                ctx.msg_type = MSG_TYPE_NORMAL
         msg_type = ctx.msg_type or (
             MSG_TYPE_REPLY if ctx.in_reply_to_msg_id else MSG_TYPE_NORMAL
         )
@@ -176,7 +185,7 @@ class PersistStage(Stage[IngestContext]):
         fids = sorted({fid for fid in (msg.file_ids or []) if fid})
         if fids:
             fres = await ctx.session.execute(
-                select(FileRecord).where(FileRecord.file_id.in_(fids))
+                select(FileRecord).where(FileRecord.file_id.in_(fids), active_file_filter())
             )
             for rec in fres.scalars().all():
                 ctx.file_map[rec.file_id] = MessageFileDTO(
@@ -185,6 +194,7 @@ class PersistStage(Stage[IngestContext]):
                     content_type=rec.content_type,
                     size_bytes=rec.size_bytes,
                     status=rec.status,
+                    expires_at=rec.expires_at,
                 )
 
 

@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { AppIcon } from "../../components/icons/AppIcon";
 import { ChannelHeader, type MemoryTab } from "../../components/ChannelHeader";
 import {
@@ -41,6 +41,7 @@ interface ChatWorkspaceViewProps {
   taskOverlayProps: ChatTaskOverlayProps;
   topicOverlayProps: ChatTopicOverlayProps;
   messageListProps: ChatMessageListProps;
+  forwardSelectionBar?: ReactNode;
   composerProps: MessageComposerProps;
   setMemoryTab: Dispatch<SetStateAction<MemoryTab | null>>;
   setPageTopicId: Dispatch<SetStateAction<string | null>>;
@@ -71,6 +72,7 @@ export function ChatWorkspaceView({
   taskOverlayProps,
   topicOverlayProps,
   messageListProps,
+  forwardSelectionBar,
   composerProps,
   setMemoryTab,
   setPageTopicId,
@@ -165,6 +167,7 @@ export function ChatWorkspaceView({
           )}
 
           <ChatMessageList {...messageListProps} />
+          {forwardSelectionBar}
 
           <div
             className="flex-shrink-0 px-3 sm:px-4 pb-4 pt-2"
