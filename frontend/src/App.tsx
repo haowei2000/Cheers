@@ -2425,6 +2425,7 @@ export default function App() {
             onOpenInviteWsMember={() => setInviteWsMemberOpen(true)}
             onOpenCreateChannel={() => setCreateChannelOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenFilePreview={openFilePreview}
           />
         }
       >

@@ -7,6 +7,8 @@ import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
 import { AppIcon, FileTypeIcon } from "./icons";
 import { InviteMemberSearch } from "./InviteMemberSearch";
+import { MemberListItem, colorForIdentity, initialsForIdentity } from "./members";
+import { SearchPicker } from "./SearchPicker";
 
 const API = "/api/v1";
 
@@ -1233,8 +1235,29 @@ export function MemoryPanel({
               <p className="text-[11px] text-gray-400">{meta.desc}</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 overflow-y-auto">
-              {channelFiles.map((f) => {
+            <div className="flex h-full flex-col">
+              <div className="border-b border-gray-100 px-3 py-2">
+                <SearchPicker
+                  context="file_lookup"
+                  channelId={channelId}
+                  types={["files"]}
+                  modal
+                  placeholder="搜索文件名、摘要或类型"
+                  emptyText="没有匹配文件"
+                  actionLabel="预览"
+                  onSelect={(selection) => {
+                    if (selection.type !== "file") return;
+                    onFilePreview?.({
+                      file_id: selection.item.file_id,
+                      original_filename: selection.item.original_filename,
+                      content_type: selection.item.content_type,
+                      size_bytes: selection.item.size_bytes,
+                    });
+                  }}
+                />
+              </div>
+              <div className="divide-y divide-gray-100 overflow-y-auto">
+                {channelFiles.map((f) => {
                 const ct = f.content_type || "";
                 const typeLabel = ct.includes("pdf")
                   ? "PDF"
@@ -1303,7 +1326,8 @@ export function MemoryPanel({
                     </a>
                   </div>
                 );
-              })}
+                })}
+              </div>
             </div>
           )
         ) : rawContent.trim() ? (
@@ -1418,29 +1442,6 @@ function QuickAddFooter({
 // with back navigation, status, and quick actions.
 // ═════════════════════════════════════════════════════════════════════════════
 
-const MEM_COLORS = [
-  "#7c6cf5",
-  "#3ecf8e",
-  "#56a7ff",
-  "#f5a623",
-  "#f05454",
-  "#9586ff",
-  "#5b8dff",
-];
-
-function colorForMember(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return MEM_COLORS[Math.abs(h) % MEM_COLORS.length];
-}
-
-function initialsFor(label: string): string {
-  const parts = label.trim().split(/\s+/);
-  const first = parts[0]?.[0] || "";
-  const second = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + second).toUpperCase() || label.slice(0, 1).toUpperCase();
-}
-
 function MembersView({
   members,
   currentUserId,
@@ -1483,7 +1484,7 @@ function MembersView({
       selected.display_name ||
       selected.username ||
       (isBot ? "Bot" : "用户");
-    const color = colorForMember(selected.member_id);
+    const color = colorForIdentity(selected.member_id);
     return (
       <div className="overflow-y-auto px-3 py-2">
         <div className="an-mem-detail">
@@ -1499,7 +1500,7 @@ function MembersView({
               className="an-av"
               style={{ background: color, borderRadius: isBot ? 9 : 999 }}
             >
-              {initialsFor(label)}
+              {initialsForIdentity(label)}
             </div>
             <div className="an-info">
               <div className="an-n">
@@ -1627,105 +1628,56 @@ function MembersView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="an-members-list min-h-0 flex-1 overflow-y-auto">
-      {bots.length > 0 && (
-        <>
-          <div className="an-mem-group">
-            <span>Agents · 智能体</span>
-            <span className="an-ct">{bots.length}</span>
-          </div>
-          {bots.map((m) => {
-            const label = m.display_name || m.username || "Bot";
-            const color = colorForMember(m.member_id);
-            return (
-              <button
-                key={m.member_id}
-                type="button"
-                className="an-mem-row"
-                onClick={() => setSelected(m)}
-              >
-                <div className="an-av-wrap">
-                  <div
-                    className="an-av bot"
-                    style={{ background: color }}
-                  >
-                    {initialsFor(label)}
-                  </div>
-                </div>
-                <div className="an-r-main">
-                  <div className="an-r-name">
-                    {label}
-                    <span className="an-tag-pill">Bot</span>
-                  </div>
-                  {m.username && m.username !== label && (
-                    <div className="an-r-sub">@{m.username}</div>
-                  )}
-                </div>
-                <span className="an-chev" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
-      {users.length > 0 && (
-        <>
-          <div className="an-mem-group">
-            <span>People · 成员</span>
-            <span className="an-ct">{users.length}</span>
-          </div>
-          {users.map((m) => {
-            const label = m.display_name || m.username || "用户";
-            const color = colorForMember(m.member_id);
-            const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
-            return (
-              <button
-                key={m.member_id}
-                type="button"
-                className={`an-mem-row ${isSelf ? "self" : ""}`}
-                onClick={() => setSelected(m)}
-                title={isSelf ? "我的频道资料" : undefined}
-                aria-label={isSelf ? "我的频道资料" : label}
-              >
-                <div className="an-av-wrap">
-                  {m.avatar_url ? (
-                    <img
-                      src={m.avatar_url}
-                      alt={label}
-                      className="an-av"
-                      style={{ borderRadius: 999 }}
-                    />
-                  ) : (
-                    <div
-                      className="an-av"
-                      style={{ background: color, borderRadius: 999 }}
-                    >
-                      {initialsFor(label)}
-                    </div>
-                  )}
-                  {isSelf && (
-                    <span className="an-self-edit" aria-hidden="true">
-                      <AppIcon name="pencil" />
-                    </span>
-                  )}
-                </div>
-                <div className="an-r-main">
-                  <div className="an-r-name">
-                    {label}
-                    {isSelf && <span className="an-tag-pill self">我</span>}
-                  </div>
-                  {m.username && m.username !== label && (
-                    <div className="an-r-sub">@{m.username}</div>
-                  )}
-                </div>
-                <span className="an-chev" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
+        {bots.length > 0 && (
+          <>
+            <div className="an-mem-group">
+              <span>Agents · 智能体</span>
+              <span className="an-ct">{bots.length}</span>
+            </div>
+            {bots.map((m) => {
+              const label = m.display_name || m.username || "Bot";
+              return (
+                <MemberListItem
+                  key={m.member_id}
+                  id={m.member_id}
+                  kind="bot"
+                  username={m.username}
+                  displayName={label}
+                  avatarUrl={m.avatar_url}
+                  variant="panel"
+                  onClick={() => setSelected(m)}
+                />
+              );
+            })}
+          </>
+        )}
+        {users.length > 0 && (
+          <>
+            <div className="an-mem-group">
+              <span>People · 成员</span>
+              <span className="an-ct">{users.length}</span>
+            </div>
+            {users.map((m) => {
+              const label = m.display_name || m.username || "用户";
+              const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
+              return (
+                <MemberListItem
+                  key={m.member_id}
+                  id={m.member_id}
+                  kind="user"
+                  username={m.username}
+                  displayName={label}
+                  avatarUrl={m.avatar_url}
+                  variant="panel"
+                  self={isSelf}
+                  onClick={() => setSelected(m)}
+                  title={isSelf ? "我的频道资料" : undefined}
+                  aria-label={isSelf ? "我的频道资料" : label}
+                />
+              );
+            })}
+          </>
+        )}
       </div>
     </div>
   );

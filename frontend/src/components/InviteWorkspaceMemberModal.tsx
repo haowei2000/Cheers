@@ -51,6 +51,7 @@ export function InviteWorkspaceMemberModal({
               context="workspace_invite"
               token={authToken}
               workspaceId={workspaceId || undefined}
+              types={["users"]}
               modal
               placeholder="搜索用户"
               actionLabel="邀请"
