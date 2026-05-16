@@ -6,9 +6,12 @@ import { API } from "../../../lib/app-config";
 import { isClarifyReplyUserMessage } from "../../../lib/helper";
 import { buildTopicTree, isMsgReply, mergeMessagesChronologically } from "../../../lib/message";
 import {
+  INITIAL_MESSAGE_PAGE_SIZE,
   MAX_LOADED_MESSAGES,
+  OLDER_MESSAGE_PAGE_SIZE,
   trimToRecentMessages,
   VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
+  VIRTUAL_MESSAGE_OVERSCAN_ROWS,
 } from "../../../lib/message-window";
 import {
   emptyMessageStore,
@@ -19,7 +22,7 @@ import {
 } from "../../../lib/message-store";
 import type { Message } from "../../../types";
 
-const MESSAGE_PAGE_SIZE = 50;
+const CHANNEL_CACHE_REVALIDATE_MS = 5_000;
 
 interface UseChannelMessagesOptions {
   selectedId: string | null;
@@ -30,6 +33,12 @@ interface UseChannelMessagesOptions {
   pageTopicMessages: Message[];
   setExpandedTopics: Dispatch<SetStateAction<Set<string>>>;
 }
+
+type ChannelMessageCacheEntry = {
+  store: MessageStore;
+  hasMore: boolean;
+  receivedAt: number;
+};
 
 export function useChannelMessages({
   selectedId,
@@ -47,10 +56,9 @@ export function useChannelMessages({
   const setMessages = useCallback(
     (next: Message[] | ((prev: Message[]) => Message[])) => {
       setMessageStore((prevStore) => {
+        if (typeof next !== "function") return messagesToStore(next);
         const prevMessages = storeToMessages(prevStore);
-        const nextMessages =
-          typeof next === "function" ? next(prevMessages) : next;
-        return messagesToStore(nextMessages);
+        return messagesToStore(next(prevMessages));
       });
     },
     [],
@@ -62,38 +70,120 @@ export function useChannelMessages({
   const isLoadingOlderRef = useRef(false);
   const stickToBottomRef = useRef(true);
   const lastAutoScrollChannelRef = useRef<string | null>(null);
+  const channelMessageCacheRef = useRef<Partial<Record<string, ChannelMessageCacheEntry>>>({});
+  const preloadRequestsRef = useRef<Partial<Record<string, Promise<ChannelMessageCacheEntry | null>>>>({});
+  const cacheGenerationRef = useRef(0);
+
+  const fetchInitialMessages = useCallback(
+    async (
+      channelId: string,
+      signal?: AbortSignal,
+    ): Promise<ChannelMessageCacheEntry> => {
+      const response = await authFetch(
+        `${API}/channels/${channelId}/messages?limit=${INITIAL_MESSAGE_PAGE_SIZE}`,
+        signal ? { signal } : undefined,
+      );
+      const data = await response.json();
+      const items = data.data || [];
+      const visibleData = trimToRecentMessages(items);
+      return {
+        store: messagesToStore(visibleData),
+        hasMore:
+          Boolean(data.meta?.has_more ?? items.length >= INITIAL_MESSAGE_PAGE_SIZE) &&
+          visibleData.length < MAX_LOADED_MESSAGES,
+        receivedAt: Date.now(),
+      };
+    },
+    [authFetch],
+  );
+
+  const preloadChannelMessages = useCallback(
+    (channelId: string) => {
+      if (
+        !channelId ||
+        channelMessageCacheRef.current[channelId] ||
+        preloadRequestsRef.current[channelId]
+      ) {
+        return;
+      }
+      const generation = cacheGenerationRef.current;
+      const request = fetchInitialMessages(channelId)
+        .then((entry) => {
+          if (cacheGenerationRef.current === generation) {
+            channelMessageCacheRef.current[channelId] = entry;
+          }
+          return entry;
+        })
+        .catch((error) => {
+          if ((error as { name?: string }).name !== "AbortError") {
+            console.debug("channel message preload failed", error);
+          }
+          return null;
+        })
+        .finally(() => {
+          delete preloadRequestsRef.current[channelId];
+        });
+      preloadRequestsRef.current[channelId] = request;
+    },
+    [fetchInitialMessages],
+  );
+
+  useEffect(() => {
+    cacheGenerationRef.current += 1;
+    channelMessageCacheRef.current = {};
+    preloadRequestsRef.current = {};
+  }, [authFetch]);
 
   useEffect(() => {
     if (!selectedId) {
-      setMessages([]);
+      setMessageStore(emptyMessageStore());
       setHasMore(true);
       setLoading(false);
       return;
     }
     const targetChannelId = selectedId;
     const controller = new AbortController();
+    const cached = channelMessageCacheRef.current[targetChannelId];
     stickToBottomRef.current = true;
     lastAutoScrollChannelRef.current = null;
-    setLoading(true);
+    if (cached) {
+      setMessageStore(cached.store);
+      setHasMore(cached.hasMore);
+      setLoading(false);
+    } else {
+      setMessageStore(emptyMessageStore());
+      setHasMore(true);
+      setLoading(true);
+    }
 
-    authFetch(`${API}/channels/${targetChannelId}/messages?limit=${MESSAGE_PAGE_SIZE}`, {
-      signal: controller.signal,
-    })
-      .then((response) => response.json())
-      .then((data) => {
+    if (cached && Date.now() - cached.receivedAt < CHANNEL_CACHE_REVALIDATE_MS) {
+      return () => controller.abort();
+    }
+
+    const request =
+      preloadRequestsRef.current[targetChannelId] ??
+      fetchInitialMessages(targetChannelId, controller.signal);
+
+    request
+      .then((entry) => {
+        if (!entry) return;
         if (
           controller.signal.aborted ||
           selectedIdRef.current !== targetChannelId
         ) {
           return;
         }
-        const items = data.data || [];
-        const visibleData = trimToRecentMessages(items);
-        setMessages(visibleData);
-        setHasMore(
-          Boolean(data.meta?.has_more ?? items.length >= MESSAGE_PAGE_SIZE) &&
-            visibleData.length < MAX_LOADED_MESSAGES,
-        );
+        channelMessageCacheRef.current[targetChannelId] = entry;
+        setMessageStore((prev) => {
+          const prevMessages = storeToMessages(prev);
+          if (prevMessages.length === 0) return entry.store;
+          return messagesToStore(
+            trimToRecentMessages(
+              mergeMessagesChronologically(prevMessages, storeToMessages(entry.store)),
+            ),
+          );
+        });
+        setHasMore(entry.hasMore);
       })
       .catch((error) => {
         if ((error as { name?: string }).name === "AbortError") return;
@@ -110,7 +200,16 @@ export function useChannelMessages({
       });
 
     return () => controller.abort();
-  }, [authFetch, selectedId, selectedIdRef, setMessages]);
+  }, [fetchInitialMessages, selectedId, selectedIdRef]);
+
+  useEffect(() => {
+    if (!selectedId || loading) return;
+    channelMessageCacheRef.current[selectedId] = {
+      store: messageStore,
+      hasMore,
+      receivedAt: Date.now(),
+    };
+  }, [hasMore, loading, messageStore, selectedId]);
 
   const loadMoreMessages = useCallback(async () => {
     if (!selectedId || !hasMore || loadingMore) return;
@@ -127,7 +226,7 @@ export function useChannelMessages({
     const prevScrollHeight = container?.scrollHeight ?? 0;
     try {
       const response = await authFetch(
-        `${API}/channels/${targetChannelId}/messages?before_id=${oldest.msg_id}&limit=${MESSAGE_PAGE_SIZE}`,
+        `${API}/channels/${targetChannelId}/messages?before_id=${oldest.msg_id}&limit=${OLDER_MESSAGE_PAGE_SIZE}`,
       );
       const data = await response.json();
       const older = data.data || [];
@@ -139,7 +238,7 @@ export function useChannelMessages({
       const hitWindowCap =
         messages.length + older.length >= MAX_LOADED_MESSAGES;
       setHasMore(
-        !hitWindowCap && Boolean(data.meta?.has_more ?? older.length >= MESSAGE_PAGE_SIZE),
+        !hitWindowCap && Boolean(data.meta?.has_more ?? older.length >= OLDER_MESSAGE_PAGE_SIZE),
       );
       setMessageStore((prev) =>
         trimMessageStoreToRecent(
@@ -270,7 +369,9 @@ export function useChannelMessages({
     count: topicRoots.length,
     getScrollElement: () => messagesContainerRef.current,
     estimateSize: () => VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
-    overscan: 12,
+    overscan: VIRTUAL_MESSAGE_OVERSCAN_ROWS,
+    isScrollingResetDelay: 120,
+    useAnimationFrameWithResizeObserver: true,
     getItemKey: (index) => topicRoots[index]?.msg_id ?? index,
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
@@ -315,5 +416,6 @@ export function useChannelMessages({
     virtualItems,
     pageTopicSourceMessages,
     pageTopicRepliesOf,
+    preloadChannelMessages,
   };
 }

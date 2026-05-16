@@ -51,6 +51,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenFilePreview?: (file: FileInfo) => void;
   onOpenPersonalFileMain?: (file: FileInfo) => void;
+  onPreloadChannel?: (channelId: string) => void;
 }
 
 const WS_LETTER_COLORS = ["#7c6cf5", "#3ecf8e", "#f5a623", "#56a7ff", "#f05454", "#9586ff"];
@@ -99,6 +100,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenFilePreview,
   onOpenPersonalFileMain,
+  onPreloadChannel,
 }: SidebarProps) {
   const currentWs = workspaces.find((w) => w.workspace_id === selectedWorkspaceId);
   const currentWsLabel = currentWs ? currentWs.name : "全部工作空间";
@@ -753,6 +755,8 @@ export function Sidebar({
                 <button
                   type="button"
                   onClick={() => setSelectedId(c.channel_id)}
+                  onFocus={() => onPreloadChannel?.(c.channel_id)}
+                  onPointerEnter={() => onPreloadChannel?.(c.channel_id)}
                   className={`an-rail-row w-full ${isActive ? "active" : ""} pr-7`}
                 >
                   <span className="an-sigil">
@@ -854,6 +858,8 @@ export function Sidebar({
                     <button
                       type="button"
                       onClick={() => setSelectedId(d.channel_id)}
+                      onFocus={() => onPreloadChannel?.(d.channel_id)}
+                      onPointerEnter={() => onPreloadChannel?.(d.channel_id)}
                       className={`an-rail-row w-full ${isActive ? "active" : ""} pr-7`}
                       title={
                         cp.username
@@ -1011,6 +1017,8 @@ export function Sidebar({
                     <button
                       type="button"
                       onClick={() => setSelectedId(dm.channel_id)}
+                      onFocus={() => onPreloadChannel?.(dm.channel_id)}
+                      onPointerEnter={() => onPreloadChannel?.(dm.channel_id)}
                       className={`an-rail-row an-project-chat-row w-full ${
                         isActive ? "active" : ""
                       } pr-7`}
