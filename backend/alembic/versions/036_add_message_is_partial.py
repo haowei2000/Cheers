@@ -1,13 +1,4 @@
-"""add is_partial flag to messages
-
-Revision ID: 036
-Revises: 035
-Create Date: 2026-04-27 00:00:00.000000
-
-When a streaming bot reply is cancelled (or errors mid-stream) we still
-keep what was generated so far and mark the row is_partial=True so the
-frontend can render a "已取消" badge.
-"""
+"""036 add message is partial module."""
 from typing import Sequence, Union
 
 import sqlalchemy as sa

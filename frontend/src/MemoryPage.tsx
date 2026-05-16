@@ -1,13 +1,14 @@
 /**
- * MemoryPage — 频道记忆全屏独立页面
+ * MemoryPage — full-screen channel memory page.
  *
- * 特性：
- * - 左侧导航栏 + 右侧内容区的双栏布局
- * - 结构化层（ANCHOR/DECISIONS/PROGRESS）：卡片式条目 + Markdown 渲染 + 内联编辑器（写/预览双栏）
- * - FILES_INDEX：文件卡片网格（图标、类型、摘要）
- * - RECENT：时间线视图
- * - MEMBERS：成员卡片
- * - TODO：任务看板
+ * Features:
+ * - Two-column layout with navigation on the left and content on the right.
+ * - Structured layers (ANCHOR/DECISIONS/PROGRESS): card entries, Markdown
+ *   rendering, and an inline write/preview editor.
+ * - FILES_INDEX: file card grid with icon, type, and summary.
+ * - RECENT: timeline view.
+ * - MEMBERS: member cards.
+ * - TODO: task board.
  */
 import {
   createElement,
@@ -17,21 +18,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  ArchiveBoxIcon,
-  ArrowTrendingUpIcon,
-  BookmarkIcon,
-  CheckCircleIcon,
-  ClipboardDocumentListIcon,
-  ClockIcon,
-  UsersIcon,
-} from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "./MessageMarkdown";
+import { AppIcon, FileTypeIcon, type AppIconName } from "./components/icons";
+import { MemberRow, sortMembersByKind } from "./components/members";
 import type { MemoryEntryItem, MemberItem, TodoItem } from "./types";
 import { getAuthToken as getStoredToken } from "./api";
 
-const ico = (Icon: typeof BookmarkIcon): ReactNode =>
-  createElement(Icon, { className: "w-full h-full" });
+const ico = (name: AppIconName): ReactNode =>
+  createElement(AppIcon, { className: "w-full h-full", name });
 
 const API = "/api/v1";
 
@@ -48,9 +42,9 @@ function relativeTime(iso: string | null): string {
   const d = new Date(iso);
   const now = Date.now();
   const diff = now - d.getTime();
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}  minutes ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}  hours ago`;
   return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }
 
@@ -79,69 +73,69 @@ const LAYER_META: Record<
     readonly?: boolean;
   }
 > = {
-  ANCHOR: {
-    label: "项目锚点",
-    desc: "核心目标、约束、背景",
-    icon: ico(BookmarkIcon),
-    color: "text-blue-600",
-    bgLight: "bg-blue-50",
-    borderColor: "border-blue-200",
-    entryBased: true,
-  },
-  PROGRESS: {
-    label: "项目进度",
-    desc: "当前进度、已完成、下一步",
-    icon: ico(ArrowTrendingUpIcon),
-    color: "text-teal-600",
-    bgLight: "bg-teal-50",
-    borderColor: "border-teal-200",
-    entryBased: true,
-  },
-  DECISIONS: {
-    label: "决策记录",
-    desc: "重要决策及原因",
-    icon: ico(ClipboardDocumentListIcon),
-    color: "text-purple-600",
-    bgLight: "bg-purple-50",
-    borderColor: "border-purple-200",
-    entryBased: true,
-  },
-  FILES_INDEX: {
-    label: "资料索引",
-    desc: "上传的文件与参考资料",
-    icon: ico(ArchiveBoxIcon),
-    color: "text-amber-600",
-    bgLight: "bg-amber-50",
-    borderColor: "border-amber-200",
-    readonly: true,
-  },
-  RECENT: {
-    label: "近期动态",
-    desc: "历史对话摘要",
-    icon: ico(ClockIcon),
-    color: "text-green-600",
-    bgLight: "bg-green-50",
-    borderColor: "border-green-200",
-    readonly: true,
-  },
-  MEMBERS: {
-    label: "频道成员",
-    desc: "用户与 Bot 能力一览",
-    icon: ico(UsersIcon),
-    color: "text-gray-600",
-    bgLight: "bg-gray-50",
-    borderColor: "border-gray-200",
-    readonly: true,
-  },
-  TODO: {
-    label: "待办事项",
-    desc: "频道任务清单",
-    icon: ico(CheckCircleIcon),
-    color: "text-rose-600",
-    bgLight: "bg-rose-50",
-    borderColor: "border-rose-200",
-    readonly: true,
-  },
+	  ANCHOR: {
+	    label: "Project anchor",
+	    desc: "Core goals, constraints, and background",
+	    icon: ico("note"),
+	    color: "text-[var(--accent)]",
+	    bgLight: "bg-[var(--accent-muted)]",
+	    borderColor: "border-[var(--border)]",
+	    entryBased: true,
+	  },
+	  PROGRESS: {
+	    label: "Project progress",
+	    desc: "Current progress, completed work, and next steps",
+	    icon: ico("trending"),
+	    color: "text-[var(--green)]",
+	    bgLight: "bg-[var(--green-muted)]",
+	    borderColor: "border-[var(--border)]",
+	    entryBased: true,
+	  },
+	  DECISIONS: {
+	    label: "Decision log",
+	    desc: "Important decisions and rationale",
+	    icon: ico("task"),
+	    color: "text-[var(--blue)]",
+	    bgLight: "bg-[var(--blue-muted)]",
+	    borderColor: "border-[var(--border)]",
+	    entryBased: true,
+	  },
+	  FILES_INDEX: {
+	    label: "Reference index",
+	    desc: "Uploaded files and references",
+	    icon: ico("archive"),
+	    color: "text-[var(--orange)]",
+	    bgLight: "bg-[var(--orange-muted)]",
+	    borderColor: "border-[var(--border)]",
+	    readonly: true,
+	  },
+	  RECENT: {
+	    label: "Recent activity",
+	    desc: "Conversation history summary",
+	    icon: ico("clock"),
+	    color: "text-[var(--green)]",
+	    bgLight: "bg-[var(--green-muted)]",
+	    borderColor: "border-[var(--border)]",
+	    readonly: true,
+	  },
+	  MEMBERS: {
+	    label: "Channel members",
+	    desc: "Users and bot capabilities",
+	    icon: ico("users"),
+	    color: "text-[var(--fg-2)]",
+	    bgLight: "bg-[var(--surface-soft)]",
+	    borderColor: "border-[var(--border)]",
+	    readonly: true,
+	  },
+	  TODO: {
+	    label: "Todo items",
+	    desc: "Channel task list",
+	    icon: ico("checkCircle"),
+	    color: "text-[var(--red)]",
+	    bgLight: "bg-[var(--red-muted)]",
+	    borderColor: "border-[var(--border)]",
+	    readonly: true,
+	  },
 };
 
 /* ── File card helper: parse FILES_INDEX markdown into cards ────────────── */
@@ -173,17 +167,17 @@ function parseFilesIndex(md: string): FileCard[] {
         fileId = m[1];
         continue;
       }
-      const m2 = line.match(/^-\s*类型:\s*(.+)/);
+      const m2 = line.match(/^-\s*Type:\s*(.+)/);
       if (m2) {
         contentType = m2[1].trim();
         continue;
       }
-      const m3 = line.match(/^-\s*摘要:\s*(.+)/);
+      const m3 = line.match(/^-\s*(?:Summary|\u6458\u8981):\s*(.+)/);
       if (m3) {
         summary = m3[1].trim();
         continue;
       }
-      const m4 = line.match(/^-\s*登记时间:\s*(.+)/);
+      const m4 = line.match(/^-\s*(?:Registered at|\u767b\u8bb0\u65f6\u95f4):\s*(.+)/);
       if (m4) {
         time = m4[1].trim();
         continue;
@@ -191,18 +185,6 @@ function parseFilesIndex(md: string): FileCard[] {
     }
     return { filename, fileId, contentType, summary, time };
   });
-}
-
-function fileIcon(ct: string): string {
-  if (ct.includes("pdf")) return "📄";
-  if (ct.includes("word") || ct.includes("doc")) return "📝";
-  if (ct.includes("sheet") || ct.includes("excel") || ct.includes("csv"))
-    return "📊";
-  if (ct.includes("presentation") || ct.includes("ppt")) return "📽️";
-  if (ct.includes("image")) return "🖼️";
-  if (ct.includes("video")) return "🎬";
-  if (ct.includes("audio")) return "🎵";
-  return "📎";
 }
 
 /* ── RECENT helper: parse page XML into timeline items ─────────────────── */
@@ -249,7 +231,7 @@ function formatRange(from: string, to: string): string {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   EntryEditor — 内联 Markdown 编辑器，左写右预览
+   EntryEditor - inline Markdown editor with split edit/preview modes.
    ══════════════════════════════════════════════════════════════════════════════ */
 
 function EntryEditor({
@@ -275,38 +257,40 @@ function EntryEditor({
   }, []);
 
   return (
-    <div className="border border-blue-200 rounded-lg overflow-hidden bg-white shadow-sm">
+    <div className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-1)]">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
+      <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--bg-0)] px-3 py-2">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="标题（可选）"
-          className="flex-1 text-sm font-medium bg-transparent border-none outline-none placeholder-gray-400"
+          placeholder="Title (optional)"
+          className="an-type-body flex-1 border-none bg-transparent font-medium outline-none placeholder:text-[var(--fg-3)]"
         />
-        <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+        <div className="an-seg ml-2 flex-shrink-0">
           <button
+            type="button"
             onClick={() => setPreviewMode(false)}
-            className={`text-xs px-2 py-1 rounded ${!previewMode ? "bg-white shadow-sm text-gray-700" : "text-gray-400 hover:text-gray-600"}`}
+            className={!previewMode ? "on" : ""}
           >
-            编辑
+            Edit
           </button>
           <button
+            type="button"
             onClick={() => setPreviewMode(true)}
-            className={`text-xs px-2 py-1 rounded ${previewMode ? "bg-white shadow-sm text-gray-700" : "text-gray-400 hover:text-gray-600"}`}
+            className={previewMode ? "on" : ""}
           >
-            预览
+            Preview
           </button>
         </div>
       </div>
       {/* Content */}
       <div className="min-h-[160px]">
         {previewMode ? (
-          <div className="p-4 prose prose-sm max-w-none text-sm">
+          <div className="max-w-none p-4">
             {content.trim() ? (
               <MessageMarkdown text={content} />
             ) : (
-              <p className="text-gray-400 italic">暂无内容</p>
+              <p className="an-type-meta italic">No content</p>
             )}
           </div>
         ) : (
@@ -314,8 +298,8 @@ function EntryEditor({
             ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="支持 Markdown 格式…"
-            className="w-full min-h-[160px] p-4 text-sm font-mono leading-relaxed resize-y border-none outline-none"
+            placeholder="Markdown is supported..."
+            className="min-h-[160px] w-full resize-y border-none bg-[var(--bg-1)] p-4 font-mono leading-relaxed text-[var(--fg-1)] outline-none placeholder:text-[var(--fg-3)]"
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                 onSave(title, content);
@@ -324,21 +308,23 @@ function EntryEditor({
         )}
       </div>
       {/* Actions */}
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-100">
-        <span className="text-[11px] text-gray-400">Ctrl+Enter 保存</span>
+      <div className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--bg-0)] px-3 py-2">
+        <span className="an-type-caption">Ctrl+Enter Save</span>
         <div className="flex gap-2">
           <button
+            type="button"
             onClick={onCancel}
-            className="text-xs px-3 py-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
+            className="an-btn an-btn-sm"
           >
-            取消
+            Cancel
           </button>
           <button
+            type="button"
             onClick={() => onSave(title, content)}
             disabled={saving || !content.trim()}
-            className="text-xs px-3 py-1.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94] disabled:opacity-50"
+            className="an-btn an-btn-primary an-btn-sm"
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -347,7 +333,7 @@ function EntryEditor({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   MemoryPage — 全屏记忆页面
+   MemoryPage - full-screen memory page.
    ══════════════════════════════════════════════════════════════════════════════ */
 
 export default function MemoryPage({
@@ -534,12 +520,12 @@ export default function MemoryPage({
   /* ── Entry cards (ANCHOR / DECISIONS / PROGRESS) ──────────────────────── */
 
   const renderEntryCards = () => {
-    if (entriesLoading)
-      return (
-        <div className="flex items-center justify-center py-20 text-gray-400">
-          加载中…
-        </div>
-      );
+	    if (entriesLoading)
+	      return (
+	        <div className="an-type-meta flex items-center justify-center py-20">
+	          Loading...
+	        </div>
+	      );
 
     return (
       <div className="space-y-4">
@@ -554,85 +540,63 @@ export default function MemoryPage({
               saving={saving}
             />
           ) : (
-            <div
-              key={entry.entry_id}
-              className={`group rounded-lg border ${meta.borderColor} bg-white hover:shadow-md transition-shadow`}
-            >
-              {/* Card header */}
-              <div
-                className={`flex items-center justify-between px-4 py-2.5 ${meta.bgLight} rounded-t-lg border-b ${meta.borderColor}`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  {entry.title ? (
-                    <h3 className="text-sm font-semibold text-gray-800 truncate">
-                      {entry.title}
-                    </h3>
-                  ) : (
-                    <h3 className="text-sm text-gray-400 italic truncate">
-                      无标题
-                    </h3>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <span className="text-[11px] text-gray-400 mr-1">
-                    {relativeTime(entry.updated_at)}
-                  </span>
-                  <button
-                    onClick={() => setEditingId(entry.entry_id)}
-                    className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-white hover:text-blue-500 hover:shadow-sm transition-all"
-                    title="编辑"
-                  >
-                    <svg
-                      className="w-3.5 h-3.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => handleDelete(entry.entry_id)}
-                    className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-white hover:text-red-500 hover:shadow-sm transition-all"
-                    title="删除"
-                  >
-                    <svg
-                      className="w-3.5 h-3.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              {/* Card body — markdown rendered */}
-              <div className="px-4 py-3 prose prose-sm max-w-none text-sm leading-relaxed">
-                <MessageMarkdown text={entry.content} />
-              </div>
-              {/* Card footer */}
-              {(entry.creator_type || entry.created_at) && (
-                <div className="px-4 py-2 border-t border-gray-50 flex items-center gap-2 text-[11px] text-gray-400">
-                  {entry.creator_type === "bot" && (
-                    <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-600">
-                      Bot
-                    </span>
-                  )}
-                  {entry.creator_type === "user" && (
-                    <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">
-                      用户
-                    </span>
+	            <div
+	              key={entry.entry_id}
+	              className={`group rounded-md border ${meta.borderColor} bg-[var(--bg-1)] transition-colors hover:border-[var(--border-strong)]`}
+	            >
+	              {/* Card header */}
+	              <div
+	                className={`flex items-center justify-between border-b ${meta.borderColor} ${meta.bgLight} px-4 py-2.5`}
+	              >
+	                <div className="flex items-center gap-2 min-w-0">
+	                  {entry.title ? (
+	                    <h3 className="an-type-body truncate font-semibold">
+	                      {entry.title}
+	                    </h3>
+	                  ) : (
+	                    <h3 className="an-type-meta truncate italic">
+	                      No title
+	                    </h3>
+	                  )}
+	                </div>
+	                <div className="flex items-center gap-1.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+	                  <span className="an-type-caption mr-1">
+	                    {relativeTime(entry.updated_at)}
+	                  </span>
+	                  <button
+	                    type="button"
+	                    onClick={() => setEditingId(entry.entry_id)}
+	                    className="an-btn an-btn-ghost an-btn-icon"
+	                    title="Edit"
+	                  >
+	                    <AppIcon name="pencil" className="h-3.5 w-3.5" />
+	                  </button>
+	                  <button
+	                    type="button"
+	                    onClick={() => handleDelete(entry.entry_id)}
+	                    className="an-btn an-btn-ghost an-btn-icon text-[var(--red)]"
+	                    title="Delete"
+	                  >
+	                    <AppIcon name="trash" className="h-3.5 w-3.5" />
+	                  </button>
+	                </div>
+	              </div>
+	              {/* Card body — markdown rendered */}
+	              <div className="max-w-none px-4 py-3 leading-relaxed">
+	                <MessageMarkdown text={entry.content} />
+	              </div>
+	              {/* Card footer */}
+	              {(entry.creator_type || entry.created_at) && (
+	                <div className="an-type-caption flex items-center gap-2 border-t border-[var(--border)] px-4 py-2">
+	                  {entry.creator_type === "bot" && (
+	                    <span className="an-chip green">
+	                      Bot
+	                    </span>
+	                  )}
+	                  {entry.creator_type === "user" && (
+	                    <span className="an-chip accent">
+	                      User
+	                    </span>
                   )}
                   {entry.created_at && (
                     <span>
@@ -657,20 +621,22 @@ export default function MemoryPage({
         )}
 
         {/* Empty state */}
-        {entries.length === 0 && !addingNew && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <span className="block w-12 h-12 mx-auto mb-4 opacity-20">{meta.icon}</span>
-            <p className="text-gray-500 font-medium mb-1">{meta.desc}</p>
-            <p className="text-sm text-gray-400 mb-4">
-              暂无记录，点击下方添加第一条
-            </p>
-            <button
-              onClick={() => setAddingNew(true)}
-              className="px-4 py-2 rounded-lg bg-[#1264A3] text-white text-sm hover:bg-[#0f5a94] transition-colors"
-            >
-              + 添加{meta.label}
-            </button>
-          </div>
+	        {entries.length === 0 && !addingNew && (
+	          <div className="flex flex-col items-center justify-center py-20 text-center">
+	            <span className="block w-12 h-12 mx-auto mb-4 opacity-20">{meta.icon}</span>
+	            <p className="an-type-body mb-1 font-medium">{meta.desc}</p>
+	            <p className="an-type-meta mb-4">
+	              No records yet. Add the first one below.
+	            </p>
+	            <button
+	              type="button"
+	              onClick={() => setAddingNew(true)}
+	              className="an-btn an-btn-primary"
+	            >
+	              <AppIcon name="plus" className="h-4 w-4" />
+	              Add{meta.label}
+	            </button>
+	          </div>
         )}
       </div>
     );
@@ -681,51 +647,55 @@ export default function MemoryPage({
   const renderFilesIndex = () => {
     const raw = contextData["files_index"] ?? "";
     const cards = parseFilesIndex(raw);
-    if (!cards.length) {
-      return (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <ArchiveBoxIcon className="w-12 h-12 mb-4 opacity-20" />
-          <p className="text-gray-500 font-medium">暂无上传文件</p>
-          <p className="text-sm text-gray-400">
-            在频道中上传文件后，索引将自动生成
-          </p>
-        </div>
+	    if (!cards.length) {
+	      return (
+	        <div className="flex flex-col items-center justify-center py-20 text-center">
+	          <AppIcon name="archive" className="w-12 h-12 mb-4 opacity-20" />
+	          <p className="an-type-body font-medium">No uploaded files</p>
+	          <p className="an-type-meta">
+	            After files are uploaded in the channel, the index is generated automatically.
+	          </p>
+	        </div>
       );
     }
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {cards.map((f) => (
-          <div
-            key={f.fileId || f.filename}
-            className="rounded-lg border border-amber-200 bg-white hover:shadow-md transition-shadow overflow-hidden"
-          >
-            <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 border-b border-amber-100">
-              <span className="text-2xl flex-shrink-0">
-                {fileIcon(f.contentType)}
+	          <div
+	            key={f.fileId || f.filename}
+	            className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-1)] transition-colors hover:border-[var(--border-strong)]"
+	          >
+	            <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--orange-muted)] px-4 py-3">
+	              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-[var(--bg-1)]">
+	                <FileTypeIcon
+                  contentType={f.contentType}
+                  filename={f.filename}
+                  size={30}
+                />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-800 truncate">
-                  {f.filename}
-                </p>
-                {f.contentType && (
-                  <p className="text-[11px] text-gray-400 truncate">
-                    {f.contentType}
-                  </p>
+	                <p className="an-type-body truncate font-medium">
+	                  {f.filename}
+	                </p>
+	                {f.contentType && (
+	                  <p className="an-type-caption truncate">
+	                    {f.contentType}
+	                  </p>
                 )}
               </div>
             </div>
-            {f.summary && (
-              <div className="px-4 py-2.5">
-                <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">
-                  {f.summary}
-                </p>
-              </div>
-            )}
-            <div className="px-4 py-2 border-t border-gray-50 flex items-center justify-between">
-              <span className="text-[11px] text-gray-400">{f.time}</span>
-              <span className="text-[11px] text-gray-300 font-mono">
-                {f.fileId.slice(0, 8)}
-              </span>
+	            {f.summary && (
+	              <div className="px-4 py-2.5">
+	                <p className="an-type-meta line-clamp-3 leading-relaxed">
+	                  {f.summary}
+	                </p>
+	              </div>
+	            )}
+	            <div className="flex items-center justify-between border-t border-[var(--border)] px-4 py-2">
+	              <span className="an-type-caption">{f.time}</span>
+	              <span className="an-type-caption font-mono">
+	                {f.fileId.slice(0, 8)}
+	              </span>
             </div>
           </div>
         ))}
@@ -738,32 +708,32 @@ export default function MemoryPage({
   const renderRecent = () => {
     const raw = contextData["recent"] ?? "";
     const items = parseRecentXml(raw);
-    if (!items.length) {
-      return (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <ClockIcon className="w-12 h-12 mb-4 opacity-20" />
-          <p className="text-gray-500 font-medium">暂无历史动态</p>
-          <p className="text-sm text-gray-400">对话消息累积后将自动归档</p>
-        </div>
+	    if (!items.length) {
+	      return (
+	        <div className="flex flex-col items-center justify-center py-20 text-center">
+	          <AppIcon name="clock" className="w-12 h-12 mb-4 opacity-20" />
+	          <p className="an-type-body font-medium">No recent activity</p>
+	          <p className="an-type-meta">Conversation messages are archived automatically over time</p>
+	        </div>
       );
     }
     return (
       <div className="relative pl-6">
         {/* Timeline line */}
-        <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-green-200" />
+	        <div className="absolute bottom-2 left-[11px] top-2 w-0.5 bg-[var(--green-muted)]" />
         <div className="space-y-4">
           {items.map((item, idx) => (
             <div key={item.pageId || idx} className="relative">
               {/* Dot */}
-              <div className="absolute -left-6 top-3 w-3 h-3 rounded-full bg-green-400 border-2 border-white shadow-sm" />
-              <div className="rounded-lg border border-green-200 bg-white hover:shadow-md transition-shadow overflow-hidden">
-                <div className="px-4 py-2.5 bg-green-50 border-b border-green-100 flex items-center gap-2">
-                  <span className="text-xs font-medium text-green-700">
-                    {formatRange(item.from, item.to)}
-                  </span>
-                </div>
-                <div className="px-4 py-3 text-sm text-gray-700 leading-relaxed">
-                  <MessageMarkdown text={item.summary} />
+	              <div className="absolute -left-6 top-3 h-3 w-3 rounded-full border-2 border-[var(--bg-1)] bg-[var(--green)]" />
+	              <div className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg-1)] transition-colors hover:border-[var(--border-strong)]">
+	                <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--green-muted)] px-4 py-2.5">
+	                  <span className="an-type-label text-[var(--green)]">
+	                    {formatRange(item.from, item.to)}
+	                  </span>
+	                </div>
+	                <div className="px-4 py-3 leading-relaxed">
+	                  <MessageMarkdown text={item.summary} />
                 </div>
               </div>
             </div>
@@ -776,67 +746,26 @@ export default function MemoryPage({
   /* ── MEMBERS — member cards ───────────────────────────────────────────── */
 
   const renderMembers = () => {
-    if (membersLoading)
-      return (
-        <div className="flex items-center justify-center py-20 text-gray-400">
-          加载中…
-        </div>
+	    if (membersLoading)
+	      return (
+	        <div className="an-type-meta flex items-center justify-center py-20">
+	          Loading...
+	        </div>
       );
     if (!members.length) {
       return (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <UsersIcon className="w-12 h-12 mb-4 opacity-20" />
-          <p className="text-gray-500">暂无成员</p>
-        </div>
+	        <div className="flex flex-col items-center justify-center py-20 text-center">
+	          <AppIcon name="users" className="w-12 h-12 mb-4 opacity-20" />
+	          <p className="an-type-meta">No members</p>
+	        </div>
       );
     }
-    const sorted = members
-      .map((member, index) => ({ member, index }))
-      .sort((a, b) => {
-        const aSelf = Boolean(currentUserId && a.member.member_id === currentUserId);
-        const bSelf = Boolean(currentUserId && b.member.member_id === currentUserId);
-        if (aSelf !== bSelf) return aSelf ? -1 : 1;
-        const aRank = a.member.member_type === "bot" ? 0 : 1;
-        const bRank = b.member.member_type === "bot" ? 0 : 1;
-        if (aRank !== bRank) return aRank - bRank;
-        return a.index - b.index;
-      })
-      .map(({ member }) => member);
+    const sorted = sortMembersByKind(members, currentUserId);
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {sorted.map((m) => {
-          const isBot = m.member_type === "bot";
-          const label =
-            m.display_name || m.username || (isBot ? "Bot" : "用户");
-          const initial = label.slice(0, 1).toUpperCase();
-          return (
-            <div
-              key={m.member_id}
-              className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 hover:shadow-sm transition-shadow"
-            >
-              <div
-                className={`w-10 h-10 ${isBot ? "rounded-lg bg-[#2EB67D]" : "rounded-full bg-[#1264A3]"} flex items-center justify-center text-white text-sm font-bold flex-shrink-0`}
-              >
-                {initial}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-800 truncate">
-                  {label}
-                </p>
-                {m.username && m.username !== m.display_name && (
-                  <p className="text-xs text-gray-400 truncate">
-                    @{m.username}
-                  </p>
-                )}
-              </div>
-              <span
-                className={`text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 font-medium ${isBot ? "bg-green-50 text-green-700" : "bg-blue-50 text-blue-700"}`}
-              >
-                {isBot ? "Bot" : "用户"}
-              </span>
-            </div>
-          );
-        })}
+        {sorted.map((m) => (
+          <MemberRow key={m.member_id} as="article" member={m} />
+        ))}
       </div>
     );
   };
@@ -846,68 +775,68 @@ export default function MemoryPage({
   const renderTodo = () => {
     const pending = todos.filter((t) => t.status === "pending");
     const completed = todos.filter((t) => t.status === "completed");
-    return (
-      <div className="space-y-6">
-        {/* Create form */}
-        <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-2">
-          <textarea
+	    return (
+	      <div className="space-y-6">
+	        {/* created form */}
+	        <div className="space-y-2 rounded-md border border-[var(--border)] bg-[var(--bg-1)] p-4">
+	          <textarea
             rows={2}
             value={todoNewContent}
             onChange={(e) => setTodoNewContent(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                 handleTodoCreate();
-            }}
-            placeholder="新建任务…"
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-blue-400"
-          />
-          <div className="flex items-center gap-2">
-            <select
-              value={todoAssignee}
-              onChange={(e) => setTodoAssignee(e.target.value)}
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-400 text-gray-500"
-            >
-              <option value="">指派给…</option>
-              {members.map((m) => (
+	            }}
+	            placeholder="NewTasks..."
+	            className="an-textarea resize-none"
+	          />
+	          <div className="flex items-center gap-2">
+	            <select
+	              value={todoAssignee}
+	              onChange={(e) => setTodoAssignee(e.target.value)}
+	              className="an-select flex-1"
+	            >
+	              <option value="">Assign to...</option>
+	              {members.map((m) => (
                 <option
                   key={m.member_id}
-                  value={`${m.member_type}:${m.member_id}`}
-                >
-                  {m.member_type === "bot" ? "🤖 " : "👤 "}
-                  {m.display_name || m.username}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleTodoCreate}
-              className="px-4 py-1.5 text-sm bg-[#1264A3] text-white rounded-lg hover:bg-[#0f5a94] flex-shrink-0"
-            >
-              添加
+	                  value={`${m.member_type}:${m.member_id}`}
+	                >
+	                  {m.member_type === "bot" ? "Bot · " : "User · "}{m.display_name || m.username}
+	                </option>
+	              ))}
+	            </select>
+	            <button
+	              type="button"
+	              onClick={handleTodoCreate}
+	              className="an-btn an-btn-primary flex-shrink-0"
+	            >
+	              Add
             </button>
           </div>
         </div>
 
         {todosLoading ? (
-          <div className="text-center py-8 text-gray-400">加载中…</div>
-        ) : todos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <CheckCircleIcon className="w-12 h-12 mb-4 opacity-20" />
-            <p className="text-gray-500">暂无待办</p>
-          </div>
+	          <div className="an-type-meta py-8 text-center">Loading...</div>
+	        ) : todos.length === 0 ? (
+	          <div className="flex flex-col items-center justify-center py-16 text-center">
+	            <AppIcon name="checkCircle" className="w-12 h-12 mb-4 opacity-20" />
+	            <p className="an-type-meta">No todos</p>
+	          </div>
         ) : (
           <div className="space-y-4">
             {/* Pending */}
             {pending.length > 0 && (
               <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                  未完成 ({pending.length})
+	                <h3 className="an-type-caption mb-2 font-semibold uppercase">
+	                  Pending ({pending.length})
                 </h3>
                 <div className="space-y-2">
                   {pending.map((todo) => (
-                    <div
-                      key={todo.todo_id}
-                      className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 hover:shadow-sm transition-shadow group"
-                    >
+	                    <div
+	                      key={todo.todo_id}
+	                      className="group flex items-start gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-1)] px-4 py-3 transition-colors hover:border-[var(--border-strong)]"
+	                    >
                       <input
                         type="checkbox"
                         checked={false}
@@ -915,10 +844,10 @@ export default function MemoryPage({
                         className="mt-0.5 w-4 h-4 cursor-pointer flex-shrink-0"
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800">{todo.content}</p>
-                        {todo.assignee_id && (
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            →{" "}
+	                        <p className="an-type-body">{todo.content}</p>
+	                        {todo.assignee_id && (
+	                          <p className="an-type-caption mt-0.5">
+	                            →{" "}
                             {getMemberName(
                               todo.assignee_id,
                               todo.assignee_type!,
@@ -926,25 +855,14 @@ export default function MemoryPage({
                           </p>
                         )}
                       </div>
-                      <button
-                        onClick={() => handleTodoDelete(todo.todo_id)}
-                        className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                        title="删除"
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
+	                      <button
+	                        type="button"
+	                        onClick={() => handleTodoDelete(todo.todo_id)}
+	                        className="an-btn an-btn-ghost an-btn-icon flex-shrink-0 text-[var(--red)] opacity-0 transition-opacity group-hover:opacity-100"
+	                        title="Delete"
+	                      >
+	                        <AppIcon name="trash" className="h-4 w-4" />
+	                      </button>
                     </div>
                   ))}
                 </div>
@@ -953,42 +871,31 @@ export default function MemoryPage({
             {/* Completed */}
             {completed.length > 0 && (
               <div>
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                  已完成 ({completed.length})
+	                <h3 className="an-type-caption mb-2 font-semibold uppercase">
+	                  Completed ({completed.length})
                 </h3>
                 <div className="space-y-2">
                   {completed.map((todo) => (
-                    <div
-                      key={todo.todo_id}
-                      className="flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-3 group"
-                    >
+	                    <div
+	                      key={todo.todo_id}
+	                      className="group flex items-start gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-0)] px-4 py-3"
+	                    >
                       <input
                         type="checkbox"
                         checked
                         onChange={() => handleTodoToggle(todo)}
                         className="mt-0.5 w-4 h-4 cursor-pointer flex-shrink-0"
                       />
-                      <p className="flex-1 text-sm text-gray-400 line-through">
-                        {todo.content}
-                      </p>
-                      <button
-                        onClick={() => handleTodoDelete(todo.todo_id)}
-                        className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
+	                      <p className="an-type-meta flex-1 line-through">
+	                        {todo.content}
+	                      </p>
+	                      <button
+	                        type="button"
+	                        onClick={() => handleTodoDelete(todo.todo_id)}
+	                        className="an-btn an-btn-ghost an-btn-icon flex-shrink-0 text-[var(--red)] opacity-0 transition-opacity group-hover:opacity-100"
+	                      >
+	                        <AppIcon name="trash" className="h-4 w-4" />
+	                      </button>
                     </div>
                   ))}
                 </div>
@@ -1027,7 +934,7 @@ export default function MemoryPage({
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex"
+      className="an-token-page fixed inset-0 z-[110] flex"
       style={{ background: "var(--overlay)" }}
     >
       <div
@@ -1044,22 +951,18 @@ export default function MemoryPage({
           className="an-settings-nav"
           style={{ width: 220, flexShrink: 0, background: "var(--bg-0)" }}
         >
-          <div
-            className="px-3 pt-1 pb-3"
-            style={{ borderBottom: "1px solid var(--border)", marginBottom: 8 }}
-          >
-            <div
-              style={{ fontSize: 14, fontWeight: 600, color: "var(--fg-1)" }}
-            >
-              频道记忆
-            </div>
-            {channelName && (
-              <div
-                style={{ fontSize: 11, color: "var(--fg-3)", marginTop: 2 }}
-              >
-                #{channelName}
-              </div>
-            )}
+	          <div
+	            className="border-b border-[var(--border)] px-3 pb-3 pt-1"
+	            style={{ marginBottom: 8 }}
+	          >
+	            <div className="an-type-title">
+	              Channel memory
+	            </div>
+	            {channelName && (
+	              <div className="an-type-caption mt-0.5">
+	                #{channelName}
+	              </div>
+	            )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {LAYERS.map((layer) => {
@@ -1074,15 +977,12 @@ export default function MemoryPage({
                 >
                   <span className="an-sn-ico inline-block w-4 h-4">{lm.icon}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate" style={{ color: "inherit" }}>
-                      {lm.label}
-                    </div>
-                    <div
-                      className="truncate"
-                      style={{ fontSize: 11, color: "var(--fg-3)" }}
-                    >
-                      {lm.desc}
-                    </div>
+	                    <div className="truncate" style={{ color: "inherit" }}>
+	                      {lm.label}
+	                    </div>
+	                    <div className="an-type-caption truncate">
+	                      {lm.desc}
+	                    </div>
                   </div>
                 </button>
               );
@@ -1095,7 +995,7 @@ export default function MemoryPage({
             className="an-btn an-btn-ghost"
             style={{ margin: "0 8px 10px", justifyContent: "center" }}
           >
-            关闭
+            Close
           </button>
         </nav>
 
@@ -1112,18 +1012,12 @@ export default function MemoryPage({
             <div className="flex items-center gap-3">
               <span className="inline-block w-6 h-6">{meta.icon}</span>
               <div>
-                <div
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 600,
-                    color: "var(--fg-1)",
-                  }}
-                >
-                  {meta.label}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--fg-3)" }}>
-                  {meta.desc}
-                </div>
+	                <div className="an-type-title">
+	                  {meta.label}
+	                </div>
+	                <div className="an-type-meta">
+	                  {meta.desc}
+	                </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1133,23 +1027,24 @@ export default function MemoryPage({
                   onClick={() => setAddingNew(true)}
                   className="an-btn an-btn-primary an-btn-sm"
                 >
-                  ＋ 添加
+                  ＋ Add
                 </button>
               )}
               {meta.entryBased && entries.length > 0 && (
-                <span className="an-chip">{entries.length} 条记录</span>
+                <span className="an-chip">{entries.length} records</span>
               )}
               {meta.readonly && activeLayer !== "TODO" && (
-                <span className="an-chip">自动生成</span>
+                <span className="an-chip">Auto-generated</span>
               )}
-              <button
-                type="button"
-                onClick={onClose}
-                className="an-modal-close"
-                title="关闭"
-              >
-                ✕
-              </button>
+	              <button
+	                type="button"
+	                onClick={onClose}
+	                className="an-modal-close"
+	                aria-label="Close"
+	                title="Close"
+	              >
+	                <AppIcon name="close" className="h-4 w-4" />
+	              </button>
             </div>
           </div>
           {/* Scrollable content */}

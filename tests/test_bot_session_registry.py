@@ -1,11 +1,11 @@
-"""BotSessionRegistry 单元测试：bind/unbind/dispatch + 旧连接被踢行为。"""
+"""Unit tests for BotSessionRegistry bind/unbind/dispatch and old-connection eviction."""
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
 
-from app.services.openclaw_bridge.registry import BotSessionRegistry
+from app.features.agent_bridge.registry import BotSessionRegistry
 
 
 class FakeWS:
@@ -30,7 +30,7 @@ async def test_bind_control_returns_old_when_replaced() -> None:
     assert sess1.control_ws is ws_a
 
     sess2, old2 = await r.bind_control("bot-1", ws_b)
-    # 同一 session 被复用（session_id 不变），control_ws 替换
+    # The same session is reused; session_id stays the same and control_ws is replaced.
     assert sess2.session_id == sess1.session_id
     assert sess2.control_ws is ws_b
     assert old2 is ws_a
@@ -94,14 +94,14 @@ async def test_connection_state_tracks_control_and_data_planes() -> None:
 
 @pytest.mark.asyncio
 async def test_unbind_control_only_clears_matching_ws() -> None:
-    """unbind 只在当前仍是此 ws 时生效，避免踢掉后到的新连接。"""
+    """unbind only applies while this ws is current, preserving newer connections."""
     r = BotSessionRegistry()
     ws_a = FakeWS()
     ws_b = FakeWS()
     await r.bind_control("bot-1", ws_a)
-    # 新连接来了（ws_b 成为当前）
+    # A new connection arrives, so ws_b becomes current.
     await r.bind_control("bot-1", ws_b)
-    # 旧 ws 的 unbind 不应把 ws_b 清掉
+    # The old ws unbind must not clear ws_b.
     await r.unbind_control("bot-1", ws_a)
     sess = r.get("bot-1")
     assert sess is not None

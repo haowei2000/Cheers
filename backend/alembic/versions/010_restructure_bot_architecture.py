@@ -17,7 +17,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 1. 创建 ai_models 表
+    # 1. Create the ai_models table.
     op.create_table(
         "ai_models",
         sa.Column("model_id", sa.String(36), nullable=False),
@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("name"),
     )
 
-    # 2. 创建 prompt_templates 表
+    # 2. Create the prompt_templates table.
     op.create_table(
         "prompt_templates",
         sa.Column("template_id", sa.String(36), nullable=False),
@@ -50,10 +50,10 @@ def upgrade() -> None:
         sa.UniqueConstraint("name"),
     )
 
-    # 3. 备份旧 bot_accounts 数据
-    # SQLite 不支持 ALTER TABLE DROP COLUMN，需要重建表
+    # 3. Preserve existing bot_accounts data.
+    # SQLite does not support ALTER TABLE DROP COLUMN, so the table is rebuilt.
     
-    # 创建新的 bot_accounts 表
+    # Create the replacement bot_accounts table.
     op.create_table(
         "bot_accounts_new",
         sa.Column("bot_id", sa.String(36), nullable=False),
@@ -71,15 +71,15 @@ def upgrade() -> None:
         sa.UniqueConstraint("username"),
     )
 
-    # 4. 删除旧表
+    # 4. Drop the old table.
     op.drop_table("bot_accounts")
 
-    # 5. 重命名新表
+    # 5. Rename the replacement table.
     op.rename_table("bot_accounts_new", "bot_accounts")
 
 
 def downgrade() -> None:
-    # 回滚：恢复旧的 bot_accounts 表结构
+    # Roll back to the previous bot_accounts schema.
     op.create_table(
         "bot_accounts_old",
         sa.Column("bot_id", sa.String(36), nullable=False),

@@ -1,4 +1,4 @@
-"""BulletinIssue 数据访问层."""
+"""Bulletin repo module."""
 from __future__ import annotations
 
 from sqlalchemy import desc, select

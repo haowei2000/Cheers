@@ -1,5 +1,7 @@
-"""Workspace v1 路由（薄层：解析 HTTP → 调 service → 返回 APIResponse）."""
+"""Workspaces API routes."""
 from __future__ import annotations
+
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -34,7 +36,7 @@ class WorkspaceUpdateBody(BaseModel):
 
 class InviteMemberBody(BaseModel):
     identifier: str
-    role: str = "member"
+    role: Literal["owner", "admin", "member"] = "member"
 
 
 @router.get("", response_model=APIResponse[list[WorkspaceOut]])

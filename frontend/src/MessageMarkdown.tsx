@@ -1,7 +1,62 @@
-import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ImgHTMLAttributes,
+  type ReactNode,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import hljs from "highlight.js";
+import toast from "react-hot-toast";
+import { AppIcon, FileTypeIcon } from "./components/icons";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import css from "highlight.js/lib/languages/css";
+import diff from "highlight.js/lib/languages/diff";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import http from "highlight.js/lib/languages/http";
+import ini from "highlight.js/lib/languages/ini";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import plaintext from "highlight.js/lib/languages/plaintext";
+import python from "highlight.js/lib/languages/python";
+import shell from "highlight.js/lib/languages/shell";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
+import {
+  createProtectedFileObjectUrl,
+  isAgentNexusFileUrl,
+  openProtectedFile,
+} from "./lib/protected-file";
+
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("diff", diff);
+hljs.registerLanguage("dockerfile", dockerfile);
+hljs.registerLanguage("http", http);
+hljs.registerLanguage("ini", ini);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("plaintext", plaintext);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("shell", shell);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("yaml", yaml);
+hljs.registerAliases(["js", "jsx", "mjs", "cjs"], { languageName: "javascript" });
+hljs.registerAliases(["ts", "tsx"], { languageName: "typescript" });
+hljs.registerAliases(["py"], { languageName: "python" });
+hljs.registerAliases(["sh", "zsh"], { languageName: "bash" });
+hljs.registerAliases(["html", "svg"], { languageName: "xml" });
+hljs.registerAliases(["yml"], { languageName: "yaml" });
 
 // ── @mention preprocessing ───────────────────────────────────────────────────
 
@@ -10,7 +65,7 @@ import hljs from "highlight.js";
  * using a `mention://` scheme so the custom `a` renderer can style them.
  */
 function preprocessMentions(text: string): string {
-  // Split on code fences (```…```) and inline code (`…`) to skip them
+  // Split on code fences (```...```) and inline code (`...`) to skip them
   const parts = text.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
   return parts
     .map((part, i) =>
@@ -23,25 +78,322 @@ function preprocessMentions(text: string): string {
 
 // ── AgentNexus file URL detection ────────────────────────────────────────────
 
-/** Matches /api/files/{id}/preview|download (relative or absolute origin). */
-const FILE_URL_RE = /(?:https?:\/\/[^/]+)?\/api\/files\/([^/]+)\/(preview|download)/;
+/** Matches /api/files/{id}/preview|download and /api/v1/files/... URLs. */
+const FILE_URL_RE = /(?:https?:\/\/[^/]+)?\/api\/(?:v1\/)?files\/([^/]+)\/(preview|download)/;
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
+const MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS = 5;
+const HIGHLIGHT_CACHE_LIMIT = 240;
+const highlightCache = new Map<string, string>();
 
-function fileIconColors(filename: string): { bg: string; fg: string } {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "pdf") return { bg: "bg-red-50", fg: "text-red-500" };
-  if (["doc", "docx"].includes(ext)) return { bg: "bg-blue-50", fg: "text-blue-500" };
-  if (["xls", "xlsx", "csv"].includes(ext)) return { bg: "bg-green-50", fg: "text-green-600" };
-  if (["md", "txt"].includes(ext)) return { bg: "bg-gray-50", fg: "text-gray-500" };
-  if (IMAGE_EXTS.has(ext)) return { bg: "bg-purple-50", fg: "text-purple-500" };
-  return { bg: "bg-blue-50", fg: "text-blue-500" };
+interface MarkdownImageLoadState {
+  attempt: number;
+  displaySrc?: string;
+  failed: boolean;
+  inFlight: boolean;
+  listeners: Set<() => void>;
+  loaded: boolean;
+  objectUrl?: string;
 }
+
+type MarkdownImageSnapshot = Pick<MarkdownImageLoadState, "attempt" | "displaySrc" | "failed" | "loaded">;
+
+const markdownImageLoadState = new Map<string, MarkdownImageLoadState>();
 
 function childrenToText(children: unknown): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map((c) => childrenToText(c)).join("");
   return "";
+}
+
+async function copyMarkdownComponentText(text: string) {
+  const value = text.trimEnd();
+  if (!value.trim()) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success("Copied this block");
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand("copy");
+    textarea.remove();
+    if (ok) toast.success("Copied this block");
+    else toast.error("Copy failed");
+  }
+}
+
+interface CopyableMarkdownBlockProps {
+  children: ReactNode;
+  className?: string;
+  copyText?: string;
+  title?: string;
+}
+
+function CopyableMarkdownBlock({
+  children,
+  className = "",
+  copyText,
+  title = "Copy this block",
+}: CopyableMarkdownBlockProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const handleCopy = () => {
+    const text = copyText ?? contentRef.current?.innerText ?? "";
+    void copyMarkdownComponentText(text);
+  };
+
+  return (
+    <div className={`group/an-md-copy relative ${className}`}>
+      <div ref={contentRef}>{children}</div>
+      <button
+        type="button"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={(event) => {
+          event.stopPropagation();
+          handleCopy();
+        }}
+        className="an-md-copy-button"
+        title={title}
+        aria-label={title}
+      >
+        <AppIcon name="copy" className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function rememberHighlightedCode(key: string, value: string): string {
+  if (highlightCache.has(key)) highlightCache.delete(key);
+  highlightCache.set(key, value);
+  while (highlightCache.size > HIGHLIGHT_CACHE_LIMIT) {
+    const oldestKey = highlightCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    highlightCache.delete(oldestKey);
+  }
+  return value;
+}
+
+function highlightCode(codeText: string, lang: string): string {
+  const key = `${lang}\n${codeText}`;
+  const cached = highlightCache.get(key);
+  if (cached !== undefined) {
+    highlightCache.delete(key);
+    highlightCache.set(key, cached);
+    return cached;
+  }
+
+  try {
+    const highlighted =
+      lang && hljs.getLanguage(lang)
+        ? hljs.highlight(codeText, { language: lang, ignoreIllegals: true }).value
+        : hljs.highlightAuto(codeText).value;
+    return rememberHighlightedCode(key, highlighted);
+  } catch {
+    return rememberHighlightedCode(key, codeText);
+  }
+}
+
+function withRetryParam(src: string, attempt: number): string {
+  if (attempt <= 1) return src;
+  try {
+    const base = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+    const url = new URL(src, base);
+    url.searchParams.set("_preview_retry", String(attempt));
+    return src.startsWith("/") ? `${url.pathname}${url.search}${url.hash}` : url.toString();
+  } catch {
+    const joiner = src.includes("?") ? "&" : "?";
+    return `${src}${joiner}_preview_retry=${attempt}`;
+  }
+}
+
+function createMarkdownImageState(): MarkdownImageLoadState {
+  return {
+    attempt: 1,
+    failed: false,
+    inFlight: false,
+    listeners: new Set(),
+    loaded: false,
+  };
+}
+
+function pruneMarkdownImageStateCache() {
+  while (markdownImageLoadState.size > 200) {
+    let pruned = false;
+    for (const [key, state] of markdownImageLoadState) {
+      if (!state.inFlight && state.listeners.size === 0) {
+        if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+        markdownImageLoadState.delete(key);
+        pruned = true;
+        break;
+      }
+    }
+    if (!pruned) break;
+  }
+}
+
+function getRememberedImageState(src: string): MarkdownImageLoadState {
+  let state = markdownImageLoadState.get(src);
+  if (!state) {
+    state = createMarkdownImageState();
+    markdownImageLoadState.set(src, state);
+    pruneMarkdownImageStateCache();
+  }
+  return state;
+}
+
+function snapshotMarkdownImageState(src: string): MarkdownImageSnapshot {
+  const { attempt, displaySrc, failed, loaded } = getRememberedImageState(src);
+  return { attempt, displaySrc, failed, loaded };
+}
+
+function notifyMarkdownImageState(state: MarkdownImageLoadState) {
+  state.listeners.forEach((listener) => listener());
+}
+
+function subscribeMarkdownImageState(src: string, listener: () => void): () => void {
+  const state = getRememberedImageState(src);
+  state.listeners.add(listener);
+  return () => {
+    state.listeners.delete(listener);
+  };
+}
+
+function loadMarkdownImagePreview(src: string) {
+  if (typeof window === "undefined") return;
+
+  const state = getRememberedImageState(src);
+  if (state.loaded || state.failed || state.inFlight) return;
+
+  state.inFlight = true;
+  notifyMarkdownImageState(state);
+
+  const attempt = state.attempt;
+  const displaySrc = withRetryParam(src, attempt);
+
+  if (isAgentNexusFileUrl(displaySrc)) {
+    createProtectedFileObjectUrl(displaySrc)
+      .then((objectUrl) => {
+        if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+        state.objectUrl = objectUrl;
+        state.displaySrc = objectUrl;
+        state.failed = false;
+        state.inFlight = false;
+        state.loaded = true;
+        notifyMarkdownImageState(state);
+      })
+      .catch(() => {
+        state.inFlight = false;
+        state.loaded = false;
+        if (attempt >= MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS) {
+          state.failed = true;
+        } else {
+          state.attempt = attempt + 1;
+        }
+        notifyMarkdownImageState(state);
+        loadMarkdownImagePreview(src);
+      });
+    return;
+  }
+
+  const image = new Image();
+
+  image.onload = () => {
+    state.displaySrc = displaySrc;
+    state.failed = false;
+    state.inFlight = false;
+    state.loaded = true;
+    notifyMarkdownImageState(state);
+  };
+
+  image.onerror = () => {
+    state.inFlight = false;
+    state.loaded = false;
+    if (attempt >= MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS) {
+      state.failed = true;
+    } else {
+      state.attempt = attempt + 1;
+    }
+    notifyMarkdownImageState(state);
+    loadMarkdownImagePreview(src);
+  };
+
+  image.src = displaySrc;
+}
+
+interface MarkdownImageProps
+  extends Omit<
+    ImgHTMLAttributes<HTMLImageElement>,
+    "alt" | "onClick" | "onError" | "onLoad" | "src"
+  > {
+  src?: string;
+  alt?: string;
+  onImageClick?: (src: string) => void;
+}
+
+function MarkdownImage({ src, alt, onImageClick, ...props }: MarkdownImageProps) {
+  const safe = src && (src.startsWith("/") || src.startsWith("http://") || src.startsWith("https://"));
+  const safeSrc = safe ? src : "";
+  const [loadState, setLoadState] = useState<MarkdownImageSnapshot>(() =>
+    safeSrc ? snapshotMarkdownImageState(safeSrc) : { attempt: 1, failed: true, loaded: false }
+  );
+
+  useEffect(() => {
+    if (!safeSrc) {
+      setLoadState({ attempt: 1, failed: true, loaded: false });
+      return;
+    }
+
+    const sync = () => setLoadState(snapshotMarkdownImageState(safeSrc));
+    const unsubscribe = subscribeMarkdownImageState(safeSrc, sync);
+    sync();
+    loadMarkdownImagePreview(safeSrc);
+    return unsubscribe;
+  }, [safeSrc]);
+
+  const attempt = loadState.attempt;
+  const failed = !safeSrc || loadState.failed;
+  const displaySrc = loadState.displaySrc ?? "";
+
+  const placeholder = (
+    <span
+      className="an-type-caption my-2 flex min-h-[96px] w-full max-w-[320px] items-center gap-2 rounded-md border border-dashed border-[var(--border)] bg-[var(--bg-0)] px-3 py-2"
+      role={failed ? "img" : "status"}
+      aria-label={failed ? alt || "image preview failed" : "image preview loading"}
+    >
+      <AppIcon name="image" className="an-md-muted-icon h-5 w-5 flex-shrink-0" />
+      <span className="min-w-0 truncate">
+        {failed ? "Image preview unavailable" : `Loading image preview (${attempt}/${MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS})`}
+      </span>
+    </span>
+  );
+
+  if (!safeSrc || failed) return placeholder;
+  if (!loadState.loaded || !displaySrc) return placeholder;
+
+  return (
+    <span className="my-2 inline-block max-w-full align-top">
+      <img
+        {...props}
+        src={displaySrc}
+        alt={alt || "image"}
+        className="block max-h-[400px] max-w-full cursor-pointer rounded-md border border-[var(--border)] transition-opacity hover:opacity-90"
+        loading="lazy"
+        onError={() => {
+          const state = getRememberedImageState(safeSrc);
+          state.failed = true;
+          state.inFlight = false;
+          state.loaded = false;
+          notifyMarkdownImageState(state);
+        }}
+        onClick={safeSrc && onImageClick ? () => onImageClick(safeSrc) : undefined}
+      />
+    </span>
+  );
 }
 
 interface FileChipProps {
@@ -56,16 +408,15 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
   const ext = (filename.split(".").pop() ?? "").toLowerCase();
   const isImage = IMAGE_EXTS.has(ext);
   const previewUrl = href.replace(/\/(download|preview)$/, "/preview");
-  const { bg, fg } = fileIconColors(filename);
   const displayName = filename && filename !== previewUrl ? filename : `file-${fileId.slice(0, 8)}`;
 
   const handleClick = () => {
-    if (isImage && onImageClick) {
-      onImageClick(previewUrl);
-    } else if (onFileClick) {
+    if (onFileClick) {
       onFileClick(previewUrl, displayName);
+    } else if (isImage && onImageClick) {
+      onImageClick(previewUrl);
     } else {
-      window.open(previewUrl, "_blank", "noreferrer");
+      openProtectedFile(previewUrl).catch(() => {});
     }
   };
 
@@ -73,14 +424,12 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
     <button
       type="button"
       onClick={handleClick}
-      className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm max-w-full hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer my-0.5 align-middle"
+      className="my-0.5 inline-flex max-w-full cursor-pointer items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-1)] px-2.5 py-1.5 align-middle transition-colors hover:bg-[var(--surface-soft)] active:bg-[var(--surface-strong)]"
     >
-      <span className={`w-7 h-7 rounded-md ${bg} flex items-center justify-center flex-shrink-0`}>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 ${fg}`}>
-          <path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 16 6.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Z" />
-        </svg>
+      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-[var(--bg-0)]">
+        <FileTypeIcon filename={displayName} size={22} />
       </span>
-      <span className="text-[13px] font-medium text-gray-700 truncate">{displayName}</span>
+      <span className="an-type-body truncate font-medium">{displayName}</span>
     </button>
   );
 }
@@ -106,9 +455,159 @@ interface MermaidDisplayState {
 }
 
 const MERMAID_RENDER_CACHE_LIMIT = 100;
+const MERMAID_MAX_SOURCE_CHARS = 20_000;
+const MERMAID_RENDER_TIMEOUT_MS = 3_000;
+const MERMAID_RENDER_ENABLED = import.meta.env.VITE_ENABLE_MERMAID !== "0";
+const MERMAID_SAFE_TAGS = new Set([
+  "a",
+  "circle",
+  "defs",
+  "desc",
+  "ellipse",
+  "g",
+  "line",
+  "linearGradient",
+  "marker",
+  "path",
+  "polygon",
+  "polyline",
+  "rect",
+  "span",
+  "stop",
+  "svg",
+  "text",
+  "textPath",
+  "title",
+  "tspan",
+]);
+const MERMAID_SAFE_ATTRS = new Set([
+  "aria-describedby",
+  "aria-label",
+  "class",
+  "clip-path",
+  "cx",
+  "cy",
+  "d",
+  "dominant-baseline",
+  "dx",
+  "dy",
+  "fill",
+  "fill-opacity",
+  "font-family",
+  "font-size",
+  "font-style",
+  "font-weight",
+  "gradientUnits",
+  "height",
+  "href",
+  "id",
+  "markerHeight",
+  "marker-end",
+  "marker-start",
+  "markerWidth",
+  "offset",
+  "opacity",
+  "orient",
+  "points",
+  "preserveAspectRatio",
+  "r",
+  "refX",
+  "refY",
+  "role",
+  "rx",
+  "ry",
+  "spreadMethod",
+  "stroke",
+  "stroke-dasharray",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-opacity",
+  "stroke-width",
+  "text-anchor",
+  "transform",
+  "version",
+  "viewBox",
+  "width",
+  "x",
+  "x1",
+  "x2",
+  "xlink:href",
+  "xmlns",
+  "xmlns:xlink",
+  "y",
+  "y1",
+  "y2",
+]);
 const mermaidRenderCache = new Map<string, MermaidRenderCacheEntry>();
 const mermaidRenderPromises = new Map<string, Promise<MermaidRenderCacheEntry>>();
 const emptyMermaidDisplayState: MermaidDisplayState = { svg: null, error: null };
+
+function isSafeSvgUrl(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed.startsWith("#") ||
+    /^https?:\/\//i.test(trimmed) ||
+    /^mailto:/i.test(trimmed)
+  );
+}
+
+function sanitizeMermaidSvg(svg: string): string | null {
+  if (typeof DOMParser === "undefined" || typeof XMLSerializer === "undefined") return null;
+  const document = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (document.querySelector("parsererror")) return null;
+
+  const walker = document.createTreeWalker(
+    document.documentElement,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT,
+  );
+  const nodesToRemove: Node[] = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.nodeType === Node.COMMENT_NODE) {
+      nodesToRemove.push(node);
+      continue;
+    }
+    if (!(node instanceof Element)) continue;
+    if (!MERMAID_SAFE_TAGS.has(node.tagName)) {
+      nodesToRemove.push(node);
+      continue;
+    }
+    for (const attr of Array.from(node.attributes)) {
+      const name = attr.name;
+      const lowerName = name.toLowerCase();
+      const value = attr.value;
+      if (
+        lowerName.startsWith("on") ||
+        lowerName === "style" ||
+        !MERMAID_SAFE_ATTRS.has(name)
+      ) {
+        node.removeAttribute(name);
+        continue;
+      }
+      if ((lowerName === "href" || lowerName === "xlink:href") && !isSafeSvgUrl(value)) {
+        node.removeAttribute(name);
+      }
+    }
+  }
+  nodesToRemove.forEach((node) => node.parentNode?.removeChild(node));
+  return new XMLSerializer().serializeToString(document.documentElement);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Mermaid render timed out")), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 function stripTrailingSemicolon(value: string): string {
   return value.trim().replace(/;\s*$/, "");
@@ -195,7 +694,7 @@ function normalizeXyChartBeta(code: string): string {
       const max = Math.max(...values);
       const yMin = min < 0 ? axisLimit(min * 1.1, "min") : "0";
       const yMax = axisLimit(max * 1.1, "max");
-      insertLines.push(`${indent}y-axis "值" ${yMin} --> ${yMax}`);
+      insertLines.push(`${indent}y-axis "Value" ${yMin} --> ${yMax}`);
     }
   }
 
@@ -272,10 +771,23 @@ async function renderMermaidWithCache(renderCode: string, theme: MermaidTheme): 
   const templateId = `mermaid-cache-${hashMermaidCacheKey(key)}`;
   const promise = (async () => {
     try {
+      if (!MERMAID_RENDER_ENABLED) {
+        throw new Error("Mermaid render closed");
+      }
+      if (renderCode.length > MERMAID_MAX_SOURCE_CHARS) {
+        throw new Error("Mermaid diagram is too large and was skipped");
+      }
       const mermaid = (await import("mermaid")).default;
-      mermaid.initialize({ startOnLoad: false, theme });
-      const { svg: rendered } = await mermaid.render(templateId, renderCode);
-      const entry: MermaidRenderCacheEntry = { templateId, svg: rendered, error: null };
+      mermaid.initialize({ securityLevel: "strict", startOnLoad: false, theme });
+      const { svg: rendered } = await withTimeout(
+        mermaid.render(templateId, renderCode),
+        MERMAID_RENDER_TIMEOUT_MS,
+      );
+      const sanitizedSvg = sanitizeMermaidSvg(rendered);
+      if (!sanitizedSvg) {
+        throw new Error("Mermaid SVG sanitization failed");
+      }
+      const entry: MermaidRenderCacheEntry = { templateId, svg: sanitizedSvg, error: null };
       rememberMermaidRender(key, entry);
       return entry;
     } catch (e) {
@@ -334,29 +846,33 @@ const MermaidBlock = memo(function MermaidBlock({ code, streaming }: MermaidBloc
 
   if (streaming || (!svg && !error)) {
     return (
-      <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
-        <code>{code}</code>
-      </pre>
+      <CopyableMarkdownBlock copyText={code} title="Copy Mermaid source">
+        <pre className="an-md-code-block my-2">
+          <code>{code}</code>
+        </pre>
+      </CopyableMarkdownBlock>
     );
   }
 
   if (error) {
     return (
-      <div className="my-2">
-        <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 text-xs font-mono overflow-x-auto leading-relaxed">
+      <CopyableMarkdownBlock className="my-2" copyText={code} title="Copy Mermaid source">
+        <pre className="an-md-code-block">
           <code>{code}</code>
         </pre>
-        <p className="text-xs text-red-500 mt-1">Mermaid 渲染错误: {error}</p>
-      </div>
+        <p className="an-type-caption an-md-error mt-1">Mermaid render error: {error}</p>
+      </CopyableMarkdownBlock>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="my-2 overflow-x-auto"
-      dangerouslySetInnerHTML={{ __html: svg! }}
-    />
+    <CopyableMarkdownBlock className="my-2" copyText={code} title="Copy Mermaid source">
+      <div
+        ref={containerRef}
+        className="overflow-x-auto"
+        dangerouslySetInnerHTML={{ __html: svg! }}
+      />
+    </CopyableMarkdownBlock>
   );
 });
 
@@ -369,8 +885,13 @@ interface MessageMarkdownProps {
   onFileClick?: (url: string, filename: string) => void;
 }
 
-export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: MessageMarkdownProps) {
-  const processedText = preprocessMentions(text);
+export const MessageMarkdown = memo(function MessageMarkdown({
+  text,
+  streaming,
+  onImageClick,
+  onFileClick,
+}: MessageMarkdownProps) {
+  const processedText = useMemo(() => preprocessMentions(text), [text]);
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
@@ -387,41 +908,32 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
           }
 
           if (!inline) {
-            let highlighted = codeText;
-            try {
-              if (lang && hljs.getLanguage(lang)) {
-                highlighted = hljs.highlight(codeText, { language: lang, ignoreIllegals: true }).value;
-              } else {
-                highlighted = hljs.highlightAuto(codeText).value;
-              }
-            } catch {}
+            const highlighted = highlightCode(codeText, lang);
             return (
-              <pre className="bg-gray-900 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
-                <code
-                  className={`hljs${lang ? ` language-${lang}` : ""}`}
-                  dangerouslySetInnerHTML={{ __html: highlighted }}
-                />
-              </pre>
+              <CopyableMarkdownBlock copyText={codeText} title="Copy code block">
+                <pre className="an-md-code-block my-2">
+                  <code
+                    className={`hljs${lang ? ` language-${lang}` : ""}`}
+                    dangerouslySetInnerHTML={{ __html: highlighted }}
+                  />
+                </pre>
+              </CopyableMarkdownBlock>
             );
           }
 
           return (
-            <code className="bg-gray-100 px-1 rounded text-xs font-mono" {...props}>
+            <code className="an-md-inline-code" {...props}>
               {children}
             </code>
           );
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         img({ src, alt, ...props }: any) {
-          const safe = src && (src.startsWith("/") || src.startsWith("http://") || src.startsWith("https://"));
-          const safeSrc = safe ? src : "";
           return (
-            <img
-              src={safeSrc}
-              alt={alt || "image"}
-              className="max-w-full max-h-[400px] rounded-lg my-2 border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
-              loading="lazy"
-              onClick={safeSrc && onImageClick ? () => onImageClick(safeSrc) : undefined}
+            <MarkdownImage
+              src={src}
+              alt={alt}
+              onImageClick={onImageClick}
               {...props}
             />
           );
@@ -434,7 +946,7 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
           if (raw.startsWith("mention://")) {
             const username = raw.slice("mention://".length);
             return (
-              <span className="inline-block bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded cursor-default">
+              <span className="an-chip accent cursor-default">
                 @{username}
               </span>
             );
@@ -460,7 +972,7 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
               href={safe ? raw : "#"}
               target="_blank"
               rel="noreferrer"
-              className="text-[#1264A3] underline"
+              className="an-md-link"
               {...props}
             >
               {children}
@@ -470,68 +982,74 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         p({ children, ...props }: any) {
           return (
-            <p className="text-sm text-gray-800 leading-relaxed my-0.5" {...props}>
-              {children}
-            </p>
+            <CopyableMarkdownBlock title="Copy paragraph">
+              <p className="an-type-body my-0.5 pr-7 leading-relaxed" {...props}>
+                {children}
+              </p>
+            </CopyableMarkdownBlock>
           );
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h1({ children, ...props }: any) {
-          return <h1 className="text-lg font-bold mt-4 mb-1 text-gray-900 border-b border-gray-200 pb-1" {...props}>{children}</h1>;
+          return <CopyableMarkdownBlock title="Copy heading"><h1 className="an-type-title mt-4 mb-1 border-b border-[var(--border)] pb-1 pr-7" {...props}>{children}</h1></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h2({ children, ...props }: any) {
-          return <h2 className="text-base font-bold mt-3 mb-1 text-gray-900 border-b border-gray-200 pb-1" {...props}>{children}</h2>;
+          return <CopyableMarkdownBlock title="Copy heading"><h2 className="an-type-body mt-3 mb-1 border-b border-[var(--border)] pb-1 pr-7 font-bold" {...props}>{children}</h2></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h3({ children, ...props }: any) {
-          return <h3 className="text-sm font-semibold mt-2 mb-0.5 text-gray-900" {...props}>{children}</h3>;
+          return <CopyableMarkdownBlock title="Copy heading"><h3 className="an-type-body mt-2 mb-0.5 pr-7 font-semibold" {...props}>{children}</h3></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h4({ children, ...props }: any) {
-          return <h4 className="text-sm font-semibold text-gray-900" {...props}>{children}</h4>;
+          return <CopyableMarkdownBlock title="Copy heading"><h4 className="an-type-body pr-7 font-semibold" {...props}>{children}</h4></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h5({ children, ...props }: any) {
-          return <h5 className="text-xs font-semibold text-gray-900" {...props}>{children}</h5>;
+          return <CopyableMarkdownBlock title="Copy heading"><h5 className="an-type-label pr-7" {...props}>{children}</h5></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h6({ children, ...props }: any) {
-          return <h6 className="text-xs font-semibold text-gray-900" {...props}>{children}</h6>;
+          return <CopyableMarkdownBlock title="Copy heading"><h6 className="an-type-label pr-7" {...props}>{children}</h6></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ul({ children, ...props }: any) {
-          return <ul className="list-disc pl-5 my-1 space-y-0.5 text-sm text-gray-800" {...props}>{children}</ul>;
+          return <CopyableMarkdownBlock title="Copy list"><ul className="an-type-body my-1 list-disc space-y-0.5 pl-5 pr-7" {...props}>{children}</ul></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ol({ children, ...props }: any) {
-          return <ol className="list-decimal pl-5 my-1 space-y-0.5 text-sm text-gray-800" {...props}>{children}</ol>;
+          return <CopyableMarkdownBlock title="Copy list"><ol className="an-type-body my-1 list-decimal space-y-0.5 pl-5 pr-7" {...props}>{children}</ol></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         blockquote({ children, ...props }: any) {
           return (
-            <blockquote
-              className="border-l-4 border-blue-300 bg-blue-50 pl-3 py-0.5 my-1 text-gray-600 text-sm italic"
-              {...props}
-            >
-              {children}
-            </blockquote>
+            <CopyableMarkdownBlock title="Copy quote">
+              <blockquote
+                className="an-type-body my-1 border-l-4 border-[var(--accent)] bg-[var(--accent-muted)] py-0.5 pl-3 pr-7 italic"
+                {...props}
+              >
+                {children}
+              </blockquote>
+            </CopyableMarkdownBlock>
           );
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         table({ children, ...props }: any) {
           return (
-            <div className="overflow-x-auto my-2">
-              <table className="border-collapse text-sm text-gray-800 w-full" {...props}>
-                {children}
-              </table>
-            </div>
+            <CopyableMarkdownBlock className="my-2" title="Copy table">
+              <div className="overflow-x-auto">
+                <table className="an-type-body w-full border-collapse" {...props}>
+                  {children}
+                </table>
+              </div>
+            </CopyableMarkdownBlock>
           );
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         th({ children, ...props }: any) {
           return (
-            <th className="border border-gray-300 bg-gray-100 px-2 py-1 text-left font-semibold text-xs" {...props}>
+            <th className="an-type-caption border border-[var(--border)] bg-[var(--surface-soft)] px-2 py-1 text-left font-semibold" {...props}>
               {children}
             </th>
           );
@@ -539,17 +1057,17 @@ export function MessageMarkdown({ text, streaming, onImageClick, onFileClick }: 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         td({ children, ...props }: any) {
           return (
-            <td className="border border-gray-200 px-2 py-1 text-xs" {...props}>
+            <td className="an-type-caption border border-[var(--border)] px-2 py-1" {...props}>
               {children}
             </td>
           );
         },
         hr() {
-          return <hr className="my-3 border-gray-200" />;
+          return <hr className="my-3 border-[var(--border)]" />;
         },
       }}
     >
       {processedText}
     </ReactMarkdown>
   );
-}
+});

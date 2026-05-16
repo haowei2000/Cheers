@@ -1,4 +1,4 @@
-"""说明书文档路由：将 docs/*.md 以 HTML 形式提供，标题带 id 便于锚点链接."""
+"""Manual routes module."""
 import re
 from pathlib import Path
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 router = APIRouter(tags=["manual"])
 
-# 项目根上一级为 backend，docs 在项目根
+# The backend directory sits below the project root; docs live at the project root.
 DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
 
 
@@ -95,21 +95,21 @@ async def save_doc(name: str, body: DocSaveBody) -> dict:
 
 
 def _heading_to_id(text: str) -> str:
-    """按统一 slug 规则生成锚点 id：小写、空白转-、去特殊字符."""
+    """Heading to id."""
     slug = text.strip().lower()
     slug = re.sub(r"\s+", "-", slug)
-    # 保留：中文、英文小写、数字、连字符
+    # Keep Chinese characters, lowercase English letters, digits, and hyphens.
     slug = re.sub(r"[^a-z0-9\u4e00-\u9fff-]", "", slug)
     slug = re.sub(r"-{2,}", "-", slug).strip("-")
     return slug or "section"
 
 
 def _md_to_html_with_heading_ids(md_text: str) -> str:
-    """将 Markdown 转为 HTML，并为 h2/h3 添加 id 属性。无 markdown 库时做最小转义兜底。"""
+    """Md to html with heading ids."""
     try:
         import markdown
     except ImportError:
-        # 未安装 markdown 时兜底：仅做基本转义，保留换行
+        # Fallback when markdown is not installed: basic escaping while preserving newlines.
         html = "<pre>" + _escape_html(md_text) + "</pre>"
         return html
     html = markdown.markdown(md_text, extensions=["extra"])
@@ -118,7 +118,7 @@ def _md_to_html_with_heading_ids(md_text: str) -> str:
 
     def add_id(match: re.Match) -> str:
         tag, content = match.group(1), match.group(2)
-        frag = re.sub(r"<[^>]+>", "", content)  # 去掉内联标签
+        frag = re.sub(r"<[^>]+>", "", content)  # Strip inline tags.
         frag = frag.strip()
         base_id = _heading_to_id(frag)
         count = used_ids.get(base_id, 0) + 1
@@ -130,7 +130,7 @@ def _md_to_html_with_heading_ids(md_text: str) -> str:
 
 
 def _escape_html(text: str) -> str:
-    """最小 HTML 转义."""
+    """Escape html."""
     return (
         text.replace("&", "&amp;")
         .replace("<", "&lt;")
@@ -141,7 +141,7 @@ def _escape_html(text: str) -> str:
 
 @router.get("/manual", response_class=HTMLResponse)
 async def manual_index() -> HTMLResponse:
-    """说明书首页：只展示面向用户/管理员的帮助文档入口，不暴露设计说明书。"""
+    """Manual index."""
     help_items: list[tuple[str, str, str]] = [
         ("使用说明书", "/manual/help/使用说明书", "总索引，按角色分流到其它说明书。"),
         ("普通用户使用说明", "/manual/help/普通用户使用说明", "日常在项目里聊天、@ Bot、上传文件的使用指南。"),
@@ -175,8 +175,8 @@ async def manual_index() -> HTMLResponse:
 
 @router.get("/manual/{name:path}", response_class=HTMLResponse)
 async def get_manual(name: str) -> HTMLResponse:
-    """返回说明书 HTML 页，支持锚点（如 /manual/系统管理说明书#四如何让-openclaw-接入注册-bot-并加入项目）。"""
-    # 只允许 .md 或纯文件名，禁止 .. 等
+    """Get manual."""
+    # Only allow .md files or bare filenames; reject path traversal.
     base = name.rstrip("/")
     if not base or ".." in base or base.startswith("/"):
         raise HTTPException(status_code=404, detail="not found")
@@ -186,7 +186,7 @@ async def get_manual(name: str) -> HTMLResponse:
     resolved = path.resolve()
     if not resolved.is_relative_to(DOCS_DIR.resolve()):
         raise HTTPException(status_code=404, detail="not found")
-    # 兼容旧的不带子目录前缀的链接：若直接路径不存在，在 help/ 与 develop/ 下查找同名文件
+    # Support legacy links without subdirectory prefixes by checking help/ and develop/.
     if not path.is_file() and "/" not in base:
         for sub in ("help", "develop"):
             candidate = DOCS_DIR / sub / base

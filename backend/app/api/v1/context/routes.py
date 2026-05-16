@@ -1,8 +1,4 @@
-"""Context v1 路由（频道记忆 GET/PUT）。
-
-GET 返回完整记忆（结构化层 + 派生层），兼容旧格式。
-PUT 仅允许更新派生层的手动覆盖（FILES_INDEX / RECENT），结构化层请使用 /memory/ 路由。
-"""
+"""Context API routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -13,13 +9,13 @@ from app.core.dependencies import get_current_user, get_session
 from app.core.exceptions import BadRequestError, NotFoundError
 from app.core.responses import APIResponse
 from app.db.models import User
+from app.features.memory.channel_memory import ChannelMemory
 from app.repositories.channel_repo import ChannelRepository
 from app.services.channel_service import ChannelService
-from app.services.memory.channel_memory import ChannelMemory
 
 router = APIRouter(prefix="/channels", tags=["context"])
 
-# 仍然允许 PUT 覆盖派生层（向后兼容，前端仍可能用到）
+# Still allow PUT to overwrite derived layers for backward compatibility.
 _PUT_VALID_LAYERS = {"FILES_INDEX", "RECENT"}
 
 
@@ -50,7 +46,7 @@ async def update_context(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """更新派生层内容。结构化层 (ANCHOR/DECISIONS/PROGRESS) 请使用 /memory/ CRUD 路由。"""
+    """Update context."""
     layer_upper = body.layer.upper()
     if layer_upper not in _PUT_VALID_LAYERS:
         raise BadRequestError(
@@ -62,7 +58,7 @@ async def update_context(
     if not channel:
         raise NotFoundError("channel not found")
     await ChannelService(session).require_channel_admin(channel_id, current_user)
-    from app.services.memory.context_store import init_context_db, set_layer
+    from app.features.memory.context_store import init_context_db, set_layer
     await init_context_db()
     await set_layer(channel_id, layer_upper, body.content)
     return APIResponse.ok(None)

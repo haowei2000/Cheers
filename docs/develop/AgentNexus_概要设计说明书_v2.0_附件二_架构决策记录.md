@@ -198,13 +198,13 @@ OpenClaw 是外部开源项目，版本升级时 API 可能发生破坏性变更
 
 __✅  已决策__
 
-在 AgentOrchestrator 与 OpenClaw 之间建立 OpenClawAdapter 接口隔离层。Orchestrator 只调用 Adapter 定义的标准内部接口，Adapter 负责将标准调用翻译为具体版本的 OpenClaw API。版本升级时只改 Adapter，Orchestrator 不动。
+在 AgentOrchestrator 与 OpenClaw 之间建立 BotAdapter 接口隔离层。Orchestrator 只调用 Adapter 定义的标准内部接口，Adapter 负责将标准调用翻译为具体版本的 OpenClaw API。版本升级时只改 Adapter，Orchestrator 不动。
 
 ## __接口隔离层设计__
 
 标准内部接口（Orchestrator 侧，永远不变）：
 
-class OpenClawAdapter:
+class BotAdapter:
 
     def execute\(self, payload: AgentPayload\) \-> AgentResponse:
 
@@ -220,7 +220,7 @@ class OpenClawAdapter:
 
 版本适配实现（每个版本一个子类）：
 
-class OpenClawV2Adapter\(OpenClawAdapter\):
+class OpenClawV2Adapter\(BotAdapter\):
 
     """适配 OpenClaw v2\.x API"""
 
@@ -230,7 +230,7 @@ class OpenClawV2Adapter\(OpenClawAdapter\):
 
         \.\.\.
 
-class OpenClawV3Adapter\(OpenClawAdapter\):
+class OpenClawV3Adapter\(BotAdapter\):
 
     """适配 OpenClaw v3\.x API（未来升级时新增此类）"""
 
@@ -261,11 +261,10 @@ Adapter 隔离层的另一个好处是：未来若替换 OpenClaw 为其他 Agen
 | D\-02 | Context Store 存储方案 | ✅ 已决 | SQLite（WAL 模式）主存储 \+ MD 文件镜像；双轨同步；零额外部署成本 |
 | D\-03 | 多 Bot 执行模式 | ✅ 已决 | 默认串行；前端展示队列状态和预估时间；第二阶段支持默认协作组 |
 | D\-04 | Bot 响应审核策略 | ✅ 已决 | 不做全量审核；仅拦截对外执行类指令；基于规则匹配，第二阶段升级为 LLM 判断 |
-| D\-05 | OpenClaw 版本升级兼容 | ✅ 已决 | 建立 OpenClawAdapter 隔离层；锁定版本号；升级只改 Adapter，不动 Orchestrator |
+| D\-05 | OpenClaw 版本升级兼容 | ✅ 已决 | 建立 BotAdapter 隔离层；锁定版本号；升级只改 Adapter，不动 Orchestrator |
 
 __文档修订历史__
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | v1\.0 | 2026\-03\-07 | 初稿，记录 D\-01 至 D\-05 的分析与最终决议，作为概要设计说明书 v2\.0 附件二发布 |
-

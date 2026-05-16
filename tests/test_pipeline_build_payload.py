@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock
 
-from app.services.pipeline.bot.capabilities import Capabilities
-from app.services.pipeline.bot.subagent import build_payload
+from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
+from app.features.bot_runtime.pipeline.bot.subagent import build_payload
 
 
 @dataclass
@@ -69,10 +69,7 @@ def _make_ctx(**overrides):
 
 
 def test_leaf_payload_omits_run_ctx() -> None:
-    """The auto-takeover phase-2 contract: suggested bots cannot recursively
-    call_bot. build_payload leaves run_ctx as None for Capabilities.leaf() so
-    channel_bot.call_bot's first check ('错误：_run_ctx 未注入') refuses
-    to dispatch further."""
+    """Covers test leaf payload omits run ctx behavior."""
     ctx = _make_ctx()
     payload = build_payload(
         ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
@@ -81,6 +78,7 @@ def test_leaf_payload_omits_run_ctx() -> None:
     assert payload.process_config.run_ctx is None
     assert payload.process_config.db_session is ctx.session
     assert payload.process_config.channel_bot_usernames == []
+    assert payload.runtime.run_ctx is None
 
 
 def test_leaf_payload_omits_msg_id_and_msg_type() -> None:
@@ -107,6 +105,8 @@ def test_regular_payload_carries_run_ctx() -> None:
     )
     assert payload.process_config.run_ctx is ctx
     assert payload.process_config.channel_bot_usernames == ["bob"]
+    assert payload.runtime.run_ctx is ctx
+    assert payload.runtime.channel_bot_usernames == ["bob"]
 
 
 def test_regular_payload_includes_msg_id() -> None:
@@ -145,6 +145,7 @@ def test_trigger_text_override_replaces_text() -> None:
         trigger_text_override="please summarize this",
     )
     assert payload.trigger_message["text"] == "please summarize this"
+    assert payload.message.text == "please summarize this"
 
 
 def test_payload_uses_pipeline_trigger_content_not_stored_message_content() -> None:
@@ -161,6 +162,7 @@ def test_payload_uses_pipeline_trigger_content_not_stored_message_content() -> N
         capabilities=Capabilities.regular(),
     )
     assert payload.trigger_message["text"] == "@alice decrypted task"
+    assert payload.message.text == "@alice decrypted task"
 
 
 def test_skip_system_prompt_flag_propagates() -> None:
@@ -173,6 +175,18 @@ def test_skip_system_prompt_flag_propagates() -> None:
     assert payload.process_config.skip_system_prompt is True
 
 
+def test_delegated_task_xml_flag_propagates() -> None:
+    ctx = _make_ctx()
+    payload = build_payload(
+        ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
+        capabilities=Capabilities.regular(),
+        trigger_text_override="<agentnexus_subbot_request />",
+        delegated_task_xml=True,
+    )
+    assert payload.trigger_message["text"] == "<agentnexus_subbot_request />"
+    assert payload.process_config.delegated_task_xml is True
+
+
 def test_in_reply_to_override_chains_bot_at_bot() -> None:
     """Bot@Bot recursion sets the sub-reply's in_reply_to to the parent
     bot's msg_id so the sub-reply chains correctly."""
@@ -183,6 +197,27 @@ def test_in_reply_to_override_chains_bot_at_bot() -> None:
         in_reply_to_msg_id="parent-bot-msg",
     )
     assert payload.trigger_message["in_reply_to_msg_id"] == "parent-bot-msg"
+    assert payload.message.in_reply_to_msg_id == "parent-bot-msg"
+
+
+def test_payload_groups_message_context_and_runtime() -> None:
+    ctx = _make_ctx(
+        memory_context={"anchor": "A"},
+        attachments=[{"file_id": "f1"}],
+        original_question="What now?",
+    )
+    payload = build_payload(
+        ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
+        capabilities=Capabilities.regular(),
+    )
+
+    assert payload.message.sender_id == "u1"
+    assert payload.message.sender_name == "Alice"
+    assert payload.context.memory == {"anchor": "A"}
+    assert payload.context.attachments == [{"file_id": "f1"}]
+    assert payload.context.original_question_text == "What now?"
+    assert payload.runtime.bot_id == "bot-a"
+    assert payload.runtime.placeholder_msg_id == "bot-msg-1"
 
 
 # ── shared invariants ────────────────────────────────────────────────

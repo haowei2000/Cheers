@@ -1,112 +1,410 @@
 import { useEffect, useState } from "react";
-import {
-  ArrowDownTrayIcon,
-  ArrowTopRightOnSquareIcon,
-  DocumentIcon,
-} from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
+import { apiFetch } from "../api/client";
+import {
+  createProtectedFileObjectUrl,
+  downloadProtectedFile,
+  openProtectedFile,
+} from "../lib/protected-file";
+import { AppIcon } from "./icons/AppIcon";
+import { FileTypeIcon } from "./icons/FileTypeIcon";
+import { Tooltip } from "./Tooltip";
 
-export function FilePreviewSidebar({
+type TextPreviewKind = "html" | "markdown" | "text";
+const HTML_PREVIEW_SANDBOX = "allow-scripts allow-forms allow-popups allow-downloads";
+const KKFILEVIEW_EXTS = new Set([
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "wps",
+  "et",
+  "dps",
+  "ofd",
+  "rtf",
+  "csv",
+  "zip",
+  "rar",
+  "7z",
+  "tar",
+  "gz",
+  "bz2",
+  "xz",
+  "dwg",
+  "dxf",
+  "epub",
+]);
+
+function swapFileAction(url: string, action: "preview" | "download" | "content") {
+  const [base, query] = url.split("?");
+  const next = base.replace(/\/(preview|download|content)$/, `/${action}`);
+  return query ? `${next}?${query}` : next;
+}
+
+function extractFileId(url: string): string | null {
+  const match = url.match(/\/files\/([^/?]+)\/(?:preview|download|content)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+export function FilePreviewPanel({
   url,
   filename,
+  contentType,
+  sizeBytes,
+  subtitle,
   onClose,
+  variant = "side",
 }: {
   url: string;
   filename: string;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  subtitle?: string | null;
   onClose: () => void;
+  variant?: "side" | "main";
 }) {
-  const downloadUrl = url.replace(/\/preview$/, "/download");
+  const previewUrl = swapFileAction(url, "preview");
+  const downloadUrl = swapFileAction(url, "download");
+  const contentUrl = swapFileAction(url, "content");
   const ext = (filename.split(".").pop() ?? "").toLowerCase();
-  const isMarkdown = ext === "md" || ext === "markdown";
+  const normalizedType = (contentType ?? "").split(";", 1)[0].toLowerCase();
+  const isImage =
+    normalizedType.startsWith("image/") ||
+    ["png", "jpg", "jpeg", "webp", "gif"].includes(ext);
+  const isPdf = normalizedType.includes("pdf") || ext === "pdf";
+  const isHtml =
+    normalizedType === "text/html" ||
+    normalizedType === "application/xhtml+xml" ||
+    ["html", "htm"].includes(ext);
+  const isMarkdown =
+    normalizedType === "text/markdown" || ext === "md" || ext === "markdown";
+  const isPlainText = normalizedType === "text/plain" || ext === "txt";
+  const isExtractedPreview =
+    ["docx", "xlsx"].includes(ext) ||
+    normalizedType.includes("wordprocessingml") ||
+    normalizedType.includes("spreadsheetml");
+  const isKkFileViewDocument =
+    !isImage &&
+    !isPdf &&
+    !isHtml &&
+    !isMarkdown &&
+    (KKFILEVIEW_EXTS.has(ext) ||
+      normalizedType.includes("wordprocessingml") ||
+      normalizedType.includes("spreadsheetml") ||
+      normalizedType.includes("presentationml") ||
+      normalizedType === "application/msword" ||
+      normalizedType === "application/vnd.ms-excel" ||
+      normalizedType === "application/vnd.ms-powerpoint" ||
+      normalizedType === "application/ofd" ||
+      normalizedType === "application/rtf");
+  const sizeLabel =
+    sizeBytes && sizeBytes > 0
+      ? sizeBytes < 1024
+        ? `${sizeBytes} B`
+        : sizeBytes < 1024 * 1024
+          ? `${(sizeBytes / 1024).toFixed(1)} KB`
+          : `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+      : "";
+  const subtitleLabel = [subtitle, sizeLabel].filter(Boolean).join(" · ");
 
-  const [mdContent, setMdContent] = useState<string | null>(null);
-  const [mdLoading, setMdLoading] = useState(false);
-  const [mdError, setMdError] = useState<string | null>(null);
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [textKind, setTextKind] = useState<TextPreviewKind>(
+    isHtml ? "html" : isMarkdown || ext === "xlsx" ? "markdown" : "text",
+  );
+  const [textLoading, setTextLoading] = useState(false);
+  const [textError, setTextError] = useState<string | null>(null);
+  const [binaryPreviewUrl, setBinaryPreviewUrl] = useState<string | null>(null);
+  const [binaryLoading, setBinaryLoading] = useState(false);
+  const [binaryError, setBinaryError] = useState<string | null>(null);
+  const [kkViewerUrl, setKkViewerUrl] = useState<string | null>(null);
+  const [kkLoading, setKkLoading] = useState(false);
+  const [kkError, setKkError] = useState<string | null>(null);
+  const [kkFallbackToText, setKkFallbackToText] = useState(false);
+  const shouldUseKkFileView = isKkFileViewDocument && !kkFallbackToText;
+  const shouldLoadText =
+    !shouldUseKkFileView &&
+    !isImage &&
+    !isPdf &&
+    !isHtml &&
+    (isMarkdown || isPlainText || isExtractedPreview);
 
   useEffect(() => {
-    if (!isMarkdown) return;
-    setMdLoading(true);
-    setMdContent(null);
-    setMdError(null);
-    fetch(url)
+    setKkFallbackToText(false);
+  }, [contentType, filename, previewUrl]);
+
+  useEffect(() => {
+    if (!shouldLoadText) {
+      setTextContent(null);
+      setTextError(null);
+      setTextLoading(false);
+      return;
+    }
+
+    const sourceUrl = isExtractedPreview ? contentUrl : previewUrl;
+    setTextLoading(true);
+    setTextContent(null);
+    setTextError(null);
+    apiFetch(sourceUrl)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.text();
+        return isExtractedPreview ? r.json() : r.text();
       })
-      .then((text) => {
-        setMdContent(text);
-        setMdLoading(false);
+      .then((payload) => {
+        if (isExtractedPreview) {
+          const data = payload?.data ?? payload;
+          if (data?.preview_type === "unsupported") {
+            throw new Error(data.error || "This file cannot be previewed yet");
+          }
+          setTextKind(data?.preview_type === "markdown" ? "markdown" : "text");
+          setTextContent(String(data?.content ?? ""));
+        } else {
+          setTextKind(isMarkdown ? "markdown" : "text");
+          setTextContent(String(payload ?? ""));
+        }
+        setTextLoading(false);
       })
       .catch((e) => {
-        setMdError(String(e));
-        setMdLoading(false);
+        setTextError(e instanceof Error ? e.message : String(e));
+        setTextLoading(false);
       });
-  }, [url, isMarkdown]);
+  }, [contentUrl, isExtractedPreview, isMarkdown, previewUrl, shouldLoadText]);
+
+  useEffect(() => {
+    if (!isKkFileViewDocument) {
+      setKkViewerUrl(null);
+      setKkError(null);
+      setKkLoading(false);
+      return;
+    }
+    if (kkFallbackToText) {
+      setKkViewerUrl(null);
+      setKkLoading(false);
+      return;
+    }
+
+    const fileId = extractFileId(previewUrl);
+    if (!fileId) {
+      setKkError("Could not identify the file preview URL");
+      setKkFallbackToText(true);
+      return;
+    }
+
+    let cancelled = false;
+    setKkLoading(true);
+    setKkError(null);
+    setKkViewerUrl(null);
+    apiFetch(`/files/${encodeURIComponent(fileId)}/kkfileview`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((payload) => {
+        const data = payload?.data ?? payload;
+        if (!data?.enabled || !data?.viewer_url) {
+          throw new Error(data?.reason || "Document preview service is unavailable");
+        }
+        if (cancelled) return;
+        setKkViewerUrl(String(data.viewer_url));
+        setKkLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setKkError(e instanceof Error ? e.message : String(e));
+        setKkLoading(false);
+        setKkFallbackToText(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isKkFileViewDocument, kkFallbackToText, previewUrl, shouldUseKkFileView]);
+
+  useEffect(() => {
+    if (!isImage && !isPdf && !isHtml) {
+      setBinaryPreviewUrl(null);
+      setBinaryError(null);
+      setBinaryLoading(false);
+      return;
+    }
+
+    let revoked = false;
+    let objectUrl: string | null = null;
+    setBinaryLoading(true);
+    setBinaryError(null);
+    setBinaryPreviewUrl(null);
+    createProtectedFileObjectUrl(previewUrl)
+      .then((url) => {
+        objectUrl = url;
+        if (revoked) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setBinaryPreviewUrl(url);
+        setBinaryLoading(false);
+      })
+      .catch((e) => {
+        setBinaryError(e instanceof Error ? e.message : String(e));
+        setBinaryLoading(false);
+      });
+
+    return () => {
+      revoked = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [isHtml, isImage, isPdf, previewUrl]);
+
+  const handleDownload = () => {
+    downloadProtectedFile(downloadUrl, filename).catch((e) => {
+      setBinaryError(e instanceof Error ? e.message : String(e));
+    });
+  };
+
+  const handleOpen = () => {
+    if (kkViewerUrl) {
+      window.open(kkViewerUrl, "_blank", "noreferrer");
+      return;
+    }
+    openProtectedFile(previewUrl).catch((e) => {
+      setBinaryError(e instanceof Error ? e.message : String(e));
+    });
+  };
+
+  const Root = variant === "main" ? "section" : "aside";
 
   return (
-    <aside className="w-full border-l border-gray-200 bg-white flex flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
-        <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-          <DocumentIcon className="w-4 h-4 text-blue-500" />
+    <Root className={`an-file-preview is-${variant}`}>
+      <div className="an-file-preview-head">
+        <div className="an-file-preview-icon">
+          <FileTypeIcon contentType={contentType} filename={filename} size={20} />
         </div>
-        <span className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0">
-          {filename}
-        </span>
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          <a
-            href={downloadUrl}
-            download={filename}
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-            title="下载文件"
-          >
-            <ArrowDownTrayIcon className="w-4 h-4" />
-          </a>
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-            title="在新标签页打开"
-          >
-            <ArrowTopRightOnSquareIcon className="w-4 h-4" />
-          </a>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none transition-colors"
-            title="关闭"
-          >
-            ×
-          </button>
+        <Tooltip
+          className="an-file-preview-title-wrap"
+          content={filename}
+          placement="bottom"
+        >
+          <div className="an-file-preview-title">
+            <strong>{filename}</strong>
+            {subtitleLabel && <span>{subtitleLabel}</span>}
+          </div>
+        </Tooltip>
+        <div className="an-file-preview-actions">
+          <Tooltip content="Download file" placement="bottom">
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="an-file-preview-action"
+              aria-label="Download file"
+            >
+              <AppIcon name="download" />
+            </button>
+          </Tooltip>
+          <Tooltip content="Open in a new tab" placement="bottom">
+            <button
+              type="button"
+              onClick={handleOpen}
+              className="an-file-preview-action"
+              aria-label="Open in a new tab"
+            >
+              <AppIcon name="externalLink" />
+            </button>
+          </Tooltip>
+          <Tooltip content="ClosePreview" placement="bottom">
+            <button
+              type="button"
+              onClick={onClose}
+              className="an-file-preview-action"
+              aria-label="ClosePreview"
+            >
+              <AppIcon name="close" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        {isMarkdown ? (
-          mdLoading ? (
-            <div className="flex items-center justify-center h-full text-sm text-gray-400">
-              加载中…
+      <div className="an-file-preview-body">
+        {isImage ? (
+          <div className="an-file-preview-stage">
+            {binaryLoading ? (
+              <span>Loading...</span>
+            ) : binaryError ? (
+              <span style={{ color: "var(--red)" }}>{binaryError}</span>
+            ) : binaryPreviewUrl ? (
+              <img
+                src={binaryPreviewUrl}
+                alt={filename}
+                className="an-file-preview-media"
+              />
+            ) : null}
+          </div>
+        ) : isPdf || isHtml ? (
+          binaryLoading ? (
+            <div className="an-file-preview-state">Loading...</div>
+          ) : binaryError ? (
+            <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
+              {binaryError}
             </div>
-          ) : mdError ? (
-            <div className="flex items-center justify-center h-full text-sm text-red-400">
-              {mdError}
+          ) : binaryPreviewUrl ? (
+            <iframe
+              key={binaryPreviewUrl}
+              src={binaryPreviewUrl}
+              title={filename}
+              sandbox={isHtml ? HTML_PREVIEW_SANDBOX : undefined}
+              referrerPolicy={isHtml ? "no-referrer" : undefined}
+              className={`an-file-preview-frame${isHtml ? " is-html" : ""}`}
+            />
+          ) : null
+        ) : shouldUseKkFileView ? (
+          kkLoading ? (
+            <div className="an-file-preview-state">Loading...</div>
+          ) : kkError ? (
+            <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
+              {kkError}
+            </div>
+          ) : kkViewerUrl ? (
+            <iframe
+              key={kkViewerUrl}
+              src={kkViewerUrl}
+              title={filename}
+              className="an-file-preview-frame is-kkfileview"
+            />
+          ) : null
+        ) : shouldLoadText ? (
+          textLoading ? (
+            <div className="an-file-preview-state">Loading...</div>
+          ) : textError ? (
+            <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
+              {textError}
+            </div>
+          ) : textKind === "markdown" ? (
+            <div className="an-file-preview-text is-markdown">
+              <MessageMarkdown text={textContent ?? ""} />
             </div>
           ) : (
-            <div className="px-5 py-4">
-              <MessageMarkdown text={mdContent ?? ""} />
+            <div className="an-file-preview-text is-plain">
+              <pre className="an-file-preview-pre">{textContent ?? ""}</pre>
             </div>
           )
         ) : (
-          <iframe
-            key={url}
-            src={url}
-            title={filename}
-            className="w-full h-full border-0"
-          />
+          <div className="an-file-preview-empty">
+            <FileTypeIcon contentType={contentType} filename={filename} size={44} />
+            <p>{kkError || "This file type cannot be previewed directly"}</p>
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="an-btn an-btn-primary"
+            >
+              <AppIcon name="download" className="w-4 h-4" />
+              Download file
+            </button>
+          </div>
         )}
       </div>
-    </aside>
+    </Root>
   );
+}
+
+export function FilePreviewSidebar(props: Omit<Parameters<typeof FilePreviewPanel>[0], "variant">) {
+  return <FilePreviewPanel {...props} variant="side" />;
 }

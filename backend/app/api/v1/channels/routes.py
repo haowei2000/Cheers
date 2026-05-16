@@ -1,4 +1,4 @@
-"""Channel v1 路由."""
+"""Channels API routes."""
 from __future__ import annotations
 
 from typing import Literal
@@ -28,7 +28,7 @@ class ChannelCreateBody(BaseModel):
 class ChannelUpdateBody(BaseModel):
     name: str | None = None
     purpose: str | None = None
-    type: Literal["public", "private"] | None = None
+    type: Literal["public", "workspace", "private"] | None = None
     auto_assist: bool | None = None
     allow_member_invites: bool | None = None
     allow_bot_adds: bool | None = None
@@ -168,8 +168,7 @@ async def get_channel(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = ChannelService(session)
-    await svc.require_channel_member(channel_id, current_user)
-    ch = await svc.get_or_404(channel_id)
+    ch = await svc.require_channel_member_or_manager(channel_id, current_user)
     return APIResponse.ok(await _channel_response(svc, ch, current_user))
 
 
@@ -193,8 +192,7 @@ async def get_channel_settings(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = ChannelService(session)
-    await svc.require_channel_member(channel_id, current_user)
-    ch = await svc.get_or_404(channel_id)
+    ch = await svc.require_channel_member_or_manager(channel_id, current_user)
     perms = await svc.channel_permission_summary(ch, current_user)
     members = await svc.list_members_with_details(channel_id, current_user)
     return APIResponse.ok(
@@ -238,7 +236,7 @@ async def list_members(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = ChannelService(session)
-    await svc.require_channel_member(channel_id, current_user)
+    await svc.require_channel_member_or_manager(channel_id, current_user)
     if with_username:
         members = await svc.list_members_with_details(channel_id, current_user)
         return APIResponse.ok(members)
@@ -340,6 +338,7 @@ async def get_my_profile(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = ChannelService(session)
+    await svc.require_channel_member(channel_id, current_user)
     profile = await svc.get_my_profile(channel_id, current_user.user_id)
     return APIResponse.ok(profile)
 
@@ -352,6 +351,7 @@ async def update_my_profile(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = ChannelService(session)
+    await svc.require_channel_member(channel_id, current_user)
     profile = await svc.update_my_profile(
         channel_id,
         current_user.user_id,

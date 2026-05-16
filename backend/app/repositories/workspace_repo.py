@@ -1,4 +1,4 @@
-"""Workspace 数据访问层."""
+"""Workspace repo module."""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -70,7 +70,7 @@ class WorkspaceRepository:
             .join(User, WorkspaceMembership.user_id == User.user_id)
             .where(WorkspaceMembership.workspace_id == workspace_id)
         )
-        return list(result.all())
+        return [(membership, user) for membership, user in result.all()]
 
     async def list_channels(self, workspace_id: str) -> list[Channel]:
         result = await self.session.execute(

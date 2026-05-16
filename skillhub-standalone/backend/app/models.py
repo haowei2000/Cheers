@@ -1,4 +1,4 @@
-"""Skill 数据模型"""
+"""Skill data models."""
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -6,7 +6,7 @@ import json
 
 
 class SkillInfo:
-    """Skill 元数据"""
+    """Skill metadata."""
 
     def __init__(self, skill_id: str, name: str, version: str,
                  description: str = "", category: str = "general",
@@ -27,12 +27,12 @@ class SkillInfo:
 
     @classmethod
     def from_json(cls, json_path: Path) -> "SkillInfo | None":
-        """从 skill.json 解析"""
+        """Parse from skill.json."""
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             skill_dir = json_path.parent
-            # 使用目录名作为 skill_id（确保与目录对应，便于删除等操作）
+            # Use the directory name as skill_id so it matches deletion and path operations.
             return cls(
                 skill_id=skill_dir.name,
                 name=data.get("name", skill_dir.name),
@@ -51,7 +51,7 @@ class SkillInfo:
 
     @classmethod
     def from_skill_md(cls, md_path: Path) -> "SkillInfo | None":
-        """从 SKILL.md 的 YAML frontmatter 解析"""
+        """Parse from SKILL.md YAML frontmatter."""
         try:
             import re
             content = md_path.read_text(encoding="utf-8")
@@ -62,8 +62,8 @@ class SkillInfo:
             yaml_content = match.group(1)
             data = {}
 
-            # 改进的 YAML 解析：支持值中包含冒号
-            # 匹配 key: value，value 可以是引号包围或普通文本
+            # Improved YAML parsing: support values that contain colons.
+            # Match key: value where value may be quoted or plain text.
             yaml_pattern = re.compile(r'^([^:]+):\s*(.*)$')
             for line in yaml_content.split('\n'):
                 line = line.strip()
@@ -73,7 +73,7 @@ class SkillInfo:
                 if match:
                     key = match.group(1).strip()
                     value = match.group(2).strip()
-                    # 去除引号
+                    # Remove wrapping quotes.
                     if value.startswith('"') and value.endswith('"'):
                         value = value[1:-1]
                     elif value.startswith("'") and value.endswith("'"):
@@ -84,7 +84,7 @@ class SkillInfo:
                 return None
 
             skill_dir = md_path.parent
-            # 如果没有 category，使用目录名作为默认 category
+            # Use the directory name as default category when category is absent.
             category_value = data.get("category", "")
             if not category_value:
                 category_value = skill_dir.name
@@ -121,7 +121,7 @@ class SkillInfo:
 
 
 class SyncResult:
-    """同步结果"""
+    """Sync result."""
 
     def __init__(self, success: bool, message: str = "",
                  sync_count: int = 0, conflict_files: list = None):
@@ -142,13 +142,13 @@ class SyncResult:
 
 
 class SyncLog:
-    """同步日志"""
+    """Sync log."""
 
     def __init__(self, status: str = "pending",
                  sync_count: int = 0,
                  conflict_files: list = None,
                  error_msg: str = ""):
-        self.id = None  # 内存中不设置 ID
+        self.id = None  # Do not set ID in memory.
         self.sync_time = datetime.now()
         self.status = status  # success / fail / pending
         self.sync_count = sync_count
@@ -169,7 +169,7 @@ class SyncLog:
 
     @classmethod
     def from_result(cls, result: SyncResult) -> "SyncLog":
-        """从 SyncResult 创建 SyncLog"""
+        """Create SyncLog from SyncResult."""
         return cls(
             status="success" if result.success else "fail",
             sync_count=result.sync_count,

@@ -17,9 +17,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # 系统提示词
+    # System prompt.
     op.add_column("bot_accounts", sa.Column("system_prompt", sa.Text(), nullable=True))
-    # 模型配置字段
+    # Model configuration fields.
     op.add_column("bot_accounts", sa.Column("model_provider", sa.String(length=32), nullable=True))
     op.add_column("bot_accounts", sa.Column("model_name", sa.String(length=64), nullable=True))
     op.add_column("bot_accounts", sa.Column("model_api_key", sa.String(length=512), nullable=True))

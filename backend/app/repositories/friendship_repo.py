@@ -1,4 +1,4 @@
-"""Friendship 数据访问层."""
+"""Friendship repo module."""
 from __future__ import annotations
 
 from sqlalchemy import and_, or_, select
@@ -48,7 +48,7 @@ class FriendshipRepository:
                 )
             )
         )
-        return list(result.all())
+        return [(friendship, user) for friendship, user in result.all()]
 
     async def list_requests(self, user_id: str, box: str) -> list[tuple[Friendship, User]]:
         """Return pending requests with the counterparty user.
@@ -68,7 +68,7 @@ class FriendshipRepository:
             .where(condition)
             .order_by(Friendship.updated_at.desc(), Friendship.created_at.desc())
         )
-        return list(result.all())
+        return [(friendship, user) for friendship, user in result.all()]
 
     async def list_blocked(self, user_id: str) -> list[tuple[Friendship, User]]:
         result = await self.session.execute(
@@ -77,7 +77,7 @@ class FriendshipRepository:
             .where(Friendship.user_id == user_id, Friendship.status == "blocked")
             .order_by(Friendship.updated_at.desc(), Friendship.created_at.desc())
         )
-        return list(result.all())
+        return [(friendship, user) for friendship, user in result.all()]
 
     async def create(self, user_id: str, friend_id: str, status: str = "pending") -> Friendship:
         if status not in FRIENDSHIP_STATUSES:

@@ -19,11 +19,11 @@ def upgrade() -> None:
     op.add_column("messages", sa.Column("msg_type", sa.String(16), nullable=False, server_default="normal"))
     op.add_column("messages", sa.Column("thread_title", sa.String(255), nullable=True))
 
-    # 回填：有 in_reply_to_msg_id 的消息标记为 reply
+    # Backfill messages with in_reply_to_msg_id as replies.
     op.execute(
         "UPDATE messages SET msg_type = 'reply' WHERE in_reply_to_msg_id IS NOT NULL"
     )
-    # 回填：被至少一条消息回复过的消息（不论自身是 normal 还是 reply）升级为 thread
+    # Backfill messages that have at least one reply as thread roots.
     op.execute(
         """
         UPDATE messages SET msg_type = 'thread'

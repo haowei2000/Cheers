@@ -37,6 +37,12 @@ export type DM = {
   channel_id: string;
   workspace_id: string;
   counterparty: DMCounterparty;
+  title?: string | null;
+  project_id?: string | null;
+  project_title?: string | null;
+  chat_title?: string | null;
+  session_scope_id?: string | null;
+  created_at?: string | null;
   unread_count?: number | null;
 };
 
@@ -46,6 +52,7 @@ export type FileInfo = {
   content_type?: string;
   size_bytes?: number;
   status?: string;
+  expires_at?: string | null;
 };
 
 export type BotTraceEvent = {
@@ -65,8 +72,8 @@ export type BotTraceEvent = {
   data?: Record<string, unknown>;
 };
 
-export type WebsocketTaskContentData = {
-  kind: "websocket_background_task";
+export type AgentBridgeTaskContentData = {
+  kind: "agent_bridge_background_task";
   status?: string;
   title?: string;
   message?: string;
@@ -119,10 +126,11 @@ export type Message = {
   is_secret?: boolean;
   secret_token?: string;
   /** True when the bot reply was finalized mid-stream (cancel/error).
-   *  Renders a "已取消" / "已中断" badge. */
+   *  Renders a canceled / interrupted badge. */
   is_partial?: boolean;
   _bot_status?: string;
   _bot_trace?: BotTraceEvent[];
+  _agent_bridge_task?: AgentBridgeTaskContentData;
 };
 
 export type ContextData = Record<string, string>;

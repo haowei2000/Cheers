@@ -1,4 +1,4 @@
-// SkillHub 主应用 - 马卡龙生机风格
+// SkillHub main app with the macaron vitality style.
 import { useState } from 'react';
 import SkillList from './pages/skillhub/SkillList';
 import SkillDetail from './pages/skillhub/SkillDetail';
@@ -16,7 +16,7 @@ export default function App() {
     <div className="app">
       <header className="header">
         <h1>SkillHub 🌻</h1>
-        <p>在skill森林里栽种或收获吧！</p>
+        <p>Plant, import, and browse local skills.</p>
       </header>
 
       <main className="main">
@@ -35,7 +35,7 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        🌸 SkillHub v1.0.0 | 充满生机
+        🌸 SkillHub v1.0.0 | Active workspace
       </footer>
     </div>
   );

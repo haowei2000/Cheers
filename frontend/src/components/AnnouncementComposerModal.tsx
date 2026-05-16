@@ -67,7 +67,7 @@ export function AnnouncementComposerModal({
       onPublished?.();
       onClose();
     } catch {
-      setError("发布失败，请重试");
+      setError("Post failed. Try again.");
     } finally {
       setBusy(false);
     }
@@ -77,19 +77,19 @@ export function AnnouncementComposerModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="发布公告"
+      title="Post announcement"
       description={channelName ? `#${channelName}` : undefined}
       maxWidth="max-w-lg"
     >
       <div className="an-field" style={{ marginBottom: 12 }}>
         <label className="an-label" htmlFor="an-announce-title">
-          标题（可选）
+          Title (optional)
         </label>
         <input
           id="an-announce-title"
           ref={titleRef}
           className="an-input"
-          placeholder="例如：本周五 14:00 UTC 发布窗口"
+          placeholder="Example: Friday 14:00 UTC release window"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
@@ -103,13 +103,13 @@ export function AnnouncementComposerModal({
       </div>
       <div className="an-field">
         <label className="an-label" htmlFor="an-announce-body">
-          正文
+          Body
         </label>
         <textarea
           id="an-announce-body"
           className="an-textarea"
           rows={6}
-          placeholder="公告内容，Markdown 可用…"
+          placeholder="Announcement content, Markdown supported..."
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => {
@@ -119,7 +119,7 @@ export function AnnouncementComposerModal({
             }
           }}
         />
-        <div className="an-help">⌘/Ctrl + Enter 直接发布</div>
+        <div className="an-help">⌘/Ctrl + Enter post directly</div>
       </div>
       {error && (
         <div
@@ -139,7 +139,7 @@ export function AnnouncementComposerModal({
           onClick={onClose}
           disabled={busy}
         >
-          取消
+          Cancel
         </button>
         <button
           type="button"
@@ -147,7 +147,7 @@ export function AnnouncementComposerModal({
           onClick={submit}
           disabled={!body.trim() || !channelId || busy}
         >
-          {busy ? "发布中…" : "发布公告"}
+          {busy ? "Posting..." : "Post announcement"}
         </button>
       </ModalFooter>
     </Modal>

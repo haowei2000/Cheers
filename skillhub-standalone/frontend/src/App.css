@@ -1,6 +1,6 @@
-/* SkillHub 马卡龙生机风格 - 充满活力与自然气息 */
+/* SkillHub macaron vitality style. */
 
-/* 基础变量 */
+/* Base variables. */
 :root {
   --mint: #B8E6D4;
   --mint-light: #D4F1E8;
@@ -27,7 +27,7 @@
   --radius-sm: 12px;
 }
 
-/* 全局 */
+/* Global. */
 * {
   margin: 0;
   padding: 0;
@@ -55,7 +55,7 @@ body {
     var(--cream);
 }
 
-/* 浮动装饰 - 花花草草小动物（始终在最上层，不会随滚动消失） */
+/* Floating decorations that stay above scrolling content. */
 .floating-decorations {
   position: fixed;
   top: 0;
@@ -74,7 +74,7 @@ body {
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* 各装饰位置 - 分布在页面各个区域 */
+/* Decoration positions distributed across the page. */
 .deco-1 { top: 8%; left: 3%; font-size: 2.2rem; animation: floatAround1 18s ease-in-out infinite; }
 .deco-2 { top: 12%; right: 5%; font-size: 1.8rem; animation: floatAround2 22s ease-in-out infinite; }
 .deco-3 { top: 30%; left: 2%; font-size: 2.4rem; animation: floatAround3 20s ease-in-out infinite; }
@@ -90,7 +90,7 @@ body {
 .deco-13 { top: 25%; left: 6%; font-size: 2.2rem; animation: floatAround13 22s ease-in-out infinite; }
 .deco-14 { top: 90%; right: 10%; font-size: 1.6rem; animation: floatAround14 16s ease-in-out infinite; }
 
-/* 多样化的浮动动画 - 每个装饰有自己的路径 */
+/* Varied floating animations with separate paths for each decoration. */
 @keyframes floatAround1 {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
   25% { transform: translate(15px, -20px) rotate(8deg); }
@@ -189,7 +189,7 @@ body {
   75% { transform: translate(-15px, -20px) rotate(-4deg); }
 }
 
-/* 头部 */
+/* Header. */
 .header {
   background: linear-gradient(135deg,
     var(--mint-light) 0%,
@@ -236,7 +236,7 @@ body {
   letter-spacing: 0.05em;
 }
 
-/* 主内容 */
+/* Main content. */
 .main {
   flex: 1;
   padding: 3rem 2rem;
@@ -247,7 +247,7 @@ body {
   z-index: 1;
 }
 
-/* 工具栏 */
+/* Toolbar. */
 .toolbar {
   display: flex;
   flex-direction: column;
@@ -360,7 +360,7 @@ body {
   50% { transform: rotate(2deg); }
 }
 
-/* 花瓣散开动画容器 */
+/* Burst animation container. */
 .flower-particle {
   position: absolute;
   left: 50%;
@@ -383,7 +383,7 @@ body {
   }
 }
 
-/* 技能数量和更新按钮 */
+/* Skill count and update button. */
 .skills-count {
   display: flex;
   justify-content: center;
@@ -464,7 +464,7 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* 星星粒子 */
+/* Star particles. */
 .star-particle {
   position: absolute;
   left: 50%;
@@ -492,7 +492,7 @@ body {
   }
 }
 
-/* 分类标签栏 */
+/* Category tabs. */
 .category-bar {
   display: flex;
   gap: 0.5rem;
@@ -552,14 +552,14 @@ body {
   transform: none;
 }
 
-/* 技能网格 */
+/* Skill grid. */
 .skills-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 2rem;
 }
 
-/* 技能卡片 */
+/* Skill cards. */
 .skill-card {
   background: var(--white);
   border-radius: 28px;
@@ -577,7 +577,7 @@ body {
   border-color: var(--mint);
 }
 
-/* 卡片顶部渐变背景 + 大 Emoji */
+/* Card top gradient background and large emoji. */
 .card-top {
   height: 120px;
   position: relative;
@@ -723,7 +723,7 @@ body {
   box-shadow: 0 6px 20px rgba(168, 237, 234, 0.5);
 }
 
-/* 消息提示 */
+/* Messages. */
 .upload-message {
   padding: 1.25rem 1.5rem;
   border-radius: 18px;
@@ -749,7 +749,7 @@ body {
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* 详情页 */
+/* Detail page. */
 .skill-detail {
   background: var(--white);
   border-radius: 32px;
@@ -980,7 +980,7 @@ body {
   box-shadow: 0 12px 40px rgba(255, 154, 158, 0.5);
 }
 
-/* 加载 */
+/* Loading. */
 .loading-container {
   text-align: center;
   padding: 5rem 2rem;
@@ -1033,7 +1033,7 @@ body {
   40% { transform: scale(1.2); opacity: 1; }
 }
 
-/* 空状态 */
+/* Empty state. */
 .empty {
   text-align: center;
   padding: 5rem 2rem;
@@ -1058,7 +1058,7 @@ body {
   color: var(--text-light);
 }
 
-/* 错误 */
+/* Error. */
 .error-box {
   background: linear-gradient(135deg, var(--rose-light), var(--peach-light));
   color: #C0392B;
@@ -1068,7 +1068,7 @@ body {
   font-weight: 700;
 }
 
-/* 底部 */
+/* Footer. */
 .footer {
   text-align: center;
   padding: 2rem;
@@ -1078,7 +1078,7 @@ body {
   z-index: 1;
 }
 
-/* 滚动条 */
+/* Scrollbar. */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -1094,7 +1094,7 @@ body {
   border-radius: 4px;
 }
 
-/* 响应式 */
+/* Responsive. */
 @media (max-width: 768px) {
   .header {
     padding: 2rem 1.5rem 3rem;
@@ -1130,7 +1130,7 @@ body {
   }
 }
 
-/* 弹窗样式 */
+/* Modal styles. */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1477,7 +1477,7 @@ body {
   40% { opacity: 1; }
 }
 
-/* 详情页分类编辑 */
+/* Detail page category editing. */
 .category-edit {
   display: flex;
   align-items: center;

@@ -1,6 +1,6 @@
 """Initial schema: workspaces, channels, users, bot_accounts, channel_memberships, messages, file_records, agent_tasks.
 
-主键/外键 String(36)，JSON 用 sa.JSON；时间默认 NOW()。
+Primary and foreign keys use String(36), JSON uses sa.JSON, and timestamps default to NOW().
 Revision ID: 001
 Revises:
 Create Date: 2026-03-07
@@ -17,7 +17,7 @@ down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# SQLite 时间默认
+# SQLite timestamp default.
 TS_DEFAULT = sa.text("NOW()")
 
 

@@ -90,7 +90,7 @@ async def web_fetch(url: str, max_length: int = MAX_CONTENT_LENGTH) -> str:
     """Fetch and extract text content from a URL."""
     url = url.strip()
     if not _is_valid_url(url):
-        return f"错误：无效的 URL '{url}'。请提供有效的 http:// 或 https:// 链接。"
+        return f"Error: invalid URL '{url}'. Provide a valid http:// or https:// link."
 
     try:
         proxy = _get_settings().web_search_proxy or None
@@ -115,7 +115,7 @@ async def web_fetch(url: str, max_length: int = MAX_CONTENT_LENGTH) -> str:
 
             result_parts = []
             if title:
-                result_parts.append(f"标题: {title}")
+                result_parts.append(f"Title: {title}")
             result_parts.append(f"URL: {url}")
             result_parts.append("---")
             result_parts.append(text)
@@ -127,7 +127,7 @@ async def web_fetch(url: str, max_length: int = MAX_CONTENT_LENGTH) -> str:
                 json_text = json.dumps(data, ensure_ascii=False, indent=2)
                 if len(json_text) > max_length:
                     json_text = json_text[:max_length] + "\n\n[JSON truncated...]"
-                return f"URL: {url}\n类型: JSON\n---\n{json_text}"
+                return f"URL: {url}\nType: JSON\n---\n{json_text}"
             except json.JSONDecodeError:
                 return f"URL: {url}\n---\n{response.text[:max_length]}"
 
@@ -135,20 +135,20 @@ async def web_fetch(url: str, max_length: int = MAX_CONTENT_LENGTH) -> str:
             text = response.text[:max_length]
             if len(response.text) > max_length:
                 text += "\n\n[Content truncated...]"
-            return f"URL: {url}\n类型: {content_type or 'text'}\n---\n{text}"
+            return f"URL: {url}\nType: {content_type or 'text'}\n---\n{text}"
 
     except httpx.TimeoutException:
         logger.warning("web_fetch timeout for URL: %s", url)
-        return f"错误：请求超时 ({REQUEST_TIMEOUT}s)。请稍后重试或使用其他链接。"
+        return f"Error: request timeout ({REQUEST_TIMEOUT}s). Try again later or use another link."
     except httpx.HTTPStatusError as e:
         logger.warning("web_fetch HTTP error for URL %s: %s", url, e.response.status_code)
-        return f"错误：HTTP {e.response.status_code} - 无法访问该页面。"
+        return f"Error: HTTP {e.response.status_code} - unable to access the page."
     except httpx.RequestError as e:
         logger.warning("web_fetch request error for URL %s: %s", url, e)
-        return "错误：无法连接到服务器。请检查 URL 是否正确或稍后重试。"
+        return "Error: unable to connect to the server. Check the URL or try again later."
     except Exception as e:
         logger.exception("web_fetch unexpected error for URL %s", url)
-        return f"错误：获取页面时发生错误 - {type(e).__name__}"
+        return f"Error: failed to fetch the page - {type(e).__name__}"
 
 
 # ── Search engine backends ────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ def _build_http_client(proxy: str | None = None) -> httpx.AsyncClient:
 
 
 async def _search_bing_cn(query: str, num_results: int, proxy: str | None) -> list[dict]:
-    """Search via cn.bing.com (国内可直连)."""
+    """Search bing cn."""
     url = f"https://cn.bing.com/search?q={quote_plus(query)}&count={num_results}"
     async with _build_http_client(proxy) as client:
         resp = await client.get(url)
@@ -182,7 +182,8 @@ async def _search_bing_cn(query: str, num_results: int, proxy: str | None) -> li
         if not link_tag:
             continue
         title = link_tag.get_text(strip=True)
-        href = link_tag.get("href", "")
+        href_value = link_tag.get("href", "")
+        href = href_value if isinstance(href_value, str) else ""
         if not href or not href.startswith("http"):
             continue
 

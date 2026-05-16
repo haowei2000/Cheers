@@ -1,4 +1,4 @@
-"""Bot v1 路由."""
+"""Bots API routes."""
 from __future__ import annotations
 
 import json
@@ -7,24 +7,30 @@ import re
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
-from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.core.exceptions import BadRequestError, ForbiddenError
+from app.core.prompt_templates import DEFAULT_TEMPLATE_VARIABLES, DEFAULT_USER_TEMPLATE
 from app.core.responses import APIResponse
 from app.core.schemas import (
     BotCreate,
     BotInResponse,
-    BotRegisterRequest,
-    BotRegistrationRequestInResponse,
+    BotOwnerInResponse,
     BotSimpleInResponse,
     BotUpdate,
     OpenClawQuickConnect,
 )
-from app.db.models import AIModel, BotAccount, BotRegistrationRequest, PromptTemplate, User, gen_uuid
-from app.services.adapters.http_bot import HttpBotAdapter
+from app.db.models import AIModel, BotAccount, PromptTemplate, User, gen_uuid
+from app.features.agent_bridge.registry import bot_session_registry
+from app.features.agent_bridge.session_queries import (
+    list_sessions_for_bot,
+    serialize_session,
+)
+from app.features.bot_runtime.adapters.builtin_registry import get_builtin_adapter
+from app.features.bot_runtime.adapters.http_bot import HttpBotAdapter
 from app.services.bot_service import (
     BotService,
     bot_scope,
@@ -32,7 +38,6 @@ from app.services.bot_service import (
     is_builtin_bot,
     normalize_bot_scope,
 )
-from app.services.openclaw_bridge.registry import bot_session_registry
 from app.utils.crypto import encrypt_value
 
 audit = logging.getLogger("app.audit")
@@ -70,7 +75,7 @@ def _validate_intro(intro: str | None) -> str | None:
 def _connection_fields(bot: BotAccount) -> dict:
     binding_type = getattr(bot, "binding_type", None) or "http"
     configured_online = bot.status != "offline"
-    if binding_type == "websocket":
+    if binding_type == "agent_bridge":
         state = bot_session_registry.connection_state(bot.bot_id)
         return {
             **state,
@@ -117,7 +122,26 @@ async def _test_bot_connection(
             "message": "Bot 已停用，不会接收消息",
         }
 
-    if binding_type == "websocket":
+    builtin_adapter = get_builtin_adapter(bot.bot_id)
+    if builtin_adapter is not None:
+        dependency_ready = await builtin_adapter.health_check()
+        reachable = True
+        return {
+            **base,
+            "adapter": type(builtin_adapter).__name__,
+            "connection_status": "online",
+            "is_online": True,
+            "reachable": reachable,
+            "dependency_ready": dependency_ready,
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+            "message": (
+                "内置 Bot 可接收消息，依赖配置正常"
+                if dependency_ready
+                else "内置 Bot 可接收消息；LLM 依赖未配置或不可用，回答能力可能受限"
+            ),
+        }
+
+    if binding_type == "agent_bridge":
         state = bot_session_registry.connection_state(bot.bot_id)
         reachable = bool(state["is_online"])
         return {
@@ -126,7 +150,7 @@ async def _test_bot_connection(
             "is_online": bool(bot.status != "offline" and state["is_online"]),
             "reachable": reachable,
             "duration_ms": int((time.perf_counter() - started) * 1000),
-            "message": "WebSocket control/data 均已连接" if reachable else "WebSocket Bot 未完整连接",
+            "message": "Agent Bridge control/data 均已连接" if reachable else "Agent Bridge Bot 未完整连接",
         }
 
     if not model:
@@ -175,14 +199,14 @@ async def _test_bot_connection(
     }
 
 
-def _owner_payload(owner: User | None) -> dict | None:
+def _owner_payload(owner: User | None) -> BotOwnerInResponse | None:
     if not owner:
         return None
-    return {
-        "user_id": owner.user_id,
-        "username": owner.username,
-        "display_name": owner.display_name,
-    }
+    return BotOwnerInResponse(
+        user_id=owner.user_id,
+        username=owner.username,
+        display_name=owner.display_name,
+    )
 
 
 async def _load_owners(session: AsyncSession, bots: list[BotAccount]) -> dict[str, User]:
@@ -233,11 +257,7 @@ def _to_full(
     bot_token: str | None = None,
     owner: User | None = None,
 ) -> dict:
-    """转换 Bot 为响应体。
-
-    bot_token 仅在 create / rotate 路径里传入，一次性返回给用户；
-    其它路径永远不回显明文 token。
-    """
+    """To full."""
     mn = model_name if model_name is not None else (bot.ai_model.name if bot.ai_model else None)
     tn = template_name if template_name is not None else (bot.prompt_template.name if bot.prompt_template else None)
     d = BotInResponse(
@@ -258,6 +278,7 @@ def _to_full(
         template_name=tn,
         created_by=bot.created_by,
         binding_type=getattr(bot, "binding_type", None) or "http",
+        bridge_provider=getattr(bot, "bridge_provider", None) or "generic",
         binding_config=getattr(bot, "binding_config", None),
         bot_token_prefix=getattr(bot, "bot_token_prefix", None),
         bot_token_rotated_at=getattr(bot, "bot_token_rotated_at", None),
@@ -307,6 +328,7 @@ async def create_bot(
         scope=body.scope,
         bot_id=body.bot_id,
         binding_type=body.binding_type,
+        bridge_provider=body.bridge_provider,
         binding_config=body.binding_config,
         current_user=current_user,
     )
@@ -324,70 +346,13 @@ async def rotate_bot_token(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """为 WebSocket Bot 轮换 token。旧 token 立即失效。
-
-    响应里一次性返回明文 bot_token，请求方必须立刻保存；后续接口只回前缀。
-    权限：Bot 创建者 或 system_admin。
-    """
+    """Rotate bot token."""
     svc = BotService(session)
-    bot, plaintext_token = await svc.rotate_websocket_token(bot_id, current_user)
+    bot, plaintext_token = await svc.rotate_agent_bridge_token(bot_id, current_user)
     audit.info("action=bot.token.rotate actor=%s resource_id=%s", current_user.user_id, bot.bot_id)
     bot = await svc.get_or_404(bot.bot_id)
     owner = await session.get(User, bot.created_by) if bot.created_by else None
     return APIResponse.ok(_to_full(bot, current_user, bot_token=plaintext_token, owner=owner))
-
-
-@router.get("/registration-requests", response_model=APIResponse[list[dict]])
-async def list_registration_requests(
-    status: str | None = None,
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    q = select(BotRegistrationRequest).order_by(BotRegistrationRequest.requested_at.desc())
-    if status:
-        q = q.where(BotRegistrationRequest.status == status)
-    result = await session.execute(q)
-    items = []
-    for row in result.scalars().all():
-        d = BotRegistrationRequestInResponse.model_validate(row).model_dump()
-        if row.requested_at:
-            d["requested_at"] = row.requested_at.isoformat()
-        if row.decided_at:
-            d["decided_at"] = row.decided_at.isoformat()
-        items.append(d)
-    return APIResponse.ok(items)
-
-
-@router.post("/register-request", response_model=APIResponse[dict])
-async def submit_register_request(
-    body: BotRegisterRequest,
-    session: AsyncSession = Depends(get_session),
-) -> APIResponse:
-    username = body.username.strip()
-    existing = await session.execute(select(BotAccount).where(BotAccount.username == username))
-    if existing.scalar_one_or_none():
-        raise ConflictError("username 已被使用")
-    pending = await session.execute(
-        select(BotRegistrationRequest).where(
-            BotRegistrationRequest.username == username,
-            BotRegistrationRequest.status == "pending",
-        )
-    )
-    if pending.scalar_one_or_none():
-        raise ConflictError("该 username 已有待审核申请")
-    intro_val = _validate_intro(body.intro) if body.intro else None
-    if not intro_val:
-        raise BadRequestError("注册须提供结构化自我介绍 intro")
-    req = BotRegistrationRequest(
-        request_id=gen_uuid(),
-        username=username,
-        display_name=body.display_name.strip() if body.display_name else None,
-        openclaw_endpoint=body.openclaw_endpoint.strip(),
-        intro=intro_val,
-        status="pending",
-    )
-    session.add(req)
-    await session.flush()
-    return APIResponse.ok({"request_id": req.request_id, "message": "注册申请已提交，等待管理员审核。"})
 
 
 @router.get("/{bot_id}/online-status", response_model=APIResponse[dict])
@@ -417,6 +382,20 @@ async def get_bot_online_status(
             "data_connected": None if binding_type == "http" else False,
         })
     if binding_type == "http":
+        builtin_adapter = get_builtin_adapter(bot.bot_id)
+        if builtin_adapter is not None:
+            dependency_ready = await builtin_adapter.health_check()
+            return APIResponse.ok({
+                **base,
+                "adapter": type(builtin_adapter).__name__,
+                "connection_status": "online",
+                "is_online": True,
+                "reachable": True,
+                "dependency_ready": dependency_ready,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "control_connected": None,
+                "data_connected": None,
+            })
         model = bot.ai_model or (await session.get(AIModel, bot.model_id) if bot.model_id else None)
         template = bot.prompt_template or (
             await session.get(PromptTemplate, bot.template_id) if bot.template_id else None
@@ -467,24 +446,19 @@ async def test_bot_connection(
     )
 
 
-@router.post("/registration-requests/{request_id}/reject", response_model=APIResponse[None])
-async def reject_registration_request(
-    request_id: str,
+@router.get("/{bot_id}/sessions", response_model=APIResponse[list[dict]])
+async def list_bot_sessions(
+    bot_id: str,
+    include_closed: bool = Query(default=True),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    result = await session.execute(
-        select(BotRegistrationRequest).where(
-            BotRegistrationRequest.request_id == request_id,
-            BotRegistrationRequest.status == "pending",
-        )
-    )
-    req = result.scalar_one_or_none()
-    if not req:
-        raise NotFoundError("申请不存在或已处理")
-    req.status = "rejected"
-    req.decided_at = datetime.utcnow()
-    await session.flush()
-    return APIResponse.ok(None, message="已拒绝")
+    svc = BotService(session)
+    bot = await svc.get_or_404(bot_id)
+    if not can_manage_bot(bot, current_user):
+        raise ForbiddenError("无权查看该 Bot 的 session")
+    sessions = await list_sessions_for_bot(session, bot_id=bot_id, include_closed=include_closed)
+    return APIResponse.ok([serialize_session(row) for row in sessions])
 
 
 @router.post("/quick-connect", response_model=APIResponse[dict])
@@ -493,7 +467,7 @@ async def quick_connect_openclaw(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """快速连接 OpenClaw：自动创建模型+Bot，并探测其能力。"""
+    """Quick connect openclaw."""
     import httpx as _httpx
 
     base_url = body.url.strip().rstrip("/")
@@ -547,11 +521,15 @@ async def quick_connect_openclaw(
             name=_PASSTHROUGH_TEMPLATE_NAME,
             description="OpenClaw 直通模板（自动创建，勿删）",
             system_prompt="你是一个通过 OpenClaw 接入的 AI 助手，请直接响应用户请求。",
-            user_template="{{message}}",
-            variables=["message"],
+            user_template=DEFAULT_USER_TEMPLATE,
+            variables=DEFAULT_TEMPLATE_VARIABLES,
             is_builtin=True,
         )
         session.add(template)
+        await session.flush()
+    elif template.user_template == "{{message}}":
+        template.user_template = DEFAULT_USER_TEMPLATE
+        template.variables = DEFAULT_TEMPLATE_VARIABLES
         await session.flush()
 
     ai_model = AIModel(

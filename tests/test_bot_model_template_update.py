@@ -3,10 +3,20 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AIModel, BotAccount, PromptTemplate
-from app.services.guide.constants import GUIDE_BOT_ID
+from app.db.models import (
+    AIModel,
+    AgentNexusSession,
+    AgentNexusSessionBinding,
+    BotAccount,
+    Channel,
+    ChannelMembership,
+    PromptTemplate,
+    Workspace,
+)
+from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 
 TEST_USER_ID = "a0000000-0000-0000-0000-000000000099"
 
@@ -104,28 +114,33 @@ async def test_system_admin_can_list_and_rebind_builtin_bot(
     model_two = _model("builtin-model-0002", "Builtin Model Two")
     template_one = _template("builtin-template-0001", "Builtin Template One")
     template_two = _template("builtin-template-0002", "Builtin Template Two")
-    bot = BotAccount(
-        bot_id=GUIDE_BOT_ID,
-        username="Coordinator",
-        display_name="协调者",
-        model_id=model_one.model_id,
-        template_id=template_one.template_id,
-        status="online",
-        binding_type="http",
-        created_by=None,
-    )
-    db_session.add_all([model_one, model_two, template_one, template_two, bot])
+    db_session.add_all([model_one, model_two, template_one, template_two])
+    bot = await db_session.get(BotAccount, HELPER_BOT_ID)
+    if bot is None:
+        bot = BotAccount(
+            bot_id=HELPER_BOT_ID,
+            username="Coordinator",
+            display_name="协调者",
+            created_by=None,
+        )
+        db_session.add(bot)
+    bot.username = "Coordinator"
+    bot.display_name = "协调者"
+    bot.model_id = model_one.model_id
+    bot.template_id = template_one.template_id
+    bot.status = "online"
+    bot.binding_type = "http"
     await db_session.flush()
 
     list_resp = await client.get("/api/v1/bots")
     assert list_resp.status_code == 200
-    listed = next(item for item in list_resp.json()["data"] if item["bot_id"] == GUIDE_BOT_ID)
+    listed = next(item for item in list_resp.json()["data"] if item["bot_id"] == HELPER_BOT_ID)
     assert listed["is_builtin"] is True
     assert listed["model_id"] == model_one.model_id
     assert listed["template_id"] == template_one.template_id
 
     update_resp = await client.put(
-        f"/api/v1/bots/{GUIDE_BOT_ID}",
+        f"/api/v1/bots/{HELPER_BOT_ID}",
         json={
             "model_id": model_two.model_id,
             "template_id": template_two.template_id,
@@ -140,7 +155,7 @@ async def test_system_admin_can_list_and_rebind_builtin_bot(
     assert updated["model_name"] == model_two.name
     assert updated["template_name"] == template_two.name
 
-    delete_resp = await client.delete(f"/api/v1/bots/{GUIDE_BOT_ID}")
+    delete_resp = await client.delete(f"/api/v1/bots/{HELPER_BOT_ID}")
     assert delete_resp.status_code == 400
 
 
@@ -174,3 +189,67 @@ async def test_create_bot_persists_avatar_url(
     assert list_resp.status_code == 200
     listed = next(item for item in list_resp.json()["data"] if item["bot_id"] == created["bot_id"])
     assert listed["avatar_url"] == "https://cdn.example.test/avatar-bot.png"
+
+
+@pytest.mark.asyncio
+async def test_delete_bot_removes_agentnexus_sessions_and_memberships(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot = BotAccount(
+        bot_id="delete-session-bot-0001",
+        username="delete_session_bot",
+        display_name="Delete Session Bot",
+        binding_type="agent_bridge",
+        created_by=TEST_USER_ID,
+    )
+    workspace = Workspace(workspace_id="delete-session-ws-0001", name="Delete Session WS")
+    channel = Channel(
+        channel_id="delete-session-ch-0001",
+        workspace_id=workspace.workspace_id,
+        name="delete-session",
+        type="public",
+    )
+    session = AgentNexusSession(
+        session_id="delete-session-sess-0001",
+        bot_id=bot.bot_id,
+        provider="generic",
+        provider_account_id="acct-delete-session",
+        provider_agent_id="agent-main",
+        provider_session_key="provider:generic:account:acct-delete-session:session:delete-session-sess-0001",
+        current_scope_type="channel",
+        current_scope_id=channel.channel_id,
+    )
+    binding = AgentNexusSessionBinding(
+        binding_id="delete-session-bind-0001",
+        session_id=session.session_id,
+        bot_id=bot.bot_id,
+        provider="generic",
+        provider_account_id=session.provider_account_id,
+        provider_agent_id=session.provider_agent_id,
+        scope_type="channel",
+        scope_id=channel.channel_id,
+        channel_id=channel.channel_id,
+        role="primary",
+    )
+    membership = ChannelMembership(
+        channel_id=channel.channel_id,
+        member_id=bot.bot_id,
+        member_type="bot",
+    )
+    db_session.add_all([workspace, channel, bot, session, binding, membership])
+    await db_session.flush()
+
+    resp = await client.delete(f"/api/v1/bots/{bot.bot_id}")
+
+    assert resp.status_code == 200
+    assert await db_session.get(BotAccount, bot.bot_id) is None
+    assert await db_session.get(AgentNexusSession, session.session_id) is None
+    assert await db_session.get(AgentNexusSessionBinding, binding.binding_id) is None
+    memberships = await db_session.execute(
+        select(ChannelMembership).where(
+            ChannelMembership.channel_id == channel.channel_id,
+            ChannelMembership.member_id == bot.bot_id,
+        )
+    )
+    assert memberships.scalar_one_or_none() is None

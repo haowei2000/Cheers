@@ -1,10 +1,18 @@
 /* TopicPage — full-page topic view (displayed in place of the chat stream
  * when App's pageTopicId is set, synced to URL hash #topic=<msg_id>). */
+import { useMemo, useState } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
 import { stripThinkTags } from "../lib/think";
-import { MessageMarkdown } from "../MessageMarkdown";
+import { ChatMessageRenderer } from "./ChatMessageRenderer";
+import { AvatarVisual } from "./AvatarVisual";
 import { BotAvatar } from "./BotAvatar";
+import { AppIcon } from "./icons/AppIcon";
 import { TopicComposer } from "./TopicComposer";
+import type {
+  ComposerKeychainItem,
+  ComposerPendingFile,
+} from "./MessageComposer";
 
 export interface TopicPageProps {
   rootMsg: Message;
@@ -15,7 +23,27 @@ export interface TopicPageProps {
   currentUserId: string;
   onBack: () => void;
   onGoToChannel?: () => void;
-  onSendReply: (text: string) => Promise<void> | void;
+  onSendReply: (text: string, inReplyToMsgId?: string) => Promise<void> | void;
+  onCopyMessage?: (message: Message) => Promise<void> | void;
+  onForwardMessage?: (message: Message) => void;
+  onToggleForwardSelection?: (message: Message) => void;
+  forwardSelectionMode?: boolean;
+  selectedForwardMsgIds?: string[];
+  onShowMessageDetails?: (message: Message) => void;
+  hasMessageDetails?: (message: Message) => boolean;
+  onImageClick?: (src: string) => void;
+  onFileClick?: (url: string, filename: string) => void;
+  renderAttachments?: (message: Message) => ReactNode;
+  pendingFiles?: ComposerPendingFile[];
+  onRemovePendingFile?: (index: number) => void;
+  onUploadFile?: (event: ChangeEvent<HTMLInputElement>) => void;
+  keychainEnabled?: boolean;
+  keychainOpen?: boolean;
+  keychainLoading?: boolean;
+  keychainItems?: ComposerKeychainItem[];
+  onToggleKeychain?: () => void;
+  onCloseKeychain?: () => void;
+  sessionPanel?: ReactNode;
 }
 
 function resolveWho(
@@ -29,9 +57,9 @@ function resolveWho(
     const bot = bots.find((b) => b.member_id === m.sender_id);
     return bot?.display_name || bot?.username || "Bot";
   }
-  if (m.sender_id === currentUserId) return "我";
+  if (m.sender_id === currentUserId) return "Me";
   const user = users.find((u) => u.member_id === m.sender_id);
-  return user?.display_name || user?.username || "用户";
+  return user?.display_name || user?.username || "User";
 }
 
 function formatDateTime(iso: string | undefined): string {
@@ -55,12 +83,97 @@ export function TopicPage({
   onBack,
   onGoToChannel,
   onSendReply,
+  onCopyMessage,
+  onForwardMessage,
+  onToggleForwardSelection,
+  forwardSelectionMode = false,
+  selectedForwardMsgIds = [],
+  onShowMessageDetails,
+  hasMessageDetails,
+  onImageClick,
+  onFileClick,
+  renderAttachments,
+  pendingFiles,
+  onRemovePendingFile,
+  onUploadFile,
+  keychainEnabled,
+  keychainOpen,
+  keychainLoading,
+  keychainItems,
+  onToggleKeychain,
+  onCloseKeychain,
+  sessionPanel,
 }: TopicPageProps) {
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const messageById = useMemo(() => {
+    const items = [rootMsg, ...replies];
+    return new Map(items.map((item) => [item.msg_id, item]));
+  }, [replies, rootMsg]);
+
   const title =
     stripThinkTags(rootMsg.content || "")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 80) || "主题";
+      .slice(0, 80) || "Topics";
+
+  const previewMessage = (m: Message): string =>
+    stripThinkTags(m.content || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || "(No content)";
+
+  const renderForwardActions = (m: Message) => {
+    if (!onForwardMessage && !onToggleForwardSelection) return null;
+    const selected = selectedForwardMsgIds.includes(m.msg_id);
+    return (
+      <>
+        {onToggleForwardSelection && (
+          <button
+            type="button"
+            title={selected ? "Cancel selection" : "Select for combined forward"}
+            aria-label={selected ? "Cancel selection" : "Select for combined forward"}
+            onClick={() => onToggleForwardSelection(m)}
+            className="an-chat-action"
+            style={
+              selected
+                ? { background: "var(--accent-muted)", color: "var(--accent)" }
+                : undefined
+            }
+          >
+            <AppIcon
+              name={selected ? "checkCircle" : "check"}
+              className="w-3.5 h-3.5"
+            />
+          </button>
+        )}
+        {onForwardMessage && (
+          <button
+            type="button"
+            title="Forward"
+            aria-label="Forward"
+            onClick={() => onForwardMessage(m)}
+            className="an-chat-action"
+          >
+            <AppIcon name="forward" className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </>
+    );
+  };
+
+  const highlightMessage = (msgId: string) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const origT = el.style.transition;
+    const prevBg = el.style.background;
+    el.style.transition = "background 200ms";
+    el.style.background = "var(--accent-muted)";
+    setTimeout(() => {
+      el.style.background = prevBg;
+      el.style.transition = origT;
+    }, 1200);
+  };
 
   const renderTopicMessage = (m: Message) => {
     const isBot = m.sender_type === "bot";
@@ -73,9 +186,13 @@ export function TopicPage({
       : undefined;
     const label = resolveWho(m, channelBots, channelUsers, currentUserId);
     const avatarUrl = isBot ? bot?.avatar_url : user?.avatar_url;
-    const initial = isOwn ? "我" : label.slice(0, 1).toUpperCase();
+    const initial = isOwn ? "Me" : label.slice(0, 1).toUpperCase();
     const msgTitle =
       typeof m.content_data?.title === "string" ? m.content_data.title : null;
+    const directParent =
+      m.in_reply_to_msg_id && m.in_reply_to_msg_id !== rootMsg.msg_id
+        ? messageById.get(m.in_reply_to_msg_id) ?? null
+        : null;
 
     return (
       <div
@@ -94,24 +211,20 @@ export function TopicPage({
               <BotAvatar
                 label={label}
                 avatarUrl={avatarUrl}
+                brandName={bot?.display_name || bot?.username || label}
                 size={36}
                 className="mt-0.5"
               />
-            ) : avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt={label}
-                className="w-9 h-9 rounded-xl object-cover select-none mt-0.5"
-              />
             ) : (
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
-                style={{
-                  background: isOwn ? "var(--accent)" : "var(--fg-3)",
-                }}
-              >
-                {initial}
-              </div>
+              <AvatarVisual
+                avatarUrl={avatarUrl}
+                background={isOwn ? "var(--accent)" : "var(--fg-3)"}
+                className="mt-0.5"
+                fallback={initial}
+                label={label}
+                radius={12}
+                size={36}
+              />
             )}
           </div>
           <div className="flex-1 min-w-0">
@@ -156,6 +269,25 @@ export function TopicPage({
                 {msgTitle}
               </div>
             ) : null}
+            {directParent ? (
+              <button
+                type="button"
+                className="an-reply-quote"
+                title="Jump to replied message"
+                onClick={() => highlightMessage(directParent.msg_id)}
+              >
+                <span className="an-rq-arrow">↪</span>
+                <span className="an-rq-name">
+                  {resolveWho(
+                    directParent,
+                    channelBots,
+                    channelUsers,
+                    currentUserId,
+                  )}
+                </span>
+                <span className="an-rq-snip">{previewMessage(directParent)}</span>
+              </button>
+            ) : null}
             <div
               style={{
                 fontSize: "var(--fs-chat-body)",
@@ -164,8 +296,48 @@ export function TopicPage({
                 wordWrap: "break-word",
               }}
             >
-              <MessageMarkdown text={stripThinkTags(m.content || "")} />
+              <ChatMessageRenderer
+                attachments={renderAttachments?.(m)}
+                collapseKey={m.msg_id}
+                content={stripThinkTags(m.content || "")}
+                onImageClick={onImageClick}
+                onFileClick={onFileClick}
+              />
             </div>
+          </div>
+          <div className={`${forwardSelectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"} focus-within:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0`}>
+            {onShowMessageDetails && hasMessageDetails?.(m) && (
+              <button
+                type="button"
+                title="View memory and streaming events for this AI reply"
+                aria-label="View memory and streaming events for this AI reply"
+                onClick={() => onShowMessageDetails(m)}
+                className="an-chat-action"
+              >
+                <AppIcon name="help" className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onCopyMessage && (
+              <button
+                type="button"
+                title="Copy message content"
+                aria-label="Copy message content"
+                onClick={() => void onCopyMessage(m)}
+                className="an-chat-action"
+              >
+                <AppIcon name="copy" className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {renderForwardActions(m)}
+            <button
+              type="button"
+              title="Reply"
+              aria-label="Reply"
+              onClick={() => setReplyingTo(m)}
+              className="an-chat-action"
+            >
+              <AppIcon name="reply" className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
@@ -176,26 +348,26 @@ export function TopicPage({
     <div className="an-topic-page">
       <div className="an-tpp-top">
         <button type="button" className="an-tpp-back" onClick={onBack}>
-          ← 返回频道
+          ← Back to channel
         </button>
         <div className="an-tpp-meta">
           <div className="an-tpp-crumbs">
             {channel && onGoToChannel ? (
               <a onClick={onGoToChannel}>#{channel.name}</a>
             ) : (
-              <span>频道</span>
+              <span>Channels</span>
             )}
             <span className="an-sep">›</span>
-            <span>主题</span>
+            <span>Topics</span>
           </div>
           <div className="an-tpp-title">{title}</div>
           <div className="an-tpp-sub">
             <span>
-              {replies.length} 条回复
+              {replies.length} replies
             </span>
             <span className="an-d" />
             <span>
-              发起人{" "}
+              Started by{" "}
               {resolveWho(rootMsg, channelBots, channelUsers, currentUserId)}
             </span>
             {rootMsg.created_at && (
@@ -206,12 +378,17 @@ export function TopicPage({
             )}
           </div>
         </div>
+        {sessionPanel && (
+          <div className="an-tpp-actions">
+            {sessionPanel}
+          </div>
+        )}
       </div>
       <div className="an-tpp-body">
         {renderTopicMessage(rootMsg)}
 
         <div className="an-tpp-divider">
-          {replies.length} 条回复
+          {replies.length} replies
         </div>
 
         {replies.length === 0 ? (
@@ -223,7 +400,7 @@ export function TopicPage({
               padding: "24px 8px",
             }}
           >
-            还没有回复。在下方发送第一条。
+            No replies yet. Send the first one below.
           </div>
         ) : (
           replies.map((r) => renderTopicMessage(r))
@@ -232,16 +409,25 @@ export function TopicPage({
       <div className="an-tpp-foot">
         <div className="an-wrap">
           <TopicComposer
-            placeholder={`回复 "${title}"…`}
+            placeholder={`Reply "${title}"...`}
             channelBots={channelBots}
             channelUsers={channelUsers}
-            onSend={onSendReply}
-            hint={
-              <>
-                <kbd>@</kbd> 提及 · <kbd>↵</kbd> 发送 · <kbd>⇧↵</kbd> 换行 ·
-                在这里的回复只留在本主题里
-              </>
-            }
+            currentUserId={currentUserId}
+            onSend={async (text) => {
+              await onSendReply(text, replyingTo?.msg_id ?? rootMsg.msg_id);
+              setReplyingTo(null);
+            }}
+            replyingTo={replyingTo}
+            onCancelReply={() => setReplyingTo(null)}
+            pendingFiles={pendingFiles}
+            onRemovePendingFile={onRemovePendingFile}
+            onUploadFile={onUploadFile}
+            keychainEnabled={keychainEnabled}
+            keychainOpen={keychainOpen}
+            keychainLoading={keychainLoading}
+            keychainItems={keychainItems}
+            onToggleKeychain={onToggleKeychain}
+            onCloseKeychain={onCloseKeychain}
           />
         </div>
       </div>

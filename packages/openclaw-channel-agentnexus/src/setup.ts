@@ -1,5 +1,6 @@
 /**
- * OpenClaw channel setup entry —— lightweight 加载路径，用于 onboarding / setup wizard。
+ * OpenClaw channel setup entry, a lightweight loading path for onboarding and
+ * setup wizards.
  */
 import { defineSetupPluginEntry } from "openclaw/plugin-sdk/channel-core";
 

@@ -1,4 +1,4 @@
-"""集中所有 FastAPI 依赖注入函数."""
+"""Dependencies module."""
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -15,7 +15,7 @@ from app.db.session import async_session_factory
 from app.services.auth.jwt_utils import decode_access_token
 
 # ---------------------------------------------------------------------------
-# 数据库会话
+# Database session.
 # ---------------------------------------------------------------------------
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -31,7 +31,7 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 # ---------------------------------------------------------------------------
-# 用户认证
+# User authentication.
 # ---------------------------------------------------------------------------
 
 async def _resolve_user(token: str, db: AsyncSession) -> User | None:
@@ -42,7 +42,7 @@ async def _resolve_user(token: str, db: AsyncSession) -> User | None:
     except Exception:
         pass
     if not user_id:
-        # 旧版 UUID 直接作为 token 的兼容逻辑
+        # Legacy compatibility for UUID values used directly as tokens.
         user_id = token
     if not user_id:
         return None
@@ -91,7 +91,7 @@ _PERMISSIONS: dict[str, list[str]] = {
 
 
 def require_permission(permission: str):
-    """生成一个权限检查依赖."""
+    """Require permission."""
     async def _check(current_user: User = Depends(get_current_user)) -> User:
         allowed = _PERMISSIONS.get(permission, [])
         if current_user.role not in allowed:
@@ -102,19 +102,19 @@ def require_permission(permission: str):
 
 
 # ---------------------------------------------------------------------------
-# 基础设施服务（从 app.state 读取）
+# Infrastructure services read from app.state.
 # ---------------------------------------------------------------------------
 
 def get_http_client(request: Request) -> httpx.AsyncClient:
-    """从 app.state 获取共享 HTTP 客户端."""
+    """Get http client."""
     client: httpx.AsyncClient | None = getattr(request.app.state, "http_client", None)
     if client is None:
-        # 降级：直接从模块全局读取（兼容非 FastAPI 上下文）
+        # Fallback to module globals for non-FastAPI contexts.
         from app.http_client import get_http_client as _get
         return _get()
     return client
 
 
 def get_storage(request: Request):
-    """从 app.state 获取存储服务（可能为 None，如未配置）."""
+    """Get storage."""
     return getattr(request.app.state, "storage", None)

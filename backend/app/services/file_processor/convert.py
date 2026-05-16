@@ -1,20 +1,57 @@
-"""文件解析能力：支持 txt / md / docx / pdf，供文件推理链路复用。"""
+"""File parsing support for txt / md / html / docx / pdf inference flows."""
 from __future__ import annotations
 
 import io
 from dataclasses import dataclass
 from pathlib import Path
 
-SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
-    ".txt": {"text/plain"},
-    ".md": {"text/markdown", "text/plain"},
+from bs4 import BeautifulSoup
+
+PARSABLE_DOCUMENT_TYPES: dict[str, set[str]] = {
+    ".txt": {"text/plain", "application/octet-stream"},
+    ".md": {"text/markdown", "text/plain", "application/octet-stream"},
+    ".html": {"text/html", "text/plain", "application/octet-stream"},
+    ".htm": {"text/html", "text/plain", "application/octet-stream"},
     ".docx": {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/octet-stream",
     },
-    ".pdf": {"application/pdf"},
+    ".pdf": {"application/pdf", "application/octet-stream"},
     ".xlsx": {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/octet-stream",
     },
+}
+
+KKFILEVIEW_DOCUMENT_TYPES: dict[str, set[str]] = {
+    ".doc": {"application/msword", "application/octet-stream"},
+    ".xls": {"application/vnd.ms-excel", "application/octet-stream"},
+    ".ppt": {"application/vnd.ms-powerpoint", "application/octet-stream"},
+    ".pptx": {
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/octet-stream",
+    },
+    ".wps": {"application/vnd.ms-works", "application/octet-stream"},
+    ".et": {"application/octet-stream"},
+    ".dps": {"application/octet-stream"},
+    ".ofd": {"application/ofd", "application/octet-stream"},
+    ".rtf": {"application/rtf", "text/rtf", "application/octet-stream"},
+    ".csv": {"text/csv", "text/plain", "application/vnd.ms-excel", "application/octet-stream"},
+    ".zip": {"application/zip", "application/x-zip-compressed", "application/octet-stream"},
+    ".rar": {"application/vnd.rar", "application/x-rar-compressed", "application/octet-stream"},
+    ".7z": {"application/x-7z-compressed", "application/octet-stream"},
+    ".tar": {"application/x-tar", "application/octet-stream"},
+    ".gz": {"application/gzip", "application/x-gzip", "application/octet-stream"},
+    ".bz2": {"application/x-bzip2", "application/octet-stream"},
+    ".xz": {"application/x-xz", "application/octet-stream"},
+    ".dwg": {"application/acad", "application/x-acad", "application/octet-stream"},
+    ".dxf": {"image/vnd.dxf", "application/dxf", "application/octet-stream"},
+    ".epub": {"application/epub+zip", "application/octet-stream"},
+}
+
+SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
+    **PARSABLE_DOCUMENT_TYPES,
+    **KKFILEVIEW_DOCUMENT_TYPES,
 }
 
 SUPPORTED_IMAGE_TYPES: dict[str, set[str]] = {
@@ -25,12 +62,12 @@ SUPPORTED_IMAGE_TYPES: dict[str, set[str]] = {
     ".gif":  {"image/gif"},
 }
 
-# 所有支持类型合集，用于 presign 校验
+# Combined supported types for presign validation.
 ALL_SUPPORTED_TYPES: dict[str, set[str]] = {**SUPPORTED_DOCUMENT_TYPES, **SUPPORTED_IMAGE_TYPES}
 
 
 def is_image_type(content_type_or_suffix: str) -> bool:
-    """判断 MIME 类型或文件扩展名是否为图片类型。"""
+    """Return whether a MIME type or file extension is an image type."""
     s = content_type_or_suffix.lower()
     return s in SUPPORTED_IMAGE_TYPES or s in {
         mime for mimes in SUPPORTED_IMAGE_TYPES.values() for mime in mimes
@@ -38,16 +75,16 @@ def is_image_type(content_type_or_suffix: str) -> bool:
 
 
 class FileParseError(Exception):
-    """文件解析失败。"""
+    """File parsing failed."""
 
 
 class UnsupportedFileTypeError(FileParseError):
-    """文件类型不支持。"""
+    """File type is unsupported."""
 
 
 @dataclass(frozen=True)
 class ParsedDocument:
-    """统一的文件解析结果。"""
+    """Unified file parsing result."""
 
     text: str
     summary: str
@@ -63,14 +100,14 @@ def parse_document_bytes(
     content_type: str | None = None,
     max_chars: int = 12000,
 ) -> ParsedDocument:
-    """将上传文件解析为纯文本，必要时进行长度截断。"""
+    """Parse an uploaded file into plain text and truncate it when needed."""
 
     suffix = Path(filename).suffix.lower()
-    if suffix not in SUPPORTED_DOCUMENT_TYPES:
+    if suffix not in PARSABLE_DOCUMENT_TYPES:
         raise UnsupportedFileTypeError(f"unsupported file type: {suffix or '(none)'}")
 
     normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
-    allowed_types = SUPPORTED_DOCUMENT_TYPES[suffix]
+    allowed_types = PARSABLE_DOCUMENT_TYPES[suffix]
     if normalized_type and normalized_type not in allowed_types:
         raise UnsupportedFileTypeError(
             f"unsupported content type for {suffix}: {normalized_type}"
@@ -81,10 +118,14 @@ def parse_document_bytes(
 
     if suffix in (".txt", ".md"):
         text = _parse_text(payload)
+    elif suffix in (".html", ".htm"):
+        text = _parse_html(payload)
     elif suffix == ".docx":
         text = _parse_docx(payload)
     elif suffix == ".pdf":
         text = _parse_pdf(payload)
+    elif suffix == ".xlsx":
+        text = _parse_xlsx(payload)
     else:
         raise UnsupportedFileTypeError(f"unsupported file type: {suffix}")
 
@@ -103,7 +144,7 @@ def parse_document_bytes(
 
 
 def to_markdown(file_path: str | Path, *, max_chars: int = 12000) -> str:
-    """兼容旧接口：从本地路径读取后解析为纯文本。"""
+    """Compatibility API: parse a local path into plain text."""
 
     path = Path(file_path)
     if not path.exists():
@@ -111,6 +152,8 @@ def to_markdown(file_path: str | Path, *, max_chars: int = 12000) -> str:
     suffix = path.suffix.lower()
     if suffix in {".txt", ".md"}:
         return _normalize_text(path.read_text(encoding="utf-8", errors="replace"))
+    if suffix in {".html", ".htm"}:
+        return _normalize_text(_parse_html(path.read_bytes()))
     if suffix == ".docx":
         return _normalize_text(_parse_docx(path.read_bytes()))
     if suffix == ".pdf":
@@ -134,6 +177,13 @@ def _parse_text(payload: bytes) -> str:
         except UnicodeDecodeError:
             continue
     return payload.decode("utf-8", errors="replace")
+
+
+def _parse_html(payload: bytes) -> str:
+    soup = BeautifulSoup(_parse_text(payload), "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    return soup.get_text("\n")
 
 
 def _parse_docx(payload: bytes) -> str:
@@ -169,10 +219,11 @@ def _normalize_text(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _parse_xlsx(path: Path) -> str:
+def _parse_xlsx(source: bytes | Path) -> str:
     from openpyxl import load_workbook
 
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook_source = io.BytesIO(source) if isinstance(source, bytes) else source
+    workbook = load_workbook(workbook_source, read_only=True, data_only=True)
     try:
         parts: list[str] = []
         for sheet in workbook.worksheets:

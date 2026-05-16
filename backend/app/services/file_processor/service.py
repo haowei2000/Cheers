@@ -1,6 +1,7 @@
-"""文件上传与解析服务：封装 presign、校验、对象读取与文本解析。"""
+"""Service module."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import mimetypes
@@ -16,13 +17,13 @@ from app.config import settings
 from app.db.models import FileRecord
 from app.services.file_processor.convert import (
     ALL_SUPPORTED_TYPES,
-    SUPPORTED_DOCUMENT_TYPES,
     FileParseError,
     ParsedDocument,
     UnsupportedFileTypeError,
     is_image_type,
     parse_document_bytes,
 )
+from app.services.file_retention import active_file_filter, file_expires_at
 from app.services.storage.base import (
     StorageClientInitError,
     StorageObject,
@@ -34,9 +35,45 @@ from app.services.storage.bootstrap import get_storage_service, is_storage_enabl
 
 logger = logging.getLogger("app.services.file_processor.service")
 
+_SUPPORTED_UPLOAD_LABEL = (
+    "pdf / doc / docx / xls / xlsx / ppt / pptx / wps / ofd / rtf / csv / "
+    "txt / md / html / zip / rar / 7z / cad / epub / png / jpg / jpeg / webp / gif"
+)
+
+_DEFAULT_CONTENT_TYPES: dict[str, str] = {
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".ofd": "application/ofd",
+    ".rtf": "application/rtf",
+    ".csv": "text/csv",
+    ".zip": "application/zip",
+    ".rar": "application/vnd.rar",
+    ".7z": "application/x-7z-compressed",
+    ".tar": "application/x-tar",
+    ".gz": "application/gzip",
+    ".bz2": "application/x-bzip2",
+    ".xz": "application/x-xz",
+    ".dxf": "image/vnd.dxf",
+    ".epub": "application/epub+zip",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
 
 class FileFlowError(Exception):
-    """文件链路业务异常。"""
+    """File Flow Error schema or model."""
 
     def __init__(self, detail: str, *, status_code: int = 400) -> None:
         super().__init__(detail)
@@ -46,7 +83,7 @@ class FileFlowError(Exception):
 
 @dataclass(frozen=True)
 class FileUploadReservation:
-    """前端直传所需的完整信息。"""
+    """File Upload Reservation schema or model."""
 
     file_id: str
     object_key: str
@@ -56,7 +93,7 @@ class FileUploadReservation:
 
 
 class FilePipelineService:
-    """复用存储抽象层，完成文件上传前校验与推理前准备。"""
+    """File Pipeline Service schema or model."""
 
     def __init__(
         self,
@@ -100,6 +137,7 @@ class FilePipelineService:
             content_type=normalized_type,
             size_bytes=size_bytes,
             status="pending_upload",
+            expires_at=file_expires_at(),
         )
         metadata = {
             "channel_id": channel_id,
@@ -117,6 +155,8 @@ class FilePipelineService:
         ), metadata
 
     async def write_upload_metadata(self, file_id: str, metadata: dict[str, str]) -> None:
+        if self.storage is None:
+            return
         await self.storage.put_metadata_if_needed(file_id, metadata)
 
     async def validate_message_files(
@@ -138,14 +178,16 @@ class FilePipelineService:
         channel_id: str,
         file_ids: list[str],
     ) -> list[dict[str, str]]:
-        """完整加载附件（含正文）。文档优先读取磁盘缓存，避免重复下载解析。"""
+        """Fully load attachments, including body text.
+
+        Documents prefer the disk cache to avoid repeated download and parsing.
+        """
         records = await self._load_records(session, channel_id=channel_id, file_ids=file_ids)
         attachments: list[dict[str, str]] = []
         for record in records:
             record.status = "processing"
-            await session.flush()
 
-            # 图片文件：读取字节并 base64 编码，供 Vision LLM 使用
+            # Image file: read bytes and base64-encode them for Vision LLM use.
             if is_image_type(record.content_type or ""):
                 await self._ensure_object_ready(record)
                 image_b64 = ""
@@ -172,12 +214,12 @@ class FilePipelineService:
                 })
                 continue
 
-            # 文档文件：优先读取磁盘缓存（首次解析后由 _persist_parsed_cache 写入）
+            # Document file: prefer disk cache written by _persist_parsed_cache.
             if record.md_path:
                 try:
                     cache_path = Path(record.md_path)
-                    if cache_path.exists():
-                        text = cache_path.read_text(encoding="utf-8")
+                    if await asyncio.to_thread(cache_path.exists):
+                        text = await asyncio.to_thread(cache_path.read_text, encoding="utf-8")
                         record.status = "ready"
                         if not record.uploaded_at:
                             record.uploaded_at = datetime.utcnow()
@@ -196,13 +238,14 @@ class FilePipelineService:
                 except Exception:
                     logger.warning("prepare_attachments: cache read failed file_id=%s, falling back to storage", record.file_id)
 
-            # 缓存未命中：从存储下载并解析
+            # Cache miss: download from storage and parse.
             try:
                 await self._ensure_object_ready(record)
                 obj = await self._load_record_object(record)
                 if not obj.body:
                     raise FileFlowError(f"文件 {record.original_filename or record.file_id} 为空，无法推理")
-                parsed = parse_document_bytes(
+                parsed = await asyncio.to_thread(
+                    parse_document_bytes,
                     obj.body,
                     filename=record.original_filename or f"{record.file_id}.txt",
                     content_type=record.content_type or obj.head.content_type,
@@ -217,7 +260,7 @@ class FilePipelineService:
                 raise FileFlowError("对象存储中找不到已上传文件，请重新上传后再试") from exc
             except UnsupportedFileTypeError as exc:
                 await self._mark_failed(session, record, str(exc))
-                raise FileFlowError("当前仅支持 pdf / docx / txt / md 文件") from exc
+                raise FileFlowError("当前仅支持 pdf / docx / xlsx / txt / md / html 文件") from exc
             except FileParseError as exc:
                 await self._mark_failed(
                     session,
@@ -226,7 +269,7 @@ class FilePipelineService:
                 )
                 raise FileFlowError(f"文件 {record.original_filename or record.file_id} 解析失败：{exc}") from exc
 
-            self._persist_parsed_cache(record, parsed)
+            await self._persist_parsed_cache(record, parsed)
             record.summary_3lines = parsed.summary or None
             record.last_error = None
             record.status = "ready"
@@ -253,19 +296,19 @@ class FilePipelineService:
         channel_id: str,
         file_ids: list[str],
     ) -> list[dict[str, str]]:
-        """轻量元信息加载，供 Orchestrator 构建文件引用提示用。
+        """Load lightweight metadata for orchestrator file reference prompts.
 
-        - 图片：完整处理（Vision LLM 需要 base64）
-        - 文档：仅读取 DB 元数据（filename、content_type、summary_3lines），不下载文件正文
-          → 减少存储 I/O 与 token 占用；Agent 按需通过 read_file 工具获取正文
+        - Images are fully processed because Vision LLMs need base64.
+        - Documents only read DB metadata (filename, content_type, summary_3lines)
+          and do not download body text. This reduces storage I/O and token use;
+          agents can fetch body text on demand through the read_file tool.
         """
         records = await self._load_records(session, channel_id=channel_id, file_ids=file_ids)
         attachments: list[dict[str, str]] = []
         for record in records:
             if is_image_type(record.content_type or ""):
-                # 图片仍需完整处理（Vision LLM 需要 base64）
+                # Images still need full processing because Vision LLMs need base64.
                 record.status = "processing"
-                await session.flush()
                 image_b64 = ""
                 try:
                     await self._ensure_object_ready(record)
@@ -290,20 +333,7 @@ class FilePipelineService:
                     "truncated": "false",
                 })
             else:
-                # 文档：只返回 DB 元数据，不下载正文
-                # 生成临时下载链接，供子 Bot 按需访问原始文件
-                download_url = ""
-                if self.storage is not None:
-                    try:
-                        scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
-                        download_url = self.storage.create_presigned_get_url(
-                            record.file_id, scope=scope,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "prepare_metadata_only: failed to generate presigned GET URL file_id=%s",
-                            record.file_id, exc_info=True,
-                        )
+                # Documents return DB metadata only and do not download body text.
                 attachments.append({
                     "file_id": record.file_id,
                     "filename": record.original_filename or record.file_id,
@@ -312,7 +342,8 @@ class FilePipelineService:
                     "summary": record.summary_3lines or "",
                     "content": "",
                     "truncated": "false",
-                    "download_url": download_url,
+                    "preview_url": f"/api/v1/files/{record.file_id}/preview",
+                    "download_url": f"/api/v1/files/{record.file_id}/download",
                 })
         return attachments
 
@@ -337,7 +368,7 @@ class FilePipelineService:
             raise FileFlowError("文件名不能为空")
         suffix = Path(normalized_name).suffix.lower()
         if suffix not in ALL_SUPPORTED_TYPES:
-            raise FileFlowError("当前仅支持 pdf / docx / txt / md / png / jpg / jpeg / webp / gif 文件")
+            raise FileFlowError(f"当前仅支持 {_SUPPORTED_UPLOAD_LABEL} 文件")
 
         # allowed_mime_types = self.allowed_mime_types
         normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
@@ -366,7 +397,7 @@ class FilePipelineService:
     def allowed_mime_types(self) -> set[str]:
         raw = (getattr(self.settings, "file_upload_allowed_types", "") or "").strip()
         if not raw:
-            values = {mime for mime_types in SUPPORTED_DOCUMENT_TYPES.values() for mime in mime_types}
+            values = {mime for mime_types in ALL_SUPPORTED_TYPES.values() for mime in mime_types}
             return values
         return {part.strip().lower() for part in raw.split(",") if part.strip()}
 
@@ -385,6 +416,7 @@ class FilePipelineService:
             select(FileRecord).where(
                 FileRecord.channel_id == channel_id,
                 FileRecord.file_id.in_(unique_ids),
+                active_file_filter(),
             )
         )
         by_id = {record.file_id: record for record in result.scalars().all()}
@@ -408,10 +440,23 @@ class FilePipelineService:
     async def _ensure_remote_object_ready(self, record: FileRecord) -> StorageObjectHead:
         if self.storage is None:
             raise FileFlowError("对象存储未初始化，无法读取上传文件", status_code=503)
-        # 根据 object_key 前缀推断 scope（generated/ 或 uploads/）
+        # Infer scope from the object_key prefix: generated/ or uploads/.
         scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
         try:
-            head = await self.storage.head_object(record.file_id, scope=scope)
+            if record.object_key:
+                from app.config import settings
+                from app.services.storage.base import StorageObjectRef
+
+                head = await self.storage.head_object_ref(
+                    StorageObjectRef(
+                        file_id=record.file_id,
+                        bucket=record.storage_bucket or settings.storage_s3_bucket,
+                        object_key=record.object_key,
+                        filename=record.original_filename,
+                    )
+                )
+            else:
+                head = await self.storage.head_object(record.file_id, scope=scope)
         except StorageObjectNotFoundError as exc:
             record.status = "pending_upload"
             record.last_error = "object not found"
@@ -439,12 +484,13 @@ class FilePipelineService:
 
     async def _ensure_local_object_ready(self, record: FileRecord) -> StorageObjectHead:
         path = self._resolve_local_path(record.original_path)
-        if not path.exists():
+        exists = await asyncio.to_thread(path.exists)
+        if not exists:
             record.status = "failed"
             record.last_error = "local file not found"
             raise FileFlowError("找不到已上传文件，请重新上传后再试")
 
-        size = path.stat().st_size
+        size = await asyncio.to_thread(lambda: path.stat().st_size)
         if size <= 0:
             record.status = "failed"
             record.last_error = "empty local file"
@@ -478,13 +524,25 @@ class FilePipelineService:
             if self.storage is None:
                 raise FileFlowError("对象存储未初始化，无法读取上传文件", status_code=503)
             scope = "generated" if (record.object_key or "").startswith("generated/") else "uploads"
+            if record.object_key:
+                from app.config import settings
+                from app.services.storage.base import StorageObjectRef
+
+                return await self.storage.get_object_ref(
+                    StorageObjectRef(
+                        file_id=record.file_id,
+                        bucket=record.storage_bucket or settings.storage_s3_bucket,
+                        object_key=record.object_key,
+                        filename=record.original_filename,
+                    )
+                )
             return await self.storage.get_object(record.file_id, scope=scope)
         return await self._load_local_object(record)
 
     async def _load_local_object(self, record: FileRecord) -> StorageObject:
         head = await self._ensure_local_object_ready(record)
         path = self._resolve_local_path(record.original_path)
-        return StorageObject(head=head, body=path.read_bytes())
+        return StorageObject(head=head, body=await asyncio.to_thread(path.read_bytes))
 
     def _resolve_local_path(self, original_path: str) -> Path:
         path = Path(original_path)
@@ -497,33 +555,17 @@ class FilePipelineService:
         if guessed:
             return guessed
         suffix = (record.original_filename or path.name).lower()
-        if suffix.endswith(".txt"):
-            return "text/plain"
-        if suffix.endswith(".md"):
-            return "text/markdown"
-        if suffix.endswith(".docx"):
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        if suffix.endswith(".pdf"):
-            return "application/pdf"
-        return "application/octet-stream"
+        return _DEFAULT_CONTENT_TYPES.get(Path(suffix).suffix.lower(), "application/octet-stream")
 
     def _default_content_type_for_suffix(self, suffix: str) -> str:
-        if suffix == ".txt":
-            return "text/plain"
-        if suffix == ".md":
-            return "text/markdown"
-        if suffix == ".docx":
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        if suffix == ".pdf":
-            return "application/pdf"
-        return "application/octet-stream"
+        return _DEFAULT_CONTENT_TYPES.get(suffix.lower(), "application/octet-stream")
 
-    def _persist_parsed_cache(self, record: FileRecord, parsed: ParsedDocument) -> None:
+    async def _persist_parsed_cache(self, record: FileRecord, parsed: ParsedDocument) -> None:
         base = Path(self.settings.data_dir)
         if not base.is_absolute():
             base = Path(__file__).resolve().parent.parent.parent / base
         cache_dir = base / "converted" / record.channel_id
-        cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / f"{record.file_id}.md"
-        cache_path.write_text(parsed.text, encoding="utf-8")
+        await asyncio.to_thread(cache_dir.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(cache_path.write_text, parsed.text, encoding="utf-8")
         record.md_path = str(cache_path)

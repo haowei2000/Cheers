@@ -1,4 +1,4 @@
-"""单 Bot 接入集成测试：发带 @bot 的消息，验证 Bot 回复被持久化并可拉取."""
+"""Tests for test orchestrator integration."""
 import asyncio
 
 import pytest
@@ -9,7 +9,7 @@ from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, Promp
 
 
 def _make_disabled_model(model_id: str) -> AIModel:
-    """创建一个已禁用的占位 AIModel，使 adapter_resolver 返回 MockBotAdapter。"""
+    """Covers make disabled model behavior."""
     return AIModel(
         model_id=model_id,
         name=f"test-model-{model_id[-4:]}",
@@ -58,7 +58,7 @@ async def _wait_for_bot_messages(
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Test isolation issue - passes when run alone, fails when run with other tests")
 async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: AsyncSession) -> None:
-    """频道内添加 Bot，发送 @bot 消息，列表中应出现用户消息 + Bot 回复."""
+    """Covers test message at bot gets bot reply behavior."""
     model = _make_disabled_model("test-model-0001")
     tpl = _make_template("test-tpl-0001")
     ws = Workspace(workspace_id="b1000000-0000-0000-0000-000000000001", name="W")
@@ -95,7 +95,7 @@ async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: As
         },
     )
     assert resp.status_code == 200
-    # 等待后台 orchestrator 任务完成（MockAdapter 无 IO，应立即完成）
+    # Wait for the background orchestrator task; MockAdapter has no IO and should finish immediately.
     await asyncio.sleep(0.2)
 
     list_resp = await client.get(f"/api/v1/channels/{ch.channel_id}/messages")
@@ -106,7 +106,7 @@ async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: As
     bot_msg = next((m for m in messages if m["sender_type"] == "bot"), None)
     assert user_msg is not None and "你好" in user_msg["content"]
     assert bot_msg is not None
-    # adapter_resolver 对 is_enabled=False 的模型返回 MockBotAdapter
+    # adapter_resolver returns MockBotAdapter for models with is_enabled=False.
     assert "MockBot" in bot_msg["content"] or "模型已禁用" in bot_msg["content"]
 
 
@@ -114,7 +114,7 @@ async def test_message_at_bot_gets_bot_reply(client: AsyncClient, db_session: As
 async def test_message_at_multiple_bots_serial_replies(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """同一消息 @ 多个 Bot 时，串行执行，每条 Bot 回复均持久化."""
+    """Covers test message at multiple bots serial replies behavior."""
     model1 = _make_disabled_model("test-model-0002")
     model2 = _make_disabled_model("test-model-0003")
     tpl = _make_template("test-tpl-0002")

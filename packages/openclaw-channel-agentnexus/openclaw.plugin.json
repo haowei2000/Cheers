@@ -1,5 +1,18 @@
 {
   "id": "agentnexus",
+  "kind": "channel",
+  "name": "AgentNexus",
+  "description": "Slack-like multi-channel chat with bots. One OpenClaw account = one AgentNexus Agent Bridge Bot.",
+  "version": "0.2.4",
+  "activation": {
+    "onStartup": true,
+    "onChannels": [
+      "agentnexus"
+    ],
+    "onCapabilities": [
+      "channel"
+    ]
+  },
   "channels": [
     "agentnexus"
   ],
@@ -13,7 +26,7 @@
   "channelConfigs": {
     "agentnexus": {
       "label": "AgentNexus",
-      "description": "Connect to AgentNexus via per-bot WebSocket bridge. One account = one AgentNexus WebSocket Bot.",
+      "description": "Connect to AgentNexus via per-bot WebSocket bridge. One account = one AgentNexus Agent Bridge Bot.",
       "schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -30,15 +43,15 @@
                 "enabled": { "type": "boolean", "default": true },
                 "botToken": {
                   "type": "string",
-                  "description": "Per-bot token issued by AgentNexus when the WebSocket Bot is created (ocw_...)."
+                  "description": "Per-bot token issued by AgentNexus when the Agent Bridge Bot is created (agb_...)."
                 },
                 "controlUrl": {
                   "type": "string",
-                  "description": "AgentNexus control WS URL, e.g. ws://localhost:8002/ws/openclaw/control"
+                  "description": "AgentNexus control WS URL, e.g. ws://localhost:8002/ws/agent-bridge/control"
                 },
                 "dataUrl": {
                   "type": "string",
-                  "description": "AgentNexus data WS URL, e.g. ws://localhost:8002/ws/openclaw/data"
+                  "description": "AgentNexus data WS URL, e.g. ws://localhost:8002/ws/agent-bridge/data"
                 },
                 "advanced": {
                   "type": "object",
@@ -47,7 +60,27 @@
                     "reconnectBaseMs": { "type": "integer", "default": 1000 },
                     "reconnectMaxMs": { "type": "integer", "default": 30000 },
                     "heartbeatIntervalMs": { "type": "integer", "default": 30000 },
-                    "sendAckTimeoutMs": { "type": "integer", "default": 10000 }
+                    "sendAckTimeoutMs": { "type": "integer", "default": 600000 }
+                  }
+                },
+                "outputFallback": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": true },
+                    "outputDirs": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "default": []
+                    },
+                    "delayMs": { "type": "integer", "default": 600000 },
+                    "pollMs": { "type": "integer", "default": 2000 },
+                    "stableMs": { "type": "integer", "default": 6000 },
+                    "postStreamWatchMs": { "type": "integer", "default": 15000 },
+                    "maxWatchMs": { "type": "integer", "default": 3600000 },
+                    "maxFiles": { "type": "integer", "default": 80 },
+                    "minBytes": { "type": "integer", "default": 16 },
+                    "maxBytes": { "type": "integer", "default": 26214400 }
                   }
                 }
               }
@@ -81,7 +114,26 @@
                     "reconnectBaseMs": { "type": "integer", "default": 1000 },
                     "reconnectMaxMs": { "type": "integer", "default": 30000 },
                     "heartbeatIntervalMs": { "type": "integer", "default": 30000 },
-                    "sendAckTimeoutMs": { "type": "integer", "default": 10000 }
+                    "sendAckTimeoutMs": { "type": "integer", "default": 600000 }
+                  }
+                },
+                "outputFallback": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean", "default": true },
+                    "outputDirs": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "default": []
+                    },
+                    "delayMs": { "type": "integer", "default": 600000 },
+                    "pollMs": { "type": "integer", "default": 2000 },
+                    "stableMs": { "type": "integer", "default": 6000 },
+                    "postStreamWatchMs": { "type": "integer", "default": 15000 },
+                    "maxWatchMs": { "type": "integer", "default": 3600000 },
+                    "maxFiles": { "type": "integer", "default": 80 },
+                    "minBytes": { "type": "integer", "default": 16 },
+                    "maxBytes": { "type": "integer", "default": 26214400 }
                   }
                 }
               }

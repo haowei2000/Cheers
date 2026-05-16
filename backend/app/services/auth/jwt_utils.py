@@ -1,4 +1,4 @@
-"""JWT 工具函数：创建和验证 access token。"""
+"""Jwt utils module."""
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -7,14 +7,14 @@ import jwt
 
 logger = logging.getLogger("app.services.auth.jwt_utils")
 
-# 延迟导入 settings 避免循环，同时支持运行时读取（测试可覆盖）
+# Import settings lazily to avoid cycles and allow runtime overrides in tests.
 _runtime_secret: str | None = None
 
 
 def _get_secret() -> str:
-    """返回 JWT 签名密钥；若未配置则自动生成随机密钥（进程内有效）。"""
+    """Get secret."""
     global _runtime_secret
-    from app.config import settings  # 延迟导入
+    from app.config import settings  # Lazy import.
     key = (settings.jwt_secret_key or "").strip()
     if key:
         return key
@@ -28,7 +28,7 @@ def _get_secret() -> str:
 
 
 def create_access_token(user_id: str, role: str) -> str:
-    """创建 JWT access token."""
+    """Create access token."""
     from app.config import settings
     expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
     payload = {
@@ -40,12 +40,27 @@ def create_access_token(user_id: str, role: str) -> str:
     return jwt.encode(payload, _get_secret(), algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> dict:
-    """解码并验证 JWT token，返回 payload dict。
+def create_service_token(claims: dict, *, expires_seconds: int) -> str:
+    """Create service token."""
+    from app.config import settings
 
-    Raises:
-        jwt.ExpiredSignatureError: token 已过期
-        jwt.InvalidTokenError: token 无效
-    """
+    now = datetime.now(UTC)
+    payload = {
+        **claims,
+        "exp": now + timedelta(seconds=max(int(expires_seconds), 1)),
+        "iat": now,
+    }
+    return jwt.encode(payload, _get_secret(), algorithm=settings.jwt_algorithm)
+
+
+def decode_service_token(token: str) -> dict:
+    """Decode service token."""
+    from app.config import settings
+
+    return jwt.decode(token, _get_secret(), algorithms=[settings.jwt_algorithm])
+
+
+def decode_access_token(token: str) -> dict:
+    """Decode access token."""
     from app.config import settings
     return jwt.decode(token, _get_secret(), algorithms=[settings.jwt_algorithm])

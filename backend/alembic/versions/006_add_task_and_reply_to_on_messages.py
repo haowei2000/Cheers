@@ -20,7 +20,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column("messages", sa.Column("task_id", sa.String(length=36), nullable=True))
     op.add_column("messages", sa.Column("in_reply_to_msg_id", sa.String(length=36), nullable=True))
-    # 索引用于按任务线程和问答配对查询
+    # Indexes used for task-thread and question/reply pair lookups.
     op.create_index("ix_messages_task_id", "messages", ["task_id"])
     op.create_index("ix_messages_in_reply_to_msg_id", "messages", ["in_reply_to_msg_id"])
 

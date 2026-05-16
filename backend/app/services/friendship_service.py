@@ -1,4 +1,4 @@
-"""Friendship 业务逻辑层."""
+"""Friendship service module."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -31,7 +31,7 @@ class FriendshipService:
     # ---- Query helpers -------------------------------------------------
 
     async def search_users(self, query: str, current_user: User, limit: int = 20) -> list[dict]:
-        """搜索用户（按 ID、用户名、显示名），排除当前用户并附带关系状态."""
+        """Search users."""
         q = query.strip()
         if not q:
             return []
@@ -112,7 +112,7 @@ class FriendshipService:
                     raise BadRequestError("好友申请已发送")
                 raise BadRequestError("对方已发送好友申请，请在收到申请中同意或拒绝")
 
-            # rejected 关系允许重新发起，方向以最新申请为准。
+            # Rejected relationships can be reopened; the latest request defines the direction.
             await self.repo.update(
                 existing,
                 user_id=current_user.user_id,

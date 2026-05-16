@@ -1,4 +1,4 @@
-// Skill 列表页面 - 马卡龙生机风格 + 导入弹窗
+// Skill list page with the macaron vitality style and import modal.
 import { useState, useEffect, useRef } from 'react';
 import { Skill, fetchSkills, getDownloadUrl, uploadSkill, deleteSkill, syncFromGitFox } from '../../api';
 
@@ -7,37 +7,37 @@ interface Props {
   onRefresh: () => void;
 }
 
-// 所有图标汇总到一个池子里，每个 skill 随机分配一个
+// Pool all icons so each skill can receive a stable pseudo-random icon.
 const EMOJI_POOL = [
-  // 森林动物
+  // Woodland icons.
   '🦊', '🐼', '🦁', '🐺', '🐻', '🐨', '🦄', '🦓', '🦌', '🦬',
   '🦆', '🦅', '🦉', '🦇', '🐸', '🐢', '🦎', '🐍', '🦖', '🦕',
   '🦋', '🐛', '🐝', '🐞', '🦜', '🦩', '🦚', '🦔', '🐾', '🦡',
-  // 植物花草
+  // Plant and floral icons.
   '🌲', '🌳', '🌴', '🌵', '🌸', '🌺', '🌻', '🌼', '🌷', '🌹',
   '💐', '💮', '🏵️', '🪷', '🪻', '🌾', '🍂', '🍃', '🌱', '🪴',
   '🍀', '🌿', '☘️', '🌈', '✨', '💫', '⭐', '🌟', '💎', '🔮',
-  // 自然现象
+  // Nature icons.
   '🌧️', '⛈️', '🌩️', '🌪️', '🌈', '🌤️', '⛅', '🌙', '🌛', '🌜️',
-  // 工具科技
+  // Tool and technology icons.
   '📱', '⌨️', '🖥️',
   '📷', '🎥', '📺', '📻', '🎙️', '🎚️', '🎛️', '🔌',, '🧲',
-  // 办公物品
+  // Office item icons.
   '📜', '🗃️', '📋',
   '📌', '📍', '✂️', '🖊️', '🖋️', '✏️', '📎',  '🖇️',
-  // 容器礼物
+  // Gift and container icons.
    '🎁', '🎀', '🎈', '🎊', '🎉', '🎆', '🎇', '🏆', '🎖️', '🎗️', '🎟️', '🎫', '💰', '🪙', '💎', '💵',
-  // 生物相关
+  // Creature-related icons.
   '🤖', '👾', '🕹️', '🎲', '🎯', '🎳',  '🧩', '🃏',
-  // 食物
+  // Food icons.
   '🍎', '🍊', '🍋', '🍓', '🍇', '🍉', '🍑', '🍒', '🥝', '🍍',
   '🥥', '🥑', '🥦', '🥬', '🌽', '🌶️', '🍄', '🥜', '🌰', '🍯',
-  // 更多装饰
+  // Additional decorative icons.
    '🎨', '🎬', '🎤', '🎧', '🎵', '🎶', '🎹', '🎸', '🎺',
   '🎷', '🎻', '🪘', '🎼', '📯',  '💐', '🌺', '🏵️', '🔔',
 ];
 
-// 根据 skill id 生成稳定的随机索引，同一个 skill 始终显示同一个图标
+// Generate a stable pseudo-random index from skill id so the same skill keeps the same icon.
 function getSkillEmoji(skillId: string): string {
   let hash = 0;
   for (let i = 0; i < skillId.length; i++) {
@@ -49,19 +49,19 @@ function getSkillEmoji(skillId: string): string {
   return EMOJI_POOL[index] || '🌸';
 }
 
-// 默认分类选项
+// Default category options.
 const DEFAULT_CATEGORIES = [
-  { value: 'development', label: '🦊 开发工具' },
-  { value: 'document', label: '🦋 文档处理' },
-  { value: 'tool', label: '🐝 实用工具' },
-  { value: 'knowledge', label: '🦉 知识管理' },
-  { value: 'ai', label: '🤖 AI 助手' },
+  { value: 'development', label: '🦊 Development Tools' },
+  { value: 'document', label: '🦋 Document Processing' },
+  { value: 'tool', label: '🐝 Utilities' },
+  { value: 'knowledge', label: '🦉 Knowledge Management' },
+  { value: 'ai', label: '🤖 AI Assistants' },
   { value: 'agent', label: '🦁 Agent' },
-  { value: 'debug', label: '🐞 调试分析' },
-  { value: 'imported', label: '🎁 其他' },
+  { value: 'debug', label: '🐞 Debugging & Analysis' },
+  { value: 'imported', label: '🎁 Other' },
 ];
 
-// 卡片背景渐变色
+// Card background gradients.
 const CARD_COLORS = [
   'linear-gradient(135deg, #B8E6D4 0%, #D4F1E8 100%)',
   'linear-gradient(135deg, #FFDAB9 0%, #FFE8D6 100%)',
@@ -75,15 +75,15 @@ function getCardColor(index: number): string {
   return CARD_COLORS[index % CARD_COLORS.length];
 }
 
-// 根据 skill 的分类获取对应的默认分类名称
+// Resolve the default category label for a skill category.
 function getCategoryLabel(skillCategory: string): { value: string; label: string } {
   const found = DEFAULT_CATEGORIES.find(c => c.value === skillCategory);
   if (found) return found;
-  // 没有找到时返回对应的默认分类（如果 skill 没有分类，默认是 general）
-  return DEFAULT_CATEGORIES.find(c => c.value === 'imported') || { value: 'imported', label: '🎁 其他' };
+  // Fall back to the imported category when no matching category is found.
+  return DEFAULT_CATEGORIES.find(c => c.value === 'imported') || { value: 'imported', label: '🎁 Other' };
 }
 
-// 导入弹窗组件
+// Import modal component.
 function UploadModal({
   isOpen,
   onClose,
@@ -98,7 +98,7 @@ function UploadModal({
   const [customCategory, setCustomCategory] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(false); // 加载选择的文件
+  const [loading, setLoading] = useState(false); // Loading selected files.
   const [error, setError] = useState('');
   const [selectedType, setSelectedType] = useState<'file' | 'folder'>('file');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -108,11 +108,11 @@ function UploadModal({
 
   async function handleUpload() {
     if (files.length === 0) {
-      setError('请选择文件或文件夹');
+      setError('Choose a file or folder');
       return;
     }
     if (useCustom && !customCategory.trim()) {
-      setError('请输入自定义分类');
+      setError('Enter a custom category');
       return;
     }
 
@@ -141,7 +141,7 @@ function UploadModal({
     if (fileList) {
       setLoading(true);
       setError('');
-      // 使用 setTimeout 让 UI 有时间更新
+      // Use setTimeout so the UI has time to update.
       setTimeout(() => {
         setFiles(Array.from(fileList));
         setLoading(false);
@@ -163,15 +163,15 @@ function UploadModal({
 
   function getDisplayText(): string {
     if (loading) {
-      return '正在从本地运输skill，请稍等......';
+      return 'Importing local skill. Please wait...';
     }
     if (files.length === 0) {
-      return selectedType === 'file' ? '点击选择压缩包...' : '点击选择文件夹...';
+      return selectedType === 'file' ? 'Click to choose an archive...' : 'Click to choose a folder...';
     }
     if (files.length === 1) {
       return files[0].name;
     }
-    return `已选择 ${files.length} 个文件`;
+    return `Selected ${files.length} files`;
   }
 
   if (!isOpen) return null;
@@ -183,41 +183,41 @@ function UploadModal({
           <div className="modal-upload-overlay">
             <div className="modal-upload-progress">
               <div className="modal-upload-spinner">🌱</div>
-              <div className="modal-upload-text">从本地运输 skill 种子中...</div>
+              <div className="modal-upload-text">Importing local skill package...</div>
               <div className="modal-upload-dots">
                 <span></span><span></span><span></span>
               </div>
             </div>
           </div>
         )}
-        <h2>✨ 导入 Skill</h2>
+        <h2>✨ Import Skill</h2>
 
         <div className="modal-section">
-          <label>选择类型</label>
+          <label>Type</label>
           <div className="import-type-selector">
             <button
               className={`import-type-btn ${selectedType === 'file' ? 'active' : ''}`}
               onClick={() => { setSelectedType('file'); setFiles([]); }}
             >
-              📦 压缩包
+              📦 Archive
             </button>
             <button
               className={`import-type-btn ${selectedType === 'folder' ? 'active' : ''}`}
               onClick={() => { setSelectedType('folder'); setFiles([]); }}
             >
-              📁 文件夹
+              📁 Folder
             </button>
           </div>
         </div>
 
         <div className="modal-section">
-          <label>{selectedType === 'file' ? '选择文件' : '选择文件夹'}</label>
-          <span className="upload-hint">确认上传文件后需要等待一段时间，请勿离开</span>
+          <label>{selectedType === 'file' ? 'Choose File' : 'Choose Folder'}</label>
+          <span className="upload-hint">Processing can take a while after upload. Keep this page open.</span>
           <div className={`file-input-wrapper ${loading ? 'loading' : ''}`}>
             {loading && (
               <div className="file-loading-indicator">
                 <span className="file-loading-spinner">📦</span>
-                <span className="file-loading-text">正在从本地运输skill，请稍等......</span>
+                <span className="file-loading-text">Importing local skill. Please wait...</span>
               </div>
             )}
             {selectedType === 'file' ? (
@@ -237,11 +237,11 @@ function UploadModal({
             )}
             <span className="file-name">{getDisplayText()}</span>
           </div>
-          <p className="hint">{selectedType === 'file' ? '支持 .zip, .tar.gz, .tgz 等格式' : '支持 md/json/py/txt 等常见格式'}</p>
+          <p className="hint">{selectedType === 'file' ? 'Supports .zip, .tar.gz, .tgz, and similar formats' : 'Supports common formats such as md/json/py/txt'}</p>
         </div>
 
         <div className="modal-section">
-          <label>选择分类</label>
+          <label>Category</label>
           <div className="category-options">
             {DEFAULT_CATEGORIES.map(cat => (
               <button
@@ -264,12 +264,12 @@ function UploadModal({
               onChange={e => setUseCustom(e.target.checked)}
               disabled={loading}
             />
-            或者创建新分类
+            Or create a new category
           </label>
           {useCustom && (
             <input
               type="text"
-              placeholder="输入新分类名称..."
+              placeholder="Enter a new category name..."
               value={customCategory}
               onChange={e => setCustomCategory(e.target.value)}
               className="custom-category-input"
@@ -280,7 +280,7 @@ function UploadModal({
         {error && <div className="modal-error">{error}</div>}
 
         <div className="modal-actions">
-          <button className="modal-btn cancel" onClick={onClose} disabled={uploading}>取消</button>
+          <button className="modal-btn cancel" onClick={onClose} disabled={uploading}>Cancel</button>
           <button
             className="modal-btn confirm"
             onClick={handleUpload}
@@ -289,9 +289,9 @@ function UploadModal({
             {uploading ? (
               <span className="upload-loading">
                 <span className="upload-spinner">🌀</span>
-                导入中，请稍候...
+                Importing, please wait...
               </span>
-            ) : '✨ 确认导入'}
+            ) : '✨ Confirm Import'}
           </button>
         </div>
       </div>
@@ -299,9 +299,9 @@ function UploadModal({
   );
 }
 
-// 花瓣emoji池
+// Flower emoji pool.
 const FLOWER_EMOJIS = ['🌸', '🌺', '🌻', '🌷', '🌼', '💐', '🌹', '🪻', '🌱', '🍀', '✨', '💫'];
-// 星星emoji池
+// Star emoji pool.
 const STAR_EMOJIS = ['⭐', '🌟', '✨', '💫', '⭐', '🌟', '✨', '💫'];
 
 interface FlowerParticle {
@@ -341,7 +341,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     loadData();
   }, [category]);
 
-  // 从 GitFox 同步 Skills
+  // Sync skills from GitFox.
   async function handleSync() {
     if (syncing) return;
 
@@ -352,20 +352,20 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
       const result = await syncFromGitFox();
       if (result.success) {
         setUploadMessage({ type: 'success', text: result.message });
-        // 重新加载数据
+        // Reload data.
         await loadData();
         onRefresh?.();
       } else {
-        setUploadMessage({ type: 'error', text: result.message || '同步失败' });
+        setUploadMessage({ type: 'error', text: result.message || 'Sync failed' });
       }
     } catch (err) {
-      setUploadMessage({ type: 'error', text: `同步失败: ${err}` });
+      setUploadMessage({ type: 'error', text: `Sync failed: ${err}` });
     }
 
     setSyncing(false);
   }
 
-  // 生成随机方向的粒子
+  // Spawn particles in random directions.
   function spawnParticles(count: number = 3): FlowerParticle[] {
     const newParticles: FlowerParticle[] = [];
     for (let i = 0; i < count; i++) {
@@ -385,16 +385,16 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     return newParticles;
   }
 
-  // 鼠标进入
+  // Mouse enter.
   function handleMouseEnter() {
     const initial = spawnParticles(8);
     setParticles(prev => [...prev, ...initial]);
 
-    // 持续生成粒子
+    // Keep spawning particles.
     intervalRef.current = setInterval(() => {
       setParticles(prev => {
         const spawned = spawnParticles(4);
-        // 1.5秒后自动移除旧粒子
+        // Remove old particles automatically after 1.5 seconds.
         setTimeout(() => {
           setParticles(p => p.filter(pp => !spawned.some(s => s.id === pp.id)));
         }, 1500);
@@ -403,17 +403,17 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     }, 150);
   }
 
-  // 鼠标离开
+  // Mouse leave.
   function handleMouseLeave() {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    // 延迟清除粒子
+    // Clear particles after a short delay.
     setTimeout(() => setParticles([]), 100);
   }
 
-  // 生成星星粒子
+  // Spawn star particles.
   function spawnStars(count: number = 3): StarParticle[] {
     const newParticles: StarParticle[] = [];
     for (let i = 0; i < count; i++) {
@@ -433,12 +433,12 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     return newParticles;
   }
 
-  // 更新按钮鼠标进入
+  // Update button mouse enter.
   function handleStarMouseEnter() {
     const initial = spawnStars(6);
     setStarParticles(prev => [...prev, ...initial]);
 
-    // 持续生成星星
+    // Keep spawning stars.
     starIntervalRef.current = setInterval(() => {
       setStarParticles(prev => {
         const spawned = spawnStars(3);
@@ -450,7 +450,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     }, 120);
   }
 
-  // 更新按钮鼠标离开
+  // Update button mouse leave.
   function handleStarMouseLeave() {
     if (starIntervalRef.current) {
       clearInterval(starIntervalRef.current);
@@ -465,7 +465,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
       const skillsData = await fetchSkills(category || undefined);
       setSkills(skillsData);
     } catch (err) {
-      console.error('加载失败:', err);
+      console.error('Load failed:', err);
     }
     setLoading(false);
   }
@@ -487,22 +487,22 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
 
   async function handleDelete(e: React.MouseEvent, skillId: string, skillName: string) {
     e.stopPropagation();
-    if (!confirm(`确定要删除「${skillName}」吗？`)) return;
+    if (!confirm(`Delete '${skillName}'?`)) return;
 
     setDeleting(skillId);
     try {
       await deleteSkill(skillId);
-      setUploadMessage({ type: 'success', text: `✓ 已删除: ${skillName}` });
+      setUploadMessage({ type: 'success', text: `✓ Deleted: ${skillName}` });
       loadData();
       onRefresh?.();
     } catch (err) {
-      setUploadMessage({ type: 'error', text: `✗ 删除失败: ${err}` });
+      setUploadMessage({ type: 'error', text: `✗ Delete failed: ${err}` });
     }
     setDeleting(null);
   }
 
   function handleUploadSuccess() {
-    setUploadMessage({ type: 'success', text: '✓ 导入成功！' });
+    setUploadMessage({ type: 'success', text: '✓ Import succeeded!' });
     loadData();
     onRefresh?.();
   }
@@ -511,7 +511,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     return (
       <div className="loading-container">
         <div className="loading-icon">🌸</div>
-        <div className="loading-text">正在加载森林...</div>
+        <div className="loading-text">Loading skills...</div>
         <div className="loading-dots">
           <span></span><span></span><span></span>
         </div>
@@ -521,7 +521,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
 
   return (
     <div className="skill-list">
-      {/* 浮动装饰 */}
+      {/* Floating decorations. */}
       <div className="floating-decorations">
         <span className="floating-deco deco-1">🌸</span>
         <span className="floating-deco deco-2">🦋</span>
@@ -544,7 +544,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
           <div className="search-wrapper">
             <input
               type="text"
-              placeholder="🌿 搜索森林中的技能..."
+              placeholder="🌿 Search skills..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="search-input"
@@ -554,7 +554,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
             >
-              {/* 粒子 */}
+              {/* Particles. */}
               {particles.map(p => (
                 <span
                   key={p.id}
@@ -571,10 +571,10 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
               <button
                 className="upload-btn"
                 onClick={() => setShowUploadModal(true)}
-                title="导入 Skill"
+                title="Import Skill"
               >
                 <span className="upload-btn-text">
-                  <span className="upload-btn-leaf">🍃</span>导入本地skill
+                  <span className="upload-btn-leaf">🍃</span>Import local skill
                 </span>
                 <span className="upload-btn-flower">🌸</span>
               </button>
@@ -587,14 +587,14 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
               className="category-chip active back-chip"
               onClick={() => setCategory('')}
             >
-              🌿 返回全部
+              🌿 Back to All
             </button>
           )}
           <button
             className={`category-chip ${category === '' ? 'active' : ''}`}
             onClick={() => setCategory('')}
           >
-            🌈 全部
+            🌈 All
           </button>
           {categories.map(cat => (
             <button
@@ -622,14 +622,14 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
             </span>
           )}
           <span className="skills-count-text">
-            {category ? `共 ${filteredSkills.length} 个skill` : `共发现 ${filteredSkills.length} 个skill`}
+            {category ? `${filteredSkills.length} skills` : `${filteredSkills.length} skills found`}
           </span>
           <div
             className="update-btn-wrapper"
             onMouseEnter={handleStarMouseEnter}
             onMouseLeave={handleStarMouseLeave}
           >
-            {/* 星星粒子 */}
+            {/* Star particles. */}
             {starParticles.map(p => (
               <span
                 key={p.id}
@@ -648,7 +648,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
                 onClick={handleSync}
                 disabled={syncing}
               >
-                <span className="update-btn-text">{syncing ? '同步中...' : '更新'}</span>
+                <span className="update-btn-text">{syncing ? 'Syncing...' : 'Update'}</span>
                 <span className="update-btn-icon">{syncing ? '⏳' : '🌙'}</span>
               </button>
             </div>
@@ -690,7 +690,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
                     className="download-btn"
                     onClick={e => handleDownload(e, skill.id)}
                   >
-                    📥 下载
+                    📥 Download
                   </button>
                 </div>
               </div>
@@ -702,12 +702,12 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
       {filteredSkills.length === 0 && (
         <div className="empty">
           <div className="empty-icon">🦔</div>
-          <p>森林里没有找到这个技能</p>
-          <span>试试导入一个 Skill 吧 🌱</span>
+          <p>No skills found</p>
+          <span>Import a skill to get started 🌱</span>
         </div>
       )}
 
-      {/* 导入弹窗 */}
+      {/* Import modal. */}
       <UploadModal
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}

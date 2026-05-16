@@ -14,6 +14,7 @@ from app.db.models import (
     BotAccount,
     Channel,
     ChannelMembership,
+    FileRecord,
     Friendship,
     Message,
     TodoItem,
@@ -261,6 +262,240 @@ async def test_global_nav_does_not_leak_channel_scoped_rows(db_session: AsyncSes
     assert {m["msg_id"] for m in data["messages"]} == {visible_msg.msg_id}
     assert {t["todo_id"] for t in data["todos"]} == {visible_todo.todo_id}
     assert {t["task_id"] for t in data["tasks"]} == {visible_task.task_id}
+
+
+@pytest.mark.asyncio
+async def test_global_nav_file_search_respects_membership_and_scopes(db_session: AsyncSession) -> None:
+    user = _user("sr-file-user", "sr_file_user")
+    visible_ws = Workspace(workspace_id="sr-file-visible-ws", name="Visible File Workspace")
+    other_ws = Workspace(workspace_id="sr-file-other-ws", name="Other File Workspace")
+    visible_ch = Channel(
+        channel_id="sr-file-visible-ch",
+        workspace_id=visible_ws.workspace_id,
+        name="file-visible",
+        type="public",
+    )
+    second_ch = Channel(
+        channel_id="sr-file-second-ch",
+        workspace_id=visible_ws.workspace_id,
+        name="file-second",
+        type="public",
+    )
+    hidden_ch = Channel(
+        channel_id="sr-file-hidden-ch",
+        workspace_id=other_ws.workspace_id,
+        name="file-hidden",
+        type="public",
+    )
+    first_file = FileRecord(
+        file_id="sr-file-visible",
+        channel_id=visible_ch.channel_id,
+        uploader_id=user.user_id,
+        original_path="/tmp/sr-file-visible.pdf",
+        original_filename="needle-plan.pdf",
+        content_type="application/pdf",
+        size_bytes=100,
+        status="ready",
+        summary_3lines="visible file summary",
+    )
+    second_file = FileRecord(
+        file_id="sr-file-second",
+        channel_id=second_ch.channel_id,
+        uploader_id=user.user_id,
+        original_path="/tmp/sr-file-second.docx",
+        original_filename="second-file.docx",
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        size_bytes=200,
+        status="ready",
+        summary_3lines="needle appears in the second channel summary",
+    )
+    hidden_file = FileRecord(
+        file_id="sr-file-hidden",
+        channel_id=hidden_ch.channel_id,
+        uploader_id=user.user_id,
+        original_path="/tmp/sr-file-hidden.pdf",
+        original_filename="needle-hidden.pdf",
+        content_type="application/pdf",
+        size_bytes=300,
+        status="ready",
+        summary_3lines="hidden file summary",
+    )
+    db_session.add_all([
+        user,
+        visible_ws,
+        other_ws,
+        visible_ch,
+        second_ch,
+        hidden_ch,
+        WorkspaceMembership(workspace_id=visible_ws.workspace_id, user_id=user.user_id),
+        ChannelMembership(channel_id=visible_ch.channel_id, member_id=user.user_id, member_type="user"),
+        ChannelMembership(channel_id=second_ch.channel_id, member_id=user.user_id, member_type="user"),
+        first_file,
+        second_file,
+        hidden_file,
+    ])
+    await db_session.flush()
+
+    global_resp = await _request_as(
+        db_session,
+        user,
+        "GET",
+        "/api/v1/search?q=needle&context=global_nav&types=files&limit=20",
+    )
+    channel_resp = await _request_as(
+        db_session,
+        user,
+        "GET",
+        f"/api/v1/search?q=needle&context=file_lookup&channel_id={second_ch.channel_id}&limit=20",
+    )
+
+    assert global_resp.status_code == 200
+    assert {f["file_id"] for f in global_resp.json()["data"]["files"]} == {
+        first_file.file_id,
+        second_file.file_id,
+    }
+    assert channel_resp.status_code == 200
+    assert [f["file_id"] for f in channel_resp.json()["data"]["files"]] == [second_file.file_id]
+
+
+@pytest.mark.asyncio
+async def test_search_types_filter_returns_only_requested_groups(db_session: AsyncSession) -> None:
+    user = _user("sr-types-user", "sr_types_user")
+    ws = Workspace(workspace_id="sr-types-ws", name="Types Workspace")
+    ch = Channel(channel_id="sr-types-ch", workspace_id=ws.workspace_id, name="types-channel", type="public")
+    msg = Message(
+        msg_id="sr-types-msg",
+        channel_id=ch.channel_id,
+        sender_id=user.user_id,
+        sender_type="user",
+        content="needle message",
+    )
+    file = FileRecord(
+        file_id="sr-types-file",
+        channel_id=ch.channel_id,
+        uploader_id=user.user_id,
+        original_path="/tmp/sr-types-file.pdf",
+        original_filename="needle-file.pdf",
+        content_type="application/pdf",
+        size_bytes=123,
+        status="ready",
+    )
+    db_session.add_all([
+        user,
+        ws,
+        ch,
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=user.user_id),
+        ChannelMembership(channel_id=ch.channel_id, member_id=user.user_id, member_type="user"),
+        msg,
+        file,
+    ])
+    await db_session.flush()
+
+    resp = await _request_as(
+        db_session,
+        user,
+        "GET",
+        "/api/v1/search?q=needle&context=global_nav&types=files&limit=20",
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert [f["file_id"] for f in data["files"]] == [file.file_id]
+    assert data["messages"] == []
+    assert data["channels"] == []
+    assert data["users"] == []
+
+
+@pytest.mark.asyncio
+async def test_channel_invite_context_returns_users_and_bots(db_session: AsyncSession) -> None:
+    owner = _user("sr-mixed-owner", "sr_mixed_owner")
+    caller = _user("sr-mixed-caller", "sr_mixed_caller")
+    candidate = _user("sr-mixed-candidate", "sr_mixed_candidate")
+    ws = Workspace(workspace_id="sr-mixed-ws", name="Mixed Invite Workspace")
+    ch = Channel(channel_id="sr-mixed-ch", workspace_id=ws.workspace_id, name="mixed-channel", type="public")
+    bot = BotAccount(
+        bot_id="sr-mixed-bot",
+        username="sr_mixed_candidate_bot",
+        created_by=owner.user_id,
+        scope="everyone",
+    )
+    db_session.add_all([
+        owner,
+        caller,
+        candidate,
+        ws,
+        ch,
+        bot,
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=caller.user_id),
+        ChannelMembership(channel_id=ch.channel_id, member_id=caller.user_id, member_type="user"),
+    ])
+    await db_session.flush()
+
+    resp = await _request_as(
+        db_session,
+        caller,
+        "GET",
+        f"/api/v1/search?q=sr_mixed_candidate&context=channel_invite&channel_id={ch.channel_id}",
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert [u["user_id"] for u in data["users"]] == [candidate.user_id]
+    assert [b["bot_id"] for b in data["bots"]] == [bot.bot_id]
+
+
+@pytest.mark.asyncio
+async def test_global_nav_message_search_can_be_channel_scoped(db_session: AsyncSession) -> None:
+    user = _user("sr-channel-scope-user", "sr_channel_scope_user")
+    ws = Workspace(workspace_id="sr-channel-scope-ws", name="Channel Scope Workspace")
+    first_ch = Channel(
+        channel_id="sr-channel-scope-a",
+        workspace_id=ws.workspace_id,
+        name="scope-a",
+        type="public",
+    )
+    second_ch = Channel(
+        channel_id="sr-channel-scope-b",
+        workspace_id=ws.workspace_id,
+        name="scope-b",
+        type="public",
+    )
+    first_msg = Message(
+        msg_id="sr-channel-scope-msg-a",
+        channel_id=first_ch.channel_id,
+        sender_id=user.user_id,
+        sender_type="user",
+        content="needle scoped first channel",
+    )
+    second_msg = Message(
+        msg_id="sr-channel-scope-msg-b",
+        channel_id=second_ch.channel_id,
+        sender_id=user.user_id,
+        sender_type="user",
+        content="needle scoped second channel",
+    )
+    db_session.add_all([
+        user,
+        ws,
+        first_ch,
+        second_ch,
+        WorkspaceMembership(workspace_id=ws.workspace_id, user_id=user.user_id),
+        ChannelMembership(channel_id=first_ch.channel_id, member_id=user.user_id, member_type="user"),
+        ChannelMembership(channel_id=second_ch.channel_id, member_id=user.user_id, member_type="user"),
+        first_msg,
+        second_msg,
+    ])
+    await db_session.flush()
+
+    resp = await _request_as(
+        db_session,
+        user,
+        "GET",
+        f"/api/v1/search?q=needle&context=global_nav&channel_id={second_ch.channel_id}&limit=20",
+    )
+
+    assert resp.status_code == 200
+    assert {m["msg_id"] for m in resp.json()["data"]["messages"]} == {second_msg.msg_id}
 
 
 @pytest.mark.asyncio

@@ -3,10 +3,22 @@ export type SearchContext =
   | "add_friend"
   | "dm_start"
   | "workspace_invite"
+  | "channel_invite"
   | "channel_invite_user"
   | "channel_invite_bot"
+  | "file_lookup"
   | "todo_lookup"
   | "task_monitor";
+
+export type SearchResultType =
+  | "workspaces"
+  | "channels"
+  | "users"
+  | "bots"
+  | "files"
+  | "todos"
+  | "tasks"
+  | "messages";
 
 export type SearchWorkspaceHit = {
   workspace_id: string;
@@ -39,6 +51,18 @@ export type SearchBotHit = {
     username: string;
     display_name?: string | null;
   } | null;
+};
+
+export type SearchFileHit = {
+  file_id: string;
+  channel_id: string;
+  channel_name: string;
+  original_filename: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  status: string;
+  snippet: string;
+  created_at: string | null;
 };
 
 export type SearchTodoHit = {
@@ -83,6 +107,7 @@ export type SearchResultsPayload = {
   channels: SearchChannelHit[];
   users: SearchUserHit[];
   bots: SearchBotHit[];
+  files: SearchFileHit[];
   todos: SearchTodoHit[];
   tasks: SearchTaskHit[];
   messages: SearchMessageHit[];
@@ -93,6 +118,7 @@ export type SearchSelection =
   | { type: "channel"; item: SearchChannelHit }
   | { type: "user"; item: SearchUserHit }
   | { type: "bot"; item: SearchBotHit }
+  | { type: "file"; item: SearchFileHit }
   | { type: "todo"; item: SearchTodoHit }
   | { type: "task"; item: SearchTaskHit }
   | { type: "message"; item: SearchMessageHit };

@@ -1,4 +1,4 @@
-"""Bulletin 业务逻辑层."""
+"""Bulletin service module."""
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession

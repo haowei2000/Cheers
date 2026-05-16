@@ -6,6 +6,7 @@
  * with their letter tiles, and a "+" tile at the bottom opens the
  * create-workspace modal. */
 import type { Workspace } from "../types";
+import { AvatarVisual } from "./AvatarVisual";
 
 export interface WorkspaceRailProps {
   workspaces: Workspace[];
@@ -63,11 +64,15 @@ function Tile({
         fontSize,
       }}
     >
-      {avatarUrl ? (
-        <img src={avatarUrl} alt={label} className="an-wsr-img" />
-      ) : (
-        initials
-      )}
+      <AvatarVisual
+        avatarUrl={avatarUrl}
+        background="transparent"
+        className={avatarUrl ? "an-wsr-img" : ""}
+        fallback={initials}
+        label={label}
+        radius={round ? 999 : 12}
+        size={40}
+      />
     </button>
   );
 }
@@ -87,12 +92,12 @@ export function WorkspaceRail({
         <>
           <Tile
             label={personal.name}
-            initials="个"
+            initials="P"
             color="var(--accent)"
             avatarUrl={personal.avatar_url}
             active={selectedWorkspaceId === personal.workspace_id}
             round
-            title={`${personal.name} · 私信`}
+            title={`${personal.name} · DMs`}
             onClick={() => onSelect(personal.workspace_id)}
           />
           <div className="an-wsr-sep" />
@@ -121,8 +126,8 @@ export function WorkspaceRail({
           type="button"
           className="an-wsr-tile an-wsr-add"
           onClick={onCreate}
-          title="创建工作空间"
-          aria-label="创建工作空间"
+          title="Create workspace"
+          aria-label="Create workspace"
         >
           +
         </button>

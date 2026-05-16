@@ -4,12 +4,12 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# 安装 uv
+# Install uv.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 ENV UV_NO_CACHE=1
 #ENV UV_COMPILE_BYTECODE=1
 
-# 先复制依赖清单，利用 Docker 层缓存。
+# Copy dependency manifests first to reuse Docker layer cache.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 

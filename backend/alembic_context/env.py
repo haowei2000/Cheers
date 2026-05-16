@@ -1,4 +1,4 @@
-"""Alembic 环境：Context Store（四层记忆）."""
+"""Alembic environment for the Context Store memory database."""
 import asyncio
 import os
 from logging.config import fileConfig
@@ -17,13 +17,13 @@ database_url = os.getenv(
     "CONTEXT_DB_URL",
     "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus",
 )
-# 确保使用异步驱动 URL
+# Ensure the async driver URL is used.
 if database_url.startswith("postgresql") and "+asyncpg" not in database_url:
     database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 config.set_main_option("sqlalchemy.url", database_url)
 
-# Context Store 无 SQLAlchemy ORM 模型，使用 None 表示无 autogenerate 支持
+# The Context Store has no SQLAlchemy ORM models, so autogenerate is disabled.
 target_metadata = None
 
 

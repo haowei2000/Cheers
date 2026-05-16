@@ -7,17 +7,20 @@ wires the pipeline into routes.py.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
-from app.services.pipeline.events import Event, MessageCreated
-from app.services.pipeline.ingest.context import IngestContext
-from app.services.pipeline.ingest.stages import (
+from app.config import settings
+from app.features.bot_runtime.pipeline.events import Event, MessageCreated
+from app.features.bot_runtime.pipeline.ingest.context import IngestContext
+from app.features.bot_runtime.pipeline.ingest.stages import (
     SECRET_PLACEHOLDER,
     EmitStage,
     SecretEnvelopeStage,
+    _publish_unread_events,
 )
 
 
@@ -27,6 +30,28 @@ class _RecordingBus:
 
     async def publish(self, event: Event) -> None:
         self.published.append(event)
+
+
+class _RecordingRealtimeBroker:
+    def __init__(self, *, fail_user_id: str | None = None) -> None:
+        self.fail_user_id = fail_user_id
+        self.user_frames: list[tuple[str, dict]] = []
+        self.active = 0
+        self.max_active = 0
+
+    async def publish_user(self, user_id: str, message: dict) -> None:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            await asyncio.sleep(0.01)
+            self.user_frames.append((user_id, message))
+            if user_id == self.fail_user_id:
+                raise RuntimeError("publish failed")
+        finally:
+            self.active -= 1
+
+    async def publish_channel(self, channel_id: str, message: dict) -> None:
+        return None
 
 
 @dataclass
@@ -119,3 +144,36 @@ async def test_emit_stage_publishes_prebuilt_payload() -> None:
     event = bus.published[0]
     assert isinstance(event, MessageCreated)
     assert event.data == ctx.payload
+
+
+async def test_unread_fanout_uses_bounded_concurrency_and_dedupes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.services.realtime_broker as realtime_broker
+
+    broker = _RecordingRealtimeBroker()
+    monkeypatch.setattr(settings, "unread_fanout_concurrency", 3)
+    monkeypatch.setattr(realtime_broker, "_broker", broker)
+    event = {"type": "channel_new_message", "data": {"channel_id": "ch1"}}
+
+    await _publish_unread_events(["u1", "u2", "u2", "u3", "u4", "u5"], event)
+
+    delivered_user_ids = [user_id for user_id, _ in broker.user_frames]
+    assert len(delivered_user_ids) == 5
+    assert set(delivered_user_ids) == {"u1", "u2", "u3", "u4", "u5"}
+    assert broker.max_active == 3
+
+
+async def test_unread_fanout_keeps_going_when_one_user_publish_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.services.realtime_broker as realtime_broker
+
+    broker = _RecordingRealtimeBroker(fail_user_id="u2")
+    monkeypatch.setattr(settings, "unread_fanout_concurrency", 2)
+    monkeypatch.setattr(realtime_broker, "_broker", broker)
+    event = {"type": "channel_new_message", "data": {"channel_id": "ch1"}}
+
+    await _publish_unread_events(["u1", "u2", "u3"], event)
+
+    assert {user_id for user_id, _ in broker.user_frames} == {"u1", "u2", "u3"}

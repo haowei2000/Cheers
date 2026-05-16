@@ -1,13 +1,15 @@
-"""FastAPI 应用入口."""
+"""FastAPI application entrypoint."""
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1.openclaw_bridge.routes import ws_router as openclaw_bridge_ws_router
+from app.agent_bridge_docs_routes import router as agent_bridge_docs_router
+from app.api.v1.agent_bridge.routes import ws_router as agent_bridge_ws_router
 from app.api.v1.router import v1_router
 from app.api.v1.ws.handler import router as ws_router
 from app.config import settings
@@ -20,26 +22,78 @@ from app.services.storage.bootstrap import initialize_storage, is_storage_enable
 
 logger = logging.getLogger("app.main")
 
+_file_retention_task: asyncio.Task | None = None
+
+
+async def _run_file_retention_cleanup_once() -> int:
+    from app.db.session import async_session_factory
+    from app.services.file_retention import FileRetentionService
+
+    async with async_session_factory() as session:
+        count = await FileRetentionService(session).prune_expired_files()
+        await session.commit()
+        return count
+
+
+async def _file_retention_cleanup_loop() -> None:
+    interval = max(
+        3600,
+        int(getattr(settings, "file_retention_cleanup_interval_seconds", 24 * 60 * 60) or 24 * 60 * 60),
+    )
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            count = await _run_file_retention_cleanup_once()
+            if count:
+                logger.info("file retention cleanup pruned %d expired files", count)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("file retention cleanup failed")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理应用生命周期：启动初始化 & 关闭清理."""
+    """Manage application lifecycle startup initialization and shutdown cleanup."""
+    global _file_retention_task
     setup_logging()
     logger.info("AgentNexus startup")
 
     if not (settings.jwt_secret_key or "").strip():
         logger.warning(
-            "JWT_SECRET_KEY 未配置，将使用进程内随机密钥（重启后旧 token 全部失效）。"
-            "建议在 .env 中设置 JWT_SECRET_KEY=<随机长字符串>。"
+            "JWT_SECRET_KEY is not configured; an in-process random secret will be used "
+            "and existing tokens will become invalid after restart. Set JWT_SECRET_KEY "
+            "to a long random string in .env."
         )
 
     from app.http_client import init_http_client
     await init_http_client()
 
+    from app.services.realtime_broker import init_realtime_broker
+    await init_realtime_broker()
+
+    from app.features.bot_runtime.pipeline.bot.jobs import run_bot_pipeline_job
+    from app.features.bot_runtime.pipeline.bot.queue import start_bot_pipeline_workers
+    await start_bot_pipeline_workers(run_bot_pipeline_job)
+
+    from app.features.bot_runtime.bot_events.jobs import run_bot_event_job
+    from app.features.bot_runtime.bot_events.queue import start_bot_event_workers
+    await start_bot_event_workers(run_bot_event_job)
+
     if is_storage_enabled():
         app.state.storage = await initialize_storage()
     else:
         app.state.storage = None
+
+    try:
+        count = await _run_file_retention_cleanup_once()
+        if count:
+            logger.info("file retention cleanup pruned %d expired files on startup", count)
+    except Exception:
+        logger.exception("file retention startup cleanup failed")
+
+    if int(getattr(settings, "file_retention_cleanup_interval_seconds", 24 * 60 * 60) or 0) > 0:
+        _file_retention_task = asyncio.create_task(_file_retention_cleanup_loop())
 
     if os.environ.get("SEED_DATA", "").strip().lower() in ("1", "true", "yes"):
         try:
@@ -55,6 +109,21 @@ async def lifespan(app: FastAPI):
         logger.exception("ensure builtin bot failed: %s", e)
 
     yield
+
+    if _file_retention_task is not None:
+        _file_retention_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await _file_retention_task
+        _file_retention_task = None
+
+    from app.features.bot_runtime.pipeline.bot.queue import stop_bot_pipeline_workers
+    await stop_bot_pipeline_workers()
+
+    from app.features.bot_runtime.bot_events.queue import stop_bot_event_workers
+    await stop_bot_event_workers()
+
+    from app.services.realtime_broker import close_realtime_broker
+    await close_realtime_broker()
 
     from app.http_client import close_http_client
     await close_http_client()
@@ -107,16 +176,17 @@ async def unhandled_exception(request, exc: Exception) -> JSONResponse:
     )
 
 
-# v1 架构路由（/api/v1/...）
+# v1 architecture routes (/api/v1/...).
 app.include_router(v1_router)
 
-# WebSocket 路由（/ws/channels/{id}，nginx location /ws 需要 upgrade 头）
+# WebSocket routes (/ws/channels/{id}); nginx location /ws needs upgrade headers.
 app.include_router(ws_router)
-app.include_router(openclaw_bridge_ws_router)
+app.include_router(agent_bridge_ws_router)
 
-# 静态功能路由（不含业务逻辑，保持不变）
+# Static feature routes without business logic.
 app.include_router(manual_router)
 app.include_router(public_router)
+app.include_router(agent_bridge_docs_router)
 
 
 @app.get("/health")

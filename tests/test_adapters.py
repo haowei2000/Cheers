@@ -1,15 +1,15 @@
-"""OpenClawAdapter 契约测试."""
+"""Tests for test adapters."""
 from unittest.mock import patch
 
 import httpx
 import pytest
 
 from app.db.models import AIModel, BotAccount, PromptTemplate
-from app.services.adapters.base import AgentPayload, AgentResponse
-from app.services.adapters.channel_bot import ChannelBotAdapter
-from app.services.adapters.http_bot import HttpBotAdapter
-from app.services.adapters.mock_bot import MockBotAdapter
-from app.services.pipeline.adapter_events import Final
+from app.features.bot_runtime.adapters.base import AgentPayload, drain_events_to_response
+from app.features.bot_runtime.adapters.channel_bot import ChannelBotAdapter
+from app.features.bot_runtime.adapters.http_bot import HttpBotAdapter
+from app.features.bot_runtime.adapters.mock_bot import MockBotAdapter
+from app.features.bot_runtime.pipeline.adapter_events import Final
 
 
 def _http_bot_adapter(
@@ -57,8 +57,7 @@ async def test_mock_adapter_execute() -> None:
         trigger_message={"user": "张三", "text": "@bot 你好", "timestamp": "2026-03-07T00:00:00Z"},
         memory_context={"anchor": "", "decisions": "", "files_index": "", "recent": ""},
     )
-    resp = await adapter.execute(payload)
-    assert isinstance(resp, AgentResponse)
+    resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
     assert resp.success is True
     assert resp.content == "你好，我是 Mock。"
     assert resp.task_id == "t1"
@@ -157,12 +156,12 @@ async def test_channel_bot_attachment_fallback_uses_file_content() -> None:
     )
 
     async def _empty_iter(*args, **kwargs):
-        # Yield an empty Final → triggers ChannelBotAdapter.execute_iter's
+        # Yield an empty Final → triggers ChannelBotAdapter.execute's
         # keyword-fallback branch (which injects the file content).
         yield Final(content="", success=True)
 
-    with patch("app.services.adapters.channel_bot._run_agent_iter", new=_empty_iter):
-        resp = await adapter.execute(payload)
+    with patch("app.features.bot_runtime.adapters.channel_bot._run_agent_iter", new=_empty_iter):
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
     assert resp.success is True
     assert "Halmet.docx" in resp.content

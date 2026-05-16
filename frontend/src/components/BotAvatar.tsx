@@ -1,3 +1,6 @@
+import { AiBrandIcon, resolveAiBrandName } from "./icons";
+import { AvatarVisual } from "./AvatarVisual";
+
 /* BotAvatar — visual marker for bot senders.
  *
  * Renders a stylized bot face inside a softly-rounded chip so bot replies
@@ -10,6 +13,8 @@ interface BotAvatarProps {
   label: string;
   /** Custom uploaded avatar URL; if set, renders <img> and ignores the SVG. */
   avatarUrl?: string | null;
+  /** Optional model/provider label used to render an AI brand logo fallback. */
+  brandName?: string | null;
   /** Pixel size; the chip is square (size × size). Defaults to 36. */
   size?: number;
   /** Tile background. Defaults to a subtle accent gradient. */
@@ -23,6 +28,7 @@ interface BotAvatarProps {
 export function BotAvatar({
   label,
   avatarUrl,
+  brandName,
   size = 36,
   background,
   color = "#fff",
@@ -30,25 +36,41 @@ export function BotAvatar({
 }: BotAvatarProps) {
   if (avatarUrl) {
     return (
-      <img
-        src={avatarUrl}
-        alt={label}
-        className={`rounded-xl object-cover ${className ?? ""}`}
-        style={{ width: size, height: size }}
+      <AvatarVisual
+        avatarUrl={avatarUrl}
+        className={className}
+        label={label}
+        radius={12}
+        size={size}
       />
     );
   }
 
-  // Soft mint-to-emerald gradient ⇒ matches the existing "Bot" tag color
-  // (#2EB67D) used elsewhere in the message header.
-  const bg = background ?? "linear-gradient(135deg, #34c98c 0%, #2EB67D 60%, #218057 100%)";
+  const resolvedBrandName = resolveAiBrandName(brandName) ?? resolveAiBrandName(label);
+  if (resolvedBrandName) {
+    const tileSize = Math.round(size * 0.62);
+
+    return (
+      <div
+        role="img"
+        aria-label={label}
+        title={label}
+        className={`rounded-lg flex items-center justify-center select-none flex-shrink-0 border border-[var(--border)] bg-[var(--bg-1)] shadow-sm ${className ?? ""}`}
+        style={{ width: size, height: size }}
+      >
+        <AiBrandIcon name={resolvedBrandName} size={tileSize} />
+      </div>
+    );
+  }
+
+  const bg = background ?? "linear-gradient(135deg, var(--accent) 0%, var(--green) 100%)";
   // Internal SVG is drawn on a 24×24 grid then scaled into the chip.
   return (
     <div
       role="img"
       aria-label={label}
       title={label}
-      className={`rounded-xl flex items-center justify-center select-none flex-shrink-0 ${className ?? ""}`}
+      className={`rounded-lg flex items-center justify-center select-none flex-shrink-0 ${className ?? ""}`}
       style={{
         width: size,
         height: size,

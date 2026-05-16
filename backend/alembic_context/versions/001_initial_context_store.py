@@ -1,10 +1,4 @@
-"""Initial context_store table (四层记忆).
-
-Revision ID: 001
-Revises:
-Create Date: 2026-03-21
-
-"""
+"""001 initial context store module."""
 from typing import Sequence, Union
 
 import sqlalchemy as sa

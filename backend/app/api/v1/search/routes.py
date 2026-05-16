@@ -20,6 +20,10 @@ async def global_search(
     limit: int = Query(5, ge=1, le=20),
     workspace_id: str | None = Query(None),
     channel_id: str | None = Query(None),
+    types: str | None = Query(
+        None,
+        description="comma-separated result groups: workspaces,channels,users,bots,files,todos,tasks,messages",
+    ),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
@@ -29,6 +33,7 @@ async def global_search(
         limit=limit,
         workspace_id=workspace_id,
         channel_id=channel_id,
+        types=types,
         current_user=current_user,
     )
     return APIResponse.ok(results)

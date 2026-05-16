@@ -1,4 +1,4 @@
-"""Memory entries CRUD：ANCHOR / DECISIONS / PROGRESS 层的条目级增删改查。"""
+"""Memory API routes."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
 from app.db.models import MemoryEntry, User
+from app.features.memory.channel_memory import ENTRY_LAYERS
 from app.services.channel_service import ChannelService
-from app.services.memory.channel_memory import ENTRY_LAYERS
 
 router = APIRouter(prefix="/channels/{channel_id}/memory", tags=["memory"])
 
@@ -55,7 +55,7 @@ async def list_entries(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """列出频道的记忆条目，可按层筛选。"""
+    """List entries."""
     await ChannelService(db).require_channel_member(channel_id, current_user)
     q = select(MemoryEntry).where(MemoryEntry.channel_id == channel_id)
     if layer:
@@ -75,13 +75,13 @@ async def create_entry(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """创建一条记忆条目。"""
+    """Create entry."""
     await ChannelService(db).require_channel_admin(channel_id, current_user)
     layer_upper = body.layer.upper()
     if layer_upper not in _VALID_LAYERS:
         raise HTTPException(400, f"invalid layer, must be one of: {', '.join(sorted(_VALID_LAYERS))}")
 
-    # 获取该层当前最大 sort_order
+    # Read the current maximum sort_order for this layer.
     max_order = await db.scalar(
         select(func.max(MemoryEntry.sort_order))
         .where(MemoryEntry.channel_id == channel_id, MemoryEntry.layer == layer_upper)
@@ -111,7 +111,7 @@ async def update_entry(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """更新一条记忆条目。"""
+    """Update entry."""
     await ChannelService(db).require_channel_admin(channel_id, current_user)
     entry = await db.get(MemoryEntry, entry_id)
     if not entry or entry.channel_id != channel_id:
@@ -136,7 +136,7 @@ async def delete_entry(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """删除一条记忆条目。"""
+    """Delete entry."""
     await ChannelService(db).require_channel_admin(channel_id, current_user)
     entry = await db.get(MemoryEntry, entry_id)
     if not entry or entry.channel_id != channel_id:

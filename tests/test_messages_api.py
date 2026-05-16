@@ -1,20 +1,26 @@
-"""ChatCore 消息 API 测试."""
+"""Tests for test messages api."""
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models import (
     AIModel,
     BotAccount,
     Channel,
     ChannelMembership,
     FileRecord,
+    Message,
     PromptTemplate,
+    User,
     Workspace,
 )
 from app.services.file_processor.service import FilePipelineService
@@ -139,7 +145,7 @@ class FakeStorageProvider(StorageProvider):
 
 @pytest.mark.asyncio
 async def test_list_messages_empty(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/channels/{id}/messages 无消息时返回空列表."""
+    """Covers test list messages empty behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000001", name="W")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000001",
@@ -159,7 +165,7 @@ async def test_list_messages_empty(client: AsyncClient, db_session: AsyncSession
 
 @pytest.mark.asyncio
 async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSession) -> None:
-    """POST /api/channels/{id}/messages 发送消息，GET 可拉取到."""
+    """Covers test create message and list behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000002", name="W2")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000002",
@@ -192,11 +198,388 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_list_topic_messages_includes_nested_replies(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Covers test list topic messages includes nested replies behavior."""
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000062", name="W62")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000062",
+        workspace_id=ws.workspace_id,
+        name="topic-page-ch",
+        type="public",
+    )
+    other = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000063",
+        workspace_id=ws.workspace_id,
+        name="other-ch",
+        type="public",
+    )
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    root = Message(
+        msg_id="m1000000-0000-0000-0000-000000000062",
+        channel_id=ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000099",
+        sender_type="user",
+        content="topic root",
+        msg_type="topic",
+        created_at=base_time,
+    )
+    direct_reply = Message(
+        msg_id="m1000000-0000-0000-0000-000000000063",
+        channel_id=ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000099",
+        sender_type="user",
+        content="direct reply",
+        msg_type="reply",
+        in_reply_to_msg_id=root.msg_id,
+        created_at=base_time + timedelta(seconds=1),
+    )
+    nested_reply = Message(
+        msg_id="m1000000-0000-0000-0000-000000000064",
+        channel_id=ch.channel_id,
+        sender_id="b1000000-0000-0000-0000-000000000062",
+        sender_type="bot",
+        content="nested bot reply",
+        msg_type="reply",
+        in_reply_to_msg_id=direct_reply.msg_id,
+        created_at=base_time + timedelta(seconds=2),
+    )
+    unrelated = Message(
+        msg_id="m1000000-0000-0000-0000-000000000065",
+        channel_id=ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000099",
+        sender_type="user",
+        content="unrelated",
+        msg_type="normal",
+        created_at=base_time + timedelta(seconds=3),
+    )
+    other_channel_reply = Message(
+        msg_id="m1000000-0000-0000-0000-000000000066",
+        channel_id=other.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000099",
+        sender_type="user",
+        content="other channel reply",
+        msg_type="reply",
+        in_reply_to_msg_id=root.msg_id,
+        created_at=base_time + timedelta(seconds=4),
+    )
+    db_session.add_all([
+        ws,
+        ch,
+        other,
+        root,
+        direct_reply,
+        nested_reply,
+        unrelated,
+        other_channel_reply,
+    ])
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/channels/{ch.channel_id}/messages/topics/{root.msg_id}"
+    )
+
+    assert resp.status_code == 200
+    assert [item["msg_id"] for item in resp.json()["data"]] == [
+        root.msg_id,
+        direct_reply.msg_id,
+        nested_reply.msg_id,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_dm_message_normalizes_topics_but_preserves_replies(
+    monkeypatch,
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Covers test dm message normalizes topics but preserves replies behavior."""
+    import app.api.v1.messages.routes as message_routes
+
+    monkeypatch.setattr(
+        message_routes,
+        "_schedule_bot_pipeline_enqueue",
+        lambda *args, **kwargs: None,
+    )
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000052", name="W52")
+    dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000052",
+        workspace_id=ws.workspace_id,
+        name="dm:test:bot",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000052",
+        username="dm_shape_bot",
+        display_name="DM Shape Bot",
+        status="online",
+        binding_type="agent_bridge",
+    )
+    parent = Message(
+        msg_id="m1000000-0000-0000-0000-000000000052",
+        channel_id=dm.channel_id,
+        sender_id=current_user_id,
+        sender_type="user",
+        content="parent",
+        msg_type="normal",
+    )
+    db_session.add_all([
+        ws,
+        dm,
+        bot,
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=current_user_id,
+            member_type="user",
+            role="member",
+        ),
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+        parent,
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{dm.channel_id}/messages",
+        json={
+            "content": "topic should be normalized",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "msg_type": "topic",
+            "in_reply_to_msg_id": parent.msg_id,
+            "content_data": {"title": "Not a Topic"},
+        },
+    )
+
+    assert resp.status_code == 200
+    msg_id = resp.json()["data"]["msg_id"]
+    saved = await db_session.get(Message, msg_id)
+    assert saved is not None
+    assert saved.msg_type == "normal"
+    assert saved.in_reply_to_msg_id is None
+    assert saved.content_data is None
+    await db_session.refresh(parent)
+    assert parent.msg_type == "normal"
+
+    reply_resp = await client.post(
+        f"/api/v1/channels/{dm.channel_id}/messages",
+        json={
+            "content": "reply should stay linked",
+            "sender_id": current_user_id,
+            "sender_type": "user",
+            "msg_type": "reply",
+            "in_reply_to_msg_id": parent.msg_id,
+        },
+    )
+
+    assert reply_resp.status_code == 200
+    reply_id = reply_resp.json()["data"]["msg_id"]
+    reply = await db_session.get(Message, reply_id)
+    assert reply is not None
+    assert reply.msg_type == "reply"
+    assert reply.in_reply_to_msg_id == parent.msg_id
+    assert reply.content_data is None
+
+
+@pytest.mark.asyncio
+async def test_create_message_survives_bot_pipeline_enqueue_failure(
+    monkeypatch,
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Covers test create message survives bot pipeline enqueue failure behavior."""
+    import app.api.v1.messages.routes as message_routes
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000035", name="W35")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000035",
+        workspace_id=ws.workspace_id,
+        name="enqueue-failure-ch",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000032",
+        username="enqueue_fail_bot",
+        display_name="Enqueue Fail Bot",
+        status="online",
+    )
+    db_session.add_all([
+        ws,
+        ch,
+        bot,
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
+    await db_session.commit()
+
+    async def fail_enqueue(channel_id: str, msg_id: str) -> str:
+        raise RuntimeError("queue down")
+
+    class FailingBroker:
+        async def publish_channel(self, channel_id: str, message: dict) -> None:
+            raise RuntimeError("broker down")
+
+    monkeypatch.setattr(message_routes, "enqueue_bot_pipeline_job", fail_enqueue)
+    monkeypatch.setattr(message_routes, "get_realtime_broker", lambda: FailingBroker())
+
+    resp = await client.post(
+        f"/api/v1/channels/{ch.channel_id}/messages",
+        json={
+            "content": "@enqueue_fail_bot still saved",
+            "sender_id": "ignored",
+            "sender_type": "user",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["content"] == "@enqueue_fail_bot still saved"
+
+    rows = (await db_session.execute(select(message_routes.Message))).scalars().all()
+    assert any(row.msg_id == data["msg_id"] for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_create_message_returns_before_bot_pipeline_enqueue_completes(
+    monkeypatch,
+    db_session: AsyncSession,
+) -> None:
+    """Covers test create message returns before bot pipeline enqueue completes behavior."""
+    import app.api.v1.messages.routes as message_routes
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000033", name="W33")
+    user = User(
+        user_id="f0000000-0000-0000-0000-000000000133",
+        username="enqueue_slow_admin",
+        password_hash="x",
+        role="system_admin",
+    )
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000033",
+        workspace_id=ws.workspace_id,
+        name="enqueue-slow-ch",
+        type="public",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000033",
+        username="enqueue_slow_bot",
+        display_name="Enqueue Slow Bot",
+        status="online",
+    )
+    db_session.add_all([
+        ws,
+        user,
+        ch,
+        bot,
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
+    await db_session.commit()
+
+    class RecordingBackgroundTasks:
+        def __init__(self) -> None:
+            self.tasks: list[tuple[object, tuple, dict]] = []
+
+        def add_task(self, func, *args, **kwargs) -> None:
+            self.tasks.append((func, args, kwargs))
+
+    async def slow_enqueue(channel_id: str, msg_id: str) -> str:
+        raise AssertionError("enqueue must be deferred to the background task")
+        return "job-slow"
+
+    monkeypatch.setattr(message_routes, "enqueue_bot_pipeline_job", slow_enqueue)
+    background_tasks = RecordingBackgroundTasks()
+
+    data, secret_token = await message_routes._handle_send_message(
+        db_session,
+        channel_id=ch.channel_id,
+        body=message_routes.MessageCreate(
+            content="@enqueue_slow_bot returns immediately",
+            sender_id="ignored",
+            sender_type="user",
+        ),
+        current_user=user,
+        background_tasks=background_tasks,
+    )
+
+    assert secret_token is None
+    assert data.content == "@enqueue_slow_bot returns immediately"
+    assert len(background_tasks.tasks) == 1
+    func, args, kwargs = background_tasks.tasks[0]
+    assert func is message_routes._enqueue_bot_pipeline_bg
+    assert args == (ch.channel_id, data.msg_id)
+    assert kwargs == {}
+
+
+@pytest.mark.asyncio
+async def test_create_message_without_bot_target_skips_bot_pipeline_enqueue(
+    monkeypatch,
+    db_session: AsyncSession,
+) -> None:
+    """Covers test create message without bot target skips bot pipeline enqueue behavior."""
+    import app.api.v1.messages.routes as message_routes
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000034", name="W34")
+    user = User(
+        user_id="f0000000-0000-0000-0000-000000000134",
+        username="enqueue_skip_admin",
+        password_hash="x",
+        role="system_admin",
+    )
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000034",
+        workspace_id=ws.workspace_id,
+        name="enqueue-skip-ch",
+        type="public",
+    )
+    db_session.add_all([ws, user, ch])
+    await db_session.commit()
+
+    scheduled: list[tuple] = []
+    monkeypatch.setattr(
+        message_routes,
+        "_schedule_bot_pipeline_enqueue",
+        lambda *args, **kwargs: scheduled.append((args, kwargs)),
+    )
+
+    data, secret_token = await message_routes._handle_send_message(
+        db_session,
+        channel_id=ch.channel_id,
+        body=message_routes.MessageCreate(
+            content="plain message without bot",
+            sender_id="ignored",
+            sender_type="user",
+        ),
+        current_user=user,
+        background_tasks=None,
+    )
+
+    assert secret_token is None
+    assert data.content == "plain message without bot"
+    assert scheduled == []
+
+
+@pytest.mark.asyncio
 async def test_secret_message_content_stores_msg_id_reference(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """加密消息正文入库为带 msg_id 的引用，便于后续定位解密对象。"""
+    """Covers test secret message content stores msg id reference behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000022", name="W22")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000022",
@@ -222,6 +605,7 @@ async def test_secret_message_content_stores_msg_id_reference(
     expected = f"🔒 [加密消息:{data['msg_id']}]"
     assert data["content"] == expected
     assert data["secret_token"]
+    assert data["created_at"].endswith("+00:00")
 
     resp2 = await client.get(f"/api/v1/channels/{ch.channel_id}/messages")
     assert resp2.status_code == 200
@@ -234,7 +618,7 @@ async def test_secret_message_content_stores_msg_id_reference(
 async def test_create_message_uses_authenticated_user_identity(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """客户端传入的 sender_id/sender_type 不能伪造消息发送者。"""
+    """Covers test create message uses authenticated user identity behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000021", name="W21")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000021",
@@ -303,6 +687,531 @@ async def test_create_message_with_file_metadata(client: AsyncClient, db_session
 
 
 @pytest.mark.asyncio
+async def test_forward_single_message_to_channel_clones_attachments(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000071", name="W71")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000071",
+        workspace_id=ws.workspace_id,
+        name="source-forward",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000072",
+        workspace_id=ws.workspace_id,
+        name="target-forward",
+        type="public",
+    )
+    file_path = tmp_path / "forward-note.txt"
+    file_path.write_text("forward attachment", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000071",
+        channel_id=source_ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000071",
+        original_path=str(file_path),
+        original_filename="forward-note.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    source_msg = Message(
+        msg_id="m1000000-0000-0000-0000-000000000071",
+        channel_id=source_ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000071",
+        sender_type="user",
+        content="source text",
+        file_ids=[record.file_id],
+    )
+    db_session.add_all([ws, source_ch, target_ch, record, source_msg])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages/forward",
+        json={
+            "source_message_ids": [source_msg.msg_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 200
+    created = resp.json()["data"]["messages"]
+    assert len(created) == 1
+    forwarded = created[0]
+    assert forwarded["channel_id"] == target_ch.channel_id
+    assert forwarded["sender_id"] == "a0000000-0000-0000-0000-000000000099"
+    assert forwarded["msg_type"] == "normal"
+    assert "转发自" in forwarded["content"]
+    assert "source text" in forwarded["content"]
+    assert len(forwarded["file_ids"]) == 1
+    assert forwarded["file_ids"][0] != record.file_id
+
+    clone = await db_session.get(FileRecord, forwarded["file_ids"][0])
+    assert clone is not None
+    assert clone.channel_id == target_ch.channel_id
+    assert clone.uploader_id == "a0000000-0000-0000-0000-000000000099"
+    assert clone.original_path == record.original_path
+    assert clone.original_filename == record.original_filename
+
+
+@pytest.mark.asyncio
+async def test_forward_single_message_to_dm(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000073", name="W73")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000073",
+        workspace_id=ws.workspace_id,
+        name="source-to-dm",
+        type="public",
+    )
+    dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000074",
+        workspace_id=ws.workspace_id,
+        name="dm:test:forward",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000073",
+        username="forward_dm_bot",
+        display_name="Forward DM Bot",
+        status="online",
+    )
+    source_msg = Message(
+        msg_id="m1000000-0000-0000-0000-000000000073",
+        channel_id=source_ch.channel_id,
+        sender_id=current_user_id,
+        sender_type="user",
+        content="forward into dm",
+    )
+    db_session.add_all([
+        ws,
+        source_ch,
+        dm,
+        bot,
+        ChannelMembership(channel_id=dm.channel_id, member_id=current_user_id, member_type="user"),
+        ChannelMembership(channel_id=dm.channel_id, member_id=bot.bot_id, member_type="bot"),
+        source_msg,
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{dm.channel_id}/messages/forward",
+        json={
+            "source_message_ids": [source_msg.msg_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 200
+    forwarded = resp.json()["data"]["messages"][0]
+    assert forwarded["channel_id"] == dm.channel_id
+    assert forwarded["sender_id"] == current_user_id
+    assert "forward into dm" in forwarded["content"]
+
+
+@pytest.mark.asyncio
+async def test_forward_topic_preserves_selected_order(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000075", name="W75")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000075",
+        workspace_id=ws.workspace_id,
+        name="topic-source",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000076",
+        workspace_id=ws.workspace_id,
+        name="topic-target",
+        type="public",
+    )
+    first = Message(
+        msg_id="m1000000-0000-0000-0000-000000000075",
+        channel_id=source_ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000075",
+        sender_type="user",
+        content="first selected second",
+    )
+    second = Message(
+        msg_id="m1000000-0000-0000-0000-000000000076",
+        channel_id=source_ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000075",
+        sender_type="user",
+        content="second selected first",
+    )
+    db_session.add_all([ws, source_ch, target_ch, first, second])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages/forward",
+        json={
+            "source_message_ids": [second.msg_id, first.msg_id],
+            "mode": "topic",
+        },
+    )
+
+    assert resp.status_code == 200
+    created = resp.json()["data"]["messages"]
+    assert len(created) == 3
+    root, reply_one, reply_two = created
+    assert root["msg_type"] == "topic"
+    assert root["content_data"]["kind"] == "forward_bundle"
+    assert reply_one["msg_type"] == "reply"
+    assert reply_one["in_reply_to_msg_id"] == root["msg_id"]
+    assert "second selected first" in reply_one["content"]
+    assert reply_two["in_reply_to_msg_id"] == root["msg_id"]
+    assert "first selected second" in reply_two["content"]
+
+
+@pytest.mark.asyncio
+async def test_forward_single_file_without_message(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000077", name="W77")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000077",
+        workspace_id=ws.workspace_id,
+        name="file-source",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000078",
+        workspace_id=ws.workspace_id,
+        name="file-target",
+        type="public",
+    )
+    file_path = tmp_path / "only-file.txt"
+    file_path.write_text("file only", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000077",
+        channel_id=source_ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000077",
+        original_path=str(file_path),
+        original_filename="only-file.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, source_ch, target_ch, record])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages/forward",
+        json={
+            "source_file_ids": [record.file_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 200
+    forwarded = resp.json()["data"]["messages"][0]
+    assert forwarded["content"] == "转发文件：only-file.txt"
+    assert len(forwarded["file_ids"]) == 1
+    clone = await db_session.get(FileRecord, forwarded["file_ids"][0])
+    assert clone is not None
+    assert clone.channel_id == target_ch.channel_id
+    assert clone.original_path == record.original_path
+
+
+@pytest.mark.asyncio
+async def test_forward_secret_message_is_rejected(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000079", name="W79")
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000079",
+        workspace_id=ws.workspace_id,
+        name="secret-source",
+        type="public",
+    )
+    target_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000080",
+        workspace_id=ws.workspace_id,
+        name="secret-target",
+        type="public",
+    )
+    secret_msg = Message(
+        msg_id="m1000000-0000-0000-0000-000000000079",
+        channel_id=source_ch.channel_id,
+        sender_id="a0000000-0000-0000-0000-000000000079",
+        sender_type="user",
+        content="secret",
+        is_secret=True,
+    )
+    db_session.add_all([ws, source_ch, target_ch, secret_msg])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_ch.channel_id}/messages/forward",
+        json={
+            "source_message_ids": [secret_msg.msg_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_file_preview_content_returns_local_markdown(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000030", name="W30")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000030",
+        workspace_id=ws.workspace_id,
+        name="preview-ch",
+        type="public",
+    )
+    file_path = tmp_path / "preview.md"
+    file_path.write_text("# Preview\n\nhello preview", encoding="utf-8")
+    record = FileRecord(
+        file_id="file-preview-md1",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="preview.md",
+        content_type="text/markdown",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/files/{record.file_id}/content")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["preview_type"] == "markdown"
+    assert "hello preview" in data["content"]
+
+
+@pytest.mark.asyncio
+async def test_file_preview_content_parses_local_html(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000091", name="W91")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000091",
+        workspace_id=ws.workspace_id,
+        name="preview-html-ch",
+        type="public",
+    )
+    file_path = tmp_path / "preview.html"
+    file_path.write_text(
+        "<!doctype html><html><head><style>.x{color:red}</style></head>"
+        "<body><h1>HTML 预览</h1><p>Hello html preview</p>"
+        "<script>alert('skip me')</script></body></html>",
+        encoding="utf-8",
+    )
+    record = FileRecord(
+        file_id="file-preview-html",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="preview.html",
+        content_type="text/html",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/files/{record.file_id}/content")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["preview_type"] == "html"
+    assert "Hello html preview" in data["content"]
+    assert "skip me" not in data["content"]
+
+
+@pytest.mark.asyncio
+async def test_file_preview_handles_html_with_generic_content_type(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000092", name="W92")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000092",
+        workspace_id=ws.workspace_id,
+        name="preview-html-generic-ch",
+        type="public",
+    )
+    file_path = tmp_path / "report.html"
+    file_path.write_text(
+        "<!doctype html><html><body><h1>HTML report</h1></body></html>",
+        encoding="utf-8",
+    )
+    record = FileRecord(
+        file_id="file-preview-html-generic",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="report.html",
+        content_type="application/octet-stream",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    preview_resp = await client.get(f"/api/v1/files/{record.file_id}/preview")
+    assert preview_resp.status_code == 200
+    assert preview_resp.headers["content-type"].startswith("text/html")
+    assert preview_resp.headers["content-disposition"].startswith("inline;")
+    assert "HTML report" in preview_resp.text
+
+    content_resp = await client.get(f"/api/v1/files/{record.file_id}/content")
+    assert content_resp.status_code == 200
+    data = content_resp.json()["data"]
+    assert data["content_type"] == "text/html"
+    assert data["preview_type"] == "html"
+    assert "HTML report" in data["content"]
+
+
+@pytest.mark.asyncio
+async def test_file_kkfileview_url_uses_signed_public_source(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "public_base_url", "agentnexus.epichust.com")
+    monkeypatch.setattr(settings, "kkfileview_enabled", True)
+    monkeypatch.setattr(settings, "kkfileview_base_url", "https://agentnexus.epichust.com/preview/")
+    monkeypatch.setattr(settings, "kkfileview_token_ttl_seconds", 600)
+    monkeypatch.setattr(settings, "jwt_secret_key", "x" * 64)
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000093", name="W93")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000093",
+        workspace_id=ws.workspace_id,
+        name="preview-kk-ch",
+        type="public",
+    )
+    file_path = tmp_path / "deck.pptx"
+    file_path.write_bytes(b"pptx bytes")
+    record = FileRecord(
+        file_id="file-preview-kk-pptx",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="deck.pptx",
+        content_type="application/octet-stream",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/files/{record.file_id}/kkfileview")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["enabled"] is True
+
+    viewer = urlparse(data["viewer_url"])
+    assert viewer.scheme == "https"
+    assert viewer.netloc == "agentnexus.epichust.com"
+    assert viewer.path == "/preview/onlinePreview"
+
+    encoded_source = parse_qs(viewer.query)["url"][0]
+    source_url = base64.b64decode(encoded_source).decode("utf-8")
+    source = urlparse(source_url)
+    assert source.scheme == "https"
+    assert source.netloc == "agentnexus.epichust.com"
+    assert source.path == f"/api/v1/files/{record.file_id}/public-preview"
+    assert parse_qs(source.query)["fullfilename"] == ["deck.pptx"]
+
+    source_resp = await client.get(f"{source.path}?{source.query}")
+    assert source_resp.status_code == 200
+    assert source_resp.content == b"pptx bytes"
+    assert source_resp.headers["content-disposition"].startswith("inline;")
+
+    xlsx_path = tmp_path / "sheet.xlsx"
+    xlsx_path.write_bytes(b"xlsx bytes")
+    xlsx_record = FileRecord(
+        file_id="file-preview-kk-xlsx",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(xlsx_path),
+        original_filename="sheet.xlsx",
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        size_bytes=xlsx_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add(xlsx_record)
+    await db_session.commit()
+
+    xlsx_resp = await client.get(f"/api/v1/files/{xlsx_record.file_id}/kkfileview")
+    assert xlsx_resp.status_code == 200
+    xlsx_data = xlsx_resp.json()["data"]
+    assert xlsx_data["enabled"] is True
+    xlsx_source = base64.b64decode(parse_qs(urlparse(xlsx_data["viewer_url"]).query)["url"][0]).decode("utf-8")
+    assert "fullfilename=sheet.xlsx" in xlsx_source
+
+
+@pytest.mark.asyncio
+async def test_file_preview_content_parses_local_xlsx(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    from openpyxl import Workbook
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000031", name="W31")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000031",
+        workspace_id=ws.workspace_id,
+        name="preview-xlsx-ch",
+        type="public",
+    )
+    file_path = tmp_path / "report.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Summary"
+    sheet.append(["Name", "Count"])
+    sheet.append(["Alpha", 3])
+    workbook.save(file_path)
+    workbook.close()
+    record = FileRecord(
+        file_id="file-preview-xlsx",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="report.xlsx",
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/files/{record.file_id}/content")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["preview_type"] == "markdown"
+    assert "## Summary" in data["content"]
+    assert "| Alpha | 3 |" in data["content"]
+
+
+@pytest.mark.asyncio
 async def test_create_presigned_upload_returns_file_record(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -348,6 +1257,37 @@ async def test_create_presigned_upload_returns_file_record(
     assert record.original_filename == "report.txt"
     assert record.status == "pending_upload"
     assert record.object_key == data["object_key"]
+
+    html_resp = await client.post(
+        "/api/v1/files/presign",
+        json={
+            "channel_id": ch.channel_id,
+            "uploader_id": "a0000000-0000-0000-0000-000000000011",
+            "filename": "preview.html",
+            "content_type": "text/html",
+            "size": 256,
+        },
+    )
+    assert html_resp.status_code == 200
+    html_data = html_resp.json()["data"]
+    assert html_data["headers"]["Content-Type"] == "text/html"
+
+    pptx_resp = await client.post(
+        "/api/v1/files/presign",
+        json={
+            "channel_id": ch.channel_id,
+            "uploader_id": "a0000000-0000-0000-0000-000000000011",
+            "filename": "deck.pptx",
+            "content_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "size": 512,
+        },
+    )
+    assert pptx_resp.status_code == 200
+    pptx_data = pptx_resp.json()["data"]
+    assert (
+        pptx_data["headers"]["Content-Type"]
+        == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
 
 
 @pytest.mark.asyncio

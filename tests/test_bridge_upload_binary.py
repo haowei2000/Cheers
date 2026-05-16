@@ -1,8 +1,4 @@
-"""bridge /files/upload-binary 端点测试（sendMedia 协议的 AgentNexus 侧）。
-
-覆盖：鉴权（missing / invalid bearer）、频道成员校验、文件保存 + FileRecord
-创建、size cap、content-type 推断、空 body 拒绝。
-"""
+"""Tests for test bridge upload binary."""
 from __future__ import annotations
 
 import uuid
@@ -20,13 +16,13 @@ from app.db.models import (
     FileRecord,
     Workspace,
 )
-from app.services.openclaw_bridge.tokens import apply_token_to_bot
+from app.features.agent_bridge.tokens import apply_token_to_bot
 
 
 async def _seed_bot_in_channel(
     db_session: AsyncSession,
 ) -> tuple[str, str, str]:
-    """返回 (bot_id, channel_id, plaintext_token)."""
+    """Covers seed bot in channel behavior."""
     ws_id = f"ws-{uuid.uuid4().hex[:8]}"
     ch_id = f"ch-{uuid.uuid4().hex[:8]}"
     bot_id = f"bot-{uuid.uuid4().hex[:8]}"
@@ -38,7 +34,7 @@ async def _seed_bot_in_channel(
         username=f"u-{bot_id[-8:]}",
         display_name="BU",
         status="online",
-        binding_type="websocket",
+        binding_type="agent_bridge",
         binding_config={},
         bot_token_hash=None,
         bot_token_prefix=None,
@@ -61,14 +57,14 @@ async def test_upload_binary_happy_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
-    monkeypatch.setattr(settings, "openclaw_bridge_enabled", True)
-    monkeypatch.setattr(settings, "openclaw_bridge_token", "dummy")
+    monkeypatch.setattr(settings, "agent_bridge_enabled", True)
+    monkeypatch.setattr(settings, "agent_bridge_token", "dummy")
 
     bot_id, ch_id, token = await _seed_bot_in_channel(db_session)
 
     body = b"\x89PNG\r\n\x1a\npayload-bytes"
     resp = await client.post(
-        "/api/v1/openclaw/bridge/files/upload-binary",
+        "/api/v1/agent-bridge/files/upload-binary",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "image/png",
@@ -93,7 +89,7 @@ async def test_upload_binary_happy_path(
     assert rec.size_bytes == len(body)
     assert rec.status == "ready"
 
-    # 文件落到 data_dir/generated/{channel_id}/{file_id}.png
+    # The file lands in data_dir/generated/{channel_id}/{file_id}.png.
     on_disk = tmp_path / "generated" / ch_id / f"{data['file_id']}.png"
     assert on_disk.exists()
     assert on_disk.read_bytes() == body
@@ -108,7 +104,7 @@ async def test_upload_binary_rejects_missing_token(
     _, ch_id, _ = await _seed_bot_in_channel(db_session)
 
     resp = await client.post(
-        "/api/v1/openclaw/bridge/files/upload-binary",
+        "/api/v1/agent-bridge/files/upload-binary",
         headers={
             "Content-Type": "text/plain",
             "X-Channel-Id": ch_id,
@@ -125,10 +121,10 @@ async def test_upload_binary_rejects_bot_not_in_channel(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
-    monkeypatch.setattr(settings, "openclaw_bridge_enabled", True)
+    monkeypatch.setattr(settings, "agent_bridge_enabled", True)
 
     _, _, token = await _seed_bot_in_channel(db_session)
-    # 另一个频道，bot 不是成员
+    # Another channel where the bot is not a member.
     other_ws = f"ws-{uuid.uuid4().hex[:8]}"
     other_ch = f"ch-{uuid.uuid4().hex[:8]}"
     db_session.add(Workspace(workspace_id=other_ws, name="OW"))
@@ -136,7 +132,7 @@ async def test_upload_binary_rejects_bot_not_in_channel(
     await db_session.commit()
 
     resp = await client.post(
-        "/api/v1/openclaw/bridge/files/upload-binary",
+        "/api/v1/agent-bridge/files/upload-binary",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "text/plain",
@@ -154,12 +150,12 @@ async def test_upload_binary_rejects_empty_body(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
-    monkeypatch.setattr(settings, "openclaw_bridge_enabled", True)
+    monkeypatch.setattr(settings, "agent_bridge_enabled", True)
 
     _, ch_id, token = await _seed_bot_in_channel(db_session)
 
     resp = await client.post(
-        "/api/v1/openclaw/bridge/files/upload-binary",
+        "/api/v1/agent-bridge/files/upload-binary",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "text/plain",
@@ -177,13 +173,13 @@ async def test_upload_binary_rejects_oversize(
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
-    monkeypatch.setattr(settings, "openclaw_bridge_enabled", True)
+    monkeypatch.setattr(settings, "agent_bridge_enabled", True)
     monkeypatch.setattr(settings, "file_upload_max_bytes", 100)
 
     _, ch_id, token = await _seed_bot_in_channel(db_session)
 
     resp = await client.post(
-        "/api/v1/openclaw/bridge/files/upload-binary",
+        "/api/v1/agent-bridge/files/upload-binary",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/octet-stream",
@@ -194,7 +190,7 @@ async def test_upload_binary_rejects_oversize(
     )
     assert resp.status_code == 413
 
-    # FileRecord 应该没被创建（写到一半被回滚/unlink）
+    # FileRecord should not be created after mid-write rollback/unlink.
     rows = (await db_session.execute(
         select(FileRecord).where(FileRecord.channel_id == ch_id)
     )).scalars().all()
@@ -206,14 +202,14 @@ async def test_upload_binary_infers_content_type_from_filename(
     client: AsyncClient, db_session: AsyncSession,
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Content-Type 缺失或 octet-stream 时用文件名扩展名兜底。"""
+    """Covers test upload binary infers content type from filename behavior."""
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
-    monkeypatch.setattr(settings, "openclaw_bridge_enabled", True)
+    monkeypatch.setattr(settings, "agent_bridge_enabled", True)
 
     _, ch_id, token = await _seed_bot_in_channel(db_session)
 
     resp = await client.post(
-        "/api/v1/openclaw/bridge/files/upload-binary",
+        "/api/v1/agent-bridge/files/upload-binary",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/octet-stream",

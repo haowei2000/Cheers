@@ -1,9 +1,11 @@
 /**
- * 本地 ambient declarations for OpenClaw plugin SDK —— tsc 编译不需要真装 openclaw。
- * 运行时由 OpenClaw CLI 的 node_modules 提供真实实现。
+ * Local ambient declarations for the OpenClaw plugin SDK so tsc does not need
+ * a real openclaw package installation.
+ * At runtime, the real implementation is provided by the OpenClaw CLI
+ * node_modules.
  *
- * 对齐 OpenClaw 2026.4.15 的公开 API（doc + /opt/homebrew/lib/node_modules/openclaw/
- * dist/plugin-sdk/）。
+ * Aligned with the public OpenClaw 2026.4.15 API from docs and
+ * /opt/homebrew/lib/node_modules/openclaw/dist/plugin-sdk/.
  */
 
 declare module "openclaw/plugin-sdk/channel-core" {
@@ -13,7 +15,7 @@ declare module "openclaw/plugin-sdk/channel-core" {
     [k: string]: unknown;
   };
 
-  /** PluginRuntime：权限按 gateway request scope 分级。 */
+  /** PluginRuntime permissions are scoped by gateway request scope. */
   export interface PluginRuntime {
     events?: {
       onAgentEvent?: (listener: (evt: {
@@ -47,7 +49,7 @@ declare module "openclaw/plugin-sdk/channel-core" {
     };
     channel?: {
       session?: {
-        resolveStorePath(store?: string, opts?: { workspaceDir?: string }): string;
+        resolveStorePath(store?: string, opts?: { agentId?: string; workspaceDir?: string }): string;
         updateLastRoute(p: {
           storePath: string;
           sessionKey: string;
@@ -64,7 +66,7 @@ declare module "openclaw/plugin-sdk/channel-core" {
     [k: string]: unknown;
   }
 
-  /** HTTP route handler 运行在 gateway request scope 里，合法使用 subagent.run。 */
+  /** HTTP route handlers run in gateway request scope and may use subagent.run. */
   export interface OpenClawPluginHttpRouteParams {
     path: string;
     handler: (req: unknown, res: unknown) => Promise<boolean | void> | boolean | void;

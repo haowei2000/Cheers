@@ -1,26 +1,28 @@
-"""ChatCore 请求/响应模型."""
+"""ChatCore request and response schemas."""
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.prompt_templates import DEFAULT_TEMPLATE_VARIABLES, DEFAULT_USER_TEMPLATE
+
 # ==================== AI Model Schemas ====================
 
 class AIModelCreate(BaseModel):
-    """创建 AI 模型."""
-    name: str = Field(..., min_length=1, max_length=64, description="显示名称，如 GPT-4o")
-    provider: str = Field(..., min_length=1, max_length=32, description="提供商: openai, ollama, anthropic")
-    model_name: str = Field(..., min_length=1, max_length=64, description="API 模型名，如 gpt-4o")
+    """AI model creation schema."""
+    name: str = Field(..., min_length=1, max_length=64, description="Display name, for example GPT-4o")
+    provider: str = Field(..., min_length=1, max_length=32, description="Provider: openai, ollama, anthropic")
+    model_name: str = Field(..., min_length=1, max_length=64, description="API model name, for example gpt-4o")
     base_url: str = Field(..., min_length=1, max_length=512, description="API Base URL")
     api_key: str | None = Field(default=None, description="API Key")
-    description: str | None = Field(default=None, description="模型描述")
+    description: str | None = Field(default=None, description="Model description")
     is_enabled: bool = Field(default=True)
-    is_public: bool = Field(default=False, description="保留字段；用户创建的模型始终仅创建者可见")
-    config: dict[str, Any] | None = Field(default=None, description="额外配置如 temperature, max_tokens")
+    is_public: bool = Field(default=False, description="Reserved field; user-created models are only visible to their creator")
+    config: dict[str, Any] | None = Field(default=None, description="Extra configuration such as temperature and max_tokens")
 
 
 class AIModelUpdate(BaseModel):
-    """更新 AI 模型."""
+    """AI model update schema."""
     name: str | None = Field(default=None, min_length=1, max_length=64)
     provider: str | None = Field(default=None, min_length=1, max_length=32)
     model_name: str | None = Field(default=None, min_length=1, max_length=64)
@@ -28,12 +30,12 @@ class AIModelUpdate(BaseModel):
     api_key: str | None = Field(default=None)
     description: str | None = Field(default=None)
     is_enabled: bool | None = Field(default=None)
-    is_public: bool | None = Field(default=None, description="保留字段；用户创建的模型始终仅创建者可见")
+    is_public: bool | None = Field(default=None, description="Reserved field; user-created models are only visible to their creator")
     config: dict[str, Any] | None = Field(default=None)
 
 
 class AIModelInResponse(BaseModel):
-    """AI 模型响应."""
+    """AI model response schema."""
     model_config = ConfigDict(from_attributes=True)
 
     model_id: str
@@ -47,23 +49,23 @@ class AIModelInResponse(BaseModel):
     is_public: bool = True
     config: dict[str, Any] | None = None
     created_at: datetime | None = None
-    # API Key 掩码显示
+    # Masked API-key display.
     api_key_masked: str | None = None
 
 
 # ==================== Prompt Template Schemas ====================
 
 class PromptTemplateCreate(BaseModel):
-    """创建提示词模板."""
-    name: str = Field(..., min_length=1, max_length=64, description="模板名称，如 代码审查")
-    description: str | None = Field(default=None, description="模板描述")
-    system_prompt: str = Field(..., min_length=1, description="系统提示词")
-    user_template: str = Field(default="{{message}}", description="用户消息模板，使用 {{变量}} 占位")
-    variables: list[str] = Field(default=["message"], description="模板变量列表")
+    """Prompt template creation schema."""
+    name: str = Field(..., min_length=1, max_length=64, description="Template name, for example Code Review")
+    description: str | None = Field(default=None, description="Template description")
+    system_prompt: str = Field(..., min_length=1, description="System prompt")
+    user_template: str = Field(default=DEFAULT_USER_TEMPLATE, description="User message template using {{variable}} placeholders")
+    variables: list[str] = Field(default=DEFAULT_TEMPLATE_VARIABLES, description="Template variable list")
 
 
 class PromptTemplateUpdate(BaseModel):
-    """更新提示词模板."""
+    """Prompt template update schema."""
     name: str | None = Field(default=None, min_length=1, max_length=64)
     description: str | None = Field(default=None)
     system_prompt: str | None = Field(default=None, min_length=1)
@@ -72,7 +74,7 @@ class PromptTemplateUpdate(BaseModel):
 
 
 class PromptTemplateInResponse(BaseModel):
-    """提示词模板响应."""
+    """Prompt template response schema."""
     model_config = ConfigDict(from_attributes=True)
 
     template_id: str
@@ -89,35 +91,36 @@ class PromptTemplateInResponse(BaseModel):
 # ==================== Bot Schemas ====================
 
 class BotCreate(BaseModel):
-    """创建 Bot：选择模型 + 选择模板（HTTP Bot），或绑定到 OpenClaw channel plugin（WebSocket Bot）."""
+    """Bot creation schema."""
     bot_id: str | None = None
-    username: str = Field(..., min_length=1, max_length=64, description="@ 用的名字")
+    username: str = Field(..., min_length=1, max_length=64, description="Username used for @mentions")
     display_name: str | None = Field(default=None, max_length=255)
-    description: str | None = Field(default=None, description="Bot 描述")
-    # HTTP Bot 必填；WebSocket Bot 可省略
-    model_id: str | None = Field(default=None, description="关联的 AI 模型 ID（HTTP Bot 必填）")
-    template_id: str | None = Field(default=None, description="关联的提示词模板 ID（HTTP Bot 必填）")
-    custom_system_prompt: str | None = Field(default=None, description="可选：覆盖模板的系统提示词")
+    description: str | None = Field(default=None, description="Bot description")
+    # Required for HTTP bots; Agent Bridge bots do not use a model, but may use a template for plugin tasks.
+    model_id: str | None = Field(default=None, description="Associated AI model ID, required for HTTP bots")
+    template_id: str | None = Field(default=None, description="Associated prompt template ID")
+    custom_system_prompt: str | None = Field(default=None, description="Optional system prompt override for the template")
     status: str = Field(default="online", pattern="^(online|offline|busy)$")
     scope: Literal["private", "friend", "everyone"] = Field(
         default="friend",
-        description="Bot 使用范围：private=仅自己，friend=自己和好友，everyone=所有登录用户",
+        description="Bot visibility: private=self only, friend=self and friends, everyone=all signed-in users",
     )
     intro: str | None = Field(default=None, description='JSON: {"capabilities": [...], "description": "..."}')
     avatar_url: str | None = Field(default=None)
     binding_type: str = Field(
         default="http",
-        pattern="^(http|websocket)$",
-        description="绑定类型：'http'=OpenAI 兼容 HTTP（默认）；'websocket'=OpenClaw channel plugin 异步回推",
+        pattern="^(http|agent_bridge)$",
+        description="Binding type: 'http'=OpenAI-compatible HTTP by default; 'agent_bridge'=external provider callback",
     )
+    bridge_provider: str = Field(default="generic", description="Agent Bridge provider, for example generic/openclaw")
     binding_config: dict | None = Field(
         default=None,
-        description="绑定相关配置，例如 WebSocket Bot 的 {agent_id, gateway}",
+        description="Binding-specific configuration, for example {agent_id, gateway} for Agent Bridge bots",
     )
 
 
 class BotUpdate(BaseModel):
-    """更新 Bot."""
+    """Bot update schema."""
     username: str | None = Field(default=None, min_length=1, max_length=64)
     display_name: str | None = Field(default=None)
     description: str | None = Field(default=None)
@@ -128,7 +131,8 @@ class BotUpdate(BaseModel):
     scope: Literal["private", "friend", "everyone"] | None = Field(default=None)
     intro: str | None = Field(default=None)
     avatar_url: str | None = Field(default=None)
-    binding_type: str | None = Field(default=None, pattern="^(http|websocket)$")
+    binding_type: str | None = Field(default=None, pattern="^(http|agent_bridge)$")
+    bridge_provider: str | None = Field(default=None)
     binding_config: dict | None = Field(default=None)
 
 
@@ -139,7 +143,7 @@ class BotOwnerInResponse(BaseModel):
 
 
 class BotInResponse(BaseModel):
-    """Bot 响应（包含关联的模型和模板信息）."""
+    """Bot response schema with model and template metadata."""
     model_config = ConfigDict(from_attributes=True)
 
     bot_id: str
@@ -153,30 +157,31 @@ class BotInResponse(BaseModel):
     custom_system_prompt: str | None = None
     created_at: datetime | None = None
     binding_type: str = "http"
+    bridge_provider: str = "generic"
     binding_config: dict | None = None
     is_builtin: bool = False
-    # WebSocket Bot token 元信息：常规响应只回前缀与轮换时间，明文 bot_token
-    # 只在 create / rotate 接口一次性返回
+    # Agent Bridge token metadata; regular responses only include prefix/rotation data.
+    # The plaintext bot_token is returned once by create/rotate endpoints.
     bot_token_prefix: str | None = None
     bot_token_rotated_at: datetime | None = None
-    bot_token: str | None = None  # 仅 create / rotate 响应里有值；其它接口永远为 None
+    bot_token: str | None = None  # Only create/rotate responses include a value.
     connection_status: str = "not_required"
     is_online: bool = True
     control_connected: bool | None = None
     data_connected: bool | None = None
 
-    # 关联信息（WebSocket Bot 可能没有）
+    # Associated metadata; Agent Bridge bots may omit it.
     model_id: str | None = None
     template_id: str | None = None
     model_name: str | None = None  # AIModel.name
     template_name: str | None = None  # PromptTemplate.name
-    created_by: str | None = None  # 创建者 user_id
+    created_by: str | None = None  # Creator user_id.
     owner: BotOwnerInResponse | None = None
     can_manage: bool = False
 
 
 class BotSimpleInResponse(BaseModel):
-    """简化版 Bot 响应（用于列表）."""
+    """Compact Bot response schema."""
     model_config = ConfigDict(from_attributes=True)
 
     bot_id: str
@@ -205,23 +210,23 @@ class BotSimpleInResponse(BaseModel):
 # ==================== OpenClaw Quick Connect ====================
 
 class OpenClawQuickConnect(BaseModel):
-    """快速连接 OpenClaw：输入 URL + Token 一键创建 Bot 并探测能力."""
-    url: str = Field(..., description="OpenClaw gateway URL，如 http://host:port 或 http://host:port/v1")
-    token: str = Field(..., description="Bearer 鉴权 Token")
-    agent_id: str = Field(default="main", description="Agent ID（即模型名，如 main）")
-    bot_username: str | None = Field(default=None, description="Bot 用户名（为空则自动生成）")
-    display_name: str | None = Field(default=None, description="Bot 显示名称（为空则自动生成）")
-    channel_id: str | None = Field(default=None, description="创建后自动加入该频道")
+    """OpenClaw quick-connect request schema."""
+    url: str = Field(..., description="OpenClaw gateway URL, for example http://host:port or http://host:port/v1")
+    token: str = Field(..., description="Bearer authentication token")
+    agent_id: str = Field(default="main", description="Agent ID, usually the model name such as main")
+    bot_username: str | None = Field(default=None, description="Bot username; generated automatically when empty")
+    display_name: str | None = Field(default=None, description="Bot display name; generated automatically when empty")
+    channel_id: str | None = Field(default=None, description="Channel to join automatically after creation")
     scope: Literal["private", "friend", "everyone"] | None = Field(
         default=None,
-        description="Bot 使用范围；OpenClaw 快速接入默认 private",
+        description="Bot visibility; OpenClaw quick connect defaults to private",
     )
 
 
 # ==================== Channel & Message Schemas ====================
 
 class ChannelCreate(BaseModel):
-    """创建频道."""
+    """Channel Create schema or model."""
     workspace_id: str
     name: str
     type: str = "public"
@@ -231,7 +236,7 @@ class ChannelCreate(BaseModel):
 
 
 class ChannelInResponse(BaseModel):
-    """频道响应."""
+    """Channel In Response schema or model."""
     model_config = ConfigDict(from_attributes=True)
     channel_id: str
     workspace_id: str
@@ -245,13 +250,13 @@ class ChannelInResponse(BaseModel):
     can_manage: bool = False
     can_invite_members: bool = False
     can_add_bots: bool = False
-    # 用户在该频道未读的消息数（由 channel_memberships.last_read_at 派生）。
-    # 未登录或非成员时保持 None。
+    # Number of unread messages for the user in this channel, derived from channel_memberships.last_read_at.
+    # Remains None for anonymous users or non-members.
     unread_count: int | None = None
 
 
 class DMCounterparty(BaseModel):
-    """DM 对方的最小档案。既可以是用户也可以是 bot。"""
+    """Direct-message counterparty profile."""
     member_id: str
     member_type: str  # "user" | "bot"
     username: str | None = None
@@ -260,18 +265,29 @@ class DMCounterparty(BaseModel):
 
 
 class DMInResponse(BaseModel):
-    """一条 Direct Message 在列表里展示所需的字段。"""
+    """D M In Response schema or model."""
     channel_id: str
     workspace_id: str
     counterparty: DMCounterparty
+    title: str | None = None
+    project_id: str | None = None
+    project_title: str | None = None
+    chat_title: str | None = None
+    session_scope_id: str | None = None
+    created_at: datetime | None = None
     unread_count: int | None = None
 
 
 class DMCreateRequest(BaseModel):
-    """POST /api/v1/dms 请求体：在某 workspace 内与对方开启/复用 DM。"""
+    """D M Create Request schema or model."""
     workspace_id: str
     member_id: str
     member_type: str  # "user" | "bot"
+    create_new: bool = False
+    title: str | None = Field(default=None, max_length=80)
+    project_id: str | None = Field(default=None, max_length=80)
+    project_title: str | None = Field(default=None, max_length=80)
+    chat_title: str | None = Field(default=None, max_length=80)
 
 
 # ==================== Global search ====================
@@ -281,7 +297,7 @@ class SearchChannelHit(BaseModel):
     channel_id: str
     name: str
     workspace_id: str
-    type: str  # 实际值排除了 "dm"（dm 单独通过 people/bot 搜索进入）
+    type: str  # Actual values exclude "dm"; DMs are entered through people/bot search.
 
 
 class SearchWorkspaceHit(BaseModel):
@@ -306,12 +322,24 @@ class SearchBotHit(BaseModel):
     owner: BotOwnerInResponse | None = None
 
 
+class SearchFileHit(BaseModel):
+    file_id: str
+    channel_id: str
+    channel_name: str
+    original_filename: str | None = None
+    content_type: str | None = None
+    size_bytes: int | None = None
+    status: str
+    snippet: str = ""
+    created_at: datetime | None = None
+
+
 class SearchMessageHit(BaseModel):
     msg_id: str
     channel_id: str
     channel_name: str
-    sender_label: str                 # 显示名（或 @username / "me"）
-    snippet: str                      # 正文片段（已截断，高亮可客户端处理）
+    sender_label: str                 # Display name, @username, or "me".
+    snippet: str                      # Truncated body snippet; clients may add highlighting.
     created_at: datetime | None = None
 
 
@@ -348,19 +376,20 @@ class SearchResults(BaseModel):
     channels: list[SearchChannelHit] = Field(default_factory=list)
     users: list[SearchUserHit] = Field(default_factory=list)
     bots: list[SearchBotHit] = Field(default_factory=list)
+    files: list[SearchFileHit] = Field(default_factory=list)
     todos: list[SearchTodoHit] = Field(default_factory=list)
     tasks: list[SearchTaskHit] = Field(default_factory=list)
     messages: list[SearchMessageHit] = Field(default_factory=list)
 
 
 class MemberAdd(BaseModel):
-    """添加成员."""
+    """Member Add schema or model."""
     member_id: str
     member_type: str
 
 
 class MemberInResponse(BaseModel):
-    """成员响应."""
+    """Member In Response schema or model."""
     model_config = ConfigDict(from_attributes=True)
     channel_id: str
     member_id: str
@@ -368,7 +397,7 @@ class MemberInResponse(BaseModel):
 
 
 class MemberWithUsernameInResponse(BaseModel):
-    """成员响应（含 Bot 的 username）."""
+    """Member With Username In Response schema or model."""
     channel_id: str
     member_id: str
     member_type: str
@@ -376,50 +405,48 @@ class MemberWithUsernameInResponse(BaseModel):
 
 
 class MessageFileInResponse(BaseModel):
-    """消息引用的文件元信息。"""
+    """Message File In Response schema or model."""
+    model_config = ConfigDict(from_attributes=True)
+
     file_id: str
     original_filename: str | None = None
     content_type: str | None = None
     size_bytes: int | None = None
     status: str
+    expires_at: datetime | None = None
 
 
 # ==================== content_data schemas (per msg_type) ====================
 
 class TopicContentData(BaseModel):
-    """主题的结构化数据。"""
+    """Topic Content Data schema or model."""
     title: str | None = None
 
 
 class AnnouncementContentData(BaseModel):
-    """公告消息的结构化数据。"""
+    """Announcement Content Data schema or model."""
     title: str | None = None
     pinned_by: str | None = None  # user_id of whoever pinned it (display-only)
 
 
 class RoutingPick(BaseModel):
-    """Coordinator 给出的一个候选 agent 以及评分/理由。"""
+    """Routing Pick schema or model."""
     agent: str                    # bot username
-    score: str | None = None      # freeform: "0.92" / "high" / 等
+    score: str | None = None      # Freeform values such as "0.92" or "high".
     why: str | None = None
-    picked: bool | None = None    # True 表示最终选中
-    secondary: bool | None = None  # True 表示作为次要候选
+    picked: bool | None = None    # True means this candidate was selected.
+    secondary: bool | None = None  # True means this was a secondary candidate.
 
 
 class RoutingContentData(BaseModel):
-    """路由卡片的结构化数据。由 coordinator 在派发任务时产出。"""
-    q: str | None = None          # 被路由的请求（通常是用户的原始消息摘要）
+    """Routing Content Data schema or model."""
+    q: str | None = None          # Routed request, usually a summary of the user's original message.
     picks: list[RoutingPick] = Field(default_factory=list)
-    plan: str | None = None       # 一句话的执行计划
+    plan: str | None = None       # One-sentence execution plan.
 
 
 class PermissionContentData(BaseModel):
-    """审批卡片的结构化数据。Bot 在发起需要人工授权的写操作前产出。
-
-    - tool: 请求的工具名（例如 write_file / run_sql）
-    - body: 面向人类的摘要（"Apply patch to gateway/src/put.rs (+4/-1)"）
-    - resolved / resolution / resolved_by / resolved_at 在 /resolve 端点被填充。
-    """
+    """Permission Content Data schema or model."""
     tool: str | None = None
     body: str | None = None
     resolved: bool = False
@@ -431,7 +458,7 @@ class PermissionContentData(BaseModel):
 # ==================== Message Create Schemas (discriminated union) ====================
 
 class _MessageCreateBase(BaseModel):
-    """消息创建公共字段。"""
+    """Message Create Base schema or model."""
     content: str
     sender_id: str
     sender_type: str = "user"
@@ -441,45 +468,45 @@ class _MessageCreateBase(BaseModel):
 
 
 class NormalMessageCreate(_MessageCreateBase):
-    """普通消息：频道内的独立消息。"""
+    """Normal Message Create schema or model."""
     msg_type: Literal["normal"] = "normal"
     content_data: dict[str, Any] | None = None
 
 
 class ReplyMessageCreate(_MessageCreateBase):
-    """回复消息：回复某条具体消息。"""
+    """Reply Message Create schema or model."""
     msg_type: Literal["reply"] = "reply"
     in_reply_to_msg_id: str
     content_data: dict[str, Any] | None = None
 
 
 class TopicMessageCreate(_MessageCreateBase):
-    """主题：显式创建一个主题。"""
+    """Topic Message Create schema or model."""
     msg_type: Literal["topic"] = "topic"
     content_data: TopicContentData | None = None
 
 
 class AnnouncementMessageCreate(_MessageCreateBase):
-    """频道公告：顶部置顶展示，带标题和置顶人。"""
+    """Announcement Message Create schema or model."""
     msg_type: Literal["announcement"] = "announcement"
     content_data: AnnouncementContentData | None = None
 
 
 class RoutingMessageCreate(_MessageCreateBase):
-    """路由卡片：coordinator 将请求派发给其他 agents 时的结构化说明。"""
+    """Routing Message Create schema or model."""
     msg_type: Literal["routing"] = "routing"
     content_data: RoutingContentData | None = None
 
 
 class PermissionMessageCreate(_MessageCreateBase):
-    """审批卡片：bot 发起需要人工授权的写操作时产出。content 为人类可读说明。"""
+    """Permission Message Create schema or model."""
     msg_type: Literal["permission"] = "permission"
     content_data: PermissionContentData | None = None
 
 
-# 统一入口：兼容旧客户端（不含 msg_type 时含 in_reply_to_msg_id 自动推断）
+# Unified entry point for legacy clients; msg_type is inferred from in_reply_to_msg_id when omitted.
 class MessageCreate(BaseModel):
-    """发送消息（兼容入口，自动推断 msg_type）。"""
+    """Message Create schema or model."""
     content: str
     sender_id: str
     sender_type: str = "user"
@@ -497,7 +524,21 @@ class MessageCreate(BaseModel):
         return self
 
 
-# Discriminated union（供新客户端使用）
+class ForwardMessageRequest(BaseModel):
+    """Forward Message Request schema or model."""
+
+    source_message_ids: list[str] = Field(default_factory=list)
+    source_file_ids: list[str] = Field(default_factory=list)
+    mode: Literal["single", "topic"] = "single"
+
+
+class ForwardMessageResponse(BaseModel):
+    """Forward Message Response schema or model."""
+
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# Discriminated union for newer clients.
 AnyMessageCreate = Annotated[
     NormalMessageCreate | ReplyMessageCreate | TopicMessageCreate | AnnouncementMessageCreate | RoutingMessageCreate | PermissionMessageCreate,
     Field(discriminator="msg_type"),
@@ -505,7 +546,7 @@ AnyMessageCreate = Annotated[
 
 
 class MessageStreamCreate(BaseModel):
-    """发送消息并以 SSE 接收 Bot 流式回复。"""
+    """Message Stream Create schema or model."""
     content: str
     sender_id: str
     sender_type: str = "user"
@@ -517,7 +558,7 @@ class MessageStreamCreate(BaseModel):
 # ==================== Message Response Schemas ====================
 
 class _MessageResponseBase(BaseModel):
-    """消息响应公共字段。"""
+    """Message Response Base schema or model."""
     model_config = ConfigDict(from_attributes=True)
     msg_id: str
     channel_id: str
@@ -537,33 +578,33 @@ class _MessageResponseBase(BaseModel):
 
 
 class NormalMessageInResponse(_MessageResponseBase):
-    """普通消息响应。"""
+    """Normal Message In Response schema or model."""
     msg_type: Literal["normal"] = "normal"
 
 
 class ReplyMessageInResponse(_MessageResponseBase):
-    """回复消息响应。"""
+    """Reply Message In Response schema or model."""
     msg_type: Literal["reply"] = "reply"
     in_reply_to_msg_id: str
 
 
 class TopicMessageInResponse(_MessageResponseBase):
-    """主题响应。content_data 包含 { title?: string } 等主题专有字段。"""
+    """Topic Message In Response schema or model."""
     msg_type: Literal["topic"] = "topic"
 
 
 class AnnouncementMessageInResponse(_MessageResponseBase):
-    """公告消息响应。content_data 包含 { title?, pinned_by? }。"""
+    """Announcement Message In Response schema or model."""
     msg_type: Literal["announcement"] = "announcement"
 
 
 class RoutingMessageInResponse(_MessageResponseBase):
-    """路由卡片响应。content_data 包含 { q?, picks: [...], plan? }。"""
+    """Routing Message In Response schema or model."""
     msg_type: Literal["routing"] = "routing"
 
 
 class PermissionMessageInResponse(_MessageResponseBase):
-    """审批卡片响应。content_data 包含 { tool?, body?, resolved, resolution?, resolved_by?, resolved_at? }。"""
+    """Permission Message In Response schema or model."""
     msg_type: Literal["permission"] = "permission"
 
 
@@ -576,64 +617,40 @@ AnyMessageInResponse = Annotated[
 # ==================== Permission resolve endpoint ========================
 
 class PermissionResolveRequest(BaseModel):
-    """POST /messages/{msg_id}/resolve 的请求体。"""
+    """Permission Resolve Request schema or model."""
     resolution: Literal["allow", "deny"]
 
 
-# 保持向后兼容：统一响应类（含全部字段）
+# Backward-compatible unified response type with all fields.
 class MessageInResponse(_MessageResponseBase):
-    """消息响应（统一格式，兼容旧接口）。"""
+    """Message In Response schema or model."""
     msg_type: str = "normal"
 
 
 # ==================== Keychain Schemas ====================
 
 class KeychainItemCreate(BaseModel):
-    """创建密钥项。"""
-    name: str = Field(..., min_length=1, max_length=128, description="密钥名称，用于引用")
-    value: str = Field(..., min_length=1, description="密钥值")
-    description: str | None = Field(default=None, description="密钥描述")
+    """Keychain Item Create schema or model."""
+    name: str = Field(..., min_length=1, max_length=128, description="Secret name used for references")
+    value: str = Field(..., min_length=1, description="Secret value")
+    description: str | None = Field(default=None, description="Secret description")
 
 
 class KeychainItemUpdate(BaseModel):
-    """更新密钥项。"""
+    """Keychain Item Update schema or model."""
     name: str | None = Field(default=None, min_length=1, max_length=128)
     value: str | None = Field(default=None, min_length=1)
     description: str | None = Field(default=None)
 
 
 class KeychainItemInResponse(BaseModel):
-    """密钥项响应（不包含实际密钥值）。"""
+    """Keychain Item In Response schema or model."""
     model_config = ConfigDict(from_attributes=True)
 
     key_id: str
     owner_id: str
     name: str
     description: str | None = None
-    value_masked: str | None = None  # 掩码显示，如 "****abcd"
+    value_masked: str | None = None  # Masked display value, for example "****abcd".
     created_at: datetime | None = None
     updated_at: datetime | None = None
-
-
-# ==================== Legacy Schemas (for compatibility) ====================
-
-class BotRegisterRequest(BaseModel):
-    """外部 OpenClaw 提交的注册申请（遗留兼容）."""
-    username: str
-    display_name: str | None = None
-    openclaw_endpoint: str
-    intro: str | None = None
-
-
-class BotRegistrationRequestInResponse(BaseModel):
-    """注册申请单条响应."""
-    model_config = ConfigDict(from_attributes=True)
-    request_id: str
-    username: str
-    display_name: str | None = None
-    openclaw_endpoint: str
-    intro: str | None = None
-    status: str
-    requested_at: datetime | None = None
-    decided_at: datetime | None = None
-    created_bot_id: str | None = None

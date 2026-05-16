@@ -41,7 +41,7 @@
 
 ## 7. 与现有架构的集成
 
-- 握手完成后自动创建 BotAccount、ChannelMembership、OpenClawAdapter 实例；向 Context Store 注入 ANCHOR 摘要与当前成员列表。
+- 握手完成后自动创建 BotAccount、ChannelMembership、BotAdapter 实例；向 Context Store 注入 ANCHOR 摘要与当前成员列表。
 - Receptionist 作为常驻内置 Bot，只监听 /a2a/enroll，握手所用 LLM 归属系统级 LLM（附件一）。
 
 ## 8. 当前实现对齐（2026-03）

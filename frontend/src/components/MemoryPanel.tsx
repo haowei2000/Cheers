@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import {
-  ArrowDownTrayIcon,
-  CheckCircleIcon,
-  PencilSquareIcon,
-  UsersIcon,
-} from "@heroicons/react/24/solid";
 import { MessageMarkdown } from "../MessageMarkdown";
 import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
 import { LAYERS } from "../types";
 import { LAYER_META } from "../lib/layer-meta";
 import { getAuthToken as getStoredToken } from "../api";
+import { AppIcon, FileTypeIcon } from "./icons";
 import { InviteMemberSearch } from "./InviteMemberSearch";
+import { SearchPicker } from "./SearchPicker";
+import { QuickAddFooter } from "../features/memory/editor/QuickAddFooter";
+import type { ChannelFilePreview } from "../features/memory/types";
+import { MembersView } from "../features/memory/views/MembersView";
+import { ProjectView } from "../features/memory/views/ProjectView";
 
 const API = "/api/v1";
 
@@ -33,6 +33,7 @@ export function MemoryPanel({
   activeLayer: externalLayer,
   onLayerChange,
   currentUserId,
+  onFilePreview,
 }: {
   channelId: string;
   channelName: string;
@@ -41,6 +42,7 @@ export function MemoryPanel({
   activeLayer?: string;
   onLayerChange?: (layer: string) => void;
   currentUserId?: string | null;
+  onFilePreview?: (file: ChannelFilePreview) => void;
 }) {
   const isControlled = externalLayer !== undefined;
   const [internalLayer, setInternalLayer] = useState<string>("ANCHOR");
@@ -103,8 +105,8 @@ export function MemoryPanel({
 
   const isProject = activeLayer === "PROJECT";
   const PROJECT_META = {
-    label: "项目 · Project",
-    desc: "核心目标与进度（Anchor + Progress）",
+    label: "Project · Project",
+    desc: "Core goals and progress (Anchor + Progress)",
     color: "blue",
     icon: "◆",
     readonly: false,
@@ -440,9 +442,9 @@ export function MemoryPanel({
         }),
       });
       if (!res.ok) throw new Error();
-      toast.success("频道资料已更新");
+      toast.success("Channel profile updated");
     } catch {
-      toast.error("保存频道资料失败");
+      toast.error("Failed to save channel profile");
     } finally {
       setProfileSaving(false);
     }
@@ -453,7 +455,7 @@ export function MemoryPanel({
     if (entriesLoading) {
       return (
         <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
-          加载中…
+          Loading...
         </div>
       );
     }
@@ -464,14 +466,14 @@ export function MemoryPanel({
         {entries.length === 0 && !addingNew ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
             <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
-            <p className="text-xs font-medium text-gray-500">暂无内容</p>
+            <p className="text-xs font-medium text-gray-500">No content</p>
             <p className="text-[11px] text-gray-400">{meta.desc}</p>
             <button
               type="button"
               onClick={() => setAddingNew(true)}
               className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
             >
-              添加条目
+              Add entry
             </button>
           </div>
         ) : timelineMode && (activeLayer === "PROGRESS" || activeLayer === "DECISIONS") ? (
@@ -481,7 +483,7 @@ export function MemoryPanel({
             </div>
             <div className="an-timeline">
               {entries.map((entry) => {
-                const isDone = /done|完成|已做|shipped|merged|resolved|批准|approved/i.test(
+                const isDone = /done|Done|\u5df2\u505a|shipped|merged|resolved|\u6279\u51c6|approved/i.test(
                   entry.content + " " + (entry.title || ""),
                 );
                 const kind =
@@ -538,7 +540,7 @@ export function MemoryPanel({
                     <input
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
-                      placeholder="标题（可选）"
+                      placeholder="Title (optional)"
                       className="w-full text-xs rounded px-2 py-1 focus:outline-none"
                       style={{
                         background: "var(--bg-0)",
@@ -567,7 +569,7 @@ export function MemoryPanel({
                           background: "transparent",
                         }}
                       >
-                        取消
+                        Cancel
                       </button>
                       <button
                         onClick={() => handleUpdateEntry(entry.entry_id)}
@@ -578,13 +580,13 @@ export function MemoryPanel({
                           border: 0,
                         }}
                       >
-                        保存
+                        Save
                       </button>
                     </div>
                   </div>
                 );
               }
-              const isDone = /done|完成|已做|shipped|merged|resolved|批准|approved/i.test(
+              const isDone = /done|Done|\u5df2\u505a|shipped|merged|resolved|\u6279\u51c6|approved/i.test(
                 entry.content + " " + (entry.title || ""),
               );
               const cls =
@@ -619,7 +621,7 @@ export function MemoryPanel({
                       onClick={() => startEditEntry(entry)}
                       className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
                       style={{ color: "var(--fg-3)" }}
-                      title="编辑"
+                      title="Edit"
                     >
                       &#9998;
                     </button>
@@ -627,7 +629,7 @@ export function MemoryPanel({
                       onClick={() => handleDeleteEntry(entry.entry_id)}
                       className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
                       style={{ color: "var(--fg-3)" }}
-                      title="删除"
+                      title="Delete"
                     >
                       &#10005;
                     </button>
@@ -644,7 +646,7 @@ export function MemoryPanel({
             <input
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="标题（可选）"
+              placeholder="Title (optional)"
               className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
             />
             <textarea
@@ -655,7 +657,7 @@ export function MemoryPanel({
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                   handleCreateEntry();
               }}
-              placeholder="内容…"
+              placeholder="Content..."
               className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
               autoFocus
             />
@@ -668,13 +670,13 @@ export function MemoryPanel({
                 }}
                 className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
               >
-                取消
+                Cancel
               </button>
               <button
                 onClick={handleCreateEntry}
                 className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
               >
-                添加
+                Add
               </button>
             </div>
           </div>
@@ -699,7 +701,7 @@ export function MemoryPanel({
     if (entriesLoading) {
       return (
         <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
-          加载中…
+          Loading...
         </div>
       );
     }
@@ -730,14 +732,14 @@ export function MemoryPanel({
         {projectEntries.length === 0 && !addingNew ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-400 gap-2 px-4 text-center">
             <p className="text-xs font-medium text-gray-500">
-              暂无 {labels[projectEditLayer]} 内容
+              No {labels[projectEditLayer]} content
             </p>
             <button
               type="button"
               onClick={() => setAddingNew(true)}
               className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
             >
-              添加条目
+              Add entry
             </button>
           </div>
         ) : (
@@ -757,7 +759,7 @@ export function MemoryPanel({
                     <input
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
-                      placeholder="标题（可选）"
+                      placeholder="Title (optional)"
                       className="w-full text-xs rounded px-2 py-1 focus:outline-none"
                       style={{
                         background: "var(--bg-0)",
@@ -787,7 +789,7 @@ export function MemoryPanel({
                           background: "transparent",
                         }}
                       >
-                        取消
+                        Cancel
                       </button>
                       <button
                         type="button"
@@ -799,7 +801,7 @@ export function MemoryPanel({
                           border: 0,
                         }}
                       >
-                        保存
+                        Save
                       </button>
                     </div>
                   </div>
@@ -833,7 +835,7 @@ export function MemoryPanel({
                       onClick={() => startEditEntry(entry)}
                       className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
                       style={{ color: "var(--fg-3)" }}
-                      title="编辑"
+                      title="Edit"
                     >
                       &#9998;
                     </button>
@@ -842,7 +844,7 @@ export function MemoryPanel({
                       onClick={() => handleProjectDeleteEntry(entry.entry_id)}
                       className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
                       style={{ color: "var(--fg-3)" }}
-                      title="删除"
+                      title="Delete"
                     >
                       &#10005;
                     </button>
@@ -858,7 +860,7 @@ export function MemoryPanel({
             <input
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="标题（可选）"
+              placeholder="Title (optional)"
               className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
             />
             <textarea
@@ -869,7 +871,7 @@ export function MemoryPanel({
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                   handleProjectCreateEntry();
               }}
-              placeholder="内容…"
+              placeholder="Content..."
               className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
               autoFocus
             />
@@ -883,14 +885,14 @@ export function MemoryPanel({
                 }}
                 className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
               >
-                取消
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={handleProjectCreateEntry}
                 className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
               >
-                添加
+                Add
               </button>
             </div>
           </div>
@@ -906,7 +908,7 @@ export function MemoryPanel({
           <div className="px-3 py-3 border-b border-gray-100">
             <div className="rounded-md border border-gray-200 p-2.5">
               <div className="text-xs font-semibold text-gray-700 mb-2">
-                邀请成员
+                Invite members
               </div>
               <InviteMemberSearch
                 channelId={channelId}
@@ -921,12 +923,12 @@ export function MemoryPanel({
 
         {membersLoading ? (
           <div className="flex items-center justify-center h-20 text-gray-400 text-xs">
-            加载中…
+            Loading...
           </div>
         ) : members.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-28 text-gray-400 gap-2 text-center px-4">
-            <UsersIcon className="w-8 h-8 opacity-30" />
-            <p className="text-xs text-gray-500">暂无成员</p>
+            <AppIcon name="users" className="w-8 h-8 opacity-30" />
+            <p className="text-xs text-gray-500">No members</p>
           </div>
         ) : (
           <MembersView
@@ -950,7 +952,7 @@ export function MemoryPanel({
       {/* Panel header */}
       <div className="an-memory-head flex-shrink-0">
         <div className="min-w-0">
-          <div className="an-t">频道记忆</div>
+          <div className="an-t">Channel memory</div>
           {channelName && <div className="an-sub">#{channelName}</div>}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
@@ -959,7 +961,7 @@ export function MemoryPanel({
             onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--surface-soft)] transition-colors"
             style={{ color: "var(--fg-3)", fontSize: 16, lineHeight: 1 }}
-            title="关闭"
+            title="Close"
           >
             ✕
           </button>
@@ -1019,7 +1021,7 @@ export function MemoryPanel({
               className="text-[10px] flex-shrink-0"
               style={{ color: "var(--fg-3)" }}
             >
-              {entries.length} 条
+              {entries.length} items
             </span>
           )}
           {isReadonly && activeLayer !== "TODO" && !canInviteFromMembers && (
@@ -1027,7 +1029,7 @@ export function MemoryPanel({
               className="text-[10px] flex-shrink-0"
               style={{ color: "var(--fg-3)" }}
             >
-              只读
+              Read-only
             </span>
           )}
         </div>
@@ -1047,7 +1049,7 @@ export function MemoryPanel({
                 background: projectEditing ? "var(--accent-muted)" : "transparent",
               }}
             >
-              {projectEditing ? "完成" : "编辑"}
+              {projectEditing ? "Done" : "Edit"}
             </button>
           )}
           {isProject && projectEditing && !addingNew && (
@@ -1061,7 +1063,7 @@ export function MemoryPanel({
                 background: "transparent",
               }}
             >
-              + 添加
+              + Add
             </button>
           )}
           {isEntryBased &&
@@ -1071,23 +1073,23 @@ export function MemoryPanel({
                 className="an-seg"
                 style={{ height: 24 }}
                 role="group"
-                aria-label="视图切换"
+                aria-label="View switcher"
               >
                 <button
                   type="button"
                   className={!timelineMode ? "on" : ""}
                   onClick={() => setTimelineMode(false)}
-                  title="列表视图"
+                  title="List view"
                 >
-                  列表
+                  List
                 </button>
                 <button
                   type="button"
                   className={timelineMode ? "on" : ""}
                   onClick={() => setTimelineMode(true)}
-                  title="时间线视图"
+                  title="Timeline view"
                 >
-                  时间线
+                  Timeline
                 </button>
               </div>
             )}
@@ -1102,7 +1104,7 @@ export function MemoryPanel({
                 background: "transparent",
               }}
             >
-              + 添加
+              + Add
             </button>
           )}
         </div>
@@ -1122,7 +1124,7 @@ export function MemoryPanel({
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                     handleTodoCreate();
                 }}
-                placeholder="新建任务…"
+                placeholder="NewTasks..."
                 className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
               />
               <div className="flex items-center gap-1.5">
@@ -1131,7 +1133,7 @@ export function MemoryPanel({
                   onChange={(e) => setTodoAssignee(e.target.value)}
                   className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:border-blue-400 text-gray-500"
                 >
-                  <option value="">指派给…</option>
+                  <option value="">Assign to...</option>
                   {members.map((m) => (
                     <option
                       key={m.member_id}
@@ -1146,7 +1148,7 @@ export function MemoryPanel({
                   onClick={handleTodoCreate}
                   className="px-2.5 py-1 text-xs bg-[#1264A3] text-white rounded hover:bg-[#0f5a94] flex-shrink-0"
                 >
-                  添加
+                  Add
                 </button>
               </div>
             </div>
@@ -1154,12 +1156,12 @@ export function MemoryPanel({
             <div className="flex-1 overflow-y-auto">
               {todosLoading ? (
                 <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
-                  加载中…
+                  Loading...
                 </div>
               ) : todos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-20 text-gray-400 gap-1 text-center px-4">
-                  <CheckCircleIcon className="w-6 h-6 opacity-30" />
-                  <p className="text-xs text-gray-400">暂无待办</p>
+                  <AppIcon name="checkCircle" className="w-6 h-6 opacity-30" />
+                  <p className="text-xs text-gray-400">No todos</p>
                 </div>
               ) : (
                 <ul className="divide-y divide-gray-100">
@@ -1220,17 +1222,38 @@ export function MemoryPanel({
         ) : activeLayer === "FILES_INDEX" ? (
           channelFilesLoading ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-xs">
-              加载中…
+              Loading...
             </div>
           ) : channelFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
               <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
-              <p className="text-xs font-medium text-gray-500">暂无文件</p>
+              <p className="text-xs font-medium text-gray-500">No files</p>
               <p className="text-[11px] text-gray-400">{meta.desc}</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 overflow-y-auto">
-              {channelFiles.map((f) => {
+            <div className="flex h-full flex-col">
+              <div className="border-b border-gray-100 px-3 py-2">
+                <SearchPicker
+                  context="file_lookup"
+                  channelId={channelId}
+                  types={["files"]}
+                  modal
+                  placeholder="Search file name, summary, or type"
+                  emptyText="No matching files"
+                  actionLabel="Preview"
+                  onSelect={(selection) => {
+                    if (selection.type !== "file") return;
+                    onFilePreview?.({
+                      file_id: selection.item.file_id,
+                      original_filename: selection.item.original_filename,
+                      content_type: selection.item.content_type,
+                      size_bytes: selection.item.size_bytes,
+                    });
+                  }}
+                />
+              </div>
+              <div className="divide-y divide-gray-100 overflow-y-auto">
+                {channelFiles.map((f) => {
                 const ct = f.content_type || "";
                 const typeLabel = ct.includes("pdf")
                   ? "PDF"
@@ -1239,8 +1262,8 @@ export function MemoryPanel({
                     : ct.includes("spreadsheetml") || ct.includes("xlsx")
                       ? "Excel"
                       : ct.startsWith("text/")
-                        ? "文本"
-                        : "文件";
+                        ? "Text"
+                        : "Files";
                 const sizeStr = f.size_bytes
                   ? f.size_bytes < 1024
                     ? `${f.size_bytes} B`
@@ -1251,18 +1274,26 @@ export function MemoryPanel({
                 return (
                   <div
                     key={f.file_id}
-                    className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                    role={onFilePreview ? "button" : undefined}
+                    tabIndex={onFilePreview ? 0 : undefined}
+                    onClick={() => onFilePreview?.(f)}
+                    onKeyDown={(event) => {
+                      if (!onFilePreview) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onFilePreview(f);
+                      }
+                    }}
+                    className={`flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors ${
+                      onFilePreview ? "cursor-pointer" : ""
+                    }`}
                   >
-                    <div className="w-8 h-8 rounded-md bg-amber-50 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm">
-                        {typeLabel === "PDF"
-                          ? "\uD83D\uDCC4"
-                          : typeLabel === "Word"
-                            ? "\uD83D\uDCC3"
-                            : typeLabel === "Excel"
-                              ? "\uD83D\uDCCA"
-                              : "\uD83D\uDCC1"}
-                      </span>
+                    <div className="w-8 h-8 rounded-md bg-gray-50 flex items-center justify-center flex-shrink-0">
+                      <FileTypeIcon
+                        contentType={f.content_type}
+                        filename={f.original_filename || f.file_id}
+                        size={26}
+                      />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-gray-800 truncate">
@@ -1283,14 +1314,16 @@ export function MemoryPanel({
                     </div>
                     <a
                       href={`${API}/files/${f.file_id}/download`}
+                      onClick={(event) => event.stopPropagation()}
                       className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
-                      title="下载文件"
+                      title="Download file"
                     >
-                      <ArrowDownTrayIcon className="w-4 h-4" />
+                      <AppIcon name="download" className="w-4 h-4" />
                     </a>
                   </div>
                 );
-              })}
+                })}
+              </div>
             </div>
           )
         ) : rawContent.trim() ? (
@@ -1301,7 +1334,7 @@ export function MemoryPanel({
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
             <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
-            <p className="text-xs font-medium text-gray-500">暂无内容</p>
+            <p className="text-xs font-medium text-gray-500">No content</p>
             <p className="text-[11px] text-gray-400">{meta.desc}</p>
           </div>
         )}
@@ -1317,634 +1350,5 @@ export function MemoryPanel({
         />
       )}
     </aside>
-  );
-}
-
-function QuickAddFooter({
-  channelId,
-  layer,
-  onAdded,
-}: {
-  channelId: string;
-  layer: string;
-  onAdded: () => void;
-}) {
-  const [v, setV] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const submit = async () => {
-    const text = v.trim();
-    if (!text || busy) return;
-    setBusy(true);
-    try {
-      const token = getStoredToken();
-      const res = await fetch(`${API}/channels/${channelId}/memory/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ layer, title: null, content: text }),
-      });
-      if (res.ok) {
-        setV("");
-        onAdded();
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div
-      className="flex items-center gap-2 flex-shrink-0"
-      style={{
-        padding: "10px 14px",
-        borderTop: "1px solid var(--border)",
-        background: "var(--bg-1)",
-      }}
-    >
-      <input
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          } else if (e.key === "Escape") {
-            setV("");
-          }
-        }}
-        placeholder="教一下 agents…"
-        disabled={busy}
-        className="an-input"
-        style={{
-          flex: 1,
-          fontSize: 12,
-          padding: "0 10px",
-          height: 28,
-          lineHeight: "28px",
-        }}
-      />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={!v.trim() || busy}
-        className="an-btn an-btn-sm"
-        title="保存为一条新条目（Enter 亦可）"
-        style={{ height: 28, padding: "0 12px", flexShrink: 0 }}
-      >
-        {busy ? "…" : "保存"}
-      </button>
-    </div>
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Members view — a list of bots + people. Clicking a row opens a profile card
-// with back navigation, status, and quick actions.
-// ═════════════════════════════════════════════════════════════════════════════
-
-const MEM_COLORS = [
-  "#7c6cf5",
-  "#3ecf8e",
-  "#56a7ff",
-  "#f5a623",
-  "#f05454",
-  "#9586ff",
-  "#5b8dff",
-];
-
-function colorForMember(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return MEM_COLORS[Math.abs(h) % MEM_COLORS.length];
-}
-
-function initialsFor(label: string): string {
-  const parts = label.trim().split(/\s+/);
-  const first = parts[0]?.[0] || "";
-  const second = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + second).toUpperCase() || label.slice(0, 1).toUpperCase();
-}
-
-function MembersView({
-  members,
-  currentUserId,
-  profileLoading,
-  profileNickname,
-  profileBio,
-  profileSaving,
-  onProfileNicknameChange,
-  onProfileBioChange,
-  onSaveMyProfile,
-}: {
-  members: MemberItem[];
-  currentUserId?: string | null;
-  profileLoading: boolean;
-  profileNickname: string;
-  profileBio: string;
-  profileSaving: boolean;
-  onProfileNicknameChange: (value: string) => void;
-  onProfileBioChange: (value: string) => void;
-  onSaveMyProfile: () => void;
-}) {
-  const [selected, setSelected] = useState<MemberItem | null>(null);
-
-  const bots = members.filter((m) => m.member_type === "bot");
-  const users = members
-    .map((member, index) => ({ member, index }))
-    .filter(({ member }) => member.member_type !== "bot")
-    .sort((a, b) => {
-      const aSelf = Boolean(currentUserId && a.member.member_id === currentUserId);
-      const bSelf = Boolean(currentUserId && b.member.member_id === currentUserId);
-      if (aSelf !== bSelf) return aSelf ? -1 : 1;
-      return a.index - b.index;
-    })
-    .map(({ member }) => member);
-
-  if (selected) {
-    const isBot = selected.member_type === "bot";
-    const isSelf = Boolean(currentUserId && selected.member_id === currentUserId && !isBot);
-    const label =
-      selected.display_name ||
-      selected.username ||
-      (isBot ? "Bot" : "用户");
-    const color = colorForMember(selected.member_id);
-    return (
-      <div className="overflow-y-auto px-3 py-2">
-        <div className="an-mem-detail">
-          <button
-            type="button"
-            className="an-md-back"
-            onClick={() => setSelected(null)}
-          >
-            ← 返回成员列表
-          </button>
-          <div className="an-md-head">
-            <div
-              className="an-av"
-              style={{ background: color, borderRadius: isBot ? 9 : 999 }}
-            >
-              {initialsFor(label)}
-            </div>
-            <div className="an-info">
-              <div className="an-n">
-                {label}
-                <span
-                  className={
-                    "an-tag-pill" + (isBot ? "" : "")
-                  }
-                  style={{
-                    fontSize: 8.5,
-                    fontWeight: 700,
-                    letterSpacing: "0.7px",
-                    padding: "1px 5px",
-                    borderRadius: 4,
-                    border: "1px solid var(--border)",
-                    textTransform: "uppercase",
-                    color: isBot ? "var(--fg-3)" : "var(--accent)",
-                    background: isBot
-                      ? "var(--surface-soft)"
-                      : "var(--accent-muted)",
-                  }}
-                >
-                  {isBot ? "BOT" : "USER"}
-                </span>
-              </div>
-              <div className="an-h">
-                {selected.username && (
-                  <span className="an-d">@{selected.username}</span>
-                )}
-                {selected.username && (
-                  <span className="an-dot-sep">·</span>
-                )}
-                <span>{isBot ? "channel agent" : "channel member"}</span>
-              </div>
-            </div>
-          </div>
-
-          {isSelf ? (
-            <div className="an-md-section">
-              <div className="an-lbl">我的频道资料</div>
-              {profileLoading ? (
-                <div className="text-xs text-gray-400 py-3">加载中…</div>
-              ) : (
-                <div className="space-y-2">
-                  <input
-                    value={profileNickname}
-                    onChange={(e) => onProfileNicknameChange(e.target.value)}
-                    placeholder="频道昵称"
-                    maxLength={64}
-                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
-                  />
-                  <textarea
-                    value={profileBio}
-                    onChange={(e) => onProfileBioChange(e.target.value)}
-                    placeholder="在本频道的身份介绍…"
-                    rows={3}
-                    className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
-                  />
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={onSaveMyProfile}
-                      disabled={profileSaving}
-                      className="text-[11px] px-2.5 py-1 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94] disabled:opacity-50"
-                    >
-                      {profileSaving ? "保存中…" : "保存资料"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="an-md-section">
-              <div className="an-lbl">简介 · About</div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  lineHeight: 1.5,
-                }}
-              >
-                {isBot
-                  ? "本频道的智能体，协同其他成员完成任务。"
-                  : "本频道的用户成员。"}
-              </div>
-            </div>
-          )}
-
-          <div className="an-md-section">
-            <div className="an-lbl">资料 · Profile</div>
-            <div className="an-md-kv">
-              <div className="an-k">ID</div>
-              <div className="an-v" style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                {selected.member_id}
-              </div>
-              <div className="an-k">类型</div>
-              <div className="an-v">{isBot ? "Bot 智能体" : "人类成员"}</div>
-              {selected.username && (
-                <>
-                  <div className="an-k">用户名</div>
-                  <div className="an-v">@{selected.username}</div>
-                </>
-              )}
-              {selected.display_name && (
-                <>
-                  <div className="an-k">显示名</div>
-                  <div className="an-v">{selected.display_name}</div>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="an-md-actions">
-            <button type="button">私聊</button>
-            <button type="button">{isBot ? "查看日志" : "资料卡"}</button>
-            <button type="button" className="primary">
-              @ 提及
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="an-members-list min-h-0 flex-1 overflow-y-auto">
-      {bots.length > 0 && (
-        <>
-          <div className="an-mem-group">
-            <span>Agents · 智能体</span>
-            <span className="an-ct">{bots.length}</span>
-          </div>
-          {bots.map((m) => {
-            const label = m.display_name || m.username || "Bot";
-            const color = colorForMember(m.member_id);
-            return (
-              <button
-                key={m.member_id}
-                type="button"
-                className="an-mem-row"
-                onClick={() => setSelected(m)}
-              >
-                <div className="an-av-wrap">
-                  <div
-                    className="an-av bot"
-                    style={{ background: color }}
-                  >
-                    {initialsFor(label)}
-                  </div>
-                </div>
-                <div className="an-r-main">
-                  <div className="an-r-name">
-                    {label}
-                    <span className="an-tag-pill">Bot</span>
-                  </div>
-                  {m.username && m.username !== label && (
-                    <div className="an-r-sub">@{m.username}</div>
-                  )}
-                </div>
-                <span className="an-chev" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
-      {users.length > 0 && (
-        <>
-          <div className="an-mem-group">
-            <span>People · 成员</span>
-            <span className="an-ct">{users.length}</span>
-          </div>
-          {users.map((m) => {
-            const label = m.display_name || m.username || "用户";
-            const color = colorForMember(m.member_id);
-            const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
-            return (
-              <button
-                key={m.member_id}
-                type="button"
-                className={`an-mem-row ${isSelf ? "self" : ""}`}
-                onClick={() => setSelected(m)}
-                title={isSelf ? "我的频道资料" : undefined}
-                aria-label={isSelf ? "我的频道资料" : label}
-              >
-                <div className="an-av-wrap">
-                  {m.avatar_url ? (
-                    <img
-                      src={m.avatar_url}
-                      alt={label}
-                      className="an-av"
-                      style={{ borderRadius: 999 }}
-                    />
-                  ) : (
-                    <div
-                      className="an-av"
-                      style={{ background: color, borderRadius: 999 }}
-                    >
-                      {initialsFor(label)}
-                    </div>
-                  )}
-                  {isSelf && (
-                    <span className="an-self-edit" aria-hidden="true">
-                      <PencilSquareIcon />
-                    </span>
-                  )}
-                </div>
-                <div className="an-r-main">
-                  <div className="an-r-name">
-                    {label}
-                    {isSelf && <span className="an-tag-pill self">我</span>}
-                  </div>
-                  {m.username && m.username !== label && (
-                    <div className="an-r-sub">@{m.username}</div>
-                  )}
-                </div>
-                <span className="an-chev" aria-hidden="true">
-                  ›
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
-      </div>
-    </div>
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// Project view — design's PROJECT tab rendered as a journey diagram.
-// Anchor node with progress ring, legend, a vertical river of decision /
-// progress nodes (chronological), and a dashed end-node with the goal state.
-// ═════════════════════════════════════════════════════════════════════════════
-
-function ProjectView({
-  anchors,
-  progress,
-  decisions,
-  loading,
-}: {
-  anchors: MemoryEntryItem[];
-  progress: MemoryEntryItem[];
-  decisions: MemoryEntryItem[];
-  loading: boolean;
-}) {
-  if (loading) {
-    return (
-      <div
-        className="flex items-center justify-center h-20 text-xs"
-        style={{ color: "var(--fg-3)" }}
-      >
-        加载中…
-      </div>
-    );
-  }
-
-  const doneRe = /done|完成|已做|shipped|merged|resolved|批准|approved/i;
-  const isDone = (e: MemoryEntryItem) =>
-    doneRe.test(e.content + " " + (e.title || ""));
-  const progressDone = progress.filter(isDone).length;
-  const progressPending = progress.length - progressDone;
-  const totalSteps = progress.length + decisions.length;
-  const completed = progressDone + decisions.length;
-  const pct = totalSteps === 0 ? 0 : Math.round((completed / totalSteps) * 100);
-
-  // Chronological river combining progress + decisions (oldest first).
-  const tsOf = (e: MemoryEntryItem) => e.updated_at || e.created_at || "";
-  const river = [
-    ...progress.map((e) => ({
-      item: e,
-      kind: isDone(e) ? "progress" : "progress-pending",
-      ts: tsOf(e),
-    })),
-    ...decisions.map((e) => ({
-      item: e,
-      kind: "decision",
-      ts: tsOf(e),
-    })),
-  ].sort((a, b) => (a.ts < b.ts ? -1 : 1));
-
-  const [primaryAnchor, ...restAnchors] = anchors;
-  const empty =
-    anchors.length === 0 && progress.length === 0 && decisions.length === 0;
-
-  // Progress ring geometry
-  const R = 22;
-  const C = 2 * Math.PI * R;
-  const off = C * (1 - pct / 100);
-
-  if (empty) {
-    return (
-      <div className="px-3 py-3">
-        <div
-          className="text-center py-10 text-xs"
-          style={{ color: "var(--fg-3)" }}
-        >
-          暂无项目锚点与进度。
-          <br />
-          点击右上角“编辑”添加 Anchor / Progress 后会显示在这里。
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-3 py-3">
-      <div className="an-journey">
-        {primaryAnchor && (
-          <div className="an-anchor-node">
-            <div className="an-ring">
-              <svg viewBox="0 0 52 52">
-                <circle className="an-ring-track" cx="26" cy="26" r={R} />
-                <circle
-                  className="an-ring-fill"
-                  cx="26"
-                  cy="26"
-                  r={R}
-                  strokeDasharray={C}
-                  strokeDashoffset={off}
-                />
-              </svg>
-              <div className="an-ring-pct">{pct}%</div>
-            </div>
-            <div className="an-info">
-              <div className="an-tg">Anchor</div>
-              {primaryAnchor.title && (
-                <div
-                  className="an-tx"
-                  style={{ fontWeight: 600, marginBottom: 2 }}
-                >
-                  {primaryAnchor.title}
-                </div>
-              )}
-              <div className="an-tx">
-                <MessageMarkdown text={primaryAnchor.content} />
-              </div>
-              <div className="an-mt">
-                {completed} / {totalSteps} 步
-                {primaryAnchor.updated_at && (
-                  <> · {new Date(primaryAnchor.updated_at).toLocaleString()}</>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {restAnchors.length > 0 && (
-          <div style={{ marginTop: 8, paddingLeft: 2 }}>
-            {restAnchors.map((a) => (
-              <div
-                key={a.entry_id}
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--fg-2)",
-                  padding: "4px 0",
-                  display: "flex",
-                  gap: 6,
-                  alignItems: "baseline",
-                }}
-              >
-                <span
-                  style={{
-                    width: 4,
-                    height: 4,
-                    borderRadius: "50%",
-                    background: "var(--accent)",
-                    display: "inline-block",
-                    marginRight: 4,
-                    flexShrink: 0,
-                  }}
-                />
-                <span style={{ flex: 1 }}>{a.title || a.content}</span>
-                {a.updated_at && (
-                  <span style={{ fontSize: 10.5, color: "var(--fg-3)" }}>
-                    {new Date(a.updated_at).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="an-legend">
-          <span className="an-lg decision">
-            <span className="an-sq" />
-            Decision
-          </span>
-          <span className="an-lg progress">
-            <span className="an-sq" />
-            Progress
-          </span>
-          <span className="an-lg todo">
-            <span className="an-sq" />
-            Pending
-          </span>
-        </div>
-
-        {river.length > 0 && (
-          <>
-            <div className="an-sh first">Path so far</div>
-            <div className="an-river">
-              {river.map(({ item, kind }) => {
-                const isPending = kind === "progress-pending";
-                const rowCls = isPending
-                  ? "an-riv todo"
-                  : kind === "decision"
-                    ? "an-riv decision"
-                    : "an-riv progress";
-                const kindLabel =
-                  kind === "decision"
-                    ? "Decision"
-                    : isPending
-                      ? "In progress"
-                      : "Progress";
-                return (
-                  <div key={item.entry_id} className={rowCls}>
-                    <span className="an-marker" />
-                    <div className="an-card">
-                      <div className="an-kind">{kindLabel}</div>
-                      {item.title && (
-                        <div
-                          className="an-tx"
-                          style={{ fontWeight: 600, marginBottom: 2 }}
-                        >
-                          {item.title}
-                        </div>
-                      )}
-                      <div className="an-tx">
-                        <MessageMarkdown text={item.content} />
-                      </div>
-                      {item.updated_at && (
-                        <div className="an-mt">
-                          {new Date(item.updated_at).toLocaleString()}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        <div className="an-end-node">
-          <div className="an-cir" />
-          <div className="an-tx">
-            <b>Goal state.</b>{" "}
-            {progressPending === 0 && totalSteps > 0
-              ? "All known steps complete."
-              : progressPending > 0
-                ? `${progressPending} step${progressPending === 1 ? "" : "s"} in progress toward anchor.`
-                : "Waiting on first progress entry."}
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }

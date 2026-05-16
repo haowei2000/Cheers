@@ -1,4 +1,4 @@
-import { PencilIcon, XMarkIcon } from "@heroicons/react/24/solid";
+import { AppIcon } from "./icons/AppIcon";
 
 interface ImageLightboxProps {
   src: string | null;
@@ -19,7 +19,7 @@ export function ImageLightbox({ src, fileId, onClose, onEdit }: ImageLightboxPro
         onClick={onClose}
         className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-xl transition-colors"
       >
-        <XMarkIcon className="w-6 h-6" />
+        <AppIcon name="close" className="w-6 h-6" />
       </button>
       {fileId && onEdit && (
         <button
@@ -30,8 +30,8 @@ export function ImageLightbox({ src, fileId, onClose, onEdit }: ImageLightboxPro
           }}
           className="absolute top-4 left-4 flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-[13px] font-medium transition-colors"
         >
-          <PencilIcon className="w-4 h-4" />
-          编辑此图
+          <AppIcon name="pencil" className="w-4 h-4" />
+          Edit this image
         </button>
       )}
       <img

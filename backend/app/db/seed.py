@@ -1,10 +1,11 @@
-"""种子数据：默认工作空间、提示词模板、Bot、测试用户."""
+"""Seed data for workspaces, prompt templates, Bots, and test users."""
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.prompt_templates import DEFAULT_TEMPLATE_VARIABLES, DEFAULT_USER_TEMPLATE
 from app.db.models import (
     BotAccount,
     Channel,
@@ -15,10 +16,10 @@ from app.db.models import (
     WorkspaceMembership,
 )
 from app.db.session import async_session_factory
+from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS, HELPER_BOT_ID
 from app.services.auth.password_utils import hash_password, verify_password
-from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 
-# 固定 ID，便于文档与脚本引用
+# Stable IDs make documentation and scripts easier to reference.
 WORKSPACE_ID = "ws-default-001"
 CHANNEL_ID = "ch-seed-001"
 ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
@@ -26,28 +27,42 @@ ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
 TEMPLATE_GENERAL_ID = "template-general-001"
 TEMPLATE_CODE_REVIEW_ID = "template-codereview-001"
 TEMPLATE_CREATIVE_ID = "template-creative-001"
-BUILTIN_BOT_IDS = (GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID)
+REMOVED_HELP_BOT_IDS = ("bot-guide-001", "bot-guide-helper-001")
 
 
-async def _seed_unified_bot(session: AsyncSession) -> bool:
-    """创建统一内置 Bot（@Coordinator）：引导 + 助手 + 记忆管理三合一。"""
-    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == GUIDE_BOT_ID))
+async def _remove_removed_help_bots(session: AsyncSession) -> bool:
+    """Remove removed help bots."""
+    did_write = False
+    result = await session.execute(
+        delete(ChannelMembership).where(ChannelMembership.member_id.in_(REMOVED_HELP_BOT_IDS))
+    )
+    did_write = did_write or bool(getattr(result, "rowcount", 0))
+    result = await session.execute(
+        delete(BotAccount).where(BotAccount.bot_id.in_(REMOVED_HELP_BOT_IDS))
+    )
+    did_write = did_write or bool(getattr(result, "rowcount", 0))
+    return did_write
+
+
+async def _seed_helper_bot(session: AsyncSession) -> bool:
+    """Seed helper bot."""
+    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == HELPER_BOT_ID))
     existing = r.scalar_one_or_none()
     if existing is not None:
-        # 迁移旧用户名 → 现在统一叫 Coordinator
-        if existing.username in ("引导", "channel bot"):
+        if existing.username in ("引导", "channel bot", "guide-helper", "Helper", "coordinator"):
             existing.username = "Coordinator"
+        existing.display_name = "协作助手"
         existing.scope = "everyone"
         await session.flush()
         return False
 
     session.add(
         BotAccount(
-            bot_id=GUIDE_BOT_ID,
+            bot_id=HELPER_BOT_ID,
             username="Coordinator",
-            display_name="协调者",
+            display_name="协作助手",
             description=(
-                "系统内置协调者（Coordinator），集引导、项目助手、记忆管理三合一。"
+                "系统内置协作助手（Coordinator），集使用帮助、项目助手、记忆管理三合一。"
                 "可回答系统使用问题、结合项目记忆回答业务问题、"
                 "读写四层项目记忆、并在需要时建议路由到专业 Bot。"
             ),
@@ -56,77 +71,36 @@ async def _seed_unified_bot(session: AsyncSession) -> bool:
             status="online",
             scope="everyone",
             intro=(
-                '{"capabilities":["系统引导","项目问答","记忆读写","澄清弹窗","Bot路由建议"],'
-                '"description":"内置协调者，@Coordinator 即可使用"}'
+                '{"capabilities":["系统帮助","项目问答","记忆读写","澄清弹窗","Bot路由建议"],'
+                '"description":"内置协作助手，@Coordinator 即可使用"}'
             ),
         )
     )
     return True
 
 
-async def _seed_guide_helper_bot(session: AsyncSession) -> bool:
-    """创建操作指引助手 Bot（@Helper）：加载 docs/help/ 下所有帮助文档，回答 AgentNexus 使用问题."""
-    r = await session.execute(select(BotAccount).where(BotAccount.bot_id == GUIDE_HELPER_BOT_ID))
-    existing = r.scalar_one_or_none()
-    if existing is not None:
-        # 迁移旧用户名 → 现在统一叫 Helper
-        if existing.username == "guide-helper":
-            existing.username = "Helper"
-        existing.scope = "everyone"
-        await session.flush()
-        return False
-
-    session.add(
-        BotAccount(
-            bot_id=GUIDE_HELPER_BOT_ID,
-            username="Helper",
-            display_name="操作指引助手",
-            description="操作指引助手，加载所有帮助文档，回答平台使用问题。",
-            model_id=None,
-            template_id=None,
-            status="online",
-            scope="everyone",
-            intro='{"capabilities":["使用说明","功能问答","操作指南"],"description":"输入 @Helper 即可获得操作指引"}',
-        )
-    )
-    await session.flush()
-
-    # 将该 Bot 加入默认频道
-    r2 = await session.execute(
-        select(ChannelMembership).where(
-            ChannelMembership.channel_id == CHANNEL_ID,
-            ChannelMembership.member_id == GUIDE_HELPER_BOT_ID,
-        )
-    )
-    if r2.scalar_one_or_none() is None:
-        session.add(
-            ChannelMembership(
-                channel_id=CHANNEL_ID,
-                member_id=GUIDE_HELPER_BOT_ID,
-                member_type="bot",
-            )
-        )
-
-    return True
-
-
 async def _seed_templates(session: AsyncSession) -> bool:
-    """创建示例提示词模板."""
+    """Seed templates."""
     did_write = False
 
     r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_GENERAL_ID))
-    if r.scalar_one_or_none() is None:
+    general_template = r.scalar_one_or_none()
+    if general_template is None:
         session.add(
             PromptTemplate(
                 template_id=TEMPLATE_GENERAL_ID,
                 name="通用助手",
                 description="通用的 AI 助手，适合回答各种问题",
                 system_prompt="你是一个有用的 AI 助手。请简洁、专业地回答用户问题。",
-                user_template="{{message}}",
-                variables=["message"],
+                user_template=DEFAULT_USER_TEMPLATE,
+                variables=DEFAULT_TEMPLATE_VARIABLES,
                 is_builtin=True,
             )
         )
+        did_write = True
+    elif general_template.is_builtin and general_template.user_template == "{{message}}":
+        general_template.user_template = DEFAULT_USER_TEMPLATE
+        general_template.variables = DEFAULT_TEMPLATE_VARIABLES
         did_write = True
 
     r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_CODE_REVIEW_ID))
@@ -170,7 +144,7 @@ async def _seed_templates(session: AsyncSession) -> bool:
 
 
 async def _seed_workspace_and_users(session: AsyncSession) -> bool:
-    """创建工作区、频道、管理员用户."""
+    """Seed workspace and users."""
     did_write = False
 
     r = await session.execute(select(Workspace).where(Workspace.workspace_id == WORKSPACE_ID))
@@ -229,12 +203,12 @@ async def _seed_workspace_and_users(session: AsyncSession) -> bool:
 
 
 async def _seed_memberships(session: AsyncSession) -> bool:
-    """创建频道成员关系（内置 Bot + 管理员）."""
+    """Create channel memberships for built-in bots and the administrator."""
     did_write = False
 
-    # session 配置为 autoflush=False，先手动 flush 一次，
-    # 让前面 _seed_guide_helper_bot 已 session.add 的 membership 对下面的 SELECT 可见，
-    # 否则会造成同一事务内重复插入 → UniqueViolation → 整个 seed 回滚
+    # The session uses autoflush=False, so flush once manually.
+    # This makes previously added memberships visible to later SELECT statements.
+    # Otherwise duplicate inserts in the same transaction can trigger UniqueViolation and roll back the seed.
     await session.flush()
 
     default_members = [(bot_id, "bot") for bot_id in BUILTIN_BOT_IDS] + [(ADMIN_USER_ID, "user")]
@@ -259,14 +233,18 @@ async def _seed_memberships(session: AsyncSession) -> bool:
 
 
 def _dm_name_members(channel_name: str | None) -> set[str]:
-    """解析 ChannelService.get_or_create_dm 写入频道名中的成员 ID。"""
-    if not channel_name or not channel_name.startswith("dm:"):
+    """Dm name members."""
+    if not channel_name:
+        return set()
+    if channel_name.startswith("dmchat:"):
+        return {part for part in channel_name.split(":")[1:3] if part}
+    if not channel_name.startswith("dm:"):
         return set()
     return {part for part in channel_name.split(":")[1:] if part}
 
 
 async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
-    """让内置 Bot 留在普通频道，并从无关 DM 中移除。"""
+    """Ensure builtin bot memberships."""
     await session.flush()
 
     dm_builtin_rows = (
@@ -281,17 +259,17 @@ async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
         )
     ).all()
     for membership, channel in dm_builtin_rows:
-        # 保留用户主动创建的一对一 Bot DM，例如 user <-> Helper；
-        # 只移除自动注入到其他 DM 的内置 Bot。
+        # Keep one-to-one bot DMs explicitly created by users, such as user <-> Coordinator.
+        # Only remove built-in bots that were automatically injected into other DMs.
         if membership.member_id not in _dm_name_members(channel.name):
             await session.delete(membership)
 
-    non_dm_channel_ids = (
+    workspace_channel_ids = (
         await session.execute(
-            select(Channel.channel_id).where(Channel.type != "dm")
+            select(Channel.channel_id).where(Channel.type.in_(("public", "workspace")))
         )
     ).scalars().all()
-    for channel_id in non_dm_channel_ids:
+    for channel_id in workspace_channel_ids:
         for bot_id in BUILTIN_BOT_IDS:
             existing = (
                 await session.execute(
@@ -312,12 +290,12 @@ async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
 
 
 async def seed(session: AsyncSession) -> bool:
-    """写入种子数据（若已存在则跳过）。返回是否执行了写入。"""
+    """Seed."""
     did_write = False
 
     did_write |= await _seed_templates(session)
-    did_write |= await _seed_unified_bot(session)
-    did_write |= await _seed_guide_helper_bot(session)
+    did_write |= await _remove_removed_help_bots(session)
+    did_write |= await _seed_helper_bot(session)
     did_write |= await _seed_workspace_and_users(session)
     did_write |= await _seed_memberships(session)
 
@@ -325,7 +303,7 @@ async def seed(session: AsyncSession) -> bool:
 
 
 async def run_seed() -> None:
-    """在独立会话中执行种子并提交。"""
+    """Run seed."""
     async with async_session_factory() as session:
         try:
             await seed(session)
@@ -336,7 +314,7 @@ async def run_seed() -> None:
 
 
 async def _sync_admin_credentials(session: AsyncSession) -> None:
-    """每次启动时将 admin 账号的用户名/显示名同步为 .env 中的配置；仅在密码变更时重新哈希。"""
+    """Sync admin credentials."""
     r = await session.execute(select(User).where(User.user_id == ADMIN_USER_ID))
     admin = r.scalar_one_or_none()
     if admin is None:
@@ -348,17 +326,14 @@ async def _sync_admin_credentials(session: AsyncSession) -> None:
 
 
 async def ensure_builtin_bot() -> None:
-    """每次启动时无条件确保内置 Bot 存在，并加入所有现有普通频道。
-
-    不依赖 SEED_DATA 环境变量，保证升级后旧库也能自动补齐内置 Bot。
-    """
+    """Ensure builtin bot."""
     async with async_session_factory() as session:
         try:
-            await _seed_unified_bot(session)
-            await _seed_guide_helper_bot(session)
+            await _remove_removed_help_bots(session)
+            await _seed_helper_bot(session)
             await _sync_admin_credentials(session)
 
-            # 确保内置 Bot 只补齐到普通频道；DM 私聊不自动添加 Coordinator / Helper。
+            # Only backfill built-in bots into regular channels; DMs do not automatically receive Coordinator.
             await _ensure_builtin_bot_memberships(session)
 
             await session.commit()
@@ -374,5 +349,5 @@ if __name__ == "__main__":
         f"  Workspace: {WORKSPACE_ID}\n"
         f"  Channel: {CHANNEL_ID}\n"
         f"  Templates: 通用助手, 代码审查, 创意写作\n"
-        f"  Bots: @Coordinator（内置协调者）, @Helper（操作指引助手）"
+        f"  Bots: @Coordinator（内置协作助手）"
     )

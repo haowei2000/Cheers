@@ -1,1 +1,1 @@
-"""认证模块."""
+"""Package initialization."""
