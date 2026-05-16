@@ -152,7 +152,7 @@ services:
       - ./data/rustfs:/data
       - ./data/rustfs_logs:/logs
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/health"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/rustfs/health/live"]
       interval: 5s
       timeout: 5s
       retries: 20
