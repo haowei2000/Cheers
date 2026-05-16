@@ -13,11 +13,11 @@ from app.repositories.file_repo import FileRepository
 from app.services.file_retention import FileRetentionService, file_expires_at, is_file_expired
 
 
-def test_file_expires_at_defaults_to_three_months(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "file_retention_days", 90)
+def test_file_expires_at_defaults_to_one_year(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "file_retention_days", 365)
     anchor = datetime(2026, 5, 15, 12, 0, tzinfo=timezone.utc)
 
-    assert file_expires_at(anchor) == anchor + timedelta(days=90)
+    assert file_expires_at(anchor) == anchor + timedelta(days=365)
 
 
 def test_file_retention_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
