@@ -1,5 +1,5 @@
 /**
- * BotSession 行为单测（mock WS server，不连真 backend）。
+ * BotSession unit tests using a mock WS server, without a real backend.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -8,7 +8,7 @@ import type { ChannelInfo } from "../src/types.js";
 
 import { MockBridge } from "./mock-bridge.js";
 
-const TOKEN = "ocw_test_token";
+const TOKEN = "agb_test_token";
 
 async function makeSession(
   bridge: MockBridge,
@@ -30,7 +30,7 @@ function newSession(
       advanced: {
         reconnectBaseMs: 50,
         reconnectMaxMs: 500,
-        heartbeatIntervalMs: 60_000, // 测试里不需要心跳
+        heartbeatIntervalMs: 60_000, // Heartbeats are unnecessary in tests.
         sendAckTimeoutMs: 2000,
       },
     },
@@ -206,12 +206,12 @@ describe("BotSession with mock bridge", () => {
     session.start();
     await session.waitReady();
 
-    // 后端踢下 control
+    // Backend kicks off the control connection.
     bridge.supersede("control");
 
-    // 片刻后 session 应当自动 stop（onFatal 触发 → stop()）
+    // The session should stop shortly after onFatal triggers stop().
     await waitFor(() => fatals.length > 0, 3000);
-    // 再 start 会抛错
+    // Starting again should throw.
     expect(() => session.start()).toThrow(/stopped/);
   });
 
@@ -220,12 +220,12 @@ describe("BotSession with mock bridge", () => {
     session.start();
     await session.waitReady();
 
-    // 模拟处理过 seq=5
+    // Simulate processing through seq=5.
     bridge.pushMessage({ task_id: "t1", channel_id: "C1", seq: 5 });
     await waitFor(() => session.lastProcessedSeq === 5);
 
-    // 用 1006 (abnormal) 关掉 data —— 非致命，会重连
-    // 直接从 mock server 侧 close 非 4401/4402/4403 的码即可
+    // Close data with 1006 (abnormal); this is non-fatal and should reconnect.
+    // Closing from the mock server with any non-4401/4402/4403 code is sufficient.
     const beforeCount = bridge.receivedResumes.length;
     for (const c of (bridge as unknown as { conns: Set<{ ws: { close: (c: number, r: string) => void; readyState: number }; stream: string }> }).conns) {
       if (c.stream === "data" && c.ws.readyState === 1 /* OPEN */) {
@@ -233,7 +233,7 @@ describe("BotSession with mock bridge", () => {
       }
     }
 
-    // 重连后应发 resume {last_event_seq: 5}
+    // Reconnect should send resume {last_event_seq: 5}.
     await waitFor(() => bridge.receivedResumes.length > beforeCount, 5000);
     const lastResume = bridge.receivedResumes[bridge.receivedResumes.length - 1];
     expect(lastResume.type).toBe("resume");
@@ -243,11 +243,11 @@ describe("BotSession with mock bridge", () => {
   });
 
   it("invalid token (401) prevents accept; session eventually becomes fatal", async () => {
-    // 构造一个带错误 token 的 session
+    // Create a session with an invalid token.
     const fatals: string[] = [];
     const s = new BotSession(
       {
-        botToken: "ocw_wrong",
+        botToken: "agb_wrong",
         controlUrl: bridge.controlUrl,
         dataUrl: bridge.dataUrl,
         advanced: { reconnectBaseMs: 30, reconnectMaxMs: 60, sendAckTimeoutMs: 500 },
@@ -255,9 +255,9 @@ describe("BotSession with mock bridge", () => {
       { onFatal: (r) => fatals.push(r) },
     );
     s.start();
-    // mock 在鉴权失败时以 HTTP 401 拒绝 upgrade —— 客户端看到 ws error/close
-    // 非 4401/4402/4403，所以会继续重试；但 ReconnectingClient 会不停尝试（non-fatal）。
-    // 为保证测试可终止，不等待 fatal —— 只验证 session 连不上即可。
+    // The mock rejects upgrade with HTTP 401 on auth failure; the client sees ws error/close.
+    // This is not 4401/4402/4403, so ReconnectingClient keeps retrying as non-fatal.
+    // To keep the test finite, do not wait for fatal; only verify the session cannot connect.
     await new Promise((r) => setTimeout(r, 200));
     expect(s.botId).toBeNull();
     await s.stop();

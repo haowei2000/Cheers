@@ -1,4 +1,4 @@
-"""Friends v1 路由（好友管理）."""
+"""Friends API routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query

@@ -1,25 +1,42 @@
-"""应用配置，从环境变量加载。"""
+"""Application configuration loaded from environment variables."""
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-# backend 根目录（app/config.py -> app -> backend）
+# Backend root directory (app/config.py -> app -> backend).
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    """全局配置."""
+    """Global configuration."""
 
-    # 主业务数据库（PostgreSQL）
+    # Main business database (PostgreSQL).
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus"
 
-    # Context Store 数据库（四层记忆；默认同主库）
+    # Context Store database for memory layers; defaults to the main database.
     context_db_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/agentnexus"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # 数据目录（相对项目根或绝对路径）
+    # High-concurrency controls.
+    orchestrator_queue_backend: str = "redis"  # redis | memory
+    orchestrator_worker_concurrency: int = 4
+    orchestrator_bot_concurrency_per_message: int = 3
+    bot_pipeline_redis_read_count: int = 8
+    bot_event_queue_backend: str = ""  # "" = follow orchestrator_queue_backend; redis | memory
+    bot_event_worker_concurrency: int = 4
+    bot_event_redis_read_count: int = 8
+    realtime_broker_backend: str = "redis"  # redis | memory
+    ws_outbound_queue_size: int = 256
+    ws_broadcast_enqueue_concurrency: int = 128
+    ws_send_timeout_seconds: float = 5.0
+    stream_delta_flush_interval_seconds: float = 0.08
+    stream_delta_flush_chars: int = 512
+    unread_fanout_concurrency: int = 64
+    recent_debounce_seconds: float = 5.0
+
+    # Data directory, relative to project root or absolute.
     data_dir: str = "data"
 
     # S3-compatible object storage (RustFS / MinIO / AWS S3 / Cloudflare R2)
@@ -35,86 +52,97 @@ class Settings(BaseSettings):
     storage_s3_verify_ssl: bool = True
     storage_presign_expires_seconds: int = 900
     file_upload_max_bytes: int = 25 * 1024 * 1024
+    # File retention: default 365 days; <=0 disables expiry.
+    file_retention_days: int = 365
+    file_retention_cleanup_interval_seconds: int = 24 * 60 * 60
     file_upload_allowed_types: str = (
         "application/pdf,"
+        "application/msword,"
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
-        "text/plain,"
+        "application/vnd.ms-excel,"
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+        "application/vnd.ms-powerpoint,"
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation,"
+        "application/ofd,application/rtf,text/csv,"
+        "application/zip,application/vnd.rar,application/x-7z-compressed,"
+        "application/x-tar,application/gzip,application/epub+zip,"
+        "text/html,text/plain,"
         "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000
+    public_base_url: str = "https://agentnexus.epichust.com"
+    kkfileview_enabled: bool = True
+    kkfileview_base_url: str = "https://agentnexus.epichust.com/preview"
+    kkfileview_token_ttl_seconds: int = 10 * 60
     avatar_upload_max_bytes: int = 2 * 1024 * 1024
     avatar_upload_allowed_types: str = "image/png,image/jpeg,image/webp,image/gif"
 
-    # JWT 认证
-    jwt_secret_key: str = ""  # 留空则启动时自动生成（非持久化），建议在 .env 中配置
+    # JWT authentication.
+    jwt_secret_key: str = ""  # Empty means generated at startup and not persisted; prefer setting it in .env.
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 1440  # 24 小时
+    jwt_access_token_expire_minutes: int = 1440  # 24 hours
 
-    # API Key 加密存储（Fernet 对称加密）
-    api_key_encryption_key: str = ""  # Base64 Fernet 密钥；留空则自动生成并持久化到 data/.encryption_key
+    # API key encrypted storage with Fernet symmetric encryption.
+    api_key_encryption_key: str = ""  # Base64 Fernet key; empty means generated and persisted to data/.encryption_key.
 
-    # 调试
+    # Debug.
     debug: bool = False
 
-    # 日志目录（相对项目根或绝对路径）；留空则仅控制台
+    # Log directory, relative to project root or absolute; empty means console only.
     log_dir: str = "data/logs"
-    # 单日志文件最大字节，0 表示不轮转
+    # Maximum bytes per log file; 0 disables rotation.
     log_max_bytes: int = 5 * 1024 * 1024  # 5MB
     log_backup_count: int = 3
 
-    # 引导 Bot 使用的 LLM（可选；不配置则用关键词匹配；默认连本地 Ollama）
-    guide_llm_base_url: str = ""
-    guide_llm_model: str = ""
-    guide_llm_api_key: str = ""
-    guide_llm_temperature: float = 0.7
-    guide_llm_max_tokens: int = 1000
+    # LLM used by the Helper Bot; keyword matching is used when unset.
+    helper_llm_base_url: str = ""
+    helper_llm_model: str = ""
+    helper_llm_api_key: str = ""
+    helper_llm_temperature: float = 0.7
+    helper_llm_max_tokens: int = 1000
     llm_localhost_alias: str = ""
 
-    # 系统 LLM（RECENT 压缩、文件摘要等；不配置则简单截断）
+    # System LLM for RECENT compression, file summaries, and similar tasks; simple truncation is used when unset.
     system_llm_api_key: str = ""
-    system_llm_base_url: str = ""  # OpenAI 兼容
+    system_llm_base_url: str = ""  # OpenAI-compatible
     system_llm_model: str = ""
 
-    # 后端记忆分页与近期上下文（不影响前端消息列表分页）
+    # Backend memory pagination and recent context; does not affect frontend message-list pagination.
     memory_history_page_max_chars: int = 50000
     memory_recent_direct_message_count: int = 30
     memory_recent_summary_max_chars: int = 1500
 
-    # 文生图（DashScope 原生 API）
-    image_gen_base_url: str = "https://dashscope.aliyuncs.com"
-    image_gen_api_key: str = ""
-    image_gen_default_model: str = "qwen-image-2.0-pro"
-
-    # 邮件 SMTP 配置（留空则仅打印验证码到日志，适合开发环境）
+    # SMTP email settings; when empty, verification codes are only logged for development.
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
     smtp_password: str = ""
-    smtp_from: str = ""          # 发件人地址，留空则用 smtp_username
-    smtp_use_tls: bool = True    # True=STARTTLS(587)；False=SSL(465) 时建议改 smtp_port=465
-    smtp_ssl: bool = False       # True 时用 SSL 直连（465端口）
+    smtp_from: str = ""          # Sender address; defaults to smtp_username when empty.
+    smtp_use_tls: bool = True    # True=STARTTLS(587); for SSL(465), set False and use smtp_ssl=True.
+    smtp_ssl: bool = False       # Use direct SSL, usually on port 465.
 
 
-    # Web 搜索引擎：bing_cn（必应国内版）/ baidu（百度）/ duckduckgo
+    # Web search engine: bing_cn, baidu, or duckduckgo.
     web_search_engine: str = "bing_cn"
-    # Web 搜索 / web_fetch 代理（留空则直连）
+    # Proxy for web search and web_fetch; empty means direct connection.
     web_search_proxy: str = ""
 
-    # CORS 允许的前端 origin 列表（逗号分隔或直接配置为列表）
+    # Allowed frontend origins for CORS, either comma-separated or configured as a list.
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
-    # 日志格式（True = JSON 结构化日志；False = 人类可读文本）
+    # Log format; True emits structured JSON and False emits human-readable text.
     log_json: bool = False
 
-    # 种子数据：初始管理员账号
+    # Seed data: initial administrator account.
     admin_username: str = "admin"
     admin_password: str = "admin#Nexus2024"
     admin_display_name: str = "系统管理员"
 
-    # ===== OpenClaw channel plugin bridge =====
-    openclaw_bridge_enabled: bool = True
-    openclaw_bridge_token: str = ""  # 空 = 未配置，bridge 路由返回 503
-    openclaw_bridge_timeout_seconds: int = 300  # 异步 Bot 慢回复阈值（超时后占位消息转后台任务）
+    # ===== Agent Bridge =====
+    agent_bridge_enabled: bool = True
+    agent_bridge_token: str = ""  # Empty means bridge routes return 503.
+    # Foreground wait threshold for async bots; after timeout, only the placeholder becomes a background task.
+    agent_bridge_timeout_seconds: int = 600
 
     model_config = {
         "env_file": [str(_BACKEND_ROOT.parent / ".env"), str(_BACKEND_ROOT / ".env")],
@@ -124,7 +152,7 @@ class Settings(BaseSettings):
 
 
 def get_data_dir(base: Path) -> Path:
-    """解析 data 目录路径."""
+    """Get data dir."""
     p = Path(settings.data_dir)
     if not p.is_absolute():
         p = base / p
@@ -132,7 +160,7 @@ def get_data_dir(base: Path) -> Path:
 
 
 def resolve_data_dir() -> Path:
-    """零参数版：以 backend/app/ 为基准解析 data_dir（与历史 adapters 写入位置一致）。"""
+    """Resolve data dir."""
     p = Path(settings.data_dir)
     if p.is_absolute():
         return p

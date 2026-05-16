@@ -1,34 +1,36 @@
-"""Bot 业务逻辑层."""
+"""Bot service module."""
 from __future__ import annotations
 
 import json
 import re
+from typing import Literal, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models import BotAccount, User
+from app.features.bot_runtime.builtin_ids import BUILTIN_BOT_IDS
 from app.repositories.bot_repo import AIModelRepository, BotRepository, PromptTemplateRepository
-from app.services.guide.constants import GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID
 from app.utils.permissions import can_access, get_friend_ids
 
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_\-'\u4e00-\u9fff]+$")
-_BUILTIN_BOT_IDS = {GUIDE_BOT_ID, GUIDE_HELPER_BOT_ID}
+_BUILTIN_BOT_IDS = set(BUILTIN_BOT_IDS)
 BOT_SCOPES = {"private", "friend", "everyone"}
+BotScope = Literal["private", "friend", "everyone"]
 
 
 def is_builtin_bot(bot: BotAccount) -> bool:
     return bot.bot_id in _BUILTIN_BOT_IDS
 
 
-def normalize_bot_scope(scope: str | None) -> str:
+def normalize_bot_scope(scope: str | None) -> BotScope:
     """Return a valid bot scope; new Bot code treats scope as the source of truth."""
     if scope in BOT_SCOPES:
-        return scope
+        return cast(BotScope, scope)
     return "friend"
 
 
-def bot_scope(bot: BotAccount) -> str:
+def bot_scope(bot: BotAccount) -> BotScope:
     return normalize_bot_scope(getattr(bot, "scope", None))
 
 
@@ -91,7 +93,7 @@ class BotService:
         return bot
 
     async def list_visible(self, current_user: User) -> list[BotAccount]:
-        """返回当前用户可发起 DM/邀请的 bot。"""
+        """List visible."""
         all_bots = await self.repo.list_all()
         if current_user.role == "system_admin":
             return all_bots
@@ -135,6 +137,11 @@ class BotService:
             raise BadRequestError("指定的提示词模板不存在")
         return model, template
 
+    async def _validate_template(self, template_id: str) -> None:
+        template = await self.template_repo.get_by_id(template_id)
+        if not template:
+            raise BadRequestError("指定的提示词模板不存在")
+
     async def create(
         self,
         username: str,
@@ -149,17 +156,11 @@ class BotService:
         scope: str | None = None,
         bot_id: str | None = None,
         binding_type: str = "http",
+        bridge_provider: str | None = None,
         binding_config: dict | None = None,
         current_user: User,
     ) -> tuple[BotAccount, str | None]:
-        """创建 Bot。
-
-        Returns:
-            (bot, plaintext_token)
-            - HTTP Bot：token 为 None
-            - WebSocket Bot：生成一次性明文 token，返回给调用者转发给用户；
-              此后只保留哈希
-        """
+        """Create."""
         username = _validate_username(username)
         intro = _validate_intro(intro)
         scope = normalize_bot_scope(scope)
@@ -174,10 +175,12 @@ class BotService:
             if not model_id or not template_id:
                 raise BadRequestError("HTTP Bot 必须指定 model_id 与 template_id")
             await self._validate_model_and_template(model_id, template_id, current_user)
-        elif binding_type == "websocket":
-            # WebSocket Bot 由 OpenClaw channel plugin 提供能力，不依赖内置 AIModel/PromptTemplate
+        elif binding_type == "agent_bridge":
+            # Agent Bridge bots are powered by external providers and do not depend on an AIModel.
+            # They can still use PromptTemplate to render task text sent to the plugin.
             model_id = None
-            template_id = None
+            if template_id:
+                await self._validate_template(template_id)
         else:
             raise BadRequestError(f"未知的 binding_type: {binding_type}")
 
@@ -192,36 +195,34 @@ class BotService:
             avatar_url=avatar_url,
             scope=scope,
             binding_type=binding_type,
+            bridge_provider=(bridge_provider or "generic").strip() or "generic",
             binding_config=binding_config,
             created_by=current_user.user_id,
         )
         if bot_id and bot_id.strip():
             bot.bot_id = bot_id.strip()
 
-        if binding_type == "websocket":
-            from app.services.openclaw_bridge.tokens import apply_token_to_bot
+        if binding_type == "agent_bridge":
+            from app.features.agent_bridge.tokens import apply_token_to_bot
             plaintext_token = apply_token_to_bot(bot)
 
         self.session.add(bot)
         await self.session.flush()
         return bot, plaintext_token
 
-    async def rotate_websocket_token(
+    async def rotate_agent_bridge_token(
         self,
         bot_id: str,
         current_user: User,
     ) -> tuple[BotAccount, str]:
-        """为 WebSocket Bot 轮换 token。旧 token 立即失效（哈希被覆盖）。
-
-        返回 (bot, plaintext_token)。权限：仅创建者或管理员。
-        """
-        from app.services.openclaw_bridge.tokens import apply_token_to_bot
+        """Rotate agent bridge token."""
+        from app.features.agent_bridge.tokens import apply_token_to_bot
 
         bot = await self.get_or_404(bot_id)
         if not can_manage_bot(bot, current_user):
             raise ForbiddenError("无权轮换该 Bot 的 token")
-        if (bot.binding_type or "http") != "websocket":
-            raise BadRequestError("只有 WebSocket Bot 才有 token 可轮换")
+        if (bot.binding_type or "http") != "agent_bridge":
+            raise BadRequestError("只有 Agent Bridge Bot 才有 token 可轮换")
 
         plaintext_token = apply_token_to_bot(bot)
         await self.session.flush()
@@ -259,6 +260,8 @@ class BotService:
             await self._validate_model_and_template(
                 next_model_id, next_template_id, current_user
             )
+        elif next_binding_type == "agent_bridge" and "template_id" in kwargs and kwargs["template_id"]:
+            await self._validate_template(kwargs["template_id"])
 
         return await self.repo.update(bot, **kwargs)
 

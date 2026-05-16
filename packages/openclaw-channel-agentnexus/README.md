@@ -1,15 +1,15 @@
-# openclaw-channel-agentnexus
+# @haowei0520/openclaw-channel-agentnexus
 
-OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNexus `WebSocket Bot`, connected over the per-bot control + data WS bridge.
+OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNexus `Agent Bridge Bot`, connected over the per-bot control + data WS bridge.
 
 ```
 ┌────────────────────────────┐        ┌───────────────────────────┐
 │  OpenClaw (this plugin)    │        │  AgentNexus backend       │
 │                            │        │                           │
-│  createChatChannelPlugin(  │  ws    │  /ws/openclaw/control     │
+│  createChatChannelPlugin(  │  ws    │  /ws/agent-bridge/control     │
 │    {outbound.sendText,     │◄──────►│     (hello, join/left)    │
 │     gateway.start, ...}    │        │                           │
-│                            │  ws    │  /ws/openclaw/data        │
+│                            │  ws    │  /ws/agent-bridge/data        │
 │   ┌──────────────────┐     │◄──────►│     (message, reply, send)│
 │   │  BotSession      │     │        │                           │
 │   │   control + data │     │        │                           │
@@ -19,17 +19,29 @@ OpenClaw channel plugin for **AgentNexus**. One OpenClaw `account` = one AgentNe
 
 ## Install
 
-### A. 从 GitHub Release 装预构建 tarball（推荐）
+公开 npm 包名是 `@haowei0520/openclaw-channel-agentnexus`。如果你在旧说明或口头沟通里看到
+`@haowei2000/openclaw-channel-agentnexus`，只有在私有 npm registry 中确实发布了这个包时才使用；公开 npm registry 上应使用 `@haowei0520`。
+
+### A. 从 npm 装当前发布 tarball（推荐）
+
+OpenClaw 安装插件时使用 tarball；用 `npm pack` 拉取公开包后安装：
+
+```bash
+npm pack @haowei0520/openclaw-channel-agentnexus@0.2.4 --pack-destination /tmp
+openclaw plugins install /tmp/haowei0520-openclaw-channel-agentnexus-0.2.4.tgz
+```
+
+### B. 从 GitHub Release 装预构建 tarball
 
 不用 clone 仓库，对方机器只要能上 GitHub 就行：
 
 ```bash
 # 用 gh CLI（最稳，URL 不会被换行截断）
-gh release download openclaw-channel-agentnexus-v0.2.2 \
+gh release download openclaw-channel-agentnexus-v0.2.4 \
   -R Grant-Huang/AgentNexus \
   --pattern "*.tgz" \
   --dir /tmp
-openclaw plugins install /tmp/openclaw-channel-agentnexus-0.2.2.tgz
+openclaw plugins install /tmp/haowei0520-openclaw-channel-agentnexus-0.2.4.tgz
 
 # 或直接 curl（URL 必须用引号括住，避免终端换行截断）
 curl -L -o /tmp/agentnexus.tgz \
@@ -37,19 +49,29 @@ curl -L -o /tmp/agentnexus.tgz \
 openclaw plugins install /tmp/agentnexus.tgz
 ```
 
-### B. 从源码 link 安装（开发态）
+### C. 从 AgentNexus 后端下载离线 tarball
+
+如果 AgentNexus 后端已经挂载 `release/openclaw-channel-agentnexus.tgz`，可以直接从部署实例下载。使用这条路径前，先确认 `release/` 下的 tarball 是最新构建产物：
+
+```bash
+curl -L -o /tmp/openclaw-channel-agentnexus.tgz \
+  "http://localhost:8002/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz"
+openclaw plugins install /tmp/openclaw-channel-agentnexus.tgz
+```
+
+### D. 从源码 link 安装（开发态）
 
 ```bash
 cd packages/openclaw-channel-agentnexus
 npm install
 npm run build
-openclaw plugins install -l "$(pwd)"      # -l 表示 link，改 dist 重启即生效
+openclaw plugins install -l "$(pwd)"      # -l 表示 link，改 dist 后重启即生效
 ```
 
-两种方式都装完后，应在 `openclaw plugins list` 里看到：
+安装完成后，应在 `openclaw plugins list` 里看到：
 
 ```
-openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.2
+@haowei0520/openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.2.4
 ```
 
 如果 `failed to load`：检查 `dist/` 是否齐 + `openclaw.plugin.json` 是否在包根。
@@ -60,9 +82,9 @@ openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.
 
 以下流程在 OpenClaw CLI `2026.4.15` 上实测通过。
 
-### 1. AgentNexus 侧准备一个 WebSocket Bot
+### 1. AgentNexus 侧准备一个 Agent Bridge Bot
 
-打开 AdminPage → Bot 管理 → 创建 Bot，选 **WebSocket Bot**。弹出的一次性 `ocw_...` token **立刻复制**，关闭后只能 rotate。
+打开 AdminPage → Bot 管理 → 创建 Bot，选 **Agent Bridge Bot**。弹出的一次性 `agb_...` token **立刻复制**，关闭后只能 rotate。
 
 把 bot 加进想让它工作的频道（频道成员里加 bot）。
 
@@ -80,16 +102,16 @@ openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.
     "agentnexus": {
       "enabled": true,
       "accounts": {
-        "my-bot": {                    // 任意 ID，对应 AgentNexus 里的一个 WS Bot
+        "my-bot": {                    // 任意 ID，对应 AgentNexus 里的一个 Agent Bridge Bot
           "enabled": true,
-          "botToken": "ocw_xxxxxxxxxxxxxxxx",                       // 必填：第 1 步拿到的 token
-          "controlUrl": "ws://your-host:8002/ws/openclaw/control",  // 必填
-          "dataUrl":    "ws://your-host:8002/ws/openclaw/data",     // 必填
+          "botToken": "agb_xxxxxxxxxxxxxxxx",                       // 必填：第 1 步拿到的 token
+          "controlUrl": "ws://your-host:8002/ws/agent-bridge/control",  // 必填
+          "dataUrl":    "ws://your-host:8002/ws/agent-bridge/data",     // 必填
           "advanced": {                              // 可选，全部有合理默认
             "reconnectBaseMs": 1000,                 // 重连退避起点
             "reconnectMaxMs": 30000,                 // 重连退避上限
             "heartbeatIntervalMs": 30000,            // ping 间隔
-            "sendAckTimeoutMs": 10000                // reply/send ack 超时
+            "sendAckTimeoutMs": 600000               // reply/send ack 超时（10 分钟）
           }
         }
         // 想多挂 bot 就再加 "another-bot": { ... }
@@ -99,11 +121,71 @@ openclaw-channel-agentnexus  agentnexus  openclaw  loaded  …/dist/index.js  0.
 }
 ```
 
+也可以用脚本快速写入配置。先确认插件已安装并在 `openclaw plugins list | grep agentnexus` 中显示 `loaded`，再执行：
+
+```bash
+AGENTNEXUS_BOT_TOKEN='agb_替换成最新token' python3 - <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+token = os.environ.get("AGENTNEXUS_BOT_TOKEN", "").strip()
+if not token.startswith("agb_"):
+    sys.exit("AGENTNEXUS_BOT_TOKEN 必须是最新的 agb_... token")
+
+plugin_dir = Path.home() / ".openclaw" / "extensions" / "agentnexus"
+if not plugin_dir.exists():
+    sys.exit(f"插件目录不存在：{plugin_dir}\n请先安装插件，再添加 channels.agentnexus")
+
+p = Path.home() / ".openclaw" / "openclaw.json"
+backup = p.with_suffix(".json.bak.add-agentnexus")
+backup.write_text(p.read_text())
+
+data = json.loads(p.read_text())
+
+plugins = data.setdefault("plugins", {})
+entries = plugins.setdefault("entries", {})
+entries["agentnexus"] = {"enabled": True}
+
+allow = plugins.setdefault("allow", [])
+if "agentnexus" not in allow:
+    allow.append("agentnexus")
+
+data.setdefault("channels", {})["agentnexus"] = {
+    "enabled": True,
+    "accounts": {
+        "remote-bot": {
+            "enabled": True,
+            "botToken": token,
+            "controlUrl": "wss://agentnexus.epichust.com/ws/agent-bridge/control",
+            "dataUrl": "wss://agentnexus.epichust.com/ws/agent-bridge/data",
+            "advanced": {
+                "reconnectBaseMs": 1000,
+                "reconnectMaxMs": 30000,
+                "heartbeatIntervalMs": 30000,
+                "sendAckTimeoutMs": 600000,
+            },
+        },
+    },
+}
+
+p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+print(f"已写入 {p}")
+print(f"备份文件 {backup}")
+PY
+
+openclaw daemon restart
+openclaw channels status --probe
+```
+
+如果 OpenClaw 报 `channels.agentnexus: unknown channel id: agentnexus`，通常是还没安装或启用插件就先写入了 channel 配置。先删除 `channels.agentnexus`，安装并确认插件 `loaded` 后再执行上面的脚本。
+
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `botToken` | ✅ | AgentNexus 创建 WS Bot 时弹出的 `ocw_...` token，仅该次可见 |
-| `controlUrl` | ✅ | bridge 控制流，路径固定 `/ws/openclaw/control` |
-| `dataUrl` | ✅ | bridge 数据流，路径固定 `/ws/openclaw/data` |
+| `botToken` | ✅ | AgentNexus 创建 Agent Bridge Bot 时弹出的 `agb_...` token，仅该次可见 |
+| `controlUrl` | ✅ | bridge 控制流，路径固定 `/ws/agent-bridge/control` |
+| `dataUrl` | ✅ | bridge 数据流，路径固定 `/ws/agent-bridge/data` |
 | `enabled` | ❌ | 默认 `true`；置 `false` 临时禁用该 account |
 | `advanced.*` | ❌ | 重连 / 心跳 / ACK 超时；默认值适合大多数场景 |
 
@@ -120,7 +202,7 @@ openclaw channels status --probe
 验证 AgentNexus 后端是否收到 plugin 连接：
 
 ```bash
-curl -H "X-OpenClaw-Token: <BRIDGE_TOKEN>" http://localhost:8002/api/v1/openclaw/bridge/status
+curl -H "X-Agent-Bridge-Token: <BRIDGE_TOKEN>" http://localhost:8002/api/v1/agent-bridge/status
 # data.bot_sessions 应从 0 变成 1（或之前的数 +1）
 ```
 
@@ -158,13 +240,13 @@ SDK 的 `ChannelGatewayContext.runtime` helpers，这些在 2026.4.15 SDK 里还
 `BotSession` 是一个独立可用的 Node 类。在没有 OpenClaw SDK 的环境里可以直接：
 
 ```ts
-import { BotSession } from "openclaw-channel-agentnexus";
+import { BotSession } from "@haowei0520/openclaw-channel-agentnexus";
 
 const session = new BotSession(
   {
     botToken: process.env.AGENTNEXUS_BOT_TOKEN!,
-    controlUrl: "ws://localhost:8002/ws/openclaw/control",
-    dataUrl: "ws://localhost:8002/ws/openclaw/data",
+    controlUrl: "ws://localhost:8002/ws/agent-bridge/control",
+    dataUrl: "ws://localhost:8002/ws/agent-bridge/data",
   },
   {
     onReady: () => console.log("ready", session.botId),

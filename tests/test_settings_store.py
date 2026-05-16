@@ -1,8 +1,8 @@
-"""admin.settings_store 回退逻辑测试。"""
+"""Tests for test settings store."""
 from __future__ import annotations
 
-from app.services.admin.settings_store import get_llm_providers_list, get_provider_for_scope
 from app.config import settings
+from app.services.admin.settings_store import get_llm_providers_list, get_provider_for_scope
 
 
 def test_get_provider_for_scope_uses_existing_provider_when_bindings_empty(monkeypatch) -> None:
@@ -20,12 +20,12 @@ def test_get_provider_for_scope_uses_existing_provider_when_bindings_empty(monke
                     "max_tokens": 1000,
                 }
             ],
-            "llm_bindings": {"guide_bot": "provider-1"},
+            "llm_bindings": {"channel_bot": "provider-1"},
         },
     )
     monkeypatch.setattr(settings, "llm_localhost_alias", "host.docker.internal", raising=False)
 
-    provider = get_provider_for_scope("guide_bot")
+    provider = get_provider_for_scope("channel_bot")
 
     assert provider is not None
     assert provider["base_url"] == "http://host.docker.internal:11434/v1"
@@ -64,7 +64,7 @@ def test_get_llm_providers_list_includes_enabled_ai_models(monkeypatch) -> None:
 def test_get_provider_for_scope_supports_ai_model_binding(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.admin.settings_store.load_admin_settings",
-        lambda: {"llm_providers": [], "llm_bindings": {"guide_bot": "ai-model:model-qwen-plus"}},
+        lambda: {"llm_providers": [], "llm_bindings": {"channel_bot": "ai-model:model-qwen-plus"}},
     )
     monkeypatch.setattr(
         "app.services.admin.settings_store._load_ai_model_providers",
@@ -83,7 +83,7 @@ def test_get_provider_for_scope_supports_ai_model_binding(monkeypatch) -> None:
         ],
     )
 
-    provider = get_provider_for_scope("guide_bot")
+    provider = get_provider_for_scope("channel_bot")
 
     assert provider is not None
     assert provider["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"

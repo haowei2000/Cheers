@@ -1,9 +1,4 @@
-"""FileService.confirm_upload 校验：必须 head_object 通过才能标记为 uploaded。
-
-回归背景：修复前 confirm_upload 直接把 DB status 置为 uploaded，不校验对象存储。
-前端 PUT 失败 / 网络抖动 / CORS 等情况下会产生"DB 有记录但 S3 无对象"的幽灵记录，
-下载时返回 NoSuchKey 404。此测试固化修复。
-"""
+"""Tests for test file service confirm."""
 from __future__ import annotations
 
 import pytest
@@ -127,7 +122,7 @@ async def test_confirm_upload_skips_head_when_storage_disabled(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """storage 未启用时走本地 path，不应调用 head_object（兼容现有本地模式）。"""
+    """Covers test confirm upload skips head when storage disabled behavior."""
     rec, user = await _seed_fixture(
         db_session,
         ws_id="f0000000-0000-0000-0000-0000000000c3",

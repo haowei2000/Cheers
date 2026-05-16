@@ -1,8 +1,9 @@
 /**
- * OpenClaw channel plugin entry —— 按 sdk-channel-plugins 官方契约。
+ * OpenClaw channel plugin entry following the sdk-channel-plugins contract.
  *
- * registerFull 里注册自 loopback HTTP 路由：WS 入站时 onMessage 会 fetch 这条路由，
- * 路由 handler 运行在 gateway-request-scope，合法调用 api.runtime.subagent.run。
+ * registerFull registers a loopback HTTP route. When WebSocket inbound
+ * messages arrive, onMessage fetches this route. The route handler runs in
+ * gateway-request-scope and may legally call api.runtime.subagent.run.
  */
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -15,12 +16,14 @@ import {
   emitRunTrace,
   getSharedApi,
   installAgentEventForwarder,
+  notifyOpenClawRunTerminal,
   registerOpenClawRunTrace,
   setSharedApi,
   type ResolvedAccount,
 } from "./plugin.js";
 
 const INBOUND_PATH = "/plugins/agentnexus/inbound";
+const RUN_COMPLETION_WAIT_TIMEOUT_MS = 48 * 60 * 60 * 1000;
 
 interface InboundBody {
   accountId: string;
@@ -54,6 +57,11 @@ function resolveGatewayToken(api: OpenClawPluginApi): string | null {
   return null;
 }
 
+function agentIdFromSessionKey(sessionKey: string): string | null {
+  const match = /^agent:([^:]+):/.exec(sessionKey);
+  return match?.[1] || null;
+}
+
 export default defineChannelPluginEntry<typeof agentnexusPlugin>({
   id: "agentnexus",
   name: "AgentNexus",
@@ -73,9 +81,10 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
 
     api.registerHttpRoute({
       path: INBOUND_PATH,
-      // auth="gateway"：让 gateway 做外层 bearer 校验（用 api.config.gateway.auth.token
-      // 的共享密钥），同时为此路由注入 operator.write scope，subagent.run 才能合法调用。
-      // auth="plugin" 时 gateway 不注入 scope，subagent.run 会 500。
+      // auth="gateway" lets the gateway validate the outer bearer token with
+      // api.config.gateway.auth.token and inject operator.write scope for this
+      // route, which is required for subagent.run. With auth="plugin", gateway
+      // does not inject scope and subagent.run returns 500.
       auth: "gateway",
       match: "exact",
       replaceExisting: true,
@@ -84,9 +93,9 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
         const req = rawReq as IncomingMessage;
         const res = rawRes as ServerResponse;
 
-        // 注意：registerFull 会被多次调用（config reload），每次都重新随机
-        // 生成 internalToken 并 setSharedApi；如果我们这里从闭包里拿，就和
-        // WS 侧 getSharedApi() 拿到的可能不一致。所以必须 request 时才读。
+        // registerFull may be called multiple times during config reloads. Each
+        // call creates a new internalToken and calls setSharedApi. Reading from
+        // this closure may diverge from the WebSocket side, so read per request.
         const expected = getSharedApi().internalToken;
         const token = req.headers?.["x-agentnexus-internal-token"];
         if (!expected || !token || token !== expected) {
@@ -109,7 +118,8 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
           return true;
         }
 
-        // 此 handler 运行在 gateway-request-scope —— subagent.run + session-binding 合法
+        // This handler runs in gateway-request-scope, so subagent.run and
+        // session binding are allowed.
         try {
           // runId normally equals idempotencyKey (= taskId). Register before
           // subagent.run so early lifecycle events have a target to forward to.
@@ -122,7 +132,7 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
             placeholderMsgId: body.placeholderMsgId ?? null,
           });
 
-          // Step 1: session binding（承诺 sessionKey → conversation）
+          // Step 1: bind sessionKey to the conversation.
           await getSessionBindingService().bind({
             targetSessionKey: body.sessionKey,
             targetKind: "subagent",
@@ -132,14 +142,24 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
               conversationId: body.taskId,
             },
             placement: "current",
+            metadata: {
+              agentnexusTaskId: body.taskId,
+              placeholderMsgId: body.placeholderMsgId ?? null,
+              channelId: body.channelId,
+              sessionKey: body.sessionKey,
+            },
           });
 
-          // Step 2: 更新 session entry 的 last route —— deliver:true 从这里读
-          //   {channel, to, accountId, threadId} 来决定把 agent 回复发到哪个 plugin
+          // Step 2: update the session entry's last route. deliver:true reads
+          // {channel, to, accountId, threadId} here to choose the plugin target
+          // for agent replies.
           const sessRT = api.runtime.channel?.session;
           if (sessRT?.resolveStorePath && sessRT?.updateLastRoute) {
             try {
-              const storePath = sessRT.resolveStorePath();
+              const agentId = agentIdFromSessionKey(body.sessionKey);
+              const storePath = agentId
+                ? sessRT.resolveStorePath(undefined, { agentId })
+                : sessRT.resolveStorePath();
               await sessRT.updateLastRoute({
                 storePath,
                 sessionKey: body.sessionKey,
@@ -182,6 +202,20 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
           api.logger.info(
             `agentnexus: inbound→subagent.run runId=${runId} sk=${body.sessionKey} task=${body.taskId}`,
           );
+          void api.runtime.subagent.waitForRun({
+            runId,
+            timeoutMs: RUN_COMPLETION_WAIT_TIMEOUT_MS,
+          }).then((result) => {
+            notifyOpenClawRunTerminal({
+              runId,
+              accountId: body.accountId,
+              taskId: body.taskId,
+              status: result.status,
+              error: result.error ?? null,
+            }, api.logger);
+          }).catch((err) => {
+            api.logger.warn(`agentnexus: waitForRun failed runId=${runId}: ${String(err)}`);
+          });
           res.statusCode = 200;
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ ok: true, runId }));
@@ -205,7 +239,7 @@ export default defineChannelPluginEntry<typeof agentnexusPlugin>({
   },
 });
 
-// 库导出：独立模式的用户可以直接拿 BotSession
+// Library exports for standalone users that want BotSession directly.
 export { BotSession, type InboundMessage, type SessionConfig, type SessionEvents, type SendResult } from "./session.js";
 export { agentnexusPlugin } from "./plugin.js";
 export { isFatalCloseCode, computeBackoff } from "./reconnect.js";

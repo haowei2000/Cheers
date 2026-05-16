@@ -1,40 +1,38 @@
-"""测试子 Bot 上下文传递优化。"""
+"""Tests for test sub bot context."""
 from types import SimpleNamespace
+from xml.etree import ElementTree as ET
 
 import pytest
 
-from app.services.adapters.base import AgentPayload, AgentResponse, OpenClawAdapter
-from app.services.pipeline.bot.context import BotRunContext
+from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
+from app.features.bot_runtime.pipeline.adapter_events import Final
+from app.features.bot_runtime.pipeline.bot.context import BotRunContext
 
 
 class _FakeWriter:
     async def pre_create(self, bot_id: str, task_id: str):
         return SimpleNamespace(msg_id="msg-001")
 
-    async def finalize(self, msg, content: str, *, file_ids=None) -> None:
+    async def finalize(self, msg, content: str, *, file_ids=None, **_) -> None:
         pass
 
     async def record_task(self, bot_id: str, msg_id: str) -> None:
         pass
 
 
-class _CapturingAdapter(OpenClawAdapter):
+class _CapturingAdapter(BotAdapter):
     def __init__(self) -> None:
         self.payloads: list[AgentPayload] = []
 
-    async def execute(self, payload: AgentPayload) -> AgentResponse:
+    async def execute(self, payload: AgentPayload):
         self.payloads.append(payload)
-        return AgentResponse(
-            content="基于项目锚点，这是一个协作平台...",
-            task_id=payload.task_id,
-            success=True,
-        )
+        yield Final(content="基于项目锚点，这是一个协作平台...", success=True)
 
     async def health_check(self) -> bool:
         return True
 
 
-def _make_run_ctx(*, memory_context: dict[str, str], adapter: OpenClawAdapter) -> BotRunContext:
+def _make_run_ctx(*, memory_context: dict[str, str], adapter: BotAdapter) -> BotRunContext:
     async def adapter_factory(bot_id: str):
         return adapter
 
@@ -67,8 +65,8 @@ def _make_run_ctx(*, memory_context: dict[str, str], adapter: OpenClawAdapter) -
 
 @pytest.mark.asyncio
 async def test_call_bot_passes_memory_context():
-    """验证 call_bot 工具正确传递四层记忆给子 Bot。"""
-    # 模拟完整的四层记忆上下文
+    """Covers test call bot passes memory context behavior."""
+    # Mock the full four-layer memory context.
     memory_context = {
         "anchor": "项目目标：构建协作平台",
         "decisions": "决策 1: 使用 SQLite\n决策 2: 采用四层记忆架构",
@@ -84,7 +82,7 @@ async def test_call_bot_passes_memory_context():
         "_run_ctx": run_ctx,
     }
 
-    from app.services.adapters.channel_bot import _make_tools
+    from app.features.bot_runtime.adapters.channel_bot import _make_tools
 
     tools = _make_tools(tool_ctx)
     call_bot_tool = next(t for t in tools if t.name == "call_bot")
@@ -94,7 +92,7 @@ async def test_call_bot_passes_memory_context():
     assert len(sub_adapter.payloads) == 1
     call_args = sub_adapter.payloads[0]
 
-    # 验证四层记忆被正确传递给子 Bot
+    # Verify the four-layer memory context is passed to the sub-bot.
     assert isinstance(call_args, AgentPayload)
     assert call_args.memory_context == memory_context
     assert call_args.memory_context["anchor"] == "项目目标：构建协作平台"
@@ -102,15 +100,14 @@ async def test_call_bot_passes_memory_context():
     assert call_args.memory_context["files_index"] == "file-001: 需求文档.md - 系统需求规格说明"
     assert call_args.memory_context["recent"] == "用户 A: 怎么创建项目？\nBot: 点击左上角 + 号..."
 
-    # 验证返回结果包含子 Bot 的回复
+    # Verify the result contains the sub-bot reply.
     assert "@codebot 回复：" in result
     assert "基于项目锚点" in result
 
 
 @pytest.mark.asyncio
 async def test_call_bot_sub_bot_receives_decrypted_secret_parent_text():
-    """加密父消息解密后，Coordinator 通过 call_bot 委托子 Bot 时，
-    子 Bot payload 中应是明文任务，而不是入库占位符。"""
+    """Covers test call bot sub bot receives decrypted secret parent text behavior."""
     memory_context = {
         "anchor": "",
         "decisions": "",
@@ -131,7 +128,7 @@ async def test_call_bot_sub_bot_receives_decrypted_secret_parent_text():
         "_run_ctx": run_ctx,
     }
 
-    from app.services.adapters.channel_bot import _make_tools
+    from app.features.bot_runtime.adapters.channel_bot import _make_tools
 
     tools = _make_tools(tool_ctx)
     call_bot_tool = next(t for t in tools if t.name == "call_bot")
@@ -140,17 +137,19 @@ async def test_call_bot_sub_bot_receives_decrypted_secret_parent_text():
 
     assert len(sub_adapter.payloads) == 1
     trigger_message = sub_adapter.payloads[0].trigger_message
-    assert trigger_message["text"] == plaintext
-    assert trigger_message["text"] != "🔒 [加密消息]"
+    root = ET.fromstring(trigger_message["text"])
+    assert root.findtext("./delegated_task") == plaintext
+    assert plaintext in trigger_message["text"]
+    assert "🔒 [加密消息]" not in trigger_message["text"]
 
 
 @pytest.mark.asyncio
 async def test_http_bot_receives_memory_as_template_vars():
-    """验证 HTTP Bot 将记忆上下文注入为模板变量。"""
+    """Covers test http bot receives memory as template vars behavior."""
     from app.db.models import AIModel, BotAccount, PromptTemplate
-    from app.services.adapters.http_bot import HttpBotAdapter
+    from app.features.bot_runtime.adapters.http_bot import HttpBotAdapter
 
-    # 创建测试 Bot（使用记忆变量的模板）
+    # Create a test bot that uses a template with the memory variable.
     model = AIModel(
         model_id="model-test",
         name="Test Model",
@@ -164,8 +163,8 @@ async def test_http_bot_receives_memory_as_template_vars():
         template_id="template-test",
         name="Test Template",
         system_prompt="你是一个专业的助手",
-        user_template="项目锚点：{{anchor}}\n\n决策记录：{{decisions}}\n\n文件索引：{{files_index}}\n\n近期动态：{{recent}}\n\n用户问题：{{message}}",
-        variables=["message"],
+        user_template="{{memory}}\n\n用户问题：{{message}}",
+        variables=["memory", "message"],
     )
 
     bot = BotAccount(
@@ -177,7 +176,7 @@ async def test_http_bot_receives_memory_as_template_vars():
 
     adapter = HttpBotAdapter(bot)
 
-    # 准备带四层记忆的 payload
+    # Prepare a payload with four-layer memory.
     memory_context = {
         "anchor": "锚点内容",
         "decisions": "决策内容",
@@ -185,16 +184,18 @@ async def test_http_bot_receives_memory_as_template_vars():
         "recent": "近期动态内容",
     }
 
-    # 验证_build_messages 会正确注入记忆变量
-    messages = adapter._build_messages("你好", memory_context)
+    # Verify _build_messages renders memory through {{memory}}.
+    from app.features.bot_runtime.adapters.prompt_template import render_memory_context
+
+    messages = adapter._build_messages("你好", {"memory": render_memory_context(memory_context)})
 
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
     assert messages[0]["content"].endswith("你是一个专业的助手")
 
     user_content = messages[1]["content"]
-    assert "项目锚点：锚点内容" in user_content
-    assert "决策记录：决策内容" in user_content
-    assert "文件索引：文件索引内容" in user_content
-    assert "近期动态：近期动态内容" in user_content
+    assert "锚点内容" in user_content
+    assert "决策内容" in user_content
+    assert "文件索引内容" in user_content
+    assert "近期动态内容" in user_content
     assert "用户问题：你好" in user_content

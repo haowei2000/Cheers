@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
@@ -14,9 +15,14 @@ from app.db.models import (
     Channel,
     ChannelMembership,
     Friendship,
+    Message,
+    PromptTemplate,
     User,
     Workspace,
 )
+from app.features.bot_runtime.pipeline.bot.context import BotRunContext
+from app.features.bot_runtime.pipeline.bus import NullEventBus
+from app.features.bot_runtime.pipeline.workflow import BotWorkflowBuilder
 from app.db.session import get_session as get_session_db
 from app.main import app
 
@@ -225,6 +231,146 @@ async def test_bot_scope_guards_dm_and_channel_invites(db_session: AsyncSession)
         json={"member_id": everyone_bot.bot_id, "member_type": "bot"},
     )
     assert existing_membership.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_bot_dm_create_new_allows_multiple_named_chats(db_session: AsyncSession) -> None:
+    data = await _seed_scope_data(db_session, "multi-chat")
+    user = data["stranger"]
+    bot = data["everyone_bot"]
+
+    first = await _request_as(
+        db_session,
+        user,
+        "POST",
+        "/api/v1/dms",
+        json={"workspace_id": "ignored", "member_id": bot.bot_id, "member_type": "bot"},
+    )
+    assert first.status_code == 200
+    first_data = first.json()["data"]
+
+    second = await _request_as(
+        db_session,
+        user,
+        "POST",
+        "/api/v1/dms",
+        json={
+            "workspace_id": "ignored",
+            "member_id": bot.bot_id,
+            "member_type": "bot",
+            "create_new": True,
+            "title": "Chat 2",
+        },
+    )
+    assert second.status_code == 200
+    second_data = second.json()["data"]
+
+    assert second_data["channel_id"] != first_data["channel_id"]
+    assert second_data["title"] == "Chat 2"
+    assert first_data["session_scope_id"] == f"user:{user.user_id}:bot:{bot.bot_id}"
+    assert second_data["session_scope_id"] == second_data["channel_id"]
+
+    listed = await _request_as(db_session, user, "GET", "/api/v1/dms")
+    assert listed.status_code == 200
+    bot_rows = [
+        row
+        for row in listed.json()["data"]
+        if row["counterparty"]["member_id"] == bot.bot_id
+    ]
+    assert {row["channel_id"] for row in bot_rows} == {
+        first_data["channel_id"],
+        second_data["channel_id"],
+    }
+
+    dmchat = (
+        await db_session.execute(
+            select(Channel).where(Channel.channel_id == second_data["channel_id"])
+        )
+    ).scalar_one()
+    assert dmchat.name.startswith("dmchat:")
+
+
+@pytest.mark.asyncio
+async def test_message_prompt_template_override_forces_channel_bot_template(db_session: AsyncSession) -> None:
+    user = User(user_id="template-user", username="template_user", password_hash="x")
+    ws = Workspace(workspace_id="template-ws", name="Template Workspace")
+    ch = Channel(
+        channel_id="template-channel",
+        workspace_id=ws.workspace_id,
+        name="template-channel",
+        type="public",
+    )
+    default_template = PromptTemplate(
+        template_id="template-default",
+        name="Template Default",
+        system_prompt="default system",
+        user_template="default {{message}}",
+        is_builtin=True,
+    )
+    channel_template = PromptTemplate(
+        template_id="template-channel-override",
+        name="Template Channel",
+        system_prompt="channel system",
+        user_template="channel {{message}}",
+        is_builtin=True,
+    )
+    forced_template = PromptTemplate(
+        template_id="template-forced",
+        name="Template Forced",
+        system_prompt="forced system",
+        user_template="forced {{message}}",
+        is_builtin=True,
+    )
+    bot = BotAccount(
+        bot_id="template-bot",
+        username="template_bot",
+        display_name="Template Bot",
+        template_id=default_template.template_id,
+        status="online",
+    )
+    db_session.add_all([
+        user,
+        ws,
+        ch,
+        default_template,
+        channel_template,
+        forced_template,
+        bot,
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=user.user_id,
+            member_type="user",
+        ),
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            template_id=channel_template.template_id,
+        ),
+    ])
+    await db_session.flush()
+
+    trigger = Message(
+        msg_id="template-message",
+        channel_id=ch.channel_id,
+        sender_id=user.user_id,
+        sender_type="user",
+        content="@template_bot hi",
+        content_data={"prompt_template_override_id": forced_template.template_id},
+    )
+    ctx = BotRunContext(
+        channel_id=ch.channel_id,
+        bus=NullEventBus(),
+        session=db_session,
+        trigger_msg=trigger,
+        adapter_factory=lambda _bot_id: None,  # type: ignore[return-value]
+    )
+
+    rows, overrides = await BotWorkflowBuilder._load_channel_bots(ctx)
+    BotWorkflowBuilder._build_bot_templates(ctx, rows, overrides)
+
+    assert overrides[bot.bot_id].template_id == forced_template.template_id
+    assert ctx.bot_user_templates_by_username[bot.username] == forced_template.user_template
 
 
 @pytest.mark.asyncio

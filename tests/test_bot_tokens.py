@@ -1,9 +1,9 @@
-"""WebSocket Bot token 生成 / 前缀 / 验证（纯单元测试）."""
+"""Tests for test bot tokens."""
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.services.openclaw_bridge.tokens import (
+from app.features.agent_bridge.tokens import (
     apply_token_to_bot,
     generate_bot_token,
     token_prefix_of,
@@ -12,7 +12,7 @@ from app.services.openclaw_bridge.tokens import (
 
 def test_generate_token_has_expected_prefix_and_length() -> None:
     t = generate_bot_token()
-    assert t.startswith("ocw_")
+    assert t.startswith("agb_")
     # base64url 32 bytes ≈ 43 chars + 4 prefix
     assert len(t) >= 40
     assert token_prefix_of(t) == t[:8]
@@ -31,10 +31,10 @@ def test_apply_token_to_bot_populates_fields() -> None:
         bot_token_rotated_at=None,
     )
     plaintext = apply_token_to_bot(bot)
-    assert plaintext.startswith("ocw_")
+    assert plaintext.startswith("agb_")
     assert bot.bot_token_prefix == plaintext[:8]
     assert bot.bot_token_hash is not None
-    # 哈希不是明文
+    # The hash must not be plaintext.
     assert plaintext not in bot.bot_token_hash
     assert bot.bot_token_rotated_at is not None
 

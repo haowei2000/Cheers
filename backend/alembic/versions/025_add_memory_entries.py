@@ -19,13 +19,13 @@ down_revision: Union[str, Sequence[str], None] = '024'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# 需要从 context_store 迁移到 memory_entries 的层
+# Layers that should be migrated from context_store to memory_entries.
 _MIGRATE_LAYERS = ("ANCHOR", "DECISIONS", "PROGRESS")
 
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # 1. 建表
+    # 1. Create the table.
     op.create_table('memory_entries',
         sa.Column('entry_id', sa.String(length=36), nullable=False),
         sa.Column('channel_id', sa.String(length=36), nullable=False),
@@ -42,10 +42,10 @@ def upgrade() -> None:
     )
     op.create_index('ix_memory_entries_channel_id', 'memory_entries', ['channel_id'])
 
-    # 2. 从 context_store 迁移 ANCHOR/DECISIONS/PROGRESS 数据
+    # 2. Migrate ANCHOR/DECISIONS/PROGRESS data from context_store.
     conn = op.get_bind()
 
-    # 检查 context_store 表是否存在（可能在同库或不存在）
+    # The context_store table may live in this database or may not exist.
     inspector = sa.inspect(conn)
     if 'context_store' not in inspector.get_table_names():
         return
@@ -91,7 +91,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    # 将 memory_entries 数据写回 context_store（尽力而为）
+    # Write memory_entries data back to context_store on a best-effort basis.
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     if 'context_store' in inspector.get_table_names():

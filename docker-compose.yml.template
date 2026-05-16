@@ -24,24 +24,62 @@ services:
       - STORAGE_S3_VERIFY_SSL=${STORAGE_S3_VERIFY_SSL:-true}
       - STORAGE_PRESIGN_EXPIRES_SECONDS=${STORAGE_PRESIGN_EXPIRES_SECONDS:-900}
       - FILE_UPLOAD_MAX_BYTES=${FILE_UPLOAD_MAX_BYTES:-26214400}
-      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,image/png,image/jpeg,image/webp,image/gif}
+      - FILE_RETENTION_DAYS=${FILE_RETENTION_DAYS:-365}
+      - FILE_RETENTION_CLEANUP_INTERVAL_SECONDS=${FILE_RETENTION_CLEANUP_INTERVAL_SECONDS:-86400}
+      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/ofd,application/rtf,text/csv,text/html,text/plain,text/markdown,application/zip,application/vnd.rar,application/x-7z-compressed,application/x-tar,application/gzip,application/epub+zip,image/png,image/jpeg,image/webp,image/gif}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://agentnexus.epichust.com}
+      - KKFILEVIEW_ENABLED=${KKFILEVIEW_ENABLED:-true}
+      - KKFILEVIEW_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com/preview}
+      - KKFILEVIEW_TOKEN_TTL_SECONDS=${KKFILEVIEW_TOKEN_TTL_SECONDS:-600}
       - LLM_LOCALHOST_ALIAS=${LLM_LOCALHOST_ALIAS:-host.docker.internal}
-      - IMAGE_GEN_BASE_URL=${IMAGE_GEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
-      - IMAGE_GEN_API_KEY=${IMAGE_GEN_API_KEY:-}
-      - IMAGE_GEN_DEFAULT_MODEL=${IMAGE_GEN_DEFAULT_MODEL:-qwen-image-2.0-pro}
-      - OPENCLAW_BRIDGE_ENABLED=${OPENCLAW_BRIDGE_ENABLED:-true}
-      - OPENCLAW_BRIDGE_TOKEN=${OPENCLAW_BRIDGE_TOKEN:-}
-      - OPENCLAW_BRIDGE_TIMEOUT_SECONDS=${OPENCLAW_BRIDGE_TIMEOUT_SECONDS:-300}
+      - HELPER_LLM_BASE_URL=${HELPER_LLM_BASE_URL:-}
+      - HELPER_LLM_MODEL=${HELPER_LLM_MODEL:-}
+      - HELPER_LLM_API_KEY=${HELPER_LLM_API_KEY:-}
+      - HELPER_LLM_TEMPERATURE=${HELPER_LLM_TEMPERATURE:-0.7}
+      - HELPER_LLM_MAX_TOKENS=${HELPER_LLM_MAX_TOKENS:-1000}
+      - AGENT_BRIDGE_ENABLED=${AGENT_BRIDGE_ENABLED:-true}
+      - AGENT_BRIDGE_TOKEN=${AGENT_BRIDGE_TOKEN:-}
+      - AGENT_BRIDGE_TIMEOUT_SECONDS=${AGENT_BRIDGE_TIMEOUT_SECONDS:-600}
+      - OPENCLAW_PLUGIN_PACKAGE=${OPENCLAW_PLUGIN_PACKAGE:-@haowei0520/openclaw-channel-agentnexus}
+      - OPENCLAW_PLUGIN_RELEASE_DIR=${OPENCLAW_PLUGIN_RELEASE_DIR:-/app/release}
+      - OPENCLAW_PLUGIN_FILE=${OPENCLAW_PLUGIN_FILE:-openclaw-channel-agentnexus.tgz}
+      - DB_MIGRATION_MODE=${DB_MIGRATION_MODE:-upgrade}
+      - DB_MIGRATION_TARGET=${DB_MIGRATION_TARGET:-head}
+      - CONTEXT_DB_MIGRATION_MODE=${CONTEXT_DB_MIGRATION_MODE:-upgrade}
+      - CONTEXT_DB_MIGRATION_TARGET=${CONTEXT_DB_MIGRATION_TARGET:-head}
+      - ALLOW_DB_DOWNGRADE=${ALLOW_DB_DOWNGRADE:-0}
       - SEED_DATA=${SEED_DATA:-1}
     volumes:
       - ./data/backend:/app/data
+      - ./release:/app/release:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
       rustfs:
-        condition: service_started
+        condition: service_healthy
+
+  db-migrate:
+    build:
+      context: ./backend
+    profiles:
+      - tools
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-agentnexus}:${POSTGRES_PASSWORD:-agentnexus}@postgres:5432/${POSTGRES_DB:-agentnexus}
+      - CONTEXT_DB_URL=postgresql+asyncpg://${POSTGRES_USER:-agentnexus}:${POSTGRES_PASSWORD:-agentnexus}@postgres:5432/${POSTGRES_DB:-agentnexus}
+      - MIGRATE_ONLY=${MIGRATE_ONLY:-1}
+      - DB_MIGRATION_MODE=${DB_MIGRATION_MODE:-upgrade}
+      - DB_MIGRATION_TARGET=${DB_MIGRATION_TARGET:-head}
+      - CONTEXT_DB_MIGRATION_MODE=${CONTEXT_DB_MIGRATION_MODE:-upgrade}
+      - CONTEXT_DB_MIGRATION_TARGET=${CONTEXT_DB_MIGRATION_TARGET:-head}
+      - ALLOW_DB_DOWNGRADE=${ALLOW_DB_DOWNGRADE:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -50,6 +88,24 @@ services:
       - "${FRONTEND_HOST_PORT:-80}:80"
     depends_on:
       - backend
+      - kkfileview
+
+  kkfileview:
+    image: ${KKFILEVIEW_IMAGE:-keking/kkfileview:latest}
+    restart: unless-stopped
+    ports:
+      - "${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}:8012"
+    environment:
+      - KK_CONTEXT_PATH=/preview
+      - KK_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com/preview}
+      - KK_TRUST_HOST=${KKFILEVIEW_TRUST_HOST:-agentnexus.epichust.com}
+      - KK_FILE_DIR=${KKFILEVIEW_FILE_DIR:-/opt/kkfileview/file/}
+      - KK_OFFICE_PREVIEW_TYPE=${KKFILEVIEW_OFFICE_PREVIEW_TYPE:-pdf}
+      - KK_PDF_DOWNLOAD_DISABLE=${KKFILEVIEW_PDF_DOWNLOAD_DISABLE:-true}
+      - KK_PDF_PRINT_DISABLE=${KKFILEVIEW_PDF_PRINT_DISABLE:-true}
+      - KK_MEDIA_CONVERT_DISABLE=${KKFILEVIEW_MEDIA_CONVERT_DISABLE:-true}
+    volumes:
+      - ./data/kkfileview:/opt/kkfileview/file
 
   postgres:
     image: postgres:16-alpine
@@ -71,8 +127,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
 
   rustfs:
     image: rustfs/rustfs:latest
@@ -97,3 +151,9 @@ services:
     volumes:
       - ./data/rustfs:/data
       - ./data/rustfs_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -S -O /dev/null http://127.0.0.1:9000/rustfs/health/live 2>&1 | grep -Eq 'HTTP/[0-9.]+ (200|403)'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s

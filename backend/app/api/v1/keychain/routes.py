@@ -1,4 +1,4 @@
-"""密钥链 API：用户个人密钥管理。"""
+"""Keychain API routes."""
 from datetime import datetime
 from typing import List
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/keychain", tags=["keychain"])
 
 
 def _mask_value(value: str) -> str:
-    """掩码显示密钥值，只显示最后4位。"""
+    """Mask value."""
     if not value:
         return "****"
     if len(value) <= 4:
@@ -28,14 +28,14 @@ async def list_keychain_items(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """获取当前用户的所有密钥项（不包含实际密钥值）。"""
+    """List keychain items."""
     stmt = select(KeychainItem).where(KeychainItem.owner_id == current_user.user_id)
     result = await db.execute(stmt)
     items = result.scalars().all()
 
     response_items = []
     for item in items:
-        # 解密获取掩码显示
+        # Decrypt only to produce a masked display value.
         decrypted = decrypt_value(item.value) or ""
         item_dict = {
             "key_id": item.key_id,
@@ -57,8 +57,8 @@ async def create_keychain_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """创建新的密钥项。"""
-    # 检查名称是否已存在
+    """Create keychain item."""
+    # Check whether the name already exists.
     stmt = select(KeychainItem).where(
         KeychainItem.owner_id == current_user.user_id,
         KeychainItem.name == item_in.name
@@ -67,7 +67,7 @@ async def create_keychain_item(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail=f"密钥名称 '{item_in.name}' 已存在")
 
-    # 加密存储
+    # Store the encrypted value.
     encrypted_value = encrypt_value(item_in.value)
 
     item = KeychainItem(
@@ -97,7 +97,7 @@ async def get_keychain_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """获取单个密钥项（不包含实际密钥值）。"""
+    """Get keychain item."""
     item = await db.get(KeychainItem, key_id)
     if not item or item.owner_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="密钥项不存在")
@@ -121,12 +121,12 @@ async def update_keychain_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """更新密钥项。"""
+    """Update keychain item."""
     item = await db.get(KeychainItem, key_id)
     if not item or item.owner_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="密钥项不存在")
 
-    # 如果更新名称，检查是否与其他密钥冲突
+    # If the name changes, check for conflicts with other keys.
     if item_in.name is not None and item_in.name != item.name:
         stmt = select(KeychainItem).where(
             KeychainItem.owner_id == current_user.user_id,
@@ -165,7 +165,7 @@ async def delete_keychain_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """删除密钥项。"""
+    """Delete keychain item."""
     item = await db.get(KeychainItem, key_id)
     if not item or item.owner_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="密钥项不存在")

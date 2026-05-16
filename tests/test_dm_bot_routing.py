@@ -5,9 +5,10 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace
-from app.services.pipeline.bot import BotRunContext, IngestStage, RouteStage
-from app.services.pipeline.bus import NullEventBus
-from app.services.pipeline.ingest.stages import SECRET_PLACEHOLDER
+from app.features.bot_runtime.pipeline.bot import BotRunContext
+from app.features.bot_runtime.pipeline.bus import NullEventBus
+from app.features.bot_runtime.pipeline.ingest.stages import SECRET_PLACEHOLDER
+from app.features.bot_runtime.pipeline.workflow import build_bot_workflow
 
 
 async def _unused_adapter_factory(bot_id: str):  # pragma: no cover - route-only tests
@@ -22,8 +23,7 @@ async def _run_route(session: AsyncSession, channel: Channel, msg: Message) -> B
         trigger_msg=msg,
         adapter_factory=_unused_adapter_factory,
     )
-    await IngestStage().run(ctx)
-    await RouteStage().run(ctx)
+    await build_bot_workflow(ctx)
     return ctx
 
 

@@ -21,7 +21,7 @@ TS_DEFAULT = sa.text("NOW()")
 def upgrade() -> None:
     conn = op.get_bind()
 
-    # 1. 为 users 表添加 bio 字段
+    # 1. Add the bio column to users.
     user_columns = [c["name"] for c in sa.inspect(conn).get_columns("users")]
     if "bio" not in user_columns:
         op.add_column(
@@ -29,7 +29,7 @@ def upgrade() -> None:
             sa.Column("bio", sa.Text(), nullable=True),
         )
 
-    # 2. 创建 channel_profiles 表
+    # 2. Create the channel_profiles table.
     existing_tables = sa.inspect(conn).get_table_names()
     if "channel_profiles" not in existing_tables:
         op.create_table(

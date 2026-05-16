@@ -1,9 +1,4 @@
-"""Direct-message v1 路由。
-
-DM 模型：type="dm" 的 Channel，仅两位成员（用户 + 用户 或 用户 + bot）。
-- GET  /api/v1/dms         — 列出当前用户所有 DM，并附带对方档案
-- POST /api/v1/dms         — 幂等：返回已存在的 DM 或新建一条
-"""
+"""Dms API routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -36,6 +31,12 @@ async def list_dms(
                 channel_id=r["channel_id"],
                 workspace_id=r["workspace_id"],
                 counterparty=DMCounterparty(**r["counterparty"]),
+                title=r.get("title"),
+                project_id=r.get("project_id"),
+                project_title=r.get("project_title"),
+                chat_title=r.get("chat_title"),
+                session_scope_id=r.get("session_scope_id"),
+                created_at=r.get("created_at"),
                 unread_count=int(unread.get(r["channel_id"], 0)),
             )
         )
@@ -60,6 +61,11 @@ async def upsert_dm(
         current_user=current_user,
         other_id=body.member_id,
         other_type=body.member_type,
+        create_new=body.create_new,
+        title=body.title,
+        project_id=body.project_id,
+        project_title=body.project_title,
+        chat_title=body.chat_title,
     )
     await session.commit()
 
@@ -75,6 +81,20 @@ async def upsert_dm(
                 counterparty=DMCounterparty(
                     member_id=body.member_id, member_type=body.member_type,
                 ),
+                title=body.chat_title or body.title,
+                project_id=body.project_id,
+                project_title=body.project_title,
+                chat_title=body.chat_title or body.title,
+                session_scope_id=(
+                    ch.channel_id
+                    if ch.name.startswith("dmchat:")
+                    else (
+                        f"user:{current_user.user_id}:bot:{body.member_id}"
+                        if body.member_type == "bot"
+                        else None
+                    )
+                ),
+                created_at=ch.created_at,
                 unread_count=0,
             )
         )
@@ -84,6 +104,12 @@ async def upsert_dm(
             channel_id=ch.channel_id,
             workspace_id=ch.workspace_id,
             counterparty=DMCounterparty(**cp_row["counterparty"]),
+            title=cp_row.get("title"),
+            project_id=cp_row.get("project_id"),
+            project_title=cp_row.get("project_title"),
+            chat_title=cp_row.get("chat_title"),
+            session_scope_id=cp_row.get("session_scope_id"),
+            created_at=cp_row.get("created_at"),
             unread_count=int(unread.get(ch.channel_id, 0)),
         )
     )

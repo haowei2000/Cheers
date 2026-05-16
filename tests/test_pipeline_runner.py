@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from app.services.pipeline.runner import Pipeline
-from app.services.pipeline.stage import Stage
+from app.features.bot_runtime.pipeline.runner import Pipeline
+from app.features.bot_runtime.pipeline.stage import Stage
 
 
 @dataclass
@@ -64,7 +64,7 @@ def test_pipeline_stages_property_is_immutable_view() -> None:
 
 
 async def test_pipeline_logs_stage_flow(caplog: pytest.LogCaptureFixture) -> None:
-    caplog.set_level(logging.INFO, logger="app.services.pipeline.runner")
+    caplog.set_level(logging.INFO, logger="app.features.bot_runtime.pipeline.runner")
 
     await Pipeline([_AppendStage("logged")], name="unit").run(_Ctx())
 

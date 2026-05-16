@@ -1,14 +1,14 @@
-"""工作空间 API 测试."""
+"""Tests for test workspaces api."""
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Workspace, WorkspaceMembership
+from app.db.models import Channel, ChannelMembership, User, Workspace, WorkspaceMembership
 
 
 @pytest.mark.asyncio
 async def test_list_workspaces_empty(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/workspaces 无手动创建工作空间时，只返回自动创建的 Personal 空间."""
+    """Covers test list workspaces empty behavior."""
     resp = await client.get("/api/v1/workspaces")
     assert resp.status_code == 200
     data = resp.json()
@@ -20,7 +20,7 @@ async def test_list_workspaces_empty(client: AsyncClient, db_session: AsyncSessi
 
 @pytest.mark.asyncio
 async def test_list_workspaces_returns_created(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/workspaces 返回已存在的工作空间."""
+    """Covers test list workspaces returns created behavior."""
     ws = Workspace(workspace_id="b0000000-0000-0000-0000-000000000001", name="默认空间")
     db_session.add(ws)
     # Add test user as workspace member so list_for_user returns this workspace
@@ -45,7 +45,7 @@ async def test_list_workspaces_returns_created(client: AsyncClient, db_session: 
 
 @pytest.mark.asyncio
 async def test_create_workspace_accepts_avatar_url(client: AsyncClient) -> None:
-    """POST /api/v1/workspaces 支持创建时设置工作空间头像 URL."""
+    """Covers test create workspace accepts avatar url behavior."""
     resp = await client.post(
         "/api/v1/workspaces",
         json={
@@ -69,7 +69,7 @@ async def test_update_workspace_sets_and_clears_avatar_url(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """PUT /api/v1/workspaces/{id} 支持设置和清空工作空间头像 URL."""
+    """Covers test update workspace sets and clears avatar url behavior."""
     ws = Workspace(workspace_id="b0000000-0000-0000-0000-000000000011", name="旧名称")
     db_session.add(ws)
     membership = WorkspaceMembership(
@@ -98,3 +98,105 @@ async def test_update_workspace_sets_and_clears_avatar_url(
     )
     assert clear_resp.status_code == 200
     assert clear_resp.json()["data"]["avatar_url"] is None
+
+
+@pytest.mark.asyncio
+async def test_invite_workspace_member_accepts_user_id_from_search(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /api/v1/workspaces/{id}/invite accepts user_id returned by search."""
+    ws = Workspace(workspace_id="b0000000-0000-0000-0000-000000000021", name="Search Invite WS")
+    public_channel = Channel(
+        channel_id="e9000000-0000-0000-0000-000000000021",
+        workspace_id=ws.workspace_id,
+        name="public-legacy",
+        type="public",
+    )
+    workspace_channel = Channel(
+        channel_id="e9000000-0000-0000-0000-000000000022",
+        workspace_id=ws.workspace_id,
+        name="workspace-alias",
+        type="workspace",
+    )
+    private_channel = Channel(
+        channel_id="e9000000-0000-0000-0000-000000000023",
+        workspace_id=ws.workspace_id,
+        name="private-channel",
+        type="private",
+    )
+    dm_channel = Channel(
+        channel_id="e9000000-0000-0000-0000-000000000024",
+        workspace_id=ws.workspace_id,
+        name="dm-channel",
+        type="dm",
+    )
+    target = User(
+        user_id="a0000000-0000-0000-0000-000000000021",
+        username="search_invite_target",
+        password_hash="x",
+        role="member",
+    )
+    db_session.add_all([
+        ws,
+        public_channel,
+        workspace_channel,
+        private_channel,
+        dm_channel,
+        target,
+        WorkspaceMembership(
+            workspace_id=ws.workspace_id,
+            user_id="a0000000-0000-0000-0000-000000000099",
+            role="owner",
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/workspaces/{ws.workspace_id}/invite",
+        json={"identifier": target.user_id},
+    )
+
+    assert resp.status_code == 200
+    membership = await db_session.get(
+        WorkspaceMembership,
+        (ws.workspace_id, target.user_id),
+    )
+    assert membership is not None
+    assert membership.role == "member"
+    assert await db_session.get(ChannelMembership, (public_channel.channel_id, target.user_id)) is not None
+    assert await db_session.get(ChannelMembership, (workspace_channel.channel_id, target.user_id)) is not None
+    assert await db_session.get(ChannelMembership, (private_channel.channel_id, target.user_id)) is None
+    assert await db_session.get(ChannelMembership, (dm_channel.channel_id, target.user_id)) is None
+
+
+@pytest.mark.asyncio
+async def test_invite_workspace_member_rejects_invalid_role(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """POST /api/v1/workspaces/{id}/invite only accepts known workspace roles."""
+    ws = Workspace(workspace_id="b0000000-0000-0000-0000-000000000031", name="Role Invite WS")
+    target = User(
+        user_id="a0000000-0000-0000-0000-000000000031",
+        username="role_invite_target",
+        password_hash="x",
+        role="member",
+    )
+    db_session.add_all([
+        ws,
+        target,
+        WorkspaceMembership(
+            workspace_id=ws.workspace_id,
+            user_id="a0000000-0000-0000-0000-000000000099",
+            role="owner",
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/workspaces/{ws.workspace_id}/invite",
+        json={"identifier": target.user_id, "role": "superuser"},
+    )
+
+    assert resp.status_code == 422

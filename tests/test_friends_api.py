@@ -1,4 +1,4 @@
-"""好友管理 API 测试."""
+"""Tests for test friends api."""
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator

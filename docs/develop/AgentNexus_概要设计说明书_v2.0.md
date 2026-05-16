@@ -642,7 +642,7 @@ data/
 | 多 Bot 同时响应导致消息乱序 | 高 | 第一阶段严格默认串行（Sequential）模式，并行模式作为高级选项由管理员开启 |
 | Agent 上下文“失忆”（每次调用独立） | 高 | Orchestrator 每次调用前强制注入四层 Context Store，上下文持久化不依赖 Agent 本身 |
 | RECENT\.md 压缩质量差导致信息丢失 | 高 | 使用专属的轻量 LLM 做摘要，保留关键决策和@提及；同时保留最后 20 条原始消息作为补充 |
-| OpenClaw API 版本升级破坏兼容性 | 中 | 建立 OpenClawAdapter 接口隔离层，版本升级时只改 Adapter，Orchestrator 不受影响 |
+| OpenClaw API 版本升级破坏兼容性 | 中 | 建立 BotAdapter 接口隔离层，版本升级时只改 Adapter，Orchestrator 不受影响 |
 | 大文件超出 LLM context window | 中 | 超过 3 万字自动启用 ChromaDB 分块检索，第一阶段可先设定文件大小上限提示用户 |
 | 管理员配置错误导致 Bot 不响应 | 中 | 管理后台每步配置实时验证，Bot 注册完成后强制经过测试对话才能激活 |
 | Python ChatCore WebSocket 并发性能不足 | 低 | 目标用户 ≤100 并发，FastAPI \+ uvicorn 完全可支撑；如超出则引入 Redis Pub/Sub 扩展 |
@@ -752,14 +752,14 @@ networks:
 
 为保证本概要设计与仓库当前代码一致，补充如下对齐说明：
 
-- 内置 Bot 体系已收敛为统一 `channel bot`（`bot-guide-001`），不再以 `@coordinator` 作为用户主入口。
+- 内置 Bot 体系已收敛为统一 `channel bot`（`bot-helper-001`），不再以 `@coordinator` 作为用户主入口。
 - Bot 执行默认主链路为 `LLMBotAdapter`（模型 + 模板）；OpenClaw HTTP/WS Adapter 保留为可选接入能力。
 - 频道模型新增 `auto_assist`，支持频道级自动接管与协作触发。
 - 消息链路新增 SSE 流式接口（`/api/channels/{channel_id}/messages/stream`）。
 - 文件上传主路径升级为预签名上传（`/api/files/presign`），legacy 上传接口继续兼容。
 - 存储架构新增抽象层（`StorageProvider`）与 S3 兼容实现，支持对象存储落盘。
 - 新增工作空间成员体系（workspace memberships）与好友关系 API。
-- 新增图片生成能力（文生图/图生图）与 MCP 配置导入能力。
+-  MCP 配置导入能力。
 - 公共知识/数据平台访问申请 API 与 A2A 自主加入协议目前仍属于设计阶段能力，未作为默认生产路径实现。
 
 __文档修订历史__
@@ -769,4 +769,3 @@ __文档修订历史__
 | v1\.0 | 2026\-03\-07 | 初稿，基于多轮需求讨论形成 | — |
 | v2\.0 | 2026\-03\-07 | 系统命名为 AgentNexus；改为 Python 自研 ChatCore；深化多 Agent 协作框架；增加四层记忆体系；增加易用性设计章节 | Claude |
 | v2\.1 | 2026\-03\-16 | 根据代码实现完成对齐修订：内置 Bot 统一为 channel bot；主链路默认 LLM Bot；补充 SSE、对象存储、workspace membership、image\_gen、MCP 导入与频道级 auto\_assist；明确公共平台与 A2A 仍属后续阶段。 | 维护更新 |
-

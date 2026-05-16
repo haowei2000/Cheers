@@ -1,4 +1,4 @@
-"""Auth v1 路由."""
+"""Auth API routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

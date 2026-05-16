@@ -9,8 +9,10 @@ from sqlalchemy.orm import aliased
 
 from app.core.exceptions import BadRequestError, ForbiddenError
 from app.core.schemas import (
+    BotOwnerInResponse,
     SearchBotHit,
     SearchChannelHit,
+    SearchFileHit,
     SearchMessageHit,
     SearchResults,
     SearchTaskHit,
@@ -23,6 +25,7 @@ from app.db.models import (
     BotAccount,
     Channel,
     ChannelMembership,
+    FileRecord,
     Friendship,
     Message,
     TodoItem,
@@ -38,8 +41,10 @@ SearchContext = Literal[
     "add_friend",
     "dm_start",
     "workspace_invite",
+    "channel_invite",
     "channel_invite_user",
     "channel_invite_bot",
+    "file_lookup",
     "todo_lookup",
     "task_monitor",
 ]
@@ -49,10 +54,34 @@ _VALID_CONTEXTS = {
     "add_friend",
     "dm_start",
     "workspace_invite",
+    "channel_invite",
     "channel_invite_user",
     "channel_invite_bot",
+    "file_lookup",
     "todo_lookup",
     "task_monitor",
+}
+
+SearchResultType = Literal[
+    "workspaces",
+    "channels",
+    "users",
+    "bots",
+    "files",
+    "todos",
+    "tasks",
+    "messages",
+]
+
+_VALID_TYPES: set[str] = {
+    "workspaces",
+    "channels",
+    "users",
+    "bots",
+    "files",
+    "todos",
+    "tasks",
+    "messages",
 }
 
 
@@ -69,12 +98,14 @@ class SearchService:
         limit: int = 5,
         workspace_id: str | None = None,
         channel_id: str | None = None,
+        types: str | None = None,
     ) -> SearchResults:
         q = (q or "").strip()
         context = (context or "global_nav").strip()
         if context not in _VALID_CONTEXTS:
             raise BadRequestError("未知搜索上下文")
         limit = max(1, min(int(limit or 5), 20))
+        requested_types = self._parse_types(types)
 
         empty = SearchResults(q=q, context=context)
         if not q:
@@ -82,124 +113,272 @@ class SearchService:
 
         if context == "workspace_invite":
             await self._require_workspace(workspace_id, current_user)
+            selected = self._selected_types(requested_types, {"users"})
             return SearchResults(
                 q=q,
                 context=context,
-                users=await self._search_users(
-                    q,
-                    current_user=current_user,
-                    limit=limit,
-                    workspace_id=workspace_id,
-                    exclude_workspace_members=True,
+                users=(
+                    await self._search_users(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        workspace_id=workspace_id,
+                        exclude_workspace_members=True,
+                    )
+                    if "users" in selected
+                    else []
+                ),
+            )
+
+        if context == "channel_invite":
+            await self._require_channel(channel_id, current_user)
+            selected = self._selected_types(requested_types, {"users", "bots"})
+            return SearchResults(
+                q=q,
+                context=context,
+                users=(
+                    await self._search_users(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        channel_id=channel_id,
+                        exclude_channel_members=True,
+                    )
+                    if "users" in selected
+                    else []
+                ),
+                bots=(
+                    await self._search_bots(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        channel_id=channel_id,
+                        exclude_channel_members=True,
+                    )
+                    if "bots" in selected
+                    else []
                 ),
             )
 
         if context == "channel_invite_user":
             await self._require_channel(channel_id, current_user)
+            selected = self._selected_types(requested_types, {"users"})
             return SearchResults(
                 q=q,
                 context=context,
-                users=await self._search_users(
-                    q,
-                    current_user=current_user,
-                    limit=limit,
-                    channel_id=channel_id,
-                    exclude_channel_members=True,
+                users=(
+                    await self._search_users(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        channel_id=channel_id,
+                        exclude_channel_members=True,
+                    )
+                    if "users" in selected
+                    else []
                 ),
             )
 
         if context == "channel_invite_bot":
             await self._require_channel(channel_id, current_user)
+            selected = self._selected_types(requested_types, {"bots"})
             return SearchResults(
                 q=q,
                 context=context,
-                bots=await self._search_bots(
-                    q,
-                    current_user=current_user,
-                    limit=limit,
-                    channel_id=channel_id,
-                    exclude_channel_members=True,
+                bots=(
+                    await self._search_bots(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        channel_id=channel_id,
+                        exclude_channel_members=True,
+                    )
+                    if "bots" in selected
+                    else []
                 ),
             )
 
         if context == "add_friend":
+            selected = self._selected_types(requested_types, {"users"})
             return SearchResults(
                 q=q,
                 context=context,
-                users=await self._search_users(
-                    q,
-                    current_user=current_user,
-                    limit=limit,
-                    exclude_friend_ids=True,
+                users=(
+                    await self._search_users(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        exclude_friend_ids=True,
+                    )
+                    if "users" in selected
+                    else []
                 ),
             )
 
         if context == "dm_start":
+            selected = self._selected_types(requested_types, {"users", "bots"})
             return SearchResults(
                 q=q,
                 context=context,
-                users=await self._search_users(q, current_user=current_user, limit=limit),
-                bots=await self._search_bots(q, current_user=current_user, limit=limit),
+                users=(
+                    await self._search_users(q, current_user=current_user, limit=limit)
+                    if "users" in selected
+                    else []
+                ),
+                bots=(
+                    await self._search_bots(q, current_user=current_user, limit=limit)
+                    if "bots" in selected
+                    else []
+                ),
+            )
+
+        if context == "file_lookup":
+            selected = self._selected_types(requested_types, {"files"})
+            return SearchResults(
+                q=q,
+                context=context,
+                files=(
+                    await self._search_files(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        workspace_id=workspace_id,
+                        channel_id=channel_id,
+                    )
+                    if "files" in selected
+                    else []
+                ),
             )
 
         if context == "todo_lookup":
             await self._require_channel(channel_id, current_user)
+            selected = self._selected_types(requested_types, {"todos"})
             return SearchResults(
                 q=q,
                 context=context,
-                todos=await self._search_todos(
-                    q,
-                    current_user=current_user,
-                    limit=limit,
-                    channel_id=channel_id,
+                todos=(
+                    await self._search_todos(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        channel_id=channel_id,
+                    )
+                    if "todos" in selected
+                    else []
                 ),
             )
 
         if context == "task_monitor":
+            selected = self._selected_types(requested_types, {"tasks"})
             return SearchResults(
                 q=q,
                 context=context,
-                tasks=await self._search_tasks(
+                tasks=(
+                    await self._search_tasks(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        workspace_id=workspace_id,
+                        channel_id=channel_id,
+                        admin_all=current_user.role == "system_admin",
+                    )
+                    if "tasks" in selected
+                    else []
+                ),
+            )
+
+        selected = self._selected_types(requested_types, _VALID_TYPES)
+        return SearchResults(
+            q=q,
+            context=context,
+            workspaces=(
+                await self._search_workspaces(q, current_user=current_user, limit=limit)
+                if "workspaces" in selected
+                else []
+            ),
+            channels=(
+                await self._search_channels(
+                    q,
+                    current_user=current_user,
+                    limit=limit,
+                    workspace_id=workspace_id,
+                )
+                if "channels" in selected
+                else []
+            ),
+            users=(
+                await self._search_users(q, current_user=current_user, limit=limit)
+                if "users" in selected
+                else []
+            ),
+            bots=(
+                await self._search_bots(q, current_user=current_user, limit=limit)
+                if "bots" in selected
+                else []
+            ),
+            files=(
+                await self._search_files(
                     q,
                     current_user=current_user,
                     limit=limit,
                     workspace_id=workspace_id,
                     channel_id=channel_id,
-                    admin_all=current_user.role == "system_admin",
-                ),
-            )
-
-        return SearchResults(
-            q=q,
-            context=context,
-            workspaces=await self._search_workspaces(q, current_user=current_user, limit=limit),
-            channels=await self._search_channels(
-                q,
-                current_user=current_user,
-                limit=limit,
-                workspace_id=workspace_id,
+                )
+                if "files" in selected
+                else []
             ),
-            users=await self._search_users(q, current_user=current_user, limit=limit),
-            bots=await self._search_bots(q, current_user=current_user, limit=limit),
-            todos=await self._search_todos(
-                q,
-                current_user=current_user,
-                limit=limit,
-                workspace_id=workspace_id,
+            todos=(
+                await self._search_todos(
+                    q,
+                    current_user=current_user,
+                    limit=limit,
+                    workspace_id=workspace_id,
+                )
+                if "todos" in selected
+                else []
             ),
-            tasks=await self._search_tasks(
-                q,
-                current_user=current_user,
-                limit=limit,
-                workspace_id=workspace_id,
+            tasks=(
+                await self._search_tasks(
+                    q,
+                    current_user=current_user,
+                    limit=limit,
+                    workspace_id=workspace_id,
+                )
+                if "tasks" in selected
+                else []
             ),
-            messages=await self._search_messages(
-                q,
-                current_user=current_user,
-                limit=limit,
-                workspace_id=workspace_id,
+            messages=(
+                await self._search_messages(
+                    q,
+                    current_user=current_user,
+                    limit=limit,
+                    workspace_id=workspace_id,
+                    channel_id=channel_id,
+                )
+                if "messages" in selected
+                else []
             ),
         )
+
+    def _parse_types(self, raw: str | None) -> set[str] | None:
+        if not raw:
+            return None
+        selected = {part.strip() for part in raw.split(",") if part.strip()}
+        if not selected:
+            return None
+        invalid = selected - _VALID_TYPES
+        if invalid:
+            raise BadRequestError(f"未知搜索类型: {', '.join(sorted(invalid))}")
+        return selected
+
+    def _selected_types(
+        self,
+        requested: set[str] | None,
+        allowed: set[str],
+    ) -> set[str]:
+        if requested is None:
+            return set(allowed)
+        return requested & allowed
 
     async def _require_workspace(self, workspace_id: str | None, current_user: User) -> None:
         if not workspace_id:
@@ -386,6 +565,7 @@ class SearchService:
         current_user: User,
         limit: int,
         workspace_id: str | None = None,
+        channel_id: str | None = None,
     ) -> list[SearchMessageHit]:
         stmt = (
             select(Message)
@@ -401,10 +581,64 @@ class SearchService:
             stmt = stmt.join(Channel, Channel.channel_id == Message.channel_id).where(
                 Channel.workspace_id == workspace_id
             )
-        rows = (
-            await self.session.execute(stmt.order_by(Message.created_at.desc()).limit(limit))
-        ).scalars().all()
+        if channel_id:
+            stmt = stmt.where(Message.channel_id == channel_id)
+        result = await self.session.execute(stmt.order_by(Message.created_at.desc()).limit(limit))
+        rows = list(result.scalars().all())
         return await self._message_hits(rows, q, current_user=current_user)
+
+    async def _search_files(
+        self,
+        q: str,
+        *,
+        current_user: User,
+        limit: int,
+        workspace_id: str | None = None,
+        channel_id: str | None = None,
+    ) -> list[SearchFileHit]:
+        stmt = (
+            select(FileRecord, Channel)
+            .join(Channel, Channel.channel_id == FileRecord.channel_id)
+            .join(ChannelMembership, ChannelMembership.channel_id == FileRecord.channel_id)
+            .where(
+                ChannelMembership.member_id == current_user.user_id,
+                ChannelMembership.member_type == "user",
+                or_(
+                    FileRecord.file_id.ilike(self._pattern(q)),
+                    FileRecord.original_filename.ilike(self._pattern(q)),
+                    FileRecord.content_type.ilike(self._pattern(q)),
+                    FileRecord.status.ilike(self._pattern(q)),
+                    FileRecord.summary_3lines.ilike(self._pattern(q)),
+                ),
+            )
+        )
+        if workspace_id:
+            stmt = stmt.where(Channel.workspace_id == workspace_id)
+        if channel_id:
+            stmt = stmt.where(FileRecord.channel_id == channel_id)
+        rows = (
+            await self.session.execute(stmt.order_by(FileRecord.created_at.desc()).limit(limit))
+        ).all()
+        hits: list[SearchFileHit] = []
+        q_lower = q.lower()
+        for rec, channel in rows:
+            filename = rec.original_filename or rec.file_id
+            summary = rec.summary_3lines or ""
+            snippet_source = summary if q_lower in summary.lower() else filename
+            hits.append(
+                SearchFileHit(
+                    file_id=rec.file_id,
+                    channel_id=rec.channel_id,
+                    channel_name=channel.name,
+                    original_filename=rec.original_filename,
+                    content_type=rec.content_type,
+                    size_bytes=rec.size_bytes,
+                    status=rec.status,
+                    snippet=self._snippet(snippet_source, q, width=120),
+                    created_at=rec.created_at,
+                )
+            )
+        return hits
 
     async def _search_todos(
         self,
@@ -620,14 +854,14 @@ class SearchService:
         ).scalars()
         return {u.user_id: u for u in rows}
 
-    def _owner_payload(self, owner: User | None) -> dict | None:
+    def _owner_payload(self, owner: User | None) -> BotOwnerInResponse | None:
         if not owner:
             return None
-        return {
-            "user_id": owner.user_id,
-            "username": owner.username,
-            "display_name": owner.display_name,
-        }
+        return BotOwnerInResponse(
+            user_id=owner.user_id,
+            username=owner.username,
+            display_name=owner.display_name,
+        )
 
     def _snippet(self, text: str | None, needle: str, width: int = 80) -> str:
         if not text:

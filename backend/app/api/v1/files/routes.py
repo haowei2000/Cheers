@@ -1,32 +1,178 @@
-"""File v1 路由."""
+"""Files API routes."""
 from __future__ import annotations
 
+import base64
+import mimetypes
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
+import jwt
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.dependencies import get_current_user, get_session
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AppError, NotFoundError, UnauthorizedError
 from app.core.responses import APIResponse
 from app.db.models import FileRecord, User
+from app.services.auth.jwt_utils import create_service_token, decode_service_token
+from app.services.channel_service import ChannelService
+from app.services.file_processor.convert import (
+    FileParseError,
+    UnsupportedFileTypeError,
+    is_image_type,
+    parse_document_bytes,
+)
+from app.services.file_retention import active_file_filter
 
 router = APIRouter(prefix="/files", tags=["files"])
 
+KKFILEVIEW_SUFFIXES = {
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".wps",
+    ".et",
+    ".dps",
+    ".ofd",
+    ".rtf",
+    ".csv",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".xz",
+    ".dwg",
+    ".dxf",
+    ".epub",
+}
 
-def _content_disposition(filename: str) -> str:
+
+def _content_disposition(filename: str, disposition: str = "attachment") -> str:
     encoded = quote(filename, safe="")
-    return f"attachment; filename*=UTF-8''{encoded}"
+    return f"{disposition}; filename*=UTF-8''{encoded}"
 
 
 def _inline_disposition(content_type: str) -> bool:
-    from app.services.file_processor.convert import is_image_type
-    ct = content_type.lower()
-    return is_image_type(ct) or "pdf" in ct or ct.startswith("text/")
+    ct = content_type.split(";", 1)[0].strip().lower()
+    return is_image_type(ct) or "pdf" in ct or ct.startswith("text/") or "xhtml+xml" in ct
+
+
+def _content_type_base(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+def _effective_content_type(rec: FileRecord, fallback: str = "application/octet-stream") -> str:
+    content_type = (rec.content_type or "").strip()
+    normalized_type = _content_type_base(content_type)
+    if not normalized_type or normalized_type == "application/octet-stream":
+        guessed = mimetypes.guess_type(rec.original_filename or "")[0]
+        if guessed:
+            return guessed
+    return content_type or fallback
+
+
+def _normalize_absolute_base_url(url: str, fallback: str = "https://agentnexus.epichust.com") -> str:
+    base = (url or "").strip().rstrip("/")
+    if not base:
+        base = fallback
+    if not base.startswith(("http://", "https://")):
+        base = f"https://{base.lstrip('/')}"
+    return base.rstrip("/")
+
+
+def _is_kkfileview_candidate(filename: str, content_type: str) -> bool:
+    suffix = Path(filename).suffix.lower()
+    content_base = _content_type_base(content_type)
+    return (
+        suffix in KKFILEVIEW_SUFFIXES
+        or "wordprocessingml" in content_base
+        or "spreadsheetml" in content_base
+        or "presentationml" in content_base
+        or content_base in {
+            "application/msword",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/ofd",
+            "application/rtf",
+            "text/csv",
+        }
+    )
+
+
+def _build_kkfileview_source_url(file_id: str, filename: str, token: str) -> str:
+    public_base = _normalize_absolute_base_url(settings.public_base_url)
+    query = urlencode({"token": token, "fullfilename": filename})
+    return f"{public_base}/api/v1/files/{quote(file_id, safe='')}/public-preview?{query}"
+
+
+def _build_kkfileview_viewer_url(source_url: str) -> str:
+    kk_base = _normalize_absolute_base_url(settings.kkfileview_base_url)
+    encoded_source = base64.b64encode(source_url.encode("utf-8")).decode("ascii")
+    return f"{kk_base}/onlinePreview?url={quote(encoded_source, safe='')}"
+
+
+def _storage_scope(rec: FileRecord) -> str:
+    return "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
+
+
+async def _load_active_file_or_404(session: AsyncSession, file_id: str) -> FileRecord:
+    result = await session.execute(
+        select(FileRecord).where(FileRecord.file_id == file_id, active_file_filter())
+    )
+    rec = result.scalar_one_or_none()
+    if not rec:
+        raise NotFoundError("file not found")
+    return rec
+
+
+async def _require_file_access(
+    session: AsyncSession,
+    rec: FileRecord,
+    current_user: User,
+) -> None:
+    await ChannelService(session).require_channel_member(rec.channel_id, current_user)
+
+
+async def _load_file_body(rec: FileRecord) -> bytes:
+    if not rec.object_key and rec.original_path:
+        local_path = Path(rec.original_path)
+        if local_path.is_file():
+            return local_path.read_bytes()
+
+    from app.services.storage.base import StorageObjectNotFoundError
+    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
+
+    if not is_storage_enabled():
+        raise AppError("storage not enabled")
+    storage = get_storage_service()
+    try:
+        if rec.object_key:
+            from app.services.storage.base import StorageObjectRef
+
+            obj = await storage.get_object_ref(
+                StorageObjectRef(
+                    file_id=rec.file_id,
+                    bucket=rec.storage_bucket or settings.storage_s3_bucket,
+                    object_key=rec.object_key,
+                    filename=rec.original_filename,
+                )
+            )
+        else:
+            obj = await storage.get_object(rec.file_id, scope=_storage_scope(rec))
+    except StorageObjectNotFoundError:
+        raise NotFoundError("file not found in storage")
+    except Exception as exc:
+        raise AppError("failed to load file") from exc
+    return obj.body
 
 
 class PresignBody(BaseModel):
@@ -80,24 +226,27 @@ async def get_download_url(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    from app.services.file_service import FileService
-    svc = FileService(session)
-    url = await svc.get_download_url(file_id)
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
+    url = f"/api/v1/files/{file_id}/download"
     return APIResponse.ok({"url": url})
 
 
 @router.get("/by-channel/{channel_id}", response_model=APIResponse[list])
 async def list_channel_files(
     channel_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """列出频道下所有非图片文件（与资料索引一致）。"""
+    """List channel files."""
     from sqlalchemy import asc
+    await ChannelService(session).require_channel_member(channel_id, current_user)
     result = await session.execute(
         select(FileRecord)
         .where(
             FileRecord.channel_id == channel_id,
             FileRecord.content_type.notlike("image/%"),
+            active_file_filter(),
         )
         .order_by(asc(FileRecord.created_at))
     )
@@ -111,6 +260,7 @@ async def list_channel_files(
             "status": r.status,
             "summary_3lines": r.summary_3lines,
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            "expires_at": r.expires_at.isoformat() if r.expires_at else None,
         }
         for r in records
     ])
@@ -120,10 +270,16 @@ async def list_channel_files(
 async def file_status(
     file_id: str,
     channel_id: str = Query(...),
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
+    await ChannelService(session).require_channel_member(channel_id, current_user)
     result = await session.execute(
-        select(FileRecord).where(FileRecord.file_id == file_id, FileRecord.channel_id == channel_id)
+        select(FileRecord).where(
+            FileRecord.file_id == file_id,
+            FileRecord.channel_id == channel_id,
+            active_file_filter(),
+        )
     )
     rec = result.scalar_one_or_none()
     if not rec:
@@ -136,6 +292,7 @@ async def file_status(
         "size_bytes": rec.size_bytes,
         "status": rec.status,
         "uploaded_at": rec.uploaded_at.isoformat() if rec.uploaded_at else None,
+        "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
         "last_error": rec.last_error,
     })
 
@@ -143,84 +300,189 @@ async def file_status(
 @router.get("/{file_id}/preview")
 async def file_preview(
     file_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    result = await session.execute(select(FileRecord).where(FileRecord.file_id == file_id))
-    rec = result.scalar_one_or_none()
-    if not rec:
-        raise NotFoundError("file not found")
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
 
-    content_type = rec.content_type or "application/octet-stream"
+    content_type = _effective_content_type(rec)
     filename = rec.original_filename or file_id
-    disposition = "inline" if _inline_disposition(content_type) else _content_disposition(filename)
-
-    if not rec.object_key and rec.original_path:
-        local_path = Path(rec.original_path)
-        if local_path.exists():
-            return Response(
-                content=local_path.read_bytes(),
-                media_type=content_type,
-                headers={"Content-Disposition": disposition, "Cache-Control": "public, max-age=3600"},
-            )
-
-    from app.services.storage.base import StorageObjectNotFoundError
-    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
-    if not is_storage_enabled():
-        from app.core.exceptions import AppError
-        raise AppError("storage not enabled")
-    storage = get_storage_service()
-    scope = "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
-    try:
-        obj = await storage.get_object(rec.file_id, scope=scope)
-    except StorageObjectNotFoundError:
-        raise NotFoundError("file not found in storage")
-    except Exception as exc:
-        from app.core.exceptions import AppError
-        raise AppError("failed to load file") from exc
-    return Response(
-        content=obj.body,
-        media_type=content_type,
-        headers={"Content-Disposition": disposition, "Cache-Control": "public, max-age=3600"},
+    disposition = (
+        _content_disposition(filename, "inline")
+        if _inline_disposition(content_type)
+        else _content_disposition(filename)
     )
+    body = await _load_file_body(rec)
+    return Response(
+        content=body,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": disposition,
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
+@router.get("/{file_id}/kkfileview", response_model=APIResponse[dict])
+async def file_kkfileview_url(
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """File kkfileview url."""
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
+
+    filename = rec.original_filename or file_id
+    content_type = _effective_content_type(rec)
+    if not settings.kkfileview_enabled or not (settings.kkfileview_base_url or "").strip():
+        return APIResponse.ok({
+            "enabled": False,
+            "reason": "kkfileview disabled",
+        })
+    if not _is_kkfileview_candidate(filename, content_type):
+        return APIResponse.ok({
+            "enabled": False,
+            "reason": "file type uses builtin preview",
+        })
+
+    ttl = max(int(getattr(settings, "kkfileview_token_ttl_seconds", 600) or 600), 60)
+    token = create_service_token(
+        {"scope": "file_preview", "file_id": rec.file_id},
+        expires_seconds=ttl,
+    )
+    source_url = _build_kkfileview_source_url(rec.file_id, filename, token)
+    return APIResponse.ok({
+        "enabled": True,
+        "viewer_url": _build_kkfileview_viewer_url(source_url),
+        "source_url": source_url,
+        "expires_in": ttl,
+    })
+
+
+@router.get("/{file_id}/public-preview")
+async def file_public_preview(
+    file_id: str,
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """File public preview."""
+    try:
+        payload = decode_service_token(token)
+    except jwt.PyJWTError as exc:
+        raise UnauthorizedError("invalid preview token") from exc
+    if payload.get("scope") != "file_preview" or payload.get("file_id") != file_id:
+        raise UnauthorizedError("invalid preview token")
+
+    rec = await _load_active_file_or_404(session, file_id)
+    filename = rec.original_filename or file_id
+    body = await _load_file_body(rec)
+    return Response(
+        content=body,
+        media_type=_effective_content_type(rec),
+        headers={
+            "Content-Disposition": _content_disposition(filename, "inline"),
+            "Cache-Control": "private, max-age=60",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/{file_id}/content", response_model=APIResponse[dict])
+async def file_preview_content(
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """File preview content."""
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
+
+    filename = rec.original_filename or file_id
+    content_type = _effective_content_type(rec)
+    if is_image_type(_content_type_base(content_type)):
+        return APIResponse.ok({
+            "file_id": rec.file_id,
+            "filename": filename,
+            "content_type": content_type,
+            "preview_type": "image",
+            "content": "",
+            "truncated": False,
+            "summary": rec.summary_3lines,
+            "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
+        })
+
+    if rec.md_path:
+        cache_path = Path(rec.md_path)
+        if cache_path.is_file():
+            return APIResponse.ok({
+                "file_id": rec.file_id,
+                "filename": filename,
+                "content_type": content_type,
+                "preview_type": "markdown",
+                "content": cache_path.read_text(encoding="utf-8", errors="replace"),
+                "truncated": False,
+                "summary": rec.summary_3lines,
+                "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
+            })
+
+    try:
+        parsed = parse_document_bytes(
+            await _load_file_body(rec),
+            filename=filename,
+            content_type=content_type,
+            max_chars=settings.file_parse_max_chars,
+        )
+    except UnsupportedFileTypeError as exc:
+        return APIResponse.ok({
+            "file_id": rec.file_id,
+            "filename": filename,
+            "content_type": content_type,
+            "preview_type": "unsupported",
+            "content": "",
+            "truncated": False,
+            "summary": rec.summary_3lines,
+            "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
+            "error": str(exc),
+        })
+    except FileParseError as exc:
+        raise AppError(f"file preview failed: {exc}") from exc
+
+    return APIResponse.ok({
+        "file_id": rec.file_id,
+        "filename": filename,
+        "content_type": content_type,
+        "preview_type": (
+            "markdown"
+            if filename.lower().endswith((".md", ".markdown", ".xlsx"))
+            else "html"
+            if filename.lower().endswith((".html", ".htm"))
+            else "text"
+        ),
+        "content": parsed.text,
+        "truncated": parsed.truncated,
+        "summary": parsed.summary,
+        "expires_at": rec.expires_at.isoformat() if rec.expires_at else None,
+    })
 
 
 @router.get("/{file_id}/download")
 async def file_download(
     file_id: str,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    result = await session.execute(select(FileRecord).where(FileRecord.file_id == file_id))
-    rec = result.scalar_one_or_none()
-    if not rec:
-        raise NotFoundError("file not found")
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
 
-    if not rec.object_key and rec.original_path:
-        local_path = Path(rec.original_path)
-        if local_path.exists():
-            filename = rec.original_filename or file_id
-            return Response(
-                content=local_path.read_bytes(),
-                media_type=rec.content_type or "application/octet-stream",
-                headers={"Content-Disposition": _content_disposition(filename), "Cache-Control": "public, max-age=3600"},
-            )
-
-    from app.services.storage.base import StorageObjectNotFoundError
-    from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
-    if not is_storage_enabled():
-        from app.core.exceptions import AppError
-        raise AppError("storage not enabled")
-    storage = get_storage_service()
-    scope = "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
-    try:
-        obj = await storage.get_object(rec.file_id, scope=scope)
-    except StorageObjectNotFoundError:
-        raise NotFoundError("file not found in storage")
-    except Exception as exc:
-        from app.core.exceptions import AppError
-        raise AppError("failed to load file") from exc
     filename = rec.original_filename or file_id
+    body = await _load_file_body(rec)
     return Response(
-        content=obj.body,
-        media_type=rec.content_type or "application/octet-stream",
-        headers={"Content-Disposition": _content_disposition(filename), "Cache-Control": "public, max-age=3600"},
+        content=body,
+        media_type=_effective_content_type(rec),
+        headers={
+            "Content-Disposition": _content_disposition(filename),
+            "Cache-Control": "private, max-age=3600",
+        },
     )

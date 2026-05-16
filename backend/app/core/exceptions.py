@@ -1,8 +1,8 @@
-"""统一异常体系."""
+"""Exceptions module."""
 
 
 class AppError(Exception):
-    """所有业务异常的基类."""
+    """App Error schema or model."""
 
     status_code: int = 500
     code: str = "internal_error"

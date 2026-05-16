@@ -1,7 +1,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
-import { UsersIcon } from "@heroicons/react/24/solid";
 import type { CurrentUser } from "../types";
+import { AppIcon } from "./icons/AppIcon";
 import { Modal } from "./Modal";
 
 const API = "/api/v1";
@@ -39,7 +39,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || "登录失败");
+      if (!res.ok) throw new Error(data.detail || data.message || "Sign-in failed");
       const payload = data.data ?? data;
       const userInfo = payload.user ?? payload;
       const user: AuthUser = {
@@ -67,7 +67,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     onSent: () => void,
   ) => {
     if (!email.trim() || !email.includes("@")) {
-      setLoginError("请输入有效的邮箱地址");
+      setLoginError("Enter a valid email address");
       return;
     }
     if (purpose === "register") setRegCodeLoading(true);
@@ -80,9 +80,9 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         body: JSON.stringify({ email: email.trim(), purpose }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "发送失败");
+      if (!res.ok) throw new Error(data.detail || "Send failed");
       onSent();
-      toast.success("验证码已发送，请查收邮件");
+      toast.success("Verification code sent. Check your email.");
     } catch (e: any) {
       setLoginError(e.message);
     } finally {
@@ -111,7 +111,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || "注册失败");
+      if (!res.ok) throw new Error(data.detail || data.message || "Registration failed");
       const loginRes = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,7 +145,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
 
   const handleForgotPassword = async () => {
     if (!forgotCode.trim() || !forgotNewPw.trim()) {
-      setLoginError("请填写验证码和新密码");
+      setLoginError("Enter the verification code and new password");
       return;
     }
     setLoginLoading(true);
@@ -161,8 +161,8 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "重置失败");
-      toast.success("密码已重置，请重新登录");
+      if (!res.ok) throw new Error(data.detail || "Reset failed");
+      toast.success("Password reset. Please sign in again.");
       setAuthMode("login");
       setForgotEmail("");
       setForgotCode("");
@@ -189,31 +189,31 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
       hideCloseButton={!currentUser}
       panelClassName="p-2"
     >
-      <div className="px-3 py-3">
+      <div className="an-token-panel px-3 py-3">
         <div className="text-center mb-6">
           <div
             className="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-3"
             style={{ background: "var(--accent)" }}
           >
-            <UsersIcon className="w-7 h-7 text-white" />
+            <AppIcon name="users" className="w-7 h-7 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">
+          <h2 className="an-type-title">
             {authMode === "login"
-              ? "登录到智枢"
+              ? "Sign in to AgentNEXUS"
               : authMode === "register"
-                ? "创建账号"
-                : "重置密码"}
+                ? "Create account"
+                : "Reset password"}
           </h2>
-          <p className="text-gray-500 text-sm mt-1">
+          <p className="an-type-meta mt-1">
             {authMode === "login"
-              ? "欢迎回来！"
+              ? "Welcome back."
               : authMode === "register"
-                ? "填写信息以创建新账号"
-                : "通过邮箱验证重置密码"}
+                ? "Fill in details to create an account"
+                : "Reset your password with email verification"}
           </p>
         </div>
         {loginError && (
-          <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">
+          <div className="an-alert-danger mb-4">
             {loginError}
           </div>
         )}
@@ -232,16 +232,16 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
           >
             <input
               name="username"
-              placeholder="用户名或邮箱"
+              placeholder="Username or email"
               required
-              className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              className="an-input mb-3"
             />
             <input
               name="password"
               type="password"
-              placeholder="密码"
+              placeholder="Password"
               required
-              className="w-full mb-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              className="an-input mb-1"
             />
             <div className="text-right mb-4">
               <button
@@ -250,17 +250,17 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setAuthMode("forgot");
                   setLoginError("");
                 }}
-                className="text-xs text-[#1264A3] hover:underline"
+                className="an-text-link an-type-caption"
               >
-                忘记密码？
+                Forgot password?
               </button>
             </div>
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm"
+              className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中..." : "登录"}
+              {loginLoading ? "Processing..." : "Sign in"}
             </button>
           </form>
         )}
@@ -288,9 +288,9 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setRegCode("");
                 }}
                 type="email"
-                placeholder="邮箱地址（必填）"
+                placeholder="Email address (required)"
                 required
-                className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+                className="an-input flex-1"
               />
               <button
                 type="button"
@@ -300,52 +300,52 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                     setRegCodeSent(true),
                   )
                 }
-                className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap"
+                className="an-btn an-btn-ghost an-btn-sm"
               >
                 {regCodeLoading
-                  ? "发送中"
+                  ? "Sending"
                   : regCodeSent
-                    ? "重新发送"
-                    : "获取验证码"}
+                    ? "Resend"
+                    : "Get code"}
               </button>
             </div>
             <input
               value={regCode}
               onChange={(e) => setRegCode(e.target.value)}
-              placeholder="邮箱验证码"
+              placeholder="Email verification code"
               required
               disabled={!regCodeSent}
-              className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400"
+              className="an-input mb-4"
             />
             {/* Step 2: Account info (shown after code sent) */}
             <input
               name="display_name"
-              placeholder="显示名称"
+              placeholder="Display name"
               required
               disabled={!regCodeSent}
-              className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400"
+              className="an-input mb-3"
             />
             <input
               name="username"
-              placeholder="用户名（登录用）"
+              placeholder="Username (for sign-in)"
               required
               disabled={!regCodeSent}
-              className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400"
+              className="an-input mb-3"
             />
             <input
               name="password"
               type="password"
-              placeholder="密码（8位以上，含字母和数字）"
+              placeholder="Password (8+ chars, letters and numbers)"
               required
               disabled={!regCodeSent}
-              className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400"
+              className="an-input mb-4"
             />
             <button
               type="submit"
               disabled={loginLoading || !regCodeSent}
-              className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm"
+              className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中..." : "注册"}
+              {loginLoading ? "Processing..." : "Create account"}
             </button>
           </form>
         )}
@@ -358,9 +358,9 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 value={forgotEmail}
                 onChange={(e) => setForgotEmail(e.target.value)}
                 type="email"
-                placeholder="注册邮箱"
+                placeholder="Registered email"
                 required
-                className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+                className="an-input flex-1"
               />
               <button
                 type="button"
@@ -370,50 +370,50 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                     setForgotCodeSent(true),
                   )
                 }
-                className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap"
+                className="an-btn an-btn-ghost an-btn-sm"
               >
                 {forgotCodeLoading
-                  ? "发送中"
+                  ? "Sending"
                   : forgotCodeSent
-                    ? "重新发送"
-                    : "获取验证码"}
+                    ? "Resend"
+                    : "Get code"}
               </button>
             </div>
             <input
               value={forgotCode}
               onChange={(e) => setForgotCode(e.target.value)}
-              placeholder="邮箱验证码"
-              className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              placeholder="Email verification code"
+              className="an-input mb-3"
             />
             <input
               value={forgotNewPw}
               onChange={(e) => setForgotNewPw(e.target.value)}
               type="password"
-              placeholder="新密码（8位以上，含字母和数字）"
-              className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              placeholder="New password (8+ chars, letters and numbers)"
+              className="an-input mb-4"
             />
             <button
               onClick={handleForgotPassword}
               disabled={loginLoading || !forgotCodeSent}
-              className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm"
+              className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中..." : "重置密码"}
+              {loginLoading ? "Processing..." : "Reset password"}
             </button>
           </div>
         )}
 
-        <div className="mt-4 text-center text-sm text-gray-500">
+        <div className="an-type-meta mt-4 text-center">
           {authMode === "login" ? (
             <>
-              没有账号？{" "}
+              No account?{" "}
               <button
                 onClick={() => {
                   setAuthMode("register");
                   setLoginError("");
                 }}
-                className="text-[#1264A3] font-medium hover:underline"
+                className="an-text-link"
               >
-                注册
+                created account
               </button>
             </>
           ) : (
@@ -422,9 +422,9 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 setAuthMode("login");
                 setLoginError("");
               }}
-              className="text-[#1264A3] font-medium hover:underline"
+              className="an-text-link"
             >
-              返回登录
+              Back to sign in
             </button>
           )}
         </div>

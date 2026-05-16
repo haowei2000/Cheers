@@ -24,7 +24,7 @@ AgentNexus 定位为 **OpenClaw 门户**：企业各部门自建的 OpenClaw 实
 
 | 类型 | 说明 | 示例 |
 |------|------|------|
-| **内置 Bot（Built-in）** | 系统自带，不可删除 | 引导 Bot、Orchestrator |
+| **内置 Bot（Built-in）** | 系统自带，不可删除 | Helper Bot、Orchestrator |
 | **外部 Bot（External）** | 部门注册的 OpenClaw 实例 | 部门 Bot |
 
 ### 2.2 @ 规则
@@ -34,13 +34,13 @@ AgentNexus 定位为 **OpenClaw 门户**：企业各部门自建的 OpenClaw 实
 | 内置 Bot | 可 @ 部门 Bot（建议）、可 @ 人类用户 |
 | 外部 Bot | 仅可 @ 人类用户；**不可 @ 另一个 Bot** |
 
-### 2.3 引导 Bot
+### 2.3 Helper Bot
 
 | 属性 | 说明 |
 |------|------|
 | **职责** | 仅回答 AgentNexus 系统使用问题（如何用、如何申请、API 文档等） |
 | **触发** | 必须被 @ 才活跃；不被 @ 则不参与 |
-| **知识源** | 系统使用说明、公共平台访问申请 API 规范等文档，供引导 Bot 检索引用 |
+| **知识源** | 系统使用说明、公共平台访问申请 API 规范等文档，供Helper Bot 检索引用 |
 
 ### 2.4 Orchestrator
 
@@ -128,7 +128,7 @@ AgentNexus 接收 → 待审批列表
 ```
 
 - **申请入口**：HTTP API，非聊天对话
-- **申请说明**：@引导 Bot 可回答如何发起申请、URL、请求结构等
+- **申请说明**： Bot 可回答如何发起申请、URL、请求结构等
 - **详细规范**：见《公共平台访问申请API规范》
 
 ---
@@ -149,13 +149,13 @@ AgentNexus 接收 → 待审批列表
 
 | 序号 | 交付物 | 实现状态 | 实现说明 |
 |------|--------|----------|----------|
-| 1 | Orchestrator 作为系统内置 Bot | ✅ | bot_id=bot-coordinator-001，username=coordinator，openclaw_endpoint=coordinator://internal；与引导 Bot 并列，可加入频道 |
+| 1 | Orchestrator 作为系统内置 Bot | ✅ | bot_id=bot-coordinator-001，username=coordinator，Agent Bridge 配置=coordinator://internal；与Helper Bot 并列，可加入频道 |
 | 2 | Orchestrator 触发模式配置 | ✅ | 管理→LLM 设置→Orchestrator 配置：「直接回答未 @ 的问题」可开关；需绑定 system_llm 或 orchestrator |
-| 3 | 引导 Bot 职责明确 | ✅ | 仅系统使用问题，必须 @ 才活跃 |
+| 3 | Helper Bot 职责明确 | ✅ | 仅系统使用问题，必须 @ 才活跃 |
 | 4 | 自动接手机制 | ✅ | Orchestrator 回复含「建议 @xxx」时，可自动触发被建议 Bot；配置项 orchestrator_auto_takeover |
 | 5 | 自动接手 UI | ✅ | WebSocket 推送 bot_processing 事件，前端显示「@xxx 正在处理...」 |
-| 6 | Bot 层级与 @ 规则 | ✅ | 内置 Bot（guide://、coordinator://）可建议 @ 部门 Bot；外部 Bot 不可 @ 另一 Bot |
-| 7 | 所有 Bot 支持澄清 | 部分 | 引导 Bot 已支持；HTTP Bot 待扩展 execute 契约 |
+| 6 | Bot 层级与 @ 规则 | ✅ | 内置 Bot（helper 内置 Bot、coordinator://）可建议 @ 部门 Bot；外部 Bot 不可 @ 另一 Bot |
+| 7 | 所有 Bot 支持澄清 | 部分 | Helper Bot 已支持；HTTP Bot 待扩展 execute 契约 |
 | 8 | 资源监控（基础版） | ✅ | GET /api/tasks/stats?limit_days=7，按 Bot 汇总任务数、平均耗时；管理→性能监控展示 |
 
 ### 阶段二：公共平台与申请流程
@@ -166,7 +166,7 @@ AgentNexus 接收 → 待审批列表
 | 2 | 公共数据平台 | 结构化数据、访问控制 |
 | 3 | 访问申请 API | 见《公共平台访问申请API规范》 |
 | 4 | 待审批列表与审核 | 管理员审核、权限生效 |
-| 5 | 引导 Bot 知识扩展 | 纳入申请 API 文档，可回答申请流程 |
+| 5 | Helper Bot 知识扩展 | 纳入申请 API 文档，可回答申请流程 |
 
 ### 阶段三：能力发现与编排增强
 
@@ -213,7 +213,7 @@ AgentNexus 接收 → 待审批列表
 
 ### 10.1 已实现并应作为默认认知
 
-- 内置体系已收敛为统一 `channel bot`（`bot-guide-001`），承担引导、协作、路由建议能力。
+- 内置体系已收敛为统一 `channel bot`（`bot-helper-001`），承担帮助、协作、路由建议能力。
 - `auto_assist` 支持频道级自动接管；全局与频道配置共同决定未 @ 场景是否自动回复。
 - 自动接手机制与前端“正在处理”提示已实现，可配置开关。
 - SSE 消息流式接口已落地，支持更细粒度的处理反馈。

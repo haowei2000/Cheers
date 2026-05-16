@@ -1,4 +1,4 @@
-"""公共留言板请求/响应模型."""
+"""ChatCore request and response schemas."""
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field

@@ -1,19 +1,21 @@
-"""OpenClaw bridge 单元测试：dispatcher、pending registry、WebsocketBotAdapter.execute()."""
+"""Tests for test openclaw bridge."""
 from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from xml.etree import ElementTree as ET
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AgentNexusSession
-from app.services.adapters.base import AgentPayload
-from app.db.models import Channel, Message, Workspace
-from app.services.adapters.websocket_bot import WebsocketBotAdapter
-from app.services.openclaw_bridge.dispatcher import BridgeDispatcher
-from app.services.openclaw_bridge.pending import PendingReply, PendingReplyRegistry
+from app.api.v1.agent_bridge.routes import _BridgeOutboundQueueFull, _BridgeOutboundWriter
+from app.config import settings
+from app.db.models import AgentNexusSession, Channel, Message, Workspace
+from app.features.agent_bridge.dispatcher import BridgeDispatcher
+from app.features.agent_bridge.pending import PendingReply, PendingReplyRegistry
+from app.features.bot_runtime.adapters.agent_bridge_bot import AgentBridgeBotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, drain_events_to_response
 
 
 def _fake_bot(**kwargs):
@@ -22,13 +24,20 @@ def _fake_bot(**kwargs):
         username="ws-bot",
         display_name="WS Bot",
         status="online",
-        binding_type="websocket",
+        binding_type="agent_bridge",
         binding_config={"agent_id": "agent-x"},
         ai_model=None,
         prompt_template=None,
     )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
+
+
+def _fake_template(user_template: str = "{{memory}}\n\n任务：{{message}}"):
+    return SimpleNamespace(
+        system_prompt="WebSocket 系统提示",
+        user_template=user_template,
+    )
 
 
 def _payload(task_id: str = "t-ws-001", channel_id: str = "c-001") -> AgentPayload:
@@ -47,7 +56,7 @@ async def test_dispatcher_publish_filters_by_bot_ids() -> None:
     d = BridgeDispatcher()
     sub_a = await d.subscribe(bot_ids=["bot-A"])
     sub_b = await d.subscribe(bot_ids=["bot-B"])
-    sub_all = await d.subscribe(bot_ids=None)  # 调试/内部：收全量
+    sub_all = await d.subscribe(bot_ids=None)  # Debug/internal mode receives all events.
 
     delivered = await d.publish({"type": "dispatch", "bot_id": "bot-A"})
     assert delivered == 2  # sub_a + sub_all
@@ -64,7 +73,7 @@ async def test_dispatcher_publish_filters_by_bot_ids() -> None:
 
 @pytest.mark.asyncio
 async def test_dispatcher_empty_subscription_receives_nothing() -> None:
-    """握手中间态：已连但还没声明 bot_ids 的订阅者不收任何事件。"""
+    """Covers test dispatcher empty subscription receives nothing behavior."""
     d = BridgeDispatcher()
     sub = await d.subscribe(bot_ids=[])
     delivered = await d.publish({"type": "dispatch", "bot_id": "bot-A"})
@@ -103,7 +112,47 @@ async def test_dispatcher_unsubscribe_stops_delivery() -> None:
     assert delivered == 0
 
 
-# --------------------------- WebsocketBotAdapter ---------------------------
+@pytest.mark.asyncio
+async def test_bridge_outbound_writer_closes_slow_subscriber(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ws_outbound_queue_size", 1)
+    monkeypatch.setattr(settings, "ws_send_timeout_seconds", 10.0)
+
+    class SlowWS:
+        def __init__(self) -> None:
+            self.sent: list[dict] = []
+            self.closed = False
+            self.send_started = asyncio.Event()
+            self.release_send = asyncio.Event()
+
+        async def send_json(self, data: dict) -> None:
+            self.sent.append(data)
+            self.send_started.set()
+            await self.release_send.wait()
+
+        async def close(self, code: int = 1000, reason: str = "") -> None:
+            self.closed = True
+            self.close_code = code
+            self.close_reason = reason
+
+    ws = SlowWS()
+    writer = _BridgeOutboundWriter(ws)  # type: ignore[arg-type]
+    writer.start()
+
+    await writer.send({"type": "dispatch", "seq": 1})
+    await asyncio.wait_for(ws.send_started.wait(), timeout=1)
+    await writer.send({"type": "dispatch", "seq": 2})
+    with pytest.raises(_BridgeOutboundQueueFull):
+        await writer.send({"type": "dispatch", "seq": 3})
+
+    assert ws.closed is True
+    assert ws.close_code == 1011
+    assert ws.close_reason == "outbound queue full"
+
+    ws.release_send.set()
+    await writer.close()
+
+
+# --------------------------- AgentBridgeBotAdapter ---------------------------
 
 class _FakeWS:
     def __init__(self) -> None:
@@ -113,20 +162,33 @@ class _FakeWS:
         self.sent.append(data)
 
 
-@pytest.mark.asyncio
-async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound() -> None:
-    from app.services.openclaw_bridge.pending import pending_replies
-    from app.services.openclaw_bridge.registry import bot_session_registry
+def _patch_record_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_record_event(bot_id: str, stream: str, event: dict) -> int:
+        return 1
 
+    monkeypatch.setattr(
+        "app.features.agent_bridge.event_log.record_event",
+        fake_record_event,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.features.agent_bridge.pending import pending_replies
+    from app.features.agent_bridge.registry import bot_session_registry
+
+    _patch_record_event(monkeypatch)
     ws = _FakeWS()
     await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
     try:
-        adapter = WebsocketBotAdapter(_fake_bot())
+        adapter = AgentBridgeBotAdapter(_fake_bot())
         payload = _payload("t-ws-001")
-        # 模拟 orchestrator：把占位 msg_id 放到 process_config
+        # Mock orchestrator behavior by putting the placeholder msg_id into process_config.
         payload.process_config.placeholder_msg_id = "placeholder-123"
 
-        resp = await adapter.execute(payload)
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
         assert resp.success is True
         assert resp.dispatched_async is True
         assert resp.content == ""
@@ -140,30 +202,151 @@ async def test_ws_bot_adapter_dispatches_via_registry_when_data_ws_bound() -> No
         assert event["placeholder_msg_id"] == "placeholder-123"
         assert event["binding_config"] == {"agent_id": "agent-x"}
 
-        # adapter 预登记了 pending（便于 plugin 秒回时定位）
+        # The adapter pre-registered pending state so a fast plugin reply can be located.
         pending = await pending_replies.peek_by_msg("placeholder-123")
         assert pending is not None
         assert pending.bot_id == "bot-ws-001"
         assert pending.channel_id == "c-001"
     finally:
         await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
-        # 清理：pop 掉预登记的 pending
+        # Cleanup: pop the pre-registered pending entry.
         await pending_replies.pop_by_msg("placeholder-123")
 
 
 @pytest.mark.asyncio
-async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
-    from app.services.openclaw_bridge.pending import pending_replies
+async def test_ws_bot_adapter_commits_placeholder_before_plugin_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.features.agent_bridge.pending import pending_replies
+    from app.features.agent_bridge.registry import bot_session_registry
 
-    adapter = WebsocketBotAdapter(_fake_bot(display_name="Alpha"))
+    _patch_record_event(monkeypatch)
+
+    async def fake_resolve_dispatch_session(*_args, **_kwargs):
+        return SimpleNamespace(to_event_payload=lambda: {"provider_session_key": "sk-test"})
+
+    monkeypatch.setattr(
+        "app.features.agent_bridge.session_map.resolve_dispatch_session",
+        fake_resolve_dispatch_session,
+    )
+
+    events: list[str] = []
+
+    class OrderedWS(_FakeWS):
+        async def send_json(self, data: dict) -> None:
+            events.append("dispatch")
+            await super().send_json(data)
+
+    class FakeSession:
+        async def flush(self) -> None:
+            events.append("flush")
+
+        async def commit(self) -> None:
+            events.append("commit")
+
+    ws = OrderedWS()
+    await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+    try:
+        adapter = AgentBridgeBotAdapter(_fake_bot())
+        payload = _payload("t-ws-durable")
+        payload.process_config.placeholder_msg_id = "placeholder-durable"
+        payload.process_config.db_session = FakeSession()
+
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
+
+        assert resp.success is True
+        assert resp.dispatched_async is True
+        assert events == ["flush", "commit", "dispatch"]
+        assert ws.sent[0]["placeholder_msg_id"] == "placeholder-durable"
+    finally:
+        await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+        await pending_replies.pop_by_msg("placeholder-durable")
+
+
+@pytest.mark.asyncio
+async def test_ws_bot_adapter_renders_prompt_template_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.features.agent_bridge.pending import pending_replies
+    from app.features.agent_bridge.registry import bot_session_registry
+
+    _patch_record_event(monkeypatch)
+    ws = _FakeWS()
+    await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+    try:
+        adapter = AgentBridgeBotAdapter(_fake_bot(prompt_template=_fake_template()))
+        payload = _payload("t-ws-template")
+        payload.process_config.placeholder_msg_id = "placeholder-template"
+        payload.memory_context = {"anchor": "WebSocket 锚点"}
+
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
+
+        assert resp.success is True
+        event = ws.sent[0]
+        rendered_text = event["trigger_message"]["text"]
+        assert "=== 频道记忆上下文" not in rendered_text
+        start = rendered_text.index("<channel_memory")
+        end = rendered_text.index("</channel_memory>") + len("</channel_memory>")
+        memory_root = ET.fromstring(rendered_text[start:end])
+        assert memory_root.find("./layer[@name='anchor']/content").text == "WebSocket 锚点"
+        assert "WebSocket 锚点" in rendered_text
+        assert "任务：@ws-bot hi" in rendered_text
+        assert event["raw_trigger_message"]["text"] == "@ws-bot hi"
+        assert event["prompt"]["user"] == rendered_text
+        assert "WebSocket 系统提示" in event["prompt"]["system"]
+    finally:
+        await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+        await pending_replies.pop_by_msg("placeholder-template")
+
+
+@pytest.mark.asyncio
+async def test_ws_bot_adapter_sends_delegated_xml_without_template_wrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.features.agent_bridge.pending import pending_replies
+    from app.features.agent_bridge.registry import bot_session_registry
+
+    _patch_record_event(monkeypatch)
+    ws = _FakeWS()
+    await bot_session_registry.bind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+    try:
+        adapter = AgentBridgeBotAdapter(_fake_bot(prompt_template=_fake_template()))
+        payload = _payload("t-ws-delegated-xml")
+        payload.process_config.placeholder_msg_id = "placeholder-delegated-xml"
+        payload.process_config.delegated_task_xml = True
+        payload.trigger_message = {
+            **payload.trigger_message,
+            "text": "<agentnexus_subbot_request><delegated_task>hi</delegated_task></agentnexus_subbot_request>",
+        }
+        payload.memory_context = {"anchor": "should-not-be-wrapped"}
+
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
+
+        assert resp.success is True
+        event = ws.sent[0]
+        rendered_text = event["trigger_message"]["text"]
+        assert rendered_text.startswith("<agentnexus_subbot_request>")
+        assert "任务：" not in rendered_text
+        assert "should-not-be-wrapped" not in rendered_text
+        assert event["prompt"]["user"] == rendered_text
+    finally:
+        await bot_session_registry.unbind_data("bot-ws-001", ws)  # type: ignore[arg-type]
+        await pending_replies.pop_by_msg("placeholder-delegated-xml")
+
+
+@pytest.mark.asyncio
+async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
+    from app.features.agent_bridge.pending import pending_replies
+
+    adapter = AgentBridgeBotAdapter(_fake_bot(display_name="Alpha"))
     payload = _payload()
     payload.process_config.placeholder_msg_id = "placeholder-fail-001"
-    resp = await adapter.execute(payload)
+    resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
     assert resp.success is False
     assert resp.dispatched_async is False
     assert resp.error_message == "no_plugin_subscribers"
     assert "Alpha" in resp.content
-    # 失败路径应回滚预登记
+    # Failure path should roll back pre-registration.
     assert await pending_replies.peek_by_msg("placeholder-fail-001") is None
 
 
@@ -171,30 +354,34 @@ async def test_ws_bot_adapter_returns_failure_when_no_data_ws() -> None:
 async def test_ws_bot_adapter_does_not_create_session_when_no_data_ws(
     db_session: AsyncSession,
 ) -> None:
-    adapter = WebsocketBotAdapter(_fake_bot())
+    adapter = AgentBridgeBotAdapter(_fake_bot())
     payload = _payload()
     payload.process_config.placeholder_msg_id = "placeholder-no-ws-session"
     payload.process_config.db_session = db_session
-
-    resp = await adapter.execute(payload)
-
-    assert resp.success is False
-    count = (
+    before_count = (
         await db_session.execute(select(func.count()).select_from(AgentNexusSession))
     ).scalar_one()
-    assert count == 0
+
+    resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
+
+    assert resp.success is False
+    after_count = (
+        await db_session.execute(select(func.count()).select_from(AgentNexusSession))
+    ).scalar_one()
+    assert after_count == before_count
 
 
 @pytest.mark.asyncio
 async def test_ws_bot_adapter_ignores_irrelevant_bot_session() -> None:
-    """别的 bot 连上不会让本 bot 的 adapter 误认为在线。"""
-    from app.services.openclaw_bridge.registry import bot_session_registry
+    """Covers test ws bot adapter ignores irrelevant bot session behavior."""
+    from app.features.agent_bridge.registry import bot_session_registry
 
     other = _FakeWS()
     await bot_session_registry.bind_data("some-other-bot", other)  # type: ignore[arg-type]
     try:
-        adapter = WebsocketBotAdapter(_fake_bot())
-        resp = await adapter.execute(_payload())
+        adapter = AgentBridgeBotAdapter(_fake_bot())
+        payload = _payload()
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
         assert resp.success is False
         assert other.sent == []
     finally:
@@ -203,9 +390,9 @@ async def test_ws_bot_adapter_ignores_irrelevant_bot_session() -> None:
 
 @pytest.mark.asyncio
 async def test_ws_bot_adapter_health_check_reflects_data_ws() -> None:
-    from app.services.openclaw_bridge.registry import bot_session_registry
+    from app.features.agent_bridge.registry import bot_session_registry
 
-    adapter = WebsocketBotAdapter(_fake_bot())
+    adapter = AgentBridgeBotAdapter(_fake_bot())
     assert await adapter.health_check() is False
 
     ws = _FakeWS()
@@ -218,8 +405,8 @@ async def test_ws_bot_adapter_health_check_reflects_data_ws() -> None:
 
 @pytest.mark.asyncio
 async def test_bridge_apply_trace_broadcasts_registered_stream(monkeypatch) -> None:
-    from app.services.openclaw_bridge.service import apply_trace, register_stream
-    from app.services.openclaw_bridge.streams import stream_registry
+    from app.features.agent_bridge.service import apply_trace, register_stream
+    from app.features.agent_bridge.streams import stream_registry
 
     sent: list[tuple[str, dict]] = []
 
@@ -288,7 +475,7 @@ async def test_pending_registry_register_and_resolve_by_msg() -> None:
     assert got is p
     assert reg.count() == 0
 
-    # 再次 resolve 应为 None
+    # A second resolve should return None.
     got2 = await reg.resolve(task_id=None, bot_id="b1", msg_id="m1")
     assert got2 is None
 
@@ -306,15 +493,15 @@ async def test_pending_registry_resolve_by_task_bot() -> None:
 
 @pytest.mark.asyncio
 async def test_pending_registry_rejects_cross_bot_resolve_by_msg() -> None:
-    """plugin 用 bot-A 的连接不能 finalize bot-B 的占位消息（msg_id 相同也不行）。"""
+    """Covers test pending registry rejects cross bot resolve by msg behavior."""
     reg = PendingReplyRegistry()
     p = PendingReply(task_id="t1", bot_id="bot-A", channel_id="c1", msg_id="m1")
     await reg.register(p)
-    # bot-B 试图用 m1 resolve → 应返回 None 且不删除
+    # bot-B resolving m1 should return None without deleting it.
     got = await reg.resolve(task_id=None, bot_id="bot-B", msg_id="m1")
     assert got is None
     assert reg.count() == 1
-    # bot-A 自己来 resolve 仍正常
+    # bot-A can still resolve its own pending entry.
     got = await reg.resolve(task_id=None, bot_id="bot-A", msg_id="m1")
     assert got is p
     assert reg.count() == 0
@@ -326,7 +513,7 @@ async def test_pending_registry_cancels_timeout_on_resolve() -> None:
     fired = asyncio.Event()
     loop = asyncio.get_event_loop()
     p = PendingReply(task_id="t1", bot_id="b1", channel_id="c1", msg_id="m1")
-    p.timeout_handle = loop.call_later(10, lambda: fired.set())  # 很长，不会触发
+    p.timeout_handle = loop.call_later(10, lambda: fired.set())  # Long enough not to fire.
     await reg.register(p)
 
     got = await reg.resolve(task_id=None, bot_id="b1", msg_id="m1")
@@ -342,11 +529,11 @@ async def test_websocket_timeout_pipeline_converts_placeholder_to_task(
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     from app.db.models import Base
-    from app.services.openclaw_bridge.pending import pending_replies
-    from app.services.openclaw_bridge.service import finalize_bot_reply
-    from app.services.pipeline.bot.task_timeout import (
-        WebsocketTaskTimeoutContext,
-        make_websocket_task_timeout_pipeline,
+    from app.features.agent_bridge.pending import pending_replies
+    from app.features.agent_bridge.service import finalize_bot_reply
+    from app.features.bot_runtime.pipeline.bot.task_timeout import (
+        AgentBridgeTaskTimeoutContext,
+        make_agent_bridge_task_timeout_pipeline,
     )
 
     sent: list[tuple[str, dict]] = []
@@ -393,7 +580,7 @@ async def test_websocket_timeout_pipeline_converts_placeholder_to_task(
                 )
             )
             try:
-                timeout_ctx = WebsocketTaskTimeoutContext(
+                timeout_ctx = AgentBridgeTaskTimeoutContext(
                     session=db_session,
                     bot_id="bot-ws-001",
                     channel_id=channel.channel_id,
@@ -401,22 +588,22 @@ async def test_websocket_timeout_pipeline_converts_placeholder_to_task(
                     msg_id=msg.msg_id,
                     timeout_s=60,
                 )
-                await make_websocket_task_timeout_pipeline().run(timeout_ctx)
+                await make_agent_bridge_task_timeout_pipeline().run(timeout_ctx)
 
                 await db_session.refresh(msg)
                 assert timeout_ctx.converted is True
                 assert msg.content_data is not None
-                assert msg.content_data["kind"] == "websocket_background_task"
+                assert msg.content_data["kind"] == "agent_bridge_background_task"
                 assert await pending_replies.peek_by_msg(msg.msg_id) is not None
                 assert sent[-1] == (
                     channel.channel_id,
                     {
                         "type": "message_done",
-                        "data": {
-                            "msg_id": msg.msg_id,
-                            "content": "OpenClaw 已转入后台任务，完成后会自动更新这条回复。",
-                            "content_data": msg.content_data,
-                        },
+                            "data": {
+                                "msg_id": msg.msg_id,
+                                "content": "Agent Bridge 已转入后台任务，完成后会自动更新这条回复。",
+                                "content_data": msg.content_data,
+                            },
                     },
                 )
 
@@ -438,11 +625,13 @@ async def test_websocket_timeout_pipeline_converts_placeholder_to_task(
                     channel.channel_id,
                     {
                         "type": "message_done",
-                        "data": {
-                            "msg_id": msg.msg_id,
-                            "content": "最终回复",
-                            "content_data": None,
-                        },
+                            "data": {
+                                "msg_id": msg.msg_id,
+                                "content": "最终回复",
+                                "file_ids": [],
+                                "files": [],
+                                "content_data": None,
+                            },
                     },
                 )
             finally:

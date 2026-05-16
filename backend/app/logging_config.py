@@ -1,7 +1,8 @@
-"""配置应用日志：写入控制台与文件（含错误单独文件）。"""
+"""Application logging configuration for console, file, and error logs."""
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 from app.config import settings
 from app.core.log_context import LogContextFilter
@@ -14,7 +15,7 @@ def _resolve_log_dir() -> Path | None:
         return None
     p = Path(settings.log_dir.strip())
     if not p.is_absolute():
-        # 相对路径：相对于 backend 目录
+        # Relative paths are resolved from the backend directory.
         base = Path(__file__).resolve().parent.parent
         p = (base / p).resolve()
     return p
@@ -38,13 +39,13 @@ class _PlainFormatter(logging.Formatter):
 
 
 class _JsonFormatter(logging.Formatter):
-    """结构化 JSON 日志格式化器（LOG_JSON=true 时启用）."""
+    """Json Formatter schema or model."""
 
     def format(self, record: logging.LogRecord) -> str:
         import json as _json
         import traceback as _tb
 
-        payload = {
+        payload: dict[str, Any] = {
             "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
             "level": record.levelname,
             "logger": record.name,
@@ -68,11 +69,7 @@ def _attach_context_filter(handler: logging.Handler) -> None:
 
 
 def setup_logging() -> None:
-    """
-    配置根与 app 日志：控制台 + 文件（通用 + 仅错误）。
-    log_dir 为空则只输出到控制台。
-    LOG_JSON=true 时使用结构化 JSON 格式。
-    """
+    """Setup logging."""
     log_dir = _resolve_log_dir()
     if settings.log_json:
         fmt: logging.Formatter = _JsonFormatter()
@@ -85,7 +82,7 @@ def setup_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
 
-    # 控制台
+    # Console handler.
     has_console = any(
         getattr(h, "stream", None) == sys.stderr for h in root.handlers
     )
@@ -111,7 +108,7 @@ def setup_logging() -> None:
     max_bytes = settings.log_max_bytes or 0
     backup_count = max(0, settings.log_backup_count)
 
-    # 通用日志（INFO 及以上）
+    # General log file for INFO and above.
     try:
         if max_bytes > 0 and backup_count > 0:
             from logging.handlers import RotatingFileHandler
@@ -133,7 +130,7 @@ def setup_logging() -> None:
     except OSError:
         pass
 
-    # 错误专用日志（ERROR 及以上，便于排查）
+    # Error-only log file for troubleshooting.
     try:
         if max_bytes > 0 and backup_count > 0:
             from logging.handlers import RotatingFileHandler
@@ -157,5 +154,5 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """获取带命名空间的 logger，便于在模块内使用."""
+    """Get logger."""
     return logging.getLogger(name)

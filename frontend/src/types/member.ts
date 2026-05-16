@@ -6,6 +6,8 @@ export type MemberItem = {
   username?: string;
   display_name?: string;
   avatar_url?: string;
+  status?: string;
+  is_online?: boolean;
 };
 
 export type ChannelMember = MemberItem & {
@@ -24,7 +26,7 @@ export type ChannelMember = MemberItem & {
     username: string;
     display_name?: string | null;
   } | null;
-  binding_type?: "http" | "websocket" | string;
+  binding_type?: "http" | "agent_bridge" | string;
   connection_status?: string;
   is_online?: boolean;
   control_connected?: boolean | null;
@@ -43,7 +45,7 @@ export type ChannelParticipant = {
     username: string;
     display_name?: string | null;
   } | null;
-  binding_type?: "http" | "websocket" | string;
+  binding_type?: "http" | "agent_bridge" | string;
   connection_status?: string;
   is_online?: boolean;
   control_connected?: boolean | null;

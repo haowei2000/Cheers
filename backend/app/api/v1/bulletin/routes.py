@@ -1,4 +1,4 @@
-"""Bulletin v1 路由（公共留言板 CRUD）."""
+"""Bulletin API routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query

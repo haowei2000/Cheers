@@ -20,7 +20,7 @@
 - [x] **M1-03** ChatCore 频道与成员：REST 接口（列表/创建/成员管理），TDD 先行
 - [x] **M1-04** ChatCore 消息：持久化 + REST 拉取历史；WebSocket 连接与广播（可先单机内存）
 - [x] **M1-05** @mention 解析与路由：从消息文本提取 @BotName，与频道已激活 Bot 匹配；单测覆盖
-- [x] **M1-06** OpenClawAdapter 接口与 Mock 实现：AgentPayload/AgentResponse、execute/health_check；MockAdapter 用于本地测试
+- [x] **M1-06** BotAdapter 接口与 Mock 实现：AgentPayload/AgentResponse、execute/health_check；MockAdapter 用于本地测试
 - [x] **M1-07** 单 Bot 接入：Orchestrator 调用 Adapter，Payload 构造（含四层记忆占位）与响应回写消息；集成测试一条链路
 - [x] **M1-08** Context Store：SQLite（WAL）+ 四层 key 读写 + MD 双轨同步；MemoryManager 读取接口供 Orchestrator 注入
 - [x] **M1-09** 文件处理管道（基础）：txt/md/docx → MD，FileRecord 与状态（转换中/已就绪/失败）；上传 API 与状态查询 API

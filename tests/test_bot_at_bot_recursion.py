@@ -18,8 +18,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.pipeline.bot.stages import dispatch as dispatch_module
-from app.services.pipeline.bot.stages.dispatch import (
+from app.features.bot_runtime.pipeline.bot.stages import dispatch as dispatch_module
+from app.features.bot_runtime.pipeline.bot.stages.dispatch import (
     MAX_BOT_MENTION_DEPTH,
     trigger_sub_bots_from_mentions,
 )
@@ -62,7 +62,7 @@ def dispatcher(monkeypatch):
     """Replace dispatch_one with a recorder that doesn't hit DB / adapters."""
     rec = _RecordingDispatcher()
     monkeypatch.setattr(
-        "app.services.pipeline.bot.subagent.dispatch_one", rec,
+        "app.features.bot_runtime.pipeline.bot.subagent.dispatch_one", rec,
     )
     return rec
 
@@ -211,7 +211,7 @@ async def test_sub_bots_get_regular_capabilities(monkeypatch) -> None:
         return None
 
     monkeypatch.setattr(
-        "app.services.pipeline.bot.subagent.dispatch_one", fake_dispatch,
+        "app.features.bot_runtime.pipeline.bot.subagent.dispatch_one", fake_dispatch,
     )
 
     ctx = _make_ctx(
@@ -223,7 +223,7 @@ async def test_sub_bots_get_regular_capabilities(monkeypatch) -> None:
         ctx, parent, parent_bot_id="bot-a", trigger_content="x", depth=0,
     )
     assert len(captured) == 1
-    from app.services.pipeline.bot.capabilities import Capabilities
+    from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
     assert captured[0] == Capabilities.regular()
 
 

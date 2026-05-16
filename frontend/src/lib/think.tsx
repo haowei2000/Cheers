@@ -24,7 +24,7 @@ export function ThinkFold({ content }: { content: string }) {
         </span>
         <span>
           {"<think> "}
-          {open ? "收起" : "展开"}
+          {open ? "Collapse" : "Expand"}
         </span>
       </button>
       {open && (
@@ -36,7 +36,7 @@ export function ThinkFold({ content }: { content: string }) {
   );
 }
 
-/** 将内容中的 <think>...</think> 替换为可折叠块，返回用于渲染的 React 节点数组 */
+/** Replace <think>...</think> blocks with collapsible React nodes for rendering. */
 export function renderWithThinkFolding(
   content: string,
   keyPrefix = "",

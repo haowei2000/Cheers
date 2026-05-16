@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 @layer base {
-  /* 全局优化所有按钮的点击体验与反馈 */
+  /* Improve tap targets and active feedback for all buttons. */
   button {
     @apply cursor-pointer transition-all duration-150 ease-in-out;
     touch-action: manipulation;
@@ -15,6 +15,10 @@
   }
   button:disabled {
     cursor: not-allowed;
+  }
+  button:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
   }
 
   /* ═══════════════════════════════════════════════════════════════════════════
@@ -234,32 +238,7 @@
   }
 }
 
-@layer utilities {
-  /* 扩大常见的过小按钮区域（如 p-1, w-6, w-7, w-8）以方便点击 */
-  button.p-1 {
-    padding: 0.5rem !important; /* p-2 */
-  }
-  button.px-2.py-1 {
-    padding-left: 0.75rem !important; /* px-3 */
-    padding-right: 0.75rem !important;
-    padding-top: 0.375rem !important; /* py-1.5 */
-    padding-bottom: 0.375rem !important;
-  }
-  button.w-6.h-6 {
-    width: 2rem !important; /* w-8 */
-    height: 2rem !important; /* h-8 */
-  }
-  button.w-7.h-7 {
-    width: 2.25rem !important; /* w-9 */
-    height: 2.25rem !important; /* h-9 */
-  }
-  button.w-8.h-8 {
-    width: 2.5rem !important; /* w-10 */
-    height: 2.5rem !important; /* h-10 */
-  }
-}
-
-/* 防止整页滚动条：页面采用固定高度布局，仅内部区域滚动 */
+/* Prevent page-level scrolling; only interior fixed-height regions scroll. */
 html,
 body {
   margin: 0;

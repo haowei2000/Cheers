@@ -11,11 +11,11 @@
  * instead of hand-rolling overlay + escape-handler + focus-trap logic.
  *
  * Usage:
- *   <Modal open={isOpen} onClose={() => setOpen(false)} title="标题">
- *     <p>body…</p>
+ *   <Modal open={isOpen} onClose={() => setOpen(false)} title="Title">
+ *     <p>body...</p>
  *     <ModalFooter>
- *       <button …>取消</button>
- *       <button …>确认</button>
+ *       <button ...>Cancel</button>
+ *       <button ...>Confirm</button>
  *     </ModalFooter>
  *   </Modal>
  */
@@ -27,7 +27,7 @@ import {
   Transition,
   TransitionChild,
 } from "@headlessui/react";
-import { XMarkIcon } from "@heroicons/react/24/outline";
+import { AppIcon } from "./icons/AppIcon";
 import { cn } from "../lib/cn";
 
 interface ModalProps {
@@ -59,7 +59,7 @@ export function Modal({
 }: ModalProps) {
   return (
     <Transition show={open} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
+      <Dialog as="div" className="relative z-[90]" onClose={onClose}>
         {/* Backdrop */}
         <TransitionChild
           as={Fragment}
@@ -129,9 +129,9 @@ export function Modal({
                         onClick={onClose}
                         className="flex-shrink-0 rounded-md p-1 hover:bg-[var(--surface-soft)] transition-colors"
                         style={{ color: "var(--fg-3)" }}
-                        aria-label="关闭"
+                        aria-label="Close"
                       >
-                        <XMarkIcon className="w-5 h-5" />
+                        <AppIcon name="close" className="w-5 h-5" />
                       </button>
                     )}
                   </div>

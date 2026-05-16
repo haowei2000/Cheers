@@ -147,7 +147,17 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: packages/openclaw-channel-agentnexus/package-lock.json
+          cache-dependency-path: |
+            packages/agentnexus-bridge-client/package-lock.json
+            packages/openclaw-channel-agentnexus/package-lock.json
+
+      - name: Install bridge client dependencies
+        working-directory: packages/agentnexus-bridge-client
+        run: npm ci
+
+      - name: Build bridge client
+        working-directory: packages/agentnexus-bridge-client
+        run: npm run build
 
       - name: Install dependencies
         run: npm ci

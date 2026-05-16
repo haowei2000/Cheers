@@ -6,7 +6,7 @@ these touch a DB.
 """
 from __future__ import annotations
 
-from app.services.pipeline.bot.capabilities import Capabilities
+from app.features.bot_runtime.pipeline.bot.capabilities import Capabilities
 
 
 def test_regular_caps_can_call_bot_no_msg_type() -> None:

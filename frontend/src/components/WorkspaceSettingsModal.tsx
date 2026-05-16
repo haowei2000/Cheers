@@ -3,6 +3,8 @@ import toast from "react-hot-toast";
 import type { Workspace } from "../types";
 import { apiFetch } from "../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../lib/avatar";
+import { AvatarIconPicker } from "./AvatarIconPicker";
+import { AvatarVisual } from "./AvatarVisual";
 import { Modal, ModalFooter } from "./Modal";
 
 const inputCls =
@@ -16,40 +18,17 @@ function WorkspaceAvatarPreview({
   avatarUrl?: string | null;
 }) {
   const initials = [...(name.trim() || "?")].slice(0, 4).join("").toUpperCase();
-  if (avatarUrl) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={name}
-        style={{
-          width: 52,
-          height: 52,
-          borderRadius: 10,
-          objectFit: "cover",
-          border: "1px solid var(--border)",
-          background: "var(--surface-soft)",
-          flexShrink: 0,
-        }}
-      />
-    );
-  }
   return (
-    <span
+    <AvatarVisual
+      avatarUrl={avatarUrl}
+      fallback={initials}
+      label={name}
+      radius={10}
+      size={52}
       style={{
-        width: 52,
-        height: 52,
-        borderRadius: 10,
-        display: "inline-grid",
-        placeItems: "center",
-        background: "var(--accent)",
-        color: "#fff",
-        fontSize: initials.length >= 4 ? 12 : 18,
-        fontWeight: 700,
-        flexShrink: 0,
+        border: avatarUrl ? "1px solid var(--border)" : undefined,
       }}
-    >
-      {initials}
-    </span>
+    />
   );
 }
 
@@ -82,7 +61,7 @@ export function WorkspaceSettingsModal({
     if (!workspace) return;
     const nextName = name.trim();
     if (!nextName) {
-      toast.error("请填写工作空间名称");
+      toast.error("Enter a workspace name");
       return;
     }
     setSaving(true);
@@ -97,14 +76,14 @@ export function WorkspaceSettingsModal({
       });
       const data = await res.json();
       if (!res.ok || data?.status === "error") {
-        throw new Error(data?.message || data?.detail || "保存失败");
+        throw new Error(data?.message || data?.detail || "Save failed");
       }
       const saved = (data?.data || data) as Workspace;
       onSaved(saved);
-      toast.success("工作空间已更新");
+      toast.success("Workspace updated");
       onClose();
     } catch (e: unknown) {
-      toast.error((e as Error).message || "保存失败");
+      toast.error((e as Error).message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -121,9 +100,9 @@ export function WorkspaceSettingsModal({
       );
       setAvatarUrl(uploaded.avatar_url);
       onSaved({ ...workspace, avatar_url: uploaded.avatar_url });
-      toast.success("工作空间头像已上传");
+      toast.success("Workspace avatar uploaded");
     } catch (e: unknown) {
-      toast.error((e as Error).message || "头像上传失败");
+      toast.error((e as Error).message || "Avatar upload failed");
     } finally {
       setAvatarUploading(false);
       if (avatarInputRef.current) avatarInputRef.current.value = "";
@@ -134,8 +113,8 @@ export function WorkspaceSettingsModal({
     <Modal
       open={open && !!workspace}
       onClose={onClose}
-      title="工作空间设置"
-      description="名称和头像。"
+      title="Workspace settings"
+      description="Name and icon."
     >
       <div className="space-y-4">
         <div className="flex items-center gap-3">
@@ -152,7 +131,7 @@ export function WorkspaceSettingsModal({
 
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: "var(--fg-2)" }}>
-            名称
+            Name
           </label>
           <input
             type="text"
@@ -165,32 +144,39 @@ export function WorkspaceSettingsModal({
 
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: "var(--fg-2)" }}>
-            头像
+            Icon
           </label>
-          <div className="flex items-center gap-2">
-            <input
-              type="url"
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                placeholder="Icon URL or choose a built-in icon"
+                className={inputCls}
+              />
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept={AVATAR_ACCEPT}
+                onChange={(e) => uploadWorkspaceAvatar(e.target.files?.[0])}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarUploading}
+                className="an-btn an-btn-ghost"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                {avatarUploading ? "Uploading..." : "Upload"}
+              </button>
+            </div>
+            <AvatarIconPicker
+              group="workspace"
+              onChange={setAvatarUrl}
               value={avatarUrl}
-              onChange={(e) => setAvatarUrl(e.target.value)}
-              placeholder="https://example.com/workspace.png"
-              className={inputCls}
             />
-            <input
-              ref={avatarInputRef}
-              type="file"
-              accept={AVATAR_ACCEPT}
-              onChange={(e) => uploadWorkspaceAvatar(e.target.files?.[0])}
-              style={{ display: "none" }}
-            />
-            <button
-              type="button"
-              onClick={() => avatarInputRef.current?.click()}
-              disabled={avatarUploading}
-              className="an-btn an-btn-ghost"
-              style={{ whiteSpace: "nowrap" }}
-            >
-              {avatarUploading ? "上传中…" : "上传"}
-            </button>
           </div>
           {avatarUrl && (
             <button
@@ -198,14 +184,14 @@ export function WorkspaceSettingsModal({
               onClick={() => setAvatarUrl("")}
               className="an-btn an-btn-ghost mt-2"
             >
-              清除头像
+              Clear icon
             </button>
           )}
         </div>
 
         <ModalFooter>
           <button type="button" onClick={onClose} className="an-btn an-btn-ghost">
-            取消
+            Cancel
           </button>
           <button
             type="button"
@@ -213,7 +199,7 @@ export function WorkspaceSettingsModal({
             disabled={saving}
             className="an-btn an-btn-primary"
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? "Saving..." : "Save"}
           </button>
         </ModalFooter>
       </div>

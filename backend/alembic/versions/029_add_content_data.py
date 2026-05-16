@@ -17,7 +17,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.add_column("messages", sa.Column("content_data", sa.JSON, nullable=True))
-    # 将已有 thread_title 迁移进 content_data
+    # Move existing thread_title values into content_data.
     op.execute(
         """
         UPDATE messages

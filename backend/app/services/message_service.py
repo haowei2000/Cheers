@@ -1,12 +1,12 @@
-"""Message 业务逻辑层."""
+"""Message service module."""
 from __future__ import annotations
 
 import secrets as _secrets
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.contracts.messages import MessageFileDTO
 from app.core.exceptions import BadRequestError, NotFoundError
-from app.core.schemas import MessageFileInResponse
 from app.db.models import Message
 from app.repositories.channel_repo import ChannelRepository
 from app.repositories.file_repo import FileRepository
@@ -27,8 +27,8 @@ class MessageService:
         channel_id: str,
         limit: int = 50,
         before_id: str | None = None,
-    ) -> tuple[list[Message], dict[str, MessageFileInResponse]]:
-        """返回消息列表及 file_map {file_id: MessageFileInResponse}."""
+    ) -> tuple[list[Message], dict[str, MessageFileDTO]]:
+        """List messages."""
         ch = await self.channel_repo.get_by_id(channel_id)
         if not ch:
             raise NotFoundError("channel not found")
@@ -37,12 +37,50 @@ class MessageService:
         records = await self.file_repo.get_many_by_ids(file_ids)
 
         file_map = {
-            fid: MessageFileInResponse(
+            fid: MessageFileDTO(
                 file_id=rec.file_id,
                 original_filename=rec.original_filename,
                 content_type=rec.content_type,
                 size_bytes=rec.size_bytes,
                 status=rec.status,
+                expires_at=rec.expires_at,
+            )
+            for fid, rec in records.items()
+        }
+        return messages, file_map
+
+    async def list_topic_messages(
+        self,
+        channel_id: str,
+        root_msg_id: str,
+    ) -> tuple[list[Message], dict[str, MessageFileDTO]]:
+        """List topic messages."""
+        ch = await self.channel_repo.get_by_id(channel_id)
+        if not ch:
+            raise NotFoundError("channel not found")
+
+        root = await self.msg_repo.get_by_id(root_msg_id)
+        if not root or root.channel_id != channel_id:
+            raise NotFoundError("topic root message not found")
+
+        descendants = await self.msg_repo.list_descendants_by_root(
+            channel_id,
+            root_msg_id,
+        )
+        messages = [root, *descendants]
+        file_ids = sorted({
+            fid for m in messages for fid in (m.file_ids or []) if fid
+        })
+        records = await self.file_repo.get_many_by_ids(file_ids)
+
+        file_map = {
+            fid: MessageFileDTO(
+                file_id=rec.file_id,
+                original_filename=rec.original_filename,
+                content_type=rec.content_type,
+                size_bytes=rec.size_bytes,
+                status=rec.status,
+                expires_at=rec.expires_at,
             )
             for fid, rec in records.items()
         }
@@ -59,8 +97,8 @@ class MessageService:
         mention_bot_ids: list[str] | None = None,
         in_reply_to_msg_id: str | None = None,
         is_secret: bool = False,
-    ) -> tuple[Message, dict[str, MessageFileInResponse]]:
-        """持久化一条消息，返回 (Message, file_map)。不触发 orchestrator（由路由层负责）."""
+    ) -> tuple[Message, dict[str, MessageFileDTO]]:
+        """Send message."""
         ch = await self.channel_repo.get_by_id(channel_id)
         if not ch:
             raise NotFoundError("channel not found")
@@ -68,7 +106,7 @@ class MessageService:
         file_ids = file_ids or []
         mention_bot_ids = mention_bot_ids or []
 
-        # 校验文件属于本频道且状态正常
+        # Validate that each file belongs to this channel and has a usable status.
         if file_ids:
             records = await self.file_repo.get_many_by_ids(file_ids)
             for fid in file_ids:
@@ -78,7 +116,7 @@ class MessageService:
                 if rec.channel_id != channel_id:
                     raise BadRequestError(f"file {fid} does not belong to this channel")
 
-        # 加密消息处理
+        # Secret-message handling.
         if is_secret:
             encrypted = encrypt_value(content)
             stored_content = SECRET_PLACEHOLDER
@@ -106,12 +144,13 @@ class MessageService:
 
         records = await self.file_repo.get_many_by_ids(file_ids)
         file_map = {
-            fid: MessageFileInResponse(
+            fid: MessageFileDTO(
                 file_id=rec.file_id,
                 original_filename=rec.original_filename,
                 content_type=rec.content_type,
                 size_bytes=rec.size_bytes,
                 status=rec.status,
+                expires_at=rec.expires_at,
             )
             for fid, rec in records.items()
         }

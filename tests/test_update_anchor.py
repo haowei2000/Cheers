@@ -1,4 +1,4 @@
-"""测试 ChannelBotAdapter 能否通过 update_anchor 工具正确更新锚点层。"""
+"""Tests for test update anchor."""
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,8 +7,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.models import AIModel, BotAccount, Channel, ChannelMembership, MemoryEntry, PromptTemplate, Workspace
-from app.services.adapters.base import AgentPayload
-from app.services.adapters.channel_bot import ChannelBotAdapter
+from app.features.bot_runtime.adapters.base import AgentPayload, drain_events_to_response
+from app.features.bot_runtime.adapters.channel_bot import ChannelBotAdapter
 
 
 def _payload(channel_id: str, text: str) -> AgentPayload:
@@ -22,11 +22,11 @@ def _payload(channel_id: str, text: str) -> AgentPayload:
 
 @pytest.mark.asyncio
 async def test_update_anchor_persists_content() -> None:
-    """LLM 返回 update_anchor 工具调用时，锚点层应被写入 memory_entries 表。"""
+    """Covers test update anchor persists content behavior."""
     channel_id = "test-ch-anchor-001"
     anchor_content = "项目目标：构建多智能体协作平台，2026 Q2 上线。"
 
-    # 创建内存数据库和 session
+    # Create an in-memory database and session.
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
         await conn.execute(text(
@@ -46,7 +46,7 @@ async def test_update_anchor_persists_content() -> None:
         ))
     test_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    # 模拟 LLM 返回工具调用，然后返回最终文本
+    # Mock the LLM returning a tool call and then final text.
     mock_llm = MagicMock()
     res1 = MagicMock()
     res1.content = ""
@@ -63,17 +63,18 @@ async def test_update_anchor_persists_content() -> None:
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.services.adapters.channel_bot._make_llm", return_value=mock_llm),
-        patch("app.services.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
+        patch("app.features.bot_runtime.adapters.channel_bot._make_llm", return_value=mock_llm),
+        patch("app.features.bot_runtime.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
         patch("app.db.session.async_session_factory", new=test_session_factory),
     ):
         adapter = ChannelBotAdapter()
-        resp = await adapter.execute(_payload(channel_id, "请把项目锚点更新为：" + anchor_content))
+        payload = _payload(channel_id, "请把项目锚点更新为：" + anchor_content)
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
         assert resp.success is True
         assert "锚点" in resp.content or "已为你更新" in resp.content
 
-        # 验证锚点层已持久化到 memory_entries 表
+        # Verify the anchor layer was persisted to memory_entries.
         async with test_session_factory() as session:
             result = await session.execute(
                 select(MemoryEntry).where(
@@ -88,7 +89,7 @@ async def test_update_anchor_persists_content() -> None:
 
 @pytest.mark.asyncio
 async def test_update_anchor_empty_content_returns_error() -> None:
-    """update_anchor 传入空 content 时应返回错误而不崩溃。"""
+    """Covers test update anchor empty content returns error behavior."""
     channel_id = "test-ch-anchor-002"
 
     mock_llm = MagicMock()
@@ -106,20 +107,21 @@ async def test_update_anchor_empty_content_returns_error() -> None:
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.services.adapters.channel_bot._make_llm", return_value=mock_llm),
-        patch("app.services.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
+        patch("app.features.bot_runtime.adapters.channel_bot._make_llm", return_value=mock_llm),
+        patch("app.features.bot_runtime.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
     ):
         adapter = ChannelBotAdapter()
-        resp = await adapter.execute(_payload(channel_id, "清空锚点"))
+        payload = _payload(channel_id, "清空锚点")
+        resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
 
         assert resp.success is True
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="Background task isolation issue - patches don't propagate to _run_orchestrator_bg")
+@pytest.mark.skip(reason="Background task isolation issue - patches don't propagate to _run_bot_pipeline_bg")
 async def test_update_anchor_via_api(client, db_session) -> None:
-    """通过 HTTP API 发送消息，触发 update_anchor，验证 memory_entries 中锚点已更新。"""
-    from app.services.guide.constants import GUIDE_BOT_ID
+    """Covers test update anchor via api behavior."""
+    from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 
     ws = Workspace(workspace_id="anc0-0000-0000-0000-000000000001", name="AnchorWS")
     ch = Channel(
@@ -131,7 +133,7 @@ async def test_update_anchor_via_api(client, db_session) -> None:
     model = _make_model("anc-model-0001")
     tpl = _make_template("anc-tpl-0001")
     bot = BotAccount(
-        bot_id=GUIDE_BOT_ID,
+        bot_id=HELPER_BOT_ID,
         username="channel bot",
         display_name="内置助手",
         model_id=model.model_id,
@@ -163,8 +165,8 @@ async def test_update_anchor_via_api(client, db_session) -> None:
     mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
     with (
-        patch("app.services.adapters.channel_bot._make_llm", return_value=mock_llm),
-        patch("app.services.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
+        patch("app.features.bot_runtime.adapters.channel_bot._make_llm", return_value=mock_llm),
+        patch("app.features.bot_runtime.adapters.channel_bot._get_llm_config", return_value={"base_url": "x", "model": "y"}),
     ):
         resp = await client.post(
             f"/api/v1/channels/{ch.channel_id}/messages",

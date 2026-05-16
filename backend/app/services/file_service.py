@@ -1,4 +1,4 @@
-"""文件业务逻辑层（轻量包装 FilePipelineService）."""
+"""File service module."""
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +7,8 @@ from app.core.exceptions import BadRequestError, NotFoundError
 from app.db.models import FileRecord, User
 from app.repositories.channel_repo import ChannelRepository
 from app.repositories.file_repo import FileRepository
+from app.services.channel_service import ChannelService
+from app.services.file_retention import file_expires_at
 
 
 class FileService:
@@ -35,11 +37,9 @@ class FileService:
         size_bytes: int,
         uploader: User,
     ) -> dict:
-        """生成预签名上传 URL，返回 {file_id, upload_url, headers, expires_in}."""
+        """Request presign."""
         from app.services.file_processor.service import FilePipelineService
-        ch = await self.channel_repo.get_by_id(channel_id)
-        if not ch:
-            raise NotFoundError("channel not found")
+        await ChannelService(self.session).require_can_send_message(channel_id, uploader)
         pipeline = FilePipelineService()
         record, reservation, metadata = pipeline.create_presigned_upload(
             channel_id=channel_id,
@@ -60,11 +60,7 @@ class FileService:
         }
 
     async def confirm_upload(self, file_id: str, uploader: User) -> FileRecord:
-        """确认上传完成，更新状态为 uploaded。
-
-        必须先 head_object 校验 S3 里真的有对象，否则 DB 会出现 status=uploaded
-        但对象不存在的"幽灵记录"，下载时报 NoSuchKey。
-        """
+        """Confirm upload."""
         from datetime import datetime
 
         from app.services.storage.base import StorageObjectNotFoundError
@@ -87,15 +83,12 @@ class FileService:
 
         rec.status = "uploaded"
         rec.uploaded_at = datetime.utcnow()
+        rec.expires_at = rec.expires_at or file_expires_at(rec.uploaded_at)
         await self.session.flush()
         return rec
 
-    async def get_download_url(self, file_id: str) -> str:
-        """获取文件预签名下载 URL."""
-        from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
+    async def get_download_url(self, file_id: str, user: User) -> str:
+        """Get download url."""
         rec = await self.get_or_404(file_id)
-        if not is_storage_enabled():
-            raise BadRequestError("storage not enabled")
-        storage = get_storage_service()
-        scope = "generated" if (rec.object_key or "").startswith("generated/") else "uploads"
-        return storage.create_presigned_get_url(rec.file_id, scope=scope)
+        await ChannelService(self.session).require_channel_member(rec.channel_id, user)
+        return f"/api/v1/files/{rec.file_id}/download"

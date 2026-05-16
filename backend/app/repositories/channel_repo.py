@@ -1,5 +1,7 @@
-"""Channel 与 ChannelMembership 数据访问层."""
+"""Channel repo module."""
 from __future__ import annotations
+
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,7 +82,7 @@ class ChannelRepository:
         allow_member_invites: bool | None = None,
         allow_bot_adds: bool | None = None,
     ) -> Channel:
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "workspace_id": workspace_id,
             "name": name,
             "type": type,
@@ -124,7 +126,7 @@ class ChannelRepository:
         return list(result.scalars().all())
 
     async def list_bot_members(self, channel_id: str) -> list[BotAccount]:
-        """返回频道内所有 Bot 成员的 BotAccount 对象."""
+        """List bot members."""
         result = await self.session.execute(
             select(BotAccount)
             .join(ChannelMembership, BotAccount.bot_id == ChannelMembership.member_id)
@@ -136,7 +138,7 @@ class ChannelRepository:
         return list(result.scalars().all())
 
     async def list_user_members(self, channel_id: str) -> list[User]:
-        """返回频道内所有用户成员的 User 对象."""
+        """List user members."""
         result = await self.session.execute(
             select(User)
             .join(ChannelMembership, User.user_id == ChannelMembership.member_id)

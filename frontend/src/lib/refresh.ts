@@ -1,32 +1,41 @@
 import type { Channel, DM, Workspace } from "../types";
-import { apiFetch } from "../api";
+import { apiJson } from "../api";
+
+type ListEnvelope<T> = {
+  data?: T[];
+};
+
+function refreshList<T>(
+  path: string,
+  setItems: (items: T[]) => void,
+  token?: string | null,
+) {
+  apiJson<ListEnvelope<T>>(path, { token: token ?? undefined })
+    .then((payload) => {
+      if (payload?.data) setItems(payload.data);
+    })
+    .catch(() => {
+      /* Background refresh is best-effort; callers keep their existing state. */
+    });
+}
 
 export function refreshChannels(
   setChannels: (c: Channel[]) => void,
   token?: string | null,
 ) {
-  apiFetch("channels", { token: token ?? undefined })
-    .then((r) => r.json())
-    .then((d) => d.data && setChannels(d.data))
-    .catch(console.error);
+  refreshList("channels", setChannels, token);
 }
 
 export function refreshDMs(
   setDMs: (d: DM[]) => void,
   token?: string | null,
 ) {
-  apiFetch("dms", { token: token ?? undefined })
-    .then((r) => r.json())
-    .then((d) => d.data && setDMs(d.data))
-    .catch(console.error);
+  refreshList("dms", setDMs, token);
 }
 
 export function refreshWorkspaces(
   setWorkspaces: (w: Workspace[]) => void,
   token?: string | null,
 ) {
-  apiFetch("workspaces", { token: token ?? undefined })
-    .then((r) => r.json())
-    .then((d) => d.data && setWorkspaces(d.data))
-    .catch(console.error);
+  refreshList("workspaces", setWorkspaces, token);
 }
