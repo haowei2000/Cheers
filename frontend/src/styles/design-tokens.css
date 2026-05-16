@@ -1035,6 +1035,41 @@
   will-change: transform;
 }
 
+.an-chat-jump-bottom {
+  position: absolute;
+  right: max(18px, calc((100% - var(--chat-column-max)) / 2 + 14px));
+  bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  z-index: 35;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+  color: var(--fg-1);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--type-caption);
+  font-weight: var(--fw-medium);
+  backdrop-filter: blur(12px);
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease,
+    color 140ms ease;
+}
+.an-chat-jump-bottom:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--bg-1);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+.an-chat-jump-bottom:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* All chat message rows share one width so every stream reads as a
  * single column. It uses the same max width as the composer, centered.
  * DM bubbles keep
@@ -1052,6 +1087,11 @@
 
 /* On narrow viewports, give messages the full column. */
 @media (max-width: 720px) {
+  .an-chat-jump-bottom {
+    right: 14px;
+    bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+
   .an-chat-msg {
     width: auto;
     max-width: none;

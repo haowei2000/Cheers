@@ -61,6 +61,8 @@ export interface ChatMessageListProps {
   topicRepliesOf: (msgId: string) => Message[];
   virtualItems: VirtualItem[];
   rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
+  showJumpToBottom: boolean;
+  onJumpToBottom: () => void;
   botById: Map<string, ChannelBot>;
   botByUsername: Map<string, ChannelBot>;
   coordinatorBot?: ChannelBot;
@@ -125,6 +127,8 @@ export function ChatMessageList({
   topicRepliesOf,
   virtualItems,
   rowVirtualizer,
+  showJumpToBottom,
+  onJumpToBottom,
   botById,
   botByUsername,
   coordinatorBot,
@@ -165,6 +169,7 @@ export function ChatMessageList({
     `${forwardSelectionMode ? "opacity-100" : `opacity-0 ${hoverClass}`} focus-within:opacity-100 transition-opacity`;
 
   return (
+    <>
                 <div
                   ref={messagesContainerRef}
                   className="an-chat-scroll flex-1 overflow-auto"
@@ -2008,5 +2013,18 @@ export function ChatMessageList({
                     </div>
                   )}
                 </div>
+                {showJumpToBottom && (
+                  <button
+                    type="button"
+                    className="an-chat-jump-bottom"
+                    onClick={onJumpToBottom}
+                    title="跳到底部"
+                    aria-label="跳到底部"
+                  >
+                    <AppIcon name="chevronDown" className="h-4 w-4" />
+                    <span>到底部</span>
+                  </button>
+                )}
+    </>
   );
 }
