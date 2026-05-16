@@ -170,18 +170,18 @@ export function ChatMessageList({
                   onScroll={onMessagesScroll}
                 >
                   {loading ? (
-                    <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                      加载中...
+                    <div className="an-type-meta flex h-full items-center justify-center">
+                      加载中…
                     </div>
                   ) : (
                     <div className="py-2 px-2">
                       {loadingMore && (
-                        <div className="text-center text-xs text-gray-400 py-2">
-                          加载更多消息...
+                        <div className="an-type-caption py-2 text-center">
+                          加载更多消息…
                         </div>
                       )}
                       {!hasMore && messages.length > 0 && (
-                        <div className="text-center text-xs text-gray-300 py-2">
+                        <div className="an-type-caption py-2 text-center">
                           — 已加载全部消息 —
                         </div>
                       )}
@@ -261,27 +261,16 @@ export function ChatMessageList({
                               className="an-chat-msg pl-16 pr-4 pt-2"
                             >
                               <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-                                <span className="text-[13px] font-semibold text-gray-900">
+                                <span className="an-chat-sender">
                                   {coordBot?.display_name ||
                                     coordBot?.username ||
                                     "协作助手"}
                                 </span>
-                                <span
-                                  className="an-tag coord"
-                                  style={{
-                                    fontSize: 9,
-                                    fontWeight: 700,
-                                    letterSpacing: "0.6px",
-                                    padding: "1px 5px",
-                                    borderRadius: 3,
-                                    background: "var(--accent-muted)",
-                                    color: "var(--accent)",
-                                  }}
-                                >
+                                <span className="an-chip accent">
                                   COORDINATOR
                                 </span>
                                 {rTime && (
-                                  <span className="text-[11px] text-gray-400">
+                                  <span className="an-chat-meta">
                                     {rTime}
                                   </span>
                                 )}
@@ -317,13 +306,7 @@ export function ChatMessageList({
                                           />
                                           @{p.agent}
                                           {p.score && (
-                                            <span
-                                              style={{
-                                                color: "var(--fg-3)",
-                                                marginLeft: 2,
-                                                fontSize: 11,
-                                              }}
-                                            >
+                                            <span className="an-type-caption ml-0.5">
                                               {p.score}
                                             </span>
                                           )}
@@ -408,11 +391,11 @@ export function ChatMessageList({
                               className="an-chat-msg pl-16 pr-4 pt-2"
                             >
                               <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-                                <span className="text-[13px] font-semibold text-gray-900">
+                                <span className="an-chat-sender">
                                   好友通知
                                 </span>
                                 {friendTime && (
-                                  <span className="text-[11px] text-gray-400">
+                                  <span className="an-chat-meta">
                                     {friendTime}
                                   </span>
                                 )}
@@ -525,26 +508,14 @@ export function ChatMessageList({
                               className="an-chat-msg pl-16 pr-4 pt-2"
                             >
                               <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-                                <span className="text-[13px] font-semibold text-gray-900">
+                                <span className="an-chat-sender">
                                   {senderLabel}
                                 </span>
-                                <span
-                                  className="an-tag bot"
-                                  style={{
-                                    fontSize: 9,
-                                    fontWeight: 700,
-                                    letterSpacing: "0.6px",
-                                    padding: "1px 5px",
-                                    borderRadius: 3,
-                                    background: "var(--surface-soft)",
-                                    color: "var(--fg-3)",
-                                    border: "1px solid var(--border)",
-                                  }}
-                                >
+                                <span className="an-chip off">
                                   BOT
                                 </span>
                                 {pTime && (
-                                  <span className="text-[11px] text-gray-400">
+                                  <span className="an-chat-meta">
                                     {pTime}
                                   </span>
                                 )}
@@ -558,14 +529,7 @@ export function ChatMessageList({
                                 <div className="an-body">
                                   <b>Approval needed.</b> {body}
                                   {tool && (
-                                    <span
-                                      style={{
-                                        fontFamily: "var(--font-mono)",
-                                        fontSize: 11,
-                                        marginLeft: 6,
-                                        color: "var(--fg-3)",
-                                      }}
-                                    >
+                                    <span className="an-type-caption ml-1.5 font-mono">
                                       ({tool})
                                     </span>
                                   )}
@@ -790,7 +754,7 @@ export function ChatMessageList({
                                   />
                                 ) : (
                                   <div
-                                    className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none mt-0.5"
+                                    className="an-chat-avatar lg mt-0.5"
                                     style={{
                                       background: isOwn
                                         ? "var(--accent)"
@@ -803,32 +767,19 @@ export function ChatMessageList({
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
-                                  <span
-                                    className="font-semibold"
-                                    style={{
-                                      fontSize: "var(--fs-chat-name)",
-                                      lineHeight: 1.2,
-                                      color: "var(--fg-1)",
-                                    }}
-                                  >
+                                  <span className="an-chat-sender">
                                     {isOwn
                                       ? "我"
                                       : m.sender_type === "bot"
                                         ? botLabel
                                         : userLabel}
                                   </span>
-                                  <span
-                                    className="text-[11px]"
-                                    style={{ color: "var(--fg-3)" }}
-                                  >
+                                  <span className="an-chat-meta">
                                     {msgTime}
                                   </span>
                                 </div>
                                 {m.content_data?.title ? (
-                                  <div
-                                    className="text-[14px] font-semibold mb-1 leading-snug"
-                                    style={{ color: "var(--fg-1)" }}
-                                  >
+                                  <div className="an-chat-title mb-1">
                                     {m.content_data.title as string}
                                   </div>
                                 ) : null}
@@ -854,14 +805,7 @@ export function ChatMessageList({
                                   );
                                 })()}
                                 {renderFileAttachments(m)}
-                                <div
-                                  style={{
-                                    fontSize: "var(--fs-chat-body)",
-                                    lineHeight: "var(--lh-chat-body)",
-                                    color: "var(--fg-1)",
-                                    wordWrap: "break-word",
-                                  }}
-                                >
+                                <div className="an-chat-body">
                                   {isSecretExpired || isSecretUnrevealed ? (
                                     secretVeil
                                   ) : activeAgentBridgeTaskData(m) ? (
@@ -887,12 +831,7 @@ export function ChatMessageList({
                                   {m._streaming &&
                                     !!(parseHelperPayload(displayContent).text ||
                                       displayContent) && (
-                                      <span
-                                        className="inline-block w-1.5 h-4 rounded-sm animate-pulse align-middle ml-0.5"
-                                        style={{
-                                          background: "var(--fg-3)",
-                                        }}
-                                      />
+                                      <span className="an-chat-typing-dot slim" />
                                     )}
                                   {renderStopStreamButton(m)}
                                   {renderPartialBadge(m)}
@@ -956,7 +895,10 @@ export function ChatMessageList({
                             id={`msg-${m.msg_id}`}
                             className="an-chat-msg group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
                           >
-                            <div className="w-8 h-8 rounded-xl bg-[#1264A3] flex items-center justify-center text-white text-xs font-bold select-none flex-shrink-0">
+                            <div
+                              className="an-chat-avatar md"
+                              style={{ background: "var(--accent)" }}
+                            >
                               我
                             </div>
                             <div className="flex items-end gap-1.5">
@@ -990,16 +932,16 @@ export function ChatMessageList({
                               <div className="an-dm-bubble-stack flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
                                 <div className="flex items-baseline gap-1.5 mb-1 justify-end">
                                   {!isDmSelected && m.msg_type === "topic" && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
+                                    <span className="an-chip blue">
                                       主题
                                     </span>
                                   )}
-                                  <span className="text-[11px] text-gray-400 mr-0.5">
+                                  <span className="an-chat-meta mr-0.5">
                                     {msgTime}
                                   </span>
                                 </div>
                                 {m.content_data?.title ? (
-                                  <div className="text-[13px] font-semibold text-white/90 mb-1 mr-0.5 leading-snug text-right">
+                                  <div className="an-chat-title mb-1 mr-0.5 text-right">
                                     {m.content_data.title as string}
                                   </div>
                                 ) : null}
@@ -1032,9 +974,7 @@ export function ChatMessageList({
                                 {isSecretExpired || isSecretUnrevealed ? (
                                   secretVeil
                                 ) : (
-                                  <div
-                                    className="bg-[#1264A3] text-white rounded-2xl rounded-tr-sm px-3.5 py-2 text-[14px] leading-relaxed break-words"
-                                  >
+                                  <div className="an-chat-bubble own">
                                     {(() => {
                                       // The quote prefix (if any) is already
                                       // rendered above as .an-reply-quote;
@@ -1077,34 +1017,37 @@ export function ChatMessageList({
                                   className="w-8 h-8 rounded-xl object-cover select-none"
                                 />
                               ) : (
-                                <div className="w-8 h-8 rounded-xl bg-gray-400 flex items-center justify-center text-white text-xs font-bold select-none">
+                                <div
+                                  className="an-chat-avatar md"
+                                  style={{ background: "var(--fg-3)" }}
+                                >
                                   {userInitials}
                                 </div>
                               )}
                             </div>
                             <div className="an-dm-bubble-stack flex flex-col max-w-[85%] sm:max-w-[72%]">
                               <div className="flex items-baseline gap-1.5 mb-1">
-                                <span className="font-semibold text-[13px] text-gray-900 leading-none">
+                                <span className="an-chat-sender">
                                   {m.sender_type === "bot"
                                     ? botLabel
                                     : userLabel}
                                 </span>
                                 {m.sender_type === "bot" && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium leading-none">
+                                  <span className="an-chip green">
                                     Bot
                                   </span>
                                 )}
                                 {!isDmSelected && m.msg_type === "topic" && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-500 font-medium leading-none">
+                                  <span className="an-chip blue">
                                     主题
                                   </span>
                                 )}
-                                <span className="text-[11px] text-gray-400 leading-none">
+                                <span className="an-chat-meta">
                                   {msgTime}
                                 </span>
                               </div>
                               {m.content_data?.title ? (
-                                <div className="text-[13px] font-semibold text-gray-700 mb-1 leading-snug">
+                                <div className="an-chat-title mb-1">
                                   {m.content_data.title as string}
                                 </div>
                               ) : null}
@@ -1128,21 +1071,19 @@ export function ChatMessageList({
                               })()}
                               {renderFileAttachments(m)}
                               <div
-                                className="rounded-2xl rounded-tl-sm px-3.5 py-2 text-[14px] leading-relaxed"
-                                style={{
-                                  background: isSecretUnrevealed
-                                    ? "var(--orange-muted)"
-                                    : "var(--surface-soft)",
-                                  color: "var(--fg-1)",
-                                  border: "1px solid var(--border)",
-                                }}
+                                className="an-chat-bubble other"
+                                style={
+                                  isSecretUnrevealed
+                                    ? { background: "var(--orange-muted)" }
+                                    : undefined
+                                }
                               >
                                 {isSecretExpired || isSecretUnrevealed ? (
                                   secretVeil
                                 ) : activeAgentBridgeTaskData(m) ? (
                                   renderAgentBridgeTaskCard(m)
                                 ) : m._streaming && !text ? (
-                                  <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                                  <span className="an-chat-typing-dot" />
                                 ) : (
                                   <ChatMessageRenderer
                                     collapseKey={m.msg_id}
@@ -1157,7 +1098,7 @@ export function ChatMessageList({
                                 {!isSecretUnrevealed &&
                                   m._streaming &&
                                   !!text && (
-                                    <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
+                                    <span className="an-chat-typing-dot slim" />
                                   )}
                                 {!isSecretUnrevealed && renderStopStreamButton(m)}
                                 {!isSecretUnrevealed && renderPartialBadge(m)}
@@ -1335,14 +1276,14 @@ export function ChatMessageList({
                                       <div
                                         className={
                                           rFlat
-                                            ? "w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none"
-                                            : "w-8 h-8 rounded-xl bg-[#2EB67D] flex items-center justify-center text-white text-xs font-bold select-none"
+                                            ? "an-chat-avatar lg"
+                                            : "an-chat-avatar md"
                                         }
-                                        style={
-                                          rFlat
-                                            ? { background: "var(--fg-3)" }
-                                            : undefined
-                                        }
+                                        style={{
+                                          background: rFlat
+                                            ? "var(--fg-3)"
+                                            : "var(--green)",
+                                        }}
                                       >
                                         {rInitials}
                                       </div>
@@ -1351,18 +1292,14 @@ export function ChatMessageList({
                                     <div
                                       className={
                                         rFlat
-                                          ? "w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none"
-                                          : `w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold select-none ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`
+                                          ? "an-chat-avatar lg"
+                                          : "an-chat-avatar md"
                                       }
-                                      style={
-                                        rFlat
-                                          ? {
-                                              background: rIsOwn
-                                                ? "var(--accent)"
-                                                : "var(--fg-3)",
-                                            }
-                                          : undefined
-                                      }
+                                      style={{
+                                        background: rIsOwn
+                                          ? "var(--accent)"
+                                          : "var(--fg-3)",
+                                      }}
                                     >
                                       {rIsOwn ? "我" : rInitials}
                                     </div>
@@ -1382,16 +1319,10 @@ export function ChatMessageList({
                                         : `flex items-baseline gap-1.5 mb-1 ${rIsOwn ? "justify-end" : ""}`
                                     }
                                   >
-                                    <span
-                                      className="font-semibold text-[13.5px] leading-none"
-                                      style={{ color: "var(--fg-1)" }}
-                                    >
+                                    <span className="an-chat-sender">
                                       {rIsOwn ? "我" : rLabel}
                                     </span>
-                                    <span
-                                      className="text-[11px] leading-none"
-                                      style={{ color: "var(--fg-3)" }}
-                                    >
+                                    <span className="an-chat-meta">
                                       {rTime}
                                     </span>
                                   </div>
@@ -1425,37 +1356,14 @@ export function ChatMessageList({
                                   <div
                                     className={
                                       rFlat
-                                        ? ""
-                                        : `rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
-                                            rIsOwn
-                                              ? "text-white rounded-tr-sm"
-                                              : "rounded-tl-sm"
-                                          }`
-                                    }
-                                    style={
-                                      rFlat
-                                        ? {
-                                            fontSize: "var(--fs-chat-body)",
-                                            lineHeight:
-                                              "var(--lh-chat-body)",
-                                            color: "var(--fg-1)",
-                                            wordWrap: "break-word",
-                                          }
-                                        : rIsOwn
-                                          ? { background: "var(--accent)" }
-                                          : {
-                                              background:
-                                                "var(--surface-soft)",
-                                              color: "var(--fg-1)",
-                                              border:
-                                                "1px solid var(--border)",
-                                            }
+                                        ? "an-chat-body"
+                                        : `an-chat-bubble ${rIsOwn ? "own" : "other"}`
                                     }
                                   >
                                     {activeAgentBridgeTaskData(r) ? (
                                       renderAgentBridgeTaskCard(r)
                                     ) : r._streaming && !rTextRaw ? (
-                                      <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                                      <span className="an-chat-typing-dot" />
                                     ) : (
                                       <ChatMessageRenderer
                                         collapseKey={r.msg_id}
@@ -1474,7 +1382,7 @@ export function ChatMessageList({
                                       />
                                     )}
                                     {r._streaming && !!rTextRaw && (
-                                      <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
+                                      <span className="an-chat-typing-dot slim" />
                                     )}
                                     {renderStopStreamButton(r)}
                                     {renderPartialBadge(r)}
@@ -1835,32 +1743,43 @@ export function ChatMessageList({
                                           className="w-6 h-6 rounded-lg object-cover flex-shrink-0 mt-0.5"
                                         />
                                       ) : (
-                                        <div className="w-6 h-6 rounded-lg bg-[#2EB67D] flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5">
+                                        <div
+                                          className="an-chat-avatar sm mt-0.5"
+                                          style={{ background: "var(--green)" }}
+                                        >
                                           {rInitials}
                                         </div>
                                       )
                                     ) : (
                                       <div
-                                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-bold select-none flex-shrink-0 mt-0.5 ${rIsOwn ? "bg-[#1264A3]" : "bg-gray-400"}`}
+                                        className="an-chat-avatar sm mt-0.5"
+                                        style={{
+                                          background: rIsOwn
+                                            ? "var(--accent)"
+                                            : "var(--fg-3)",
+                                        }}
                                       >
                                         {rIsOwn ? "我" : rInitials}
                                       </div>
                                     )}
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
-                                        <span className="font-semibold text-[12px] text-gray-900">
+                                        <span
+                                          className="an-type-label"
+                                          style={{ color: "var(--fg-1)" }}
+                                        >
                                           {rLabel}
                                         </span>
                                         {r.sender_type === "bot" && (
-                                          <span className="text-[9px] px-1 py-0.5 rounded bg-[#2EB67D]/10 text-[#2EB67D] font-medium">
+                                          <span className="an-chip green">
                                             Bot
                                           </span>
                                         )}
-                                        <span className="text-[11px] text-gray-400">
+                                        <span className="an-chat-meta">
                                           {rTime}
                                         </span>
                                         {rCollapsed && (
-                                          <span className="text-[11px] text-gray-400 truncate max-w-[120px]">
+                                          <span className="an-chat-meta truncate max-w-[120px]">
                                             {rPreview}
                                           </span>
                                         )}
@@ -1869,7 +1788,7 @@ export function ChatMessageList({
                                           onClick={() =>
                                             toggleMessage(r.msg_id)
                                           }
-                                          className="opacity-0 group-hover/tr:opacity-100 transition-opacity ml-0.5 flex items-center justify-center w-4 h-4 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                          className="an-chat-mini-action ml-0.5 opacity-0 group-hover/tr:opacity-100"
                                           title={rCollapsed ? "展开" : "折叠"}
                                         >
                                           {rCollapsed ? (
@@ -1925,25 +1844,14 @@ export function ChatMessageList({
                                         <>
                                           {renderFileAttachments(r)}
                                           <div
-                                            className={`rounded-xl px-2.5 py-1.5 text-[13px] leading-relaxed ${rIsOwn ? "whitespace-pre-wrap break-words" : ""}`}
-                                            style={
+                                            className={`an-chat-bubble topic-reply ${
                                               rIsOwn
-                                                ? {
-                                                    background:
-                                                      "var(--accent-muted)",
-                                                    color: "var(--fg-1)",
-                                                  }
-                                                : {
-                                                    background:
-                                                      "var(--surface-soft)",
-                                                    color: "var(--fg-1)",
-                                                    border:
-                                                      "1px solid var(--border)",
-                                                  }
-                                            }
+                                                ? "own whitespace-pre-wrap break-words"
+                                                : "other"
+                                            }`}
                                           >
                                             {r._streaming && !rTextRaw ? (
-                                              <span className="inline-block w-2 h-4 bg-gray-400 rounded-sm animate-pulse align-middle" />
+                                              <span className="an-chat-typing-dot" />
                                             ) : (
                                               <ChatMessageRenderer
                                                 collapseKey={r.msg_id}
@@ -1956,7 +1864,7 @@ export function ChatMessageList({
                                               />
                                             )}
                                             {r._streaming && !!rTextRaw && (
-                                              <span className="inline-block w-1.5 h-4 bg-gray-400 rounded-sm animate-pulse align-middle ml-0.5" />
+                                              <span className="an-chat-typing-dot slim" />
                                             )}
                                             {renderStopStreamButton(r)}
                                             {renderPartialBadge(r)}
@@ -2080,34 +1988,40 @@ export function ChatMessageList({
                       {Object.entries(processingBots).map(
                         ([botId, username]) => (
                           <div key={botId} className="an-chat-msg flex gap-3 px-3 py-2">
-                            <div className="w-9 h-9 rounded-xl bg-[#2EB67D]/20 flex items-center justify-center text-[#2EB67D] text-sm font-bold flex-shrink-0">
+                            <div
+                              className="an-chat-avatar lg"
+                              style={{
+                                background: "var(--green-muted)",
+                                color: "var(--green)",
+                              }}
+                            >
                               {username.slice(0, 1).toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-baseline gap-2 mb-1">
-                                <span className="font-semibold text-[14px] text-gray-900">
+                                <span className="an-chat-sender">
                                   {username}
                                 </span>
-                                <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-[#2EB67D]/10 text-[#2EB67D] font-medium">
+                                <span className="an-chip green">
                                   Bot
                                 </span>
                               </div>
-                              <div className="flex items-center gap-1.5 text-[13px] text-gray-400">
+                              <div className="an-type-meta flex items-center gap-1.5">
                                 <span className="inline-flex gap-0.5">
                                   <span
-                                    className="w-1.5 h-1.5 rounded-full bg-gray-300 animate-bounce"
+                                    className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce"
                                     style={{ animationDelay: "0ms" }}
                                   />
                                   <span
-                                    className="w-1.5 h-1.5 rounded-full bg-gray-300 animate-bounce"
+                                    className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce"
                                     style={{ animationDelay: "150ms" }}
                                   />
                                   <span
-                                    className="w-1.5 h-1.5 rounded-full bg-gray-300 animate-bounce"
+                                    className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce"
                                     style={{ animationDelay: "300ms" }}
                                   />
                                 </span>
-                                正在输入...
+                                正在输入…
                               </div>
                             </div>
                           </div>
