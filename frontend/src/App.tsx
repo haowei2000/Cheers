@@ -497,6 +497,7 @@ export default function App() {
     virtualItems,
     pageTopicSourceMessages,
     pageTopicRepliesOf,
+    preloadChannelMessages,
   } = useChannelMessages({
     selectedId,
     isDmSelected,
@@ -1315,6 +1316,7 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenFilePreview={openFilePreview}
             onOpenPersonalFileMain={openPersonalFileInMain}
+            onPreloadChannel={preloadChannelMessages}
           />
         }
       >
