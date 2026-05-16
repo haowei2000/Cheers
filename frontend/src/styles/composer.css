@@ -305,6 +305,11 @@
   color: var(--accent);
   background: var(--accent-muted);
 }
+.an-composer-bar .an-composer-glyph {
+  font-size: var(--type-title);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+}
 .an-composer-bar .an-composer-iconbtn.is-secret-on {
   color: var(--orange);
   background: var(--orange-muted);

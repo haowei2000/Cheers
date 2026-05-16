@@ -647,7 +647,7 @@ export function MessageComposer({
                     }
                     aria-label="选择提示词模板"
                   >
-                    <span className="text-[15px] font-semibold leading-none">/</span>
+	                    <span className="an-composer-glyph">/</span>
                   </button>
                 </div>
               )}
@@ -663,7 +663,7 @@ export function MessageComposer({
                 className="an-composer-iconbtn"
                 title="提及成员或 Bot"
               >
-                <span className="text-[15px] font-semibold leading-none">@</span>
+	                <span className="an-composer-glyph">@</span>
               </button>
               <button
                 type="button"
@@ -812,14 +812,14 @@ export function MessageComposer({
                     {template.template_id === selectedPromptTemplateId ? (
                       <AppIcon name="check" className="w-3.5 h-3.5" />
                     ) : (
-                      <span className="text-[14px] font-semibold">/</span>
+	                      <span className="an-composer-glyph">/</span>
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{template.name}</span>
                     {template.description && (
                       <span
-                        className="block truncate text-[11px]"
+	                        className="an-type-caption block truncate"
                         style={{ color: "var(--fg-3)" }}
                       >
                         {template.description}

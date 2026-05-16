@@ -232,6 +232,12 @@
   font-weight: var(--fw-regular);
   line-height: var(--lh-body);
 }
+.an-type-caption {
+  color: var(--fg-3);
+  font-size: var(--type-caption);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+}
 .an-truncate {
   min-width: 0;
   overflow: hidden;
