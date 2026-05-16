@@ -962,7 +962,7 @@ export function ChatMessageList({
                             <div className="flex items-end gap-1.5">
                               {renderForwardActionButtons?.(
                                 m,
-                                `${actionVisibilityClass()} w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1`,
+                                `${actionVisibilityClass()} an-chat-action mb-1`,
                                 "w-3.5 h-3.5",
                               )}
                               {!isDmSelected && (
@@ -982,7 +982,7 @@ export function ChatMessageList({
                                       : inputRef.current
                                     )?.focus();
                                   }}
-                                  className={`${actionVisibilityClass()} w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 mb-1`}
+                                  className={`${actionVisibilityClass()} an-chat-action mb-1`}
                                 >
                                   {replyIcon}
                                 </button>
@@ -1183,7 +1183,7 @@ export function ChatMessageList({
                             <div className={`${actionVisibilityClass()} an-msg-actions self-center flex items-center gap-1 flex-shrink-0`}>
                               {renderForwardActionButtons?.(
                                 m,
-                                "w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0",
+                                "an-chat-action",
                                 "w-3.5 h-3.5",
                               )}
                               {renderMemoryLoadButton(m)}
@@ -1203,7 +1203,7 @@ export function ChatMessageList({
                                       : inputRef.current
                                     )?.focus();
                                   }}
-                                  className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                  className="an-chat-action"
                                 >
                                   {replyIcon}
                                 </button>
@@ -1690,53 +1690,46 @@ export function ChatMessageList({
                         return (
                           <div
                             key={m.msg_id}
-                            id={`msg-${m.msg_id}`}
                             className="an-chat-msg pl-16 my-1.5"
                           >
-                          <div
-                            className="rounded-xl border border-[#1264A3]/30 bg-gray-100 shadow-sm overflow-hidden"
-                          >
-                            {/* Topic header */}
-                            <div className="flex items-center justify-between px-3 py-2 bg-[#1264A3]/5 border-b border-[#1264A3]/10">
-                              <div className="flex items-center gap-1.5">
-                                <AppIcon name="messageCircle" className="w-3.5 h-3.5 text-[#1264A3]" />
-                                <span className="text-[12px] font-medium text-[#1264A3]">
-                                  主题 · {replies.length + 1} 条消息
-                                </span>
+                            <div className="an-topic-card">
+                              {/* Topic header */}
+                              <div className="an-topic-card-head">
+                                <div className="an-topic-card-title">
+                                  <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
+                                  <span className="truncate">
+                                    主题 · {replies.length + 1} 条消息
+                                  </span>
+                                </div>
+                                <div className="an-topic-card-actions">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPageTopicId(m.msg_id)}
+                                    className="an-topic-card-action"
+                                    title="以独立页打开主题"
+                                  >
+                                    <AppIcon name="externalLink" className="w-3 h-3" />
+                                    独立页打开
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTopic(m.msg_id)}
+                                    className="an-topic-card-action"
+                                  >
+                                    <AppIcon name="chevronUp" className="w-3 h-3" />
+                                    收起
+                                  </button>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setPageTopicId(m.msg_id)}
-                                  className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-[#1264A3] px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
-                                  title="以独立页打开主题"
-                                >
-                                  <AppIcon name="externalLink" className="w-3 h-3" />
-                                  独立页打开
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleTopic(m.msg_id)}
-                                  className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 px-1.5 py-0.5 rounded hover:bg-white/80 transition-colors"
-                                >
-                                  <AppIcon name="chevronUp" className="w-3 h-3" />
-                                  收起
-                                </button>
+                              {/* Root message */}
+                              {rootBubble}
+                              {/* Replies divider */}
+                              <div className="an-topic-card-divider">
+                                <span>{replies.length} 条回复</span>
                               </div>
-                            </div>
-                            {/* Root message */}
-                            {rootBubble}
-                            {/* Replies divider */}
-                            <div className="flex items-center gap-2 px-4 py-1">
-                              <div className="flex-1 h-px bg-gray-200" />
-                              <span className="text-[11px] text-gray-400 whitespace-nowrap">
-                                {replies.length} 条回复
-                              </span>
-                              <div className="flex-1 h-px bg-gray-200" />
-                            </div>
-                            {/* Reply messages */}
-                            <div className="flex flex-col gap-0.5 pb-1.5">
-                              {replies.map((r) => {
+                              {/* Reply messages */}
+                              <div className="flex flex-col gap-0.5 pb-1.5">
+                                {replies.map((r) => {
                                 const rIsOwn =
                                   r.sender_type === "user" &&
                                   r.sender_id === currentUserId;
@@ -1994,7 +1987,7 @@ export function ChatMessageList({
                                     <div className={`${actionVisibilityClass("group-hover/tr:opacity-100")} an-msg-actions self-center flex items-center gap-1 flex-shrink-0`}>
                                       {renderForwardActionButtons?.(
                                         r,
-                                        "w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0",
+                                        "an-chat-action",
                                         "w-3 h-3",
                                       )}
                                       {renderMemoryLoadButton(r)}
@@ -2014,27 +2007,27 @@ export function ChatMessageList({
                                             : inputRef.current
                                           )?.focus();
                                         }}
-                                        className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                        className="an-chat-action"
                                       >
                                         <AppIcon name="reply" className="w-3 h-3" />
                                       </button>
                                     </div>
                                   </div>
                                 );
-                              })}
+                                })}
+                              </div>
+                              {/* Bottom collapse button */}
+                              <div className="an-topic-card-foot">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleTopic(m.msg_id)}
+                                  className="an-topic-card-action"
+                                >
+                                  <AppIcon name="chevronUp" className="w-3 h-3" />
+                                  收起主题
+                                </button>
+                              </div>
                             </div>
-                            {/* Bottom collapse button */}
-                            <div className="flex justify-center py-1.5 border-t border-gray-100">
-                              <button
-                                type="button"
-                                onClick={() => toggleTopic(m.msg_id)}
-                                className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded hover:bg-gray-100 transition-colors"
-                              >
-                                <AppIcon name="chevronUp" className="w-3 h-3" />
-                                收起主题
-                              </button>
-                            </div>
-                          </div>
                           </div>
                         );
                       });
