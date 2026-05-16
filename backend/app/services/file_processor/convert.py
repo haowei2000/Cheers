@@ -7,18 +7,51 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
-    ".txt": {"text/plain"},
-    ".md": {"text/markdown", "text/plain"},
-    ".html": {"text/html", "text/plain"},
-    ".htm": {"text/html", "text/plain"},
+PARSABLE_DOCUMENT_TYPES: dict[str, set[str]] = {
+    ".txt": {"text/plain", "application/octet-stream"},
+    ".md": {"text/markdown", "text/plain", "application/octet-stream"},
+    ".html": {"text/html", "text/plain", "application/octet-stream"},
+    ".htm": {"text/html", "text/plain", "application/octet-stream"},
     ".docx": {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/octet-stream",
     },
-    ".pdf": {"application/pdf"},
+    ".pdf": {"application/pdf", "application/octet-stream"},
     ".xlsx": {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/octet-stream",
     },
+}
+
+KKFILEVIEW_DOCUMENT_TYPES: dict[str, set[str]] = {
+    ".doc": {"application/msword", "application/octet-stream"},
+    ".xls": {"application/vnd.ms-excel", "application/octet-stream"},
+    ".ppt": {"application/vnd.ms-powerpoint", "application/octet-stream"},
+    ".pptx": {
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/octet-stream",
+    },
+    ".wps": {"application/vnd.ms-works", "application/octet-stream"},
+    ".et": {"application/octet-stream"},
+    ".dps": {"application/octet-stream"},
+    ".ofd": {"application/ofd", "application/octet-stream"},
+    ".rtf": {"application/rtf", "text/rtf", "application/octet-stream"},
+    ".csv": {"text/csv", "text/plain", "application/vnd.ms-excel", "application/octet-stream"},
+    ".zip": {"application/zip", "application/x-zip-compressed", "application/octet-stream"},
+    ".rar": {"application/vnd.rar", "application/x-rar-compressed", "application/octet-stream"},
+    ".7z": {"application/x-7z-compressed", "application/octet-stream"},
+    ".tar": {"application/x-tar", "application/octet-stream"},
+    ".gz": {"application/gzip", "application/x-gzip", "application/octet-stream"},
+    ".bz2": {"application/x-bzip2", "application/octet-stream"},
+    ".xz": {"application/x-xz", "application/octet-stream"},
+    ".dwg": {"application/acad", "application/x-acad", "application/octet-stream"},
+    ".dxf": {"image/vnd.dxf", "application/dxf", "application/octet-stream"},
+    ".epub": {"application/epub+zip", "application/octet-stream"},
+}
+
+SUPPORTED_DOCUMENT_TYPES: dict[str, set[str]] = {
+    **PARSABLE_DOCUMENT_TYPES,
+    **KKFILEVIEW_DOCUMENT_TYPES,
 }
 
 SUPPORTED_IMAGE_TYPES: dict[str, set[str]] = {
@@ -70,11 +103,11 @@ def parse_document_bytes(
     """Parse an uploaded file into plain text and truncate it when needed."""
 
     suffix = Path(filename).suffix.lower()
-    if suffix not in SUPPORTED_DOCUMENT_TYPES:
+    if suffix not in PARSABLE_DOCUMENT_TYPES:
         raise UnsupportedFileTypeError(f"unsupported file type: {suffix or '(none)'}")
 
     normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
-    allowed_types = SUPPORTED_DOCUMENT_TYPES[suffix]
+    allowed_types = PARSABLE_DOCUMENT_TYPES[suffix]
     if normalized_type and normalized_type not in allowed_types:
         raise UnsupportedFileTypeError(
             f"unsupported content type for {suffix}: {normalized_type}"

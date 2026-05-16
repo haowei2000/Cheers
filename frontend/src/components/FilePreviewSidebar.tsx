@@ -11,11 +11,41 @@ import { FileTypeIcon } from "./icons/FileTypeIcon";
 import { Tooltip } from "./Tooltip";
 
 type TextPreviewKind = "html" | "markdown" | "text";
+const HTML_PREVIEW_SANDBOX = "allow-scripts allow-forms allow-popups allow-downloads";
+const KKFILEVIEW_EXTS = new Set([
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "wps",
+  "et",
+  "dps",
+  "ofd",
+  "rtf",
+  "csv",
+  "zip",
+  "rar",
+  "7z",
+  "tar",
+  "gz",
+  "bz2",
+  "xz",
+  "dwg",
+  "dxf",
+  "epub",
+]);
 
 function swapFileAction(url: string, action: "preview" | "download" | "content") {
   const [base, query] = url.split("?");
   const next = base.replace(/\/(preview|download|content)$/, `/${action}`);
   return query ? `${next}?${query}` : next;
+}
+
+function extractFileId(url: string): string | null {
+  const match = url.match(/\/files\/([^/?]+)\/(?:preview|download|content)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 export function FilePreviewPanel({
@@ -50,12 +80,25 @@ export function FilePreviewPanel({
     ["html", "htm"].includes(ext);
   const isMarkdown =
     normalizedType === "text/markdown" || ext === "md" || ext === "markdown";
-  const isPlainText = normalizedType.startsWith("text/") || ext === "txt";
+  const isPlainText = normalizedType === "text/plain" || ext === "txt";
   const isExtractedPreview =
     ["docx", "xlsx"].includes(ext) ||
     normalizedType.includes("wordprocessingml") ||
     normalizedType.includes("spreadsheetml");
-  const shouldLoadText = !isImage && !isPdf && !isHtml && (isMarkdown || isPlainText || isExtractedPreview);
+  const isKkFileViewDocument =
+    !isImage &&
+    !isPdf &&
+    !isHtml &&
+    !isMarkdown &&
+    (KKFILEVIEW_EXTS.has(ext) ||
+      normalizedType.includes("wordprocessingml") ||
+      normalizedType.includes("spreadsheetml") ||
+      normalizedType.includes("presentationml") ||
+      normalizedType === "application/msword" ||
+      normalizedType === "application/vnd.ms-excel" ||
+      normalizedType === "application/vnd.ms-powerpoint" ||
+      normalizedType === "application/ofd" ||
+      normalizedType === "application/rtf");
   const sizeLabel =
     sizeBytes && sizeBytes > 0
       ? sizeBytes < 1024
@@ -75,6 +118,21 @@ export function FilePreviewPanel({
   const [binaryPreviewUrl, setBinaryPreviewUrl] = useState<string | null>(null);
   const [binaryLoading, setBinaryLoading] = useState(false);
   const [binaryError, setBinaryError] = useState<string | null>(null);
+  const [kkViewerUrl, setKkViewerUrl] = useState<string | null>(null);
+  const [kkLoading, setKkLoading] = useState(false);
+  const [kkError, setKkError] = useState<string | null>(null);
+  const [kkFallbackToText, setKkFallbackToText] = useState(false);
+  const shouldUseKkFileView = isKkFileViewDocument && !kkFallbackToText;
+  const shouldLoadText =
+    !shouldUseKkFileView &&
+    !isImage &&
+    !isPdf &&
+    !isHtml &&
+    (isMarkdown || isPlainText || isExtractedPreview);
+
+  useEffect(() => {
+    setKkFallbackToText(false);
+  }, [contentType, filename, previewUrl]);
 
   useEffect(() => {
     if (!shouldLoadText) {
@@ -112,6 +170,56 @@ export function FilePreviewPanel({
         setTextLoading(false);
       });
   }, [contentUrl, isExtractedPreview, isMarkdown, previewUrl, shouldLoadText]);
+
+  useEffect(() => {
+    if (!isKkFileViewDocument) {
+      setKkViewerUrl(null);
+      setKkError(null);
+      setKkLoading(false);
+      return;
+    }
+    if (kkFallbackToText) {
+      setKkViewerUrl(null);
+      setKkLoading(false);
+      return;
+    }
+
+    const fileId = extractFileId(previewUrl);
+    if (!fileId) {
+      setKkError("无法识别文件预览地址");
+      setKkFallbackToText(true);
+      return;
+    }
+
+    let cancelled = false;
+    setKkLoading(true);
+    setKkError(null);
+    setKkViewerUrl(null);
+    apiFetch(`/files/${encodeURIComponent(fileId)}/kkfileview`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((payload) => {
+        const data = payload?.data ?? payload;
+        if (!data?.enabled || !data?.viewer_url) {
+          throw new Error(data?.reason || "文档预览服务不可用");
+        }
+        if (cancelled) return;
+        setKkViewerUrl(String(data.viewer_url));
+        setKkLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setKkError(e instanceof Error ? e.message : String(e));
+        setKkLoading(false);
+        setKkFallbackToText(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isKkFileViewDocument, kkFallbackToText, previewUrl, shouldUseKkFileView]);
 
   useEffect(() => {
     if (!isImage && !isPdf && !isHtml) {
@@ -154,6 +262,10 @@ export function FilePreviewPanel({
   };
 
   const handleOpen = () => {
+    if (kkViewerUrl) {
+      window.open(kkViewerUrl, "_blank", "noreferrer");
+      return;
+    }
     openProtectedFile(previewUrl).catch((e) => {
       setBinaryError(e instanceof Error ? e.message : String(e));
     });
@@ -238,9 +350,24 @@ export function FilePreviewPanel({
               key={binaryPreviewUrl}
               src={binaryPreviewUrl}
               title={filename}
-              sandbox={isHtml ? "" : undefined}
+              sandbox={isHtml ? HTML_PREVIEW_SANDBOX : undefined}
               referrerPolicy={isHtml ? "no-referrer" : undefined}
-              className="an-file-preview-frame"
+              className={`an-file-preview-frame${isHtml ? " is-html" : ""}`}
+            />
+          ) : null
+        ) : shouldUseKkFileView ? (
+          kkLoading ? (
+            <div className="an-file-preview-state">加载中...</div>
+          ) : kkError ? (
+            <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
+              {kkError}
+            </div>
+          ) : kkViewerUrl ? (
+            <iframe
+              key={kkViewerUrl}
+              src={kkViewerUrl}
+              title={filename}
+              className="an-file-preview-frame is-kkfileview"
             />
           ) : null
         ) : shouldLoadText ? (
@@ -251,18 +378,18 @@ export function FilePreviewPanel({
               {textError}
             </div>
           ) : textKind === "markdown" ? (
-            <div className="an-file-preview-text">
+            <div className="an-file-preview-text is-markdown">
               <MessageMarkdown text={textContent ?? ""} />
             </div>
           ) : (
-            <div className="an-file-preview-text">
+            <div className="an-file-preview-text is-plain">
               <pre className="an-file-preview-pre">{textContent ?? ""}</pre>
             </div>
           )
         ) : (
           <div className="an-file-preview-empty">
             <FileTypeIcon contentType={contentType} filename={filename} size={44} />
-            <p>当前文件类型无法直接预览</p>
+            <p>{kkError || "当前文件类型无法直接预览"}</p>
             <button
               type="button"
               onClick={handleDownload}
