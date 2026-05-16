@@ -458,45 +458,49 @@ export function MessageComposer({
             file.previewUrl ? (
               <div
                 key={`${file.name}:${index}`}
-                className="relative group cursor-pointer rounded-xl overflow-hidden border border-gray-200 shadow-sm inline-block"
+                className="relative group cursor-pointer rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-1)] shadow-sm inline-block"
               >
                 <img
                   src={file.previewUrl}
                   alt={file.name}
                   className="max-w-[180px] max-h-[140px] object-cover block"
                 />
-                <div className="px-2.5 py-1.5 bg-white text-[11px] text-gray-500 border-t border-gray-100 flex items-center gap-1.5 max-w-[180px]">
-                  <AppIcon name="image" className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                <div className="px-2.5 py-1.5 bg-[var(--bg-1)] text-[var(--fg-3)] border-t border-[var(--border)] flex items-center gap-1.5 max-w-[180px] an-type-caption">
+                  <AppIcon name="image" className="w-3 h-3 flex-shrink-0" />
                   <span className="truncate">{file.name}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => removePendingFile(index, file.previewUrl)}
-                  className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full text-[11px] leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
+                  className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
+                  aria-label="移除附件"
+                  title="移除附件"
                 >
-                  ×
+                  <AppIcon name="close" className="w-3 h-3" />
                 </button>
               </div>
             ) : (
               <div
                 key={`${file.name}:${index}`}
-                className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-white border border-gray-200 rounded-xl shadow-sm max-w-[240px]"
+                className="relative group flex items-center gap-2.5 px-3 py-2.5 bg-[var(--bg-1)] border border-[var(--border)] rounded-lg shadow-sm max-w-[240px]"
               >
-                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <div className="w-9 h-9 rounded-md bg-[var(--accent-muted)] flex items-center justify-center flex-shrink-0">
                   <FileTypeIcon filename={file.name} size={20} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-medium text-gray-700 truncate">
+                  <div className="an-type-label text-[var(--fg-2)] truncate">
                     {file.name}
                   </div>
-                  <div className="text-[11px] text-gray-400">待发送</div>
+                  <div className="an-type-caption text-[var(--fg-3)]">待发送</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => removePendingFile(index, null)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-500 text-white rounded-full text-[11px] leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--fg-3)] text-white rounded-full leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
+                  aria-label="移除附件"
+                  title="移除附件"
                 >
-                  ×
+                  <AppIcon name="close" className="w-3 h-3" />
                 </button>
               </div>
             ),

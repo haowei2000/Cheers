@@ -58,7 +58,7 @@ export function ClarifyInlineBlock({
 
   if (status === "waiting") {
     return (
-      <div className="my-2 rounded-lg border border-gray-200 bg-[#F8F8F8] p-3">
+      <div className="an-token-panel my-2 rounded-lg border border-gray-200 bg-[#F8F8F8] p-3">
         <span className="text-xs text-gray-400 flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full bg-gray-300 animate-pulse" />
           引导正在根据澄清回答…
@@ -72,7 +72,7 @@ export function ClarifyInlineBlock({
       replyContent?.replace(/^@(?:Helper|Coordinator|channel bot)\s*澄清回答[：:]\s*/i, "").trim() ||
       "";
     return (
-      <div className="my-2 rounded-lg border border-gray-200 bg-[#F8F8F8] overflow-hidden">
+      <div className="an-token-panel my-2 rounded-lg border border-gray-200 bg-[#F8F8F8] overflow-hidden">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -105,7 +105,7 @@ export function ClarifyInlineBlock({
   }
 
   return (
-    <div className="my-2 rounded-lg border border-[#1264A3]/30 bg-[#F8F8F8] overflow-hidden p-3">
+    <div className="an-token-panel my-2 rounded-lg border border-[#1264A3]/30 bg-[#F8F8F8] overflow-hidden p-3">
       <div className="mb-3">
         <h4 className="text-sm font-semibold text-gray-800">
           {schema.title || "请先确认以下问题"}

@@ -176,7 +176,7 @@ export default function DocsPage() {
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
   return (
-    <div className="flex h-screen flex-col bg-gray-50 font-sans text-gray-900 overflow-hidden">
+    <div className="an-token-page flex h-screen flex-col bg-gray-50 font-sans text-gray-900 overflow-hidden">
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4 flex-shrink-0">
         <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
           <AppIcon name="arrowLeft" className="w-4 h-4" />
@@ -199,7 +199,7 @@ export default function DocsPage() {
             </div>
             <input
               type="text"
-              placeholder="搜索文档..."
+              placeholder="搜索文档…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-blue-400"
@@ -254,7 +254,9 @@ export default function DocsPage() {
                 </button>
               )}
               <div className="text-gray-400">
-                <div className="text-5xl mb-3 text-gray-300">📄</div>
+                <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--fg-3)]">
+                  <AppIcon name="file" className="h-7 w-7" />
+                </div>
                 <p className="text-base font-medium text-gray-600">选择一个文档</p>
                 <p className="text-sm mt-1">从侧边栏选择一个文件以查看或编辑。</p>
               </div>
@@ -448,7 +450,15 @@ export default function DocsPage() {
                               目录
                             </p>
                             {isMobile && (
-                              <button onClick={() => setTocOpen(false)} className="text-gray-400">×</button>
+                              <button
+                                type="button"
+                                onClick={() => setTocOpen(false)}
+                                className="inline-grid h-7 w-7 place-items-center rounded-md text-gray-400 hover:bg-gray-100"
+                                aria-label="关闭目录"
+                                title="关闭目录"
+                              >
+                                <AppIcon name="close" className="h-4 w-4" />
+                              </button>
                             )}
                           </div>
                           <nav className="space-y-0.5">
