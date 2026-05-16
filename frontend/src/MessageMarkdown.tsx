@@ -157,7 +157,7 @@ function CopyableMarkdownBlock({
           event.stopPropagation();
           handleCopy();
         }}
-        className="absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 bg-white/95 text-gray-500 opacity-0 shadow-sm transition-opacity hover:bg-gray-50 hover:text-gray-900 focus:opacity-100 group-hover/an-md-copy:opacity-100"
+        className="an-md-copy-button"
         title={title}
         aria-label={title}
       >
@@ -361,11 +361,11 @@ function MarkdownImage({ src, alt, onImageClick, ...props }: MarkdownImageProps)
 
   const placeholder = (
     <span
-      className="my-2 flex min-h-[96px] w-full max-w-[320px] items-center gap-2 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-400"
+      className="an-type-caption my-2 flex min-h-[96px] w-full max-w-[320px] items-center gap-2 rounded-md border border-dashed border-[var(--border)] bg-[var(--bg-0)] px-3 py-2"
       role={failed ? "img" : "status"}
       aria-label={failed ? alt || "image preview failed" : "image preview loading"}
     >
-      <AppIcon name="image" className="h-5 w-5 flex-shrink-0 text-gray-300" />
+      <AppIcon name="image" className="an-md-muted-icon h-5 w-5 flex-shrink-0" />
       <span className="min-w-0 truncate">
         {failed ? "图片预览不可用" : `图片预览加载中 (${attempt}/${MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS})`}
       </span>
@@ -381,7 +381,7 @@ function MarkdownImage({ src, alt, onImageClick, ...props }: MarkdownImageProps)
         {...props}
         src={displaySrc}
         alt={alt || "image"}
-        className="block max-h-[400px] max-w-full rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+        className="block max-h-[400px] max-w-full cursor-pointer rounded-md border border-[var(--border)] transition-opacity hover:opacity-90"
         loading="lazy"
         onError={() => {
           const state = getRememberedImageState(safeSrc);
@@ -424,12 +424,12 @@ function FileChip({ href, fileId, filename, onImageClick, onFileClick }: FileChi
     <button
       type="button"
       onClick={handleClick}
-      className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm max-w-full hover:bg-gray-50 active:bg-gray-100 transition-colors cursor-pointer my-0.5 align-middle"
+      className="my-0.5 inline-flex max-w-full cursor-pointer items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-1)] px-2.5 py-1.5 align-middle transition-colors hover:bg-[var(--surface-soft)] active:bg-[var(--surface-strong)]"
     >
-      <span className="w-7 h-7 rounded-md bg-gray-50 flex items-center justify-center flex-shrink-0">
+      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-[var(--bg-0)]">
         <FileTypeIcon filename={displayName} size={22} />
       </span>
-      <span className="text-[13px] font-medium text-gray-700 truncate">{displayName}</span>
+      <span className="an-type-body truncate font-medium">{displayName}</span>
     </button>
   );
 }
@@ -847,7 +847,7 @@ const MermaidBlock = memo(function MermaidBlock({ code, streaming }: MermaidBloc
   if (streaming || (!svg && !error)) {
     return (
       <CopyableMarkdownBlock copyText={code} title="复制 Mermaid 源码">
-        <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
+        <pre className="an-md-code-block my-2">
           <code>{code}</code>
         </pre>
       </CopyableMarkdownBlock>
@@ -857,10 +857,10 @@ const MermaidBlock = memo(function MermaidBlock({ code, streaming }: MermaidBloc
   if (error) {
     return (
       <CopyableMarkdownBlock className="my-2" copyText={code} title="复制 Mermaid 源码">
-        <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 text-xs font-mono overflow-x-auto leading-relaxed">
+        <pre className="an-md-code-block">
           <code>{code}</code>
         </pre>
-        <p className="text-xs text-red-500 mt-1">Mermaid 渲染错误: {error}</p>
+        <p className="an-type-caption an-md-error mt-1">Mermaid 渲染错误: {error}</p>
       </CopyableMarkdownBlock>
     );
   }
@@ -911,7 +911,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
             const highlighted = highlightCode(codeText, lang);
             return (
               <CopyableMarkdownBlock copyText={codeText} title="复制代码块">
-                <pre className="bg-gray-900 rounded-lg p-3 my-2 text-xs font-mono overflow-x-auto leading-relaxed">
+                <pre className="an-md-code-block my-2">
                   <code
                     className={`hljs${lang ? ` language-${lang}` : ""}`}
                     dangerouslySetInnerHTML={{ __html: highlighted }}
@@ -922,7 +922,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           }
 
           return (
-            <code className="bg-gray-100 px-1 rounded text-xs font-mono" {...props}>
+            <code className="an-md-inline-code" {...props}>
               {children}
             </code>
           );
@@ -946,7 +946,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           if (raw.startsWith("mention://")) {
             const username = raw.slice("mention://".length);
             return (
-              <span className="inline-block bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded cursor-default">
+              <span className="an-chip accent cursor-default">
                 @{username}
               </span>
             );
@@ -972,7 +972,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
               href={safe ? raw : "#"}
               target="_blank"
               rel="noreferrer"
-              className="text-[#1264A3] underline"
+              className="an-md-link"
               {...props}
             >
               {children}
@@ -983,7 +983,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         p({ children, ...props }: any) {
           return (
             <CopyableMarkdownBlock title="复制段落">
-              <p className="text-sm text-gray-800 leading-relaxed my-0.5 pr-7" {...props}>
+              <p className="an-type-body my-0.5 pr-7 leading-relaxed" {...props}>
                 {children}
               </p>
             </CopyableMarkdownBlock>
@@ -991,42 +991,42 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h1({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h1 className="text-lg font-bold mt-4 mb-1 text-gray-900 border-b border-gray-200 pb-1 pr-7" {...props}>{children}</h1></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="复制标题"><h1 className="an-type-title mt-4 mb-1 border-b border-[var(--border)] pb-1 pr-7" {...props}>{children}</h1></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h2({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h2 className="text-base font-bold mt-3 mb-1 text-gray-900 border-b border-gray-200 pb-1 pr-7" {...props}>{children}</h2></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="复制标题"><h2 className="an-type-body mt-3 mb-1 border-b border-[var(--border)] pb-1 pr-7 font-bold" {...props}>{children}</h2></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h3({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h3 className="text-sm font-semibold mt-2 mb-0.5 text-gray-900 pr-7" {...props}>{children}</h3></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="复制标题"><h3 className="an-type-body mt-2 mb-0.5 pr-7 font-semibold" {...props}>{children}</h3></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h4({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h4 className="text-sm font-semibold text-gray-900 pr-7" {...props}>{children}</h4></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="复制标题"><h4 className="an-type-body pr-7 font-semibold" {...props}>{children}</h4></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h5({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h5 className="text-xs font-semibold text-gray-900 pr-7" {...props}>{children}</h5></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="复制标题"><h5 className="an-type-label pr-7" {...props}>{children}</h5></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h6({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h6 className="text-xs font-semibold text-gray-900 pr-7" {...props}>{children}</h6></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="复制标题"><h6 className="an-type-label pr-7" {...props}>{children}</h6></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ul({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制列表"><ul className="list-disc pl-5 pr-7 my-1 space-y-0.5 text-sm text-gray-800" {...props}>{children}</ul></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="复制列表"><ul className="an-type-body my-1 list-disc space-y-0.5 pl-5 pr-7" {...props}>{children}</ul></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ol({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制列表"><ol className="list-decimal pl-5 pr-7 my-1 space-y-0.5 text-sm text-gray-800" {...props}>{children}</ol></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="复制列表"><ol className="an-type-body my-1 list-decimal space-y-0.5 pl-5 pr-7" {...props}>{children}</ol></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         blockquote({ children, ...props }: any) {
           return (
             <CopyableMarkdownBlock title="复制引用">
               <blockquote
-                className="border-l-4 border-blue-300 bg-blue-50 pl-3 pr-7 py-0.5 my-1 text-gray-600 text-sm italic"
+                className="an-type-body my-1 border-l-4 border-[var(--accent)] bg-[var(--accent-muted)] py-0.5 pl-3 pr-7 italic"
                 {...props}
               >
                 {children}
@@ -1039,7 +1039,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           return (
             <CopyableMarkdownBlock className="my-2" title="复制表格">
               <div className="overflow-x-auto">
-                <table className="border-collapse text-sm text-gray-800 w-full" {...props}>
+                <table className="an-type-body w-full border-collapse" {...props}>
                   {children}
                 </table>
               </div>
@@ -1049,7 +1049,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         th({ children, ...props }: any) {
           return (
-            <th className="border border-gray-300 bg-gray-100 px-2 py-1 text-left font-semibold text-xs" {...props}>
+            <th className="an-type-caption border border-[var(--border)] bg-[var(--surface-soft)] px-2 py-1 text-left font-semibold" {...props}>
               {children}
             </th>
           );
@@ -1057,13 +1057,13 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         td({ children, ...props }: any) {
           return (
-            <td className="border border-gray-200 px-2 py-1 text-xs" {...props}>
+            <td className="an-type-caption border border-[var(--border)] px-2 py-1" {...props}>
               {children}
             </td>
           );
         },
         hr() {
-          return <hr className="my-3 border-gray-200" />;
+          return <hr className="my-3 border-[var(--border)]" />;
         },
       }}
     >
