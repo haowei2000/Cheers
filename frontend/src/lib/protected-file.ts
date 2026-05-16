@@ -7,9 +7,29 @@ export function isAgentNexusFileUrl(url: string): boolean {
   return AGENTNEXUS_FILE_URL_RE.test(url);
 }
 
+async function buildProtectedFileError(res: Response): Promise<Error> {
+  let message = "";
+  try {
+    const payload = await res.clone().json();
+    if (payload && typeof payload === "object" && "message" in payload) {
+      message = String((payload as { message?: unknown }).message ?? "");
+    }
+  } catch {
+    // Non-JSON file errors fall back to status-specific copy below.
+  }
+  if (!message) {
+    if (res.status === 404) message = "文件不存在、已过期或已被清理";
+    else if (res.status === 401 || res.status === 403) message = "没有权限预览此文件";
+    else message = `文件预览加载失败（HTTP ${res.status}）`;
+  }
+  const error = new Error(message);
+  error.name = "ProtectedFileError";
+  return error;
+}
+
 export async function fetchProtectedFileBlob(url: string): Promise<Blob> {
   const res = await apiFetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw await buildProtectedFileError(res);
   return res.blob();
 }
 

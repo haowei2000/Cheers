@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import type { CurrentUser } from "../../../types";
 import { apiFetch } from "../../../api";
 import { AVATAR_ACCEPT, uploadAvatarImage } from "../../../lib/avatar";
+import { AvatarVisual } from "../../../components/AvatarVisual";
 import { DangerButton, Field, PrimaryButton, inputCls } from "../shared/SettingsControls";
 
 function AvatarPreview({
@@ -18,19 +19,17 @@ function AvatarPreview({
 }) {
   if (avatarUrl) {
     return (
-      <img
-        src={avatarUrl}
-        alt={label}
-        title={label}
+      <AvatarVisual
+        avatarUrl={avatarUrl}
+        label={label}
+        fallback={fallback}
+        radius={8}
+        size={size}
         style={{
-          width: size,
-          height: size,
-          borderRadius: 8,
-          objectFit: "cover",
-          flexShrink: 0,
           border: "1px solid var(--border)",
           background: "var(--surface-soft)",
         }}
+        title={label}
       />
     );
   }
