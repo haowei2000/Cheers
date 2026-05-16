@@ -4728,6 +4728,7 @@ kbd {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  background: var(--bg-0);
 }
 .an-file-preview-stage {
   min-height: 100%;
@@ -4753,10 +4754,44 @@ kbd {
   border: 0;
   background: var(--bg-1);
 }
+.an-file-preview-frame.is-html {
+  background: #fff;
+}
 .an-file-preview-text {
   max-width: 980px;
   margin: 0 auto;
   padding: 22px;
+}
+.an-file-preview-text.is-markdown {
+  max-width: 1040px;
+  padding: 30px 34px 44px;
+  color: var(--fg-1);
+}
+.an-file-preview.is-side .an-file-preview-text.is-markdown {
+  padding: 20px;
+}
+.an-file-preview-text.is-markdown h1:first-child,
+.an-file-preview-text.is-markdown h2:first-child,
+.an-file-preview-text.is-markdown h3:first-child {
+  margin-top: 0;
+}
+.an-file-preview-text.is-markdown p {
+  margin-block: 0.45rem;
+}
+.an-file-preview-text.is-markdown ul,
+.an-file-preview-text.is-markdown ol {
+  margin-block: 0.55rem;
+}
+.an-file-preview-text.is-markdown table {
+  min-width: 640px;
+}
+.an-file-preview-text.is-markdown .an-md-code-block {
+  max-width: 100%;
+  margin-block: 12px;
+}
+.an-file-preview-text.is-plain {
+  max-width: 1080px;
+  padding: 28px 32px 44px;
 }
 .an-file-preview-pre {
   margin: 0;

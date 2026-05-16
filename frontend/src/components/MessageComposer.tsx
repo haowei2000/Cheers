@@ -611,7 +611,7 @@ export function MessageComposer({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".txt,.md,.html,.htm,.docx,.pdf,.xlsx,.png,.jpg,.jpeg,.webp,.gif"
+                    accept=".txt,.md,.html,.htm,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.wps,.et,.dps,.ofd,.rtf,.csv,.zip,.rar,.7z,.tar,.gz,.bz2,.xz,.dwg,.dxf,.epub,.pdf,.png,.jpg,.jpeg,.webp,.gif"
                     className="hidden"
                     onChange={onUploadFile}
                   />

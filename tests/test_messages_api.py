@@ -1,14 +1,17 @@
 """ChatCore 消息 API 测试."""
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models import (
     AIModel,
     BotAccount,
@@ -1038,6 +1041,132 @@ async def test_file_preview_content_parses_local_html(
 
 
 @pytest.mark.asyncio
+async def test_file_preview_handles_html_with_generic_content_type(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000092", name="W92")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000092",
+        workspace_id=ws.workspace_id,
+        name="preview-html-generic-ch",
+        type="public",
+    )
+    file_path = tmp_path / "report.html"
+    file_path.write_text(
+        "<!doctype html><html><body><h1>HTML report</h1></body></html>",
+        encoding="utf-8",
+    )
+    record = FileRecord(
+        file_id="file-preview-html-generic",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="report.html",
+        content_type="application/octet-stream",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    preview_resp = await client.get(f"/api/v1/files/{record.file_id}/preview")
+    assert preview_resp.status_code == 200
+    assert preview_resp.headers["content-type"].startswith("text/html")
+    assert preview_resp.headers["content-disposition"].startswith("inline;")
+    assert "HTML report" in preview_resp.text
+
+    content_resp = await client.get(f"/api/v1/files/{record.file_id}/content")
+    assert content_resp.status_code == 200
+    data = content_resp.json()["data"]
+    assert data["content_type"] == "text/html"
+    assert data["preview_type"] == "html"
+    assert "HTML report" in data["content"]
+
+
+@pytest.mark.asyncio
+async def test_file_kkfileview_url_uses_signed_public_source(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "public_base_url", "agentnexus.epichust.com")
+    monkeypatch.setattr(settings, "kkfileview_enabled", True)
+    monkeypatch.setattr(settings, "kkfileview_base_url", "https://agentnexus.epichust.com")
+    monkeypatch.setattr(settings, "kkfileview_token_ttl_seconds", 600)
+    monkeypatch.setattr(settings, "jwt_secret_key", "x" * 64)
+
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000093", name="W93")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000093",
+        workspace_id=ws.workspace_id,
+        name="preview-kk-ch",
+        type="public",
+    )
+    file_path = tmp_path / "deck.pptx"
+    file_path.write_bytes(b"pptx bytes")
+    record = FileRecord(
+        file_id="file-preview-kk-pptx",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(file_path),
+        original_filename="deck.pptx",
+        content_type="application/octet-stream",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([ws, ch, record])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/v1/files/{record.file_id}/kkfileview")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["enabled"] is True
+
+    viewer = urlparse(data["viewer_url"])
+    assert viewer.scheme == "https"
+    assert viewer.netloc == "agentnexus.epichust.com"
+    assert viewer.path == "/onlinePreview"
+
+    encoded_source = parse_qs(viewer.query)["url"][0]
+    source_url = base64.b64decode(encoded_source).decode("utf-8")
+    source = urlparse(source_url)
+    assert source.scheme == "https"
+    assert source.netloc == "agentnexus.epichust.com"
+    assert source.path == f"/api/v1/files/{record.file_id}/public-preview"
+    assert parse_qs(source.query)["fullfilename"] == ["deck.pptx"]
+
+    source_resp = await client.get(f"{source.path}?{source.query}")
+    assert source_resp.status_code == 200
+    assert source_resp.content == b"pptx bytes"
+    assert source_resp.headers["content-disposition"].startswith("inline;")
+
+    xlsx_path = tmp_path / "sheet.xlsx"
+    xlsx_path.write_bytes(b"xlsx bytes")
+    xlsx_record = FileRecord(
+        file_id="file-preview-kk-xlsx",
+        channel_id=ch.channel_id,
+        uploader_id="a0000000-0000-0000-0000-000000000001",
+        original_path=str(xlsx_path),
+        original_filename="sheet.xlsx",
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        size_bytes=xlsx_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add(xlsx_record)
+    await db_session.commit()
+
+    xlsx_resp = await client.get(f"/api/v1/files/{xlsx_record.file_id}/kkfileview")
+    assert xlsx_resp.status_code == 200
+    xlsx_data = xlsx_resp.json()["data"]
+    assert xlsx_data["enabled"] is True
+    xlsx_source = base64.b64decode(parse_qs(urlparse(xlsx_data["viewer_url"]).query)["url"][0]).decode("utf-8")
+    assert "fullfilename=sheet.xlsx" in xlsx_source
+
+
+@pytest.mark.asyncio
 async def test_file_preview_content_parses_local_xlsx(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1142,6 +1271,23 @@ async def test_create_presigned_upload_returns_file_record(
     assert html_resp.status_code == 200
     html_data = html_resp.json()["data"]
     assert html_data["headers"]["Content-Type"] == "text/html"
+
+    pptx_resp = await client.post(
+        "/api/v1/files/presign",
+        json={
+            "channel_id": ch.channel_id,
+            "uploader_id": "a0000000-0000-0000-0000-000000000011",
+            "filename": "deck.pptx",
+            "content_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "size": 512,
+        },
+    )
+    assert pptx_resp.status_code == 200
+    pptx_data = pptx_resp.json()["data"]
+    assert (
+        pptx_data["headers"]["Content-Type"]
+        == "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
 
 
 @pytest.mark.asyncio

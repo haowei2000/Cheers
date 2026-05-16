@@ -1,9 +1,12 @@
 """File v1 路由."""
 from __future__ import annotations
 
+import base64
+import mimetypes
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
+import jwt
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, model_validator
@@ -12,9 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.dependencies import get_current_user, get_session
-from app.core.exceptions import AppError, NotFoundError
+from app.core.exceptions import AppError, NotFoundError, UnauthorizedError
 from app.core.responses import APIResponse
 from app.db.models import FileRecord, User
+from app.services.auth.jwt_utils import create_service_token, decode_service_token
 from app.services.channel_service import ChannelService
 from app.services.file_processor.convert import (
     FileParseError,
@@ -26,6 +30,31 @@ from app.services.file_retention import active_file_filter
 
 router = APIRouter(prefix="/files", tags=["files"])
 
+KKFILEVIEW_SUFFIXES = {
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".wps",
+    ".et",
+    ".dps",
+    ".ofd",
+    ".rtf",
+    ".csv",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".xz",
+    ".dwg",
+    ".dxf",
+    ".epub",
+}
+
 
 def _content_disposition(filename: str, disposition: str = "attachment") -> str:
     encoded = quote(filename, safe="")
@@ -33,8 +62,62 @@ def _content_disposition(filename: str, disposition: str = "attachment") -> str:
 
 
 def _inline_disposition(content_type: str) -> bool:
-    ct = content_type.lower()
-    return is_image_type(ct) or "pdf" in ct or ct.startswith("text/")
+    ct = content_type.split(";", 1)[0].strip().lower()
+    return is_image_type(ct) or "pdf" in ct or ct.startswith("text/") or "xhtml+xml" in ct
+
+
+def _content_type_base(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+def _effective_content_type(rec: FileRecord, fallback: str = "application/octet-stream") -> str:
+    content_type = (rec.content_type or "").strip()
+    normalized_type = _content_type_base(content_type)
+    if not normalized_type or normalized_type == "application/octet-stream":
+        guessed = mimetypes.guess_type(rec.original_filename or "")[0]
+        if guessed:
+            return guessed
+    return content_type or fallback
+
+
+def _normalize_absolute_base_url(url: str, fallback: str = "https://agentnexus.epichust.com") -> str:
+    base = (url or "").strip().rstrip("/")
+    if not base:
+        base = fallback
+    if not base.startswith(("http://", "https://")):
+        base = f"https://{base.lstrip('/')}"
+    return base.rstrip("/")
+
+
+def _is_kkfileview_candidate(filename: str, content_type: str) -> bool:
+    suffix = Path(filename).suffix.lower()
+    content_base = _content_type_base(content_type)
+    return (
+        suffix in KKFILEVIEW_SUFFIXES
+        or "wordprocessingml" in content_base
+        or "spreadsheetml" in content_base
+        or "presentationml" in content_base
+        or content_base in {
+            "application/msword",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/ofd",
+            "application/rtf",
+            "text/csv",
+        }
+    )
+
+
+def _build_kkfileview_source_url(file_id: str, filename: str, token: str) -> str:
+    public_base = _normalize_absolute_base_url(settings.public_base_url)
+    query = urlencode({"token": token, "fullfilename": filename})
+    return f"{public_base}/api/v1/files/{quote(file_id, safe='')}/public-preview?{query}"
+
+
+def _build_kkfileview_viewer_url(source_url: str) -> str:
+    kk_base = _normalize_absolute_base_url(settings.kkfileview_base_url)
+    encoded_source = base64.b64encode(source_url.encode("utf-8")).decode("ascii")
+    return f"{kk_base}/onlinePreview?url={quote(encoded_source, safe='')}"
 
 
 def _storage_scope(rec: FileRecord) -> str:
@@ -223,7 +306,7 @@ async def file_preview(
     rec = await _load_active_file_or_404(session, file_id)
     await _require_file_access(session, rec, current_user)
 
-    content_type = rec.content_type or "application/octet-stream"
+    content_type = _effective_content_type(rec)
     filename = rec.original_filename or file_id
     disposition = (
         _content_disposition(filename, "inline")
@@ -241,6 +324,71 @@ async def file_preview(
     )
 
 
+@router.get("/{file_id}/kkfileview", response_model=APIResponse[dict])
+async def file_kkfileview_url(
+    file_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """返回 kkFileView viewer URL。仅复杂文档使用，轻量类型继续走内置预览。"""
+    rec = await _load_active_file_or_404(session, file_id)
+    await _require_file_access(session, rec, current_user)
+
+    filename = rec.original_filename or file_id
+    content_type = _effective_content_type(rec)
+    if not settings.kkfileview_enabled or not (settings.kkfileview_base_url or "").strip():
+        return APIResponse.ok({
+            "enabled": False,
+            "reason": "kkfileview disabled",
+        })
+    if not _is_kkfileview_candidate(filename, content_type):
+        return APIResponse.ok({
+            "enabled": False,
+            "reason": "file type uses builtin preview",
+        })
+
+    ttl = max(int(getattr(settings, "kkfileview_token_ttl_seconds", 600) or 600), 60)
+    token = create_service_token(
+        {"scope": "file_preview", "file_id": rec.file_id},
+        expires_seconds=ttl,
+    )
+    source_url = _build_kkfileview_source_url(rec.file_id, filename, token)
+    return APIResponse.ok({
+        "enabled": True,
+        "viewer_url": _build_kkfileview_viewer_url(source_url),
+        "source_url": source_url,
+        "expires_in": ttl,
+    })
+
+
+@router.get("/{file_id}/public-preview")
+async def file_public_preview(
+    file_id: str,
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """供 kkFileView 拉取文件的短期签名下载流。"""
+    try:
+        payload = decode_service_token(token)
+    except jwt.PyJWTError as exc:
+        raise UnauthorizedError("invalid preview token") from exc
+    if payload.get("scope") != "file_preview" or payload.get("file_id") != file_id:
+        raise UnauthorizedError("invalid preview token")
+
+    rec = await _load_active_file_or_404(session, file_id)
+    filename = rec.original_filename or file_id
+    body = await _load_file_body(rec)
+    return Response(
+        content=body,
+        media_type=_effective_content_type(rec),
+        headers={
+            "Content-Disposition": _content_disposition(filename, "inline"),
+            "Cache-Control": "private, max-age=60",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.get("/{file_id}/content", response_model=APIResponse[dict])
 async def file_preview_content(
     file_id: str,
@@ -252,8 +400,8 @@ async def file_preview_content(
     await _require_file_access(session, rec, current_user)
 
     filename = rec.original_filename or file_id
-    content_type = rec.content_type or "application/octet-stream"
-    if is_image_type(content_type):
+    content_type = _effective_content_type(rec)
+    if is_image_type(_content_type_base(content_type)):
         return APIResponse.ok({
             "file_id": rec.file_id,
             "filename": filename,
@@ -332,7 +480,7 @@ async def file_download(
     body = await _load_file_body(rec)
     return Response(
         content=body,
-        media_type=rec.content_type or "application/octet-stream",
+        media_type=_effective_content_type(rec),
         headers={
             "Content-Disposition": _content_disposition(filename),
             "Cache-Control": "private, max-age=3600",

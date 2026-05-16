@@ -40,6 +40,26 @@ def create_access_token(user_id: str, role: str) -> str:
     return jwt.encode(payload, _get_secret(), algorithm=settings.jwt_algorithm)
 
 
+def create_service_token(claims: dict, *, expires_seconds: int) -> str:
+    """创建内部服务用短期 JWT，不代表用户登录态。"""
+    from app.config import settings
+
+    now = datetime.now(UTC)
+    payload = {
+        **claims,
+        "exp": now + timedelta(seconds=max(int(expires_seconds), 1)),
+        "iat": now,
+    }
+    return jwt.encode(payload, _get_secret(), algorithm=settings.jwt_algorithm)
+
+
+def decode_service_token(token: str) -> dict:
+    """解码内部服务短期 JWT。"""
+    from app.config import settings
+
+    return jwt.decode(token, _get_secret(), algorithms=[settings.jwt_algorithm])
+
+
 def decode_access_token(token: str) -> dict:
     """解码并验证 JWT token，返回 payload dict。
 

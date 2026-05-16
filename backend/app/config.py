@@ -57,11 +57,23 @@ class Settings(BaseSettings):
     file_retention_cleanup_interval_seconds: int = 24 * 60 * 60
     file_upload_allowed_types: str = (
         "application/pdf,"
+        "application/msword,"
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "application/vnd.ms-excel,"
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+        "application/vnd.ms-powerpoint,"
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation,"
+        "application/ofd,application/rtf,text/csv,"
+        "application/zip,application/vnd.rar,application/x-7z-compressed,"
+        "application/x-tar,application/gzip,application/epub+zip,"
         "text/html,text/plain,"
         "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000
+    public_base_url: str = "https://agentnexus.epichust.com"
+    kkfileview_enabled: bool = True
+    kkfileview_base_url: str = "https://agentnexus.epichust.com"
+    kkfileview_token_ttl_seconds: int = 10 * 60
     avatar_upload_max_bytes: int = 2 * 1024 * 1024
     avatar_upload_allowed_types: str = "image/png,image/jpeg,image/webp,image/gif"
 
