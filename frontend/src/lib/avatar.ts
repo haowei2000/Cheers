@@ -39,6 +39,14 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   },
   {
     category: "main",
+    name: "dashboard",
+    label: "空间",
+    color: "#0891B2",
+    background: "#E8FAFC",
+    groups: ["workspace", "all"],
+  },
+  {
+    category: "main",
     name: "briefcase",
     label: "项目",
     color: "#B45309",

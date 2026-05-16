@@ -114,7 +114,7 @@ export function WorkspaceSettingsModal({
       open={open && !!workspace}
       onClose={onClose}
       title="工作空间设置"
-      description="名称和头像。"
+      description="名称和图标。"
     >
       <div className="space-y-4">
         <div className="flex items-center gap-3">
@@ -144,7 +144,7 @@ export function WorkspaceSettingsModal({
 
         <div>
           <label className="block text-sm font-medium mb-1" style={{ color: "var(--fg-2)" }}>
-            头像
+            图标
           </label>
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
@@ -152,7 +152,7 @@ export function WorkspaceSettingsModal({
                 type="text"
                 value={avatarUrl}
                 onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://example.com/workspace.png"
+                placeholder="图标 URL 或选择内置图标"
                 className={inputCls}
               />
               <input
@@ -184,7 +184,7 @@ export function WorkspaceSettingsModal({
               onClick={() => setAvatarUrl("")}
               className="an-btn an-btn-ghost mt-2"
             >
-              清除头像
+              清除图标
             </button>
           )}
         </div>

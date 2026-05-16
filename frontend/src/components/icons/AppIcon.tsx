@@ -7,6 +7,7 @@ import {
   Brain,
   Briefcase,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Check,
   CheckCircle2,
@@ -36,6 +37,7 @@ import {
   Minus,
   NotebookTabs,
   Paperclip,
+  Palette,
   Pencil,
   Plus,
   RefreshCw,
@@ -91,6 +93,7 @@ export const appIconMap = {
   model: Cpu,
   note: NotebookTabs,
   notification: Bell,
+  palette: Palette,
   pencil: Pencil,
   plus: Plus,
   preview: Eye,
@@ -109,6 +112,7 @@ export const appIconMap = {
   users: Users,
   zap: Zap,
   chevronDown: ChevronDown,
+  chevronRight: ChevronRight,
   chevronUp: ChevronUp,
 } satisfies Record<string, LucideIcon>;
 

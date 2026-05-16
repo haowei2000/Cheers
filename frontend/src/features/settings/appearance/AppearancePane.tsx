@@ -1,4 +1,5 @@
 import type { Density } from "../../../lib/density";
+import { LanguageSwitcher } from "../../../i18n";
 
 // ── Appearance pane ───────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ export function AppearancePane({
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">外观</div>
-          <div className="an-pane-sub">主题与密度。</div>
+          <div className="an-pane-sub">主题、密度与语言。</div>
         </div>
       </div>
       <div className="an-list-table">
@@ -65,6 +66,13 @@ export function AppearancePane({
               紧凑
             </button>
           </div>
+        </div>
+        <div className="an-row-card" style={{ justifyContent: "space-between" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="an-rc-title">语言</div>
+            <div className="an-rc-sub">界面显示语言。</div>
+          </div>
+          <LanguageSwitcher hideLabel />
         </div>
       </div>
     </div>

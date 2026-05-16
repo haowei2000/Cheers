@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { apiFetch } from "../../../api";
+import { AppIcon } from "../../../components/icons";
 import {
   BackBar,
   DangerButton,
@@ -118,14 +119,16 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
             style={{
               width: 32, height: 32, borderRadius: 6,
               background: "var(--surface-soft)", color: "var(--accent)",
-              fontSize: 16, display: "inline-grid", placeItems: "center", flexShrink: 0,
+              display: "inline-grid", placeItems: "center", flexShrink: 0,
             }}
-          >＋</span>
+          >
+            <AppIcon name="plus" className="h-4 w-4" />
+          </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="an-rc-title">新建模板</div>
             <div className="an-rc-sub">为某类对话创建可复用的提示词组合</div>
           </div>
-          <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
+          <AppIcon name="chevronRight" className="an-rc-chev" />
         </button>
         {loading ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>加载中…</div>
@@ -144,17 +147,12 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
                 <div className="an-rc-title">
                   {t.name}
                   {t.is_builtin && (
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, letterSpacing: "0.5px",
-                      padding: "1px 5px", borderRadius: 3,
-                      background: "var(--surface-soft)", color: "var(--fg-3)",
-                      border: "1px solid var(--border)",
-                    }}>BUILTIN</span>
+                    <span className="an-chip off">BUILTIN</span>
                   )}
                 </div>
                 {t.description && <div className="an-rc-sub">{t.description}</div>}
               </div>
-              <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
+              <AppIcon name="chevronRight" className="an-rc-chev" />
             </button>
           ))
         )}
@@ -342,7 +340,6 @@ function TemplateForm({
                           background: "transparent",
                           border: 0,
                           cursor: "pointer",
-                          fontSize: 12,
                         }}
                         onMouseEnter={(e) =>
                           (e.currentTarget.style.background = "var(--surface-soft)")

@@ -1,11 +1,24 @@
 import { LANGUAGE_OPTIONS, type AppLanguage } from "./catalog";
 import { useLanguage } from "./LanguageProvider";
 
-export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
+export function LanguageSwitcher({
+  compact = false,
+  hideLabel = false,
+}: {
+  compact?: boolean;
+  hideLabel?: boolean;
+}) {
   const { language, setLanguage } = useLanguage();
+  const className = [
+    "an-lang-switch",
+    compact ? "compact" : "",
+    hideLabel ? "hide-label" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <label className={compact ? "an-lang-switch compact" : "an-lang-switch"}>
+    <label className={className}>
       <span className="an-lang-label">Language</span>
       <select
         value={language}

@@ -8,6 +8,7 @@ import {
 } from "../lib/protected-file";
 import { AppIcon } from "./icons/AppIcon";
 import { FileTypeIcon } from "./icons/FileTypeIcon";
+import { Tooltip } from "./Tooltip";
 
 type TextPreviewKind = "html" | "markdown" | "text";
 
@@ -17,18 +18,22 @@ function swapFileAction(url: string, action: "preview" | "download" | "content")
   return query ? `${next}?${query}` : next;
 }
 
-export function FilePreviewSidebar({
+export function FilePreviewPanel({
   url,
   filename,
   contentType,
   sizeBytes,
+  subtitle,
   onClose,
+  variant = "side",
 }: {
   url: string;
   filename: string;
   contentType?: string | null;
   sizeBytes?: number | null;
+  subtitle?: string | null;
   onClose: () => void;
+  variant?: "side" | "main";
 }) {
   const previewUrl = swapFileAction(url, "preview");
   const downloadUrl = swapFileAction(url, "download");
@@ -59,6 +64,7 @@ export function FilePreviewSidebar({
           ? `${(sizeBytes / 1024).toFixed(1)} KB`
           : `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
       : "";
+  const subtitleLabel = [subtitle, sizeLabel].filter(Boolean).join(" · ");
 
   const [textContent, setTextContent] = useState<string | null>(null);
   const [textKind, setTextKind] = useState<TextPreviewKind>(
@@ -153,72 +159,78 @@ export function FilePreviewSidebar({
     });
   };
 
+  const Root = variant === "main" ? "section" : "aside";
+
   return (
-    <aside className="w-full border-l border-gray-200 bg-white flex flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
-        <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-          <FileTypeIcon contentType={contentType} filename={filename} size={18} />
+    <Root className={`an-file-preview is-${variant}`}>
+      <div className="an-file-preview-head">
+        <div className="an-file-preview-icon">
+          <FileTypeIcon contentType={contentType} filename={filename} size={20} />
         </div>
-        <span className="text-sm font-semibold text-gray-900 truncate flex-1 min-w-0">
-          {filename}
-        </span>
-        {sizeLabel && (
-          <span className="hidden sm:inline text-[11px] text-gray-400">
-            {sizeLabel}
-          </span>
-        )}
-        <div className="flex items-center gap-0.5 flex-shrink-0">
-          <button
-            type="button"
-            onClick={handleDownload}
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-            title="下载文件"
-          >
-            <AppIcon name="download" className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleOpen}
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-            title="在新标签页打开"
-          >
-            <AppIcon name="externalLink" className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-base leading-none transition-colors"
-            title="关闭"
-          >
-            <AppIcon name="close" className="w-4 h-4" />
-          </button>
+        <Tooltip
+          className="an-file-preview-title-wrap"
+          content={filename}
+          placement="bottom"
+        >
+          <div className="an-file-preview-title">
+            <strong>{filename}</strong>
+            {subtitleLabel && <span>{subtitleLabel}</span>}
+          </div>
+        </Tooltip>
+        <div className="an-file-preview-actions">
+          <Tooltip content="下载文件" placement="bottom">
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="an-file-preview-action"
+              aria-label="下载文件"
+            >
+              <AppIcon name="download" />
+            </button>
+          </Tooltip>
+          <Tooltip content="在新标签页打开" placement="bottom">
+            <button
+              type="button"
+              onClick={handleOpen}
+              className="an-file-preview-action"
+              aria-label="在新标签页打开"
+            >
+              <AppIcon name="externalLink" />
+            </button>
+          </Tooltip>
+          <Tooltip content="关闭预览" placement="bottom">
+            <button
+              type="button"
+              onClick={onClose}
+              className="an-file-preview-action"
+              aria-label="关闭预览"
+            >
+              <AppIcon name="close" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="an-file-preview-body">
         {isImage ? (
-          <div className="min-h-full flex items-center justify-center bg-gray-50 p-4">
+          <div className="an-file-preview-stage">
             {binaryLoading ? (
-              <span className="text-sm text-gray-400">加载中...</span>
+              <span>加载中...</span>
             ) : binaryError ? (
-              <span className="text-sm text-red-400">{binaryError}</span>
+              <span style={{ color: "var(--red)" }}>{binaryError}</span>
             ) : binaryPreviewUrl ? (
               <img
                 src={binaryPreviewUrl}
                 alt={filename}
-                className="max-w-full max-h-full object-contain rounded-md shadow-sm"
+                className="an-file-preview-media"
               />
             ) : null}
           </div>
         ) : isPdf || isHtml ? (
           binaryLoading ? (
-            <div className="flex items-center justify-center h-full text-sm text-gray-400">
-              加载中...
-            </div>
+            <div className="an-file-preview-state">加载中...</div>
           ) : binaryError ? (
-            <div className="flex items-center justify-center h-full text-sm text-red-400">
+            <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
               {binaryError}
             </div>
           ) : binaryPreviewUrl ? (
@@ -228,37 +240,33 @@ export function FilePreviewSidebar({
               title={filename}
               sandbox={isHtml ? "" : undefined}
               referrerPolicy={isHtml ? "no-referrer" : undefined}
-              className="w-full h-full border-0"
+              className="an-file-preview-frame"
             />
           ) : null
         ) : shouldLoadText ? (
           textLoading ? (
-            <div className="flex items-center justify-center h-full text-sm text-gray-400">
-              加载中…
-            </div>
+            <div className="an-file-preview-state">加载中…</div>
           ) : textError ? (
-            <div className="flex items-center justify-center h-full text-sm text-red-400">
+            <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
               {textError}
             </div>
           ) : textKind === "markdown" ? (
-            <div className="px-5 py-4">
+            <div className="an-file-preview-text">
               <MessageMarkdown text={textContent ?? ""} />
             </div>
           ) : (
-            <div className="px-5 py-4">
-              <pre className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-800 font-mono">
-                {textContent ?? ""}
-              </pre>
+            <div className="an-file-preview-text">
+              <pre className="an-file-preview-pre">{textContent ?? ""}</pre>
             </div>
           )
         ) : (
-          <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-500">
-            <FileTypeIcon contentType={contentType} filename={filename} size={40} />
+          <div className="an-file-preview-empty">
+            <FileTypeIcon contentType={contentType} filename={filename} size={44} />
             <p>当前文件类型无法直接预览</p>
             <button
               type="button"
               onClick={handleDownload}
-              className="inline-flex items-center gap-2 rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-700 transition-colors"
+              className="an-btn an-btn-primary"
             >
               <AppIcon name="download" className="w-4 h-4" />
               下载文件
@@ -266,6 +274,10 @@ export function FilePreviewSidebar({
           </div>
         )}
       </div>
-    </aside>
+    </Root>
   );
+}
+
+export function FilePreviewSidebar(props: Omit<Parameters<typeof FilePreviewPanel>[0], "variant">) {
+  return <FilePreviewPanel {...props} variant="side" />;
 }

@@ -179,17 +179,7 @@ export function FriendsPane({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      style={{
-        padding: "5px 9px",
-        borderRadius: 6,
-        border: danger ? "1px solid var(--red)" : "1px solid var(--border)",
-        background: "transparent",
-        color: danger ? "var(--red)" : "var(--fg-2)",
-        fontSize: 11,
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-        fontFamily: "inherit",
-      }}
+      className={`an-btn an-btn-sm ${danger ? "an-btn-danger" : ""}`}
     >
       {label}
     </button>

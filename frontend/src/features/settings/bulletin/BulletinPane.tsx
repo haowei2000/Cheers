@@ -210,16 +210,7 @@ export function BulletinPane({
                   <button
                     type="button"
                     onClick={() => toggleStatus(it)}
-                    style={{
-                      padding: "4px 8px",
-                      fontSize: 11,
-                      border: "1px solid var(--border)",
-                      borderRadius: 5,
-                      background: "transparent",
-                      color: "var(--fg-2)",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
+                    className="an-btn an-btn-sm"
                   >
                     {it.status === "open" ? "关闭" : "开放"}
                   </button>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { apiFetch } from "../../../api";
-import { AiBrandIcon } from "../../../components/icons";
+import { AiBrandIcon, AppIcon } from "../../../components/icons";
 import {
   BackBar,
   DangerButton,
@@ -56,10 +56,10 @@ export function ModelBrandCard({ model }: { model?: ModelIdentity | null }) {
         size={20}
       />
       <div style={{ minWidth: 0 }}>
-        <div className="truncate" style={{ color: "var(--fg-1)", fontSize: 12, fontWeight: 650 }}>
+        <div className="an-type-label an-truncate">
           {model.name}
         </div>
-        <div className="truncate" style={{ color: "var(--fg-3)", fontSize: 11 }}>
+        <div className="an-type-meta an-truncate">
           {[model.provider, model.model_name].filter(Boolean).join(" · ")}
         </div>
       </div>
@@ -147,14 +147,16 @@ export function ModelListSubPane({ authToken }: { authToken: string | null }) {
             style={{
               width: 32, height: 32, borderRadius: 6,
               background: "var(--surface-soft)", color: "var(--accent)",
-              fontSize: 16, display: "inline-grid", placeItems: "center", flexShrink: 0,
+              display: "inline-grid", placeItems: "center", flexShrink: 0,
             }}
-          >＋</span>
+          >
+            <AppIcon name="plus" className="h-4 w-4" />
+          </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="an-rc-title">新建模型</div>
             <div className="an-rc-sub">添加一个 OpenAI 兼容的 LLM Provider</div>
           </div>
-          <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
+          <AppIcon name="chevronRight" className="an-rc-chev" />
         </button>
         {loading ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>加载中…</div>
@@ -191,24 +193,14 @@ export function ModelListSubPane({ authToken }: { authToken: string | null }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="an-rc-title">
                   {m.name}
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, letterSpacing: "0.5px",
-                    padding: "1px 5px", borderRadius: 3,
-                    background: "var(--surface-soft)", color: "var(--fg-3)",
-                    border: "1px solid var(--border)",
-                  }}>{m.provider}</span>
+                  <span className="an-chip off">{m.provider}</span>
                   {!m.is_enabled && (
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, letterSpacing: "0.5px",
-                      padding: "1px 5px", borderRadius: 3,
-                      background: "var(--surface-soft)", color: "var(--red)",
-                      border: "1px solid var(--red)",
-                    }}>DISABLED</span>
+                    <span className="an-chip red">DISABLED</span>
                   )}
                 </div>
                 <div className="an-rc-sub">{m.model_name} · {m.base_url}</div>
               </div>
-              <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
+              <AppIcon name="chevronRight" className="an-rc-chev" />
             </button>
           ))
         )}
@@ -400,11 +392,11 @@ function ModelForm({
               />
             </Field>
           </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--fg-2)" }}>
+          <label className="an-checkline">
             <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} disabled={isBuiltin} />
             启用流式响应（stream）
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--fg-2)" }}>
+          <label className="an-checkline">
             <input type="checkbox" checked={supportsVision} onChange={(e) => setSupportsVision(e.target.checked)} disabled={isBuiltin} />
             支持视觉输入（supports_vision）
           </label>
@@ -421,11 +413,11 @@ function ModelForm({
 
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">可见性</div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--fg-2)" }}>
+          <label className="an-checkline">
             <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} disabled={isBuiltin} />
             启用
           </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--fg-2)" }}>
+          <label className="an-checkline">
             <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} disabled={isBuiltin} />
             公开（所有用户可见）
           </label>
