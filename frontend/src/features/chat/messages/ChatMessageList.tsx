@@ -7,6 +7,7 @@ import type {
 } from "react";
 import type { VirtualItem, Virtualizer } from "@tanstack/react-virtual";
 import toast from "react-hot-toast";
+import { AvatarVisual } from "../../../components/AvatarVisual";
 import { BotAvatar } from "../../../components/BotAvatar";
 import { ClarifyInlineBlock } from "../../../components/ClarifyInlineBlock";
 import {
@@ -1529,11 +1530,14 @@ export function ChatMessageList({
                                 <span className="an-topic-chip-faces">
                                   {visibleAvatars.map((p) =>
                                     p.avatarUrl ? (
-                                      <img
+                                      <AvatarVisual
                                         key={p.key}
-                                        src={p.avatarUrl}
-                                        alt={p.label}
+                                        avatarUrl={p.avatarUrl}
                                         className="an-topic-chip-face"
+                                        fallback={p.initial}
+                                        label={p.label}
+                                        radius={8}
+                                        size={24}
                                       />
                                     ) : (
                                       <span
