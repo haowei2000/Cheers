@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import type { ChannelMember as Member, Friend, BotItem as Bot } from "./types";
 import { AppIcon } from "./components/icons/AppIcon";
-import { MemberRow, MemberSection } from "./components/members";
+import { MemberAvatar, MemberRow, MemberSection } from "./components/members";
 import { SearchPicker } from "./components/SearchPicker";
 
 const API = "/api/v1";
@@ -295,7 +295,7 @@ export default function ChannelMembersModal({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+        className="an-token-panel bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -305,10 +305,13 @@ export default function ChannelMembersModal({
             <p className="text-xs text-gray-500">#{channelName}</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-xl"
+            className="w-8 h-8 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            aria-label="关闭"
+            title="关闭"
           >
-            ×
+            <AppIcon name="close" className="w-4 h-4" />
           </button>
         </div>
 
@@ -350,8 +353,8 @@ export default function ChannelMembersModal({
             // Member list.
             loading ? (
               <div className="text-center py-8 text-gray-500">
-                <div className="animate-spin w-6 h-6 border-2 border-[#1264A3] border-t-transparent rounded-full mx-auto mb-2"></div>
-                加载中...
+                <div className="animate-spin w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto mb-2"></div>
+                加载中…
               </div>
             ) : (
               <div className="space-y-4">
@@ -458,9 +461,9 @@ export default function ChannelMembersModal({
                       <button
                         onClick={inviteSelectedFriends}
                         disabled={inviteLoading}
-                        className="px-3 py-1.5 bg-[#007a5a] text-white rounded text-sm font-medium hover:bg-[#006a4d] disabled:opacity-50"
+                        className="an-btn an-btn-primary an-btn-sm"
                       >
-                        {inviteLoading ? "邀请中..." : "批量邀请"}
+                        {inviteLoading ? "邀请中…" : "批量邀请"}
                       </button>
                     )}
                   </div>
@@ -493,9 +496,12 @@ export default function ChannelMembersModal({
                               onClick={(e) => e.stopPropagation()}
                               className="accent-[#1264A3]"
                             />
-                            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-sm font-bold">
-                              {(friend.display_name || friend.username).charAt(0).toUpperCase()}
-                            </div>
+                            <MemberAvatar
+                              avatarUrl={friend.avatar_url}
+                              kind="user"
+                              label={friend.display_name || friend.username}
+                              size={32}
+                            />
                             <div>
                               <p className="font-medium text-sm text-gray-900">
                                 {friend.display_name || friend.username}
@@ -509,7 +515,7 @@ export default function ChannelMembersModal({
                               inviteFriend(friend.user_id);
                             }}
                             disabled={inviteLoading}
-                            className="px-2 py-1 text-xs bg-[#1264A3] text-white rounded hover:bg-[#0f5a94] disabled:opacity-50"
+                            className="an-btn an-btn-primary an-btn-sm"
                           >
                             邀请
                           </button>

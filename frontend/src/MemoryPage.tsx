@@ -972,7 +972,7 @@ export default function MemoryPage({
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex"
+      className="an-token-page fixed inset-0 z-[110] flex"
       style={{ background: "var(--overlay)" }}
     >
       <div
