@@ -81,6 +81,8 @@ function ProfilePane({
   const [emailCode, setEmailCode] = useState("");
   const [emailCodeSent, setEmailCodeSent] = useState(false);
   const [emailCodeLoading, setEmailCodeLoading] = useState(false);
+  const [accountTab, setAccountTab] =
+    useState<"profile" | "security">("profile");
 
   useEffect(() => {
     if (!authToken) return;
@@ -204,244 +206,229 @@ function ProfilePane({
 
   return (
     <div className="an-pane">
-      <div className="an-pane-head">
+      <div
+        className="an-pane-head"
+        style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
+      >
         <div>
-          <div className="an-pane-title">编辑资料</div>
-          <div className="an-pane-sub">显示名称、个人简介与密码。</div>
+          <div className="an-pane-title">
+            {accountTab === "profile" ? "编辑资料" : "账号安全"}
+          </div>
+          <div className="an-pane-sub">
+            {accountTab === "profile"
+              ? "显示名称、头像与简介。"
+              : "账号标识与密码验证。"}
+          </div>
+        </div>
+        <div className="an-seg" role="tablist" aria-label="账户设置视图">
+          <button
+            type="button"
+            className={accountTab === "profile" ? "on" : ""}
+            onClick={() => setAccountTab("profile")}
+            role="tab"
+            aria-selected={accountTab === "profile"}
+          >
+            资料
+          </button>
+          <button
+            type="button"
+            className={accountTab === "security" ? "on" : ""}
+            onClick={() => setAccountTab("security")}
+            role="tab"
+            aria-selected={accountTab === "security"}
+          >
+            安全
+          </button>
         </div>
       </div>
       <div className="an-list-table">
-        <div className="an-row-card" style={{ alignItems: "flex-start", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
-            <AvatarPreview
-              label={displayName || currentUser.username}
-              avatarUrl={avatarUrl}
-              fallback={initial}
-            />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="an-rc-title">{displayName || currentUser.username}</div>
-              <div className="an-rc-sub">@{currentUser.username} · {currentUser.role}</div>
-            </div>
-          </div>
-          <div style={{ width: "100%" }}>
-            <Field label="UUID（可分享给好友添加）">
-              <div style={{ display: "flex", gap: 6 }}>
-                <code
-                  style={{
-                    flex: 1,
-                    padding: "6px 10px",
-                    background: "var(--bg-0)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    fontSize: 11,
-                    color: "var(--fg-2)",
-                    userSelect: "all",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {currentUser.user_id}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(currentUser.user_id);
-                    toast.success("UUID 已复制");
-                  }}
-                  style={{
-                    padding: "6px 10px",
-                    background: "var(--surface-soft)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    fontSize: 11,
-                    color: "var(--fg-2)",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  复制
-                </button>
+        {accountTab === "profile" && (
+          <>
+            <div className="an-row-card" style={{ alignItems: "center", gap: 12 }}>
+              <AvatarPreview
+                label={displayName || currentUser.username}
+                avatarUrl={avatarUrl}
+                fallback={initial}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="an-rc-title">{displayName || currentUser.username}</div>
+                <div className="an-rc-sub">@{currentUser.username} · {currentUser.role}</div>
               </div>
-            </Field>
-          </div>
-        </div>
-
-        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
-          <div className="an-rc-title">基本信息</div>
-          <Field label="显示名称">
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className={inputCls}
-            />
-          </Field>
-          <Field label="头像">
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="url"
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://example.com/avatar.png"
-                className={inputCls}
-                style={{ flex: 1 }}
-              />
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept={AVATAR_ACCEPT}
-                onChange={(e) => uploadProfileAvatar(e.target.files?.[0])}
-                style={{ display: "none" }}
-              />
-              <button
-                type="button"
-                onClick={() => avatarInputRef.current?.click()}
-                disabled={avatarUploading}
-                style={{
-                  padding: "8px 10px",
-                  background: "var(--surface-soft)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  cursor: avatarUploading ? "not-allowed" : "pointer",
-                  opacity: avatarUploading ? 0.6 : 1,
-                  fontFamily: "inherit",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {avatarUploading ? "上传中…" : "上传"}
-              </button>
-              {avatarUrl && (
-                <button
-                  type="button"
-                  onClick={() => setAvatarUrl("")}
-                  style={{
-                    padding: "8px 10px",
-                    background: "var(--surface-soft)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    fontSize: 12,
-                    color: "var(--fg-2)",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  清除
-                </button>
-              )}
             </div>
-          </Field>
-          <Field label="个人简介">
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              rows={3}
-              className={`${inputCls} resize-none`}
-            />
-          </Field>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <PrimaryButton onClick={saveProfile} disabled={saving}>
-              {saving ? "保存中…" : "保存资料"}
-            </PrimaryButton>
-          </div>
-        </div>
 
-        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
-          <div className="an-rc-title">修改密码</div>
-          <div className="an-seg" style={{ alignSelf: "flex-start" }}>
-            <button
-              type="button"
-              className={pwMode === "password" ? "on" : ""}
-              onClick={() => setPwMode("password")}
-            >
-              密码验证
-            </button>
-            <button
-              type="button"
-              className={pwMode === "email" ? "on" : ""}
-              onClick={() => setPwMode("email")}
-            >
-              邮箱验证
-            </button>
-          </div>
-          {pwMode === "password" ? (
-            <Field label="当前密码">
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                className={inputCls}
-                autoComplete="current-password"
-              />
-            </Field>
-          ) : (
-            <Field label={`邮箱验证码${email ? `（发送至 ${email}）` : "（账号未绑定邮箱）"}`}>
-              {email ? (
-                <div style={{ display: "flex", gap: 6 }}>
+            <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+              <div className="an-rc-title">基本信息</div>
+              <Field label="显示名称">
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="头像">
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input
-                    value={emailCode}
-                    onChange={(e) => setEmailCode(e.target.value)}
+                    type="url"
+                    value={avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                    placeholder="https://example.com/avatar.png"
                     className={inputCls}
                     style={{ flex: 1 }}
                   />
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept={AVATAR_ACCEPT}
+                    onChange={(e) => uploadProfileAvatar(e.target.files?.[0])}
+                    style={{ display: "none" }}
+                  />
                   <button
                     type="button"
-                    disabled={emailCodeLoading}
-                    onClick={sendEmailCode}
-                    style={{
-                      padding: "8px 12px",
-                      background: "var(--surface-soft)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      fontSize: 12,
-                      cursor: emailCodeLoading ? "not-allowed" : "pointer",
-                      whiteSpace: "nowrap",
-                      fontFamily: "inherit",
-                    }}
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={avatarUploading}
+                    className="an-btn an-btn-sm"
                   >
-                    {emailCodeLoading ? "发送中…" : emailCodeSent ? "重新发送" : "获取验证码"}
+                    {avatarUploading ? "上传中…" : "上传"}
+                  </button>
+                  {avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setAvatarUrl("")}
+                      className="an-btn an-btn-sm"
+                    >
+                      清除
+                    </button>
+                  )}
+                </div>
+              </Field>
+              <Field label="个人简介">
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  rows={3}
+                  className={`${inputCls} resize-none`}
+                />
+              </Field>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <PrimaryButton onClick={saveProfile} disabled={saving}>
+                  {saving ? "保存中…" : "保存资料"}
+                </PrimaryButton>
+              </div>
+            </div>
+          </>
+        )}
+
+        {accountTab === "security" && (
+          <>
+            <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+              <div className="an-rc-title">账号标识</div>
+              <Field label="UUID（可分享给好友添加）">
+                <div style={{ display: "flex", gap: 6 }}>
+                  <code className="an-code-pill" style={{ flex: 1 }}>
+                    {currentUser.user_id}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(currentUser.user_id);
+                      toast.success("UUID 已复制");
+                    }}
+                    className="an-btn an-btn-sm"
+                  >
+                    复制
                   </button>
                 </div>
+              </Field>
+            </div>
+
+            <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
+              <div className="an-rc-title">修改密码</div>
+              <div className="an-seg" style={{ alignSelf: "flex-start" }}>
+                <button
+                  type="button"
+                  className={pwMode === "password" ? "on" : ""}
+                  onClick={() => setPwMode("password")}
+                >
+                  密码验证
+                </button>
+                <button
+                  type="button"
+                  className={pwMode === "email" ? "on" : ""}
+                  onClick={() => setPwMode("email")}
+                >
+                  邮箱验证
+                </button>
+              </div>
+              {pwMode === "password" ? (
+                <Field label="当前密码">
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className={inputCls}
+                    autoComplete="current-password"
+                  />
+                </Field>
               ) : (
-                <div style={{ fontSize: 12, color: "var(--red)" }}>账号未绑定邮箱，无法使用邮箱验证</div>
+                <Field label={`邮箱验证码${email ? `（发送至 ${email}）` : "（账号未绑定邮箱）"}`}>
+                  {email ? (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input
+                        value={emailCode}
+                        onChange={(e) => setEmailCode(e.target.value)}
+                        className={inputCls}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        disabled={emailCodeLoading}
+                        onClick={sendEmailCode}
+                        className="an-btn an-btn-sm"
+                      >
+                        {emailCodeLoading ? "发送中…" : emailCodeSent ? "重新发送" : "获取验证码"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="an-text-danger">账号未绑定邮箱，无法使用邮箱验证</div>
+                  )}
+                </Field>
               )}
-            </Field>
-          )}
-          <Field label="新密码">
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className={inputCls}
-              autoComplete="new-password"
-            />
-          </Field>
-          <Field label="确认新密码">
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className={inputCls}
-              autoComplete="new-password"
-            />
-          </Field>
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <PrimaryButton
-              onClick={changePassword}
-              disabled={
-                pwSaving ||
-                !newPassword ||
-                !confirmPassword ||
-                (pwMode === "password" && !currentPassword) ||
-                (pwMode === "email" && !emailCode)
-              }
-            >
-              {pwSaving ? "更新中…" : "更新密码"}
-            </PrimaryButton>
-          </div>
-        </div>
+              <Field label="新密码">
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className={inputCls}
+                  autoComplete="new-password"
+                />
+              </Field>
+              <Field label="确认新密码">
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className={inputCls}
+                  autoComplete="new-password"
+                />
+              </Field>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <PrimaryButton
+                  onClick={changePassword}
+                  disabled={
+                    pwSaving ||
+                    !newPassword ||
+                    !confirmPassword ||
+                    (pwMode === "password" && !currentPassword) ||
+                    (pwMode === "email" && !emailCode)
+                  }
+                >
+                  {pwSaving ? "更新中…" : "更新密码"}
+                </PrimaryButton>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -544,16 +531,7 @@ export function KeychainPane({ authToken }: { authToken: string }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="an-rc-title">
                   <span style={{ fontFamily: "ui-monospace, monospace" }}>{it.name}</span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--fg-3)",
-                      background: "var(--surface-soft)",
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      fontFamily: "ui-monospace, monospace",
-                    }}
-                  >
+                  <span className="an-chip off" style={{ fontFamily: "var(--font-mono)" }}>
                     {it.value_masked}
                   </span>
                 </div>
@@ -589,18 +567,7 @@ export function KeychainPane({ authToken }: { authToken: string }) {
               <button
                 type="button"
                 onClick={() => setShowValue((v) => !v)}
-                style={{
-                  position: "absolute",
-                  right: 8,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  background: "transparent",
-                  border: 0,
-                  fontSize: 11,
-                  color: "var(--fg-3)",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
+                className="an-over-input-action"
                 tabIndex={-1}
               >
                 {showValue ? "隐藏" : "显示"}

@@ -256,14 +256,10 @@ export function BotEditPane({
           </div>
           {connectionTest && (
             <div
+              className="an-inline-status"
               style={{
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                padding: "8px 10px",
                 background: connectionTest.reachable ? "var(--green-muted)" : "var(--red-muted)",
                 color: connectionTest.reachable ? "var(--green)" : "var(--red)",
-                fontSize: 12,
-                lineHeight: 1.5,
               }}
             >
               <div style={{ fontWeight: 650 }}>
@@ -378,18 +374,7 @@ export function BotEditPane({
                 type="button"
                 onClick={() => avatarInputRef.current?.click()}
                 disabled={avatarUploading}
-                style={{
-                  padding: "8px 10px",
-                  background: "var(--surface-soft)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  cursor: avatarUploading ? "not-allowed" : "pointer",
-                  opacity: avatarUploading ? 0.6 : 1,
-                  fontFamily: "inherit",
-                  whiteSpace: "nowrap",
-                }}
+                className="an-btn an-btn-sm"
               >
                 {avatarUploading ? "上传中…" : "上传"}
               </button>
@@ -397,17 +382,7 @@ export function BotEditPane({
                 <button
                   type="button"
                   onClick={() => setAvatarUrl("")}
-                  style={{
-                    padding: "8px 10px",
-                    background: "var(--surface-soft)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    fontSize: 12,
-                    color: "var(--fg-2)",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    whiteSpace: "nowrap",
-                  }}
+                  className="an-btn an-btn-sm"
                 >
                   清除
                 </button>
@@ -440,7 +415,7 @@ export function BotEditPane({
             </PrimaryButton>
           </div>
         </div>
-        <div className="an-row-card" style={{ color: "var(--fg-3)", fontSize: 12 }}>
+        <div className="an-row-card an-type-meta">
           高级配置已收敛到设置弹窗；HTTP Bot 可在此切换模型与模板，Agent Bridge Bot 可切换任务模板。
         </div>
       </div>

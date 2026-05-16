@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import type { Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
 import { apiFetch } from "../api";
+import { makeBuiltinAvatarValue } from "../lib/avatar";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
 import { AvatarVisual } from "./AvatarVisual";
 import { AppIcon } from "./icons/AppIcon";
@@ -13,9 +14,9 @@ import {
 } from "./SearchPicker";
 import { MemberAvatar, type MemberKind } from "./members";
 import type { SearchSelection } from "../types";
-import { LanguageSwitcher } from "../i18n";
 import { WorkspaceSettingsModal } from "./WorkspaceSettingsModal";
 import { Modal } from "./Modal";
+import { Tooltip } from "./Tooltip";
 
 interface SidebarProps {
   isMobile: boolean;
@@ -49,6 +50,7 @@ interface SidebarProps {
   onOpenCreateChannel: () => void;
   onOpenSettings: () => void;
   onOpenFilePreview?: (file: FileInfo) => void;
+  onOpenPersonalFileMain?: (file: FileInfo) => void;
 }
 
 const WS_LETTER_COLORS = ["#7c6cf5", "#3ecf8e", "#f5a623", "#56a7ff", "#f05454", "#9586ff"];
@@ -69,6 +71,7 @@ const wsColor = (id: string) => {
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
   return WS_LETTER_COLORS[h % WS_LETTER_COLORS.length];
 };
+const ALL_WORKSPACES_AVATAR = makeBuiltinAvatarValue("main", "dashboard");
 
 export function Sidebar({
   isMobile,
@@ -95,12 +98,13 @@ export function Sidebar({
   onOpenCreateChannel,
   onOpenSettings,
   onOpenFilePreview,
+  onOpenPersonalFileMain,
 }: SidebarProps) {
   const currentWs = workspaces.find((w) => w.workspace_id === selectedWorkspaceId);
   const currentWsLabel = currentWs ? currentWs.name : "全部工作空间";
-  const currentWsLetter = currentWs ? currentWs.name.slice(0, 1).toUpperCase() : "∗";
+  const currentWsLetter = currentWs ? currentWs.name.slice(0, 1).toUpperCase() : "全";
   const currentWsAccent = currentWs ? wsColor(currentWs.workspace_id) : "var(--accent)";
-  const currentWsAvatarUrl = currentWs?.avatar_url || "";
+  const currentWsAvatarUrl = currentWs?.avatar_url || (!currentWs ? ALL_WORKSPACES_AVATAR : "");
   const [searchWorkspaceId, setSearchWorkspaceId] = useState(selectedWorkspaceId);
   useEffect(() => {
     setSearchWorkspaceId(selectedWorkspaceId);
@@ -584,15 +588,24 @@ export function Sidebar({
             style={{ background: currentWsAvatarUrl ? "var(--surface-soft)" : currentWsAccent }}
           />
           <span
-            className="truncate flex-1"
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: "var(--fg-1)",
-            }}
+            className="an-type-label truncate flex-1"
+            style={{ color: "var(--fg-1)" }}
           >
             {currentWsLabel}
           </span>
+          {selectedWorkspaceId && (
+            <Tooltip content="设置工作空间图标">
+              <button
+                type="button"
+                onClick={() => setWorkspaceSettingsOpen(true)}
+                title="设置工作空间图标"
+                aria-label="设置工作空间图标"
+                className="an-btn an-btn-ghost an-btn-icon"
+              >
+                <AppIcon name="palette" className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          )}
           {selectedWorkspaceId && !isPersonalWorkspace && (
             <button
               type="button"
@@ -930,7 +943,12 @@ export function Sidebar({
               className="an-rail-row w-full"
               title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
               onClick={() => {
-                onOpenFilePreview?.(file);
+                setSelectedId(null);
+                if (onOpenPersonalFileMain) {
+                  onOpenPersonalFileMain(file);
+                } else {
+                  onOpenFilePreview?.(file);
+                }
                 if (isMobile) setSidebarOpen(false);
               }}
             >
@@ -1062,25 +1080,33 @@ export function Sidebar({
 
       </div>
 
-      {/* Account footer: avatar, online state, language switcher, and settings. */}
+      {/* Account footer: avatar with presence, display name, and settings. */}
       <div className="an-rail-foot">
         {currentUser ? (
           <>
-            <AvatarVisual
-              avatarUrl={currentUser.avatar_url}
-              background={userColor}
-              className="an-av"
-              fallback={userInitial}
-              label={currentUser.display_name || currentUser.username}
-              radius={6}
-              size={28}
-              style={{ background: currentUser.avatar_url ? "var(--surface-soft)" : userColor }}
-            />
+            <Tooltip content="当前在线" placement="top">
+              <span
+                className="an-account-avatar-wrap"
+                tabIndex={0}
+                aria-label="当前在线"
+                title="当前在线"
+              >
+                <AvatarVisual
+                  avatarUrl={currentUser.avatar_url}
+                  background={userColor}
+                  className="an-av"
+                  fallback={userInitial}
+                  label={currentUser.display_name || currentUser.username}
+                  radius={6}
+                  size={28}
+                  style={{ background: currentUser.avatar_url ? "var(--surface-soft)" : userColor }}
+                />
+                <span className="an-presence-dot" aria-hidden="true" />
+              </span>
+            </Tooltip>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="an-n truncate">{currentUser.display_name}</div>
-              <div className="an-s">online</div>
             </div>
-            <LanguageSwitcher compact />
             <button
               type="button"
               className="an-cog"

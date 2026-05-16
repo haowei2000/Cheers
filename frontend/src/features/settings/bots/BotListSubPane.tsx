@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { BotAvatar } from "../../../components/BotAvatar";
+import { AppIcon } from "../../../components/icons";
+import { Tooltip } from "../../../components/Tooltip";
 import { BackBar } from "../shared/SettingsControls";
 import { BotEditPane } from "./BotEditPane";
 import { BotNewPane } from "./BotNewPane";
@@ -65,27 +67,18 @@ export function BotListSubPane({
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">Bot</div>
-          <div className="an-pane-sub">
-            管理你的 Bot。点击卡片查看详情或编辑。
-          </div>
+          <div className="an-pane-sub">{bots.length} 个可管理 Bot</div>
         </div>
-        <button
-          type="button"
-          onClick={onChanged}
-          style={{
-            border: "1px solid var(--border)",
-            background: "var(--surface)",
-            color: "var(--fg-2)",
-            borderRadius: 6,
-            padding: "6px 10px",
-            fontSize: 12,
-            fontFamily: "inherit",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-        >
-          刷新状态
-        </button>
+        <Tooltip content="刷新 Bot 在线状态" placement="left">
+          <button
+            type="button"
+            className="an-btn an-btn-icon"
+            onClick={onChanged}
+            aria-label="刷新 Bot 在线状态"
+          >
+            <AppIcon name="refresh" />
+          </button>
+        </Tooltip>
       </div>
       <div className="an-list-table">
         <button
@@ -101,19 +94,18 @@ export function BotListSubPane({
               borderRadius: 6,
               background: "var(--surface-soft)",
               color: "var(--accent)",
-              fontSize: 16,
               display: "inline-grid",
               placeItems: "center",
               flexShrink: 0,
             }}
           >
-            ＋
+            <AppIcon name="plus" className="h-4 w-4" />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="an-rc-title">新建 Bot</div>
-            <div className="an-rc-sub">创建一个新的频道 Bot</div>
+            <div className="an-rc-sub">模型 + 模板</div>
           </div>
-          <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
+          <AppIcon name="chevronRight" className="an-rc-chev" />
         </button>
         {bots.length === 0 ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
@@ -136,17 +128,20 @@ export function BotListSubPane({
               />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="an-rc-title">{b.display_name || b.username}</div>
-                <div className="an-rc-sub">
-                  @{b.username} · {(b.binding_type || "http") === "agent_bridge" ? "WebSocket" : "HTTP"}
-                  {" · "}
-                  {botScopeLabel(b.scope)}
-                  {" · "}
-                  Owner: {botOwnerLabel(b)}
-                  {b.is_builtin ? " · 内置" : ""}
-                </div>
+                <Tooltip
+                  content={`@${b.username} · ${(b.binding_type || "http") === "agent_bridge" ? "WebSocket" : "HTTP"} · ${botScopeLabel(b.scope)} · Owner: ${botOwnerLabel(b)}${b.is_builtin ? " · 内置" : ""}`}
+                  placement="bottom"
+                >
+                  <div className="an-rc-sub an-truncate">
+                    @{b.username}
+                    {" · "}
+                    {botScopeLabel(b.scope)}
+                    {b.is_builtin ? " · 内置" : ""}
+                  </div>
+                </Tooltip>
               </div>
               <BotOnlineBadge bot={b} />
-              <span style={{ color: "var(--fg-3)", fontSize: 12 }}>›</span>
+              <AppIcon name="chevronRight" className="an-rc-chev" />
             </button>
           ))
         )}

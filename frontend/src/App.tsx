@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useTheme } from "./useTheme";
 import { useAuth } from "./hooks/useAuth";
@@ -13,6 +13,7 @@ import { AppModals } from "./components/app/AppModals";
 import { ChannelMainFrame } from "./components/app/ChannelMainFrame";
 import { ChatShell } from "./components/app/ChatShell";
 import { ChatSidePanels } from "./components/app/ChatSidePanels";
+import { LazyPanelFallback } from "./components/app/LazyPanelFallback";
 import { ChatWorkspaceView } from "./features/chat/ChatWorkspaceView";
 import { useChannelMessages } from "./features/chat/hooks/useChannelMessages";
 import { useChannelParticipants } from "./features/chat/hooks/useChannelParticipants";
@@ -60,6 +61,12 @@ type ComposerPromptTemplateOption = {
   description?: string | null;
   is_builtin?: boolean;
 };
+
+const MainFilePreviewPanel = lazy(() =>
+  import("./components/FilePreviewSidebar").then((module) => ({
+    default: module.FilePreviewPanel,
+  })),
+);
 
 export default function App() {
   const { isDark, setTheme } = useTheme();
@@ -391,7 +398,10 @@ export default function App() {
     setLightboxFileId,
     filePreviewPanel,
     setFilePreviewPanel,
+    mainFilePreviewPanel,
+    setMainFilePreviewPanel,
     openFilePreview,
+    openPersonalFilePreviewMain,
     handleMarkdownImageClick,
     handleMarkdownFileClick,
     renderFileAttachments,
@@ -405,6 +415,30 @@ export default function App() {
     720,
     "left",
   );
+  const openPersonalFileInMain = useCallback(
+    (file: FileInfo) => {
+      setSelectedId(null);
+      setMemoryTab(null);
+      setPageTopicId(null);
+      setPageTaskMsgId(null);
+      setTaskPageOpen(false);
+      openPersonalFilePreviewMain(file);
+    },
+    [
+      openPersonalFilePreviewMain,
+      setMemoryTab,
+      setPageTaskMsgId,
+      setPageTopicId,
+      setSelectedId,
+      setTaskPageOpen,
+    ],
+  );
+  useEffect(() => {
+    if (selectedId) setMainFilePreviewPanel(null);
+  }, [selectedId, setMainFilePreviewPanel]);
+  useEffect(() => {
+    if (!isPersonalWorkspace) setMainFilePreviewPanel(null);
+  }, [isPersonalWorkspace, setMainFilePreviewPanel]);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1280,6 +1314,7 @@ export default function App() {
             onOpenCreateChannel={() => setCreateChannelOpen(true)}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenFilePreview={openFilePreview}
+            onOpenPersonalFileMain={openPersonalFileInMain}
           />
         }
       >
@@ -1319,6 +1354,22 @@ export default function App() {
               }
             }}
           >
+            {mainFilePreviewPanel && isPersonalWorkspace ? (
+              <Suspense fallback={<LazyPanelFallback />}>
+                <MainFilePreviewPanel
+                  url={mainFilePreviewPanel.url}
+                  filename={mainFilePreviewPanel.filename}
+                  contentType={mainFilePreviewPanel.contentType}
+                  sizeBytes={mainFilePreviewPanel.sizeBytes}
+                  subtitle={mainFilePreviewPanel.channelLabel}
+                  variant="main"
+                  onClose={() => {
+                    setMainFilePreviewPanel(null);
+                    setSelectedId(null);
+                  }}
+                />
+              </Suspense>
+            ) : (
             <ChatWorkspaceView
               selectedId={selectedId}
               selectedChannel={selectedChannel}
@@ -1525,6 +1576,7 @@ export default function App() {
               onJumpToMessage={jumpToMessage}
               onRefreshDmSession={refreshDmSession}
             />
+            )}
           </ChannelMainFrame>
 
           <ChatSidePanels
