@@ -1,10 +1,12 @@
 import type { Message } from "../types";
 
 export const MAX_LOADED_MESSAGES = 800;
+export const INITIAL_MESSAGE_PAGE_SIZE = 30;
+export const OLDER_MESSAGE_PAGE_SIZE = 60;
 export const VIRTUAL_MESSAGE_ESTIMATED_HEIGHT = 118;
 
 const VIRTUAL_MESSAGE_MIN_ROWS = 120;
-const VIRTUAL_MESSAGE_OVERSCAN_ROWS = 12;
+export const VIRTUAL_MESSAGE_OVERSCAN_ROWS = 8;
 
 export type PendingStreamDelta = {
   delta: string;

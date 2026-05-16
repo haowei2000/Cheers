@@ -2,6 +2,7 @@ import {
   lazy,
   memo,
   Suspense,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -364,44 +365,52 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
   } | null>(null);
   const hasContent = content.trim().length > 0;
 
+  const hideSelectionButton = useCallback(() => {
+    setSelectionCopy(null);
+  }, []);
+
+  const updateSelection = useCallback(() => {
+    if (!hasContent) {
+      setSelectionCopy(null);
+      return;
+    }
+    const container = bodySelectionRef.current;
+    const selection = window.getSelection();
+    if (
+      !container ||
+      !selection ||
+      selection.isCollapsed ||
+      selection.rangeCount === 0 ||
+      !selection.anchorNode ||
+      !selection.focusNode ||
+      !container.contains(selection.anchorNode) ||
+      !container.contains(selection.focusNode)
+    ) {
+      setSelectionCopy(null);
+      return;
+    }
+    const text = selection.toString().trim();
+    if (!text) {
+      setSelectionCopy(null);
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (!rect.width && !rect.height) {
+      setSelectionCopy(null);
+      return;
+    }
+    const hostRect = container.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(rect.right - hostRect.left - 36, 4),
+      Math.max(hostRect.width - 40, 4),
+    );
+    const top = Math.max(rect.top - hostRect.top - 32, 4);
+    setSelectionCopy({ text, top, left });
+  }, [hasContent]);
+
   useEffect(() => {
-    if (!hasContent) return;
-    const updateSelection = () => {
-      const container = bodySelectionRef.current;
-      const selection = window.getSelection();
-      if (
-        !container ||
-        !selection ||
-        selection.isCollapsed ||
-        selection.rangeCount === 0 ||
-        !selection.anchorNode ||
-        !selection.focusNode ||
-        !container.contains(selection.anchorNode) ||
-        !container.contains(selection.focusNode)
-      ) {
-        setSelectionCopy(null);
-        return;
-      }
-      const text = selection.toString().trim();
-      if (!text) {
-        setSelectionCopy(null);
-        return;
-      }
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      if (!rect.width && !rect.height) {
-        setSelectionCopy(null);
-        return;
-      }
-      const hostRect = container.getBoundingClientRect();
-      const left = Math.min(
-        Math.max(rect.right - hostRect.left - 36, 4),
-        Math.max(hostRect.width - 40, 4),
-      );
-      const top = Math.max(rect.top - hostRect.top - 32, 4);
-      setSelectionCopy({ text, top, left });
-    };
-    const hideSelectionButton = () => setSelectionCopy(null);
+    if (!selectionCopy) return;
     const handlePointerDown = (event: PointerEvent) => {
       const container = bodySelectionRef.current;
       if (!container || container.contains(event.target as Node)) return;
@@ -411,23 +420,20 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
       if (event.key === "Escape") hideSelectionButton();
     };
 
-    document.addEventListener("selectionchange", updateSelection);
-    document.addEventListener("mouseup", updateSelection);
-    document.addEventListener("keyup", updateSelection);
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
-    document.addEventListener("scroll", hideSelectionButton, true);
+    document.addEventListener("scroll", hideSelectionButton, {
+      capture: true,
+      passive: true,
+    });
     window.addEventListener("resize", hideSelectionButton);
     return () => {
-      document.removeEventListener("selectionchange", updateSelection);
-      document.removeEventListener("mouseup", updateSelection);
-      document.removeEventListener("keyup", updateSelection);
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("scroll", hideSelectionButton, true);
       window.removeEventListener("resize", hideSelectionButton);
     };
-  }, [hasContent]);
+  }, [hideSelectionButton, selectionCopy]);
 
   const copySelectionText = async () => {
     if (!selectionCopy?.text) return;
@@ -491,7 +497,13 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
           />
         ) : null)}
       {hasContent || streaming || bodySuffix ? (
-        <div ref={bodySelectionRef} className="relative">
+        <div
+          ref={bodySelectionRef}
+          className="relative"
+          onKeyUp={updateSelection}
+          onMouseUp={updateSelection}
+          onTouchEnd={updateSelection}
+        >
           <MessageContentClamp
             contentKey={collapseKey ?? content}
             disabled={disableAutoCollapse || !hasContent}

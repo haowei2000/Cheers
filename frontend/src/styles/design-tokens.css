@@ -1024,6 +1024,17 @@
   text-decoration: underline;
 }
 
+.an-chat-scroll {
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
+}
+
+.an-chat-virtual-row {
+  contain: layout paint style;
+  will-change: transform;
+}
+
 /* All chat message rows share one width so every stream reads as a
  * single column. It uses the same max width as the composer, centered.
  * DM bubbles keep

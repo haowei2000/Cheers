@@ -167,7 +167,7 @@ export function ChatMessageList({
   return (
                 <div
                   ref={messagesContainerRef}
-                  className="flex-1 overflow-auto"
+                  className="an-chat-scroll flex-1 overflow-auto"
                   onScroll={onMessagesScroll}
                 >
                   {loading ? (
@@ -1939,6 +1939,7 @@ export function ChatMessageList({
                                 key={virtualItem.key}
                                 ref={rowVirtualizer.measureElement}
                                 data-index={virtualItem.index}
+                                className="an-chat-virtual-row"
                                 style={{
                                   position: "absolute",
                                   top: 0,
