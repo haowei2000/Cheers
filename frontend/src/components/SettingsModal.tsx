@@ -1,13 +1,16 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import type { CurrentUser } from "../types";
 import { apiFetch } from "../api";
-import { AppIcon } from "./icons";
+import { AppIcon, type AppIconName } from "./icons";
 import { Modal } from "./Modal";
 import { AccountPane, KeychainPane } from "../features/settings/account/AccountPane";
 import { AppearancePane } from "../features/settings/appearance/AppearancePane";
 import { BulletinPane } from "../features/settings/bulletin/BulletinPane";
-import { BotPane, type BotRow } from "../features/settings/bots/BotPane";
+import { BotListSubPane } from "../features/settings/bots/BotListSubPane";
+import type { BotRow } from "../features/settings/bots/types";
 import { FriendsPane } from "../features/settings/friends/FriendsPane";
+import { ModelListSubPane } from "../features/settings/models/ModelListSubPane";
+import { TemplateListSubPane } from "../features/settings/templates/TemplateListSubPane";
 import {
   applyDensity,
   DENSITY_KEY,
@@ -27,10 +30,58 @@ interface SettingsModalProps {
   onLogout: () => void;
 }
 
-/** One pane per top-level category. Drill-down within a category (e.g.
- *  selecting a specific bot inside the Bot pane) is local state on that
- *  pane, not a separate sidebar entry. */
-type Pane = "bot" | "account" | "friends" | "appearance" | "bulletin" | "other";
+type SettingsRoute =
+  | "bots"
+  | "templates"
+  | "models"
+  | "account"
+  | "friends"
+  | "keychain"
+  | "appearance"
+  | "bulletin";
+
+type SettingsNavItem = {
+  id: SettingsRoute;
+  icon: AppIconName;
+  label: string;
+  hint: string;
+};
+
+type SettingsNavGroup = {
+  label: string;
+  items: SettingsNavItem[];
+};
+
+const SETTINGS_NAV: SettingsNavGroup[] = [
+  {
+    label: "智能体",
+    items: [
+      { id: "bots", icon: "bot", label: "Bot", hint: "账号与状态" },
+      { id: "templates", icon: "note", label: "模板", hint: "Prompt 复用" },
+      { id: "models", icon: "model", label: "模型", hint: "LLM Provider" },
+    ],
+  },
+  {
+    label: "个人",
+    items: [
+      { id: "account", icon: "user", label: "账户", hint: "资料与密码" },
+      { id: "friends", icon: "userPlus", label: "好友", hint: "关系与申请" },
+      { id: "keychain", icon: "key", label: "钥匙链", hint: "密钥引用" },
+    ],
+  },
+  {
+    label: "界面",
+    items: [
+      { id: "appearance", icon: "palette", label: "外观", hint: "主题与密度" },
+    ],
+  },
+  {
+    label: "反馈",
+    items: [
+      { id: "bulletin", icon: "messageCircle", label: "留言板", hint: "反馈与记录" },
+    ],
+  },
+];
 
 export function SettingsModal({
   open,
@@ -43,7 +94,7 @@ export function SettingsModal({
   onOpenDM,
   onLogout,
 }: SettingsModalProps) {
-  const [pane, setPane] = useState<Pane>("bot");
+  const [route, setRoute] = useState<SettingsRoute>("bots");
   const [density, setDensityState] = useState<Density>(() => getStoredDensity());
   const [bots, setBots] = useState<BotRow[]>([]);
   const canManageBuiltinBots = currentUser?.role === "system_admin";
@@ -82,49 +133,51 @@ export function SettingsModal({
     applyDensity(d);
   };
 
-  const NAV_ITEMS: { id: Pane; ico: ReactNode; label: string }[] = [
-    { id: "bot", ico: "◉", label: "Bot" },
-    { id: "account", ico: "◉", label: "账户" },
-    { id: "friends", ico: "◎", label: "好友" },
-    { id: "appearance", ico: "◐", label: "外观" },
-    {
-      id: "bulletin",
-      ico: <AppIcon name="messageCircle" className="inline-block w-3.5 h-3.5 align-text-bottom" />,
-      label: "留言板",
-    },
-    { id: "other", ico: "⌘", label: "其他" },
-  ];
-
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="设置 · Settings"
-      maxWidth="max-w-3xl"
+      maxWidth="max-w-4xl"
       panelClassName="overflow-hidden"
     >
       <div className="an-modal-body -mx-5 -my-4">
-        <nav className="an-settings-nav">
-          {NAV_ITEMS.map((it) => (
-            <button
-              key={it.id}
-              type="button"
-              className={`an-sn-item ${pane === it.id ? "on" : ""}`}
-              onClick={() => setPane(it.id)}
-            >
-              <span className="an-sn-ico">{it.ico}</span> {it.label}
-            </button>
+        <nav className="an-settings-nav" aria-label="设置导航">
+          {SETTINGS_NAV.map((group) => (
+            <div key={group.label} className="an-sn-group">
+              <div className="an-sn-group-title">{group.label}</div>
+              {group.items.map((it) => (
+                <button
+                  key={it.id}
+                  type="button"
+                  className={`an-sn-item ${route === it.id ? "on" : ""}`}
+                  onClick={() => setRoute(it.id)}
+                  title={`${it.label} · ${it.hint}`}
+                  aria-current={route === it.id ? "page" : undefined}
+                >
+                  <span className="an-sn-ico">
+                    <AppIcon name={it.icon} />
+                  </span>
+                  <span className="an-sn-copy">
+                    <span className="an-sn-label">{it.label}</span>
+                    <span className="an-sn-hint">{it.hint}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="an-settings-pane">
-          {pane === "bot" && (
-            <BotPane
+          {route === "bots" && (
+            <BotListSubPane
               bots={visibleBots}
               authToken={authToken}
               onChanged={reloadBots}
             />
           )}
-          {pane === "account" && (
+          {route === "templates" && <TemplateListSubPane authToken={authToken} />}
+          {route === "models" && <ModelListSubPane authToken={authToken} />}
+          {route === "account" && (
             <AccountPane
               currentUser={currentUser}
               authToken={authToken}
@@ -135,14 +188,14 @@ export function SettingsModal({
               }}
             />
           )}
-          {pane === "friends" && (
+          {route === "friends" && (
             <FriendsPane
               currentUserId={currentUser?.user_id || ""}
               authToken={authToken}
               onOpenDM={onOpenDM}
             />
           )}
-          {pane === "appearance" && (
+          {route === "appearance" && (
             <AppearancePane
               isDark={isDark}
               setTheme={setTheme}
@@ -150,15 +203,25 @@ export function SettingsModal({
               setDensity={changeDensity}
             />
           )}
-          {pane === "bulletin" && (
+          {route === "bulletin" && (
             <BulletinPane
               authToken={authToken}
               currentUserId={currentUser?.user_id || ""}
               userRole={currentUser?.role || ""}
             />
           )}
-          {pane === "other" && authToken && (
+          {route === "keychain" && authToken && (
             <KeychainPane authToken={authToken} />
+          )}
+          {route === "keychain" && !authToken && (
+            <div className="an-pane">
+              <div className="an-pane-head">
+                <div>
+                  <div className="an-pane-title">钥匙链</div>
+                  <div className="an-pane-sub">登录后可管理密钥引用。</div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>

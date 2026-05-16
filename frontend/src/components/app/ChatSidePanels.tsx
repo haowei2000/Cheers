@@ -1,6 +1,7 @@
 import { lazy, Suspense, type MouseEvent } from "react";
 import type { ContextData, FileInfo } from "../../types";
 import type { MemoryTab } from "../ChannelHeader";
+import type { FilePreviewPanelState } from "../../features/chat/hooks/useFilePreviewController";
 
 const MemoryPanel = lazy(() =>
   import("../MemoryPanel").then((module) => ({ default: module.MemoryPanel })),
@@ -10,13 +11,6 @@ const FilePreviewSidebar = lazy(() =>
     default: module.FilePreviewSidebar,
   })),
 );
-
-export type FilePreviewPanelState = {
-  url: string;
-  filename: string;
-  contentType?: string | null;
-  sizeBytes?: number | null;
-};
 
 type ChannelFilePreview = {
   file_id: string;

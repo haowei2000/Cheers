@@ -1,6 +1,7 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { AppIcon } from "../../components/icons/AppIcon";
 import { ChannelHeader, type MemoryTab } from "../../components/ChannelHeader";
+import { useLanguage } from "../../i18n";
 import {
   MessageComposer,
   type MessageComposerProps,
@@ -85,6 +86,8 @@ export function ChatWorkspaceView({
   onJumpToMessage,
   onRefreshDmSession,
 }: ChatWorkspaceViewProps) {
+  const { isChinese } = useLanguage();
+  const mobileBrandLabel = isChinese ? "智枢协作" : "AgentNEXUS";
   const topics = topicRoots
     .map((root) => {
       const replies = topicRepliesOf(root.msg_id);
@@ -192,8 +195,11 @@ export function ChatWorkspaceView({
               >
                 <AppIcon name="menu" className="w-6 h-6" />
               </button>
-              <span className="text-sm font-semibold text-gray-700">
-                智枢协作
+              <span
+                className="text-sm font-semibold text-gray-700"
+                data-i18n-skip
+              >
+                {mobileBrandLabel}
               </span>
             </div>
           )}

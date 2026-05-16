@@ -46,14 +46,14 @@ export function CreateWorkspaceModal({
               className="block text-sm font-medium mb-1"
               style={{ color: "var(--fg-2)" }}
             >
-              头像
+              图标
             </label>
             <div className="flex flex-col gap-2">
               <input
                 type="text"
                 value={avatarUrl}
                 onChange={(e) => onAvatarUrlChange(e.target.value)}
-                placeholder="https://example.com/workspace.png"
+                placeholder="图标 URL 或选择内置图标"
                 className="an-input"
               />
               <AvatarIconPicker

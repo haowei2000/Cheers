@@ -135,18 +135,9 @@ export function BotNewPane({
             <div className="an-rc-title">Bot Token</div>
             <div style={{ display: "flex", gap: 6 }}>
               <code
+                className="an-code-pill"
                 style={{
                   flex: 1,
-                  padding: "8px 10px",
-                  background: "var(--bg-0)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  color: "var(--fg-1)",
-                  userSelect: "all",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
                 }}
               >
                 {issued.token}
@@ -157,16 +148,7 @@ export function BotNewPane({
                   navigator.clipboard.writeText(issued.token);
                   toast.success("Token 已复制");
                 }}
-                style={{
-                  padding: "8px 12px",
-                  background: "var(--surface-soft)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  color: "var(--fg-2)",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
+                className="an-btn an-btn-sm"
               >
                 复制
               </button>
@@ -236,18 +218,10 @@ export function BotNewPane({
           </div>
           <div className="an-pane-sub">
             <button
-              type="button"
-              onClick={() => setStep(1)}
-              style={{
-                background: "transparent",
-                border: 0,
-                color: "var(--accent)",
-                fontSize: 12,
-                padding: 0,
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
+            type="button"
+            onClick={() => setStep(1)}
+            className="an-back"
+          >
               ← 重新选择类型
             </button>
           </div>
@@ -381,16 +355,7 @@ export function BotNewPane({
           <button
             type="button"
             onClick={() => setStep(1)}
-            style={{
-              padding: "8px 12px",
-              background: "transparent",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              fontSize: 13,
-              color: "var(--fg-2)",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
+            className="an-btn"
           >
             上一步
           </button>
