@@ -23,6 +23,8 @@ import {
 } from "./BotShared";
 import type { BotConnectionTestResult, BotRow, BotScope, ModelItem, TemplateItem } from "./types";
 
+type BotSettingsTab = "profile" | "runtime" | "status";
+
 export function BotEditPane({
   bot,
   authToken,
@@ -49,6 +51,7 @@ export function BotEditPane({
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [modelId, setModelId] = useState(bot.model_id || "");
   const [templateId, setTemplateId] = useState(bot.template_id || "");
+  const [botTab, setBotTab] = useState<BotSettingsTab>("profile");
 
   useEffect(() => {
     setDisplayName(bot.display_name || "");
@@ -212,7 +215,10 @@ export function BotEditPane({
 
   return (
     <div className="an-pane">
-      <div className="an-pane-head">
+      <div
+        className="an-pane-head"
+        style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <BotAvatar
             label={displayName || bot.username}
@@ -231,9 +237,42 @@ export function BotEditPane({
             </div>
           </div>
         </div>
-        <BotOnlineBadge bot={bot} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+          <BotOnlineBadge bot={bot} />
+          <div className="an-seg" role="tablist" aria-label="Bot 设置视图">
+            <button
+              type="button"
+              className={botTab === "profile" ? "on" : ""}
+              onClick={() => setBotTab("profile")}
+              role="tab"
+              aria-selected={botTab === "profile"}
+            >
+              资料
+            </button>
+            <button
+              type="button"
+              className={botTab === "runtime" ? "on" : ""}
+              onClick={() => setBotTab("runtime")}
+              role="tab"
+              aria-selected={botTab === "runtime"}
+            >
+              配置
+            </button>
+            <button
+              type="button"
+              className={botTab === "status" ? "on" : ""}
+              onClick={() => setBotTab("status")}
+              role="tab"
+              aria-selected={botTab === "status"}
+            >
+              状态
+            </button>
+          </div>
+        </div>
       </div>
       <div className="an-list-table">
+        {botTab === "status" && (
+          <>
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <div>
@@ -273,6 +312,10 @@ export function BotEditPane({
         {(bot.binding_type || "http") === "agent_bridge" && (
           <BotSessionsPanel botId={bot.bot_id} authToken={authToken} />
         )}
+          </>
+        )}
+        {botTab === "runtime" && (
+          <>
         {isHttpBot && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
             <div className="an-rc-title">LLM 模型</div>
@@ -339,6 +382,15 @@ export function BotEditPane({
             </div>
           )}
         </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <PrimaryButton onClick={() => void save()} disabled={saving}>
+            {saving ? "保存中…" : "保存配置"}
+          </PrimaryButton>
+        </div>
+          </>
+        )}
+        {botTab === "profile" && (
+          <>
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">基本信息</div>
           <Field label="显示名称">
@@ -418,6 +470,8 @@ export function BotEditPane({
         <div className="an-row-card an-type-meta">
           高级配置已收敛到设置弹窗；HTTP Bot 可在此切换模型与模板，Agent Bridge Bot 可切换任务模板。
         </div>
+          </>
+        )}
       </div>
     </div>
   );

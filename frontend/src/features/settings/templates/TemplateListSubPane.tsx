@@ -20,6 +20,8 @@ type TemplateRow = {
   is_builtin?: boolean;
 };
 
+type TemplateSettingsTab = "identity" | "template";
+
 const TEMPLATE_VARS: { name: string; desc: string }[] = [
   { name: "memory", desc: "频道记忆上下文" },
   { name: "message", desc: "用户消息" },
@@ -184,6 +186,7 @@ function TemplateForm({
   const [varDropdownOpen, setVarDropdownOpen] = useState(false);
   const [varFilter, setVarFilter] = useState("");
   const [varDropdownStart, setVarDropdownStart] = useState(0);
+  const [settingsTab, setSettingsTab] = useState<TemplateSettingsTab>("identity");
 
   const save = async () => {
     if (!name.trim()) return toast.error("模板名称必填");
@@ -242,134 +245,165 @@ function TemplateForm({
 
   return (
     <div className="an-pane">
-      <div className="an-pane-head">
+      <div
+        className="an-pane-head"
+        style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
+      >
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "新建模板"}</div>
           {isBuiltin && <div className="an-pane-sub">系统内置模板（只读）</div>}
         </div>
+        <div className="an-seg" role="tablist" aria-label="模板设置视图">
+          <button
+            type="button"
+            className={settingsTab === "identity" ? "on" : ""}
+            onClick={() => setSettingsTab("identity")}
+            role="tab"
+            aria-selected={settingsTab === "identity"}
+          >
+            基础
+          </button>
+          <button
+            type="button"
+            className={settingsTab === "template" ? "on" : ""}
+            onClick={() => setSettingsTab("template")}
+            role="tab"
+            aria-selected={settingsTab === "template"}
+          >
+            模板
+          </button>
+        </div>
       </div>
       <div className="an-list-table">
-        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <Field label="名称">
-            <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
-          </Field>
-          <Field label="User Template（输入 {{ 弹出可用变量）">
-            <div style={{ position: "relative" }}>
-              <textarea
-                ref={userTplRef}
-                value={userTemplate}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  const pos = e.target.selectionStart ?? v.length;
-                  setUserTemplate(v);
-                  const lastBraces = v.lastIndexOf("{{", pos - 1);
-                  const between = lastBraces !== -1 ? v.slice(lastBraces + 2, pos) : "";
-                  if (
-                    lastBraces !== -1 &&
-                    !between.includes("}}") &&
-                    !between.includes("\n") &&
-                    !between.includes(" ")
-                  ) {
-                    setVarFilter(between);
-                    setVarDropdownStart(lastBraces);
-                    setVarDropdownOpen(true);
-                  } else {
-                    setVarDropdownOpen(false);
-                  }
-                }}
-                onBlur={() => setTimeout(() => setVarDropdownOpen(false), 150)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && varDropdownOpen) {
-                    setVarDropdownOpen(false);
-                    e.stopPropagation();
-                  }
-                }}
-                rows={4}
-                className={`${inputCls} resize-none`}
-                disabled={isBuiltin}
-                style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)" }}
-              />
-              {varDropdownOpen && (() => {
-                const matched = TEMPLATE_VARS.filter((v) =>
-                  v.name.toLowerCase().includes(varFilter.toLowerCase()),
-                );
-                if (matched.length === 0) return null;
-                return (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: "100%",
-                      left: 0,
-                      right: 0,
-                      marginTop: 4,
-                      maxHeight: 240,
-                      overflowY: "auto",
-                      zIndex: 50,
-                      background: "var(--bg-1)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 8,
-                      boxShadow: "0 8px 24px var(--shadow)",
-                    }}
-                  >
-                    {matched.map((v) => (
-                      <button
-                        key={v.name}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          const cur = userTemplate;
-                          const el = userTplRef.current;
-                          const pos = el?.selectionStart ?? cur.length;
-                          const insert = `{{${v.name}}}`;
-                          const next = cur.slice(0, varDropdownStart) + insert + cur.slice(pos);
-                          setUserTemplate(next);
-                          setVarDropdownOpen(false);
-                          requestAnimationFrame(() => {
-                            el?.focus();
-                            const cursor = varDropdownStart + insert.length;
-                            el?.setSelectionRange(cursor, cursor);
-                          });
-                        }}
-                        style={{
-                          display: "flex",
-                          width: "100%",
-                          alignItems: "center",
-                          gap: 12,
-                          padding: "8px 12px",
-                          textAlign: "left",
-                          background: "transparent",
-                          border: 0,
-                          cursor: "pointer",
-                        }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.background = "var(--surface-soft)")
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.background = "transparent")
-                        }
-                      >
-                        <code style={{ color: "var(--accent)", fontFamily: "var(--font-mono, ui-monospace, monospace)" }}>{`{{${v.name}}}`}</code>
-                        <span style={{ color: "var(--fg-3)" }}>{v.desc}</span>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          </Field>
-          {!isBuiltin && (
-            <div style={{ display: "flex", justifyContent: isEdit ? "space-between" : "flex-end" }}>
-              {isEdit && (
-                <DangerButton onClick={remove} disabled={deleting}>
-                  {deleting ? "删除中…" : "删除"}
-                </DangerButton>
-              )}
-              <PrimaryButton onClick={save} disabled={saving}>
-                {saving ? "保存中…" : isEdit ? "保存" : "创建"}
-              </PrimaryButton>
-            </div>
-          )}
-        </div>
+        {settingsTab === "identity" && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <Field label="名称">
+              <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
+            </Field>
+          </div>
+        )}
+
+        {settingsTab === "template" && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <Field label="User Template（输入 {{ 弹出可用变量）">
+              <div style={{ position: "relative" }}>
+                <textarea
+                  ref={userTplRef}
+                  value={userTemplate}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const pos = e.target.selectionStart ?? v.length;
+                    setUserTemplate(v);
+                    const lastBraces = v.lastIndexOf("{{", pos - 1);
+                    const between = lastBraces !== -1 ? v.slice(lastBraces + 2, pos) : "";
+                    if (
+                      lastBraces !== -1 &&
+                      !between.includes("}}") &&
+                      !between.includes("\n") &&
+                      !between.includes(" ")
+                    ) {
+                      setVarFilter(between);
+                      setVarDropdownStart(lastBraces);
+                      setVarDropdownOpen(true);
+                    } else {
+                      setVarDropdownOpen(false);
+                    }
+                  }}
+                  onBlur={() => setTimeout(() => setVarDropdownOpen(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape" && varDropdownOpen) {
+                      setVarDropdownOpen(false);
+                      e.stopPropagation();
+                    }
+                  }}
+                  rows={4}
+                  className={`${inputCls} resize-none`}
+                  disabled={isBuiltin}
+                  style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)" }}
+                />
+                {varDropdownOpen && (() => {
+                  const matched = TEMPLATE_VARS.filter((v) =>
+                    v.name.toLowerCase().includes(varFilter.toLowerCase()),
+                  );
+                  if (matched.length === 0) return null;
+                  return (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 4,
+                        maxHeight: 240,
+                        overflowY: "auto",
+                        zIndex: 50,
+                        background: "var(--bg-1)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        boxShadow: "0 8px 24px var(--shadow)",
+                      }}
+                    >
+                      {matched.map((v) => (
+                        <button
+                          key={v.name}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            const cur = userTemplate;
+                            const el = userTplRef.current;
+                            const pos = el?.selectionStart ?? cur.length;
+                            const insert = `{{${v.name}}}`;
+                            const next = cur.slice(0, varDropdownStart) + insert + cur.slice(pos);
+                            setUserTemplate(next);
+                            setVarDropdownOpen(false);
+                            requestAnimationFrame(() => {
+                              el?.focus();
+                              const cursor = varDropdownStart + insert.length;
+                              el?.setSelectionRange(cursor, cursor);
+                            });
+                          }}
+                          style={{
+                            display: "flex",
+                            width: "100%",
+                            alignItems: "center",
+                            gap: 12,
+                            padding: "8px 12px",
+                            textAlign: "left",
+                            background: "transparent",
+                            border: 0,
+                            cursor: "pointer",
+                          }}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.background = "var(--surface-soft)")
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.background = "transparent")
+                          }
+                        >
+                          <code style={{ color: "var(--accent)", fontFamily: "var(--font-mono, ui-monospace, monospace)" }}>{`{{${v.name}}}`}</code>
+                          <span style={{ color: "var(--fg-3)" }}>{v.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </Field>
+          </div>
+        )}
+
+        {!isBuiltin && (
+          <div style={{ display: "flex", justifyContent: isEdit ? "space-between" : "flex-end" }}>
+            {isEdit && (
+              <DangerButton onClick={remove} disabled={deleting}>
+                {deleting ? "删除中…" : "删除"}
+              </DangerButton>
+            )}
+            <PrimaryButton onClick={save} disabled={saving}>
+              {saving ? "保存中…" : isEdit ? "保存" : "创建"}
+            </PrimaryButton>
+          </div>
+        )}
       </div>
     </div>
   );

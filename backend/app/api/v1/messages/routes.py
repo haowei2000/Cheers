@@ -154,8 +154,13 @@ async def list_messages(
 ) -> APIResponse:
     await ChannelService(session).require_channel_member(channel_id, current_user)
     svc = MessageService(session)
-    messages, file_map = await svc.list_messages(channel_id, limit=limit, before_id=before_id)
-    return APIResponse.ok([_serialize(m, file_map) for m in messages])
+    messages, file_map = await svc.list_messages(channel_id, limit=limit + 1, before_id=before_id)
+    has_more = len(messages) > limit
+    visible_messages = messages[-limit:] if has_more else messages
+    return APIResponse.ok(
+        [_serialize(m, file_map) for m in visible_messages],
+        meta={"has_more": has_more, "limit": limit},
+    )
 
 
 @router.get("/topics/{root_msg_id}", response_model=APIResponse[list[dict]])

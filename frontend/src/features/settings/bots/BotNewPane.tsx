@@ -14,6 +14,8 @@ import {
 import { BotScopeControl } from "./BotShared";
 import type { BindingType, BotRow, BotScope, ModelItem, TemplateItem } from "./types";
 
+type BotNewConfigTab = "profile" | "runtime";
+
 export function BotNewPane({
   authToken,
   onCreated,
@@ -39,6 +41,7 @@ export function BotNewPane({
   const [creating, setCreating] = useState(false);
   const [issued, setIssued] = useState<{ token: string; bot: BotRow } | null>(null);
   const selectedModel = models.find((m) => m.model_id === modelId);
+  const [configTab, setConfigTab] = useState<BotNewConfigTab>("profile");
 
   useEffect(() => {
     if (step !== 2) return;
@@ -226,8 +229,29 @@ export function BotNewPane({
             </button>
           </div>
         </div>
+        <div className="an-seg" role="tablist" aria-label="新建 Bot 配置视图">
+          <button
+            type="button"
+            className={configTab === "profile" ? "on" : ""}
+            onClick={() => setConfigTab("profile")}
+            role="tab"
+            aria-selected={configTab === "profile"}
+          >
+            资料
+          </button>
+          <button
+            type="button"
+            className={configTab === "runtime" ? "on" : ""}
+            onClick={() => setConfigTab("runtime")}
+            role="tab"
+            aria-selected={configTab === "runtime"}
+          >
+            配置
+          </button>
+        </div>
       </div>
       <div className="an-list-table">
+        {configTab === "profile" && (
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
           <div className="an-rc-title">基本信息</div>
           <Field label="用户名（@后跟的标识）">
@@ -275,7 +299,10 @@ export function BotNewPane({
             <BotScopeControl value={scope} onChange={setScope} disabled={creating} />
           </Field>
         </div>
+        )}
 
+        {configTab === "runtime" && (
+          <>
         {bindingType === "http" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
             <div className="an-rc-title">LLM 模型</div>
@@ -349,6 +376,8 @@ export function BotNewPane({
               />
             </Field>
           </div>
+        )}
+          </>
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>

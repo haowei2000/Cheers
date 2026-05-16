@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction, UIEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AuthFetch } from "../../../api/client";
@@ -18,6 +18,8 @@ import {
   type MessageStore,
 } from "../../../lib/message-store";
 import type { Message } from "../../../types";
+
+const MESSAGE_PAGE_SIZE = 50;
 
 interface UseChannelMessagesOptions {
   selectedId: string | null;
@@ -74,7 +76,7 @@ export function useChannelMessages({
     lastAutoScrollChannelRef.current = null;
     setLoading(true);
 
-    authFetch(`${API}/channels/${targetChannelId}/messages`, {
+    authFetch(`${API}/channels/${targetChannelId}/messages?limit=${MESSAGE_PAGE_SIZE}`, {
       signal: controller.signal,
     })
       .then((response) => response.json())
@@ -89,7 +91,7 @@ export function useChannelMessages({
         const visibleData = trimToRecentMessages(items);
         setMessages(visibleData);
         setHasMore(
-          Boolean(data.meta?.has_more ?? items.length >= 30) &&
+          Boolean(data.meta?.has_more ?? items.length >= MESSAGE_PAGE_SIZE) &&
             visibleData.length < MAX_LOADED_MESSAGES,
         );
       })
@@ -125,7 +127,7 @@ export function useChannelMessages({
     const prevScrollHeight = container?.scrollHeight ?? 0;
     try {
       const response = await authFetch(
-        `${API}/channels/${targetChannelId}/messages?before_id=${oldest.msg_id}&limit=50`,
+        `${API}/channels/${targetChannelId}/messages?before_id=${oldest.msg_id}&limit=${MESSAGE_PAGE_SIZE}`,
       );
       const data = await response.json();
       const older = data.data || [];
@@ -137,7 +139,7 @@ export function useChannelMessages({
       const hitWindowCap =
         messages.length + older.length >= MAX_LOADED_MESSAGES;
       setHasMore(
-        !hitWindowCap && Boolean(data.meta?.has_more ?? older.length >= 50),
+        !hitWindowCap && Boolean(data.meta?.has_more ?? older.length >= MESSAGE_PAGE_SIZE),
       );
       setMessageStore((prev) =>
         trimMessageStoreToRecent(
@@ -273,7 +275,7 @@ export function useChannelMessages({
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
     if (!selectedId || topicRoots.length === 0) return;
     const container = messagesContainerRef.current;
@@ -281,13 +283,9 @@ export function useChannelMessages({
     lastAutoScrollChannelRef.current = selectedId;
     if (!channelChanged && !stickToBottomRef.current) return;
 
-    requestAnimationFrame(() => {
-      rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
-      requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight;
-        stickToBottomRef.current = true;
-      });
-    });
+    rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
+    container.scrollTop = container.scrollHeight;
+    stickToBottomRef.current = true;
   }, [messages.length, rowVirtualizer, selectedId, topicRoots.length]);
 
   const pageTopicSourceMessages = useMemo(
