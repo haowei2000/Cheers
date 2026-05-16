@@ -23,6 +23,9 @@ import {
 import type { Message } from "../../../types";
 
 const CHANNEL_CACHE_REVALIDATE_MS = 5_000;
+const JUMP_TO_BOTTOM_BOTTOM_GAP = 240;
+const JUMP_TO_BOTTOM_SCROLL_DISTANCE = 140;
+const STICK_TO_BOTTOM_GAP = 160;
 
 interface UseChannelMessagesOptions {
   selectedId: string | null;
@@ -66,6 +69,7 @@ export function useChannelMessages({
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const isLoadingOlderRef = useRef(false);
   const stickToBottomRef = useRef(true);
@@ -73,6 +77,15 @@ export function useChannelMessages({
   const channelMessageCacheRef = useRef<Partial<Record<string, ChannelMessageCacheEntry>>>({});
   const preloadRequestsRef = useRef<Partial<Record<string, Promise<ChannelMessageCacheEntry | null>>>>({});
   const cacheGenerationRef = useRef(0);
+  const showJumpToBottomRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
+  const downwardScrollDistanceRef = useRef(0);
+
+  const setJumpToBottomVisible = useCallback((visible: boolean) => {
+    if (showJumpToBottomRef.current === visible) return;
+    showJumpToBottomRef.current = visible;
+    setShowJumpToBottom(visible);
+  }, []);
 
   const fetchInitialMessages = useCallback(
     async (
@@ -139,6 +152,7 @@ export function useChannelMessages({
       setMessageStore(emptyMessageStore());
       setHasMore(true);
       setLoading(false);
+      setJumpToBottomVisible(false);
       return;
     }
     const targetChannelId = selectedId;
@@ -146,6 +160,9 @@ export function useChannelMessages({
     const cached = channelMessageCacheRef.current[targetChannelId];
     stickToBottomRef.current = true;
     lastAutoScrollChannelRef.current = null;
+    lastScrollTopRef.current = 0;
+    downwardScrollDistanceRef.current = 0;
+    setJumpToBottomVisible(false);
     if (cached) {
       setMessageStore(cached.store);
       setHasMore(cached.hasMore);
@@ -200,7 +217,7 @@ export function useChannelMessages({
       });
 
     return () => controller.abort();
-  }, [fetchInitialMessages, selectedId, selectedIdRef]);
+  }, [fetchInitialMessages, selectedId, selectedIdRef, setJumpToBottomVisible]);
 
   useEffect(() => {
     if (!selectedId || loading) return;
@@ -251,7 +268,7 @@ export function useChannelMessages({
           container.scrollTop = container.scrollHeight - prevScrollHeight;
           stickToBottomRef.current =
             container.scrollHeight - container.scrollTop - container.clientHeight <
-            160;
+            STICK_TO_BOTTOM_GAP;
         }
         isLoadingOlderRef.current = false;
       });
@@ -266,13 +283,34 @@ export function useChannelMessages({
   const handleMessagesScroll = useCallback(
     (event: UIEvent<HTMLDivElement>) => {
       const target = event.currentTarget;
-      stickToBottomRef.current =
-        target.scrollHeight - target.scrollTop - target.clientHeight < 160;
+      const scrollTop = target.scrollTop;
+      const bottomGap = target.scrollHeight - scrollTop - target.clientHeight;
+      const nearBottom = bottomGap < STICK_TO_BOTTOM_GAP;
+      const delta = scrollTop - lastScrollTopRef.current;
+      lastScrollTopRef.current = scrollTop;
+      stickToBottomRef.current = nearBottom;
+
+      if (nearBottom) {
+        downwardScrollDistanceRef.current = 0;
+        setJumpToBottomVisible(false);
+      } else if (delta > 0) {
+        downwardScrollDistanceRef.current += delta;
+        if (
+          bottomGap > JUMP_TO_BOTTOM_BOTTOM_GAP &&
+          downwardScrollDistanceRef.current > JUMP_TO_BOTTOM_SCROLL_DISTANCE
+        ) {
+          setJumpToBottomVisible(true);
+        }
+      } else if (delta < -8) {
+        downwardScrollDistanceRef.current = 0;
+        setJumpToBottomVisible(false);
+      }
+
       if (target.scrollTop < 100 && hasMore && !loadingMore) {
         loadMoreMessages();
       }
     },
-    [hasMore, loadingMore, loadMoreMessages],
+    [hasMore, loadingMore, loadMoreMessages, setJumpToBottomVisible],
   );
 
   useEffect(() => {
@@ -282,11 +320,12 @@ export function useChannelMessages({
     const updateMetrics = () => {
       const wasStuckToBottom = stickToBottomRef.current;
       stickToBottomRef.current =
-        container.scrollHeight - container.scrollTop - container.clientHeight < 160;
+        container.scrollHeight - container.scrollTop - container.clientHeight < STICK_TO_BOTTOM_GAP;
       if (wasStuckToBottom && !isLoadingOlderRef.current) {
         requestAnimationFrame(() => {
           container.scrollTop = container.scrollHeight;
           stickToBottomRef.current = true;
+          setJumpToBottomVisible(false);
         });
       }
     };
@@ -376,6 +415,23 @@ export function useChannelMessages({
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
 
+  const jumpToBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    downwardScrollDistanceRef.current = 0;
+    setJumpToBottomVisible(false);
+    stickToBottomRef.current = true;
+    if (topicRoots.length > 0) {
+      rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
+    }
+    requestAnimationFrame(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: "smooth",
+      });
+    });
+  }, [rowVirtualizer, setJumpToBottomVisible, topicRoots.length]);
+
   useLayoutEffect(() => {
     if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
     if (!selectedId || topicRoots.length === 0) return;
@@ -387,7 +443,8 @@ export function useChannelMessages({
     rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
     container.scrollTop = container.scrollHeight;
     stickToBottomRef.current = true;
-  }, [messages.length, rowVirtualizer, selectedId, topicRoots.length]);
+    setJumpToBottomVisible(false);
+  }, [messages.length, rowVirtualizer, selectedId, setJumpToBottomVisible, topicRoots.length]);
 
   const pageTopicSourceMessages = useMemo(
     () => mergeMessagesChronologically(messages, pageTopicMessages),
@@ -414,6 +471,8 @@ export function useChannelMessages({
     clarifyAnsweredParentIds,
     rowVirtualizer,
     virtualItems,
+    showJumpToBottom,
+    jumpToBottom,
     pageTopicSourceMessages,
     pageTopicRepliesOf,
     preloadChannelMessages,
