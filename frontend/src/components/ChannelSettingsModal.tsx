@@ -21,11 +21,11 @@ type PromptTemplateItem = {
 };
 
 function roleText(role?: string | null): string {
-  if (role === "owner") return "所有者";
-  if (role === "admin") return "管理员";
-  if (role === "workspace_admin") return "工作空间管理员";
-  if (role === "system_admin") return "系统管理员";
-  return "成员";
+  if (role === "owner") return "Owner";
+  if (role === "admin") return "Admins";
+  if (role === "workspace_admin") return "Workspace admins";
+  if (role === "system_admin") return "System administrator";
+  return "Members";
 }
 
 function normalizeScope(value?: string | null): ChannelScope {
@@ -104,7 +104,7 @@ export function ChannelSettingsModal({
       setMyRole(data.permissions.my_role);
       setMembers(data.members || []);
     } catch (err) {
-      toast.error((err as Error).message || "加载频道设置失败");
+      toast.error((err as Error).message || "Failed to load channel settings");
     } finally {
       setLoading(false);
     }
@@ -146,9 +146,9 @@ export function ChannelSettingsModal({
         }),
       );
       onSaved(updated);
-      toast.success("频道设置已保存");
+      toast.success("Channel settings saved");
     } catch (err) {
-      toast.error((err as Error).message || "保存失败");
+      toast.error((err as Error).message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -167,10 +167,10 @@ export function ChannelSettingsModal({
           },
         ),
       );
-      toast.success("成员角色已更新");
+      toast.success("Member role updated");
       loadSettings();
     } catch (err) {
-      toast.error((err as Error).message || "更新失败");
+      toast.error((err as Error).message || "Update failed");
     }
   };
 
@@ -186,17 +186,17 @@ export function ChannelSettingsModal({
           },
         ),
       );
-      toast.success("Bot 频道模板已更新");
+      toast.success("Bot channel template updated");
       loadSettings();
     } catch (err) {
-      toast.error((err as Error).message || "更新失败");
+      toast.error((err as Error).message || "Update failed");
     }
   };
 
   const tabs: { id: TabId; label: string; icon: JSX.Element }[] = [
-    { id: "channel", label: "频道", icon: <AppIcon name="settings" /> },
-    { id: "admins", label: "管理员", icon: <AppIcon name="users" /> },
-    { id: "bots", label: "Bot 模板", icon: <AppIcon name="model" /> },
+    { id: "channel", label: "Channels", icon: <AppIcon name="settings" /> },
+    { id: "admins", label: "Admins", icon: <AppIcon name="users" /> },
+    { id: "bots", label: "Bot templates", icon: <AppIcon name="model" /> },
   ];
   const userMembers = members
     .map((member, index) => ({ member, index }))
@@ -220,7 +220,7 @@ export function ChannelSettingsModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="频道设置"
+      title="Channel settings"
       description={`#${channel.name} · ${roleText(myRole)}`}
       maxWidth="max-w-3xl"
       panelClassName="overflow-hidden"
@@ -245,26 +245,26 @@ export function ChannelSettingsModal({
           <div className="mt-4 rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-500">
             <div className="mb-1 flex items-center gap-1.5 font-medium text-gray-700">
               <AppIcon name="shieldCheck" className="h-4 w-4" />
-              {canManage ? "可管理" : canInviteMembers || canAddBots ? "可邀请" : "只读"}
+              {canManage ? "Can manage" : canInviteMembers || canAddBots ? "Can invite" : "Read-only"}
             </div>
-            邀请成员和添加 Bot 可在频道中配置。
+            Invite members and add bots in channel configuration.
           </div>
         </nav>
 
         <section className="min-w-0 overflow-y-auto p-5">
           {loading ? (
             <div className="flex h-full items-center justify-center text-sm text-gray-400">
-              加载中…
+              Loading...
             </div>
           ) : activeTab === "channel" ? (
             <div className="max-w-xl space-y-5">
               <div className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-3">
                 <div>
                   <div className="text-sm font-medium text-gray-800">
-                    自动接管
+                    Auto takeover
                   </div>
                   <div className="text-xs text-gray-500">
-                    开启后，频道内消息会自动调用内置助手协作处理。
+                    When enabled, channel messages automatically call the built-in assistant for collaborative handling.
                   </div>
                 </div>
                 <button
@@ -290,7 +290,7 @@ export function ChannelSettingsModal({
 
               <div className="rounded-md border border-gray-200 px-3 py-3">
                 <label className="mb-2 block text-sm font-medium text-gray-800">
-                  频道范围
+                  Channel scope
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {(["workspace", "private"] as const).map((scope) => (
@@ -310,8 +310,8 @@ export function ChannelSettingsModal({
                       </div>
                       <div className="text-xs text-gray-500">
                         {scope === "workspace"
-                          ? "工作空间频道；新成员自动加入"
-                          : "私有频道；仅频道成员可见"}
+                          ? "Workspace channel; new members join automatically"
+                          : "Private channel; only channel members can see it"}
                       </div>
                     </button>
                   ))}
@@ -321,8 +321,8 @@ export function ChannelSettingsModal({
               <div className="space-y-2 rounded-md border border-gray-200 px-3 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-sm font-medium text-gray-800">成员邀请</div>
-                    <div className="text-xs text-gray-500">允许普通成员邀请人类成员加入频道。</div>
+                    <div className="text-sm font-medium text-gray-800">MembersInvite</div>
+                    <div className="text-xs text-gray-500">Allow regular members to invite human members to the channel.</div>
                   </div>
                   <button
                     type="button"
@@ -346,8 +346,8 @@ export function ChannelSettingsModal({
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-sm font-medium text-gray-800">添加 Bot</div>
-                    <div className="text-xs text-gray-500">允许普通成员添加自己可见的 Bot。</div>
+                    <div className="text-sm font-medium text-gray-800">Add Bot</div>
+                    <div className="text-xs text-gray-500">Allow regular members to add bots they can see.</div>
                   </div>
                   <button
                     type="button"
@@ -377,7 +377,7 @@ export function ChannelSettingsModal({
                   onClick={onClose}
                   className="rounded-md px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
                 >
-                  关闭
+                  Close
                 </button>
                 <button
                   type="button"
@@ -385,19 +385,19 @@ export function ChannelSettingsModal({
                   disabled={!canManage || saving}
                   className="rounded-md bg-[#1264A3] px-4 py-2 text-sm font-medium text-white hover:bg-[#0f5a94] disabled:opacity-50"
                 >
-                  {saving ? "保存中…" : "保存"}
+                  {saving ? "Saving..." : "Save"}
                 </button>
               </ModalFooter>
             </div>
           ) : activeTab === "admins" ? (
             <div className="space-y-3">
               <div className="text-sm font-semibold text-gray-900">
-                管理员设置
+                AdminsSettings
               </div>
               <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
                 {userMembers.length === 0 ? (
                   <div className="py-12 text-center text-sm text-gray-400">
-                    暂无用户成员
+                    No user members
                   </div>
                 ) : (
                   userMembers.map((member) => (
@@ -420,9 +420,9 @@ export function ChannelSettingsModal({
                           onChange={(e) => updateRole(member, e.target.value)}
                           className="an-select h-8 w-32 py-1 text-xs"
                         >
-                          <option value="member">成员</option>
-                          <option value="admin">管理员</option>
-                          <option value="owner">所有者</option>
+                          <option value="member">Members</option>
+                          <option value="admin">Admins</option>
+                          <option value="owner">Owner</option>
                         </select>
                         }
                       />
@@ -434,12 +434,12 @@ export function ChannelSettingsModal({
           ) : (
             <div className="space-y-3">
               <div className="text-sm font-semibold text-gray-900">
-                Bot 频道模板
+                Bot channel template
               </div>
               <div className="divide-y divide-gray-100 rounded-md border border-gray-200">
                 {botMembers.length === 0 ? (
                   <div className="py-12 text-center text-sm text-gray-400">
-                    暂无 Bot 成员
+                    No bots Members
                   </div>
                 ) : (
                   botMembers.map((member) => {
@@ -451,7 +451,7 @@ export function ChannelSettingsModal({
                         <MemberRow
                           as="article"
                           member={member}
-                          meta={member.template_name ? `当前模板：${member.template_name}` : "默认模板"}
+                          meta={member.template_name ? `Current template: ${member.template_name}` : "Default template"}
                           action={
                         <select
                           value={member.template_id || ""}
@@ -459,12 +459,12 @@ export function ChannelSettingsModal({
                           onChange={(e) => updateBotTemplate(member, e.target.value || null)}
                           title={
                             canEditTemplate
-                              ? "Bot 频道模板覆盖"
-                              : "只有邀请该 Bot 入频道的人可修改频道模板"
+                              ? "Bot channel template override"
+                              : "Only the person who invited this bot can edit the channel template"
                           }
                           className="an-select h-8 w-44 py-1 text-xs"
                         >
-                          <option value="">默认模板</option>
+                          <option value="">Default template</option>
                           {templates.map((template) => (
                             <option
                               key={template.template_id}

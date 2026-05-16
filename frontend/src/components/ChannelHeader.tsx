@@ -106,7 +106,7 @@ export function ChannelHeader({
       ? dmContextTitle
       : ""
     : autoAssist
-      ? "自动接管已开启"
+      ? "Auto takeover is enabled"
       : "";
   const [topicsOpen, setTopicsOpen] = useState(false);
   const popRef = useRef<HTMLDivElement | null>(null);
@@ -170,14 +170,14 @@ export function ChannelHeader({
       </div>
 
       {/* Tasks + memory button group */}
-      <div className="an-mem-cluster" role="group" aria-label="频道工具">
+      <div className="an-mem-cluster" role="group" aria-label="Channel tools">
         {onOpenTasks && (
           <button
             type="button"
             className={`an-mc-btn ${taskActive ? "on" : ""}`}
             onClick={onOpenTasks}
-            title="频道后台任务"
-            aria-label={`频道后台任务，${taskCount} 个`}
+            title="Channel background tasks"
+            aria-label={`Channel background tasks,${taskCount} `}
             aria-pressed={taskActive}
           >
             <AppIcon name="task" />
@@ -193,7 +193,7 @@ export function ChannelHeader({
               type="button"
               className={`an-mc-btn ${on ? "on" : ""}`}
               onClick={() => onSetMemoryTab(on ? null : t.id)}
-              title={`频道记忆 · ${t.label}`}
+              title={`Channel memory · ${t.label}`}
               aria-pressed={on}
             >
               {t.icon}
@@ -210,10 +210,10 @@ export function ChannelHeader({
             type="button"
             className={`an-topics-btn ${topicsOpen ? "on" : ""}`}
             onClick={() => setTopicsOpen((v) => !v)}
-            title="频道主题"
+            title="Channel topics"
           >
             <AppIcon name="messageCircle" className="w-4 h-4" />
-            <span className="hidden sm:inline">主题</span>
+            <span className="hidden sm:inline">Topics</span>
             <span className="an-tb-n">{topics.length}</span>
           </button>
           {topicsOpen && (
@@ -225,9 +225,9 @@ export function ChannelHeader({
                 position: "absolute",
               }}
             >
-              <div className="an-hd">频道内的主题</div>
+              <div className="an-hd">Topics in this channel</div>
               {topics.length === 0 ? (
-                <div className="an-menu-empty">暂无主题</div>
+                <div className="an-menu-empty">No topics</div>
               ) : (
                 topics.map((t) => (
                   <button
@@ -240,13 +240,13 @@ export function ChannelHeader({
                       else onJumpToMessage?.(t.rootId);
                     }}
                   >
-                    <div className="an-it-t">{t.title || "(无标题)"}</div>
+                    <div className="an-it-t">{t.title || "(No title)"}</div>
                     <div className="an-it-s">
-                      <span>{t.count} 条回复</span>
+                      <span>{t.count} replies</span>
                       {t.lastTime && (
                         <>
                           <span className="an-d" />
-                          <span>最近 {t.lastTime}</span>
+                          <span>Recent {t.lastTime}</span>
                         </>
                       )}
                     </div>
@@ -262,7 +262,7 @@ export function ChannelHeader({
         <button
           type="button"
           onClick={onOpenChannelSettings}
-          title="频道设置"
+          title="Channel settings"
           className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
           style={{ color: "var(--fg-3)" }}
         >

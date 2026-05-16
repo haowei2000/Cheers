@@ -5,9 +5,9 @@ export function relativeTime(iso: string | null): string {
   const d = new Date(iso);
   const now = Date.now();
   const diff = now - d.getTime();
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}  minutes ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}  hours ago`;
   return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }
 
@@ -30,17 +30,17 @@ export function parseFilesIndex(md: string): FileCard[] {
         fileId = m[1];
         continue;
       }
-      const m2 = line.match(/^-\s*类型:\s*(.+)/);
+      const m2 = line.match(/^-\s*Type:\s*(.+)/);
       if (m2) {
         contentType = m2[1].trim();
         continue;
       }
-      const m3 = line.match(/^-\s*摘要:\s*(.+)/);
+      const m3 = line.match(/^-\s*(?:Summary|\u6458\u8981):\s*(.+)/);
       if (m3) {
         summary = m3[1].trim();
         continue;
       }
-      const m4 = line.match(/^-\s*登记时间:\s*(.+)/);
+      const m4 = line.match(/^-\s*(?:Registered at|\u767b\u8bb0\u65f6\u95f4):\s*(.+)/);
       if (m4) {
         time = m4[1].trim();
       }

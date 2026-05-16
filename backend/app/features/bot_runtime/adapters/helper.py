@@ -1,4 +1,4 @@
-"""帮助助手 Bot 适配器：加载 docs/help/ 下的帮助文档作为上下文，回答 AgentNexus 使用问题。"""
+"""Helper module."""
 
 import logging
 import re
@@ -27,10 +27,7 @@ _cached_docs: str | None = None
 
 
 def _load_docs_from_folder() -> str:
-    """从 docs/help/ 文件夹加载所有 .md 文件内容，按文件名排序拼接为字符串。
-
-    文件名排序保证加载顺序稳定。跳过目录本身。
-    """
+    """Load docs from folder."""
     if not _DOCS_DIR.is_dir():
         logger.warning("help_bot: docs folder not found at %s", _DOCS_DIR)
         return ""
@@ -54,7 +51,7 @@ def _load_docs_from_folder() -> str:
 
 
 def get_help_docs() -> str:
-    """获取已缓存的帮助文档内容（懒加载，首次调用时加载）。"""
+    """Get help docs."""
     global _cached_docs
     if _cached_docs is None:
         _cached_docs = _load_docs_from_folder()
@@ -62,7 +59,10 @@ def get_help_docs() -> str:
 
 
 def _get_llm_config() -> dict | None:
-    """优先 channel_bot，依次回退 orchestrator / system_llm，最后回退 helper_llm_* 环境变量。"""
+    """
+Resolve LLM configuration, preferring channel_bot, then orchestrator, then system_llm, then
+helper_llm environment variables.
+    """
     from app.config import settings
 
     for scope in ("channel_bot", "orchestrator", "system_llm"):
@@ -82,7 +82,7 @@ def _get_llm_config() -> dict | None:
 
 
 def _make_llm(cfg: dict) -> ChatOpenAI:
-    """从配置构建 ChatOpenAI 实例。"""
+    """Build a ChatOpenAI instance from provider configuration."""
     kwargs: dict[str, Any] = {
         "base_url": cfg["base_url"].rstrip("/"),
         "api_key": cfg.get("api_key") or "none",
@@ -99,12 +99,12 @@ def _make_llm(cfg: dict) -> ChatOpenAI:
 
 
 def _strip_ui_blocks(text: str) -> str:
-    """移除消息中的 helper-clarify / helper-form JSON 代码块。"""
+    """Remove helper-clarify and helper-form JSON code blocks before sending content to the LLM."""
     return re.sub(r"```(?:helper-clarify|helper-form)[^`]*```", "", text, flags=re.DOTALL).strip()
 
 
 async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
-    """批量解析消息列表中所有发送者的显示名称，返回 {sender_id: name}。"""
+    """Resolve display names for all message senders in a batch."""
     from sqlalchemy import select
 
     from app.db.models import BotAccount, User
@@ -128,7 +128,7 @@ async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
 async def _fetch_recent_history(
     session, channel_id: str, before_msg_id: str | None, limit: int = HISTORY_MSG_COUNT
 ) -> list:
-    """从 DB 拉取最近消息，转换为 LangChain 消息列表（时间正序）。"""
+    """Fetch recent non-empty messages before the trigger message and convert them into LangChain messages."""
     from sqlalchemy import select
 
     from app.db.models import Message as MsgModel
@@ -210,7 +210,7 @@ async def _stream_llm(
 
 
 def _extract_text(content: Any) -> str:
-    """从 LLM 响应中提取纯文本。"""
+    """Extract text."""
     if not content:
         return ""
     if isinstance(content, str):
@@ -221,7 +221,7 @@ def _extract_text(content: Any) -> str:
 
 
 class HelpBotAdapter(BotAdapter):
-    """帮助助手 Bot：加载 docs/help/ 下所有帮助文档，回答 AgentNexus 使用问题。"""
+    """Help Bot Adapter schema or model."""
 
     async def execute(self, payload: AgentPayload):
         user_text = payload.message.text
@@ -240,54 +240,45 @@ class HelpBotAdapter(BotAdapter):
         system_prompt = "\n\n".join(
             [
                 (
-                    "你是 AgentNexus 的专属操作指引助手。当用户询问「如何做某事」或「怎么操作」时，"
-                    "你必须给出**清晰、可操作的分步骤指引**，包含具体的按钮名称、图标、菜单位置。\n\n"
-                    "## 界面关键元素速查\n"
-                    "• **左侧侧边栏**：Logo、🔍搜索、🔔通知、用户头像/菜单\n"
-                    "• **工作空间列表**：点击「+」创建工作空间\n"
-                    "• **频道列表**：点击「+」创建频道；频道右侧「⋮」菜单管理频道\n"
-                    "• **功能面板**：记忆中心（五层记忆）、好友列表、管理面板（管理员）、密钥链\n"
-                    "• **顶部导航**：频道标题、在线成员数量、⚙️设置、⚡快速连接、📝摘要\n"
-                    "• **底部输入区**：多行文本框、🔑密钥链按钮、➕上传文件、🔒加密发送、绿色「发送」按钮\n"
-                    "• **@提及**：输入 @ 自动弹出 Bot/用户列表，用方向键选择\n"
-                    "• **快捷键**：Ctrl+Enter 发送、Ctrl+K 快速搜索\n\n"
-                    "## 回答格式规范（必须严格遵守）\n"
-                    "当用户询问操作问题时，必须包含以下结构：\n\n"
-                    "**1. 问题确认**（一句话）\n"
-                    "确认用户的需求是什么\n\n"
-                    "**2. 操作步骤**（核心部分）\n"
-                    "用编号列表给出分步操作，每步格式：\n"
-                    "  `步骤 N`：点击/进入 **[界面元素名称]**，选择/输入 **[具体内容]**\n"
-                    "例如：\n"
-                    "  `步骤 1`：点击左侧侧边栏的「**+**」按钮（位于频道列表下方）\n"
-                    "  `步骤 2`：在弹出的输入框中输入**频道名称**\n"
-                    "  `步骤 3`：选择频道类型（**Workspace** 工作空间频道，或 **Private** 私有频道）\n"
-                    "  `步骤 4`：点击「**保存**」完成创建\n\n"
-                    "**3. 预期结果**\n"
-                    "说明操作完成后会看到什么\n\n"
-                    "**4. 附加提示**（可选）\n"
-                    "提醒用户注意事项或相关功能\n\n"
-                    "## 其他问题回答规范\n"
-                    "• **概念解释类**：用简洁的语言解释，附上相关文档链接\n"
-                    "• **故障排除类**：先确认症状，再给出排查步骤\n"
-                    "• **功能咨询类**：介绍功能用途，并说明在哪里找到该功能\n\n"
-                    "## 禁止事项\n"
-                    "• 不要说「在设置里」这种模糊描述，必须说「点击左侧的**⚙️设置图标**」\n"
-                    "• 不要编造界面元素，只基于文档描述\n"
-                    "• 不要给出不存在的操作路径\n"
-                    "• 如文档没有明确说明，诚实告知并建议用户提供更多细节"
+                    "You are AgentNexus's dedicated operation-guide assistant. When the user asks how to do something, "
+                    "provide clear, actionable step-by-step guidance with concrete button names, icons, and menu locations.\n\n"
+                    "## Interface Quick Reference\n"
+                    "• **Left sidebar**: logo, search, notifications, user avatar/menu\n"
+                    "• **Workspace list**: click + to create a workspace\n"
+                    "• **Channel list**: click + to create a channel; use the channel ⋮ menu for channel management\n"
+                    "• **Panels**: memory center, friends list, admin panel, keychain\n"
+                    "• **Top navigation**: channel title, online member count, settings, quick connect, summary\n"
+                    "• **Composer**: multiline input, keychain button, upload button, encrypted send, Send button\n"
+                    "• **Mentions**: type @ to open the Bot/user picker and use arrow keys to choose\n"
+                    "• **Shortcuts**: Ctrl+Enter to send, Ctrl+K for quick search\n\n"
+                    "## Required Answer Format\n"
+                    "When answering operation questions, use this structure:\n\n"
+                    "**1. Confirm the request** in one sentence.\n\n"
+                    "**2. Steps** as a numbered list. Each step should follow this style:\n"
+                    "  `Step N`: click/open **[UI element]**, then choose/type **[specific content]**\n\n"
+                    "**3. Expected result**: explain what the user should see after completion.\n\n"
+                    "**4. Extra tips** if relevant.\n\n"
+                    "## Other Answer Types\n"
+                    "• **Concept explanations**: explain briefly and include related documentation links.\n"
+                    "• **Troubleshooting**: confirm the symptom first, then provide checks.\n"
+                    "• **Feature questions**: explain what the feature does and where to find it.\n\n"
+                    "## Do Not\n"
+                    "• Do not use vague directions like 'in settings'; name the specific UI element.\n"
+                    "• Do not invent UI elements.\n"
+                    "• Do not provide nonexistent operation paths.\n"
+                    "• If the documentation is unclear, say so and ask for more details."
                 ),
                 (
-                    "=== 帮助文档（完整参考）===\n"
-                    + (docs_content if docs_content else "（文档加载失败，请检查 docs/help/ 文件夹是否存在）")
+                    "=== Help Documents (Full Reference) ===\n"
+                    + (docs_content if docs_content else "(Documents failed to load; check whether docs/help/ exists.)")
                 ),
                 (
-                    "=== 当前频道上下文 ===\n"
-                    f"【锚点】\n{memory.get('anchor') or '（暂无）'}\n\n"
-                    f"【进度】\n{memory.get('progress') or '（暂无）'}\n\n"
-                    f"【决策】\n{memory.get('decisions') or '（暂无）'}\n\n"
-                    f"【资料索引】\n{memory.get('files_index') or '（暂无）'}\n\n"
-                    f"【最近关注】\n{memory.get('recent') or '（暂无）'}"
+                    "=== Current Channel Context ===\n"
+                    f"[Anchor]\n{memory.get('anchor') or '(none)'}\n\n"
+                    f"[Progress]\n{memory.get('progress') or '(none)'}\n\n"
+                    f"[Decisions]\n{memory.get('decisions') or '(none)'}\n\n"
+                    f"[File Index]\n{memory.get('files_index') or '(none)'}\n\n"
+                    f"[Recent Focus]\n{memory.get('recent') or '(none)'}"
                 ),
             ]
         )
@@ -340,7 +331,7 @@ class HelpBotAdapter(BotAdapter):
 
 
 async def _fetch_user_display_name(session, user_id: str) -> str:
-    """获取单个用户的显示名称。"""
+    """Fetch one user display name and return an empty string on failure."""
     if not user_id or not session:
         return ""
     from sqlalchemy import select

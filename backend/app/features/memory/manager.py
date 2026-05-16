@@ -1,12 +1,4 @@
-"""MemoryManager：频道记忆加载与 system prompt 构建（供 Orchestrator 注入）。
-
-新架构：
-- ANCHOR / DECISIONS / PROGRESS → 从 memory_entries 表结构化加载
-- FILES_INDEX → 从 FileRecord 实时渲染
-- RECENT → 从 HistoryPage 实时渲染
-- TODOS → 从 TodoItem 实时渲染
-统一通过 ChannelMemory 领域对象。
-"""
+"""Manager module."""
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +8,7 @@ from app.features.memory.prompt_xml import render_agent_memory_context_xml
 
 
 async def load(channel_id: str, session: AsyncSession) -> dict[str, str]:
-    """加载频道全部记忆，返回兼容旧格式的 dict。"""
+    """Load."""
     mem = await ChannelMemory.load(channel_id, session)
     return mem.to_context_dict()
 
@@ -24,17 +16,13 @@ async def load(channel_id: str, session: AsyncSession) -> dict[str, str]:
 async def load_layers(
     channel_id: str, session: AsyncSession, layers: frozenset[str] | set[str],
 ) -> dict[str, str]:
-    """按需加载指定层，返回 ``to_context_dict`` 兼容字典。
-
-    ``layers`` 应为 ``ChannelMemory.ALL_LAYERS`` 的子集。未请求的层在
-    返回字典中是空字符串——对模板/adapter 是无害默认值。
-    """
+    """Load layers."""
     mem = await ChannelMemory.load_layers(channel_id, session, layers)
     return mem.to_context_dict()
 
 
 async def load_channel_memory(channel_id: str, session: AsyncSession) -> ChannelMemory:
-    """加载频道记忆，返回完整 ChannelMemory 对象。"""
+    """Load channel memory."""
     return await ChannelMemory.load(channel_id, session)
 
 
@@ -44,11 +32,7 @@ async def save_layer(
     content: str,
     session: AsyncSession | None = None,
 ) -> str:
-    """更新指定层的单条内容（覆盖模式），返回 entry_id。
-
-    内部委托给 replace_layer_entries（即覆盖写入）。
-    兼容 channel_bot 工具的调用方式。
-    """
+    """Save layer."""
     return await replace_layer_entries(
         channel_id=channel_id,
         layer=layer,
@@ -66,7 +50,7 @@ async def save_entry(
     creator_type: str | None = None,
     session: AsyncSession | None = None,
 ) -> str:
-    """创建一条记忆条目，返回 entry_id。供 Bot tool 和内部逻辑调用。"""
+    """Save entry."""
 
 
     if session is None:
@@ -119,7 +103,7 @@ async def replace_layer_entries(
     creator_type: str | None = None,
     session: AsyncSession | None = None,
 ) -> str:
-    """替换某层的全部条目为单条新内容（兼容旧的覆盖写入模式）。返回 entry_id。"""
+    """Replace layer entries."""
 
 
     if session is None:
@@ -166,7 +150,7 @@ async def _do_replace(
 
 
 def build_system_prompt_prefix(channel_name: str, bot_role: str, memory: dict[str, str]) -> str:
-    """拼接记忆为 XML System Prompt 前缀。"""
+    """Build system prompt prefix."""
     return render_agent_memory_context_xml(
         channel_name=channel_name,
         bot_role=bot_role,

@@ -1,8 +1,4 @@
-"""Context v1 路由（频道记忆 GET/PUT）。
-
-GET 返回完整记忆（结构化层 + 派生层），兼容旧格式。
-PUT 仅允许更新派生层的手动覆盖（FILES_INDEX / RECENT），结构化层请使用 /memory/ 路由。
-"""
+"""Context API routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -50,7 +46,7 @@ async def update_context(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """更新派生层内容。结构化层 (ANCHOR/DECISIONS/PROGRESS) 请使用 /memory/ CRUD 路由。"""
+    """Update context."""
     layer_upper = body.layer.upper()
     if layer_upper not in _PUT_VALID_LAYERS:
         raise BadRequestError(

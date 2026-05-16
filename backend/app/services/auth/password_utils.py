@@ -1,4 +1,4 @@
-"""密码哈希工具（模块级单例，避免重复初始化 CryptContext）."""
+"""Password utils module."""
 from passlib.context import CryptContext
 
 _ctx = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")

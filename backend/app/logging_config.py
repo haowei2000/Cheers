@@ -1,4 +1,4 @@
-"""配置应用日志：写入控制台与文件（含错误单独文件）。"""
+"""Application logging configuration for console, file, and error logs."""
 import logging
 import sys
 from pathlib import Path
@@ -39,7 +39,7 @@ class _PlainFormatter(logging.Formatter):
 
 
 class _JsonFormatter(logging.Formatter):
-    """结构化 JSON 日志格式化器（LOG_JSON=true 时启用）."""
+    """Json Formatter schema or model."""
 
     def format(self, record: logging.LogRecord) -> str:
         import json as _json
@@ -69,11 +69,7 @@ def _attach_context_filter(handler: logging.Handler) -> None:
 
 
 def setup_logging() -> None:
-    """
-    配置根与 app 日志：控制台 + 文件（通用 + 仅错误）。
-    log_dir 为空则只输出到控制台。
-    LOG_JSON=true 时使用结构化 JSON 格式。
-    """
+    """Setup logging."""
     log_dir = _resolve_log_dir()
     if settings.log_json:
         fmt: logging.Formatter = _JsonFormatter()
@@ -158,5 +154,5 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """获取带命名空间的 logger，便于在模块内使用."""
+    """Get logger."""
     return logging.getLogger(name)

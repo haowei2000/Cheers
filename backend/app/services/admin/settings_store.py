@@ -1,4 +1,4 @@
-"""兼容读取历史管理配置：LLM 功能绑定、助手运行参数和图像生成配置。"""
+"""Settings store module."""
 import asyncio
 import concurrent.futures
 import json
@@ -26,7 +26,7 @@ _LEGACY_JSON_PATHS = [
 
 
 def _run_async(coro) -> Any:
-    """在独立线程的新事件循环中运行协程，避免与 FastAPI 事件循环冲突。"""
+    """Run async."""
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         return executor.submit(asyncio.run, coro).result(timeout=10)
 
@@ -80,7 +80,7 @@ async def _save_settings_async(data: dict[str, Any]) -> None:
 
 
 def _migrate_from_json() -> dict[str, Any]:
-    """读取旧 JSON 文件并写入 DB（仅首次）；读取失败则返回空 dict。"""
+    """Migrate from json."""
     for path in _LEGACY_JSON_PATHS:
         if path.is_file():
             try:
@@ -94,7 +94,7 @@ def _migrate_from_json() -> dict[str, Any]:
 
 
 def load_admin_settings() -> dict[str, Any]:
-    """从 DB 读取管理端配置；若 DB 中不存在则尝试从旧 JSON 迁移。"""
+    """Load admin settings."""
     try:
         data = _run_async(_load_settings_async())
         if not data:
@@ -105,7 +105,7 @@ def load_admin_settings() -> dict[str, Any]:
 
 
 def save_admin_settings(data: dict[str, Any]) -> None:
-    """将管理端配置写入 DB。"""
+    """Save admin settings."""
     try:
         _run_async(_save_settings_async(data))
     except Exception:
@@ -176,7 +176,7 @@ def _parse_json_object(raw_value: Any) -> dict[str, Any]:
 
 
 async def _fetch_ai_models_async() -> list[dict[str, Any]]:
-    """从数据库异步加载已启用的 AI 模型列表。在独立事件循环中运行，使用独立引擎。"""
+    """Fetch ai models async."""
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from sqlalchemy.pool import NullPool
@@ -222,7 +222,7 @@ async def _fetch_ai_models_async() -> list[dict[str, Any]]:
 
 
 def _load_ai_model_providers() -> list[dict[str, Any]]:
-    """同步包装器：在独立线程中运行异步查询，避免嵌套事件循环冲突。"""
+    """Load ai model providers."""
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(asyncio.run, _fetch_ai_models_async())
@@ -231,7 +231,7 @@ def _load_ai_model_providers() -> list[dict[str, Any]]:
         return []
 
 def get_llm_providers_list() -> list[dict[str, Any]]:
-    """返回 LLM 列表（不含 api_key 明文，仅 api_key_set）。"""
+    """Get llm providers list."""
     data = load_admin_settings()
     _ensure_llm_structures(data)
     out = []
@@ -250,7 +250,7 @@ def get_llm_providers_list() -> list[dict[str, Any]]:
 
 
 def get_llm_bindings() -> dict[str, str]:
-    """返回各功能绑定的 provider id。"""
+    """Get llm bindings."""
     data = load_admin_settings()
     _ensure_llm_structures(data)
     return dict(data.get("llm_bindings", {}) or {})
@@ -269,10 +269,7 @@ def _get_provider_by_id(provider_id: str) -> dict[str, Any] | None:
 
 
 def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
-    """
-    按功能范围返回当前绑定的 LLM 配置（base_url, model, api_key, temperature, max_tokens）。
-    channel_bot 为频道内置助手的统一 scope，兼容旧版 assistant_bot / builtin_llm。
-    """
+    """Get provider for scope."""
     from app.config import settings
 
     data = load_admin_settings()
@@ -312,7 +309,7 @@ def get_provider_for_scope(scope: str) -> dict[str, Any] | None:
 
 
 def get_assist_settings() -> dict[str, Any]:
-    """获取系统助手配置（LLM 绑定 + 自动接管）。"""
+    """Get assist settings."""
     data = load_admin_settings()
     _ensure_orchestrator_settings(data)
     _ensure_llm_structures(data)

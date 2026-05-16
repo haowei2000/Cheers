@@ -90,8 +90,9 @@ def _clone_or_init_repo() -> tuple[bool, str, Path]:
 
 def _fetch_and_rebase() -> tuple[bool, str, list[str]]:
     """
-    Run git fetch + rebase.
-    Return (success, message, conflict_files).
+        Run git fetch + rebase.
+        Return (success, message, conflict_files).
+
     """
     repo_path = settings.skills_repo_dir
 
@@ -172,8 +173,9 @@ def _fetch_and_rebase() -> tuple[bool, str, list[str]]:
 
 def _sync_files_to_local() -> tuple[int, list[str]]:
     """
-    Sync repository files into the local skills-local directory.
-    Return (sync_count, copied_files).
+        Sync repository files into the local skills-local directory.
+        Return (sync_count, copied_files).
+
     """
     src_dir = settings.skills_repo_dir / "skills"
     dst_dir = settings.skills_local_dir
@@ -218,7 +220,8 @@ def _sync_files_to_local() -> tuple[int, list[str]]:
 
 def update_skills_from_gitfox() -> SyncResult:
     """
-    Update skills from the GitFox repository using git fetch + rebase.
+        Update skills from the GitFox repository using git fetch + rebase.
+
     """
     if not settings.git_sync_enabled:
         return SyncResult(
@@ -283,7 +286,7 @@ def sync_from_git() -> SyncResult:
 
 
 def get_sync_status() -> dict:
-    """获取同步状态"""
+    """Return synchronization status."""
     repo_path = settings.skills_repo_dir
     has_repo = _is_git_repo(repo_path)
 

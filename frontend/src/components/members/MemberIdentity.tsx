@@ -49,7 +49,7 @@ export function resolveMemberId(member: MemberLike): string {
 
 export function resolveMemberLabel(member: MemberLike, fallbackKind?: MemberKind): string {
   const kind = fallbackKind ?? resolveMemberKind(member);
-  return member.display_name || member.username || (kind === "bot" ? "Bot" : kind === "system" ? "系统" : "用户");
+  return member.display_name || member.username || (kind === "bot" ? "Bot" : kind === "system" ? "System" : "User");
 }
 
 export function resolveMemberSub(member: MemberLike): string {
@@ -63,8 +63,8 @@ export function initialsForMember(label: string): string {
 
 export function memberKindLabel(kind: MemberKind): string {
   if (kind === "bot") return "Bot";
-  if (kind === "system") return "系统";
-  return "用户";
+  if (kind === "system") return "System";
+  return "User";
 }
 
 export function memberAccent(kind: MemberKind): string {
@@ -94,7 +94,7 @@ export function isMemberOnline(member: MemberLike): boolean {
 
 export function MemberPresenceBadge({ member }: { member: MemberLike }) {
   const online = isMemberOnline(member);
-  const label = online ? "在线" : "离线";
+  const label = online ? "Online" : "Offline";
   return (
     <span
       className="an-member-presence"

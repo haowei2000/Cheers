@@ -51,7 +51,7 @@ export function MembersView({
             className="an-md-back"
             onClick={() => setSelected(null)}
           >
-            ← 返回成员列表
+            ← Back to members
           </button>
           <div className="an-md-head">
             <MemberAvatar
@@ -81,24 +81,24 @@ export function MembersView({
 
           {isSelf ? (
             <div className="an-md-section">
-              <div className="an-lbl">我的频道资料</div>
+              <div className="an-lbl">My channel profile</div>
               {profileLoading ? (
                 <div className="py-3 text-xs" style={{ color: "var(--fg-3)" }}>
-                  加载中…
+                  Loading...
                 </div>
               ) : (
                 <div className="space-y-2">
                   <input
                     value={profileNickname}
                     onChange={(e) => onProfileNicknameChange(e.target.value)}
-                    placeholder="频道昵称"
+                    placeholder="Channel nickname"
                     maxLength={64}
                     className="an-input"
                   />
                   <textarea
                     value={profileBio}
                     onChange={(e) => onProfileBioChange(e.target.value)}
-                    placeholder="在本频道的身份介绍…"
+                    placeholder="Introduce your role in this channel..."
                     rows={3}
                     className="an-textarea"
                   />
@@ -109,7 +109,7 @@ export function MembersView({
                       disabled={profileSaving}
                       className="an-btn an-btn-primary an-btn-sm"
                     >
-                      {profileSaving ? "保存中…" : "保存资料"}
+                      {profileSaving ? "Saving..." : "Save profile"}
                     </button>
                   </div>
                 </div>
@@ -117,7 +117,7 @@ export function MembersView({
             </div>
           ) : (
             <div className="an-md-section">
-              <div className="an-lbl">简介 · About</div>
+              <div className="an-lbl">About</div>
               <div
                 style={{
                   fontSize: 12,
@@ -126,30 +126,30 @@ export function MembersView({
                 }}
               >
                 {isBot
-                  ? "本频道的智能体，协同其他成员完成任务。"
-                  : "本频道的用户成员。"}
+                  ? "Agents in this channel collaborate with other members."
+                  : "User members in this channel."}
               </div>
             </div>
           )}
 
           <div className="an-md-section">
-            <div className="an-lbl">资料 · Profile</div>
+            <div className="an-lbl">Profile</div>
             <div className="an-md-kv">
               <div className="an-k">ID</div>
               <div className="an-v" style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
                 {selected.member_id}
               </div>
-              <div className="an-k">类型</div>
-              <div className="an-v">{isBot ? "Bot 智能体" : "人类成员"}</div>
+              <div className="an-k">Type</div>
+              <div className="an-v">{isBot ? "Bot agent" : "Human member"}</div>
               {selected.username && (
                 <>
-                  <div className="an-k">用户名</div>
+                  <div className="an-k">Username</div>
                   <div className="an-v">@{selected.username}</div>
                 </>
               )}
               {selected.display_name && (
                 <>
-                  <div className="an-k">显示名</div>
+                  <div className="an-k">Display name</div>
                   <div className="an-v">{selected.display_name}</div>
                 </>
               )}
@@ -157,10 +157,10 @@ export function MembersView({
           </div>
 
           <div className="an-md-actions">
-            <button type="button">私聊</button>
-            <button type="button">{isBot ? "查看日志" : "资料卡"}</button>
+            <button type="button">DM</button>
+            <button type="button">{isBot ? "View logs" : "Profile card"}</button>
             <button type="button" className="primary">
-              @ 提及
+              @ mention
             </button>
           </div>
         </div>
@@ -172,7 +172,7 @@ export function MembersView({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="an-members-list min-h-0 flex-1 overflow-y-auto">
         {bots.length > 0 && (
-          <MemberSection title="Agents · 智能体" count={bots.length}>
+          <MemberSection title="Agents" count={bots.length}>
             {bots.map((m) => (
               <MemberRow
                 key={m.member_id}
@@ -191,7 +191,7 @@ export function MembersView({
           </MemberSection>
         )}
         {users.length > 0 && (
-          <MemberSection title="People · 成员" count={users.length}>
+          <MemberSection title="People" count={users.length}>
             {users.map((m) => {
               const isSelf = Boolean(currentUserId && m.member_id === currentUserId);
               return (
@@ -203,14 +203,14 @@ export function MembersView({
                   badge={(
                     <>
                       {isSelf ? (
-                        <span className="an-member-badge" data-tone="accent">我</span>
+                        <span className="an-member-badge" data-tone="accent">Me</span>
                       ) : (
                         <MemberKindBadge kind="user" />
                       )}
                       <MemberPresenceBadge member={m} />
                     </>
                   )}
-                  title={isSelf ? "我的频道资料" : undefined}
+                  title={isSelf ? "My channel profile" : undefined}
                   action={<span className="an-member-chev" aria-hidden="true">›</span>}
                 />
               );

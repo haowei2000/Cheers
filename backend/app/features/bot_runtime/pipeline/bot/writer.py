@@ -228,13 +228,7 @@ class BotMessageWriter:
     async def register_async_pending(
         self, bot_msg: Message, task_id: str, bot_id: str,
     ) -> None:
-        """Agent Bridge Bot 异步派发：占位消息不立即 finalize，为后台 task 武装前台等待 timer。
-
-        PendingReply 已由 AgentBridgeBotAdapter.execute() 在 dispatch 之前预登记
-        （避免 plugin 秒回时 pending 未登记的竞态）；这里只 arm "转后台 task"
-        的 timer。timer 触发后 pending 会继续保留，provider 可继续长期运行，
-        迟到的最终回复仍会更新同一条消息。
-        """
+        """Register async pending."""
         from app.config import settings as _settings
         from app.db.session import async_session_factory
         from app.features.agent_bridge.pending import pending_replies

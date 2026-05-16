@@ -42,9 +42,9 @@ function relativeTime(iso: string | null): string {
   const d = new Date(iso);
   const now = Date.now();
   const diff = now - d.getTime();
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}  minutes ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}  hours ago`;
   return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }
 
@@ -74,8 +74,8 @@ const LAYER_META: Record<
   }
 > = {
 	  ANCHOR: {
-	    label: "项目锚点",
-	    desc: "核心目标、约束、背景",
+	    label: "Project anchor",
+	    desc: "Core goals, constraints, and background",
 	    icon: ico("note"),
 	    color: "text-[var(--accent)]",
 	    bgLight: "bg-[var(--accent-muted)]",
@@ -83,8 +83,8 @@ const LAYER_META: Record<
 	    entryBased: true,
 	  },
 	  PROGRESS: {
-	    label: "项目进度",
-	    desc: "当前进度、已完成、下一步",
+	    label: "Project progress",
+	    desc: "Current progress, completed work, and next steps",
 	    icon: ico("trending"),
 	    color: "text-[var(--green)]",
 	    bgLight: "bg-[var(--green-muted)]",
@@ -92,8 +92,8 @@ const LAYER_META: Record<
 	    entryBased: true,
 	  },
 	  DECISIONS: {
-	    label: "决策记录",
-	    desc: "重要决策及原因",
+	    label: "Decision log",
+	    desc: "Important decisions and rationale",
 	    icon: ico("task"),
 	    color: "text-[var(--blue)]",
 	    bgLight: "bg-[var(--blue-muted)]",
@@ -101,8 +101,8 @@ const LAYER_META: Record<
 	    entryBased: true,
 	  },
 	  FILES_INDEX: {
-	    label: "资料索引",
-	    desc: "上传的文件与参考资料",
+	    label: "Reference index",
+	    desc: "Uploaded files and references",
 	    icon: ico("archive"),
 	    color: "text-[var(--orange)]",
 	    bgLight: "bg-[var(--orange-muted)]",
@@ -110,8 +110,8 @@ const LAYER_META: Record<
 	    readonly: true,
 	  },
 	  RECENT: {
-	    label: "近期动态",
-	    desc: "历史对话摘要",
+	    label: "Recent activity",
+	    desc: "Conversation history summary",
 	    icon: ico("clock"),
 	    color: "text-[var(--green)]",
 	    bgLight: "bg-[var(--green-muted)]",
@@ -119,8 +119,8 @@ const LAYER_META: Record<
 	    readonly: true,
 	  },
 	  MEMBERS: {
-	    label: "频道成员",
-	    desc: "用户与 Bot 能力一览",
+	    label: "Channel members",
+	    desc: "Users and bot capabilities",
 	    icon: ico("users"),
 	    color: "text-[var(--fg-2)]",
 	    bgLight: "bg-[var(--surface-soft)]",
@@ -128,8 +128,8 @@ const LAYER_META: Record<
 	    readonly: true,
 	  },
 	  TODO: {
-	    label: "待办事项",
-	    desc: "频道任务清单",
+	    label: "Todo items",
+	    desc: "Channel task list",
 	    icon: ico("checkCircle"),
 	    color: "text-[var(--red)]",
 	    bgLight: "bg-[var(--red-muted)]",
@@ -167,17 +167,17 @@ function parseFilesIndex(md: string): FileCard[] {
         fileId = m[1];
         continue;
       }
-      const m2 = line.match(/^-\s*类型:\s*(.+)/);
+      const m2 = line.match(/^-\s*Type:\s*(.+)/);
       if (m2) {
         contentType = m2[1].trim();
         continue;
       }
-      const m3 = line.match(/^-\s*摘要:\s*(.+)/);
+      const m3 = line.match(/^-\s*(?:Summary|\u6458\u8981):\s*(.+)/);
       if (m3) {
         summary = m3[1].trim();
         continue;
       }
-      const m4 = line.match(/^-\s*登记时间:\s*(.+)/);
+      const m4 = line.match(/^-\s*(?:Registered at|\u767b\u8bb0\u65f6\u95f4):\s*(.+)/);
       if (m4) {
         time = m4[1].trim();
         continue;
@@ -231,7 +231,7 @@ function formatRange(from: string, to: string): string {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   EntryEditor — 内联 Markdown 编辑器，左写右预览
+   EntryEditor - inline Markdown editor with split edit/preview modes.
    ══════════════════════════════════════════════════════════════════════════════ */
 
 function EntryEditor({
@@ -263,7 +263,7 @@ function EntryEditor({
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="标题（可选）"
+          placeholder="Title (optional)"
           className="an-type-body flex-1 border-none bg-transparent font-medium outline-none placeholder:text-[var(--fg-3)]"
         />
         <div className="an-seg ml-2 flex-shrink-0">
@@ -272,14 +272,14 @@ function EntryEditor({
             onClick={() => setPreviewMode(false)}
             className={!previewMode ? "on" : ""}
           >
-            编辑
+            Edit
           </button>
           <button
             type="button"
             onClick={() => setPreviewMode(true)}
             className={previewMode ? "on" : ""}
           >
-            预览
+            Preview
           </button>
         </div>
       </div>
@@ -290,7 +290,7 @@ function EntryEditor({
             {content.trim() ? (
               <MessageMarkdown text={content} />
             ) : (
-              <p className="an-type-meta italic">暂无内容</p>
+              <p className="an-type-meta italic">No content</p>
             )}
           </div>
         ) : (
@@ -298,7 +298,7 @@ function EntryEditor({
             ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="支持 Markdown 格式…"
+            placeholder="Markdown is supported..."
             className="min-h-[160px] w-full resize-y border-none bg-[var(--bg-1)] p-4 font-mono leading-relaxed text-[var(--fg-1)] outline-none placeholder:text-[var(--fg-3)]"
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
@@ -309,14 +309,14 @@ function EntryEditor({
       </div>
       {/* Actions */}
       <div className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--bg-0)] px-3 py-2">
-        <span className="an-type-caption">Ctrl+Enter 保存</span>
+        <span className="an-type-caption">Ctrl+Enter Save</span>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={onCancel}
             className="an-btn an-btn-sm"
           >
-            取消
+            Cancel
           </button>
           <button
             type="button"
@@ -324,7 +324,7 @@ function EntryEditor({
             disabled={saving || !content.trim()}
             className="an-btn an-btn-primary an-btn-sm"
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -333,7 +333,7 @@ function EntryEditor({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   MemoryPage — 全屏记忆页面
+   MemoryPage - full-screen memory page.
    ══════════════════════════════════════════════════════════════════════════════ */
 
 export default function MemoryPage({
@@ -523,7 +523,7 @@ export default function MemoryPage({
 	    if (entriesLoading)
 	      return (
 	        <div className="an-type-meta flex items-center justify-center py-20">
-	          加载中…
+	          Loading...
 	        </div>
 	      );
 
@@ -555,7 +555,7 @@ export default function MemoryPage({
 	                    </h3>
 	                  ) : (
 	                    <h3 className="an-type-meta truncate italic">
-	                      无标题
+	                      No title
 	                    </h3>
 	                  )}
 	                </div>
@@ -567,7 +567,7 @@ export default function MemoryPage({
 	                    type="button"
 	                    onClick={() => setEditingId(entry.entry_id)}
 	                    className="an-btn an-btn-ghost an-btn-icon"
-	                    title="编辑"
+	                    title="Edit"
 	                  >
 	                    <AppIcon name="pencil" className="h-3.5 w-3.5" />
 	                  </button>
@@ -575,7 +575,7 @@ export default function MemoryPage({
 	                    type="button"
 	                    onClick={() => handleDelete(entry.entry_id)}
 	                    className="an-btn an-btn-ghost an-btn-icon text-[var(--red)]"
-	                    title="删除"
+	                    title="Delete"
 	                  >
 	                    <AppIcon name="trash" className="h-3.5 w-3.5" />
 	                  </button>
@@ -595,7 +595,7 @@ export default function MemoryPage({
 	                  )}
 	                  {entry.creator_type === "user" && (
 	                    <span className="an-chip accent">
-	                      用户
+	                      User
 	                    </span>
                   )}
                   {entry.created_at && (
@@ -626,7 +626,7 @@ export default function MemoryPage({
 	            <span className="block w-12 h-12 mx-auto mb-4 opacity-20">{meta.icon}</span>
 	            <p className="an-type-body mb-1 font-medium">{meta.desc}</p>
 	            <p className="an-type-meta mb-4">
-	              暂无记录，点击下方添加第一条
+	              No records yet. Add the first one below.
 	            </p>
 	            <button
 	              type="button"
@@ -634,7 +634,7 @@ export default function MemoryPage({
 	              className="an-btn an-btn-primary"
 	            >
 	              <AppIcon name="plus" className="h-4 w-4" />
-	              添加{meta.label}
+	              Add{meta.label}
 	            </button>
 	          </div>
         )}
@@ -651,9 +651,9 @@ export default function MemoryPage({
 	      return (
 	        <div className="flex flex-col items-center justify-center py-20 text-center">
 	          <AppIcon name="archive" className="w-12 h-12 mb-4 opacity-20" />
-	          <p className="an-type-body font-medium">暂无上传文件</p>
+	          <p className="an-type-body font-medium">No uploaded files</p>
 	          <p className="an-type-meta">
-	            在频道中上传文件后，索引将自动生成
+	            After files are uploaded in the channel, the index is generated automatically.
 	          </p>
 	        </div>
       );
@@ -712,8 +712,8 @@ export default function MemoryPage({
 	      return (
 	        <div className="flex flex-col items-center justify-center py-20 text-center">
 	          <AppIcon name="clock" className="w-12 h-12 mb-4 opacity-20" />
-	          <p className="an-type-body font-medium">暂无历史动态</p>
-	          <p className="an-type-meta">对话消息累积后将自动归档</p>
+	          <p className="an-type-body font-medium">No recent activity</p>
+	          <p className="an-type-meta">Conversation messages are archived automatically over time</p>
 	        </div>
       );
     }
@@ -749,14 +749,14 @@ export default function MemoryPage({
 	    if (membersLoading)
 	      return (
 	        <div className="an-type-meta flex items-center justify-center py-20">
-	          加载中…
+	          Loading...
 	        </div>
       );
     if (!members.length) {
       return (
 	        <div className="flex flex-col items-center justify-center py-20 text-center">
 	          <AppIcon name="users" className="w-12 h-12 mb-4 opacity-20" />
-	          <p className="an-type-meta">暂无成员</p>
+	          <p className="an-type-meta">No members</p>
 	        </div>
       );
     }
@@ -777,7 +777,7 @@ export default function MemoryPage({
     const completed = todos.filter((t) => t.status === "completed");
 	    return (
 	      <div className="space-y-6">
-	        {/* Create form */}
+	        {/* created form */}
 	        <div className="space-y-2 rounded-md border border-[var(--border)] bg-[var(--bg-1)] p-4">
 	          <textarea
             rows={2}
@@ -787,7 +787,7 @@ export default function MemoryPage({
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                 handleTodoCreate();
 	            }}
-	            placeholder="新建任务…"
+	            placeholder="NewTasks..."
 	            className="an-textarea resize-none"
 	          />
 	          <div className="flex items-center gap-2">
@@ -796,13 +796,13 @@ export default function MemoryPage({
 	              onChange={(e) => setTodoAssignee(e.target.value)}
 	              className="an-select flex-1"
 	            >
-	              <option value="">指派给…</option>
+	              <option value="">Assign to...</option>
 	              {members.map((m) => (
                 <option
                   key={m.member_id}
 	                  value={`${m.member_type}:${m.member_id}`}
 	                >
-	                  {m.member_type === "bot" ? "Bot · " : "用户 · "}{m.display_name || m.username}
+	                  {m.member_type === "bot" ? "Bot · " : "User · "}{m.display_name || m.username}
 	                </option>
 	              ))}
 	            </select>
@@ -811,17 +811,17 @@ export default function MemoryPage({
 	              onClick={handleTodoCreate}
 	              className="an-btn an-btn-primary flex-shrink-0"
 	            >
-	              添加
+	              Add
             </button>
           </div>
         </div>
 
         {todosLoading ? (
-	          <div className="an-type-meta py-8 text-center">加载中…</div>
+	          <div className="an-type-meta py-8 text-center">Loading...</div>
 	        ) : todos.length === 0 ? (
 	          <div className="flex flex-col items-center justify-center py-16 text-center">
 	            <AppIcon name="checkCircle" className="w-12 h-12 mb-4 opacity-20" />
-	            <p className="an-type-meta">暂无待办</p>
+	            <p className="an-type-meta">No todos</p>
 	          </div>
         ) : (
           <div className="space-y-4">
@@ -829,7 +829,7 @@ export default function MemoryPage({
             {pending.length > 0 && (
               <div>
 	                <h3 className="an-type-caption mb-2 font-semibold uppercase">
-	                  未完成 ({pending.length})
+	                  Pending ({pending.length})
                 </h3>
                 <div className="space-y-2">
                   {pending.map((todo) => (
@@ -859,7 +859,7 @@ export default function MemoryPage({
 	                        type="button"
 	                        onClick={() => handleTodoDelete(todo.todo_id)}
 	                        className="an-btn an-btn-ghost an-btn-icon flex-shrink-0 text-[var(--red)] opacity-0 transition-opacity group-hover:opacity-100"
-	                        title="删除"
+	                        title="Delete"
 	                      >
 	                        <AppIcon name="trash" className="h-4 w-4" />
 	                      </button>
@@ -872,7 +872,7 @@ export default function MemoryPage({
             {completed.length > 0 && (
               <div>
 	                <h3 className="an-type-caption mb-2 font-semibold uppercase">
-	                  已完成 ({completed.length})
+	                  Completed ({completed.length})
                 </h3>
                 <div className="space-y-2">
                   {completed.map((todo) => (
@@ -956,7 +956,7 @@ export default function MemoryPage({
 	            style={{ marginBottom: 8 }}
 	          >
 	            <div className="an-type-title">
-	              频道记忆
+	              Channel memory
 	            </div>
 	            {channelName && (
 	              <div className="an-type-caption mt-0.5">
@@ -995,7 +995,7 @@ export default function MemoryPage({
             className="an-btn an-btn-ghost"
             style={{ margin: "0 8px 10px", justifyContent: "center" }}
           >
-            关闭
+            Close
           </button>
         </nav>
 
@@ -1027,21 +1027,21 @@ export default function MemoryPage({
                   onClick={() => setAddingNew(true)}
                   className="an-btn an-btn-primary an-btn-sm"
                 >
-                  ＋ 添加
+                  ＋ Add
                 </button>
               )}
               {meta.entryBased && entries.length > 0 && (
-                <span className="an-chip">{entries.length} 条记录</span>
+                <span className="an-chip">{entries.length} records</span>
               )}
               {meta.readonly && activeLayer !== "TODO" && (
-                <span className="an-chip">自动生成</span>
+                <span className="an-chip">Auto-generated</span>
               )}
 	              <button
 	                type="button"
 	                onClick={onClose}
 	                className="an-modal-close"
-	                aria-label="关闭"
-	                title="关闭"
+	                aria-label="Close"
+	                title="Close"
 	              >
 	                <AppIcon name="close" className="h-4 w-4" />
 	              </button>

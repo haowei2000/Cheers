@@ -17,7 +17,7 @@ type Issue = {
   created_at: string;
 };
 
-const PRIORITY_LABEL: Record<string, string> = { low: "低", medium: "中", high: "高" };
+const PRIORITY_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High" };
 
 export function BulletinPane({
   authToken,
@@ -73,10 +73,10 @@ export function BulletinPane({
         setNewContent("");
         setNewPriority("medium");
         reload();
-        toast.success("已发布");
+        toast.success("Posted");
       } else {
         const d = await res.json();
-        toast.error(d?.detail || "创建失败");
+        toast.error(d?.detail || "Create failed");
       }
     } finally {
       setCreating(false);
@@ -94,7 +94,7 @@ export function BulletinPane({
   };
 
   const remove = async (issue: Issue) => {
-    if (!confirm(`确定删除「${issue.title}」？`)) return;
+    if (!confirm(`Delete "${issue.title}"?`)) return;
     const res = await apiFetch(`/bulletin/issues/${issue.issue_id}`, {
       method: "DELETE",
       token: authToken,
@@ -109,20 +109,20 @@ export function BulletinPane({
     <div className="an-pane">
       <div className="an-pane-head" style={{ justifyContent: "space-between" }}>
         <div>
-          <div className="an-pane-title">留言板</div>
-          <div className="an-pane-sub">公共反馈与变更记录。</div>
+          <div className="an-pane-title">Bulletin</div>
+          <div className="an-pane-sub">Public feedback and change log.</div>
         </div>
         {authToken && (
           <PrimaryButton onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? "取消" : "+ 新建"}
+            {showCreate ? "Cancel" : "+ New"}
           </PrimaryButton>
         )}
       </div>
       <div className="an-list-table">
         {showCreate && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">新建 Issue</div>
-            <Field label="标题">
+            <div className="an-rc-title">New issue</div>
+            <Field label="Title">
               <input
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
@@ -130,7 +130,7 @@ export function BulletinPane({
                 autoFocus
               />
             </Field>
-            <Field label="详细描述（可选）">
+            <Field label="Detailed description (optional)">
               <textarea
                 value={newContent}
                 onChange={(e) => setNewContent(e.target.value)}
@@ -138,7 +138,7 @@ export function BulletinPane({
                 className={`${inputCls} resize-none`}
               />
             </Field>
-            <Field label="优先级">
+            <Field label="Priority">
               <div className="an-seg">
                 {(["low", "medium", "high"] as const).map((p) => (
                   <button
@@ -154,7 +154,7 @@ export function BulletinPane({
             </Field>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <PrimaryButton onClick={create} disabled={creating || !newTitle.trim()}>
-                {creating ? "提交中…" : "提交"}
+                {creating ? "Submitting..." : "Submit"}
               </PrimaryButton>
             </div>
           </div>
@@ -162,11 +162,11 @@ export function BulletinPane({
 
         {loading ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
-            加载中…
+            Loading...
           </div>
         ) : issues.length === 0 ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
-            暂无 Issue
+            No issues
           </div>
         ) : (
           issues.map((it) => (
@@ -202,7 +202,7 @@ export function BulletinPane({
                   </div>
                 )}
                 <div className="an-rc-sub" style={{ marginTop: 4 }}>
-                  {it.creator_name || "匿名"} · {PRIORITY_LABEL[it.priority]}优先级
+                  {it.creator_name || "Anonymous"} · {PRIORITY_LABEL[it.priority]}Priority
                 </div>
               </div>
               {canManage(it) && (
@@ -212,9 +212,9 @@ export function BulletinPane({
                     onClick={() => toggleStatus(it)}
                     className="an-btn an-btn-sm"
                   >
-                    {it.status === "open" ? "关闭" : "开放"}
+                    {it.status === "open" ? "Close" : "Open"}
                   </button>
-                  <DangerButton onClick={() => remove(it)}>删除</DangerButton>
+                  <DangerButton onClick={() => remove(it)}>Delete</DangerButton>
                 </div>
               )}
             </div>

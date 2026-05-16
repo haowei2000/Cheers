@@ -1,4 +1,4 @@
-"""Bot 适配器抽象接口（ADR D-05）：Orchestrator 只依赖此接口，所有 adapter 实现它。"""
+"""Base module."""
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
@@ -219,12 +219,7 @@ async def drain_events_to_response(
 
 
 class BotAdapter(ABC):
-    """所有 Bot 执行路径的共同协议。Orchestrator 只调这里的方法，adapter 可随意换实现。
-
-    ``execute`` is the single runtime entry point. Implementations yield zero
-    or more Delta events followed by exactly one terminal Final or
-    DispatchedAsync event.
-    """
+    """Bot Adapter schema or model."""
 
     @abstractmethod
     def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
@@ -233,5 +228,5 @@ class BotAdapter(ABC):
 
     @abstractmethod
     async def health_check(self) -> bool:
-        """检查该 adapter 的依赖（远端 LLM / WS 链路 / …）是否可用."""
+        """Health check."""
         raise NotImplementedError

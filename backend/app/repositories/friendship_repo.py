@@ -1,4 +1,4 @@
-"""Friendship 数据访问层."""
+"""Friendship repo module."""
 from __future__ import annotations
 
 from sqlalchemy import and_, or_, select

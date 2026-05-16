@@ -1,4 +1,4 @@
-"""密钥链 API：用户个人密钥管理。"""
+"""Keychain API routes."""
 from datetime import datetime
 from typing import List
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/keychain", tags=["keychain"])
 
 
 def _mask_value(value: str) -> str:
-    """掩码显示密钥值，只显示最后4位。"""
+    """Mask value."""
     if not value:
         return "****"
     if len(value) <= 4:
@@ -28,7 +28,7 @@ async def list_keychain_items(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """获取当前用户的所有密钥项（不包含实际密钥值）。"""
+    """List keychain items."""
     stmt = select(KeychainItem).where(KeychainItem.owner_id == current_user.user_id)
     result = await db.execute(stmt)
     items = result.scalars().all()
@@ -57,7 +57,7 @@ async def create_keychain_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """创建新的密钥项。"""
+    """Create keychain item."""
     # Check whether the name already exists.
     stmt = select(KeychainItem).where(
         KeychainItem.owner_id == current_user.user_id,
@@ -97,7 +97,7 @@ async def get_keychain_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """获取单个密钥项（不包含实际密钥值）。"""
+    """Get keychain item."""
     item = await db.get(KeychainItem, key_id)
     if not item or item.owner_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="密钥项不存在")
@@ -121,7 +121,7 @@ async def update_keychain_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """更新密钥项。"""
+    """Update keychain item."""
     item = await db.get(KeychainItem, key_id)
     if not item or item.owner_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="密钥项不存在")
@@ -165,7 +165,7 @@ async def delete_keychain_item(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """删除密钥项。"""
+    """Delete keychain item."""
     item = await db.get(KeychainItem, key_id)
     if not item or item.owner_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="密钥项不存在")

@@ -24,7 +24,7 @@ export function ThinkFold({ content }: { content: string }) {
         </span>
         <span>
           {"<think> "}
-          {open ? "收起" : "展开"}
+          {open ? "Collapse" : "Expand"}
         </span>
       </button>
       {open && (

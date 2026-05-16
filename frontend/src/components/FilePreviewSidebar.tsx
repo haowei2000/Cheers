@@ -155,7 +155,7 @@ export function FilePreviewPanel({
         if (isExtractedPreview) {
           const data = payload?.data ?? payload;
           if (data?.preview_type === "unsupported") {
-            throw new Error(data.error || "当前文件暂不支持预览");
+            throw new Error(data.error || "This file cannot be previewed yet");
           }
           setTextKind(data?.preview_type === "markdown" ? "markdown" : "text");
           setTextContent(String(data?.content ?? ""));
@@ -186,7 +186,7 @@ export function FilePreviewPanel({
 
     const fileId = extractFileId(previewUrl);
     if (!fileId) {
-      setKkError("无法识别文件预览地址");
+      setKkError("Could not identify the file preview URL");
       setKkFallbackToText(true);
       return;
     }
@@ -203,7 +203,7 @@ export function FilePreviewPanel({
       .then((payload) => {
         const data = payload?.data ?? payload;
         if (!data?.enabled || !data?.viewer_url) {
-          throw new Error(data?.reason || "文档预览服务不可用");
+          throw new Error(data?.reason || "Document preview service is unavailable");
         }
         if (cancelled) return;
         setKkViewerUrl(String(data.viewer_url));
@@ -290,32 +290,32 @@ export function FilePreviewPanel({
           </div>
         </Tooltip>
         <div className="an-file-preview-actions">
-          <Tooltip content="下载文件" placement="bottom">
+          <Tooltip content="Download file" placement="bottom">
             <button
               type="button"
               onClick={handleDownload}
               className="an-file-preview-action"
-              aria-label="下载文件"
+              aria-label="Download file"
             >
               <AppIcon name="download" />
             </button>
           </Tooltip>
-          <Tooltip content="在新标签页打开" placement="bottom">
+          <Tooltip content="Open in a new tab" placement="bottom">
             <button
               type="button"
               onClick={handleOpen}
               className="an-file-preview-action"
-              aria-label="在新标签页打开"
+              aria-label="Open in a new tab"
             >
               <AppIcon name="externalLink" />
             </button>
           </Tooltip>
-          <Tooltip content="关闭预览" placement="bottom">
+          <Tooltip content="ClosePreview" placement="bottom">
             <button
               type="button"
               onClick={onClose}
               className="an-file-preview-action"
-              aria-label="关闭预览"
+              aria-label="ClosePreview"
             >
               <AppIcon name="close" />
             </button>
@@ -327,7 +327,7 @@ export function FilePreviewPanel({
         {isImage ? (
           <div className="an-file-preview-stage">
             {binaryLoading ? (
-              <span>加载中...</span>
+              <span>Loading...</span>
             ) : binaryError ? (
               <span style={{ color: "var(--red)" }}>{binaryError}</span>
             ) : binaryPreviewUrl ? (
@@ -340,7 +340,7 @@ export function FilePreviewPanel({
           </div>
         ) : isPdf || isHtml ? (
           binaryLoading ? (
-            <div className="an-file-preview-state">加载中...</div>
+            <div className="an-file-preview-state">Loading...</div>
           ) : binaryError ? (
             <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
               {binaryError}
@@ -357,7 +357,7 @@ export function FilePreviewPanel({
           ) : null
         ) : shouldUseKkFileView ? (
           kkLoading ? (
-            <div className="an-file-preview-state">加载中...</div>
+            <div className="an-file-preview-state">Loading...</div>
           ) : kkError ? (
             <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
               {kkError}
@@ -372,7 +372,7 @@ export function FilePreviewPanel({
           ) : null
         ) : shouldLoadText ? (
           textLoading ? (
-            <div className="an-file-preview-state">加载中…</div>
+            <div className="an-file-preview-state">Loading...</div>
           ) : textError ? (
             <div className="an-file-preview-state" style={{ color: "var(--red)" }}>
               {textError}
@@ -389,14 +389,14 @@ export function FilePreviewPanel({
         ) : (
           <div className="an-file-preview-empty">
             <FileTypeIcon contentType={contentType} filename={filename} size={44} />
-            <p>{kkError || "当前文件类型无法直接预览"}</p>
+            <p>{kkError || "This file type cannot be previewed directly"}</p>
             <button
               type="button"
               onClick={handleDownload}
               className="an-btn an-btn-primary"
             >
               <AppIcon name="download" className="w-4 h-4" />
-              下载文件
+              Download file
             </button>
           </div>
         )}

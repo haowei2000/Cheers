@@ -1,4 +1,4 @@
-"""验证 HttpBotAdapter 模板变量在直接调用和 call_bot 子调用场景下均能正确渲染。"""
+"""Tests for test template vars."""
 from __future__ import annotations
 
 import re
@@ -27,7 +27,7 @@ def _make_bot(
     model_name: str = "test-model",
     base_url: str = "http://fake:1234/v1",
 ) -> SimpleNamespace:
-    """构建一个供 HttpBotAdapter 使用的最小 bot 桩对象。"""
+    """Covers make bot behavior."""
     template = SimpleNamespace(
         system_prompt=system_prompt,
         user_template=user_template,
@@ -110,7 +110,7 @@ def _make_call_bot_run_ctx(
 # _apply_user_template unit tests.
 
 class TestApplyUserTemplate:
-    """直接测试 _apply_user_template 渲染逻辑。"""
+    """Covers Test Apply User Template behavior."""
 
     def _adapter(self, user_template: str = "{{message}}") -> HttpBotAdapter:
         bot = _make_bot(user_template=user_template)
@@ -167,7 +167,7 @@ class TestApplyUserTemplate:
         assert "什么进度？" in result
 
     def test_all_vars_combined(self) -> None:
-        """模板同时使用所有变量，确保无遗漏。"""
+        """Covers test all vars combined behavior."""
         tpl = (
             "bot={{bot_name}} sender={{sender_name}} channel={{channel_name}} "
             "cid={{channel_id}} ts={{timestamp}} "
@@ -199,7 +199,7 @@ class TestApplyUserTemplate:
         assert "msg=问题" in result
 
     def test_unknown_var_kept(self) -> None:
-        """模板中含未知变量时保留原始占位符。"""
+        """Covers test unknown var kept behavior."""
         adapter = self._adapter("{{unknown_var}} {{message}}")
         result = adapter._apply_user_template("hi")
         assert "{{unknown_var}}" in result
@@ -273,7 +273,7 @@ async def _execute_and_capture_body(adapter: HttpBotAdapter, payload: AgentPaylo
 
 @pytest.mark.asyncio
 async def test_execute_renders_all_context_vars() -> None:
-    """验证 execute() 构建的 messages 中模板变量全部被渲染。"""
+    """Covers test execute renders all context vars behavior."""
     user_template = (
         "频道={{channel_name}} 发送者={{sender_name}} Bot={{bot_name}} "
         "频道ID={{channel_id}} 时间={{timestamp}} "
@@ -338,7 +338,7 @@ async def test_execute_renders_all_context_vars() -> None:
 
 @pytest.mark.asyncio
 async def test_execute_renders_memory_when_default_template_requests_it() -> None:
-    """默认模板包含 {{memory}} 和 {{message}}，因此会渲染记忆。"""
+    """Covers test execute renders memory when default template requests it behavior."""
     bot = _make_bot()
     adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
     payload = AgentPayload(
@@ -371,7 +371,7 @@ async def test_execute_renders_memory_when_default_template_requests_it() -> Non
     assert messages[0]["role"] == "system"
     user_content = messages[1]["content"]
     assert "=== 频道记忆上下文" not in user_content
-    assert "## 项目锚点" not in user_content
+    assert "## Project Anchor" not in user_content
     root = _extract_channel_memory_xml(user_content)
     assert root.attrib["version"] == "1"
     assert root.find("./layer[@name='anchor']/content").text == "默认模板锚点"
@@ -384,7 +384,7 @@ async def test_execute_renders_memory_when_default_template_requests_it() -> Non
 
 @pytest.mark.asyncio
 async def test_execute_renders_default_template_without_memory_content() -> None:
-    """没有记忆内容时，{{memory}} 渲染为空，但 {{message}} 仍进入 LLM。"""
+    """Covers test execute renders default template without memory content behavior."""
     bot = _make_bot()
     adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
     payload = AgentPayload(
@@ -415,7 +415,7 @@ async def test_execute_renders_default_template_without_memory_content() -> None
 
 @pytest.mark.asyncio
 async def test_skip_system_prompt_still_renders_memory_template() -> None:
-    """call_bot 子调用跳过 system prompt 时，唯一 user message 仍按模板渲染。"""
+    """Covers test skip system prompt still renders memory template behavior."""
     bot = _make_bot()
     adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
     payload = AgentPayload(
@@ -458,7 +458,7 @@ async def test_skip_system_prompt_still_renders_memory_template() -> None:
 
 @pytest.mark.asyncio
 async def test_vision_request_renders_memory_template_in_text_part() -> None:
-    """图片请求走多模态 content 数组时，也必须按模板渲染 text part。"""
+    """Covers test vision request renders memory template in text part behavior."""
     bot = _make_bot()
     adapter = HttpBotAdapter(bot)  # type: ignore[arg-type]
     payload = AgentPayload(
@@ -502,14 +502,13 @@ async def test_vision_request_renders_memory_template_in_text_part() -> None:
 
 @pytest.mark.asyncio
 async def test_call_bot_passes_context_to_sub_bot() -> None:
-    """验证 call_bot 构建的 sub_payload 包含 channel_name 和 sender_name，
-    使子 bot 的模板变量能正确渲染。"""
+    """Covers test call bot passes context to sub bot behavior."""
     from app.features.bot_runtime.adapters.channel_bot import _make_tools
 
     captured_payload: list[AgentPayload] = []
 
     async def _fake_adapter_factory(bot_id: str):
-        """返回一个捕获 payload 的假 adapter。"""
+        """Covers fake adapter factory behavior."""
         class _CapturingAdapter(BotAdapter):
             async def execute(self, payload: AgentPayload):
                 captured_payload.append(payload)
@@ -588,7 +587,7 @@ async def test_call_bot_passes_context_to_sub_bot() -> None:
 
 @pytest.mark.asyncio
 async def test_call_bot_end_to_end_renders_delegated_xml() -> None:
-    """call_bot 调用 HttpBotAdapter 子 bot 时，发送单一 XML 委托提示。"""
+    """Covers test call bot end to end renders delegated xml behavior."""
     from app.features.bot_runtime.adapters.channel_bot import _make_tools
 
     all_vars_template = (

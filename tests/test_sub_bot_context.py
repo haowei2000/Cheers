@@ -1,4 +1,4 @@
-"""测试子 Bot 上下文传递优化。"""
+"""Tests for test sub bot context."""
 from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
@@ -65,7 +65,7 @@ def _make_run_ctx(*, memory_context: dict[str, str], adapter: BotAdapter) -> Bot
 
 @pytest.mark.asyncio
 async def test_call_bot_passes_memory_context():
-    """验证 call_bot 工具正确传递四层记忆给子 Bot。"""
+    """Covers test call bot passes memory context behavior."""
     # Mock the full four-layer memory context.
     memory_context = {
         "anchor": "项目目标：构建协作平台",
@@ -107,8 +107,7 @@ async def test_call_bot_passes_memory_context():
 
 @pytest.mark.asyncio
 async def test_call_bot_sub_bot_receives_decrypted_secret_parent_text():
-    """加密父消息解密后，Coordinator 通过 call_bot 委托子 Bot 时，
-    子 Bot payload 中应是明文任务，而不是入库占位符。"""
+    """Covers test call bot sub bot receives decrypted secret parent text behavior."""
     memory_context = {
         "anchor": "",
         "decisions": "",
@@ -146,7 +145,7 @@ async def test_call_bot_sub_bot_receives_decrypted_secret_parent_text():
 
 @pytest.mark.asyncio
 async def test_http_bot_receives_memory_as_template_vars():
-    """验证 HTTP Bot 将记忆上下文注入为模板变量。"""
+    """Covers test http bot receives memory as template vars behavior."""
     from app.db.models import AIModel, BotAccount, PromptTemplate
     from app.features.bot_runtime.adapters.http_bot import HttpBotAdapter
 

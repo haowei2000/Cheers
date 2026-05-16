@@ -65,7 +65,7 @@ hljs.registerAliases(["yml"], { languageName: "yaml" });
  * using a `mention://` scheme so the custom `a` renderer can style them.
  */
 function preprocessMentions(text: string): string {
-  // Split on code fences (```…```) and inline code (`…`) to skip them
+  // Split on code fences (```...```) and inline code (`...`) to skip them
   const parts = text.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
   return parts
     .map((part, i) =>
@@ -111,7 +111,7 @@ async function copyMarkdownComponentText(text: string) {
   if (!value.trim()) return;
   try {
     await navigator.clipboard.writeText(value);
-    toast.success("已复制此块");
+    toast.success("Copied this block");
   } catch {
     const textarea = document.createElement("textarea");
     textarea.value = value;
@@ -122,8 +122,8 @@ async function copyMarkdownComponentText(text: string) {
     textarea.select();
     const ok = document.execCommand("copy");
     textarea.remove();
-    if (ok) toast.success("已复制此块");
-    else toast.error("复制失败");
+    if (ok) toast.success("Copied this block");
+    else toast.error("Copy failed");
   }
 }
 
@@ -138,7 +138,7 @@ function CopyableMarkdownBlock({
   children,
   className = "",
   copyText,
-  title = "复制此块",
+  title = "Copy this block",
 }: CopyableMarkdownBlockProps) {
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -367,7 +367,7 @@ function MarkdownImage({ src, alt, onImageClick, ...props }: MarkdownImageProps)
     >
       <AppIcon name="image" className="an-md-muted-icon h-5 w-5 flex-shrink-0" />
       <span className="min-w-0 truncate">
-        {failed ? "图片预览不可用" : `图片预览加载中 (${attempt}/${MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS})`}
+        {failed ? "Image preview unavailable" : `Loading image preview (${attempt}/${MAX_MARKDOWN_IMAGE_LOAD_ATTEMPTS})`}
       </span>
     </span>
   );
@@ -595,7 +595,7 @@ function sanitizeMermaidSvg(svg: string): string | null {
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Mermaid 渲染超时")), timeoutMs);
+    const timer = setTimeout(() => reject(new Error("Mermaid render timed out")), timeoutMs);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -694,7 +694,7 @@ function normalizeXyChartBeta(code: string): string {
       const max = Math.max(...values);
       const yMin = min < 0 ? axisLimit(min * 1.1, "min") : "0";
       const yMax = axisLimit(max * 1.1, "max");
-      insertLines.push(`${indent}y-axis "值" ${yMin} --> ${yMax}`);
+      insertLines.push(`${indent}y-axis "Value" ${yMin} --> ${yMax}`);
     }
   }
 
@@ -772,10 +772,10 @@ async function renderMermaidWithCache(renderCode: string, theme: MermaidTheme): 
   const promise = (async () => {
     try {
       if (!MERMAID_RENDER_ENABLED) {
-        throw new Error("Mermaid 渲染已关闭");
+        throw new Error("Mermaid render closed");
       }
       if (renderCode.length > MERMAID_MAX_SOURCE_CHARS) {
-        throw new Error("Mermaid 图表过大，已跳过渲染");
+        throw new Error("Mermaid diagram is too large and was skipped");
       }
       const mermaid = (await import("mermaid")).default;
       mermaid.initialize({ securityLevel: "strict", startOnLoad: false, theme });
@@ -785,7 +785,7 @@ async function renderMermaidWithCache(renderCode: string, theme: MermaidTheme): 
       );
       const sanitizedSvg = sanitizeMermaidSvg(rendered);
       if (!sanitizedSvg) {
-        throw new Error("Mermaid SVG 清洗失败");
+        throw new Error("Mermaid SVG sanitization failed");
       }
       const entry: MermaidRenderCacheEntry = { templateId, svg: sanitizedSvg, error: null };
       rememberMermaidRender(key, entry);
@@ -846,7 +846,7 @@ const MermaidBlock = memo(function MermaidBlock({ code, streaming }: MermaidBloc
 
   if (streaming || (!svg && !error)) {
     return (
-      <CopyableMarkdownBlock copyText={code} title="复制 Mermaid 源码">
+      <CopyableMarkdownBlock copyText={code} title="Copy Mermaid source">
         <pre className="an-md-code-block my-2">
           <code>{code}</code>
         </pre>
@@ -856,17 +856,17 @@ const MermaidBlock = memo(function MermaidBlock({ code, streaming }: MermaidBloc
 
   if (error) {
     return (
-      <CopyableMarkdownBlock className="my-2" copyText={code} title="复制 Mermaid 源码">
+      <CopyableMarkdownBlock className="my-2" copyText={code} title="Copy Mermaid source">
         <pre className="an-md-code-block">
           <code>{code}</code>
         </pre>
-        <p className="an-type-caption an-md-error mt-1">Mermaid 渲染错误: {error}</p>
+        <p className="an-type-caption an-md-error mt-1">Mermaid render error: {error}</p>
       </CopyableMarkdownBlock>
     );
   }
 
   return (
-    <CopyableMarkdownBlock className="my-2" copyText={code} title="复制 Mermaid 源码">
+    <CopyableMarkdownBlock className="my-2" copyText={code} title="Copy Mermaid source">
       <div
         ref={containerRef}
         className="overflow-x-auto"
@@ -910,7 +910,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
           if (!inline) {
             const highlighted = highlightCode(codeText, lang);
             return (
-              <CopyableMarkdownBlock copyText={codeText} title="复制代码块">
+              <CopyableMarkdownBlock copyText={codeText} title="Copy code block">
                 <pre className="an-md-code-block my-2">
                   <code
                     className={`hljs${lang ? ` language-${lang}` : ""}`}
@@ -982,7 +982,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         p({ children, ...props }: any) {
           return (
-            <CopyableMarkdownBlock title="复制段落">
+            <CopyableMarkdownBlock title="Copy paragraph">
               <p className="an-type-body my-0.5 pr-7 leading-relaxed" {...props}>
                 {children}
               </p>
@@ -991,40 +991,40 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h1({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h1 className="an-type-title mt-4 mb-1 border-b border-[var(--border)] pb-1 pr-7" {...props}>{children}</h1></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="Copy heading"><h1 className="an-type-title mt-4 mb-1 border-b border-[var(--border)] pb-1 pr-7" {...props}>{children}</h1></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h2({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h2 className="an-type-body mt-3 mb-1 border-b border-[var(--border)] pb-1 pr-7 font-bold" {...props}>{children}</h2></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="Copy heading"><h2 className="an-type-body mt-3 mb-1 border-b border-[var(--border)] pb-1 pr-7 font-bold" {...props}>{children}</h2></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h3({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h3 className="an-type-body mt-2 mb-0.5 pr-7 font-semibold" {...props}>{children}</h3></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="Copy heading"><h3 className="an-type-body mt-2 mb-0.5 pr-7 font-semibold" {...props}>{children}</h3></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h4({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h4 className="an-type-body pr-7 font-semibold" {...props}>{children}</h4></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="Copy heading"><h4 className="an-type-body pr-7 font-semibold" {...props}>{children}</h4></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h5({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h5 className="an-type-label pr-7" {...props}>{children}</h5></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="Copy heading"><h5 className="an-type-label pr-7" {...props}>{children}</h5></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         h6({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制标题"><h6 className="an-type-label pr-7" {...props}>{children}</h6></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="Copy heading"><h6 className="an-type-label pr-7" {...props}>{children}</h6></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ul({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制列表"><ul className="an-type-body my-1 list-disc space-y-0.5 pl-5 pr-7" {...props}>{children}</ul></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="Copy list"><ul className="an-type-body my-1 list-disc space-y-0.5 pl-5 pr-7" {...props}>{children}</ul></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ol({ children, ...props }: any) {
-          return <CopyableMarkdownBlock title="复制列表"><ol className="an-type-body my-1 list-decimal space-y-0.5 pl-5 pr-7" {...props}>{children}</ol></CopyableMarkdownBlock>;
+          return <CopyableMarkdownBlock title="Copy list"><ol className="an-type-body my-1 list-decimal space-y-0.5 pl-5 pr-7" {...props}>{children}</ol></CopyableMarkdownBlock>;
         },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         blockquote({ children, ...props }: any) {
           return (
-            <CopyableMarkdownBlock title="复制引用">
+            <CopyableMarkdownBlock title="Copy quote">
               <blockquote
                 className="an-type-body my-1 border-l-4 border-[var(--accent)] bg-[var(--accent-muted)] py-0.5 pl-3 pr-7 italic"
                 {...props}
@@ -1037,7 +1037,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         table({ children, ...props }: any) {
           return (
-            <CopyableMarkdownBlock className="my-2" title="复制表格">
+            <CopyableMarkdownBlock className="my-2" title="Copy table">
               <div className="overflow-x-auto">
                 <table className="an-type-body w-full border-collapse" {...props}>
                   {children}

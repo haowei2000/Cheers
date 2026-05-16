@@ -56,7 +56,7 @@ export function useMessagePresentation({
         <button
           type="button"
           onClick={() => onShowMessageDetails(message)}
-          title="查看这条 AI 回复的记忆与流式事件"
+          title="View memory and streaming events for this AI reply"
           className="an-chat-action"
         >
           <AppIcon name="help" className="h-3.5 w-3.5" />
@@ -87,7 +87,7 @@ export function useMessagePresentation({
               _streaming: true,
             })),
           );
-          toast.error("取消失败");
+          toast.error("Cancel failed");
         }
       } catch {
         setMessageStore((prev) =>
@@ -96,7 +96,7 @@ export function useMessagePresentation({
             _streaming: true,
           })),
         );
-        toast.error("取消失败");
+        toast.error("Cancel failed");
       }
     },
     [authToken, selectedId, setMessageStore],
@@ -108,7 +108,7 @@ export function useMessagePresentation({
       return (
         <button
           type="button"
-          title="停止生成"
+          title="Stop generating"
           onClick={() => cancelStreamingMessage(message)}
           className="inline-flex items-center justify-center align-middle ml-1.5 w-5 h-5 rounded border"
           style={{
@@ -145,7 +145,7 @@ export function useMessagePresentation({
           color: "var(--fg-3)",
         }}
       >
-        已取消
+        Canceled
       </span>
     );
   }, []);

@@ -30,14 +30,14 @@ function dmLabel(dm: DM): string {
   return (
     dm.counterparty.display_name ||
     dm.counterparty.username ||
-    (dm.counterparty.member_type === "bot" ? "Bot" : "用户")
+    (dm.counterparty.member_type === "bot" ? "Bot" : "User")
   );
 }
 
 function dmSubLabel(dm: DM): string {
-  if (dm.counterparty.member_type === "bot") return "Bot 私信";
+  if (dm.counterparty.member_type === "bot") return "Bot DMs";
   if (dm.counterparty.username) return `@${dm.counterparty.username}`;
-  return "私信";
+  return "DMs";
 }
 
 export function ForwardMessageModal({
@@ -70,14 +70,14 @@ export function ForwardMessageModal({
       void onForwardToMember(selection.item.bot_id, "bot");
       return;
     }
-    toast.error("请选择频道、用户或 Bot");
+    toast.error("Select a channel, user, or bot");
   };
 
   return (
     <Modal
       open={open}
       onClose={submitting ? () => undefined : onClose}
-      title="转发到"
+      title="Forward to"
       description={summary}
       maxWidth="max-w-lg"
     >
@@ -89,13 +89,13 @@ export function ForwardMessageModal({
           modal
           autoFocus
           limit={8}
-          placeholder="搜索频道、用户或 Bot"
-          emptyText="没有可转发的目标"
+          placeholder="Search channels, users, or bots"
+          emptyText="No forward targets"
           actionLabel={(selection) =>
             selection.type === "channel" ||
             selection.type === "user" ||
             selection.type === "bot"
-              ? "转发"
+              ? "Forward"
               : null
           }
           onSelect={handleSearchPick}
@@ -104,12 +104,12 @@ export function ForwardMessageModal({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <section className="min-w-0">
             <div className="mb-2 text-xs font-semibold text-[var(--fg-3)]">
-              频道
+              Channels
             </div>
             <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
               {visibleChannels.length === 0 ? (
                 <div className="rounded-md border border-dashed border-[var(--border)] px-3 py-6 text-center text-xs text-[var(--fg-3)]">
-                  没有频道
+                  No channels
                 </div>
               ) : (
                 visibleChannels.map((channel) => (
@@ -139,12 +139,12 @@ export function ForwardMessageModal({
 
           <section className="min-w-0">
             <div className="mb-2 text-xs font-semibold text-[var(--fg-3)]">
-              私信
+              DMs
             </div>
             <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
               {visibleDMs.length === 0 ? (
                 <div className="rounded-md border border-dashed border-[var(--border)] px-3 py-6 text-center text-xs text-[var(--fg-3)]">
-                  没有私信
+                  No DMs
                 </div>
               ) : (
                 visibleDMs.map((dm) => (
@@ -184,7 +184,7 @@ export function ForwardMessageModal({
           disabled={submitting}
           onClick={onClose}
         >
-          取消
+          Cancel
         </button>
       </ModalFooter>
     </Modal>

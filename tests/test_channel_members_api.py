@@ -1,4 +1,4 @@
-"""ChatCore 频道成员 API 测试（TDD）."""
+"""Tests for test channel members api."""
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,7 @@ from app.db.models import Channel, ChannelMembership, User, Workspace, Workspace
 
 @pytest.mark.asyncio
 async def test_list_members_empty(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/channels/{id}/members 无成员时返回空列表."""
+    """Covers test list members empty behavior."""
     ws = Workspace(workspace_id="c0000000-0000-0000-0000-000000000001", name="W")
     ch = Channel(
         channel_id="d0000000-0000-0000-0000-000000000001",
@@ -29,7 +29,7 @@ async def test_list_members_empty(client: AsyncClient, db_session: AsyncSession)
 
 @pytest.mark.asyncio
 async def test_add_member_and_list(client: AsyncClient, db_session: AsyncSession) -> None:
-    """POST /api/channels/{id}/members 添加成员，GET 返回该成员."""
+    """Covers test add member and list behavior."""
     ws = Workspace(workspace_id="c0000000-0000-0000-0000-000000000002", name="W2")
     ch = Channel(
         channel_id="d0000000-0000-0000-0000-000000000002",
@@ -98,7 +98,7 @@ async def test_add_user_member_requires_workspace_membership(
 
 @pytest.mark.asyncio
 async def test_remove_member(client: AsyncClient, db_session: AsyncSession) -> None:
-    """DELETE /api/channels/{id}/members 移除成员."""
+    """Covers test remove member behavior."""
     ws = Workspace(workspace_id="c0000000-0000-0000-0000-000000000003", name="W3")
     ch = Channel(
         channel_id="d0000000-0000-0000-0000-000000000003",

@@ -1,4 +1,4 @@
-"""Bot 业务逻辑层."""
+"""Bot service module."""
 from __future__ import annotations
 
 import json
@@ -93,7 +93,7 @@ class BotService:
         return bot
 
     async def list_visible(self, current_user: User) -> list[BotAccount]:
-        """返回当前用户可发起 DM/邀请的 bot。"""
+        """List visible."""
         all_bots = await self.repo.list_all()
         if current_user.role == "system_admin":
             return all_bots
@@ -160,14 +160,7 @@ class BotService:
         binding_config: dict | None = None,
         current_user: User,
     ) -> tuple[BotAccount, str | None]:
-        """创建 Bot。
-
-        Returns:
-            (bot, plaintext_token)
-            - HTTP Bot：token 为 None
-            - Agent Bridge Bot：生成一次性明文 token，返回给调用者转发给用户；
-              此后只保留哈希
-        """
+        """Create."""
         username = _validate_username(username)
         intro = _validate_intro(intro)
         scope = normalize_bot_scope(scope)
@@ -222,10 +215,7 @@ class BotService:
         bot_id: str,
         current_user: User,
     ) -> tuple[BotAccount, str]:
-        """为 Agent Bridge Bot 轮换 token。旧 token 立即失效（哈希被覆盖）。
-
-        返回 (bot, plaintext_token)。权限：仅创建者或管理员。
-        """
+        """Rotate agent bridge token."""
         from app.features.agent_bridge.tokens import apply_token_to_bot
 
         bot = await self.get_or_404(bot_id)

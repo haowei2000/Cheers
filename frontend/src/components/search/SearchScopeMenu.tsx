@@ -29,10 +29,10 @@ export function SearchScopeMenu({
   if (!hasScopeOptions && !hasTypeOptions) return null;
 
   return (
-    <div className="an-search-scope-pop" role="dialog" aria-label="搜索设置">
+    <div className="an-search-scope-pop" role="dialog" aria-label="Search settings">
       {hasScopeOptions && (
-        <div className="an-search-settings-section" role="radiogroup" aria-label="搜索范围">
-          <div className="an-search-settings-heading">范围</div>
+        <div className="an-search-settings-section" role="radiogroup" aria-label="Search scope">
+          <div className="an-search-settings-heading">Scope</div>
           {options.map((option) => {
             const selected = option.value === value;
             return (
@@ -60,7 +60,7 @@ export function SearchScopeMenu({
       )}
       {hasTypeOptions && onTypeToggle && (
         <div className="an-search-settings-section">
-          <div className="an-search-settings-heading">类型</div>
+          <div className="an-search-settings-heading">Type</div>
           <SearchFilters
             options={typeOptions}
             activeTypes={activeTypes}

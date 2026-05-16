@@ -1,4 +1,4 @@
-"""Workspace 业务逻辑层."""
+"""Workspace service module."""
 from __future__ import annotations
 
 from sqlalchemy import and_, or_, select
@@ -23,7 +23,7 @@ class WorkspaceService:
         self.user_repo = UserRepository(session)
 
     async def _check_workspace_permission(self, workspace_id: str, current_user: User, allowed_roles=("owner", "admin")) -> None:
-        """检查用户是否有权限在工作空间内执行操作."""
+        """Check workspace permission."""
         if is_admin(current_user):
             return
         membership = await self.repo.get_membership(workspace_id, current_user.user_id)
@@ -31,7 +31,7 @@ class WorkspaceService:
             raise ForbiddenError("没有权限执行此操作（需要工作空间所有者或管理员权限）")
 
     async def _check_workspace_member(self, workspace_id: str, current_user: User) -> None:
-        """检查用户是否可读取工作空间内成员/频道等基础信息."""
+        """Check workspace member."""
         if is_admin(current_user):
             return
         membership = await self.repo.get_membership(workspace_id, current_user.user_id)

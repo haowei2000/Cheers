@@ -1,4 +1,4 @@
-"""Auth 业务逻辑层."""
+"""Auth service module."""
 from __future__ import annotations
 
 import re
@@ -37,7 +37,7 @@ class AuthService:
     # ---- Registration / Login ----
 
     async def send_verification_code(self, email: str, purpose: str) -> str:
-        """生成验证码并存储，返回明文（调用方负责发送邮件）。"""
+        """Send verification code."""
         if purpose not in _OTP_VALID_PURPOSES:
             raise BadRequestError("无效的 purpose")
         email = email.strip().lower()
@@ -99,7 +99,7 @@ class AuthService:
         display_name: Optional[str] = None,
         email: Optional[str] = None,
     ) -> User:
-        """直接注册（无需验证码，用于开发/内部用途）."""
+        """Register."""
         username = username.strip()
         if not username:
             raise BadRequestError("用户名不能为空")
@@ -117,7 +117,7 @@ class AuthService:
         )
 
     async def login(self, username: str, password: str) -> tuple[User, str]:
-        """用用户名或邮箱登录，返回 (user, access_token)."""
+        """Login."""
         from sqlalchemy import or_
         result = await self.session.execute(
             select(User).where(
@@ -131,7 +131,7 @@ class AuthService:
         return user, token
 
     async def forgot_password(self, email: str, code: str, new_password: str) -> None:
-        """通过邮箱验证码重置密码."""
+        """Forgot password."""
         email = email.strip().lower()
         _validate_password(new_password)
         await self._verify_code(email, "reset_password", code)

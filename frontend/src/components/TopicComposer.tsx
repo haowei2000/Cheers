@@ -91,11 +91,11 @@ export function TopicComposer({
       keychainItems={keychainItems}
       onToggleKeychain={onToggleKeychain}
       onCloseKeychain={onCloseKeychain}
-      sendButtonLabel={busy ? "发送中…" : "回复"}
+      sendButtonLabel={busy ? "Sending..." : "Reply"}
       normalHint={
         <>
-          <kbd>@</kbd> 提及 · <kbd>↵</kbd> 发送 · <kbd>⇧↵</kbd> 换行 ·
-          在这里的回复只留在本主题里
+          <kbd>@</kbd> mentions · <kbd>↵</kbd> Send · <kbd>⇧↵</kbd> line break ·
+          Replies here stay in this topic
         </>
       }
     />

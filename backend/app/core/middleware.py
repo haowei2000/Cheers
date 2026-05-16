@@ -1,4 +1,4 @@
-"""请求 ID 注入 + 访问日志中间件."""
+"""Middleware module."""
 import logging
 import time
 from uuid import uuid4

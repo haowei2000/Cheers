@@ -1,4 +1,4 @@
-"""Friendship 业务逻辑层."""
+"""Friendship service module."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -31,7 +31,7 @@ class FriendshipService:
     # ---- Query helpers -------------------------------------------------
 
     async def search_users(self, query: str, current_user: User, limit: int = 20) -> list[dict]:
-        """搜索用户（按 ID、用户名、显示名），排除当前用户并附带关系状态."""
+        """Search users."""
         q = query.strip()
         if not q:
             return []

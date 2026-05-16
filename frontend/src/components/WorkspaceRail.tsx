@@ -92,12 +92,12 @@ export function WorkspaceRail({
         <>
           <Tile
             label={personal.name}
-            initials="个"
+            initials="P"
             color="var(--accent)"
             avatarUrl={personal.avatar_url}
             active={selectedWorkspaceId === personal.workspace_id}
             round
-            title={`${personal.name} · 私信`}
+            title={`${personal.name} · DMs`}
             onClick={() => onSelect(personal.workspace_id)}
           />
           <div className="an-wsr-sep" />
@@ -126,8 +126,8 @@ export function WorkspaceRail({
           type="button"
           className="an-wsr-tile an-wsr-add"
           onClick={onCreate}
-          title="创建工作空间"
-          aria-label="创建工作空间"
+          title="Create workspace"
+          aria-label="Create workspace"
         >
           +
         </button>

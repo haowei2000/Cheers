@@ -1,4 +1,4 @@
-"""Context Store：四层 key 读写（ADR D-02）."""
+"""Context store module."""
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -28,7 +28,7 @@ def _get_session_factory():
 
 
 async def init_context_db() -> None:
-    """创建 context_store 表（如果不存在）."""
+    """Init context db."""
     global _context_db_initialized
     if _context_db_initialized:
         return
@@ -47,7 +47,7 @@ async def init_context_db() -> None:
 
 
 async def get_layer(channel_id: str, layer: str) -> str:
-    """读取一层内容，不存在则返回空字符串."""
+    """Get layer."""
     factory = _get_session_factory()
     async with factory() as session:
         result = await session.execute(
@@ -59,7 +59,7 @@ async def get_layer(channel_id: str, layer: str) -> str:
 
 
 async def set_layer(channel_id: str, layer: str, content: str) -> None:
-    """写入一层（UPSERT）."""
+    """Set layer."""
     now = datetime.now(timezone.utc).isoformat()
     factory = _get_session_factory()
     async with factory() as session:
@@ -75,7 +75,7 @@ async def set_layer(channel_id: str, layer: str, content: str) -> None:
 
 
 async def get_all_layers(channel_id: str) -> dict[str, str]:
-    """读取频道四层记忆，供 Orchestrator 注入（单次查询）."""
+    """Get all layers."""
     factory = _get_session_factory()
     async with factory() as session:
         rows = await session.execute(

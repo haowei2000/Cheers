@@ -29,7 +29,7 @@ export function EntryEditor({
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="标题（可选）"
+          placeholder="Title (optional)"
           className="flex-1 text-sm font-medium bg-transparent border-none outline-none placeholder-gray-400"
         />
         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
@@ -37,13 +37,13 @@ export function EntryEditor({
             onClick={() => setPreviewMode(false)}
             className={`text-xs px-2 py-1 rounded ${!previewMode ? "bg-white shadow-sm text-gray-700" : "text-gray-400 hover:text-gray-600"}`}
           >
-            编辑
+            Edit
           </button>
           <button
             onClick={() => setPreviewMode(true)}
             className={`text-xs px-2 py-1 rounded ${previewMode ? "bg-white shadow-sm text-gray-700" : "text-gray-400 hover:text-gray-600"}`}
           >
-            预览
+            Preview
           </button>
         </div>
       </div>
@@ -53,7 +53,7 @@ export function EntryEditor({
             {content.trim() ? (
               <MessageMarkdown text={content} />
             ) : (
-              <p className="text-gray-400 italic">暂无内容</p>
+              <p className="text-gray-400 italic">No content</p>
             )}
           </div>
         ) : (
@@ -61,7 +61,7 @@ export function EntryEditor({
             ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="支持 Markdown 格式…"
+            placeholder="Markdown is supported..."
             className="w-full min-h-[160px] p-4 text-sm font-mono leading-relaxed resize-y border-none outline-none"
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
@@ -71,20 +71,20 @@ export function EntryEditor({
         )}
       </div>
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-t border-gray-100">
-        <span className="text-[11px] text-gray-400">Ctrl+Enter 保存</span>
+        <span className="text-[11px] text-gray-400">Ctrl+Enter Save</span>
         <div className="flex gap-2">
           <button
             onClick={onCancel}
             className="text-xs px-3 py-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
           >
-            取消
+            Cancel
           </button>
           <button
             onClick={() => onSave(title, content)}
             disabled={saving || !content.trim()}
             className="text-xs px-3 py-1.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94] disabled:opacity-50"
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>

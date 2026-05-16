@@ -39,7 +39,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || "登录失败");
+      if (!res.ok) throw new Error(data.detail || data.message || "Sign-in failed");
       const payload = data.data ?? data;
       const userInfo = payload.user ?? payload;
       const user: AuthUser = {
@@ -67,7 +67,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     onSent: () => void,
   ) => {
     if (!email.trim() || !email.includes("@")) {
-      setLoginError("请输入有效的邮箱地址");
+      setLoginError("Enter a valid email address");
       return;
     }
     if (purpose === "register") setRegCodeLoading(true);
@@ -80,9 +80,9 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         body: JSON.stringify({ email: email.trim(), purpose }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "发送失败");
+      if (!res.ok) throw new Error(data.detail || "Send failed");
       onSent();
-      toast.success("验证码已发送，请查收邮件");
+      toast.success("Verification code sent. Check your email.");
     } catch (e: any) {
       setLoginError(e.message);
     } finally {
@@ -111,7 +111,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || "注册失败");
+      if (!res.ok) throw new Error(data.detail || data.message || "Registration failed");
       const loginRes = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,7 +145,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
 
   const handleForgotPassword = async () => {
     if (!forgotCode.trim() || !forgotNewPw.trim()) {
-      setLoginError("请填写验证码和新密码");
+      setLoginError("Enter the verification code and new password");
       return;
     }
     setLoginLoading(true);
@@ -161,8 +161,8 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "重置失败");
-      toast.success("密码已重置，请重新登录");
+      if (!res.ok) throw new Error(data.detail || "Reset failed");
+      toast.success("Password reset. Please sign in again.");
       setAuthMode("login");
       setForgotEmail("");
       setForgotCode("");
@@ -199,17 +199,17 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
           </div>
           <h2 className="an-type-title">
             {authMode === "login"
-              ? "登录到智枢"
+              ? "Sign in to AgentNEXUS"
               : authMode === "register"
-                ? "创建账号"
-                : "重置密码"}
+                ? "Create account"
+                : "Reset password"}
           </h2>
           <p className="an-type-meta mt-1">
             {authMode === "login"
-              ? "欢迎回来！"
+              ? "Welcome back."
               : authMode === "register"
-                ? "填写信息以创建新账号"
-                : "通过邮箱验证重置密码"}
+                ? "Fill in details to create an account"
+                : "Reset your password with email verification"}
           </p>
         </div>
         {loginError && (
@@ -232,14 +232,14 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
           >
             <input
               name="username"
-              placeholder="用户名或邮箱"
+              placeholder="Username or email"
               required
               className="an-input mb-3"
             />
             <input
               name="password"
               type="password"
-              placeholder="密码"
+              placeholder="Password"
               required
               className="an-input mb-1"
             />
@@ -252,7 +252,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 }}
                 className="an-text-link an-type-caption"
               >
-                忘记密码？
+                Forgot password?
               </button>
             </div>
             <button
@@ -260,7 +260,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               disabled={loginLoading}
               className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中…" : "登录"}
+              {loginLoading ? "Processing..." : "Sign in"}
             </button>
           </form>
         )}
@@ -288,7 +288,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setRegCode("");
                 }}
                 type="email"
-                placeholder="邮箱地址（必填）"
+                placeholder="Email address (required)"
                 required
                 className="an-input flex-1"
               />
@@ -303,16 +303,16 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 className="an-btn an-btn-ghost an-btn-sm"
               >
                 {regCodeLoading
-                  ? "发送中"
+                  ? "Sending"
                   : regCodeSent
-                    ? "重新发送"
-                    : "获取验证码"}
+                    ? "Resend"
+                    : "Get code"}
               </button>
             </div>
             <input
               value={regCode}
               onChange={(e) => setRegCode(e.target.value)}
-              placeholder="邮箱验证码"
+              placeholder="Email verification code"
               required
               disabled={!regCodeSent}
               className="an-input mb-4"
@@ -320,14 +320,14 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
             {/* Step 2: Account info (shown after code sent) */}
             <input
               name="display_name"
-              placeholder="显示名称"
+              placeholder="Display name"
               required
               disabled={!regCodeSent}
               className="an-input mb-3"
             />
             <input
               name="username"
-              placeholder="用户名（登录用）"
+              placeholder="Username (for sign-in)"
               required
               disabled={!regCodeSent}
               className="an-input mb-3"
@@ -335,7 +335,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
             <input
               name="password"
               type="password"
-              placeholder="密码（8位以上，含字母和数字）"
+              placeholder="Password (8+ chars, letters and numbers)"
               required
               disabled={!regCodeSent}
               className="an-input mb-4"
@@ -345,7 +345,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               disabled={loginLoading || !regCodeSent}
               className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中…" : "注册"}
+              {loginLoading ? "Processing..." : "Create account"}
             </button>
           </form>
         )}
@@ -358,7 +358,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 value={forgotEmail}
                 onChange={(e) => setForgotEmail(e.target.value)}
                 type="email"
-                placeholder="注册邮箱"
+                placeholder="Registered email"
                 required
                 className="an-input flex-1"
               />
@@ -373,23 +373,23 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 className="an-btn an-btn-ghost an-btn-sm"
               >
                 {forgotCodeLoading
-                  ? "发送中"
+                  ? "Sending"
                   : forgotCodeSent
-                    ? "重新发送"
-                    : "获取验证码"}
+                    ? "Resend"
+                    : "Get code"}
               </button>
             </div>
             <input
               value={forgotCode}
               onChange={(e) => setForgotCode(e.target.value)}
-              placeholder="邮箱验证码"
+              placeholder="Email verification code"
               className="an-input mb-3"
             />
             <input
               value={forgotNewPw}
               onChange={(e) => setForgotNewPw(e.target.value)}
               type="password"
-              placeholder="新密码（8位以上，含字母和数字）"
+              placeholder="New password (8+ chars, letters and numbers)"
               className="an-input mb-4"
             />
             <button
@@ -397,7 +397,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               disabled={loginLoading || !forgotCodeSent}
               className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中…" : "重置密码"}
+              {loginLoading ? "Processing..." : "Reset password"}
             </button>
           </div>
         )}
@@ -405,7 +405,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
         <div className="an-type-meta mt-4 text-center">
           {authMode === "login" ? (
             <>
-              没有账号？{" "}
+              No account?{" "}
               <button
                 onClick={() => {
                   setAuthMode("register");
@@ -413,7 +413,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 }}
                 className="an-text-link"
               >
-                注册
+                created account
               </button>
             </>
           ) : (
@@ -424,7 +424,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               }}
               className="an-text-link"
             >
-              返回登录
+              Back to sign in
             </button>
           )}
         </div>

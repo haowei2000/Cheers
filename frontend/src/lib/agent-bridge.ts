@@ -29,8 +29,8 @@ export function getAgentBridgeTaskData(
     return {
       kind: AGENT_BRIDGE_TASK_KIND,
       status: message._streaming ? "running" : "done",
-      title: "Agent Bridge 过程",
-      message: message._streaming ? "provider 正在执行。" : "任务已完成。",
+      title: "Agent Bridge trace",
+      message: message._streaming ? "Provider is running." : "Task completed.",
       task_id: message.task_id || null,
     };
   }

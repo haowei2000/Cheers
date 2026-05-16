@@ -1,4 +1,4 @@
-"""API v1 路由聚合."""
+"""Router module."""
 from fastapi import APIRouter
 
 from app.api.v1.admin.routes import router as admin_router

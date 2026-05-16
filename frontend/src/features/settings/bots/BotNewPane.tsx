@@ -70,11 +70,11 @@ export function BotNewPane({
 
   const create = async () => {
     if (!username.trim()) {
-      toast.error("用户名必填");
+      toast.error("Username is required");
       return;
     }
     if (bindingType === "http" && (!modelId || !templateId)) {
-      toast.error("HTTP Bot 必须选择模型和模板");
+      toast.error("HTTP bots require a model and template");
       return;
     }
     const body: Record<string, unknown> = {
@@ -104,7 +104,7 @@ export function BotNewPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("Bot 创建成功");
+        toast.success("Bot created successfully");
         const created = data.data as BotRow & { bot_token?: string | null };
         if (bindingType === "agent_bridge" && created?.bot_token) {
           setIssued({ token: created.bot_token, bot: created });
@@ -112,10 +112,10 @@ export function BotNewPane({
           onCreated(created);
         }
       } else {
-        toast.error(data?.message || data?.detail || "创建失败");
+        toast.error(data?.message || data?.detail || "Create failed");
       }
     } catch (e: unknown) {
-      toast.error((e as Error).message || "创建失败");
+      toast.error((e as Error).message || "Create failed");
     } finally {
       setCreating(false);
     }
@@ -126,10 +126,10 @@ export function BotNewPane({
       <div className="an-pane">
         <div className="an-pane-head">
           <div>
-            <div className="an-pane-title">Bot 已创建 · 保存 Agent Bridge Token</div>
+            <div className="an-pane-title">Bot created · Save Agent Bridge Token</div>
             <div className="an-pane-sub">
-              这是一次性明文 token，关闭此页面后将无法再查看。请立即复制并填入
-              Agent Bridge provider 配置；之后只能通过"轮换 token"重新生成。
+              This plain-text token is shown only once. After closing this page, it cannot be viewed again. Copy it now and put it in
+              the Agent Bridge provider configuration. After that, you can only regenerate it by rotating the token.
             </div>
           </div>
         </div>
@@ -149,31 +149,31 @@ export function BotNewPane({
                 type="button"
                 onClick={() => {
                   navigator.clipboard.writeText(issued.token);
-                  toast.success("Token 已复制");
+                  toast.success("Token copied");
                 }}
                 className="an-btn an-btn-sm"
               >
-                复制
+                Copy
               </button>
             </div>
             <div className="an-rc-sub" style={{ marginTop: 0 }}>
-              在 plugin 端用
+              In the plugin, use
               <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
                 Authorization: Bearer {"<token>"}
               </code>
-              连接
+              Connect
               <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
                 /ws/agent-bridge/control
               </code>
-              和
+              and
               <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
                 /ws/agent-bridge/data
               </code>
-              即可接管该 Bot。
+              to take over this bot.
             </div>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <PrimaryButton onClick={() => onCreated(issued.bot)}>完成</PrimaryButton>
+            <PrimaryButton onClick={() => onCreated(issued.bot)}>Done</PrimaryButton>
           </div>
         </div>
       </div>
@@ -185,8 +185,8 @@ export function BotNewPane({
       <div className="an-pane">
         <div className="an-pane-head">
           <div>
-            <div className="an-pane-title">新建 Bot · 选择类型</div>
-            <div className="an-pane-sub">不同类型的 Bot 需要不同的配置项。</div>
+            <div className="an-pane-title">New bot · choose type</div>
+            <div className="an-pane-sub">Different bot types require different settings.</div>
           </div>
         </div>
         <div className="an-list-table">
@@ -194,18 +194,18 @@ export function BotNewPane({
             id="http"
             active={bindingType === "http"}
             title="HTTP Bot"
-            sub="由后端调用 LLM provider，需要绑定 AI 模型与 Prompt 模板。"
+            sub="The backend calls an LLM provider and requires an AI model plus a prompt template."
             onClick={() => setBindingType("http")}
           />
           <BindingTypeCard
             id="agent_bridge"
             active={bindingType === "agent_bridge"}
             title="Agent Bridge Bot"
-            sub="由外部 provider 反向连接并异步回推，可绑定 Prompt 模板。"
+            sub="An external provider connects back and pushes results asynchronously. A prompt template can be bound."
             onClick={() => setBindingType("agent_bridge")}
           />
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            <PrimaryButton onClick={() => setStep(2)}>下一步 →</PrimaryButton>
+            <PrimaryButton onClick={() => setStep(2)}>Next →</PrimaryButton>
           </div>
         </div>
       </div>
@@ -217,7 +217,7 @@ export function BotNewPane({
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">
-            新建 Bot · {bindingType === "http" ? "HTTP" : "Agent Bridge"} 配置
+            New bot · {bindingType === "http" ? "HTTP" : "Agent Bridge"} Configuration
           </div>
           <div className="an-pane-sub">
             <button
@@ -225,11 +225,11 @@ export function BotNewPane({
             onClick={() => setStep(1)}
             className="an-back"
           >
-              ← 重新选择类型
+              ← Choose type again
             </button>
           </div>
         </div>
-        <div className="an-seg" role="tablist" aria-label="新建 Bot 配置视图">
+        <div className="an-seg" role="tablist" aria-label="New bot configuration view">
           <button
             type="button"
             className={configTab === "profile" ? "on" : ""}
@@ -237,7 +237,7 @@ export function BotNewPane({
             role="tab"
             aria-selected={configTab === "profile"}
           >
-            资料
+            Profile
           </button>
           <button
             type="button"
@@ -246,31 +246,31 @@ export function BotNewPane({
             role="tab"
             aria-selected={configTab === "runtime"}
           >
-            配置
+            Configuration
           </button>
         </div>
       </div>
       <div className="an-list-table">
         {configTab === "profile" && (
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">基本信息</div>
-          <Field label="用户名（@后跟的标识）">
+          <div className="an-rc-title">Basic information</div>
+          <Field label="Username (the @ handle)">
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className={inputCls}
-              placeholder="如 helper"
+              placeholder="e.g. helper"
             />
           </Field>
-          <Field label="显示名称">
+          <Field label="Display name">
             <input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className={inputCls}
-              placeholder="如 频道助手"
+              placeholder="e.g. channel-helper"
             />
           </Field>
-          <Field label="头像 URL">
+          <Field label="Avatar URL">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <BotAvatar
                 label={displayName || username || "Bot"}
@@ -287,7 +287,7 @@ export function BotNewPane({
               />
             </div>
           </Field>
-          <Field label="描述（可选）">
+          <Field label="Description (optional)">
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -295,7 +295,7 @@ export function BotNewPane({
               className={`${inputCls} resize-none`}
             />
           </Field>
-          <Field label="使用范围">
+          <Field label="Scope">
             <BotScopeControl value={scope} onChange={setScope} disabled={creating} />
           </Field>
         </div>
@@ -305,16 +305,16 @@ export function BotNewPane({
           <>
         {bindingType === "http" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">LLM 模型</div>
+            <div className="an-rc-title">LLM models</div>
             <ModelBrandCard model={selectedModel} />
-            <Field label="AI 模型">
+            <Field label="AI model">
               <select
                 value={modelId}
                 onChange={(e) => setModelId(e.target.value)}
                 className={inputCls}
               >
                 {models.length === 0 ? (
-                  <option value="">（无可用模型，请先在设置的 LLM 模型中创建）</option>
+                  <option value="">(No models available. Create one in Settings &gt; LLM models first.)</option>
                 ) : (
                   models.map((m) => (
                     <option key={m.model_id} value={m.model_id}>
@@ -328,15 +328,15 @@ export function BotNewPane({
         )}
 
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">Prompt 模板</div>
-          <Field label={bindingType === "agent_bridge" ? "发送给 plugin 的任务模板" : "Prompt 模板"}>
+          <div className="an-rc-title">Prompt template</div>
+          <Field label={bindingType === "agent_bridge" ? "Task template sent to the plugin" : "Prompt template"}>
             <select
               value={templateId}
               onChange={(e) => setTemplateId(e.target.value)}
               className={inputCls}
             >
               {templates.length === 0 ? (
-                <option value="">（无可用模板，请先在设置的消息模板中创建）</option>
+                <option value="">(No templates available. Create one in Settings &gt; Message templates first.)</option>
               ) : (
                 templates.map((t) => (
                   <option key={t.template_id} value={t.template_id}>
@@ -348,31 +348,31 @@ export function BotNewPane({
           </Field>
           {bindingType === "agent_bridge" && (
             <div className="an-rc-sub" style={{ marginTop: 0 }}>
-              模板会在后端渲染成最终任务文本，再通过 Agent Bridge 下发给 provider。
+              The backend renders the template into final task text, then sends it to the provider through Agent Bridge.
             </div>
           )}
         </div>
 
         {bindingType === "agent_bridge" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">Agent Bridge 绑定</div>
+            <div className="an-rc-title">Agent Bridge binding</div>
             <div className="an-rc-sub" style={{ marginTop: 0 }}>
-              创建后将得到一次性的 bot token，把它填到 plugin 配置里，plugin 连
+              After creation, you will receive a one-time bot token. Put it in the plugin config and connect the plugin to
               <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
                 /ws/agent-bridge/control
               </code>
-              和
+              and
               <code style={{ background: "var(--surface-soft)", padding: "0 4px", borderRadius: 3, margin: "0 2px" }}>
                 /ws/agent-bridge/data
               </code>
-              即可接管该 Bot。
+              to take over this bot.
             </div>
-            <Field label="Provider agent id（可选）">
+            <Field label="Provider agent ID (optional)">
               <input
                 value={agentId}
                 onChange={(e) => setAgentId(e.target.value)}
                 className={inputCls}
-                placeholder="如 agent-codereview"
+                placeholder="e.g. agent-codereview"
               />
             </Field>
           </div>
@@ -386,10 +386,10 @@ export function BotNewPane({
             onClick={() => setStep(1)}
             className="an-btn"
           >
-            上一步
+            Back
           </button>
           <PrimaryButton onClick={create} disabled={creating || !username.trim()}>
-            {creating ? "创建中…" : "创建"}
+            {creating ? "Creating..." : "Create"}
           </PrimaryButton>
         </div>
       </div>

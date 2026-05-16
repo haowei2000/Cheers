@@ -1,4 +1,4 @@
-"""admin.settings_store 回退逻辑测试。"""
+"""Tests for test settings store."""
 from __future__ import annotations
 
 from app.config import settings

@@ -1,4 +1,4 @@
-"""Message v1 路由."""
+"""Messages API routes."""
 from __future__ import annotations
 
 import asyncio
@@ -184,7 +184,7 @@ async def _handle_send_message(
     current_user: User,
     background_tasks: BackgroundTasks | None = None,
 ) -> tuple[MessageDTO, str | None]:
-    """持久化消息、广播、调度 Bot pipeline。返回 (payload_dict, secret_token)。"""
+    """Handle send message."""
     await ChannelService(session).require_can_send_message(channel_id, current_user)
     raw_content_data = getattr(body, "content_data", None)
     if hasattr(raw_content_data, "model_dump"):
@@ -435,7 +435,7 @@ async def forward_messages(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """把消息或文件转发到目标频道/DM。"""
+    """Forward messages."""
     channel_service = ChannelService(session)
     await channel_service.require_can_send_message(channel_id, current_user)
     source_messages, source_files = await _load_forward_sources(
@@ -576,7 +576,7 @@ async def send_message_stream(
     body: MessageStreamCreate,
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    """发送消息，通过 SSE 返回 Bot 流式输出。"""
+    """Send message stream."""
     from app.core.exceptions import AppError, BadRequestError, NotFoundError
 
     normalized_file_ids = _normalize_file_ids(body.file_ids, body.file_id)
@@ -746,12 +746,7 @@ async def resolve_permission(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """对 permission 类型消息（工具调用审批卡）记录 allow/deny。
-
-    - 仅 msg_type == "permission" 的消息可被 resolve；
-    - 已 resolved 的消息不可再次 resolve（返回原值）；
-    - 成功后在同频道广播更新后的消息。
-    """
+    """Resolve permission."""
     from datetime import datetime, timezone
 
     from sqlalchemy import select
@@ -801,7 +796,7 @@ async def reveal_secret_message(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """解密并返回加密消息原始内容（1 分钟内有效，查看后立即清除）。"""
+    """Reveal secret message."""
     import hmac as _hmac
     from datetime import datetime as _dt
     from datetime import timedelta, timezone

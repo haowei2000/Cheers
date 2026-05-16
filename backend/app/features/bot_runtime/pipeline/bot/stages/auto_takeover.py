@@ -1,18 +1,4 @@
-"""AutoTakeoverStage: coordinator direct-answer + auto-takeover phase 2.
-
-Runs only when ``ctx.direct_answer_mode`` and the Coordinator bot is among
-the target usernames — i.e. the channel has auto-assist enabled and the
-user didn't @-mention anyone, so the workflow builder routed the message
-to the Coordinator.
-
-Per-bot dispatch (pre-create, execute, finalize, record_task, recurse) is
-shared with DispatchStage / call_bot via ``pipeline.bot.subagent``. This
-stage's job is the policy: give the coordinator
-``Capabilities.coordinator()`` (full call_bot + msg_type for clarify
-rendering), parse the coordinator's reply for ``建议 @bot1, @bot2``
-mentions, and dispatch the suggestees with ``Capabilities.leaf()`` so
-they can't recursively call_bot further.
-"""
+"""Auto takeover module."""
 from __future__ import annotations
 
 import logging

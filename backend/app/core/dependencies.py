@@ -1,4 +1,4 @@
-"""集中所有 FastAPI 依赖注入函数."""
+"""Dependencies module."""
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -91,7 +91,7 @@ _PERMISSIONS: dict[str, list[str]] = {
 
 
 def require_permission(permission: str):
-    """生成一个权限检查依赖."""
+    """Require permission."""
     async def _check(current_user: User = Depends(get_current_user)) -> User:
         allowed = _PERMISSIONS.get(permission, [])
         if current_user.role not in allowed:
@@ -106,7 +106,7 @@ def require_permission(permission: str):
 # ---------------------------------------------------------------------------
 
 def get_http_client(request: Request) -> httpx.AsyncClient:
-    """从 app.state 获取共享 HTTP 客户端."""
+    """Get http client."""
     client: httpx.AsyncClient | None = getattr(request.app.state, "http_client", None)
     if client is None:
         # Fallback to module globals for non-FastAPI contexts.
@@ -116,5 +116,5 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
 
 
 def get_storage(request: Request):
-    """从 app.state 获取存储服务（可能为 None，如未配置）."""
+    """Get storage."""
     return getattr(request.app.state, "storage", None)

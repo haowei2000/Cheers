@@ -1,4 +1,4 @@
-"""文件保留期行为测试。"""
+"""Tests for test file retention."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone

@@ -53,7 +53,7 @@ def _generate_skill_json(skill_id: str, name: str, category: str, files: list) -
         "id": skill_id,
         "name": name,
         "version": "1.0.0",
-        "description": f"从压缩包导入的技能: {name}",
+        "description": f"Imported from archive: {name}",
         "category": category,
         "author": "imported",
         "support_openclaw_version": ">=1.0.0",
@@ -65,8 +65,9 @@ def _generate_skill_json(skill_id: str, name: str, category: str, files: list) -
 
 def _safe_extract(archive_path: Path, extract_to: Path) -> bool:
     """
-    Extract safely and prevent path traversal attacks.
-    Check every file path to ensure writes stay inside the target directory.
+        Extract safely and prevent path traversal attacks.
+        Check every file path to ensure writes stay inside the target directory.
+
     """
     archive_type = _get_archive_type(str(archive_path))
     extract_funcs = {
@@ -128,8 +129,9 @@ def _extract_tar_safe(archive_path: Path, extract_to: Path) -> bool:
 
 def _extract_and_find_skill(archive_path: Path, extract_to: Path) -> tuple[Path | None, str]:
     """
-    Extract the archive and find the directory that contains skill.json.
-    Return (skill_dir, skill_id), or (None, error_msg) on failure.
+        Extract the archive and find the directory that contains skill.json.
+        Return (skill_dir, skill_id), or (None, error_msg) on failure.
+
     """
     temp_extract = extract_to / "__temp_extract__"
     temp_extract.mkdir(exist_ok=True)
@@ -137,7 +139,7 @@ def _extract_and_find_skill(archive_path: Path, extract_to: Path) -> tuple[Path 
     try:
         # Extract safely.
         if not _safe_extract(archive_path, temp_extract):
-            return None, "压缩包包含非法路径，已被阻止"
+            return None, "Archive contains an unsafe path and was blocked"
 
         # Find skill.json.
         skill_dir = None
@@ -194,7 +196,7 @@ def _extract_and_find_skill(archive_path: Path, extract_to: Path) -> tuple[Path 
         return target_dir, skill_id
 
     except Exception as e:
-        logger.error(f"解压失败: {e}")
+        logger.error(f"Extraction failed: {e}")
         return None, str(e)
     finally:
         # Clean up the temp directory.
@@ -367,12 +369,13 @@ def package_skill_to_zip(skill_id: str) -> Path | None:
 
 def import_skill(file_content: bytes, filename: str, category: str = "imported") -> dict:
     """
-    Import a skill file or archive.
-    Args:
-        file_content: File content.
-        filename: Original filename.
-        category: Optional category.
-    Returns: {"success": bool, "skill_id": str, "message": str}
+        Import a skill file or archive.
+        Args:
+            file_content: File content.
+            filename: Original filename.
+            category: Optional category.
+        Returns: {"success": bool, "skill_id": str, "message": str}
+
     """
     global _skills_cache
 
@@ -396,13 +399,13 @@ def import_skill(file_content: bytes, filename: str, category: str = "imported")
         skill_dir, result = _extract_and_find_skill(temp_path, skills_dir)
 
         if skill_dir is None:
-            return {"success": False, "skill_id": "", "message": f"解压失败: {result}"}
+            return {"success": False, "skill_id": "", "message": f"Extraction failed: {result}"}
 
         return _save_skill(skill_dir, category, skills_dir)
 
     except Exception as e:
         logger.error(f"Import failed: {e}")
-        return {"success": False, "skill_id": "", "message": f"导入失败: {str(e)}"}
+        return {"success": False, "skill_id": "", "message": f"Import failed: {str(e)}"}
     finally:
         # Clean up the temp file.
         if temp_path.exists():
@@ -411,8 +414,9 @@ def import_skill(file_content: bytes, filename: str, category: str = "imported")
 
 def _process_folder_upload(file_path: Path, original_name: str, category: str, skills_dir: Path) -> dict:
     """
-    Process folder uploads from multiple webkitdirectory files.
-    Use file paths to determine whether they belong to the same skill.
+        Process folder uploads from multiple webkitdirectory files.
+        Use file paths to determine whether they belong to the same skill.
+
     """
     global _skills_cache
 
@@ -490,12 +494,12 @@ def _process_folder_upload(file_path: Path, original_name: str, category: str, s
         return {
             "success": True,
             "skill_id": final_skill_id,
-            "message": f"成功导入技能: {final_skill_id}"
+            "message": f"Imported skill successfully: {final_skill_id}"
         }
 
     except Exception as e:
         logger.error(f"Folder import error: {e}")
-        return {"success": False, "skill_id": "", "message": f"导入失败: {str(e)}"}
+        return {"success": False, "skill_id": "", "message": f"Import failed: {str(e)}"}
 
 
 def _save_skill(skill_dir: Path, category: str, skills_dir: Path) -> dict:
@@ -506,7 +510,7 @@ def _save_skill(skill_dir: Path, category: str, skills_dir: Path) -> dict:
 
     # Safety check: ensure the directory exists.
     if not skill_dir.exists():
-        return {"success": False, "skill_id": "", "message": f"技能目录不存在: {skill_id}"}
+        return {"success": False, "skill_id": "", "message": f"Skill directory does not exist: {skill_id}"}
 
     # Scan actual files.
     actual_files = []
@@ -530,7 +534,7 @@ def _save_skill(skill_dir: Path, category: str, skills_dir: Path) -> dict:
             with open(skill_json, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.warning(f"更新 skill.json 失败: {e}")
+            logger.warning(f"Failed to update skill.json: {e}")
     else:
         # Create a new skill.json.
         name = skill_id.replace('-', ' ').replace('_', ' ').title()
@@ -545,7 +549,7 @@ def _save_skill(skill_dir: Path, category: str, skills_dir: Path) -> dict:
     return {
         "success": True,
         "skill_id": skill_id,
-        "message": f"成功导入技能: {skill_id}"
+        "message": f"Imported skill successfully: {skill_id}"
     }
 
 
@@ -555,7 +559,7 @@ def update_skill_category(skill_id: str, category: str) -> dict:
 
     skill_dir = get_skill_path(skill_id)
     if not skill_dir:
-        return {"success": False, "message": "技能不存在"}
+        return {"success": False, "message": "Skill does not exist"}
 
     skill_json = skill_dir / "skill.json"
     skill_md = skill_dir / "SKILL.md"
@@ -569,7 +573,7 @@ def update_skill_category(skill_id: str, category: str) -> dict:
             with open(skill_json, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            return {"success": False, "message": f"更新 skill.json 失败: {e}"}
+            return {"success": False, "message": f"Failed to update skill.json: {e}"}
     elif skill_md.exists():
         # Update SKILL.md YAML frontmatter.
         try:
@@ -587,14 +591,14 @@ def update_skill_category(skill_id: str, category: str) -> dict:
                 new_content = frontmatter + content[match.end(3):]
                 skill_md.write_text(new_content, encoding='utf-8')
             else:
-                return {"success": False, "message": "SKILL.md 格式不正确"}
+                return {"success": False, "message": "Invalid SKILL.md format"}
         except Exception as e:
-            return {"success": False, "message": f"更新 SKILL.md 失败: {e}"}
+            return {"success": False, "message": f"Failed to update SKILL.md: {e}"}
     else:
-        return {"success": False, "message": "没有找到 skill.json 或 SKILL.md"}
+        return {"success": False, "message": "No skill.json or SKILL.md found"}
 
     _skills_cache = None
-    return {"success": True, "message": f"已更新分类为: {category}"}
+    return {"success": True, "message": f"Category updated to: {category}"}
 
 
 def delete_skill(skill_id: str) -> dict:
@@ -604,20 +608,20 @@ def delete_skill(skill_id: str) -> dict:
     # Safety check: ensure skill_id has no path traversal characters.
     if '..' in skill_id or '/' in skill_id or '\\' in skill_id:
         logger.warning(f"Invalid skill_id: {skill_id}")
-        return {"success": False, "message": "无效的技能 ID"}
+        return {"success": False, "message": "Invalid skill ID"}
 
     skill_dir = get_skill_path(skill_id)
     if not skill_dir:
-        return {"success": False, "message": "技能不存在"}
+        return {"success": False, "message": "Skill does not exist"}
 
     try:
         shutil.rmtree(skill_dir)
         _skills_cache = None
         logger.info(f"Deleted skill: {skill_id}")
-        return {"success": True, "message": f"已删除技能: {skill_id}"}
+        return {"success": True, "message": f"Deleted skill: {skill_id}"}
     except Exception as e:
         logger.error(f"Delete failed: {e}")
-        return {"success": False, "message": f"删除失败: {str(e)}"}
+        return {"success": False, "message": f"Delete failed: {str(e)}"}
 
 
 def clear_cache():

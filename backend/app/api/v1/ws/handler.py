@@ -1,4 +1,4 @@
-"""WebSocket 频道处理器（从 main.py 迁移）."""
+"""Handler module."""
 from __future__ import annotations
 
 import json
@@ -17,7 +17,7 @@ router = APIRouter()
 
 @router.websocket("/ws/channels/{channel_id}")
 async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
-    """连接频道 WebSocket，接收实时消息推送 & send_message 动作."""
+    """Websocket channel."""
     with bind_context(channel_id=channel_id):
         await ws_manager.connect(websocket, channel_id)
         logger.info("ws.connect channel_id=%s", channel_id)
@@ -56,11 +56,7 @@ async def websocket_channel(websocket: WebSocket, channel_id: str) -> None:
 
 @router.websocket("/ws/users/{user_id}")
 async def websocket_user(websocket: WebSocket, user_id: str) -> None:
-    """用户级轻量通知通道。当前只用于跨频道未读增量。
-
-    与 /ws/channels/{channel_id} 一样暂未做鉴权——user_id 由前端在登录后
-    自行提供；内容都是 "告诉用户刷新未读" 级别的信号，不含敏感负载。
-    """
+    """Websocket user."""
     with bind_context(user_id=user_id):
         await ws_manager.connect_user(websocket, user_id)
         logger.info("ws.connect user_id=%s", user_id)

@@ -92,7 +92,7 @@ export function MemberListItem({
   onClick?: () => void;
   asButton?: boolean;
 }) {
-  const label = displayName || username || (kind === "bot" ? "Bot" : "用户");
+  const label = displayName || username || (kind === "bot" ? "Bot" : "User");
   const avatarLabel = label || id;
   const fallbackSubtitle = username && username !== label ? `@${username}` : "";
   const computedSubtitle = subtitle === undefined ? fallbackSubtitle : subtitle;
@@ -137,7 +137,7 @@ export function MemberListItem({
         <div className="an-member-line">
           <span className="an-member-name">{name ?? label}</span>
           {kind === "bot" && <MemberBadge>Bot</MemberBadge>}
-          {self && <MemberBadge tone="accent">我</MemberBadge>}
+          {self && <MemberBadge tone="accent">Me</MemberBadge>}
           {badges}
         </div>
         {computedSubtitle && <div className="an-member-sub">{computedSubtitle}</div>}

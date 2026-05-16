@@ -152,7 +152,7 @@ export function useWorkspaceDirectory({
 
   const handleCreateWorkspace = useCallback(() => {
     if (!newWorkspaceName.trim()) {
-      toast.error("请填写工作空间名称");
+      toast.error("Enter a workspace name");
       return;
     }
     authFetch(`${API}/workspaces`, {
@@ -165,28 +165,28 @@ export function useWorkspaceDirectory({
       .then((response) => response.json())
       .then((data) => {
         if (data.status === "success") {
-          toast.success("工作空间创建成功");
+          toast.success("Workspace created");
           setNewWorkspaceName("");
           setNewWorkspaceAvatarUrl("");
           setCreateWsOpen(false);
           refreshWorkspaces(setWorkspaces, authToken ?? undefined);
           setSelectedWorkspaceId(data.data.workspace_id);
         } else {
-          toast.error(data.detail || "创建失败");
+          toast.error(data.detail || "Create failed");
         }
       })
-      .catch(() => toast.error("创建失败"));
+      .catch(() => toast.error("Create failed"));
   }, [authFetch, authToken, newWorkspaceAvatarUrl, newWorkspaceName]);
 
   const inviteWorkspaceMember = useCallback(
     (identifier: string) => {
       const cleaned = identifier.trim();
       if (!cleaned) {
-        toast.error("请输入用户名");
+        toast.error("Enter a username");
         return;
       }
       if (!selectedWorkspaceId) {
-        toast.error("请先选择工作空间");
+        toast.error("Select a workspace first");
         return;
       }
       authFetch(`${API}/workspaces/${selectedWorkspaceId}/invite`, {
@@ -196,14 +196,14 @@ export function useWorkspaceDirectory({
         .then((response) => response.json())
         .then((data) => {
           if (data.status === "success") {
-            toast.success(data.message || "邀请成功");
+            toast.success(data.message || "Invite sent");
             setInviteWsIdentifier("");
             setInviteWsMemberOpen(false);
           } else {
-            toast.error(data.detail || "邀请失败");
+            toast.error(data.detail || "Invite failed");
           }
         })
-        .catch(() => toast.error("邀请失败"));
+        .catch(() => toast.error("Invite failed"));
     },
     [authFetch, selectedWorkspaceId],
   );
@@ -214,11 +214,11 @@ export function useWorkspaceDirectory({
 
   const handleCreateChannel = useCallback(() => {
     if (!newChannelName.trim()) {
-      toast.error("请填写频道名称");
+      toast.error("Enter a channel name");
       return;
     }
     if (!selectedWorkspaceId) {
-      toast.error("请先选择工作空间");
+      toast.error("Select a workspace first");
       return;
     }
     authFetch(`${API}/channels`, {
@@ -233,16 +233,16 @@ export function useWorkspaceDirectory({
       .then((response) => response.json())
       .then((data) => {
         if (data.status === "success") {
-          toast.success("频道创建成功");
+          toast.success("Channel created");
           setNewChannelName("");
           setCreateChannelOpen(false);
           refreshChannels(setChannels, authToken ?? undefined);
           setSelectedId(data.data.channel_id);
         } else {
-          toast.error(data.detail || "创建失败");
+          toast.error(data.detail || "Create failed");
         }
       })
-      .catch(() => toast.error("创建失败"));
+      .catch(() => toast.error("Create failed"));
   }, [authFetch, authToken, newChannelName, selectedWorkspaceId]);
 
   const openDirectMessage = useCallback(
@@ -250,7 +250,7 @@ export function useWorkspaceDirectory({
       const personal = workspaces.find((workspace) => workspace.kind === "personal");
       const workspaceId = personal?.workspace_id ?? selectedWorkspaceId;
       if (!workspaceId) {
-        toast.error("请先进入个人空间");
+        toast.error("Open Personal first");
         return;
       }
       try {
@@ -265,7 +265,7 @@ export function useWorkspaceDirectory({
         });
         const data = await response.json();
         if (!response.ok || data?.status === "error") {
-          toast.error(data?.detail || data?.message || "发起私信失败");
+          toast.error(data?.detail || data?.message || "Failed to start DM");
           return;
         }
         const dm = data?.data as DM | undefined;
@@ -281,7 +281,7 @@ export function useWorkspaceDirectory({
         setSelectedId(dm.channel_id);
         onCloseSettings();
       } catch {
-        toast.error("发起私信失败");
+        toast.error("Failed to start DM");
       }
     },
     [authToken, onCloseSettings, selectedWorkspaceId, workspaces],
@@ -330,9 +330,9 @@ export function useWorkspaceDirectory({
             refreshDMs(setDMs, authToken ?? undefined);
             refreshChannels(setChannels, authToken ?? undefined);
             if (message.type === "friend_request_created") {
-              toast.success("收到新的好友申请");
+              toast.success("New friend requests received");
             } else if (message.type === "friendship_changed") {
-              toast.success("好友状态已更新");
+              toast.success("Friend status updated");
             }
           }
         } catch {

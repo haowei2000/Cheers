@@ -1,15 +1,4 @@
-"""AgentBridgeBotAdapter：异步 Agent Bridge Bot 适配器。
-
-Slack / Discord 风格的异步流程（Phase C：per-bot data WS）：
-  1. 用户 @mention 本 Bot 时，Bot pipeline 创建占位 bot 消息后消费 execute() 事件流；
-  2. execute() 向 bot_session_registry 查找目标 bot 的 data WS，推送 message 帧；
-     - 若找到：yield DispatchedAsync()
-     - 若未连：返回 success=False，Bot pipeline 按原 finalize 路径写兜底文案
-  3. Bot pipeline 看到 dispatched_async=True 后，把占位消息登记到 pending_replies，
-     调度超时兜底；
-  4. 远端 provider agent 产出回复后，plugin 通过 data WS 的 reply 帧回推；
-     bridge 的 /ws/agent-bridge/data 路由从 pending_replies 里 finalize 占位消息。
-"""
+"""Agent bridge bot module."""
 from __future__ import annotations
 
 import logging
@@ -28,7 +17,7 @@ logger = logging.getLogger("app.features.bot_runtime.adapters.agent_bridge_bot")
 
 
 def _sanitize_attachment(a: dict) -> dict:
-    """只对外暴露摘要/文件名/类型/file_id；content 全文留 plugin 按需回拉（Phase D+）。"""
+    """Sanitize attachment."""
     return {
         "file_id": a.get("file_id"),
         "filename": a.get("filename") or a.get("original_filename"),
@@ -39,7 +28,7 @@ def _sanitize_attachment(a: dict) -> dict:
 
 
 class AgentBridgeBotAdapter(BotAdapter):
-    """Agent Bridge Bot：通过 per-bot data WS 派发消息，plugin 异步回推回复."""
+    """Agent Bridge Bot Adapter schema or model."""
 
     def __init__(
         self,

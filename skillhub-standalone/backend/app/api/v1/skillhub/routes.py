@@ -85,7 +85,7 @@ async def upload_skill(request: Request, category: str = Query("imported", descr
                     files_to_process.append((value, filename))
 
         if not files_to_process:
-            return {"success": False, "message": "请上传文件"}
+            return {"success": False, "message": "Upload a file"}
 
         for upload_file, filename in files_to_process:
             content = await upload_file.read()
@@ -98,14 +98,14 @@ async def upload_skill(request: Request, category: str = Query("imported", descr
             return results[0] if len(results) == 1 else {
                 "success": True,
                 "skill_id": ",".join([r["skill_id"] for r in results if r["success"]]),
-                "message": f"成功导入 {success_count} 个技能"
+                "message": f"Imported {success_count} skills successfully"
             }
         else:
             # Partial success.
             return {
                 "success": True,
                 "skill_id": ",".join([r["skill_id"] for r in results if r["success"]]),
-                "message": f"成功导入 {success_count}/{len(results)} 个技能"
+                "message": f"Imported {success_count}/{len(results)} skills successfully"
             }
 
     except Exception as e:
@@ -190,8 +190,9 @@ def _generate_checksum(data: str) -> str:
 @router.get("/openclaw/skills")
 async def openclaw_list_skills(request: Request):
     """
-    OpenClaw reads all available skills through this read-only endpoint.
-    The response is lightweight, standardized, and easy for OpenClaw to parse.
+        OpenClaw reads all available skills through this read-only endpoint.
+        The response is lightweight, standardized, and easy for OpenClaw to parse.
+
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -224,8 +225,9 @@ async def openclaw_list_skills(request: Request):
 @router.get("/openclaw/skills/{skill_id}")
 async def openclaw_get_skill(request: Request, skill_id: str):
     """
-    OpenClaw reads one skill detail through this read-only endpoint.
-    Return full metadata and file list.
+        OpenClaw reads one skill detail through this read-only endpoint.
+        Return full metadata and file list.
+
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -252,8 +254,9 @@ async def openclaw_get_skill(request: Request, skill_id: str):
 @router.get("/openclaw/skills/{skill_id}/manifest")
 async def openclaw_get_skill_manifest(request: Request, skill_id: str):
     """
-    OpenClaw reads a skill manifest through this read-only endpoint.
-    Return the full skill.json content directly for immediate use.
+        OpenClaw reads a skill manifest through this read-only endpoint.
+        Return the full skill.json content directly for immediate use.
+
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -268,7 +271,8 @@ async def openclaw_get_skill_manifest(request: Request, skill_id: str):
 @router.get("/openclaw/categories")
 async def openclaw_get_categories(request: Request):
     """
-    OpenClaw reads all categories and skill counts through this read-only endpoint.
+        OpenClaw reads all categories and skill counts through this read-only endpoint.
+
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -298,8 +302,9 @@ async def openclaw_search_skills(
     limit: int = Query(10, description="Result limit"),
 ):
     """
-    OpenClaw searches skills through this read-only endpoint.
-    Supports keyword search and category filtering.
+        OpenClaw searches skills through this read-only endpoint.
+        Supports keyword search and category filtering.
+
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -347,8 +352,9 @@ async def openclaw_search_skills(
 @router.get("/openclaw/paths")
 async def openclaw_get_skill_paths(request: Request):
     """
-    OpenClaw reads all local skill paths through this read-only endpoint.
-    Return local paths so OpenClaw can use them without downloading.
+        OpenClaw reads all local skill paths through this read-only endpoint.
+        Return local paths so OpenClaw can use them without downloading.
+
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -372,7 +378,8 @@ async def openclaw_get_skill_paths(request: Request):
 @router.get("/openclaw/paths/{skill_id}")
 async def openclaw_get_skill_path(request: Request, skill_id: str):
     """
-    OpenClaw reads one skill local path through this read-only endpoint.
+        OpenClaw reads one skill local path through this read-only endpoint.
+
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")
@@ -402,7 +409,8 @@ async def openclaw_get_skill_path(request: Request, skill_id: str):
 @router.get("/openclaw/config")
 async def openclaw_get_config(request: Request):
     """
-    OpenClaw reads SkillHub configuration through this read-only endpoint.
+        OpenClaw reads SkillHub configuration through this read-only endpoint.
+
     """
     if not _verify_api_key(request):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid API key")

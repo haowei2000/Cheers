@@ -1,12 +1,4 @@
-"""add openclaw_plugin_events for resume/replay
-
-Revision ID: 032
-Revises: 031
-Create Date: 2026-04-21 16:00:00.000000
-
-per-bot data stream 事件日志，用于 plugin 重连时按 last_event_seq 回放漏收的事件。
-Phase D 只记 data stream（control 事件重连后由 hello 快照兜底）。
-"""
+"""032 add openclaw plugin events module."""
 from typing import Sequence, Union
 
 import sqlalchemy as sa

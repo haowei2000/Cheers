@@ -22,7 +22,7 @@ export function BotListSubPane({
   if (view === "new") {
     return (
       <div className="an-pane">
-        <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
+        <BackBar label="Back to bot list" onBack={() => setView("list")} />
         <BotNewPane
           authToken={authToken}
           onCreated={(b) => {
@@ -39,16 +39,16 @@ export function BotListSubPane({
     if (!bot) {
       return (
         <div className="an-pane">
-          <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
+          <BackBar label="Back to bot list" onBack={() => setView("list")} />
           <div className="an-row-card" style={{ color: "var(--fg-3)" }}>
-            该 Bot 已不存在
+            This bot no longer exists
           </div>
         </div>
       );
     }
     return (
       <div className="an-pane">
-        <BackBar label="返回 Bot 列表" onBack={() => setView("list")} />
+        <BackBar label="Back to bot list" onBack={() => setView("list")} />
         <BotEditPane
           bot={bot}
           authToken={authToken}
@@ -67,14 +67,14 @@ export function BotListSubPane({
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">Bot</div>
-          <div className="an-pane-sub">{bots.length} 个可管理 Bot</div>
+          <div className="an-pane-sub">{bots.length} manageable bots</div>
         </div>
-        <Tooltip content="刷新 Bot 在线状态" placement="left">
+        <Tooltip content="Refresh bot online status" placement="left">
           <button
             type="button"
             className="an-btn an-btn-icon"
             onClick={onChanged}
-            aria-label="刷新 Bot 在线状态"
+            aria-label="Refresh bot online status"
           >
             <AppIcon name="refresh" />
           </button>
@@ -102,14 +102,14 @@ export function BotListSubPane({
             <AppIcon name="plus" className="h-4 w-4" />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title">新建 Bot</div>
-            <div className="an-rc-sub">模型 + 模板</div>
+            <div className="an-rc-title">New bot</div>
+            <div className="an-rc-sub">Model + template</div>
           </div>
           <AppIcon name="chevronRight" className="an-rc-chev" />
         </button>
         {bots.length === 0 ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
-            暂无 Bot
+            No bots
           </div>
         ) : (
           bots.map((b) => (
@@ -129,14 +129,14 @@ export function BotListSubPane({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="an-rc-title">{b.display_name || b.username}</div>
                 <Tooltip
-                  content={`@${b.username} · ${(b.binding_type || "http") === "agent_bridge" ? "WebSocket" : "HTTP"} · ${botScopeLabel(b.scope)} · Owner: ${botOwnerLabel(b)}${b.is_builtin ? " · 内置" : ""}`}
+                  content={`@${b.username} · ${(b.binding_type || "http") === "agent_bridge" ? "WebSocket" : "HTTP"} · ${botScopeLabel(b.scope)} · Owner: ${botOwnerLabel(b)}${b.is_builtin ? " · Built-in" : ""}`}
                   placement="bottom"
                 >
                   <div className="an-rc-sub an-truncate">
                     @{b.username}
                     {" · "}
                     {botScopeLabel(b.scope)}
-                    {b.is_builtin ? " · 内置" : ""}
+                    {b.is_builtin ? " · Built-in" : ""}
                   </div>
                 </Tooltip>
               </div>

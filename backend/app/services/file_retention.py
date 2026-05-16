@@ -1,4 +1,4 @@
-"""文件保留期与过期清理。"""
+"""File retention module."""
 from __future__ import annotations
 
 import logging
@@ -32,7 +32,7 @@ def file_retention_days() -> int:
 
 
 def file_expires_at(anchor: datetime | None = None) -> datetime | None:
-    """返回文件过期时间；FILE_RETENTION_DAYS <= 0 时表示不过期。"""
+    """File expires at."""
     days = file_retention_days()
     if days <= 0:
         return None
@@ -49,7 +49,7 @@ def is_file_expired(record: FileRecord, now: datetime | None = None) -> bool:
 
 
 def active_file_filter(now: datetime | None = None):
-    """SQLAlchemy 条件：仅返回未过期文件；NULL 兼容保留旧数据。"""
+    """Active file filter."""
     if file_retention_days() <= 0:
         return true()
     cutoff = now or utcnow()
@@ -57,7 +57,7 @@ def active_file_filter(now: datetime | None = None):
 
 
 class FileRetentionService:
-    """清理超过保留期的文件记录与物理文件。"""
+    """File Retention Service schema or model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

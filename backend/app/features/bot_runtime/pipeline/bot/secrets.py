@@ -1,4 +1,4 @@
-"""密钥引用解析与注入。"""
+"""Secrets module."""
 import re
 from typing import Dict
 
@@ -13,12 +13,12 @@ _SECRET_REF_PATTERN = re.compile(r'\$secret\{([^}]+)\}')
 
 
 def extract_secret_refs(text: str) -> list[str]:
-    """从文本中提取所有密钥引用名称。"""
+    """Extract secret refs."""
     return _SECRET_REF_PATTERN.findall(text)
 
 
 def replace_secret_refs(text: str, secrets: Dict[str, str]) -> str:
-    """将文本中的密钥引用替换为实际值。"""
+    """Replace secret refs."""
     def _replacer(match):
         name = match.group(1)
         if name in secrets:
@@ -33,7 +33,7 @@ async def load_user_secrets(
     user_id: str,
     secret_names: list[str]
 ) -> Dict[str, str]:
-    """从数据库加载用户指定的密钥（已解密）。"""
+    """Load user secrets."""
     if not secret_names:
         return {}
 

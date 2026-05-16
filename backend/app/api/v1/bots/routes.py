@@ -1,4 +1,4 @@
-"""Bot v1 路由."""
+"""Bots API routes."""
 from __future__ import annotations
 
 import json
@@ -257,11 +257,7 @@ def _to_full(
     bot_token: str | None = None,
     owner: User | None = None,
 ) -> dict:
-    """转换 Bot 为响应体。
-
-    bot_token 仅在 create / rotate 路径里传入，一次性返回给用户；
-    其它路径永远不回显明文 token。
-    """
+    """To full."""
     mn = model_name if model_name is not None else (bot.ai_model.name if bot.ai_model else None)
     tn = template_name if template_name is not None else (bot.prompt_template.name if bot.prompt_template else None)
     d = BotInResponse(
@@ -350,11 +346,7 @@ async def rotate_bot_token(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """为 Agent Bridge Bot 轮换 token。旧 token 立即失效。
-
-    响应里一次性返回明文 bot_token，请求方必须立刻保存；后续接口只回前缀。
-    权限：Bot 创建者 或 system_admin。
-    """
+    """Rotate bot token."""
     svc = BotService(session)
     bot, plaintext_token = await svc.rotate_agent_bridge_token(bot_id, current_user)
     audit.info("action=bot.token.rotate actor=%s resource_id=%s", current_user.user_id, bot.bot_id)
@@ -475,7 +467,7 @@ async def quick_connect_openclaw(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """快速连接 OpenClaw：自动创建模型+Bot，并探测其能力。"""
+    """Quick connect openclaw."""
     import httpx as _httpx
 
     base_url = body.url.strip().rstrip("/")

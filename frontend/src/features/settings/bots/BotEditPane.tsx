@@ -96,7 +96,7 @@ export function BotEditPane({
 
   const save = async (opts?: { silent?: boolean }) => {
     if (isHttpBot && (!modelId || !templateId)) {
-      toast.error("HTTP Bot 必须选择模型和模板");
+      toast.error("HTTP bots require a model and template");
       return false;
     }
     setSaving(true);
@@ -118,16 +118,16 @@ export function BotEditPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        if (!opts?.silent) toast.success("已保存");
+        if (!opts?.silent) toast.success("Saved");
         setConnectionTest(null);
         onUpdated();
         return true;
       } else {
-        toast.error(data?.message || data?.detail || "保存失败");
+        toast.error(data?.message || data?.detail || "Save failed");
         return false;
       }
     } catch (e: unknown) {
-      toast.error((e as Error).message || "保存失败");
+      toast.error((e as Error).message || "Save failed");
       return false;
     } finally {
       setSaving(false);
@@ -140,10 +140,10 @@ export function BotEditPane({
     try {
       const uploaded = await uploadAvatarImage(`/avatars/bots/${bot.bot_id}`, file, authToken);
       setAvatarUrl(uploaded.avatar_url);
-      toast.success("Bot 头像已上传");
+      toast.success("Bot Avatar uploaded");
       onUpdated();
     } catch (e: unknown) {
-      toast.error((e as Error).message || "头像上传失败");
+      toast.error((e as Error).message || "Avatar upload failed");
     } finally {
       setAvatarUploading(false);
       if (avatarInputRef.current) avatarInputRef.current.value = "";
@@ -151,7 +151,7 @@ export function BotEditPane({
   };
 
   const remove = async () => {
-    if (!confirm(`确定删除 @${bot.username}？此操作无法撤销。`)) return;
+    if (!confirm(`Delete @${bot.username}? This cannot be undone.`)) return;
     setDeleting(true);
     try {
       const res = await apiFetch(`/bots/${bot.bot_id}`, {
@@ -160,13 +160,13 @@ export function BotEditPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("已删除");
+        toast.success("Deleted");
         onDeleted();
       } else {
-        toast.error(data?.message || data?.detail || "删除失败");
+        toast.error(data?.message || data?.detail || "Delete failed");
       }
     } catch (e: unknown) {
-      toast.error((e as Error).message || "删除失败");
+      toast.error((e as Error).message || "Delete failed");
     } finally {
       setDeleting(false);
     }
@@ -174,7 +174,7 @@ export function BotEditPane({
 
   const testConnection = async () => {
     if (isHttpBot && (!bot.model_id || !bot.template_id)) {
-      toast.error("HTTP Bot 尚未保存模型和模板配置，请先保存后测试");
+      toast.error("Save the HTTP bot model and template before testing");
       return;
     }
     setTestingConnection(true);
@@ -185,18 +185,18 @@ export function BotEditPane({
       });
       const data = await res.json();
       if (data?.status !== "success") {
-        throw new Error(data?.message || data?.detail || "连通测试失败");
+        throw new Error(data?.message || data?.detail || "Connection test failed");
       }
       const result = data.data as BotConnectionTestResult;
       setConnectionTest(result);
       if (result.reachable) {
-        toast.success(result.message || "Bot 连通正常");
+        toast.success(result.message || "Bot connection is healthy");
       } else {
-        toast.error(result.message || "Bot 未连通");
+        toast.error(result.message || "Bot is not connected");
       }
       onUpdated();
     } catch (e: unknown) {
-      const message = (e as Error).message || "连通测试失败";
+      const message = (e as Error).message || "Connection test failed";
       setConnectionTest({ reachable: false, message });
       toast.error(message);
     } finally {
@@ -205,10 +205,10 @@ export function BotEditPane({
   };
 
   const modelOptions = modelId && !models.some((m) => m.model_id === modelId)
-    ? [{ model_id: modelId, name: bot.model_name || "当前模型" }, ...models]
+    ? [{ model_id: modelId, name: bot.model_name || "Current model" }, ...models]
     : models;
   const templateOptions = templateId && !templates.some((t) => t.template_id === templateId)
-    ? [{ template_id: templateId, name: bot.template_name || "当前模板" }, ...templates]
+    ? [{ template_id: templateId, name: bot.template_name || "Current template" }, ...templates]
     : templates;
   const selectedModel = modelOptions.find((m) => m.model_id === modelId);
   const botBrandName = modelBrandName(selectedModel) || bot.model_name || bot.display_name || bot.username;
@@ -230,7 +230,7 @@ export function BotEditPane({
             <div className="an-pane-title">{bot.display_name || bot.username}</div>
             <div className="an-pane-sub">
               @{bot.username} · {bot.bot_id}
-              {bot.is_builtin ? " · 内置" : ""}
+              {bot.is_builtin ? " · Built-in" : ""}
             </div>
             <div className="an-pane-sub">
               Owner: {botOwnerLabel(bot)} · {botScopeLabel(scope)}
@@ -239,7 +239,7 @@ export function BotEditPane({
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
           <BotOnlineBadge bot={bot} />
-          <div className="an-seg" role="tablist" aria-label="Bot 设置视图">
+          <div className="an-seg" role="tablist" aria-label="Bot settings view">
             <button
               type="button"
               className={botTab === "profile" ? "on" : ""}
@@ -247,7 +247,7 @@ export function BotEditPane({
               role="tab"
               aria-selected={botTab === "profile"}
             >
-              资料
+              Profile
             </button>
             <button
               type="button"
@@ -256,7 +256,7 @@ export function BotEditPane({
               role="tab"
               aria-selected={botTab === "runtime"}
             >
-              配置
+              Configuration
             </button>
             <button
               type="button"
@@ -265,7 +265,7 @@ export function BotEditPane({
               role="tab"
               aria-selected={botTab === "status"}
             >
-              状态
+              Status
             </button>
           </div>
         </div>
@@ -276,20 +276,20 @@ export function BotEditPane({
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
             <div>
-              <div className="an-rc-title">在线检测</div>
-              <div className="an-rc-sub">实时连通测试</div>
+              <div className="an-rc-title">Online check</div>
+              <div className="an-rc-sub">Live connectivity test</div>
             </div>
             <PrimaryButton onClick={testConnection} disabled={testingConnection || saving}>
-              {testingConnection ? "测试中…" : "测试连通"}
+              {testingConnection ? "Testing..." : "Test connection"}
             </PrimaryButton>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-            <div className="an-rc-sub">类型：{(bot.binding_type || "http") === "agent_bridge" ? "Agent Bridge" : "HTTP"}</div>
-            <div className="an-rc-sub">状态：{bot.status || "online"}</div>
+            <div className="an-rc-sub">Type:{(bot.binding_type || "http") === "agent_bridge" ? "Agent Bridge" : "HTTP"}</div>
+            <div className="an-rc-sub">Status:{bot.status || "online"}</div>
             {(bot.binding_type || "http") === "agent_bridge" && (
               <>
-                <div className="an-rc-sub">Control：{bot.control_connected ? "在线" : "离线"}</div>
-                <div className="an-rc-sub">Data：{bot.data_connected ? "在线" : "离线"}</div>
+                <div className="an-rc-sub">Control:{bot.control_connected ? "Online" : "Offline"}</div>
+                <div className="an-rc-sub">Data:{bot.data_connected ? "Online" : "Offline"}</div>
               </>
             )}
           </div>
@@ -302,7 +302,7 @@ export function BotEditPane({
               }}
             >
               <div style={{ fontWeight: 650 }}>
-                {connectionTest.reachable ? "连通正常" : "未连通"}
+                {connectionTest.reachable ? "Connection healthy" : "Not connected"}
                 {typeof connectionTest.duration_ms === "number" ? ` · ${connectionTest.duration_ms}ms` : ""}
               </div>
               {connectionTest.message && <div>{connectionTest.message}</div>}
@@ -318,14 +318,14 @@ export function BotEditPane({
           <>
         {isHttpBot && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">LLM 模型</div>
+            <div className="an-rc-title">LLM models</div>
             <ModelBrandCard model={selectedModel} />
             {bot.is_builtin && (
               <div className="an-rc-sub">
-                内置 Bot 私聊使用专用 adapter；连通测试不会读取这里的模型绑定。
+                Built-in bot DMs use a dedicated adapter. Connection tests do not read this model binding.
               </div>
             )}
-            <Field label="AI 模型">
+            <Field label="AI model">
               <select
                 value={modelId}
                 onChange={(e) => {
@@ -335,10 +335,10 @@ export function BotEditPane({
                 className={inputCls}
               >
                 {modelOptions.length === 0 ? (
-                  <option value="">（无可用模型）</option>
+                  <option value="">(No models available)</option>
                 ) : (
                   <>
-                    <option value="">（未配置模型，请选择后保存）</option>
+                    <option value="">(No model configured. Select one, then save.)</option>
                     {modelOptions.map((m) => (
                       <option key={m.model_id} value={m.model_id}>
                         {m.name}
@@ -351,8 +351,8 @@ export function BotEditPane({
           </div>
         )}
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">Prompt 模板</div>
-          <Field label={isHttpBot ? "Prompt 模板" : "发送给 plugin 的任务模板"}>
+          <div className="an-rc-title">Prompt template</div>
+          <Field label={isHttpBot ? "Prompt template" : "Task template sent to the plugin"}>
             <select
               value={templateId}
               onChange={(e) => {
@@ -362,11 +362,11 @@ export function BotEditPane({
               className={inputCls}
             >
               {templateOptions.length === 0 ? (
-                <option value="">（无可用模板）</option>
+                <option value="">(No templates available)</option>
               ) : (
                 <>
-                  {isHttpBot && <option value="">（未配置模板，请选择后保存）</option>}
-                  {!isHttpBot && <option value="">（使用系统默认模板）</option>}
+                  {isHttpBot && <option value="">(No template configured. Select one, then save.)</option>}
+                  {!isHttpBot && <option value="">(Use the system default template)</option>}
                   {templateOptions.map((t) => (
                     <option key={t.template_id} value={t.template_id}>
                       {t.name}
@@ -378,13 +378,13 @@ export function BotEditPane({
           </Field>
           {!isHttpBot && (
             <div className="an-rc-sub" style={{ marginTop: 0 }}>
-              模板会在后端渲染成最终任务文本，再通过 Agent Bridge 下发给 provider。
+              The backend renders the template into final task text, then sends it to the provider through Agent Bridge.
             </div>
           )}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <PrimaryButton onClick={() => void save()} disabled={saving}>
-            {saving ? "保存中…" : "保存配置"}
+            {saving ? "Saving..." : "Save configuration"}
           </PrimaryButton>
         </div>
           </>
@@ -392,15 +392,15 @@ export function BotEditPane({
         {botTab === "profile" && (
           <>
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">基本信息</div>
-          <Field label="显示名称">
+          <div className="an-rc-title">Basic information</div>
+          <Field label="Display name">
             <input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className={inputCls}
             />
           </Field>
-          <Field label="头像">
+          <Field label="Avatar">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <BotAvatar
                 label={displayName || bot.username}
@@ -428,7 +428,7 @@ export function BotEditPane({
                 disabled={avatarUploading}
                 className="an-btn an-btn-sm"
               >
-                {avatarUploading ? "上传中…" : "上传"}
+                {avatarUploading ? "Uploading..." : "Upload"}
               </button>
               {avatarUrl && (
                 <button
@@ -436,12 +436,12 @@ export function BotEditPane({
                   onClick={() => setAvatarUrl("")}
                   className="an-btn an-btn-sm"
                 >
-                  清除
+                  Clear
                 </button>
               )}
             </div>
           </Field>
-          <Field label="描述">
+          <Field label="Description">
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -449,26 +449,26 @@ export function BotEditPane({
               className={`${inputCls} resize-none`}
             />
           </Field>
-          <Field label="使用范围">
+          <Field label="Scope">
             <BotScopeControl value={scope} onChange={setScope} disabled={saving} />
           </Field>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             {bot.is_builtin ? (
               <span className="an-rc-sub" style={{ alignSelf: "center" }}>
-                内置 Bot 不可删除
+                Built-in bots cannot be deleted
               </span>
             ) : (
               <DangerButton onClick={remove} disabled={deleting}>
-                {deleting ? "删除中…" : "删除 Bot"}
+                {deleting ? "Deleting..." : "Delete Bot"}
               </DangerButton>
             )}
             <PrimaryButton onClick={() => void save()} disabled={saving}>
-              {saving ? "保存中…" : "保存"}
+              {saving ? "Saving..." : "Save"}
             </PrimaryButton>
           </div>
         </div>
         <div className="an-row-card an-type-meta">
-          高级配置已收敛到设置弹窗；HTTP Bot 可在此切换模型与模板，Agent Bridge Bot 可切换任务模板。
+          Advanced configuration now lives in Settings. HTTP bots can switch models and templates here; Agent Bridge bots can switch task templates.
         </div>
           </>
         )}

@@ -1,4 +1,4 @@
-"""统一 API 响应模型."""
+"""Responses module."""
 from __future__ import annotations
 
 from typing import Generic, Literal, TypeVar
@@ -9,11 +9,7 @@ T = TypeVar("T")
 
 
 class APIResponse(BaseModel, Generic[T]):
-    """标准 API 响应封装.
-
-    所有 v1 路由统一使用此格式返回：
-        {"status": "success", "data": ..., "message": "", "request_id": "..."}
-    """
+    """A P I Response schema or model."""
 
     status: Literal["success", "error"] = "success"
     data: T | None = None

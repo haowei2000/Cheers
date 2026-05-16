@@ -2,9 +2,9 @@ import type { BotRow, BotScope } from "./types";
 import { MemberPresenceBadge } from "../../../components/members";
 
 const BOT_SCOPE_OPTIONS: { value: BotScope; label: string; hint: string }[] = [
-  { value: "private", label: "Private", hint: "仅自己可发起私信或邀请" },
-  { value: "friend", label: "Friend", hint: "自己和好友可发起私信或邀请" },
-  { value: "everyone", label: "Everyone", hint: "所有用户可发起私信或邀请" },
+  { value: "private", label: "Private", hint: "Only you can start DMs or invite" },
+  { value: "friend", label: "Friend", hint: "You and friends can start DMs or invite" },
+  { value: "everyone", label: "Everyone", hint: "All users can start DMs or invite" },
 ];
 
 export function normalizeBotScope(scope?: string | null): BotScope {
@@ -19,7 +19,7 @@ export function botScopeLabel(scope?: string | null) {
 }
 
 export function botOwnerLabel(bot: Pick<BotRow, "owner" | "created_by">) {
-  return bot.owner?.display_name || bot.owner?.username || bot.created_by || "系统";
+  return bot.owner?.display_name || bot.owner?.username || bot.created_by || "System";
 }
 
 export function BotScopeControl({
@@ -37,7 +37,7 @@ export function BotScopeControl({
       <div
         className="an-seg"
         role="radiogroup"
-        aria-label="Bot 使用范围"
+        aria-label="Bot Scope"
         style={{ display: "inline-flex", justifySelf: "start" }}
       >
         {BOT_SCOPE_OPTIONS.map((opt) => (

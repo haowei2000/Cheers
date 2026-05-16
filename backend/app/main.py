@@ -61,8 +61,9 @@ async def lifespan(app: FastAPI):
 
     if not (settings.jwt_secret_key or "").strip():
         logger.warning(
-            "JWT_SECRET_KEY 未配置，将使用进程内随机密钥（重启后旧 token 全部失效）。"
-            "建议在 .env 中设置 JWT_SECRET_KEY=<随机长字符串>。"
+            "JWT_SECRET_KEY is not configured; an in-process random secret will be used "
+            "and existing tokens will become invalid after restart. Set JWT_SECRET_KEY "
+            "to a long random string in .env."
         )
 
     from app.http_client import init_http_client

@@ -1,4 +1,4 @@
-"""HTTP Bot 适配器：将消息、记忆和上传文件解析结果一起发送给模型。"""
+"""Http bot module."""
 from __future__ import annotations
 
 import json
@@ -29,7 +29,7 @@ DEFAULT_MAX_TOKENS = 2000
 
 
 class HttpBotAdapter(BotAdapter):
-    """根据 Bot 的 model + template 配置调用 OpenAI-compatible LLM。"""
+    """Http Bot Adapter schema or model."""
 
     def __init__(
         self,
@@ -74,7 +74,7 @@ class HttpBotAdapter(BotAdapter):
     def _build_vision_user_content(
         self, user_text: str, attachments: list[dict[str, str]],
     ) -> list[dict]:
-        """构建 OpenAI Vision 格式的多模态 content 数组。"""
+        """Build vision user content."""
         parts: list[dict] = [{"type": "text", "text": user_text}]
         for att in attachments:
             if att.get("is_image") != "true":
@@ -126,7 +126,7 @@ class HttpBotAdapter(BotAdapter):
         return "\n".join(lines)
 
     def _apply_topic_context(self, trigger_meta: dict, user_text: str) -> str:
-        """根据消息类型（msg_type）注入主题上下文。"""
+        """Apply topic context."""
         topic_chain: list[dict] = trigger_meta.get("topic_chain") or []
         child_replies: list[dict] = trigger_meta.get("child_replies") or []
         msg_type = trigger_meta.get("msg_type") or (
@@ -275,13 +275,7 @@ class HttpBotAdapter(BotAdapter):
         return bool(data.get("choices"))
 
     async def execute(self, payload: AgentPayload) -> AsyncIterator[AdapterEvent]:
-        """执行 LLM 调用，流式 yield ``Delta`` per token + 最终 ``Final``.
-
-        上下文注入机制：
-        - payload.context.memory 由 ContextLoadStage 在模板包含 {{memory}}
-          时加载并渲染为模板变量
-        - 是否发送记忆完全由 PromptTemplate.user_template 决定
-        """
+        """Execute."""
         with bind_context(bot_id=self.bot.bot_id):
             async for event in self._execute_inner(payload):
                 yield event

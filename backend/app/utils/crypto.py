@@ -1,4 +1,4 @@
-"""API Key 加密工具：使用 Fernet 对称加密存储敏感凭据。"""
+"""Crypto module."""
 import logging
 from pathlib import Path
 
@@ -12,7 +12,7 @@ _fernet = None
 
 
 def _get_fernet():
-    """返回全局 Fernet 实例，首次调用时初始化。"""
+    """Get fernet."""
     global _fernet
     if _fernet is not None:
         return _fernet
@@ -63,7 +63,7 @@ def _get_fernet():
 
 
 def encrypt_value(plaintext: str) -> str:
-    """加密字符串，返回带前缀的密文。空字符串原样返回。"""
+    """Encrypt value."""
     if not plaintext:
         return plaintext
     fernet = _get_fernet()
@@ -72,7 +72,7 @@ def encrypt_value(plaintext: str) -> str:
 
 
 def decrypt_value(value: str) -> str:
-    """解密字符串。若值不含加密前缀（旧版明文），原样返回。"""
+    """Decrypt value."""
     if not value:
         return value
     if not value.startswith(_CIPHER_PREFIX):

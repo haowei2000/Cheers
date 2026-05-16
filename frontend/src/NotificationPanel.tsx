@@ -26,10 +26,10 @@ type Props = {
 
 function timeAgo(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return "刚刚";
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
-  return `${Math.floor(diff / 86400)}天前`;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+  return `${Math.floor(diff / 86400)} days ago`;
 }
 
 export default function NotificationPanel({ isOpen, onClose, userToken, onNavigate }: Props) {
@@ -62,13 +62,13 @@ export default function NotificationPanel({ isOpen, onClose, userToken, onNaviga
       <div className="an-token-panel relative ml-auto flex h-full w-96 max-w-full flex-col border-l border-[var(--border)] bg-[var(--bg-1)] shadow-xl">
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-4 py-3">
-          <span className="an-type-title">通知</span>
+          <span className="an-type-title">Notifications</span>
           <button
             type="button"
             onClick={onClose}
             className="an-btn an-btn-ghost an-btn-icon"
-            aria-label="关闭通知"
-            title="关闭通知"
+            aria-label="Close notifications"
+            title="Close notifications"
           >
             <AppIcon name="close" className="w-4 h-4" />
           </button>
@@ -76,31 +76,31 @@ export default function NotificationPanel({ isOpen, onClose, userToken, onNaviga
 
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="an-type-meta flex h-24 items-center justify-center">加载中…</div>
+            <div className="an-type-meta flex h-24 items-center justify-center">Loading...</div>
           ) : items.length === 0 ? (
             <div className="an-type-meta flex h-40 flex-col items-center justify-center gap-2">
               <AppIcon name="notification" className="h-9 w-9 opacity-35" />
-              <p>暂无通知</p>
+              <p>No notifications</p>
             </div>
           ) : (
             <>
               {friendRequests.length > 0 && (
                 <Section
-                  title={`好友申请 (${friendRequests.length})`}
+                  title={`Friend requests (${friendRequests.length})`}
                   items={friendRequests}
                   onNavigate={(n) => { onNavigate(n.channel_id, n.id); onClose(); }}
                 />
               )}
               {mentions.length > 0 && (
                 <Section
-                  title={`@提及 (${mentions.length})`}
+                  title={`@mentions (${mentions.length})`}
                   items={mentions}
                   onNavigate={(n) => { onNavigate(n.channel_id, n.id); onClose(); }}
                 />
               )}
               {todos.length > 0 && (
                 <Section
-                  title={`待办指派 (${todos.length})`}
+                  title={`Todo assignments (${todos.length})`}
                   items={todos}
                   onNavigate={(n) => { onNavigate(n.channel_id); onClose(); }}
                 />
@@ -150,7 +150,7 @@ function Section({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <span className="an-type-label text-[var(--accent)]">
-                      {n.notif_type === "friend_request" ? "好友通知" : `#${n.channel_name}`}
+                      {n.notif_type === "friend_request" ? "Friend notifications" : `#${n.channel_name}`}
                     </span>
                     <span className="an-type-caption">{timeAgo(n.created_at)}</span>
                   </div>

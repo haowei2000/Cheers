@@ -1,4 +1,4 @@
-"""JWT 工具函数：创建和验证 access token。"""
+"""Jwt utils module."""
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -12,7 +12,7 @@ _runtime_secret: str | None = None
 
 
 def _get_secret() -> str:
-    """返回 JWT 签名密钥；若未配置则自动生成随机密钥（进程内有效）。"""
+    """Get secret."""
     global _runtime_secret
     from app.config import settings  # Lazy import.
     key = (settings.jwt_secret_key or "").strip()
@@ -28,7 +28,7 @@ def _get_secret() -> str:
 
 
 def create_access_token(user_id: str, role: str) -> str:
-    """创建 JWT access token."""
+    """Create access token."""
     from app.config import settings
     expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_access_token_expire_minutes)
     payload = {
@@ -41,7 +41,7 @@ def create_access_token(user_id: str, role: str) -> str:
 
 
 def create_service_token(claims: dict, *, expires_seconds: int) -> str:
-    """创建内部服务用短期 JWT，不代表用户登录态。"""
+    """Create service token."""
     from app.config import settings
 
     now = datetime.now(UTC)
@@ -54,18 +54,13 @@ def create_service_token(claims: dict, *, expires_seconds: int) -> str:
 
 
 def decode_service_token(token: str) -> dict:
-    """解码内部服务短期 JWT。"""
+    """Decode service token."""
     from app.config import settings
 
     return jwt.decode(token, _get_secret(), algorithms=[settings.jwt_algorithm])
 
 
 def decode_access_token(token: str) -> dict:
-    """解码并验证 JWT token，返回 payload dict。
-
-    Raises:
-        jwt.ExpiredSignatureError: token 已过期
-        jwt.InvalidTokenError: token 无效
-    """
+    """Decode access token."""
     from app.config import settings
     return jwt.decode(token, _get_secret(), algorithms=[settings.jwt_algorithm])

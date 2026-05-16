@@ -25,17 +25,17 @@ interface ChannelMembersModalProps {
 
 function botOnlineText(bot: Pick<Bot, "binding_type" | "connection_status" | "is_online" | "status">) {
   if ((bot.binding_type || "http") !== "agent_bridge") {
-    return bot.is_online === false || bot.status === "offline" ? "已停用" : "HTTP 已启用";
+    return bot.is_online === false || bot.status === "offline" ? "Disabled" : "HTTP enabled";
   }
-  if (bot.connection_status === "online" && bot.is_online) return "Bridge 在线";
-  if (bot.connection_status === "partial") return "Bridge 部分连接";
-  return "Bridge 离线";
+  if (bot.connection_status === "online" && bot.is_online) return "Bridge online";
+  if (bot.connection_status === "partial") return "Bridge partially connected";
+  return "Bridge offline";
 }
 
 function BotOnlinePill({ bot }: { bot: Pick<Bot, "binding_type" | "connection_status" | "is_online" | "status"> }) {
   const text = botOnlineText(bot);
-  const isGood = text.includes("在线") || text.includes("启用");
-  const isPartial = text.includes("部分");
+  const isGood = text.includes("Online") || text.includes("Enabled");
+  const isPartial = text.includes("partial");
   return (
     <span
       className={`an-chip ${
@@ -58,7 +58,7 @@ function botScopeText(scope?: Bot["scope"]) {
 }
 
 function botOwnerText(bot: Pick<Bot, "owner">) {
-  return bot.owner?.display_name || bot.owner?.username || "系统";
+  return bot.owner?.display_name || bot.owner?.username || "System";
 }
 
 export default function ChannelMembersModal({
@@ -95,7 +95,7 @@ export default function ChannelMembersModal({
         setMembers(data.data || []);
       }
     } catch (err) {
-      console.error("加载成员失败:", err);
+      console.error("Failed to load members:", err);
     } finally {
       setLoading(false);
     }
@@ -113,7 +113,7 @@ export default function ChannelMembersModal({
         setFriends(data.data || []);
       }
     } catch (err) {
-      console.error("加载好友列表失败:", err);
+      console.error("Failed to load friends list:", err);
     }
   };
 
@@ -131,7 +131,7 @@ export default function ChannelMembersModal({
       });
       const data = await res.json();
       if (data.status === "success") {
-        toast.success("邀请成功");
+        toast.success("Invite sent");
         loadMembers();
         loadFriendsToInvite();
         setSelectedFriends((prev) => {
@@ -140,10 +140,10 @@ export default function ChannelMembersModal({
           return next;
         });
       } else {
-        toast.error(data.detail || "邀请失败");
+        toast.error(data.detail || "Invite failed");
       }
     } catch (err) {
-      toast.error("邀请失败");
+      toast.error("Invite failed");
     } finally {
       setInviteLoading(false);
     }
@@ -152,7 +152,7 @@ export default function ChannelMembersModal({
   // Invite selected friends in bulk.
   const inviteSelectedFriends = async () => {
     if (selectedFriends.size === 0) {
-      toast.error("请先选择好友");
+      toast.error("Select friends first");
       return;
     }
 
@@ -183,13 +183,13 @@ export default function ChannelMembersModal({
 
     setInviteLoading(false);
     if (successCount > 0) {
-      toast.success(`成功邀请 ${successCount} 位好友`);
+      toast.success(`Invited ${successCount} friends`);
       loadMembers();
       loadFriendsToInvite();
       setSelectedFriends(new Set());
     }
     if (failCount > 0) {
-      toast.error(`${failCount} 位好友邀请失败`);
+      toast.error(`${failCount} friend invites failed`);
     }
   };
 
@@ -197,9 +197,9 @@ export default function ChannelMembersModal({
   const removeMember = async (memberId: string, memberType: string) => {
     if (memberType === "bot") {
       // Preserve the existing removal flow for bots.
-      if (!confirm("确定要移除这个 Bot 吗？")) return;
+      if (!confirm("Remove this bot?")) return;
     } else {
-      if (!confirm("确定要移除这个成员吗？")) return;
+      if (!confirm("Remove this member?")) return;
     }
 
     try {
@@ -209,14 +209,14 @@ export default function ChannelMembersModal({
       );
       const data = await res.json();
       if (data.status === "success") {
-        toast.success("已移除");
+        toast.success("Removed");
         loadMembers();
         loadFriendsToInvite();
       } else {
-        toast.error(data.detail || "移除失败");
+        toast.error(data.detail || "Remove failed");
       }
     } catch (err) {
-      toast.error("移除失败");
+      toast.error("Remove failed");
     }
   };
 
@@ -246,13 +246,13 @@ export default function ChannelMembersModal({
       );
       const data = await res.json();
       if (data.status === "success") {
-        toast.success("提示词模板已更新");
+        toast.success("Prompt template updated");
         loadMembers();
       } else {
-        toast.error(data.detail || "更新失败");
+        toast.error(data.detail || "Update failed");
       }
     } catch {
-      toast.error("更新失败");
+      toast.error("Update failed");
     }
   };
 
@@ -267,13 +267,13 @@ export default function ChannelMembersModal({
       });
       const data = await res.json();
       if (data.status === "success") {
-        toast.success("Bot 已添加");
+        toast.success("Bot added");
         loadMembers();
       } else {
-        toast.error(data.detail || "添加失败");
+        toast.error(data.detail || "Add failed");
       }
     } catch {
-      toast.error("添加失败");
+      toast.error("Add failed");
     } finally {
       setAddingBotId(null);
     }
@@ -296,7 +296,7 @@ export default function ChannelMembersModal({
     <Modal
       open={isOpen}
       onClose={onClose}
-      title="频道成员"
+      title="Channel members"
       description={`#${channelName}`}
       maxWidth="max-w-lg"
       panelClassName="an-token-panel max-h-[85vh] overflow-hidden"
@@ -309,28 +309,28 @@ export default function ChannelMembersModal({
             onClick={() => setActiveTab("members")}
             className={`an-tab ${activeTab === "members" ? "on" : ""}`}
           >
-            当前成员 ({members.length})
+            Current members ({members.length})
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("invite")}
             className={`an-tab ${activeTab === "invite" ? "on" : ""}`}
           >
-            邀请好友 {friends.length > 0 && `(${friends.length})`}
+            Invite friends {friends.length > 0 && `(${friends.length})`}
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("invite_by_id")}
             className={`an-tab ${activeTab === "invite_by_id" ? "on" : ""}`}
           >
-            搜索用户
+            Search users
           </button>
           <button
             type="button"
             onClick={() => setActiveTab("invite_bot")}
             className={`an-tab ${activeTab === "invite_bot" ? "on" : ""}`}
           >
-            邀请 Bot
+            Invite Bot
           </button>
         </div>
 
@@ -341,12 +341,12 @@ export default function ChannelMembersModal({
             loading ? (
               <div className="an-type-meta py-8 text-center">
                 <div className="animate-spin w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto mb-2"></div>
-                加载中…
+                Loading...
               </div>
             ) : (
               <div className="space-y-4">
                 {userMembers.length > 0 && (
-                  <MemberSection title="用户" count={userMembers.length}>
+                  <MemberSection title="User" count={userMembers.length}>
                     {userMembers.map((member) => (
                       <MemberRow
                         key={member.member_id}
@@ -354,7 +354,7 @@ export default function ChannelMembersModal({
                         member={member}
                         badge={
                           member.member_id === currentUserId ? (
-                            <span className="an-tag-pill self">我</span>
+                            <span className="an-tag-pill self">Me</span>
                           ) : undefined
                         }
                         action={
@@ -364,7 +364,7 @@ export default function ChannelMembersModal({
                               onClick={() => removeMember(member.member_id, member.member_type)}
                               className="an-btn an-btn-danger an-btn-sm"
                             >
-                              移除
+                              Remove
                             </button>
                           )
                         }
@@ -391,21 +391,21 @@ export default function ChannelMembersModal({
                                 onClick={() => removeMember(member.member_id, member.member_type)}
                                 className="an-btn an-btn-danger an-btn-sm"
                               >
-                                移除
+                                Remove
                               </button>
                             }
                           />
                           {/* Prompt template selector. */}
                           <div className="ml-11 flex items-center gap-2">
-                            <label className="an-label whitespace-nowrap">提示词模板:</label>
+                            <label className="an-label whitespace-nowrap">Prompt template:</label>
                             <select
                               value={member.template_id || ""}
                               onChange={(e) => updateBotTemplate(member.member_id, e.target.value || null)}
                               disabled={!canEditTemplate}
-                              title={canEditTemplate ? "Bot 频道模板覆盖" : "只有邀请该 Bot 入频道的人可修改频道模板"}
+                              title={canEditTemplate ? "Bot channel template override" : "Only the person who invited this bot can edit the channel template"}
                               className="an-select h-8 flex-1 py-1 text-xs"
                             >
-                              <option value="">默认 (Bot 自带)</option>
+                              <option value="">Default (bot-owned)</option>
                               {allTemplates.map((t) => (
                                 <option key={t.template_id} value={t.template_id}>
                                   {t.name}
@@ -422,7 +422,7 @@ export default function ChannelMembersModal({
                 {members.length === 0 && (
                   <div className="an-type-meta py-8 text-center">
                     <AppIcon name="users" className="mx-auto mb-2 h-10 w-10 text-[var(--fg-3)]" />
-                    <p>暂无成员</p>
+                    <p>No members</p>
                   </div>
                 )}
               </div>
@@ -435,14 +435,14 @@ export default function ChannelMembersModal({
               {friends.length === 0 ? (
                 <div className="py-8 text-center">
                   <AppIcon name="userPlus" className="mx-auto mb-3 h-10 w-10 text-[var(--fg-3)]" />
-                  <p className="an-type-body mb-1">暂无可邀请的好友</p>
-                  <p className="an-type-meta">所有好友都已在频道中</p>
+                  <p className="an-type-body mb-1">No friends available to invite</p>
+                  <p className="an-type-meta">All friends are already in this channel</p>
                 </div>
               ) : (
                 <>
                   <div className="mb-4 flex items-center justify-between">
                     <p className="an-type-meta">
-                      选择好友邀请加入频道 ({selectedFriends.size} 已选)
+                      Select friends to invite to the channel ({selectedFriends.size} selected)
                     </p>
                     {selectedFriends.size > 0 && (
                       <button
@@ -450,7 +450,7 @@ export default function ChannelMembersModal({
                         disabled={inviteLoading}
                         className="an-btn an-btn-primary an-btn-sm"
                       >
-                        {inviteLoading ? "邀请中…" : "批量邀请"}
+                        {inviteLoading ? "Inviting..." : "Invite selected"}
                       </button>
                     )}
                   </div>
@@ -504,7 +504,7 @@ export default function ChannelMembersModal({
                             disabled={inviteLoading}
                             className="an-btn an-btn-primary an-btn-sm"
                           >
-                            邀请
+                            Invite
                           </button>
                         </div>
                       );
@@ -519,15 +519,15 @@ export default function ChannelMembersModal({
             <div>
               <div className="mb-4">
                 <label className="an-label mb-1 block">
-                  用户
+                  User
                 </label>
                 <SearchPicker
                   context="channel_invite_user"
                   token={userToken}
                   channelId={channelId}
                   modal
-                  placeholder="搜索用户"
-                  actionLabel={inviteLoading ? "邀请中" : "邀请"}
+                  placeholder="Search users"
+                  actionLabel={inviteLoading ? "Inviting" : "Invite"}
                   onSelect={(selection) => {
                     if (selection.type === "user") inviteFriend(selection.item.user_id);
                   }}
@@ -542,10 +542,10 @@ export default function ChannelMembersModal({
               token={userToken}
               channelId={channelId}
               modal
-              placeholder="搜索 Bot"
+              placeholder="Search bots"
               actionLabel={(selection) => {
                 if (selection.type !== "bot") return null;
-                return addingBotId === selection.item.bot_id ? "添加中" : "添加";
+                return addingBotId === selection.item.bot_id ? "Adding" : "Add";
               }}
               onSelect={(selection) => {
                 if (selection.type === "bot") addBot(selection.item.bot_id);

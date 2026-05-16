@@ -18,7 +18,7 @@ export function SearchFilters({
 
   const activeTypeSet = new Set(activeTypes);
   return (
-    <div className="an-search-filters" role="group" aria-label="搜索类型">
+    <div className="an-search-filters" role="group" aria-label="Search types">
       {options.map((option) => {
         const selected = activeTypeSet.has(option.type);
         return (

@@ -1,4 +1,4 @@
-"""Agent Bridge Bot token 生成 / 前缀 / 验证（纯单元测试）."""
+"""Tests for test bot tokens."""
 from __future__ import annotations
 
 from types import SimpleNamespace

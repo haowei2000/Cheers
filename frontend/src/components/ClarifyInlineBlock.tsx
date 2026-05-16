@@ -61,7 +61,7 @@ export function ClarifyInlineBlock({
       <div className="an-token-panel my-2 rounded-lg border border-gray-200 bg-[#F8F8F8] p-3">
         <span className="text-xs text-gray-400 flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full bg-gray-300 animate-pulse" />
-          引导正在根据澄清回答…
+          The guide is using the clarification answer...
         </span>
       </div>
     );
@@ -69,7 +69,7 @@ export function ClarifyInlineBlock({
 
   if (status === "answered") {
     const displayReply =
-      replyContent?.replace(/^@(?:Helper|Coordinator|channel bot)\s*澄清回答[：:]\s*/i, "").trim() ||
+      replyContent?.replace(/^@(?:Helper|Coordinator|channel bot)\s*Clarification answer[::]\s*/i, "").trim() ||
       "";
     return (
       <div className="an-token-panel my-2 rounded-lg border border-gray-200 bg-[#F8F8F8] overflow-hidden">
@@ -84,15 +84,15 @@ export function ClarifyInlineBlock({
           >
             ▶
           </span>
-          <span className="font-medium">澄清</span>
-          <span className="text-gray-400">{open ? "收起" : "展开"}</span>
+          <span className="font-medium">Clarification</span>
+          <span className="text-gray-400">{open ? "Collapse" : "Expand"}</span>
         </button>
         {open && (
           <div className="px-3 pb-3 text-xs text-gray-600 border-t border-gray-200 space-y-2 pt-2">
-            <p className="text-gray-500">已澄清并已收到引导回复</p>
+            <p className="text-gray-500">Clarified and guide reply received</p>
             {displayReply && (
               <div className="rounded border border-gray-200 bg-white p-2">
-                <p className="text-gray-400 mb-1">澄清回答</p>
+                <p className="text-gray-400 mb-1">Clarification answer</p>
                 <pre className="whitespace-pre-wrap text-gray-700 font-sans text-xs">
                   {displayReply}
                 </pre>
@@ -108,7 +108,7 @@ export function ClarifyInlineBlock({
     <div className="an-token-panel my-2 rounded-lg border border-[#1264A3]/30 bg-[#F8F8F8] overflow-hidden p-3">
       <div className="mb-3">
         <h4 className="text-sm font-semibold text-gray-800">
-          {schema.title || "请先确认以下问题"}
+          {schema.title || "Please confirm the following questions"}
         </h4>
       </div>
       <div className="space-y-2 max-h-[40vh] overflow-auto pr-1">
@@ -146,7 +146,7 @@ export function ClarifyInlineBlock({
                             [optKey]: e.target.value,
                           }))
                         }
-                        placeholder={opt.text_placeholder || "请输入"}
+                        placeholder={opt.text_placeholder || "Enter a value"}
                         className="ml-6 w-full rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:border-[#1264A3]"
                       />
                     )}
@@ -163,7 +163,7 @@ export function ClarifyInlineBlock({
                       onChange={() => toggleOther(q)}
                       className="accent-[#1264A3]"
                     />
-                    <span>{q.other_label || "其他"}</span>
+                    <span>{q.other_label || "Other"}</span>
                   </label>
                   {(answers[q.id] || []).includes(OTHER_CHOICE_ID) && (
                     <input
@@ -175,7 +175,7 @@ export function ClarifyInlineBlock({
                           [q.id]: e.target.value,
                         }))
                       }
-                      placeholder={q.other_placeholder || "请输入其他补充"}
+                      placeholder={q.other_placeholder || "Enter additional details"}
                       className="mt-1.5 w-full rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-800 focus:outline-none focus:border-[#1264A3]"
                     />
                   )}
@@ -192,7 +192,7 @@ export function ClarifyInlineBlock({
             onClick={onSkip}
             className="px-4 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-medium"
           >
-            跳过
+            Skip
           </button>
         )}
         <button
@@ -207,7 +207,7 @@ export function ClarifyInlineBlock({
           }
           className="px-4 py-1.5 rounded bg-[#007a5a] text-white font-medium disabled:opacity-40 text-sm hover:bg-[#006a4d]"
         >
-          继续
+          Continue
         </button>
       </div>
     </div>

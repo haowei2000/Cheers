@@ -1,4 +1,4 @@
-"""ChannelMemory：统一的频道记忆领域对象，聚合所有记忆层并提供 export 能力。"""
+"""Channel memory module."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,7 +16,7 @@ ENTRY_LAYERS = ("ANCHOR", "DECISIONS", "PROGRESS")
 
 @dataclass
 class MemoryItem:
-    """单条记忆条目的轻量表示。"""
+    """Memory Item schema or model."""
     entry_id: str
     layer: str
     title: str | None
@@ -44,7 +44,7 @@ class MemoryItem:
 
 @dataclass
 class ChannelMemory:
-    """频道完整记忆快照，用于注入 prompt 或导出。"""
+    """Channel Memory schema or model."""
     channel_id: str
     # Structured layers: list of items.
     anchor: list[MemoryItem] = field(default_factory=list)
@@ -63,19 +63,14 @@ class ChannelMemory:
 
     @classmethod
     async def load(cls, channel_id: str, session: AsyncSession) -> ChannelMemory:
-        """从 DB 加载频道全部记忆层。"""
+        """Load."""
         return await cls.load_layers(channel_id, session, cls.ALL_LAYERS)
 
     @classmethod
     async def load_layers(
         cls, channel_id: str, session: AsyncSession, layers: frozenset[str] | set[str],
     ) -> ChannelMemory:
-        """加载指定的记忆层。``layers`` 是 ``ALL_LAYERS`` 的子集。
-
-        未在 ``layers`` 中的层在结果对象上保持空值（[] 或 ""），
-        ``to_context_dict()`` 会把它们渲染为空字符串——对调用方来说
-        等价于 "未配置"。
-        """
+        """Load layers."""
         mem = cls(channel_id=channel_id)
 
         # 1) Structured layers from memory_entries, optionally filtered by layer.
@@ -118,7 +113,7 @@ class ChannelMemory:
     # Export as dict for compatibility with the existing memory_context API.
 
     def to_context_dict(self) -> dict[str, str]:
-        """导出为 flat dict，兼容现有 payload.memory_context 格式。"""
+        """To context dict."""
         return {
             "anchor": self.export_layer_text("ANCHOR"),
             "decisions": self.export_layer_text("DECISIONS"),
@@ -141,7 +136,7 @@ class ChannelMemory:
         return []
 
     def export_layer_md(self, layer: str) -> str:
-        """将某个结构化层的所有条目导出为 Markdown。"""
+        """Export layer md."""
         items = self._get_items(layer)
         if not items:
             return ""
@@ -154,7 +149,7 @@ class ChannelMemory:
         return "\n\n".join(parts)
 
     def export_layer_text(self, layer: str) -> str:
-        """将某个结构化层导出为适合 XML prompt 包装的纯文本。"""
+        """Export layer text."""
         items = self._get_items(layer)
         if not items:
             return ""
@@ -167,7 +162,7 @@ class ChannelMemory:
         return "\n\n".join(parts)
 
     def export_layer_xml(self, layer: str) -> str:
-        """将某个结构化层的所有条目导出为 XML。"""
+        """Export layer xml."""
         items = self._get_items(layer)
         tag = layer.lower()
         if not items:
@@ -182,28 +177,28 @@ class ChannelMemory:
     # Full export.
 
     def export_md(self) -> str:
-        """导出频道全部记忆为 Markdown 文档。"""
+        """Export md."""
         sections: list[str] = []
         for layer_name, label in [
-            ("ANCHOR", "项目锚点"),
-            ("PROGRESS", "项目进度"),
-            ("DECISIONS", "决策记录"),
+            ("ANCHOR", "Project Anchor"),
+            ("PROGRESS", "Project Progress"),
+            ("DECISIONS", "Decision Records"),
         ]:
             content = self.export_layer_md(layer_name)
             if content:
                 sections.append(f"## {label}\n\n{content}")
 
         if self.files_index:
-            sections.append(f"## 资料索引\n\n{self.files_index}")
+            sections.append(f"## File Index\n\n{self.files_index}")
         if self.recent:
-            sections.append(f"## 近期动态\n\n{self.recent}")
+            sections.append(f"## Recent Updates\n\n{self.recent}")
         if self.todos:
-            sections.append(f"## 待办事项\n\n{self.todos}")
+            sections.append(f"## Todos\n\n{self.todos}")
 
         return "\n\n---\n\n".join(sections) if sections else ""
 
     def export_xml(self) -> str:
-        """导出频道全部记忆为 XML 文档。"""
+        """Export xml."""
         lines: list[str] = ["<project_memory>"]
         lines.append(f"  {self.export_layer_xml('ANCHOR')}")
         lines.append(f"  {self.export_layer_xml('PROGRESS')}")
@@ -227,7 +222,7 @@ class ChannelMemory:
 
     @staticmethod
     async def _render_files_index(channel_id: str, session: AsyncSession) -> str:
-        """从 FileRecord 实时渲染 FILES_INDEX 文本。"""
+        """Render files index."""
         result = await session.execute(
             select(FileRecord)
             .where(
@@ -257,14 +252,14 @@ class ChannelMemory:
 
     @staticmethod
     async def _render_recent(channel_id: str, session: AsyncSession) -> str:
-        """运行时渲染 RECENT：当前页 + 已封存历史页摘要。"""
+        """Render recent."""
         from app.features.memory.history_pager import render_recent_context
 
         return await render_recent_context(channel_id, session)
 
     @staticmethod
     async def _render_todos(channel_id: str, session: AsyncSession) -> str:
-        """从 TodoItem 实时渲染待办事项文本。"""
+        """Render todos."""
         result = await session.execute(
             select(TodoItem)
             .where(TodoItem.channel_id == channel_id)

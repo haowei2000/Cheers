@@ -69,10 +69,7 @@ def _make_ctx(**overrides):
 
 
 def test_leaf_payload_omits_run_ctx() -> None:
-    """The auto-takeover phase-2 contract: suggested bots cannot recursively
-    call_bot. build_payload leaves run_ctx as None for Capabilities.leaf() so
-    channel_bot.call_bot's first check ('错误：_run_ctx 未注入') refuses
-    to dispatch further."""
+    """Covers test leaf payload omits run ctx behavior."""
     ctx = _make_ctx()
     payload = build_payload(
         ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),

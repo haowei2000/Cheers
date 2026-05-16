@@ -1,4 +1,4 @@
-"""Admin 业务逻辑层（AIModel / PromptTemplate）."""
+"""Admin service module."""
 from __future__ import annotations
 
 from sqlalchemy import update
@@ -104,7 +104,7 @@ class PromptTemplateService:
         return await self.repo.list_all()
 
     async def list_visible(self, user: User) -> list[PromptTemplate]:
-        """返回用户可见的模板：内置 + 无主（管理员创建）+ 自己创建的。"""
+        """List visible."""
         from sqlalchemy import or_
         from sqlalchemy import select as sa_select
 
@@ -146,7 +146,7 @@ class PromptTemplateService:
         )
 
     def _check_owner(self, tmpl: PromptTemplate, user: User) -> None:
-        """检查用户是否有权修改该模板。"""
+        """Check owner."""
         from app.utils.permissions import is_admin
         if is_admin(user):
             return

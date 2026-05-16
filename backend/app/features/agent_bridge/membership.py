@@ -1,8 +1,4 @@
-"""Agent Bridge Bot 的 membership 快照和成员事件派发工具。
-
-成员事件来源于 channel_service.add_member/remove_member 的 hook（只在 binding_type='agent_bridge'
-的 bot 被加入/移除频道时派发）。快照用于 control WS 的 hello 首帧。
-"""
+"""Membership module."""
 from __future__ import annotations
 
 import logging
@@ -17,7 +13,7 @@ logger = logging.getLogger("app.features.agent_bridge.membership")
 
 
 async def load_memberships(session: AsyncSession, bot_id: str) -> list[dict]:
-    """查询 bot 当前所在的所有频道，返回 hello 帧里用的 memberships 列表。"""
+    """Load memberships."""
     rows = (await session.execute(
         select(Channel, ChannelMembership)
         .join(ChannelMembership, ChannelMembership.channel_id == Channel.channel_id)
@@ -41,7 +37,7 @@ async def load_memberships(session: AsyncSession, bot_id: str) -> list[dict]:
 async def emit_channel_joined(
     session: AsyncSession, *, bot_id: str, channel_id: str, invited_by: str | None,
 ) -> None:
-    """成员加入：若该 bot 是 agent_bridge 类型、且有活跃 control WS，则推送 channel_joined 事件。"""
+    """Emit channel joined."""
     bot = (await session.execute(
         select(BotAccount).where(BotAccount.bot_id == bot_id)
     )).scalar_one_or_none()
@@ -65,7 +61,7 @@ async def emit_channel_joined(
 async def emit_channel_left(
     session: AsyncSession, *, bot_id: str, channel_id: str, reason: str,
 ) -> None:
-    """成员移除：推送 channel_left 事件（Agent Bridge Bot only）。"""
+    """Emit channel left."""
     bot = (await session.execute(
         select(BotAccount).where(BotAccount.bot_id == bot_id)
     )).scalar_one_or_none()

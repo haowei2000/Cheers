@@ -152,7 +152,7 @@ class Settings(BaseSettings):
 
 
 def get_data_dir(base: Path) -> Path:
-    """解析 data 目录路径."""
+    """Get data dir."""
     p = Path(settings.data_dir)
     if not p.is_absolute():
         p = base / p
@@ -160,7 +160,7 @@ def get_data_dir(base: Path) -> Path:
 
 
 def resolve_data_dir() -> Path:
-    """零参数版：以 backend/app/ 为基准解析 data_dir（与历史 adapters 写入位置一致）。"""
+    """Resolve data dir."""
     p = Path(settings.data_dir)
     if p.is_absolute():
         return p

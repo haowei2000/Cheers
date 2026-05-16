@@ -1,4 +1,4 @@
-"""BotAccount / AIModel / PromptTemplate 数据访问层."""
+"""Bot repo module."""
 from __future__ import annotations
 
 from sqlalchemy import delete, or_, select

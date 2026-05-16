@@ -112,7 +112,7 @@ export default function TodoPanel({ channelId, onClose }: TodoPanelProps) {
     <div className="flex flex-col h-full bg-white">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
-        <span className="text-sm font-semibold text-gray-800">待办事项</span>
+        <span className="text-sm font-semibold text-gray-800">Todo items</span>
         <button
           onClick={onClose}
           className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -121,7 +121,7 @@ export default function TodoPanel({ channelId, onClose }: TodoPanelProps) {
         </button>
       </div>
 
-      {/* Create form */}
+      {/* created form */}
       <div className="px-3 py-2 border-b border-gray-100 flex-shrink-0 space-y-2">
         <textarea
           rows={2}
@@ -156,7 +156,7 @@ export default function TodoPanel({ channelId, onClose }: TodoPanelProps) {
       {/* List */}
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="flex items-center justify-center h-16 text-gray-400 text-sm">加载中…</div>
+          <div className="flex items-center justify-center h-16 text-gray-400 text-sm">Loading...</div>
         ) : todos.length === 0 ? (
           <div className="flex items-center justify-center h-16 text-gray-400 text-sm">No tasks yet.</div>
         ) : (

@@ -1,4 +1,4 @@
-"""全局共享 httpx.AsyncClient，复用 TCP 连接降低延迟。"""
+"""Http client module."""
 import httpx
 
 _client: httpx.AsyncClient | None = None

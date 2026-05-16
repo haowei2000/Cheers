@@ -1,14 +1,4 @@
-"""Bridge 服务：把 plugin 回推的 Bot 回复落盘并广播。
-
-抽离出来的理由：orchestrator 内部的 `_finalize_bot_msg` 是闭包，无法从路由里调。
-这里提供一个从 bridge 路由调的独立 finalize 实现，行为尽量与 orchestrator 版本一致：
-  1. 更新占位 Message.content；
-  2. 解析并写入 mention_user_ids；
-  3. 合并 file_ids；
-  4. 广播 WebSocket `message_done` 事件。
-
-若找不到占位消息（task_id 不匹配或服务重启后 registry 丢失），则创建一条新的 Bot 消息写入频道。
-"""
+"""Service module."""
 from __future__ import annotations
 
 import asyncio
@@ -122,17 +112,7 @@ async def finalize_bot_reply(
     reply_to_msg_id: str | None = None,
     file_ids: list[str] | None = None,
 ) -> tuple[Message, bool]:
-    """把 plugin 回推的回复写入频道；优先 finalize 占位消息，找不到则新建一条。
-
-    Args:
-        reply_to_msg_id: 若 plugin 明确知道要 finalize 的占位 msg_id，这里传入；
-            否则按 (task_id, bot_id) 兜底匹配 pending registry。
-        in_reply_to_msg_id: 该回复的 in_reply_to 字段（指向用户的触发消息）；
-            finalize 占位时不修改此字段（占位消息创建时已设好），仅新建时使用。
-
-    Returns:
-        (msg, finalized_placeholder)
-    """
+    """Finalize bot reply."""
     pending: PendingReply | None = await pending_replies.resolve(
         task_id=task_id, bot_id=bot_id, msg_id=reply_to_msg_id,
     )

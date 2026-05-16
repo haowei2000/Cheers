@@ -19,14 +19,14 @@ const CATEGORY_EMOJI: Record<string, string> = {
 };
 
 const DEFAULT_CATEGORIES = [
-  { value: 'development', label: '🦊 开发工具' },
-  { value: 'document', label: '🦋 文档处理' },
-  { value: 'tool', label: '🐝 实用工具' },
-  { value: 'knowledge', label: '🦉 知识管理' },
-  { value: 'ai', label: '🤖 AI 助手' },
+  { value: 'development', label: '🦊 Development Tools' },
+  { value: 'document', label: '🦋 Document Processing' },
+  { value: 'tool', label: '🐝 Utilities' },
+  { value: 'knowledge', label: '🦉 Knowledge Management' },
+  { value: 'ai', label: '🤖 AI Assistants' },
   { value: 'agent', label: '🦁 Agent' },
-  { value: 'debug', label: '🐞 调试分析' },
-  { value: 'imported', label: '🎁 其他' },
+  { value: 'debug', label: '🐞 Debugging & Analysis' },
+  { value: 'imported', label: '🎁 Other' },
 ];
 
 function getEmoji(category: string): string {
@@ -55,7 +55,7 @@ export default function SkillDetail({ skillId, onBack }: Props) {
       setSkill(data);
       setNewCategory(data.category);
     } catch {
-      setError('加载失败了');
+      setError('Failed to load');
     }
     setLoading(false);
   }
@@ -65,7 +65,7 @@ export default function SkillDetail({ skillId, onBack }: Props) {
 
     const finalCategory = useCustomCategory ? newCategory.trim() : newCategory;
     if (!finalCategory) {
-      setUpdateMsg('请选择或输入分类');
+      setUpdateMsg('Choose or enter a category');
       return;
     }
 
@@ -76,9 +76,9 @@ export default function SkillDetail({ skillId, onBack }: Props) {
       await updateSkillCategory(skill.id, finalCategory);
       setSkill({ ...skill, category: finalCategory });
       setEditingCategory(false);
-      setUpdateMsg('✓ 分类已更新');
+      setUpdateMsg('✓ Category updated');
     } catch (err) {
-      setUpdateMsg(`✗ 更新失败: ${err}`);
+      setUpdateMsg(`✗ Update failed: ${err}`);
     }
 
     setUpdating(false);
@@ -92,7 +92,7 @@ export default function SkillDetail({ skillId, onBack }: Props) {
     return (
       <div className="loading-container">
         <div className="loading-icon">🦋</div>
-        <div className="loading-text">正在打开...</div>
+        <div className="loading-text">Opening...</div>
         <div className="loading-dots">
           <span></span><span></span><span></span>
         </div>
@@ -115,7 +115,7 @@ export default function SkillDetail({ skillId, onBack }: Props) {
       </div>
 
       <button className="back-btn" onClick={onBack}>
-        🌿 返回
+        🌿 Back
       </button>
 
       <div className="detail-title">
@@ -138,17 +138,17 @@ export default function SkillDetail({ skillId, onBack }: Props) {
                 }}
                 className="category-select-edit"
               >
-                <option value="">选择分类...</option>
+                <option value="">Category...</option>
                 {DEFAULT_CATEGORIES.map(cat => (
                   <option key={cat.value} value={cat.value}>{cat.label}</option>
                 ))}
-                <option value="__custom__">✨ 创建新分类</option>
+                <option value="__custom__">✨ Create New Category</option>
               </select>
 
               {useCustomCategory && (
                 <input
                   type="text"
-                  placeholder="输入新分类..."
+                  placeholder="Enter a new category..."
                   value={newCategory}
                   onChange={e => setNewCategory(e.target.value)}
                   className="custom-category-input-edit"
@@ -173,7 +173,7 @@ export default function SkillDetail({ skillId, onBack }: Props) {
             <span
               className="detail-category clickable"
               onClick={() => setEditingCategory(true)}
-              title="点击编辑分类"
+              title="Edit category"
             >
               {getEmoji(skill.category)} {skill.category} ✏️
             </span>
@@ -189,26 +189,26 @@ export default function SkillDetail({ skillId, onBack }: Props) {
 
       <div className="detail-meta">
         <div className="meta-card">
-          <div className="meta-label">🌸 作者</div>
+          <div className="meta-label">🌸 Author</div>
           <div className="meta-value">{skill.author}</div>
         </div>
         <div className="meta-card">
-          <div className="meta-label">📅 更新时间</div>
+          <div className="meta-label">📅 Updated</div>
           <div className="meta-value">{skill.update_time}</div>
         </div>
         <div className="meta-card">
-          <div className="meta-label">💫 支持版本</div>
-          <div className="meta-value">{skill.support_version || '任意版本'}</div>
+          <div className="meta-label">💫 Supported Version</div>
+          <div className="meta-value">{skill.support_version || 'Any version'}</div>
         </div>
       </div>
 
       <div className="detail-section">
-        <h3>🌟 功能概述</h3>
+        <h3>🌟 Overview</h3>
         <p className="detail-description">{skill.description}</p>
       </div>
 
       <div className="detail-section">
-        <h3>🏷️ 标签</h3>
+        <h3>🏷️ Tags</h3>
         <div className="tags-cloud">
           {skill.tags.map((tag, i) => (
             <span key={tag} className="tag-item" style={{ animationDelay: `${i * 0.1}s` }}>
@@ -220,7 +220,7 @@ export default function SkillDetail({ skillId, onBack }: Props) {
 
       {skill.files && skill.files.length > 0 && (
         <div className="detail-section">
-          <h3>📁 包含文件 ({skill.files.length})</h3>
+          <h3>📁 Files ({skill.files.length})</h3>
           <ul className="file-list">
             {skill.files.map(file => (
               <li key={file}>{file}</li>
@@ -231,13 +231,13 @@ export default function SkillDetail({ skillId, onBack }: Props) {
 
       {skill.readme && (
         <div className="detail-section">
-          <h3>📖 使用说明</h3>
+          <h3>📖 Usage</h3>
           <pre className="readme-content">{skill.readme}</pre>
         </div>
       )}
 
       <button className="download-btn-large" onClick={handleDownload}>
-        📥 下载这个技能
+        📥 Download This Skill
       </button>
     </div>
   );

@@ -1,4 +1,4 @@
-"""Pytest fixtures：测试用 DB、客户端."""
+"""Tests for conftest."""
 import asyncio
 import os
 from collections.abc import AsyncGenerator, Generator
@@ -19,7 +19,7 @@ TEST_DATABASE_URL = os.getenv(
 
 @pytest.fixture(scope="session")
 def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """整个测试会话共用一个事件循环，避免 asyncpg Future 绑定不同 loop 的问题。"""
+    """Covers event loop behavior."""
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
@@ -27,7 +27,7 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 
 @pytest_asyncio.fixture(scope="session")
 async def db_engine():
-    """PostgreSQL 测试引擎（整个测试会话共用，建表一次）."""
+    """Covers db engine behavior."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -50,7 +50,7 @@ async def db_engine():
 
 @pytest_asyncio.fixture
 async def db_session(db_engine) -> AsyncGenerator[AsyncSession, None]:
-    """每个测试独立的异步会话，测试结束后回滚。"""
+    """Covers db session behavior."""
     factory = async_sessionmaker(
         db_engine, class_=AsyncSession, expire_on_commit=False, autocommit=False, autoflush=False
     )
@@ -61,11 +61,7 @@ async def db_session(db_engine) -> AsyncGenerator[AsyncSession, None]:
 
 @pytest_asyncio.fixture
 async def client(db_session: AsyncSession, db_engine) -> AsyncGenerator[AsyncClient, None]:
-    """覆盖依赖的 FastAPI 测试客户端。
-
-    同时将 messages.py 中的 async_session_factory 替换为测试用工厂，
-    确保 Bot pipeline 后台任务也写入同一块测试 DB。
-    """
+    """Covers client behavior."""
     import app.api.v1.messages.routes as _messages_mod
     import app.features.bot_runtime.pipeline.bot.jobs as _bot_pipeline_jobs_mod
     from app.core.dependencies import get_current_user

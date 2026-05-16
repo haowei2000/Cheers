@@ -1,8 +1,4 @@
-"""adapter_resolver 对 binding_type 的路由契约测试。
-
-AgentBridgeBotAdapter 的 execute/health_check 语义在 tests/test_agent_bridge.py
-里有专门覆盖（含 dispatcher 互动）。此文件只验证 resolver 分流行为。
-"""
+"""Tests for test websocket bot adapter."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -70,7 +66,7 @@ async def test_resolver_ws_bot_offline_returns_mock() -> None:
 
 @pytest.mark.asyncio
 async def test_resolver_http_binding_without_model_returns_mock() -> None:
-    """默认 http 绑定下，无 AIModel 配置仍沿用旧的回退逻辑（不应被新分支影响）。"""
+    """Covers test resolver http binding without model returns mock behavior."""
     bot = _fake_bot(binding_type="http", ai_model=None)
     session = _mock_session_returning_bot(bot)
 

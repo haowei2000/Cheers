@@ -1,4 +1,4 @@
-"""Memory entries CRUD：ANCHOR / DECISIONS / PROGRESS 层的条目级增删改查。"""
+"""Memory API routes."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -55,7 +55,7 @@ async def list_entries(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """列出频道的记忆条目，可按层筛选。"""
+    """List entries."""
     await ChannelService(db).require_channel_member(channel_id, current_user)
     q = select(MemoryEntry).where(MemoryEntry.channel_id == channel_id)
     if layer:
@@ -75,7 +75,7 @@ async def create_entry(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """创建一条记忆条目。"""
+    """Create entry."""
     await ChannelService(db).require_channel_admin(channel_id, current_user)
     layer_upper = body.layer.upper()
     if layer_upper not in _VALID_LAYERS:
@@ -111,7 +111,7 @@ async def update_entry(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """更新一条记忆条目。"""
+    """Update entry."""
     await ChannelService(db).require_channel_admin(channel_id, current_user)
     entry = await db.get(MemoryEntry, entry_id)
     if not entry or entry.channel_id != channel_id:
@@ -136,7 +136,7 @@ async def delete_entry(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """删除一条记忆条目。"""
+    """Delete entry."""
     await ChannelService(db).require_channel_admin(channel_id, current_user)
     entry = await db.get(MemoryEntry, entry_id)
     if not entry or entry.channel_id != channel_id:

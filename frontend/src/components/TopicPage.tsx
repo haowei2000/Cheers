@@ -57,9 +57,9 @@ function resolveWho(
     const bot = bots.find((b) => b.member_id === m.sender_id);
     return bot?.display_name || bot?.username || "Bot";
   }
-  if (m.sender_id === currentUserId) return "我";
+  if (m.sender_id === currentUserId) return "Me";
   const user = users.find((u) => u.member_id === m.sender_id);
-  return user?.display_name || user?.username || "用户";
+  return user?.display_name || user?.username || "User";
 }
 
 function formatDateTime(iso: string | undefined): string {
@@ -114,13 +114,13 @@ export function TopicPage({
     stripThinkTags(rootMsg.content || "")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 80) || "主题";
+      .slice(0, 80) || "Topics";
 
   const previewMessage = (m: Message): string =>
     stripThinkTags(m.content || "")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 80) || "(无内容)";
+      .slice(0, 80) || "(No content)";
 
   const renderForwardActions = (m: Message) => {
     if (!onForwardMessage && !onToggleForwardSelection) return null;
@@ -130,8 +130,8 @@ export function TopicPage({
         {onToggleForwardSelection && (
           <button
             type="button"
-            title={selected ? "取消选择" : "选择后合并转发"}
-            aria-label={selected ? "取消选择" : "选择后合并转发"}
+            title={selected ? "Cancel selection" : "Select for combined forward"}
+            aria-label={selected ? "Cancel selection" : "Select for combined forward"}
             onClick={() => onToggleForwardSelection(m)}
             className="an-chat-action"
             style={
@@ -149,8 +149,8 @@ export function TopicPage({
         {onForwardMessage && (
           <button
             type="button"
-            title="转发"
-            aria-label="转发"
+            title="Forward"
+            aria-label="Forward"
             onClick={() => onForwardMessage(m)}
             className="an-chat-action"
           >
@@ -186,7 +186,7 @@ export function TopicPage({
       : undefined;
     const label = resolveWho(m, channelBots, channelUsers, currentUserId);
     const avatarUrl = isBot ? bot?.avatar_url : user?.avatar_url;
-    const initial = isOwn ? "我" : label.slice(0, 1).toUpperCase();
+    const initial = isOwn ? "Me" : label.slice(0, 1).toUpperCase();
     const msgTitle =
       typeof m.content_data?.title === "string" ? m.content_data.title : null;
     const directParent =
@@ -273,7 +273,7 @@ export function TopicPage({
               <button
                 type="button"
                 className="an-reply-quote"
-                title="跳转到被回复的消息"
+                title="Jump to replied message"
                 onClick={() => highlightMessage(directParent.msg_id)}
               >
                 <span className="an-rq-arrow">↪</span>
@@ -309,8 +309,8 @@ export function TopicPage({
             {onShowMessageDetails && hasMessageDetails?.(m) && (
               <button
                 type="button"
-                title="查看这条 AI 回复的记忆与流式事件"
-                aria-label="查看这条 AI 回复的记忆与流式事件"
+                title="View memory and streaming events for this AI reply"
+                aria-label="View memory and streaming events for this AI reply"
                 onClick={() => onShowMessageDetails(m)}
                 className="an-chat-action"
               >
@@ -320,8 +320,8 @@ export function TopicPage({
             {onCopyMessage && (
               <button
                 type="button"
-                title="复制消息内容"
-                aria-label="复制消息内容"
+                title="Copy message content"
+                aria-label="Copy message content"
                 onClick={() => void onCopyMessage(m)}
                 className="an-chat-action"
               >
@@ -331,8 +331,8 @@ export function TopicPage({
             {renderForwardActions(m)}
             <button
               type="button"
-              title="回复"
-              aria-label="回复"
+              title="Reply"
+              aria-label="Reply"
               onClick={() => setReplyingTo(m)}
               className="an-chat-action"
             >
@@ -348,26 +348,26 @@ export function TopicPage({
     <div className="an-topic-page">
       <div className="an-tpp-top">
         <button type="button" className="an-tpp-back" onClick={onBack}>
-          ← 返回频道
+          ← Back to channel
         </button>
         <div className="an-tpp-meta">
           <div className="an-tpp-crumbs">
             {channel && onGoToChannel ? (
               <a onClick={onGoToChannel}>#{channel.name}</a>
             ) : (
-              <span>频道</span>
+              <span>Channels</span>
             )}
             <span className="an-sep">›</span>
-            <span>主题</span>
+            <span>Topics</span>
           </div>
           <div className="an-tpp-title">{title}</div>
           <div className="an-tpp-sub">
             <span>
-              {replies.length} 条回复
+              {replies.length} replies
             </span>
             <span className="an-d" />
             <span>
-              发起人{" "}
+              Started by{" "}
               {resolveWho(rootMsg, channelBots, channelUsers, currentUserId)}
             </span>
             {rootMsg.created_at && (
@@ -388,7 +388,7 @@ export function TopicPage({
         {renderTopicMessage(rootMsg)}
 
         <div className="an-tpp-divider">
-          {replies.length} 条回复
+          {replies.length} replies
         </div>
 
         {replies.length === 0 ? (
@@ -400,7 +400,7 @@ export function TopicPage({
               padding: "24px 8px",
             }}
           >
-            还没有回复。在下方发送第一条。
+            No replies yet. Send the first one below.
           </div>
         ) : (
           replies.map((r) => renderTopicMessage(r))
@@ -409,7 +409,7 @@ export function TopicPage({
       <div className="an-tpp-foot">
         <div className="an-wrap">
           <TopicComposer
-            placeholder={`回复 "${title}"…`}
+            placeholder={`Reply "${title}"...`}
             channelBots={channelBots}
             channelUsers={channelUsers}
             currentUserId={currentUserId}

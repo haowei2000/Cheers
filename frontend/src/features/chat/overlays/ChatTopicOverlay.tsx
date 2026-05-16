@@ -101,7 +101,7 @@ export function ChatTopicOverlay({
       }}
     >
       {rootMsg ? (
-        <Suspense fallback={<LazyPanelFallback label="正在加载话题视图..." />}>
+        <Suspense fallback={<LazyPanelFallback label="Loading topic view..." />}>
           <TopicPage
             rootMsg={rootMsg}
             replies={repliesOf(rootId)}
@@ -138,7 +138,7 @@ export function ChatTopicOverlay({
                 scopeType="topic"
                 scopeId={rootId}
                 channelId={selectedId}
-                title="主题对应 Session"
+                title="Topic sessions"
                 variant="toolbar"
               />
             }
@@ -148,17 +148,17 @@ export function ChatTopicOverlay({
         <div className="an-topic-page">
           <div className="an-tpp-top">
             <button type="button" className="an-tpp-back" onClick={onBack}>
-              ← 返回频道
+              ← Back to channel
             </button>
             <div className="an-tpp-meta">
               <div className="an-tpp-crumbs">
-                <span>{channel ? `#${channel.name}` : "频道"}</span>
+                <span>{channel ? `#${channel.name}` : "Channels"}</span>
                 <span className="an-sep">›</span>
-                <span>主题</span>
+                <span>Topics</span>
               </div>
               <div className="an-tpp-title">
                 {pageTopicError ||
-                  (pageTopicLoading ? "正在加载话题消息" : "未找到话题消息")}
+                  (pageTopicLoading ? "Loading topic messages" : "Topic message not found")}
               </div>
             </div>
           </div>

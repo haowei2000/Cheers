@@ -1,12 +1,4 @@
-"""rename msg_type 'thread' to 'topic'
-
-Revision ID: 035
-Revises: 034
-Create Date: 2026-04-25 03:00:00.000000
-
-Product rename: 对话串 / thread → 主题 / topic. Existing rows with
-msg_type='thread' are converted in place; new code emits 'topic'.
-"""
+"""035 rename thread to topic module."""
 from typing import Sequence, Union
 
 from alembic import op

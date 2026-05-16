@@ -1,4 +1,4 @@
-"""业务模型；主库为 SQLite，ID 使用 String(36) 存 UUID."""
+"""Business data models for the primary SQLite database."""
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -21,7 +21,7 @@ def friendship_pair_key_default(context) -> str:
 
 
 class Base(DeclarativeBase):
-    """声明式基类."""
+    """Base schema or model."""
     pass
 
 
@@ -117,7 +117,7 @@ class Workspace(Base):
 
 
 class Channel(Base):
-    """频道/协作群."""
+    """Channel schema or model."""
     __tablename__ = "channels"
 
     channel_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -146,7 +146,7 @@ class Channel(Base):
 
 
 class User(Base):
-    """人类用户."""
+    """User schema or model."""
     __tablename__ = "users"
 
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -161,7 +161,7 @@ class User(Base):
 
 
 class EmailCode(Base):
-    """邮件验证码（注册/找回密码/修改密码）."""
+    """Email Code schema or model."""
     __tablename__ = "email_codes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -226,7 +226,7 @@ class ChannelUnreadCount(Base):
 
 
 class WorkspaceMembership(Base):
-    """工作空间成员关系."""
+    """Workspace Membership schema or model."""
     __tablename__ = "workspace_memberships"
 
     workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey("workspaces.workspace_id"), primary_key=True)
@@ -236,7 +236,7 @@ class WorkspaceMembership(Base):
 
 
 class Message(Base):
-    """消息."""
+    """Message schema or model."""
     __tablename__ = "messages"
 
     msg_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -289,7 +289,7 @@ class HistoryPage(Base):
 
 
 class FileRecord(Base):
-    """文件记录与处理状态."""
+    """File Record schema or model."""
     __tablename__ = "file_records"
 
     file_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -321,7 +321,7 @@ class FileRecord(Base):
 
 
 class AgentTask(Base):
-    """Agent 任务日志（质量监控）."""
+    """Agent Task schema or model."""
     __tablename__ = "agent_tasks"
 
     task_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -336,7 +336,7 @@ class AgentTask(Base):
 
 
 class BotRun(Base):
-    """Bot 回复生命周期状态。"""
+    """Bot Run schema or model."""
     __tablename__ = "bot_runs"
 
     bot_run_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -362,7 +362,7 @@ class BotRun(Base):
 
 
 class ChannelProfile(Base):
-    """用户在频道内的个性化资料（昵称、简介）."""
+    """Channel Profile schema or model."""
     __tablename__ = "channel_profiles"
 
     channel_id: Mapped[str] = mapped_column(String(36), ForeignKey("channels.channel_id"), primary_key=True)
@@ -373,15 +373,7 @@ class ChannelProfile(Base):
 
 
 class Friendship(Base):
-    """好友关系表：记录用户之间的好友申请与关系状态.
-
-    user_id 是关系的发起/控制方：
-    - pending / rejected: user_id 为申请人，friend_id 为接收人
-    - accepted: user_id 保留最初申请人，friend_id 为同意人
-    - blocked: user_id 为拉黑人，friend_id 为被拉黑人
-
-    pair_key 是两个用户 ID 排序后的稳定键，用来保证任意两人之间只有一条关系记录。
-    """
+    """Friendship schema or model."""
     __tablename__ = "friendships"
 
     friendship_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -406,7 +398,7 @@ class Friendship(Base):
 
 
 class SystemSetting(Base):
-    """系统配置键值表（替代 admin_settings.json）。"""
+    """System Setting schema or model."""
     __tablename__ = "system_settings"
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -414,7 +406,7 @@ class SystemSetting(Base):
 
 
 class BulletinIssue(Base):
-    """公共留言板 Issue。"""
+    """Bulletin Issue schema or model."""
     __tablename__ = "bulletin_issues"
 
     issue_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -448,7 +440,7 @@ class TodoItem(Base):
 
 
 class MemoryEntry(Base):
-    """频道记忆条目：ANCHOR / DECISIONS / PROGRESS 层的结构化单条记录。"""
+    """Memory Entry schema or model."""
     __tablename__ = "memory_entries"
 
     entry_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
@@ -484,7 +476,7 @@ class KeychainItem(Base):
 
 
 class AgentBridgeEvent(Base):
-    """per-bot Agent Bridge 派发事件日志，用于 plugin 重连时按 last_event_seq 回放。"""
+    """Agent Bridge Event schema or model."""
     __tablename__ = "agent_bridge_events"
 
     event_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

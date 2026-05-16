@@ -19,12 +19,12 @@ export function MessageDetailModal({
     <Modal
       open={!!message}
       onClose={onClose}
-      title="AI 回复详情"
+      title="AI reply details"
       description={
         memoryLoadDetail
-          ? `触发消息 ${memoryLoadDetail.trigger_msg_id || "-"} · ${memoryLoadDetail.trigger_msg_type || "normal"}`
+          ? `Trigger message ${memoryLoadDetail.trigger_msg_id || "-"} · ${memoryLoadDetail.trigger_msg_type || "normal"}`
           : message
-            ? `消息 ${message.msg_id}`
+            ? `Messages ${message.msg_id}`
             : undefined
       }
       maxWidth="max-w-4xl"
@@ -33,7 +33,7 @@ export function MessageDetailModal({
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
-              调用记忆
+              Memory calls
             </h3>
             {memoryLoadDetail && (
               <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
@@ -48,19 +48,19 @@ export function MessageDetailModal({
                 style={{ borderColor: "var(--border)" }}
               >
                 <div>
-                  <div style={{ color: "var(--fg-3)" }}>加载策略</div>
+                  <div style={{ color: "var(--fg-3)" }}>Load strategy</div>
                   <div className="mt-0.5 font-mono break-all">
                     {memoryLoadDetail.strategy || "-"}
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--fg-3)" }}>请求层</div>
+                  <div style={{ color: "var(--fg-3)" }}>Requested layers</div>
                   <div className="mt-0.5">
                     {(memoryLoadDetail.requested_layers || []).join(", ") || "-"}
                   </div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--fg-3)" }}>触发类型</div>
+                  <div style={{ color: "var(--fg-3)" }}>Trigger type</div>
                   <div className="mt-0.5">
                     {memoryLoadDetail.trigger_msg_type || "normal"}
                   </div>
@@ -86,7 +86,7 @@ export function MessageDetailModal({
                           color: layer.requested ? "var(--accent)" : "var(--fg-3)",
                         }}
                       >
-                        {layer.requested ? "已请求" : "未请求"}
+                        {layer.requested ? "Requested" : "Not requested"}
                       </span>
                       <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
                         {layer.chars || 0} chars
@@ -107,7 +107,7 @@ export function MessageDetailModal({
                       </pre>
                     ) : (
                       <div className="mt-2 text-xs" style={{ color: "var(--fg-3)" }}>
-                        {layer.requested ? "这一层没有可用内容。" : "这一层未参与本次加载。"}
+                        {layer.requested ? "No content is available for this layer." : "This layer was not requested for this load."}
                       </div>
                     )}
                   </div>
@@ -116,7 +116,7 @@ export function MessageDetailModal({
             </>
           ) : (
             <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-              这条消息没有可展示的记忆加载信息。
+              This message has no displayable memory load information.
             </div>
           )}
         </section>
@@ -124,7 +124,7 @@ export function MessageDetailModal({
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold" style={{ color: "var(--fg-1)" }}>
-              流式事件过程
+              Streaming event trace
             </h3>
             <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
               {botTraceEvents.length} events
@@ -180,7 +180,7 @@ export function MessageDetailModal({
             </div>
           ) : (
             <div className="rounded-lg border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-              当前页面会话还没有捕获到这条回复的流式事件。
+              This page session has not captured streaming events for this reply yet.
             </div>
           )}
         </section>

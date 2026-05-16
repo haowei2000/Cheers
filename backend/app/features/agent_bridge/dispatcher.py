@@ -1,13 +1,4 @@
-"""进程内 pub/sub：把 Agent Bridge Bot 的派发事件按 bot_id 定向推送给订阅的 provider.
-
-设计说明：
-  - 单进程单例 `bridge_dispatcher`。非集群部署下够用；多副本下应换成
-    Redis Pub/Sub 或类似机制。
-  - 每条 WS 连接订阅时声明它关心的 `bot_ids`。publish() 只把事件推给
-    匹配该事件 `bot_id` 的订阅者 —— 避免 plugin A 看到它不负责的 Bot 流量。
-  - Queue 满时丢弃（通常意味着 plugin 掉线或过载），plugin 侧应自愈。
-  - 管理/调试场景可以以 bot_ids=None 订阅接收全部事件；默认 API 不暴露。
-"""
+"""Dispatcher module."""
 from __future__ import annotations
 
 import asyncio
@@ -43,12 +34,7 @@ class BridgeDispatcher:
         self._lock = asyncio.Lock()
 
     async def subscribe(self, bot_ids: Iterable[str] | None = None) -> _Subscriber:
-        """订阅派发事件。
-
-        Args:
-            bot_ids: 订阅者关心的 bot_id 集合。None = 接收全部（仅限内部用途）；
-                     传入集合 = 仅接收匹配的事件；空集合 = 不接收任何事件。
-        """
+        """Subscribe."""
         bot_ids_frozen: frozenset[str] | None
         if bot_ids is None:
             bot_ids_frozen = None
@@ -68,7 +54,7 @@ class BridgeDispatcher:
         return sub
 
     async def update_subscription(self, sub: _Subscriber, bot_ids: Iterable[str] | None) -> None:
-        """在线更新某订阅者的 bot_ids 过滤。"""
+        """Update subscription."""
         async with self._lock:
             sub.bot_ids = None if bot_ids is None else frozenset(bot_ids)
 
@@ -78,7 +64,7 @@ class BridgeDispatcher:
         logger.info("bridge_dispatcher: subscriber removed total=%d", len(self._subscribers))
 
     async def publish(self, event: dict[str, Any]) -> int:
-        """定向广播事件，返回成功入队的订阅者数。"""
+        """Publish."""
         bot_id = event.get("bot_id") if isinstance(event, dict) else None
         delivered = 0
         dead: list[_Subscriber] = []

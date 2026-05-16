@@ -52,11 +52,11 @@ export function ChannelProfileModal({
         body: JSON.stringify({ nickname: nickname || null, bio: bio || null }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "保存失败");
-      toast.success("频道资料已更新");
+      if (!res.ok) throw new Error(data.detail || "Save failed");
+      toast.success("Channel profile updated");
       onClose();
     } catch (e: unknown) {
-      toast.error((e as Error).message || "保存失败");
+      toast.error((e as Error).message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -69,39 +69,39 @@ export function ChannelProfileModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="我在频道的资料"
+      title="My channel profile"
       description={`#${channelName}`}
     >
       {loading ? (
         <div className="flex items-center justify-center py-8 text-gray-400 text-sm">
-          加载中…
+          Loading...
         </div>
       ) : (
         <div className="space-y-4">
           <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
-            在这里设置的昵称和简介仅在本频道内显示，不影响其他频道。
+            The nickname and bio set here are shown only in this channel and do not affect other channels.
           </p>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              频道昵称
+              Channel nickname
             </label>
             <input
               type="text"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
-              placeholder="留空则使用全局显示名称"
+              placeholder="Leave blank to use global display name"
               className={inputCls}
               maxLength={64}
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              频道简介
+              Channel bio
             </label>
             <textarea
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              placeholder="在本频道的身份介绍…"
+              placeholder="Introduce your role in this channel..."
               className={`${inputCls} resize-none`}
               rows={4}
             />
@@ -114,7 +114,7 @@ export function ChannelProfileModal({
           onClick={onClose}
           className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium"
         >
-          取消
+          Cancel
         </button>
         <button
           type="button"
@@ -122,7 +122,7 @@ export function ChannelProfileModal({
           disabled={saving || loading}
           className="px-4 py-2 bg-[#1264A3] text-white rounded-lg text-sm font-medium hover:bg-[#0f5a94] disabled:opacity-50"
         >
-          {saving ? "保存中…" : "保存"}
+          {saving ? "Saving..." : "Save"}
         </button>
       </ModalFooter>
     </Modal>

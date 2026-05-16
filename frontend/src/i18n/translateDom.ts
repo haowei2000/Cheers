@@ -1,4 +1,4 @@
-import { LANGUAGE_BY_CODE, translateToEnglish, type AppLanguage } from "./catalog";
+import { LANGUAGE_BY_CODE, translateToChinese, type AppLanguage } from "./catalog";
 
 type TranslationCache = Map<string, Promise<string | null>>;
 
@@ -41,7 +41,7 @@ declare global {
 
 export function translateDom(root: ParentNode, language: AppLanguage): void {
   const option = LANGUAGE_BY_CODE.get(language);
-  if (!option || language === "zh-CN") {
+  if (!option || language === "en") {
     restoreDom(root);
     return;
   }
@@ -68,19 +68,27 @@ function walkTextNodes(root: ParentNode, visit: (node: Text) => void): void {
 }
 
 function translateTextNode(node: Text, targetLanguage: string): void {
-  let original = textOriginals.get(node);
   const current = node.nodeValue ?? "";
-  if (original === undefined || (targetLanguage === "en" && current !== translateToEnglish(original) && hasCjk(current))) {
+  let original = textOriginals.get(node);
+  if (original === undefined) {
     original = current;
     textOriginals.set(node, original);
+  } else {
+    const translated = translateFromEnglish(original, targetLanguage);
+    if (current !== original && current !== translated && targetLanguage === "zh-CN") {
+      original = current;
+      textOriginals.set(node, original);
+    }
   }
-  const english = translateToEnglish(original);
-  if (targetLanguage === "en") {
-    if (node.nodeValue !== english) node.nodeValue = english;
+
+  const translated = translateFromEnglish(original, targetLanguage);
+  if (targetLanguage === "zh-CN") {
+    if (node.nodeValue !== translated) node.nodeValue = translated;
     return;
   }
-  if (node.nodeValue !== english) node.nodeValue = english;
-  void translateAutomatically(english, targetLanguage).then((translated) => {
+
+  if (node.nodeValue !== original) node.nodeValue = original;
+  void translateAutomatically(original, targetLanguage).then((translated) => {
     if (translated && textOriginals.get(node) === original) {
       node.nodeValue = translated;
     }
@@ -100,14 +108,15 @@ function translateAttributes(root: ParentNode, targetLanguage: string): void {
       const current = element.getAttribute(attr);
       if (!current?.trim()) continue;
       let original = originals[attr] ?? current;
-      if (targetLanguage === "en" && current !== translateToEnglish(original) && hasCjk(current)) {
+      const translated = translateFromEnglish(original, targetLanguage);
+      if (targetLanguage === "zh-CN" && current !== original && current !== translated) {
         original = current;
       }
       originals[attr] = original;
-      const english = translateToEnglish(original);
-      if (element.getAttribute(attr) !== english) element.setAttribute(attr, english);
-      if (targetLanguage !== "en") {
-        void translateAutomatically(english, targetLanguage).then((translated) => {
+      const nextValue = translateFromEnglish(original, targetLanguage);
+      if (element.getAttribute(attr) !== nextValue) element.setAttribute(attr, nextValue);
+      if (targetLanguage !== "zh-CN") {
+        void translateAutomatically(original, targetLanguage).then((translated) => {
           if (translated && attrOriginals.get(element)?.[attr] === original) {
             element.setAttribute(attr, translated);
           }
@@ -119,8 +128,9 @@ function translateAttributes(root: ParentNode, targetLanguage: string): void {
   }
 }
 
-function hasCjk(value: string): boolean {
-  return /[\u3400-\u9fff]/.test(value);
+function translateFromEnglish(value: string, targetLanguage: string): string {
+  if (targetLanguage === "zh-CN") return translateToChinese(value);
+  return value;
 }
 
 function restoreDom(root: ParentNode): void {

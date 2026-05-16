@@ -1,4 +1,4 @@
-"""ChatCore 频道 API 测试（TDD）."""
+"""Tests for test channels api."""
 from datetime import datetime, timedelta
 
 import pytest
@@ -31,7 +31,7 @@ from app.services.channel_service import ChannelService
 
 @pytest.mark.asyncio
 async def test_list_channels_empty(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/channels 无频道时返回空列表."""
+    """Covers test list channels empty behavior."""
     resp = await client.get("/api/v1/channels")
     assert resp.status_code == 200
     data = resp.json()
@@ -41,7 +41,7 @@ async def test_list_channels_empty(client: AsyncClient, db_session: AsyncSession
 
 @pytest.mark.asyncio
 async def test_create_channel(client: AsyncClient, db_session: AsyncSession) -> None:
-    """POST /api/channels 创建频道，需 workspace_id、name."""
+    """Covers test create channel behavior."""
     # Create the workspace first.
     ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000001", name="Default")
     db_session.add(ws)
@@ -106,7 +106,7 @@ async def test_create_private_channel_only_adds_creator(
 
 @pytest.mark.asyncio
 async def test_create_dm_channel_does_not_auto_add_builtin_bots(db_session: AsyncSession) -> None:
-    """DM 私聊不自动添加 Helper。"""
+    """Covers test create dm channel does not auto add builtin bots behavior."""
     ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000010", name="DM Workspace")
     creator = User(
         user_id="a0000000-0000-0000-0000-000000000010",
@@ -135,7 +135,7 @@ async def test_create_dm_channel_does_not_auto_add_builtin_bots(db_session: Asyn
 
 @pytest.mark.asyncio
 async def test_builtin_membership_sync_skips_dm_channels(db_session: AsyncSession) -> None:
-    """启动补齐只处理普通频道，并清理误注入 DM 的内置 Bot。"""
+    """Covers test builtin membership sync skips dm channels behavior."""
     ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000011", name="Sync Workspace")
     public = Channel(
         channel_id="b0000000-0000-0000-0000-000000000011",
@@ -192,7 +192,7 @@ async def test_builtin_membership_sync_skips_dm_channels(db_session: AsyncSessio
 
 @pytest.mark.asyncio
 async def test_list_channels_returns_created(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/channels 返回已创建频道."""
+    """Covers test list channels returns created behavior."""
     ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000002", name="W2")
     db_session.add(ws)
     ch = Channel(
