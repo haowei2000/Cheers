@@ -1,6 +1,7 @@
 import type { KeyboardEvent, ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { AppIcon } from "../icons/AppIcon";
+import { MemberAvatar, type MemberKind } from "./MemberIdentity";
 
 export type MemberListItemKind = "user" | "bot" | "system";
 export type MemberListItemVariant = "panel" | "card";
@@ -92,6 +93,7 @@ export function MemberListItem({
   asButton?: boolean;
 }) {
   const label = displayName || username || (kind === "bot" ? "Bot" : "用户");
+  const avatarLabel = label || id;
   const fallbackSubtitle = username && username !== label ? `@${username}` : "";
   const computedSubtitle = subtitle === undefined ? fallbackSubtitle : subtitle;
   const shouldUseButton = asButton ?? Boolean(onClick && !leading && !actions && !children);
@@ -118,16 +120,13 @@ export function MemberListItem({
     <>
       {leading && <div className="an-member-leading">{leading}</div>}
       <span className="an-member-avatar-wrap">
-        {avatarUrl ? (
-          <img src={avatarUrl} alt="" className="an-member-avatar" />
-        ) : (
-          <span
-            className="an-member-avatar"
-            style={{ background: colorForIdentity(id) }}
-          >
-            {initialsForIdentity(label)}
-          </span>
-        )}
+        <MemberAvatar
+          avatarUrl={avatarUrl}
+          className="an-member-avatar"
+          kind={kind as MemberKind}
+          label={avatarLabel}
+          size={32}
+        />
         {self && (
           <span className="an-member-self-mark" aria-hidden="true">
             <AppIcon name="pencil" />

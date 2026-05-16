@@ -3,6 +3,7 @@ import type { Channel, DM, SearchSelection } from "../types";
 import { Modal, ModalFooter } from "./Modal";
 import { SearchPicker } from "./SearchPicker";
 import { AppIcon } from "./icons/AppIcon";
+import { MemberAvatar, type MemberKind } from "./members";
 
 interface ForwardMessageModalProps {
   channels: Channel[];
@@ -117,7 +118,7 @@ export function ForwardMessageModal({
                     type="button"
                     disabled={submitting}
                     onClick={() => void onForwardToChannel(channel.channel_id)}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-soft)] disabled:opacity-50"
+                    className="an-row-card w-full"
                   >
                     <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-soft)] text-[var(--fg-3)]">
                       <AppIcon name="channel" className="h-4 w-4" />
@@ -152,22 +153,14 @@ export function ForwardMessageModal({
                     type="button"
                     disabled={submitting}
                     onClick={() => void onForwardToChannel(dm.channel_id)}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-[var(--surface-soft)] disabled:opacity-50"
+                    className="an-row-card w-full"
                   >
-                    {dm.counterparty.avatar_url ? (
-                      <img
-                        src={dm.counterparty.avatar_url}
-                        alt={dmLabel(dm)}
-                        className="h-7 w-7 flex-shrink-0 rounded-md object-cover"
-                      />
-                    ) : (
-                      <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-[var(--surface-soft)] text-[var(--fg-3)]">
-                        <AppIcon
-                          name={dm.counterparty.member_type === "bot" ? "bot" : "user"}
-                          className="h-4 w-4"
-                        />
-                      </span>
-                    )}
+                    <MemberAvatar
+                      avatarUrl={dm.counterparty.avatar_url}
+                      kind={dm.counterparty.member_type as MemberKind}
+                      label={dmLabel(dm)}
+                      size={28}
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium text-[var(--fg-1)]">
                         {dmLabel(dm)}
@@ -187,7 +180,7 @@ export function ForwardMessageModal({
       <ModalFooter>
         <button
           type="button"
-          className="rounded-md px-3 py-1.5 text-sm text-[var(--fg-2)] transition-colors hover:bg-[var(--surface-soft)]"
+          className="an-btn an-btn-ghost"
           disabled={submitting}
           onClick={onClose}
         >

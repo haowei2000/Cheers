@@ -370,8 +370,9 @@ export default function ChannelMembersModal({
                         action={
                           member.member_id !== currentUserId && (
                             <button
+                              type="button"
                               onClick={() => removeMember(member.member_id, member.member_type)}
-                              className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
+                              className="an-btn an-btn-danger an-btn-sm"
                             >
                               移除
                             </button>
@@ -396,8 +397,9 @@ export default function ChannelMembersModal({
                             meta={`${botScopeText(member.scope)} · Owner: ${botOwnerText(member)}`}
                             action={
                               <button
+                                type="button"
                                 onClick={() => removeMember(member.member_id, member.member_type)}
-                                className="text-red-500 text-xs hover:text-red-700 px-2 py-1"
+                                className="an-btn an-btn-danger an-btn-sm"
                               >
                                 移除
                               </button>
@@ -405,13 +407,13 @@ export default function ChannelMembersModal({
                           />
                           {/* Prompt template selector. */}
                           <div className="ml-11 flex items-center gap-2">
-                            <label className="text-xs text-gray-500 whitespace-nowrap">提示词模板:</label>
+                            <label className="an-label whitespace-nowrap">提示词模板:</label>
                             <select
                               value={member.template_id || ""}
                               onChange={(e) => updateBotTemplate(member.member_id, e.target.value || null)}
                               disabled={!canEditTemplate}
                               title={canEditTemplate ? "Bot 频道模板覆盖" : "只有邀请该 Bot 入频道的人可修改频道模板"}
-                              className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded bg-white text-gray-700 focus:outline-none focus:border-[#2EB67D] focus:ring-1 focus:ring-[#2EB67D] disabled:bg-gray-50 disabled:text-gray-400"
+                              className="an-select h-8 flex-1 py-1 text-xs"
                             >
                               <option value="">默认 (Bot 自带)</option>
                               {allTemplates.map((t) => (

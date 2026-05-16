@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { SearchSelection } from "../../types";
 import { FileTypeIcon } from "../icons/FileTypeIcon";
-import { MemberListItem } from "../members";
+import { MemberIdentity } from "../members";
 import { SearchHighlight } from "./SearchHighlight";
 import { itemKey, labelFor, sigilFor, subFor } from "./searchResultUtils";
 
@@ -26,22 +26,29 @@ export function SearchResultItem({
   if (selection.type === "user" || selection.type === "bot") {
     const label = labelFor(selection);
     return (
-      <MemberListItem
+      <button
         key={itemKey(selection)}
-        id={selection.type === "user" ? selection.item.user_id : selection.item.bot_id}
-        kind={selection.type}
-        username={selection.item.username}
-        displayName={label}
-        name={<SearchHighlight text={label} query={query} />}
-        avatarUrl={selection.item.avatar_url}
-        subtitle={sub}
-        variant="panel"
-        compact
-        asButton
+        type="button"
         className="an-search-hit an-search-member-hit"
         onClick={() => onSelect(selection)}
-        actions={action ? <span className="an-search-action">{action}</span> : undefined}
-      />
+      >
+        <MemberIdentity
+          avatarSize={28}
+          member={{
+            ...selection.item,
+            member_type: selection.type,
+            member_id:
+              selection.type === "user"
+                ? selection.item.user_id
+                : selection.item.bot_id,
+          }}
+          kind={selection.type}
+          badge={selection.type === "bot" ? undefined : null}
+          primary={<SearchHighlight text={label} query={query} />}
+          sub={sub}
+        />
+        {action && <span className="an-search-action">{action}</span>}
+      </button>
     );
   }
 
