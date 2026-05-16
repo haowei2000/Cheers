@@ -26,9 +26,9 @@ def _as_utc(value: datetime) -> datetime:
 
 def file_retention_days() -> int:
     try:
-        return int(getattr(settings, "file_retention_days", 90) or 0)
+        return int(getattr(settings, "file_retention_days", 365) or 0)
     except (TypeError, ValueError):
-        return 90
+        return 365
 
 
 def file_expires_at(anchor: datetime | None = None) -> datetime | None:
