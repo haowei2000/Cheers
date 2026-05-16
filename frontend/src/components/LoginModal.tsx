@@ -250,7 +250,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setAuthMode("forgot");
                   setLoginError("");
                 }}
-                className="text-xs text-[#1264A3] hover:underline"
+                className="text-xs text-[var(--accent)] hover:underline"
               >
                 忘记密码？
               </button>
@@ -411,7 +411,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setAuthMode("register");
                   setLoginError("");
                 }}
-                className="text-[#1264A3] font-medium hover:underline"
+                className="font-medium text-[var(--accent)] hover:underline"
               >
                 注册
               </button>
@@ -422,7 +422,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 setAuthMode("login");
                 setLoginError("");
               }}
-              className="text-[#1264A3] font-medium hover:underline"
+              className="font-medium text-[var(--accent)] hover:underline"
             >
               返回登录
             </button>
