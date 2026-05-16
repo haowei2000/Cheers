@@ -16,6 +16,10 @@
   button:disabled {
     cursor: not-allowed;
   }
+  button:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
 
   /* ═══════════════════════════════════════════════════════════════════════════
      DARK MODE — comprehensive overrides
@@ -231,31 +235,6 @@
   /* ── Iframe backgrounds ───────────────────────────────────────────────── */
   .dark iframe {
     background-color: #1a1b21;
-  }
-}
-
-@layer utilities {
-  /* Expand commonly undersized button hit areas, such as p-1, w-6, w-7, and w-8. */
-  button.p-1 {
-    padding: 0.5rem !important; /* p-2 */
-  }
-  button.px-2.py-1 {
-    padding-left: 0.75rem !important; /* px-3 */
-    padding-right: 0.75rem !important;
-    padding-top: 0.375rem !important; /* py-1.5 */
-    padding-bottom: 0.375rem !important;
-  }
-  button.w-6.h-6 {
-    width: 2rem !important; /* w-8 */
-    height: 2rem !important; /* h-8 */
-  }
-  button.w-7.h-7 {
-    width: 2.25rem !important; /* w-9 */
-    height: 2.25rem !important; /* h-9 */
-  }
-  button.w-8.h-8 {
-    width: 2.5rem !important; /* w-10 */
-    height: 2.5rem !important; /* h-10 */
   }
 }
 
