@@ -30,6 +30,8 @@ export type ModelIdentity = {
   model_name?: string | null;
 };
 
+type ModelSettingsTab = "identity" | "runtime" | "access";
+
 export function modelBrandName(model?: ModelIdentity | null): string {
   if (!model) return "";
   return [model.provider, model.model_name, model.name].filter(Boolean).join(" ");
@@ -246,6 +248,7 @@ function ModelForm({
       ? JSON.stringify(cfg.extra_headers)
       : "",
   );
+  const [settingsTab, setSettingsTab] = useState<ModelSettingsTab>("identity");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -328,100 +331,138 @@ function ModelForm({
 
   return (
     <div className="an-pane">
-      <div className="an-pane-head">
+      <div
+        className="an-pane-head"
+        style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
+      >
         <div>
           <div className="an-pane-title">{isEdit ? existing!.name : "新建模型"}</div>
           {isBuiltin && <div className="an-pane-sub">系统内置（只读）</div>}
         </div>
+        <div className="an-seg" role="tablist" aria-label="模型设置视图">
+          <button
+            type="button"
+            className={settingsTab === "identity" ? "on" : ""}
+            onClick={() => setSettingsTab("identity")}
+            role="tab"
+            aria-selected={settingsTab === "identity"}
+          >
+            基础
+          </button>
+          <button
+            type="button"
+            className={settingsTab === "runtime" ? "on" : ""}
+            onClick={() => setSettingsTab("runtime")}
+            role="tab"
+            aria-selected={settingsTab === "runtime"}
+          >
+            参数
+          </button>
+          <button
+            type="button"
+            className={settingsTab === "access" ? "on" : ""}
+            onClick={() => setSettingsTab("access")}
+            role="tab"
+            aria-selected={settingsTab === "access"}
+          >
+            权限
+          </button>
+        </div>
       </div>
       <div className="an-list-table">
-        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">基本信息</div>
-          <Field label="名称">
-            <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
-          </Field>
-          <Field label="Provider">
-            <select value={provider} onChange={(e) => setProvider(e.target.value)} className={inputCls} disabled={isBuiltin}>
-              <option value="ollama">Ollama</option>
-              <option value="openai">OpenAI 兼容</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="azure">Azure OpenAI</option>
-              <option value="custom">自定义</option>
-            </select>
-          </Field>
-          <Field label="模型名（model_name，发给 provider）">
-            <input value={modelName} onChange={(e) => setModelName(e.target.value)} className={inputCls} placeholder="如 llama3.2" disabled={isBuiltin} />
-          </Field>
-          <Field label="Base URL">
-            <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className={inputCls} placeholder="如 http://localhost:11434/v1" disabled={isBuiltin} />
-          </Field>
-          <Field label={isEdit ? "API Key（留空则不修改）" : "API Key"}>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className={inputCls}
-              placeholder={existing?.api_key_masked || "可选"}
-              disabled={isBuiltin}
-            />
-          </Field>
-          <Field label="描述">
-            <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} disabled={isBuiltin} />
-          </Field>
-        </div>
-
-        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">推理参数</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <Field label={`Temperature (${temperature})`}>
+        {settingsTab === "identity" && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">基本信息</div>
+            <Field label="名称">
+              <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
+            </Field>
+            <Field label="Provider">
+              <select value={provider} onChange={(e) => setProvider(e.target.value)} className={inputCls} disabled={isBuiltin}>
+                <option value="ollama">Ollama</option>
+                <option value="openai">OpenAI 兼容</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="azure">Azure OpenAI</option>
+                <option value="custom">自定义</option>
+              </select>
+            </Field>
+            <Field label="模型名（model_name，发给 provider）">
+              <input value={modelName} onChange={(e) => setModelName(e.target.value)} className={inputCls} placeholder="如 llama3.2" disabled={isBuiltin} />
+            </Field>
+            <Field label="Base URL">
+              <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className={inputCls} placeholder="如 http://localhost:11434/v1" disabled={isBuiltin} />
+            </Field>
+            <Field label={isEdit ? "API Key（留空则不修改）" : "API Key"}>
               <input
-                type="number" step="0.1" min={0} max={2}
-                value={temperature}
-                onChange={(e) => setTemperature(Number(e.target.value))}
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
                 className={inputCls}
+                placeholder={existing?.api_key_masked || "可选"}
                 disabled={isBuiltin}
               />
             </Field>
-            <Field label="Max Tokens">
+            <Field label="描述">
+              <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} disabled={isBuiltin} />
+            </Field>
+          </div>
+        )}
+
+        {settingsTab === "runtime" && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">推理参数</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Field label={`Temperature (${temperature})`}>
+                <input
+                  type="number" step="0.1" min={0} max={2}
+                  value={temperature}
+                  onChange={(e) => setTemperature(Number(e.target.value))}
+                  className={inputCls}
+                  disabled={isBuiltin}
+                />
+              </Field>
+              <Field label="Max Tokens">
+                <input
+                  type="number" min={64}
+                  value={maxTokens}
+                  onChange={(e) => setMaxTokens(Number(e.target.value))}
+                  className={inputCls}
+                  disabled={isBuiltin}
+                />
+              </Field>
+            </div>
+            <label className="an-checkline">
+              <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} disabled={isBuiltin} />
+              启用流式响应（stream）
+            </label>
+            <label className="an-checkline">
+              <input type="checkbox" checked={supportsVision} onChange={(e) => setSupportsVision(e.target.checked)} disabled={isBuiltin} />
+              支持视觉输入（supports_vision）
+            </label>
+            <Field label="额外 Headers（JSON 对象，可选）">
               <input
-                type="number" min={64}
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(Number(e.target.value))}
+                value={extraHeaders}
+                onChange={(e) => setExtraHeaders(e.target.value)}
                 className={inputCls}
+                placeholder='如 {"X-Custom":"value"}'
                 disabled={isBuiltin}
               />
             </Field>
           </div>
-          <label className="an-checkline">
-            <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} disabled={isBuiltin} />
-            启用流式响应（stream）
-          </label>
-          <label className="an-checkline">
-            <input type="checkbox" checked={supportsVision} onChange={(e) => setSupportsVision(e.target.checked)} disabled={isBuiltin} />
-            支持视觉输入（supports_vision）
-          </label>
-          <Field label="额外 Headers（JSON 对象，可选）">
-            <input
-              value={extraHeaders}
-              onChange={(e) => setExtraHeaders(e.target.value)}
-              className={inputCls}
-              placeholder='如 {"X-Custom":"value"}'
-              disabled={isBuiltin}
-            />
-          </Field>
-        </div>
+        )}
 
-        <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">可见性</div>
-          <label className="an-checkline">
-            <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} disabled={isBuiltin} />
-            启用
-          </label>
-          <label className="an-checkline">
-            <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} disabled={isBuiltin} />
-            公开（所有用户可见）
-          </label>
-        </div>
+        {settingsTab === "access" && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div className="an-rc-title">可见性</div>
+            <label className="an-checkline">
+              <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} disabled={isBuiltin} />
+              启用
+            </label>
+            <label className="an-checkline">
+              <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} disabled={isBuiltin} />
+              公开（所有用户可见）
+            </label>
+          </div>
+        )}
 
         {!isBuiltin && (
           <div style={{ display: "flex", justifyContent: isEdit ? "space-between" : "flex-end" }}>
