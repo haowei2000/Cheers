@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     file_parse_max_chars: int = 12000
     public_base_url: str = "https://agentnexus.epichust.com"
     kkfileview_enabled: bool = True
-    kkfileview_base_url: str = "https://agentnexus.epichust.com"
+    kkfileview_base_url: str = "https://agentnexus.epichust.com/preview"
     kkfileview_token_ttl_seconds: int = 10 * 60
     avatar_upload_max_bytes: int = 2 * 1024 * 1024
     avatar_upload_allowed_types: str = "image/png,image/jpeg,image/webp,image/gif"

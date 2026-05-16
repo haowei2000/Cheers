@@ -29,7 +29,7 @@ services:
       - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/ofd,application/rtf,text/csv,text/html,text/plain,text/markdown,application/zip,application/vnd.rar,application/x-7z-compressed,application/x-tar,application/gzip,application/epub+zip,image/png,image/jpeg,image/webp,image/gif}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://agentnexus.epichust.com}
       - KKFILEVIEW_ENABLED=${KKFILEVIEW_ENABLED:-true}
-      - KKFILEVIEW_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com}
+      - KKFILEVIEW_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com/preview}
       - KKFILEVIEW_TOKEN_TTL_SECONDS=${KKFILEVIEW_TOKEN_TTL_SECONDS:-600}
       - LLM_LOCALHOST_ALIAS=${LLM_LOCALHOST_ALIAS:-host.docker.internal}
       - HELPER_LLM_BASE_URL=${HELPER_LLM_BASE_URL:-}
@@ -88,6 +88,24 @@ services:
       - "${FRONTEND_HOST_PORT:-80}:80"
     depends_on:
       - backend
+      - kkfileview
+
+  kkfileview:
+    image: ${KKFILEVIEW_IMAGE:-keking/kkfileview:latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KKFILEVIEW_HOST_PORT:-8012}:8012"
+    environment:
+      - KK_CONTEXT_PATH=/preview
+      - KK_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com/preview}
+      - KK_TRUST_HOST=${KKFILEVIEW_TRUST_HOST:-agentnexus.epichust.com}
+      - KK_FILE_DIR=${KKFILEVIEW_FILE_DIR:-/opt/kkfileview/file/}
+      - KK_OFFICE_PREVIEW_TYPE=${KKFILEVIEW_OFFICE_PREVIEW_TYPE:-pdf}
+      - KK_PDF_DOWNLOAD_DISABLE=${KKFILEVIEW_PDF_DOWNLOAD_DISABLE:-true}
+      - KK_PDF_PRINT_DISABLE=${KKFILEVIEW_PDF_PRINT_DISABLE:-true}
+      - KK_MEDIA_CONVERT_DISABLE=${KKFILEVIEW_MEDIA_CONVERT_DISABLE:-true}
+    volumes:
+      - ./data/kkfileview:/opt/kkfileview/file
 
   postgres:
     image: postgres:16-alpine
