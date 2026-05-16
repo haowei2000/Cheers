@@ -59,15 +59,18 @@ export default function NotificationPanel({ isOpen, onClose, userToken, onNaviga
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
       {/* Panel */}
-      <div className="relative ml-auto h-full w-96 max-w-full bg-white shadow-xl flex flex-col">
+      <div className="an-token-panel relative ml-auto h-full w-96 max-w-full bg-white shadow-xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
           <span className="text-sm font-semibold text-gray-900">通知</span>
           <button
+            type="button"
             onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            aria-label="关闭通知"
+            title="关闭通知"
           >
-            ×
+            <AppIcon name="close" className="w-4 h-4" />
           </button>
         </div>
 
@@ -76,7 +79,7 @@ export default function NotificationPanel({ isOpen, onClose, userToken, onNaviga
             <div className="flex items-center justify-center h-24 text-gray-400 text-sm">加载中…</div>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-gray-400 gap-2">
-              <span className="text-4xl opacity-30">🔔</span>
+              <AppIcon name="notification" className="w-9 h-9 opacity-35" />
               <p className="text-sm">暂无通知</p>
             </div>
           ) : (
@@ -134,18 +137,18 @@ function Section({
               <div className="flex items-start gap-3">
                 <span className="flex-shrink-0 mt-0.5">
                   {n.notif_type === "mention" ? (
-                    <AppIcon name="messageCircle" className="w-5 h-5 text-[#1264A3]" />
+                    <AppIcon name="messageCircle" className="w-5 h-5 text-[var(--accent)]" />
                   ) : n.notif_type === "friend_request" ? (
-                    <AppIcon name="userPlus" className="w-5 h-5 text-[#2EB67D]" />
+                    <AppIcon name="userPlus" className="w-5 h-5 text-[var(--green)]" />
                   ) : n.todo_status === "completed" ? (
-                    <AppIcon name="checkCircle" className="w-5 h-5 text-[#2EB67D]" />
+                    <AppIcon name="checkCircle" className="w-5 h-5 text-[var(--green)]" />
                   ) : (
                     <AppIcon name="copy" className="w-5 h-5 text-gray-400" />
                   )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-xs font-medium text-[#1264A3]">
+                    <span className="text-xs font-medium text-[var(--accent)]">
                       {n.notif_type === "friend_request" ? "好友通知" : `#${n.channel_name}`}
                     </span>
                     <span className="text-[10px] text-gray-400">{timeAgo(n.created_at)}</span>

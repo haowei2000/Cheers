@@ -170,7 +170,7 @@ export default function BulletinPage() {
     authToken && (issue.creator_id === currentUserId || isAdmin);
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
+    <div className="an-token-page min-h-screen bg-[#F8F9FA] flex flex-col">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4">
         <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
@@ -182,10 +182,12 @@ export default function BulletinPage() {
         <div className="flex-1" />
         {authToken && (
           <button
+            type="button"
             onClick={() => setShowCreate(true)}
-            className="bg-[#1264A3] text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-[#0D5180] transition-colors"
+            className="an-btn an-btn-primary"
           >
-            + 新建 Issue
+            <AppIcon name="plus" className="w-4 h-4" />
+            新建 Issue
           </button>
         )}
       </header>
@@ -218,7 +220,7 @@ export default function BulletinPage() {
 
         {/* Issue List */}
         {loading ? (
-          <div className="text-center text-gray-400 py-20">加载中...</div>
+          <div className="text-center text-gray-400 py-20">加载中…</div>
         ) : issues.length === 0 ? (
           <div className="text-center text-gray-400 py-20">暂无 Issue{authToken ? "，点击右上角新建" : ""}</div>
         ) : (
@@ -361,7 +363,7 @@ export default function BulletinPage() {
                 disabled={creating || !newTitle.trim()}
                 className="px-4 py-2 text-sm bg-[#1264A3] text-white rounded hover:bg-[#0D5180] disabled:opacity-50"
               >
-                {creating ? "提交中..." : "提交"}
+                {creating ? "提交中…" : "提交"}
               </button>
             </div>
           </div>

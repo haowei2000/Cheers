@@ -189,7 +189,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
       hideCloseButton={!currentUser}
       panelClassName="p-2"
     >
-      <div className="px-3 py-3">
+      <div className="an-token-panel px-3 py-3">
         <div className="text-center mb-6">
           <div
             className="w-12 h-12 rounded-lg flex items-center justify-center mx-auto mb-3"
@@ -234,14 +234,14 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               name="username"
               placeholder="用户名或邮箱"
               required
-              className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              className="an-input mb-3"
             />
             <input
               name="password"
               type="password"
               placeholder="密码"
               required
-              className="w-full mb-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              className="an-input mb-1"
             />
             <div className="text-right mb-4">
               <button
@@ -250,7 +250,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setAuthMode("forgot");
                   setLoginError("");
                 }}
-                className="text-xs text-[#1264A3] hover:underline"
+                className="text-xs text-[var(--accent)] hover:underline"
               >
                 忘记密码？
               </button>
@@ -258,9 +258,9 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm"
+              className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中..." : "登录"}
+              {loginLoading ? "处理中…" : "登录"}
             </button>
           </form>
         )}
@@ -290,7 +290,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 type="email"
                 placeholder="邮箱地址（必填）"
                 required
-                className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+                className="an-input flex-1"
               />
               <button
                 type="button"
@@ -300,7 +300,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                     setRegCodeSent(true),
                   )
                 }
-                className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap"
+                className="an-btn an-btn-ghost an-btn-sm"
               >
                 {regCodeLoading
                   ? "发送中"
@@ -315,7 +315,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               placeholder="邮箱验证码"
               required
               disabled={!regCodeSent}
-              className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400"
+              className="an-input mb-4"
             />
             {/* Step 2: Account info (shown after code sent) */}
             <input
@@ -323,14 +323,14 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               placeholder="显示名称"
               required
               disabled={!regCodeSent}
-              className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400"
+              className="an-input mb-3"
             />
             <input
               name="username"
               placeholder="用户名（登录用）"
               required
               disabled={!regCodeSent}
-              className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400"
+              className="an-input mb-3"
             />
             <input
               name="password"
@@ -338,14 +338,14 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               placeholder="密码（8位以上，含字母和数字）"
               required
               disabled={!regCodeSent}
-              className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3] disabled:bg-gray-50 disabled:text-gray-400"
+              className="an-input mb-4"
             />
             <button
               type="submit"
               disabled={loginLoading || !regCodeSent}
-              className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm"
+              className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中..." : "注册"}
+              {loginLoading ? "处理中…" : "注册"}
             </button>
           </form>
         )}
@@ -360,7 +360,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 type="email"
                 placeholder="注册邮箱"
                 required
-                className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+                className="an-input flex-1"
               />
               <button
                 type="button"
@@ -370,7 +370,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                     setForgotCodeSent(true),
                   )
                 }
-                className="px-3 py-2 text-xs bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50 whitespace-nowrap"
+                className="an-btn an-btn-ghost an-btn-sm"
               >
                 {forgotCodeLoading
                   ? "发送中"
@@ -383,21 +383,21 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
               value={forgotCode}
               onChange={(e) => setForgotCode(e.target.value)}
               placeholder="邮箱验证码"
-              className="w-full mb-3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              className="an-input mb-3"
             />
             <input
               value={forgotNewPw}
               onChange={(e) => setForgotNewPw(e.target.value)}
               type="password"
               placeholder="新密码（8位以上，含字母和数字）"
-              className="w-full mb-4 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-[#1264A3] focus:ring-1 focus:ring-[#1264A3]"
+              className="an-input mb-4"
             />
             <button
               onClick={handleForgotPassword}
               disabled={loginLoading || !forgotCodeSent}
-              className="w-full bg-[#4A154B] text-white py-2.5 rounded-lg font-semibold hover:bg-[#3d1040] disabled:opacity-50 text-sm"
+              className="an-btn an-btn-primary w-full py-2.5"
             >
-              {loginLoading ? "处理中..." : "重置密码"}
+              {loginLoading ? "处理中…" : "重置密码"}
             </button>
           </div>
         )}
@@ -411,7 +411,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setAuthMode("register");
                   setLoginError("");
                 }}
-                className="text-[#1264A3] font-medium hover:underline"
+                className="font-medium text-[var(--accent)] hover:underline"
               >
                 注册
               </button>
@@ -422,7 +422,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 setAuthMode("login");
                 setLoginError("");
               }}
-              className="text-[#1264A3] font-medium hover:underline"
+              className="font-medium text-[var(--accent)] hover:underline"
             >
               返回登录
             </button>

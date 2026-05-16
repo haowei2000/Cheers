@@ -308,6 +308,99 @@
   transform: translate3d(0, -50%, 0);
 }
 
+.an-token-page,
+.an-token-panel {
+  background: var(--bg-0);
+  color: var(--fg-1);
+}
+.an-token-page .bg-white,
+.an-token-panel.bg-white,
+.an-token-panel .bg-white {
+  background-color: var(--bg-1) !important;
+}
+.an-token-page .bg-gray-50,
+.an-token-panel .bg-gray-50 {
+  background-color: var(--bg-0) !important;
+}
+.an-token-page .bg-gray-100,
+.an-token-panel .bg-gray-100 {
+  background-color: var(--surface-soft) !important;
+}
+.an-token-page .bg-blue-50,
+.an-token-panel .bg-blue-50,
+.an-token-page .bg-\[\#F8F8F8\],
+.an-token-panel .bg-\[\#F8F8F8\] {
+  background-color: var(--accent-muted) !important;
+}
+.an-token-page .bg-blue-600,
+.an-token-panel .bg-blue-600,
+.an-token-page .bg-\[\#1264A3\],
+.an-token-panel .bg-\[\#1264A3\],
+.an-token-page .bg-\[\#007a5a\],
+.an-token-panel .bg-\[\#007a5a\],
+.an-token-page .bg-\[\#4A154B\],
+.an-token-panel .bg-\[\#4A154B\] {
+  background-color: var(--accent) !important;
+}
+.an-token-page .hover\:bg-\[\#0D5180\]:hover,
+.an-token-panel .hover\:bg-\[\#0D5180\]:hover,
+.an-token-page .hover\:bg-\[\#0f5a94\]:hover,
+.an-token-panel .hover\:bg-\[\#0f5a94\]:hover,
+.an-token-page .hover\:bg-\[\#006a4d\]:hover,
+.an-token-panel .hover\:bg-\[\#006a4d\]:hover,
+.an-token-page .hover\:bg-\[\#3d1040\]:hover,
+.an-token-panel .hover\:bg-\[\#3d1040\]:hover {
+  background-color: var(--accent-hover) !important;
+}
+.an-token-page .text-gray-900,
+.an-token-panel .text-gray-900,
+.an-token-page .text-gray-800,
+.an-token-panel .text-gray-800 {
+  color: var(--fg-1) !important;
+}
+.an-token-page .text-gray-700,
+.an-token-panel .text-gray-700,
+.an-token-page .text-gray-600,
+.an-token-panel .text-gray-600 {
+  color: var(--fg-2) !important;
+}
+.an-token-page .text-gray-500,
+.an-token-panel .text-gray-500,
+.an-token-page .text-gray-400,
+.an-token-panel .text-gray-400,
+.an-token-page .text-gray-300,
+.an-token-panel .text-gray-300 {
+  color: var(--fg-3) !important;
+}
+.an-token-page .text-blue-600,
+.an-token-panel .text-blue-600,
+.an-token-page .text-blue-700,
+.an-token-panel .text-blue-700,
+.an-token-page .text-\[\#1264A3\],
+.an-token-panel .text-\[\#1264A3\] {
+  color: var(--accent) !important;
+}
+.an-token-page .border-gray-100,
+.an-token-panel .border-gray-100,
+.an-token-page .border-gray-200,
+.an-token-panel .border-gray-200,
+.an-token-page .border-gray-300,
+.an-token-panel .border-gray-300,
+.an-token-page .border-blue-200,
+.an-token-panel .border-blue-200 {
+  border-color: var(--border) !important;
+}
+.an-token-page .focus\:border-blue-400:focus,
+.an-token-panel .focus\:border-blue-400:focus,
+.an-token-page .focus\:border-\[\#1264A3\]:focus,
+.an-token-panel .focus\:border-\[\#1264A3\]:focus {
+  border-color: var(--border-focus) !important;
+}
+.an-token-page .focus\:ring-\[\#1264A3\]:focus,
+.an-token-panel .focus\:ring-\[\#1264A3\]:focus {
+  --tw-ring-color: var(--accent-ring) !important;
+}
+
 /* Memory cluster — 4-icon header control */
 .an-mem-cluster {
   display: inline-flex;

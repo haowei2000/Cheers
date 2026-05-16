@@ -55,7 +55,7 @@ export function BotAvatar({
         role="img"
         aria-label={label}
         title={label}
-        className={`rounded-xl flex items-center justify-center select-none flex-shrink-0 border border-gray-200 bg-white shadow-sm ${className ?? ""}`}
+        className={`rounded-lg flex items-center justify-center select-none flex-shrink-0 border border-[var(--border)] bg-[var(--bg-1)] shadow-sm ${className ?? ""}`}
         style={{ width: size, height: size }}
       >
         <AiBrandIcon name={resolvedBrandName} size={tileSize} />
@@ -63,16 +63,14 @@ export function BotAvatar({
     );
   }
 
-  // Soft mint-to-emerald gradient ⇒ matches the existing "Bot" tag color
-  // (#2EB67D) used elsewhere in the message header.
-  const bg = background ?? "linear-gradient(135deg, #34c98c 0%, #2EB67D 60%, #218057 100%)";
+  const bg = background ?? "linear-gradient(135deg, var(--accent) 0%, var(--green) 100%)";
   // Internal SVG is drawn on a 24×24 grid then scaled into the chip.
   return (
     <div
       role="img"
       aria-label={label}
       title={label}
-      className={`rounded-xl flex items-center justify-center select-none flex-shrink-0 ${className ?? ""}`}
+      className={`rounded-lg flex items-center justify-center select-none flex-shrink-0 ${className ?? ""}`}
       style={{
         width: size,
         height: size,
