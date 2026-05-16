@@ -69,7 +69,7 @@ kkfileview:
   image: ${KKFILEVIEW_IMAGE:-keking/kkfileview:latest}
   restart: unless-stopped
   ports:
-    - "127.0.0.1:${KKFILEVIEW_HOST_PORT:-8012}:8012"
+    - "${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}:8012"
   environment:
     - KK_CONTEXT_PATH=/preview
     - KK_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com/preview}
@@ -83,7 +83,16 @@ kkfileview:
     - ./data/kkfileview:/opt/kkfileview/file
 ```
 
-`127.0.0.1:${KKFILEVIEW_HOST_PORT:-8012}:8012` 表示 kkFileView 只暴露给服务器本机，不直接暴露到公网。公网访问统一走 `https://agentnexus.epichust.com/preview/`。
+`${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}:8012` 表示 kkFileView 默认只暴露给服务器本机，不直接暴露到公网。公网访问统一走 `https://agentnexus.epichust.com/preview/`。
+
+如果服务器本机 `8012` 已被占用，只需要在 `.env` 修改宿主机端口，例如：
+
+```bash
+KKFILEVIEW_HOST_BIND=127.0.0.1
+KKFILEVIEW_HOST_PORT=18012
+```
+
+项目内置 `frontend` 容器通过 Docker 内网访问 `kkfileview:8012`，所以使用内置前端代理时，修改 `KKFILEVIEW_HOST_PORT` 不影响浏览器访问的 `https://agentnexus.epichust.com/preview/`。
 
 ## 环境变量
 
@@ -95,6 +104,7 @@ KKFILEVIEW_ENABLED=true
 KKFILEVIEW_BASE_URL=https://agentnexus.epichust.com/preview
 KKFILEVIEW_TOKEN_TTL_SECONDS=600
 
+KKFILEVIEW_HOST_BIND=127.0.0.1
 KKFILEVIEW_HOST_PORT=8012
 KKFILEVIEW_IMAGE=keking/kkfileview:latest
 KKFILEVIEW_TRUST_HOST=agentnexus.epichust.com
@@ -113,6 +123,7 @@ JWT_SECRET_KEY=replace-with-a-long-random-secret
 | `KKFILEVIEW_ENABLED` | `true` | 是否启用 kkFileView 复杂文档预览 |
 | `KKFILEVIEW_BASE_URL` | `https://agentnexus.epichust.com/preview` | 后端返回给前端 iframe 的 kkFileView 地址 |
 | `KKFILEVIEW_TOKEN_TTL_SECONDS` | `600` | `public-preview` 短期 token 有效期，最低会按 60 秒处理 |
+| `KKFILEVIEW_HOST_BIND` | `127.0.0.1` | kkFileView 宿主机监听地址；生产建议保持本机地址，不直接暴露公网 |
 | `KKFILEVIEW_HOST_PORT` | `8012` | 宿主机本地监听端口 |
 | `KKFILEVIEW_IMAGE` | `keking/kkfileview:latest` | kkFileView Docker 镜像 |
 | `KKFILEVIEW_TRUST_HOST` | `agentnexus.epichust.com` | kkFileView 允许访问的主机名 |
@@ -255,7 +266,7 @@ docker compose logs -f backend
 2. 检查 kkFileView 本地端口：
 
    ```bash
-   curl -I http://127.0.0.1:8012/preview/
+   curl -I "http://${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}/preview/"
    ```
 
 3. 检查公网路径：
@@ -386,6 +397,30 @@ KKFILEVIEW_ENABLED=false
 
 关闭后复杂文档会回退到当前内置文本/Markdown 能力，无法保证 Office 原始排版。
 
+### 7. kkFileView 启动时报 `address already in use`
+
+说明宿主机监听端口被占用。先确认占用来源：
+
+```bash
+sudo ss -lntp | grep 8012
+docker ps --format 'table {{.Names}}\t{{.Ports}}' | grep 8012
+```
+
+如果不想停止占用该端口的服务，可以直接在 `.env` 改端口：
+
+```bash
+KKFILEVIEW_HOST_BIND=127.0.0.1
+KKFILEVIEW_HOST_PORT=18012
+```
+
+然后重建 kkFileView 和前端代理：
+
+```bash
+docker compose up -d --force-recreate kkfileview frontend
+```
+
+使用项目内置前端代理时，外部访问地址仍然是 `https://agentnexus.epichust.com/preview/`，不要把 `KKFILEVIEW_BASE_URL` 改成带 `:18012` 的地址。
+
 ## 推荐生产配置清单
 
 上线前逐项确认：
@@ -412,4 +447,3 @@ KKFILEVIEW_ENABLED=false
 | `backend/app/api/v1/files/routes.py` | kkFileView URL 生成、签名源文件接口 |
 | `frontend/src/components/FilePreviewSidebar.tsx` | 前端复杂文档 iframe 预览入口 |
 | `tests/test_messages_api.py` | kkFileView URL 和签名源文件测试 |
-
