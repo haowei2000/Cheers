@@ -25,6 +25,7 @@ import type { Message } from "../../../types";
 const CHANNEL_CACHE_REVALIDATE_MS = 5_000;
 const JUMP_TO_BOTTOM_BOTTOM_GAP = 240;
 const JUMP_TO_BOTTOM_SCROLL_DISTANCE = 140;
+const JUMP_TO_BOTTOM_SETTLE_FRAMES = 12;
 const STICK_TO_BOTTOM_GAP = 160;
 
 interface UseChannelMessagesOptions {
@@ -80,11 +81,18 @@ export function useChannelMessages({
   const showJumpToBottomRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const downwardScrollDistanceRef = useRef(0);
+  const jumpToBottomRafRef = useRef<number | null>(null);
 
   const setJumpToBottomVisible = useCallback((visible: boolean) => {
     if (showJumpToBottomRef.current === visible) return;
     showJumpToBottomRef.current = visible;
     setShowJumpToBottom(visible);
+  }, []);
+
+  const cancelJumpToBottomRaf = useCallback(() => {
+    if (jumpToBottomRafRef.current === null) return;
+    cancelAnimationFrame(jumpToBottomRafRef.current);
+    jumpToBottomRafRef.current = null;
   }, []);
 
   const fetchInitialMessages = useCallback(
@@ -147,8 +155,11 @@ export function useChannelMessages({
     preloadRequestsRef.current = {};
   }, [authFetch]);
 
+  useEffect(() => cancelJumpToBottomRaf, [cancelJumpToBottomRaf]);
+
   useEffect(() => {
     if (!selectedId) {
+      cancelJumpToBottomRaf();
       setMessageStore(emptyMessageStore());
       setHasMore(true);
       setLoading(false);
@@ -162,6 +173,7 @@ export function useChannelMessages({
     lastAutoScrollChannelRef.current = null;
     lastScrollTopRef.current = 0;
     downwardScrollDistanceRef.current = 0;
+    cancelJumpToBottomRaf();
     setJumpToBottomVisible(false);
     if (cached) {
       setMessageStore(cached.store);
@@ -217,7 +229,7 @@ export function useChannelMessages({
       });
 
     return () => controller.abort();
-  }, [fetchInitialMessages, selectedId, selectedIdRef, setJumpToBottomVisible]);
+  }, [cancelJumpToBottomRaf, fetchInitialMessages, selectedId, selectedIdRef, setJumpToBottomVisible]);
 
   useEffect(() => {
     if (!selectedId || loading) return;
@@ -418,19 +430,44 @@ export function useChannelMessages({
   const jumpToBottom = useCallback(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
+    cancelJumpToBottomRaf();
     downwardScrollDistanceRef.current = 0;
     setJumpToBottomVisible(false);
     stickToBottomRef.current = true;
     if (topicRoots.length > 0) {
       rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
     }
-    requestAnimationFrame(() => {
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: "smooth",
-      });
-    });
-  }, [rowVirtualizer, setJumpToBottomVisible, topicRoots.length]);
+
+    const settleToBottom = (remainingFrames: number) => {
+      const nextContainer = messagesContainerRef.current;
+      if (!nextContainer) return;
+      if (topicRoots.length > 0) {
+        rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
+      }
+      nextContainer.scrollTop = Math.max(
+        0,
+        nextContainer.scrollHeight - nextContainer.clientHeight,
+      );
+      lastScrollTopRef.current = nextContainer.scrollTop;
+      const bottomGap =
+        nextContainer.scrollHeight -
+        nextContainer.scrollTop -
+        nextContainer.clientHeight;
+      if (bottomGap > 1 && remainingFrames > 0) {
+        jumpToBottomRafRef.current = requestAnimationFrame(() =>
+          settleToBottom(remainingFrames - 1),
+        );
+        return;
+      }
+      jumpToBottomRafRef.current = null;
+      stickToBottomRef.current = true;
+      setJumpToBottomVisible(false);
+    };
+
+    jumpToBottomRafRef.current = requestAnimationFrame(() =>
+      settleToBottom(JUMP_TO_BOTTOM_SETTLE_FRAMES),
+    );
+  }, [cancelJumpToBottomRaf, rowVirtualizer, setJumpToBottomVisible, topicRoots.length]);
 
   useLayoutEffect(() => {
     if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
