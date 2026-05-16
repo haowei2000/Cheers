@@ -1,11 +1,4 @@
-"""解析 bot_id -> BotAdapter.
-
-路由规则：
-- 内置 Bot（见 ``builtin_registry.BUILTIN_BOT_ADAPTERS``）→ 专用 adapter
-- 其余 bot：按 BotAccount.binding_type 分流
-    · 'http'      → HttpBotAdapter（OpenAI 兼容 HTTP，Bot = AIModel + PromptTemplate）
-    · 'agent_bridge' → AgentBridgeBotAdapter（经外部 provider 异步回推）
-"""
+"""Adapter resolver module."""
 import logging
 
 from sqlalchemy import select
@@ -27,14 +20,7 @@ async def get_adapter_for_bot(
     *,
     template_override: PromptTemplate | None = None,
 ) -> BotAdapter:
-    """获取 Bot 的适配器。
-
-    内置 Bot 命中 ``builtin_registry`` 直接返回专用 adapter；
-    其余 bot 按 ``BotAccount.binding_type`` 分流到 HttpBot / AgentBridgeBot。
-
-    Args:
-        template_override: 频道级提示词模板覆盖，优先于 BotAccount 上的默认模板。
-    """
+    """Get adapter for bot."""
     # Built-in bots do not depend on AIModel/PromptTemplate rows in the DB.
     builtin = get_builtin_adapter(bot_id)
     if builtin is not None:

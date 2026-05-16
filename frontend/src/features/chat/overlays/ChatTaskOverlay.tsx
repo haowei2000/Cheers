@@ -48,7 +48,7 @@ export function ChatTaskOverlay({
         minHeight: 0,
       }}
     >
-      <Suspense fallback={<LazyPanelFallback label="正在加载任务视图..." />}>
+      <Suspense fallback={<LazyPanelFallback label="Loading task view..." />}>
         <TaskPage
           tasks={tasks}
           selectedMsgId={selectedMsgId}

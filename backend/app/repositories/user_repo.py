@@ -1,4 +1,4 @@
-"""User 数据访问层."""
+"""User repo module."""
 from __future__ import annotations
 
 from sqlalchemy import select

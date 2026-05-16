@@ -37,14 +37,14 @@ export function SecretMessageVeil({
       </span>
       <div className="an-secret-veil-body">
         <span className="an-secret-veil-label">
-          {expired ? "加密消息已过期" : "加密消息"}
+          {expired ? "Encrypted message expired" : "Encrypted message"}
         </span>
         <span className="an-secret-veil-meta">
           {expired
-            ? "一次性查看窗口已关闭"
+            ? "One-time view window closed"
             : secondsLeft !== null
-              ? `剩余 ${secondsLeft}s · 仅 Bot 可读`
-              : "仅 Bot 可读"}
+              ? `Remaining ${secondsLeft}s · bot-readable only`
+              : "bot-readable only"}
         </span>
       </div>
       {!expired && canReveal && (
@@ -53,7 +53,7 @@ export function SecretMessageVeil({
           className="an-secret-veil-reveal"
           onClick={onReveal}
         >
-          查看
+          View
         </button>
       )}
     </div>

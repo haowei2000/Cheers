@@ -23,13 +23,13 @@ type TemplateRow = {
 type TemplateSettingsTab = "identity" | "template";
 
 const TEMPLATE_VARS: { name: string; desc: string }[] = [
-  { name: "memory", desc: "频道记忆上下文" },
-  { name: "message", desc: "用户消息" },
-  { name: "sender_name", desc: "发送者名称" },
-  { name: "bot_name", desc: "当前 Bot 名称" },
-  { name: "channel_name", desc: "频道名称" },
-  { name: "channel_id", desc: "频道 ID" },
-  { name: "timestamp", desc: "消息时间" },
+  { name: "memory", desc: "Channel memory context" },
+  { name: "message", desc: "User message" },
+  { name: "sender_name", desc: "Sender name" },
+  { name: "bot_name", desc: "Current bot name" },
+  { name: "channel_name", desc: "Channel name" },
+  { name: "channel_id", desc: "Channel ID" },
+  { name: "timestamp", desc: "Message time" },
 ];
 
 const DEFAULT_USER_TEMPLATE = "{{memory}}\n\n{{message}}";
@@ -62,7 +62,7 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
   if (view === "new") {
     return (
       <div className="an-pane">
-        <BackBar label="返回模板列表" onBack={() => setView("list")} />
+        <BackBar label="Back to template list" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
           onSaved={() => {
@@ -78,14 +78,14 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
     if (!tpl) {
       return (
         <div className="an-pane">
-          <BackBar label="返回模板列表" onBack={() => setView("list")} />
-          <div className="an-row-card" style={{ color: "var(--fg-3)" }}>该模板已不存在</div>
+          <BackBar label="Back to template list" onBack={() => setView("list")} />
+          <div className="an-row-card" style={{ color: "var(--fg-3)" }}>This template no longer exists</div>
         </div>
       );
     }
     return (
       <div className="an-pane">
-        <BackBar label="返回模板列表" onBack={() => setView("list")} />
+        <BackBar label="Back to template list" onBack={() => setView("list")} />
         <TemplateForm
           authToken={authToken}
           existing={tpl}
@@ -106,8 +106,8 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
     <div className="an-pane">
       <div className="an-pane-head">
         <div>
-          <div className="an-pane-title">消息模板</div>
-          <div className="an-pane-sub">系统提示词与用户模板的复用集合。</div>
+          <div className="an-pane-title">Message templates</div>
+          <div className="an-pane-sub">Reusable system prompts and user templates.</div>
         </div>
       </div>
       <div className="an-list-table">
@@ -127,15 +127,15 @@ export function TemplateListSubPane({ authToken }: { authToken: string | null })
             <AppIcon name="plus" className="h-4 w-4" />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title">新建模板</div>
-            <div className="an-rc-sub">为某类对话创建可复用的提示词组合</div>
+            <div className="an-rc-title">New template</div>
+            <div className="an-rc-sub">Create a reusable prompt set for a conversation type</div>
           </div>
           <AppIcon name="chevronRight" className="an-rc-chev" />
         </button>
         {loading ? (
-          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>加载中…</div>
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>Loading...</div>
         ) : items.length === 0 ? (
-          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>暂无模板</div>
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>No templates</div>
         ) : (
           items.map((t) => (
             <button
@@ -189,7 +189,7 @@ function TemplateForm({
   const [settingsTab, setSettingsTab] = useState<TemplateSettingsTab>("identity");
 
   const save = async () => {
-    if (!name.trim()) return toast.error("模板名称必填");
+    if (!name.trim()) return toast.error("Template name is required");
     setSaving(true);
     try {
       const tpl = userTemplate.trim() || DEFAULT_USER_TEMPLATE;
@@ -210,13 +210,13 @@ function TemplateForm({
       );
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success(isEdit ? "已更新" : "已创建");
+        toast.success(isEdit ? "Updated" : "Created");
         onSaved();
       } else {
-        toast.error(data?.message || data?.detail || (isEdit ? "更新失败" : "创建失败"));
+        toast.error(data?.message || data?.detail || (isEdit ? "Update failed" : "Create failed"));
       }
     } catch (e: unknown) {
-      toast.error((e as Error).message || "保存失败");
+      toast.error((e as Error).message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -224,7 +224,7 @@ function TemplateForm({
 
   const remove = async () => {
     if (!existing) return;
-    if (!confirm(`确定删除「${existing.name}」？`)) return;
+    if (!confirm(`Delete "${existing.name}"?`)) return;
     setDeleting(true);
     try {
       const res = await apiFetch(`/templates/${existing.template_id}`, {
@@ -233,10 +233,10 @@ function TemplateForm({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("已删除");
+        toast.success("Deleted");
         onDeleted?.();
       } else {
-        toast.error(data?.message || data?.detail || "删除失败");
+        toast.error(data?.message || data?.detail || "Delete failed");
       }
     } finally {
       setDeleting(false);
@@ -250,10 +250,10 @@ function TemplateForm({
         style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
       >
         <div>
-          <div className="an-pane-title">{isEdit ? existing!.name : "新建模板"}</div>
-          {isBuiltin && <div className="an-pane-sub">系统内置模板（只读）</div>}
+          <div className="an-pane-title">{isEdit ? existing!.name : "New template"}</div>
+          {isBuiltin && <div className="an-pane-sub">System built-in template (read-only)</div>}
         </div>
-        <div className="an-seg" role="tablist" aria-label="模板设置视图">
+        <div className="an-seg" role="tablist" aria-label="Template settings view">
           <button
             type="button"
             className={settingsTab === "identity" ? "on" : ""}
@@ -261,7 +261,7 @@ function TemplateForm({
             role="tab"
             aria-selected={settingsTab === "identity"}
           >
-            基础
+            Basics
           </button>
           <button
             type="button"
@@ -270,14 +270,14 @@ function TemplateForm({
             role="tab"
             aria-selected={settingsTab === "template"}
           >
-            模板
+            Template
           </button>
         </div>
       </div>
       <div className="an-list-table">
         {settingsTab === "identity" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <Field label="名称">
+            <Field label="Name">
               <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
             </Field>
           </div>
@@ -285,7 +285,7 @@ function TemplateForm({
 
         {settingsTab === "template" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <Field label="User Template（输入 {{ 弹出可用变量）">
+            <Field label="User template (type {{ to show variables)">
               <div style={{ position: "relative" }}>
                 <textarea
                   ref={userTplRef}
@@ -396,11 +396,11 @@ function TemplateForm({
           <div style={{ display: "flex", justifyContent: isEdit ? "space-between" : "flex-end" }}>
             {isEdit && (
               <DangerButton onClick={remove} disabled={deleting}>
-                {deleting ? "删除中…" : "删除"}
+                {deleting ? "Deleting..." : "Delete"}
               </DangerButton>
             )}
             <PrimaryButton onClick={save} disabled={saving}>
-              {saving ? "保存中…" : isEdit ? "保存" : "创建"}
+              {saving ? "Saving..." : isEdit ? "Save" : "Create"}
             </PrimaryButton>
           </div>
         )}

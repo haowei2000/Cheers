@@ -58,7 +58,7 @@ export function QuickAddFooter({
             setV("");
           }
         }}
-        placeholder="教一下 agents…"
+        placeholder="Teach the agents..."
         disabled={busy}
         className="an-input"
         style={{
@@ -74,10 +74,10 @@ export function QuickAddFooter({
         onClick={submit}
         disabled={!v.trim() || busy}
         className="an-btn an-btn-sm"
-        title="保存为一条新条目（Enter 亦可）"
+        title="Save as a new entry (Enter also works)"
         style={{ height: 28, padding: "0 12px", flexShrink: 0 }}
       >
-        {busy ? "…" : "保存"}
+        {busy ? "..." : "Save"}
       </button>
     </div>
   );

@@ -1,10 +1,4 @@
-"""内置 Bot 注册表：bot_id → adapter 工厂。
-
-内置 Bot（@Coordinator、@Helper 等）不走 ``BotAccount.binding_type``
-的 http/websocket 分流，而是按固定 ``bot_id`` 直接返回专用 adapter。
-这里把所有内置 Bot 聚拢到一张表里，``adapter_resolver`` 只需一次 lookup，
-新增内置 Bot 只需在这里加一行。
-"""
+"""Builtin registry module."""
 
 from __future__ import annotations
 
@@ -22,6 +16,6 @@ BUILTIN_BOT_ADAPTERS: dict[str, Callable[[], BotAdapter]] = {
 
 
 def get_builtin_adapter(bot_id: str) -> BotAdapter | None:
-    """若 ``bot_id`` 是内置 Bot，返回其 adapter；否则返回 None。"""
+    """Get builtin adapter."""
     factory = BUILTIN_BOT_ADAPTERS.get(bot_id)
     return factory() if factory else None

@@ -18,11 +18,11 @@ interface TaskPageProps {
 }
 
 function taskTitle(task: TaskMessage): string {
-  return task.content_data.title || "后台任务进行中";
+  return task.content_data.title || "Background task in progress";
 }
 
 function taskMessage(task: TaskMessage): string {
-  return task.content_data.message || task.content || "Agent Bridge 已接收任务，完成后会自动更新这条回复。";
+  return task.content_data.message || task.content || "Agent Bridge received the task. This reply updates automatically when it finishes.";
 }
 
 function botLabel(task: TaskMessage, channelBots: ChannelBot[]): string {
@@ -55,16 +55,16 @@ export function TaskPage({
           type="button"
           onClick={onBack}
           className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-[var(--surface-soft)]"
-          title="返回频道"
+          title="Back to channel"
         >
           <AppIcon name="arrowLeft" className="w-4 h-4" />
         </button>
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold truncate">
-            <span aria-hidden="true">#</span>{channel?.name || "频道"} Tasks
+            <span aria-hidden="true">#</span>{channel?.name || "Channels"} Tasks
           </div>
           <div className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-            {tasks.length} 个后台任务
+            {tasks.length} background tasks
           </div>
         </div>
       </div>
@@ -74,7 +74,7 @@ export function TaskPage({
           scopeId={selectedTaskId}
           channelId={channel.channel_id}
           botId={selectedBotId}
-          title="任务对应 Session"
+          title="Task sessions"
         />
       )}
 
@@ -82,7 +82,7 @@ export function TaskPage({
         <div className="border-r overflow-auto" style={{ borderColor: "var(--border)" }}>
           {tasks.length === 0 ? (
             <div className="p-4 text-sm" style={{ color: "var(--fg-3)" }}>
-              当前频道没有后台任务。
+              This channel has no background tasks.
             </div>
           ) : (
             <div className="p-2 space-y-1">
@@ -104,7 +104,7 @@ export function TaskPage({
                       <span className="text-[13px] font-medium truncate">{taskTitle(task)}</span>
                     </div>
                     <div className="mt-1 text-[11px] truncate" style={{ color: "var(--fg-3)" }}>
-                      {botLabel(task, channelBots)} · {task.created_at ? formatTs(task.created_at) : "刚刚"}
+                      {botLabel(task, channelBots)} · {task.created_at ? formatTs(task.created_at) : "just now"}
                     </div>
                   </button>
                 );
@@ -120,7 +120,7 @@ export function TaskPage({
               style={{ color: "var(--fg-3)" }}
             >
               <AppIcon name="task" className="w-6 h-6" />
-              <span>当前频道没有后台任务。</span>
+              <span>This channel has no background tasks.</span>
             </div>
           ) : (
             <div className="max-w-3xl p-5">
@@ -141,13 +141,13 @@ export function TaskPage({
                   style={{ borderColor: "var(--border)", color: "var(--fg-2)" }}
                 >
                   <AppIcon name="externalLink" className="w-3.5 h-3.5" />
-                  消息
+                  Messages
                 </button>
               </div>
 
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <div className="rounded-md border p-3" style={{ borderColor: "var(--border)", background: "var(--surface-soft)" }}>
-                  <div style={{ color: "var(--fg-3)" }}>状态</div>
+                  <div style={{ color: "var(--fg-3)" }}>Status</div>
                   <div className="mt-1 font-medium">{selected.content_data.status || "running"}</div>
                 </div>
                 <div className="rounded-md border p-3" style={{ borderColor: "var(--border)", background: "var(--surface-soft)" }}>
@@ -159,7 +159,7 @@ export function TaskPage({
                   <div className="mt-1 font-mono break-all">{selected.content_data.task_id || selected.task_id || "-"}</div>
                 </div>
                 <div className="rounded-md border p-3" style={{ borderColor: "var(--border)", background: "var(--surface-soft)" }}>
-                  <div style={{ color: "var(--fg-3)" }}>转后台阈值</div>
+                  <div style={{ color: "var(--fg-3)" }}>Background threshold</div>
                   <div className="mt-1 font-medium">
                     {typeof selected.content_data.timeout_seconds === "number"
                       ? `${selected.content_data.timeout_seconds}s`
@@ -169,10 +169,10 @@ export function TaskPage({
               </div>
 
               <div className="mt-5">
-                <h3 className="text-sm font-semibold">Agent Bridge 过程</h3>
+                <h3 className="text-sm font-semibold">Agent Bridge trace</h3>
                 {traces.length === 0 ? (
                   <div className="mt-2 rounded-md border p-3 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                    暂无 trace 事件；任务完成后这条消息会自动更新。
+                    No trace events yet. This message updates automatically when the task finishes.
                   </div>
                 ) : (
                   <div className="mt-2 space-y-2">

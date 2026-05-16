@@ -1,4 +1,4 @@
-"""Channel 业务逻辑层."""
+"""Channel service module."""
 from __future__ import annotations
 
 import json
@@ -883,7 +883,7 @@ class ChannelService:
         template_id: str | None,
         current_user: User,
     ) -> dict:
-        """设置频道内某个 Bot 成员的提示词模板覆盖。权限归邀请该 Bot 入频道的人。"""
+        """Update member template."""
         await self.get_or_404(channel_id)
 
         m = await self.repo.get_membership(channel_id, member_id)
@@ -930,7 +930,7 @@ class ChannelService:
         role: str,
         current_user: User,
     ) -> dict:
-        """更新频道内用户成员的频道角色。"""
+        """Update member role."""
         channel = await self.get_or_404(channel_id)
         await self._require_channel_admin(channel, current_user)
         if role not in CHANNEL_MEMBER_ROLES:
@@ -956,7 +956,7 @@ class ChannelService:
         }
 
     async def get_friends_to_invite(self, channel_id: str, current_user: User) -> list[dict]:
-        """返回当前用户的好友中尚未加入频道的列表."""
+        """Get friends to invite."""
         channel = await self.get_or_404(channel_id)
         self._ensure_not_dm_for_member_add(channel)
         await self._require_can_invite_members(channel, current_user)

@@ -1,4 +1,4 @@
-"""文件业务逻辑层（轻量包装 FilePipelineService）."""
+"""File service module."""
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +37,7 @@ class FileService:
         size_bytes: int,
         uploader: User,
     ) -> dict:
-        """生成预签名上传 URL，返回 {file_id, upload_url, headers, expires_in}."""
+        """Request presign."""
         from app.services.file_processor.service import FilePipelineService
         await ChannelService(self.session).require_can_send_message(channel_id, uploader)
         pipeline = FilePipelineService()
@@ -60,11 +60,7 @@ class FileService:
         }
 
     async def confirm_upload(self, file_id: str, uploader: User) -> FileRecord:
-        """确认上传完成，更新状态为 uploaded。
-
-        必须先 head_object 校验 S3 里真的有对象，否则 DB 会出现 status=uploaded
-        但对象不存在的"幽灵记录"，下载时报 NoSuchKey。
-        """
+        """Confirm upload."""
         from datetime import datetime
 
         from app.services.storage.base import StorageObjectNotFoundError
@@ -92,7 +88,7 @@ class FileService:
         return rec
 
     async def get_download_url(self, file_id: str, user: User) -> str:
-        """获取受权限保护的稳定下载 URL。"""
+        """Get download url."""
         rec = await self.get_or_404(file_id)
         await ChannelService(self.session).require_channel_member(rec.channel_id, user)
         return f"/api/v1/files/{rec.file_id}/download"

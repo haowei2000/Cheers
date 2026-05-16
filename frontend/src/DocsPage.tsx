@@ -180,9 +180,9 @@ export default function DocsPage() {
       <header className="flex flex-shrink-0 items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-1)] px-6 py-3">
         <Link to="/" className="an-btn an-btn-ghost an-btn-sm">
           <AppIcon name="arrowLeft" className="w-4 h-4" />
-          返回
+          Back
         </Link>
-        <h1 className="an-type-title">文档</h1>
+        <h1 className="an-type-title">Docs</h1>
         <span className="an-type-meta ml-1">Docs</span>
       </header>
 
@@ -195,11 +195,11 @@ export default function DocsPage() {
           {/* Header */}
           <div className="border-b border-[var(--border)] px-4 py-3">
             <div className="flex items-center justify-between mb-2">
-              <span className="an-type-label">文档列表</span>
+              <span className="an-type-label">Docs list</span>
             </div>
             <input
               type="text"
-              placeholder="搜索文档…"
+              placeholder="Search docs..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="an-input"
@@ -209,11 +209,11 @@ export default function DocsPage() {
           {/* File list */}
           <div className="flex-1 overflow-y-auto py-1">
             {filtered.length === 0 && (
-              <p className="an-type-meta px-4 py-3">未找到文件。</p>
+              <p className="an-type-meta px-4 py-3">No files found.</p>
             )}
             {filtered.map((f) => {
               const basename = f.stem.includes("/") ? f.stem.split("/").pop()! : f.stem;
-              const categoryLabel = f.category === "help" ? "用户" : f.category === "develop" ? "开发" : "";
+              const categoryLabel = f.category === "help" ? "User" : f.category === "develop" ? "Develop" : "";
               return (
                 <button
                   key={f.stem}
@@ -240,7 +240,7 @@ export default function DocsPage() {
 
           {/* Footer */}
           <div className="border-t border-[var(--border)] px-4 py-2">
-            <p className="an-type-meta">{files.length} 个文件</p>
+            <p className="an-type-meta">{files.length} files</p>
           </div>
         </aside>
 
@@ -250,15 +250,15 @@ export default function DocsPage() {
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
               {isMobile && (
                 <button type="button" onClick={() => setSidebarOpen(true)} className="an-btn an-btn-primary mb-8">
-                  浏览文件
+                  Browse files
                 </button>
               )}
               <div>
                 <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--fg-3)]">
                   <AppIcon name="file" className="h-7 w-7" />
                 </div>
-                <p className="an-type-body font-medium">选择一个文档</p>
-                <p className="an-type-meta mt-1">从侧边栏选择一个文件以查看或编辑。</p>
+                <p className="an-type-body font-medium">Select a document</p>
+                <p className="an-type-meta mt-1">Select a file from the sidebar to view or edit.</p>
               </div>
             </div>
           ) : (
@@ -288,7 +288,7 @@ export default function DocsPage() {
                       onClick={() => setTocOpen((o) => !o)}
                       className={`an-btn an-btn-sm ${tocOpen ? "an-btn-primary" : ""}`}
                     >
-                      目录
+                      Table of contents
                     </button>
                   )}
 
@@ -299,14 +299,14 @@ export default function DocsPage() {
                       onClick={() => setMode("preview")}
                       className={mode === "preview" ? "on" : ""}
                     >
-                      查看
+                      View
                     </button>
                     <button
                       type="button"
                       onClick={() => setMode("edit")}
                       className={mode === "edit" ? "on" : ""}
                     >
-                      编辑
+                      Edit
                     </button>
                   </div>
 
@@ -318,7 +318,7 @@ export default function DocsPage() {
                         onClick={handleDiscard}
                         className="an-btn an-btn-sm hidden sm:inline-flex"
                       >
-                        放弃
+                        Discard
                       </button>
                       <button
                         type="button"
@@ -326,7 +326,7 @@ export default function DocsPage() {
                         disabled={saving}
                         className="an-btn an-btn-primary an-btn-sm"
                       >
-                        {saving ? "…" : "保存"}
+                        {saving ? "..." : "Save"}
                       </button>
                     </>
                   )}
@@ -337,7 +337,7 @@ export default function DocsPage() {
               <div className="flex-1 flex min-h-0 relative">
                 {loading ? (
                   <div className="an-type-meta flex flex-1 items-center justify-center">
-                    加载中…
+                    Loading...
                   </div>
                 ) : mode === "edit" ? (
                   /* Edit mode */
@@ -451,15 +451,15 @@ export default function DocsPage() {
 	                        <aside className={`${isMobile ? "fixed inset-y-0 right-0 z-[80] w-64 shadow-xl" : "w-56 border-l"} flex-shrink-0 overflow-y-auto border-[var(--border)] bg-[var(--bg-1)] px-3 py-4`}>
 	                          <div className="flex items-center justify-between mb-2">
 	                            <p className="an-type-caption font-semibold uppercase">
-	                              目录
+	                              Table of contents
                             </p>
                             {isMobile && (
                               <button
                                 type="button"
                                 onClick={() => setTocOpen(false)}
 	                                className="an-btn an-btn-ghost an-btn-icon"
-                                aria-label="关闭目录"
-                                title="关闭目录"
+                                aria-label="Close table of contents"
+                                title="Close table of contents"
                               >
                                 <AppIcon name="close" className="h-4 w-4" />
                               </button>

@@ -1,4 +1,4 @@
-"""用户提示词模板路由（带所有权权限控制）."""
+"""Templates API routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -25,7 +25,7 @@ async def list_templates(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """返回当前用户可见的模板（内置 + 管理员创建 + 自己创建）。"""
+    """List templates."""
     svc = PromptTemplateService(session)
     templates = await svc.list_visible(current_user)
     return APIResponse.ok([_template_out(t) for t in templates])

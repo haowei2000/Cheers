@@ -1,4 +1,4 @@
-"""Agent Bridge 单元测试：dispatcher、pending registry、AgentBridgeBotAdapter.execute()."""
+"""Tests for test openclaw bridge."""
 from __future__ import annotations
 
 import asyncio
@@ -73,7 +73,7 @@ async def test_dispatcher_publish_filters_by_bot_ids() -> None:
 
 @pytest.mark.asyncio
 async def test_dispatcher_empty_subscription_receives_nothing() -> None:
-    """握手中间态：已连但还没声明 bot_ids 的订阅者不收任何事件。"""
+    """Covers test dispatcher empty subscription receives nothing behavior."""
     d = BridgeDispatcher()
     sub = await d.subscribe(bot_ids=[])
     delivered = await d.publish({"type": "dispatch", "bot_id": "bot-A"})
@@ -373,7 +373,7 @@ async def test_ws_bot_adapter_does_not_create_session_when_no_data_ws(
 
 @pytest.mark.asyncio
 async def test_ws_bot_adapter_ignores_irrelevant_bot_session() -> None:
-    """别的 bot 连上不会让本 bot 的 adapter 误认为在线。"""
+    """Covers test ws bot adapter ignores irrelevant bot session behavior."""
     from app.features.agent_bridge.registry import bot_session_registry
 
     other = _FakeWS()
@@ -493,7 +493,7 @@ async def test_pending_registry_resolve_by_task_bot() -> None:
 
 @pytest.mark.asyncio
 async def test_pending_registry_rejects_cross_bot_resolve_by_msg() -> None:
-    """plugin 用 bot-A 的连接不能 finalize bot-B 的占位消息（msg_id 相同也不行）。"""
+    """Covers test pending registry rejects cross bot resolve by msg behavior."""
     reg = PendingReplyRegistry()
     p = PendingReply(task_id="t1", bot_id="bot-A", channel_id="c1", msg_id="m1")
     await reg.register(p)

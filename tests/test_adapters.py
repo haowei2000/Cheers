@@ -1,4 +1,4 @@
-"""BotAdapter 契约测试."""
+"""Tests for test adapters."""
 from unittest.mock import patch
 
 import httpx

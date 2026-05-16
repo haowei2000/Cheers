@@ -177,18 +177,18 @@ export function ChatMessageList({
                 >
                   {loading ? (
                     <div className="an-type-meta flex h-full items-center justify-center">
-                      加载中…
+                      Loading...
                     </div>
                   ) : (
                     <div className="py-2 px-2">
                       {loadingMore && (
                         <div className="an-type-caption py-2 text-center">
-                          加载更多消息…
+                          Load more messages...
                         </div>
                       )}
                       {!hasMore && messages.length > 0 && (
                         <div className="an-type-caption py-2 text-center">
-                          — 已加载全部消息 —
+                          — All messages loaded —
                         </div>
                       )}
                       {!loading &&
@@ -200,13 +200,13 @@ export function ChatMessageList({
                               # {selectedChannel.name}
                             </div>
                             <div className="an-empty-sm">
-                              这里还没有消息。@ 调用一个 Bot 或直接开始对话。
+                              No messages yet. Mention a bot or start chatting directly.
                             </div>
                             <div className="an-empty-chips">
                               {[
-                                "@Coordinator 总结这个频道最近的进展",
-                                "这个频道的目标是什么？",
-                                "@Coordinator 帮我接下来要做什么",
+                                "@Coordinator summarize recent progress in this channel",
+                                "What is the goal of this channel?",
+                                "@Coordinator help me decide what to do next",
                               ].map((s) => (
                                 <button
                                   key={s}
@@ -270,7 +270,7 @@ export function ChatMessageList({
                                 <span className="an-chat-sender">
                                   {coordBot?.display_name ||
                                     coordBot?.username ||
-                                    "协作助手"}
+                                    "Assistant"}
                                 </span>
                                 <span className="an-chip accent">
                                   COORDINATOR
@@ -284,7 +284,7 @@ export function ChatMessageList({
                               <div className="an-routing">
                                 {q && (
                                   <div className="an-rq">
-                                    路由: <b>{q}</b>
+                                    Route: <b>{q}</b>
                                   </div>
                                 )}
                                 {picks.length > 0 && (
@@ -323,7 +323,7 @@ export function ChatMessageList({
                                 )}
                                 {plan && (
                                   <div className="an-plan">
-                                    <b>计划:</b> {plan}
+                                    <b>Plan:</b> {plan}
                                   </div>
                                 )}
                               </div>
@@ -351,7 +351,7 @@ export function ChatMessageList({
                           const requesterName =
                             (requester.display_name as string | undefined) ||
                             (requester.username as string | undefined) ||
-                            "用户";
+                            "User";
                           const requesterUsername =
                             requester.username as string | undefined;
                           const canResolve =
@@ -368,7 +368,7 @@ export function ChatMessageList({
                               );
                               const data = await r.json();
                               if (data?.status !== "success") {
-                                toast.error(data?.detail || data?.message || "操作失败");
+                                toast.error(data?.detail || data?.message || "Operation failed");
                                 return;
                               }
                               const nextStatus =
@@ -384,9 +384,9 @@ export function ChatMessageList({
                                 })),
                               );
                               refreshDMs(setDMs, authToken ?? undefined);
-                              toast.success(action === "accept" ? "已同意好友申请" : "已拒绝好友申请");
+                              toast.success(action === "accept" ? "Friend request accepted" : "Friend request rejected");
                             } catch {
-                              toast.error("操作失败");
+                              toast.error("Operation failed");
                             }
                           };
                           const friendTime = m.created_at ? formatTs(m.created_at) : "";
@@ -398,7 +398,7 @@ export function ChatMessageList({
                             >
                               <div className="flex items-baseline gap-1.5 mb-1 pl-1">
                                 <span className="an-chat-sender">
-                                  好友通知
+                                  Friend notifications
                                 </span>
                                 {friendTime && (
                                   <span className="an-chat-meta">
@@ -416,14 +416,14 @@ export function ChatMessageList({
                                   )}
                                   <span style={{ marginLeft: 6 }}>
                                     {status === "pending"
-                                      ? "请求添加你为好友"
+                                      ? "wants to add you as a friend"
                                       : status === "accepted"
-                                        ? "已成为你的好友"
+                                        ? "is now your friend"
                                         : status === "rejected"
-                                          ? "好友申请已拒绝"
+                                          ? "Friend request rejected"
                                           : status === "cancelled"
-                                            ? "已撤回好友申请"
-                                            : "好友申请已处理"}
+                                            ? "Friend request withdrawn"
+                                            : "Friend request handled"}
                                   </span>
                                 </div>
                                 {canResolve && (
@@ -433,14 +433,14 @@ export function ChatMessageList({
                                       className="deny"
                                       onClick={() => submitFriendRequest("reject")}
                                     >
-                                      拒绝
+                                      Reject
                                     </button>
                                     <button
                                       type="button"
                                       className="allow"
                                       onClick={() => submitFriendRequest("accept")}
                                     >
-                                      同意
+                                      Accept
                                     </button>
                                   </>
                                 )}
@@ -548,8 +548,8 @@ export function ChatMessageList({
                                     >
                                       ·{" "}
                                       {resolution === "allow"
-                                        ? "已通过"
-                                        : "已拒绝"}
+                                        ? "Approved"
+                                        : "Denied"}
                                     </span>
                                   )}
                                 </div>
@@ -560,14 +560,14 @@ export function ChatMessageList({
                                       className="deny"
                                       onClick={() => submitResolution("deny")}
                                     >
-                                      拒绝
+                                      Reject
                                     </button>
                                     <button
                                       type="button"
                                       className="allow"
                                       onClick={() => submitResolution("allow")}
                                     >
-                                      通过
+                                      Allow
                                     </button>
                                   </>
                                 )}
@@ -590,14 +590,14 @@ export function ChatMessageList({
                               : null;
                           const pinnedUser = pinnedById
                             ? pinnedById === currentUserId
-                              ? { display_name: "我", username: "me" }
+                              ? { display_name: "Me", username: "me" }
                               : userById.get(pinnedById)
                             : null;
                           const pinnedLabel =
                             pinnedUser?.display_name ||
                             pinnedUser?.username ||
                             pinnedById ||
-                            "频道管理员";
+                            "Channel administrator";
                           const annTime = m.created_at
                             ? formatTs(m.created_at)
                             : "";
@@ -611,13 +611,13 @@ export function ChatMessageList({
                                 <div className="an-ann-ico" aria-hidden="true">
                                   !
                                 </div>
-                                <div className="an-ann-tag">公告 · Announcement</div>
+                                <div className="an-ann-tag">Announcement · Announcement</div>
                                 {title && (
                                   <div className="an-ann-title">{title}</div>
                                 )}
                                 <div className="an-ann-body">{m.content}</div>
                                 <div className="an-ann-foot">
-                                  <span>由 {pinnedLabel} 置顶</span>
+                                  <span>By {pinnedLabel} pinned</span>
                                   {annTime && (
                                     <>
                                       <span>·</span>
@@ -665,7 +665,7 @@ export function ChatMessageList({
                           const base = isClarifyReplyUserMessage(effectiveContent)
                             ? effectiveContent
                                 .replace(
-                                  /^@(?:Helper|Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                  /^@(?:Helper|Coordinator|channel bot|\u5f15\u5bfc)\s*(?:Clarification answer|\u6f84\u6e05\u56de\u7b54)[\uFF1A:]\s*/i,
                                   "",
                                 )
                                 .trim()
@@ -695,7 +695,7 @@ export function ChatMessageList({
                           (isOwn
                             ? currentUser?.display_name || currentUser?.username
                             : senderUser?.display_name || senderUser?.username) ||
-                          "用户";
+                          "User";
                         const userAvatarUrl = isOwn
                           ? currentUser?.avatar_url
                           : senderUser?.avatar_url;
@@ -767,7 +767,7 @@ export function ChatMessageList({
                                         : "var(--fg-3)",
                                     }}
                                   >
-                                    {isOwn ? "我" : userInitials}
+                                    {isOwn ? "Me" : userInitials}
                                   </div>
                                 )}
                               </div>
@@ -775,7 +775,7 @@ export function ChatMessageList({
                                 <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
                                   <span className="an-chat-sender">
                                     {isOwn
-                                      ? "我"
+                                      ? "Me"
                                       : m.sender_type === "bot"
                                         ? botLabel
                                         : userLabel}
@@ -791,7 +791,7 @@ export function ChatMessageList({
                                 ) : null}
                                 {/* Unified reply-quote: lifted out of the
                                     body so all 4 message paths render the
-                                    "回复某条消息" indicator the exact same
+                                    "Reply to a message" indicator the exact same
                                     way (.an-reply-quote with elbow connector). */}
                                 {(() => {
                                   const mq = parseQuotePrefix(displayContent);
@@ -800,7 +800,7 @@ export function ChatMessageList({
                                   return (
                                     <div
                                       className="an-reply-quote"
-                                      title={`回复 ${mq.label}`}
+                                      title={`Reply ${mq.label}`}
                                     >
                                       <span className="an-rq-arrow">↪</span>
                                       <span className="an-rq-name">{mq.label}</span>
@@ -820,7 +820,7 @@ export function ChatMessageList({
                                     <ChatMessageRenderer
                                       collapseKey={m.msg_id}
                                       content={
-                                        // Strip the `> [Author]: …\n\n` prefix
+                                        // Strip the `> [Author]: ...\n\n` prefix
                                         // (rendered separately as .an-reply-quote
                                         // above) so the body shows only the
                                         // actual content.
@@ -865,7 +865,7 @@ export function ChatMessageList({
                               <div className={`${actionVisibilityClass()} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
                                 <button
                                   type="button"
-                                  title="复制消息内容"
+                                  title="Copy message content"
                                   onClick={() => copyMessageText(m)}
                                   className="an-chat-action"
                                 >
@@ -875,7 +875,7 @@ export function ChatMessageList({
                                 {renderMemoryLoadButton(m)}
                                 <button
                                   type="button"
-                                  title="回复"
+                                  title="Reply"
                                   onClick={() => {
                                     setReplyingTo(m);
                                     const mention =
@@ -905,7 +905,7 @@ export function ChatMessageList({
                               className="an-chat-avatar md"
                               style={{ background: "var(--accent)" }}
                             >
-                              我
+                              Me
                             </div>
                             <div className="flex items-end gap-1.5">
                               {renderForwardActionButtons?.(
@@ -916,7 +916,7 @@ export function ChatMessageList({
                               {!isDmSelected && (
                                 <button
                                   type="button"
-                                  title="回复"
+                                  title="Reply"
                                   onClick={() => {
                                     setReplyingTo(m);
                                     const mention =
@@ -939,7 +939,7 @@ export function ChatMessageList({
                                 <div className="flex items-baseline gap-1.5 mb-1 justify-end">
                                   {!isDmSelected && m.msg_type === "topic" && (
                                     <span className="an-chip blue">
-                                      主题
+                                      Topics
                                     </span>
                                   )}
                                   <span className="an-chat-meta mr-0.5">
@@ -967,7 +967,7 @@ export function ChatMessageList({
                                   return (
                                     <div
                                       className="an-reply-quote"
-                                      title={`回复 ${q.label}`}
+                                      title={`Reply ${q.label}`}
                                     >
                                       <span className="an-rq-arrow">↪</span>
                                       <span className="an-rq-name">{q.label}</span>
@@ -1045,7 +1045,7 @@ export function ChatMessageList({
                                 )}
                                 {!isDmSelected && m.msg_type === "topic" && (
                                   <span className="an-chip blue">
-                                    主题
+                                    Topics
                                   </span>
                                 )}
                                 <span className="an-chat-meta">
@@ -1063,7 +1063,7 @@ export function ChatMessageList({
                                 return (
                                   <div
                                     className="an-reply-quote"
-                                    title={`回复 ${cq.label}`}
+                                    title={`Reply ${cq.label}`}
                                   >
                                     <span className="an-rq-arrow">↪</span>
                                     <span className="an-rq-name">
@@ -1137,7 +1137,7 @@ export function ChatMessageList({
                               {!isDmSelected && (
                                 <button
                                   type="button"
-                                  title="回复"
+                                  title="Reply"
                                   onClick={() => {
                                     setReplyingTo(m);
                                     const mention =
@@ -1201,10 +1201,10 @@ export function ChatMessageList({
                           const rLabel = rBot
                             ? rBot.display_name || rBot.username || "Bot"
                             : rIsOwn
-                              ? "我"
+                              ? "Me"
                               : rSenderUser?.display_name ||
                                 rSenderUser?.username ||
-                                "用户";
+                                "User";
                           const rInitials = rLabel.slice(0, 2).toUpperCase();
                           const rTime = r.created_at
                             ? new Date(r.created_at).toLocaleString("zh-CN", {
@@ -1222,7 +1222,7 @@ export function ChatMessageList({
                             const base = isClarifyReplyUserMessage(r.content)
                               ? r.content
                                   .replace(
-                                    /^@(?:Helper|Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                    /^@(?:Helper|Coordinator|channel bot|\u5f15\u5bfc)\s*(?:Clarification answer|\u6f84\u6e05\u56de\u7b54)[\uFF1A:]\s*/i,
                                     "",
                                   )
                                   .trim()
@@ -1287,7 +1287,7 @@ export function ChatMessageList({
                                           : "var(--fg-3)",
                                       }}
                                     >
-                                      {rIsOwn ? "我" : rInitials}
+                                      {rIsOwn ? "Me" : rInitials}
                                     </div>
                                   )}
                                 </div>
@@ -1306,7 +1306,7 @@ export function ChatMessageList({
                                     }
                                   >
                                     <span className="an-chat-sender">
-                                      {rIsOwn ? "我" : rLabel}
+                                      {rIsOwn ? "Me" : rLabel}
                                     </span>
                                     <span className="an-chat-meta">
                                       {rTime}
@@ -1326,7 +1326,7 @@ export function ChatMessageList({
                                     return (
                                       <div
                                         className="an-reply-quote"
-                                        title={`回复 ${rq.label}`}
+                                        title={`Reply ${rq.label}`}
                                       >
                                         <span className="an-rq-arrow">↪</span>
                                         <span className="an-rq-name">
@@ -1354,7 +1354,7 @@ export function ChatMessageList({
                                       <ChatMessageRenderer
                                         collapseKey={r.msg_id}
                                         content={
-                                          // Drop the `> [Author]: …\n\n` prefix
+                                          // Drop the `> [Author]: ...\n\n` prefix
                                           // (now rendered above as an
                                           // .an-reply-quote) so the body shows
                                           // only the actual content.
@@ -1394,7 +1394,7 @@ export function ChatMessageList({
                                 <div className={`${actionVisibilityClass()} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
                                   <button
                                     type="button"
-                                    title="复制消息内容"
+                                    title="Copy message content"
                                     onClick={() => copyMessageText(r)}
                                     className="an-chat-action"
                                   >
@@ -1404,7 +1404,7 @@ export function ChatMessageList({
                                   {renderMemoryLoadButton(r)}
                                   <button
                                     type="button"
-                                    title="回复"
+                                    title="Reply"
                                     onClick={() => {
                                       setReplyingTo(r);
                                       const mention =
@@ -1444,7 +1444,7 @@ export function ChatMessageList({
                               .replace(/\s+/g, " ")
                               .trim()
                               .slice(0, 80) ||
-                            "(无标题)";
+                            "(No title)";
                           // Participants = root sender ∪ all unique reply
                           // senders. Keep insertion order so the root comes
                           // first and reads as the "owner" of the topic.
@@ -1482,10 +1482,10 @@ export function ChatMessageList({
                                 ? null
                                 : userById.get(sid);
                               const label = isSelf
-                                ? "我"
+                                ? "Me"
                                 : u?.display_name ||
                                   u?.username ||
-                                  "用户";
+                                  "User";
                               acc.push({
                                 key,
                                 kind: "user",
@@ -1497,7 +1497,7 @@ export function ChatMessageList({
                                   ? currentUser?.avatar_url || undefined
                                   : u?.avatar_url || undefined,
                                 initial: isSelf
-                                  ? "我"
+                                  ? "Me"
                                   : label.slice(0, 1).toUpperCase(),
                                 isSelf,
                               });
@@ -1571,12 +1571,12 @@ export function ChatMessageList({
                                     {titleSummary}
                                   </span>
                                   <span className="an-topic-chip-meta">
-                                    主题 · {replies.length + 1} 条消息 ·{" "}
-                                    {participants.length} 人参与
+                                    Topics · {replies.length + 1} messages ·{" "}
+                                    {participants.length} participants
                                   </span>
                                 </span>
                                 <span className="an-topic-chip-open">
-                                  展开 ›
+                                  Expand ›
                                 </span>
                               </button>
                             </div>
@@ -1595,7 +1595,7 @@ export function ChatMessageList({
                                 <div className="an-topic-card-title">
                                   <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
                                   <span className="truncate">
-                                    主题 · {replies.length + 1} 条消息
+                                    Topics · {replies.length + 1} messages
                                   </span>
                                 </div>
                                 <div className="an-topic-card-actions">
@@ -1603,10 +1603,10 @@ export function ChatMessageList({
                                     type="button"
                                     onClick={() => setPageTopicId(m.msg_id)}
                                     className="an-topic-card-action"
-                                    title="以独立页打开主题"
+                                    title="Open topic as a standalone page"
                                   >
                                     <AppIcon name="externalLink" className="w-3 h-3" />
-                                    独立页打开
+                                    Open standalone
                                   </button>
                                   <button
                                     type="button"
@@ -1614,7 +1614,7 @@ export function ChatMessageList({
                                     className="an-topic-card-action"
                                   >
                                     <AppIcon name="chevronUp" className="w-3 h-3" />
-                                    收起
+                                    Collapse
                                   </button>
                                 </div>
                               </div>
@@ -1622,7 +1622,7 @@ export function ChatMessageList({
                               {rootBubble}
                               {/* Replies divider */}
                               <div className="an-topic-card-divider">
-                                <span>{replies.length} 条回复</span>
+                                <span>{replies.length} replies</span>
                               </div>
                               {/* Reply messages */}
                               <div className="flex flex-col gap-0.5 pb-1.5">
@@ -1641,10 +1641,10 @@ export function ChatMessageList({
                                 const rLabel = rBot
                                   ? rBot.display_name || rBot.username || "Bot"
                                   : rIsOwn
-                                    ? "我"
+                                    ? "Me"
                                     : rSenderUser?.display_name ||
                                       rSenderUser?.username ||
-                                      "用户";
+                                      "User";
                                 const rInitials = rLabel
                                   .slice(0, 2)
                                   .toUpperCase();
@@ -1662,7 +1662,7 @@ export function ChatMessageList({
                                   const base = isClarifyReplyUserMessage(r.content)
                                     ? r.content
                                         .replace(
-                                          /^@(?:Helper|Coordinator|channel bot|引导)\s*澄清回答[：:]\s*/i,
+                                          /^@(?:Helper|Coordinator|channel bot|\u5f15\u5bfc)\s*(?:Clarification answer|\u6f84\u6e05\u56de\u7b54)[\uFF1A:]\s*/i,
                                           "",
                                         )
                                         .trim()
@@ -1707,17 +1707,17 @@ export function ChatMessageList({
                                       rParentBot?.username ||
                                       "Bot"
                                     : rDirectParent.sender_id === currentUserId
-                                      ? "我"
+                                      ? "Me"
                                       : rParentSenderUser?.display_name ||
                                         rParentSenderUser?.username ||
-                                        "用户"
+                                        "User"
                                   : null;
                                 const rCollapsed = collapsedMessages.has(
                                   r.msg_id,
                                 );
                                 const rPreview =
                                   rDisplay.replace(/\s+/g, " ").slice(0, 10) +
-                                  (rDisplay.length > 10 ? "…" : "");
+                                  (rDisplay.length > 10 ? "..." : "");
                                 return (
                                   <div
                                     key={r.msg_id}
@@ -1741,7 +1741,7 @@ export function ChatMessageList({
                                             : "var(--fg-3)",
                                         }}
                                       >
-                                        {rIsOwn ? "我" : rInitials}
+                                        {rIsOwn ? "Me" : rInitials}
                                       </div>
                                     )}
                                     <div className="flex-1 min-w-0">
@@ -1771,7 +1771,7 @@ export function ChatMessageList({
                                             toggleMessage(r.msg_id)
                                           }
                                           className="an-chat-mini-action ml-0.5 opacity-0 group-hover/tr:opacity-100"
-                                          title={rCollapsed ? "展开" : "折叠"}
+                                          title={rCollapsed ? "Expand" : "Collapse"}
                                         >
                                           {rCollapsed ? (
                                             <AppIcon name="chevronDown" className="w-3 h-3" />
@@ -1804,7 +1804,7 @@ export function ChatMessageList({
                                               el.style.transition = origT;
                                             }, 1200);
                                           }}
-                                          title="跳转到被回复的消息"
+                                          title="Jump to replied message"
                                         >
                                           <span className="an-rq-arrow">↪</span>
                                           <span className="an-rq-name">
@@ -1818,7 +1818,7 @@ export function ChatMessageList({
                                               .replace(/\s+/g, " ")
                                               .trim()
                                               .slice(0, 80) ||
-                                              "(无内容)"}
+                                              "(No content)"}
                                           </span>
                                         </button>
                                       )}
@@ -1883,7 +1883,7 @@ export function ChatMessageList({
                                       {renderMemoryLoadButton(r)}
                                       <button
                                         type="button"
-                                        title="回复"
+                                        title="Reply"
                                         onClick={() => {
                                           setReplyingTo(r);
                                           const mention =
@@ -1914,7 +1914,7 @@ export function ChatMessageList({
                                   className="an-topic-card-action"
                                 >
                                   <AppIcon name="chevronUp" className="w-3 h-3" />
-                                  收起主题
+                                  Collapse topics
                                 </button>
                               </div>
                             </div>
@@ -2004,7 +2004,7 @@ export function ChatMessageList({
                                     style={{ animationDelay: "300ms" }}
                                   />
                                 </span>
-                                正在输入…
+                                Typing...
                               </div>
                             </div>
                           </div>
@@ -2018,11 +2018,11 @@ export function ChatMessageList({
                     type="button"
                     className="an-chat-jump-bottom"
                     onClick={onJumpToBottom}
-                    title="跳到底部"
-                    aria-label="跳到底部"
+                    title="Jump to bottom"
+                    aria-label="Jump to bottom"
                   >
                     <AppIcon name="chevronDown" className="h-4 w-4" />
-                    <span>到底部</span>
+                    <span>Bottom</span>
                   </button>
                 )}
     </>

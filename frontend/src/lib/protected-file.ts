@@ -18,9 +18,9 @@ async function buildProtectedFileError(res: Response): Promise<Error> {
     // Non-JSON file errors fall back to status-specific copy below.
   }
   if (!message) {
-    if (res.status === 404) message = "文件不存在、已过期或已被清理";
-    else if (res.status === 401 || res.status === 403) message = "没有权限预览此文件";
-    else message = `文件预览加载失败（HTTP ${res.status}）`;
+    if (res.status === 404) message = "File does not exist, has expired, or was cleaned up";
+    else if (res.status === 401 || res.status === 403) message = "You do not have permission to preview this file";
+    else message = `File preview failed to load (HTTP ${res.status})`;
   }
   const error = new Error(message);
   error.name = "ProtectedFileError";

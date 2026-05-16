@@ -24,7 +24,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "user",
-    label: "用户",
+    label: "User",
     color: "#1264A3",
     background: "#EAF4FF",
     groups: ["user", "all"],
@@ -40,7 +40,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "dashboard",
-    label: "空间",
+    label: "Spaces",
     color: "#0891B2",
     background: "#E8FAFC",
     groups: ["workspace", "all"],
@@ -48,7 +48,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "briefcase",
-    label: "项目",
+    label: "Project",
     color: "#B45309",
     background: "#FFF7E6",
     groups: ["user", "workspace", "all"],
@@ -56,7 +56,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "channel",
-    label: "频道",
+    label: "Channels",
     color: "#0891B2",
     background: "#E8FAFC",
     groups: ["workspace", "bot", "all"],
@@ -64,7 +64,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "message",
-    label: "消息",
+    label: "Messages",
     color: "#7C3AED",
     background: "#F3ECFF",
     groups: ["user", "workspace", "all"],
@@ -72,7 +72,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "memory",
-    label: "记忆",
+    label: "Memory",
     color: "#0F766E",
     background: "#E7F8F4",
     groups: ["user", "bot", "workspace", "all"],
@@ -80,7 +80,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "model",
-    label: "模型",
+    label: "Models",
     color: "#4F46E5",
     background: "#EEF2FF",
     groups: ["bot", "all"],
@@ -88,7 +88,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "tools",
-    label: "工具",
+    label: "Tools",
     color: "#475569",
     background: "#F1F5F9",
     groups: ["bot", "workspace", "all"],
@@ -96,7 +96,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "shieldCheck",
-    label: "管理",
+    label: "Admin",
     color: "#C2410C",
     background: "#FFF1E8",
     groups: ["workspace", "all"],
@@ -104,7 +104,7 @@ const builtinAvatarSeeds: Omit<BuiltinAvatarOption, "value">[] = [
   {
     category: "main",
     name: "zap",
-    label: "自动化",
+    label: "Automation",
     color: "#D97706",
     background: "#FFF8DB",
     groups: ["bot", "workspace", "all"],
@@ -232,9 +232,9 @@ export async function uploadAvatarImage(
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.status === "error") {
-    throw new Error(data?.message || data?.detail || "头像上传失败");
+    throw new Error(data?.message || data?.detail || "Avatar upload failed");
   }
   const payload = data?.data || data;
-  if (!payload?.avatar_url) throw new Error("头像上传失败");
+  if (!payload?.avatar_url) throw new Error("Avatar upload failed");
   return payload;
 }

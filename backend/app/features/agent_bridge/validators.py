@@ -1,8 +1,4 @@
-"""plugin 提交的 reply/send 帧的跨领域校验工具。
-
-返回 None 表示通过；返回 (code, detail) 表示拒绝。这样调用方可以自由决定
-要不要抛 HTTPException、写 send_ack(ok=False) 还是别的包装。
-"""
+"""Validators module."""
 from __future__ import annotations
 
 from sqlalchemy import select

@@ -1,4 +1,4 @@
-"""File v1 路由."""
+"""Files API routes."""
 from __future__ import annotations
 
 import base64
@@ -238,7 +238,7 @@ async def list_channel_files(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """列出频道下所有非图片文件（与资料索引一致）。"""
+    """List channel files."""
     from sqlalchemy import asc
     await ChannelService(session).require_channel_member(channel_id, current_user)
     result = await session.execute(
@@ -330,7 +330,7 @@ async def file_kkfileview_url(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """返回 kkFileView viewer URL。仅复杂文档使用，轻量类型继续走内置预览。"""
+    """File kkfileview url."""
     rec = await _load_active_file_or_404(session, file_id)
     await _require_file_access(session, rec, current_user)
 
@@ -367,7 +367,7 @@ async def file_public_preview(
     token: str = Query(...),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
-    """供 kkFileView 拉取文件的短期签名下载流。"""
+    """File public preview."""
     try:
         payload = decode_service_token(token)
     except jwt.PyJWTError as exc:
@@ -395,7 +395,7 @@ async def file_preview_content(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """返回适合预览窗口展示的文本/Markdown 内容。"""
+    """File preview content."""
     rec = await _load_active_file_or_404(session, file_id)
     await _require_file_access(session, rec, current_user)
 

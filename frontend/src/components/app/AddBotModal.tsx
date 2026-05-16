@@ -38,9 +38,9 @@ function StatusChip({
 }) {
   const label = botInlineStatus(bot);
   const tone =
-    label.includes("在线") || label.includes("启用")
+    label.includes("Online") || label.includes("Enabled")
       ? "green"
-      : label.includes("部分")
+      : label.includes("partial")
         ? "orange"
         : "";
   return <span className={`an-chip ${tone}`}>{label}</span>;
@@ -89,8 +89,8 @@ export function AddBotModal({
     <Modal
       open={open && Boolean(selectedChannelId)}
       onClose={onClose}
-      title="管理频道 Bot"
-      description="选择要加入频道协作的 Bot，并查看连接状态、可见范围和所有者。"
+      title="Manage channel bots"
+      description="Choose bots to join this channel, and view connection status, visibility, and owner."
       maxWidth="max-w-4xl"
       panelClassName="overflow-hidden"
     >
@@ -98,11 +98,11 @@ export function AddBotModal({
         <section className="min-w-0">
           <div className="max-h-[48vh] overflow-y-auto pr-1">
             <MemberSection
-              title={`${channelBots.length} 个 Bot 在此频道`}
+              title={`${channelBots.length} bots in this channel`}
               count={channelBots.length}
               empty={
                 <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                  暂无 Bot。可以从右侧列表选择并加入。
+                  No bots. Select one from the list on the right to add it.
                 </div>
               }
             >
@@ -119,7 +119,7 @@ export function AddBotModal({
                       onClick={() => onRemoveBot(bot.member_id)}
                       className="an-btn an-btn-danger an-btn-sm"
                     >
-                      移除
+                      Remove
                     </button>
                   }
                 />
@@ -141,18 +141,18 @@ export function AddBotModal({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="an-input h-8 pl-8 text-xs"
-                  placeholder="搜索 Bot"
+                  placeholder="Search bots"
                 />
               </div>
             </div>
           </div>
           <div className="max-h-[48vh] overflow-y-auto pr-1">
             <MemberSection
-              title={`${filteredBots.length}/${availableBots.length} 个可用 Bot`}
+              title={`${filteredBots.length}/${availableBots.length} available bots`}
               count={filteredBots.length}
               empty={
                 <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--border)", color: "var(--fg-3)" }}>
-                  {availableBots.length === 0 ? "暂无可添加 Bot。" : "没有匹配的 Bot。"}
+                  {availableBots.length === 0 ? "No bots available to add." : "No matching bots."}
                 </div>
               }
             >
@@ -192,7 +192,7 @@ export function AddBotModal({
 
       <ModalFooter>
         <button type="button" onClick={onClose} className="an-btn an-btn-ghost">
-          关闭
+          Close
         </button>
         <button
           type="button"
@@ -200,7 +200,7 @@ export function AddBotModal({
           onClick={onAddSelected}
           className="an-btn an-btn-primary"
         >
-          {addingBots ? "添加中…" : `添加选中 (${selectedBotIds.size})`}
+          {addingBots ? "Adding..." : `Add selected (${selectedBotIds.size})`}
         </button>
       </ModalFooter>
     </Modal>

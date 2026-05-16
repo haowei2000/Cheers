@@ -41,7 +41,7 @@ interface ChatSidePanelsProps {
 function SidePanelFallback() {
   return (
     <div className="flex h-full w-full items-center justify-center text-sm text-[var(--fg-3)]">
-      加载中...
+      Loading...
     </div>
   );
 }

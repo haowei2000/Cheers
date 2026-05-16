@@ -18,15 +18,15 @@ export function AppearancePane({
     <div className="an-pane">
       <div className="an-pane-head">
         <div>
-          <div className="an-pane-title">外观</div>
-          <div className="an-pane-sub">主题、密度与语言。</div>
+          <div className="an-pane-title">Appearance</div>
+          <div className="an-pane-sub">Topics, density, and language.</div>
         </div>
       </div>
       <div className="an-list-table">
         <div className="an-row-card" style={{ justifyContent: "space-between" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title">主题</div>
-            <div className="an-rc-sub">整体亮度。</div>
+            <div className="an-rc-title">Topics</div>
+            <div className="an-rc-sub">Overall brightness.</div>
           </div>
           <div className="an-seg">
             <button
@@ -34,21 +34,21 @@ export function AppearancePane({
               className={isDark ? "on" : ""}
               onClick={() => setTheme("dark")}
             >
-              深色
+              Dark
             </button>
             <button
               type="button"
               className={!isDark ? "on" : ""}
               onClick={() => setTheme("light")}
             >
-              浅色
+              Light
             </button>
           </div>
         </div>
         <div className="an-row-card" style={{ justifyContent: "space-between" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title">密度</div>
-            <div className="an-rc-sub">消息间距。</div>
+            <div className="an-rc-title">Density</div>
+            <div className="an-rc-sub">Message spacing.</div>
           </div>
           <div className="an-seg">
             <button
@@ -56,21 +56,21 @@ export function AppearancePane({
               className={density === "comfy" ? "on" : ""}
               onClick={() => setDensity("comfy")}
             >
-              舒适
+              Comfortable
             </button>
             <button
               type="button"
               className={density === "compact" ? "on" : ""}
               onClick={() => setDensity("compact")}
             >
-              紧凑
+              Compact
             </button>
           </div>
         </div>
         <div className="an-row-card" style={{ justifyContent: "space-between" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title">语言</div>
-            <div className="an-rc-sub">界面显示语言。</div>
+            <div className="an-rc-title">Language</div>
+            <div className="an-rc-sub">Interface display language.</div>
           </div>
           <LanguageSwitcher hideLabel />
         </div>

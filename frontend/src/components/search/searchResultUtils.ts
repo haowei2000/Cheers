@@ -7,7 +7,7 @@ export function botScopeText(scope?: SearchBotHit["scope"]) {
 }
 
 export function botOwnerText(bot: Pick<SearchBotHit, "owner">) {
-  return bot.owner?.display_name || bot.owner?.username || "系统";
+  return bot.owner?.display_name || bot.owner?.username || "System";
 }
 
 export function channelTypeText(type?: string | null) {
@@ -27,9 +27,9 @@ export function fileTypeText(contentType?: string | null) {
   if (ct.includes("pdf")) return "PDF";
   if (ct.includes("wordprocessingml") || ct.includes("docx")) return "Word";
   if (ct.includes("spreadsheetml") || ct.includes("xlsx")) return "Excel";
-  if (ct.startsWith("image/")) return "图片";
-  if (ct.startsWith("text/")) return "文本";
-  return "文件";
+  if (ct.startsWith("image/")) return "Image";
+  if (ct.startsWith("text/")) return "Text";
+  return "Files";
 }
 
 export function labelFor(selection: SearchSelection) {
@@ -52,11 +52,11 @@ export function subFor(selection: SearchSelection) {
   if (type === "bot") return `@${item.username} · ${botScopeText(item.scope)} · Owner: ${botOwnerText(item)}`;
   if (type === "file") {
     const size = formatBytes(item.size_bytes);
-    return `${item.channel_name || "频道"} · ${fileTypeText(item.content_type)}${size ? ` · ${size}` : ""}`;
+    return `${item.channel_name || "Channels"} · ${fileTypeText(item.content_type)}${size ? ` · ${size}` : ""}`;
   }
-  if (type === "todo") return `${item.channel_name || "频道"} · ${item.status}`;
-  if (type === "task") return `${item.channel_name || "频道"} · ${item.task_id}`;
-  return `${item.channel_name || "频道"} · ${item.sender_label}`;
+  if (type === "todo") return `${item.channel_name || "Channels"} · ${item.status}`;
+  if (type === "task") return `${item.channel_name || "Channels"} · ${item.task_id}`;
+  return `${item.channel_name || "Channels"} · ${item.sender_label}`;
 }
 
 export function sigilFor(type: SearchSelection["type"]) {
@@ -71,14 +71,14 @@ export function sigilFor(type: SearchSelection["type"]) {
 }
 
 export function groupTitle(type: SearchSelection["type"]) {
-  if (type === "workspace") return "工作空间";
-  if (type === "channel") return "频道";
-  if (type === "user") return "成员";
+  if (type === "workspace") return "Workspaces";
+  if (type === "channel") return "Channels";
+  if (type === "user") return "Members";
   if (type === "bot") return "Bot";
-  if (type === "file") return "文件";
-  if (type === "todo") return "待办";
-  if (type === "task") return "任务";
-  return "消息";
+  if (type === "file") return "Files";
+  if (type === "todo") return "Todos";
+  if (type === "task") return "Tasks";
+  return "Messages";
 }
 
 export function itemKey(selection: SearchSelection) {

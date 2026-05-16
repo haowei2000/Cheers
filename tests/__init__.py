@@ -1,1 +1,1 @@
-"""AgentNexus 测试包."""
+"""Package initialization."""

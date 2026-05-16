@@ -15,21 +15,21 @@ function fmtTime(value?: string | null): string {
 }
 
 function scopeLabel(type: string, id: string): string {
-  if (type === "channel") return `频道 · ${id}`;
-  if (type === "topic") return `主题 · ${id}`;
-  if (type === "task") return `任务 · ${id}`;
-  if (type === "dm") return `私聊 · ${id}`;
+  if (type === "channel") return `Channels · ${id}`;
+  if (type === "topic") return `Topics · ${id}`;
+  if (type === "task") return `Tasks · ${id}`;
+  if (type === "dm") return `DM · ${id}`;
   return `${type} · ${id}`;
 }
 
 function shortKey(value: string): string {
   if (!value) return "-";
   if (value.length <= 34) return value;
-  return `${value.slice(0, 18)}…${value.slice(-12)}`;
+  return `${value.slice(0, 18)}...${value.slice(-12)}`;
 }
 
 function statusLabel(status: string): string {
-  if (status === "task_owned") return "Task 接管";
+  if (status === "task_owned") return "Task-owned";
   if (status === "active") return "Active";
   if (status === "closed") return "Closed";
   return status || "-";
@@ -121,8 +121,8 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
           <button
             type="button"
             onClick={() => void copyText(session.provider_session_key)}
-            title="复制 provider session key"
-            aria-label="复制 provider session key"
+            title="Copy provider session key"
+            aria-label="Copy provider session key"
             style={{
               width: 30,
               height: 30,
@@ -147,10 +147,10 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
             color: "var(--fg-2)",
           }}
         >
-          <div>Provider：{session.provider} / {session.provider_agent_id}</div>
-          <div>Account：{session.provider_account_id}</div>
-          <div>创建：{fmtTime(session.created_at)}</div>
-          <div>最后使用：{fmtTime(session.last_used_at)}</div>
+          <div>Provider:{session.provider} / {session.provider_agent_id}</div>
+          <div>Account:{session.provider_account_id}</div>
+          <div>Create:{fmtTime(session.created_at)}</div>
+          <div>Last used: {fmtTime(session.last_used_at)}</div>
         </div>
 
         {bindings.length > 0 && (
@@ -192,7 +192,7 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
             cursor: "pointer",
           }}
         >
-          {expanded ? "收起详情" : "展开详情"}
+          {expanded ? "Collapse details" : "Expand details"}
         </button>
       </div>
     </div>
@@ -203,7 +203,7 @@ export function SessionList({ sessions }: { sessions: AgentBridgeSession[] }) {
   if (sessions.length === 0) {
     return (
       <div className="text-xs" style={{ color: "var(--fg-3)" }}>
-        暂无 Agent Bridge session。
+        No Agent Bridge sessions.
       </div>
     );
   }
@@ -219,7 +219,7 @@ export function SessionScopePanel({
   scopeId,
   channelId,
   botId,
-  title = "对应 Session",
+  title = "Related sessions",
   refreshKey = 0,
   variant = "block",
   onRefresh,
@@ -263,7 +263,7 @@ export function SessionScopePanel({
       })
       .catch((e: unknown) => {
         if (!active) return;
-        setError((e as Error).message || "加载 session 失败");
+        setError((e as Error).message || "Failed to load sessions");
         setSessions([]);
       })
       .finally(() => {
@@ -286,7 +286,7 @@ export function SessionScopePanel({
   }, [open, variant]);
 
   if (variant === "toolbar") {
-    const summary = loading ? "…" : String(sessions.length);
+    const summary = loading ? "..." : String(sessions.length);
     return (
       <div className={`an-session-control ${onRefresh ? "has-refresh" : ""}`} ref={wrapRef}>
         <button
@@ -294,7 +294,7 @@ export function SessionScopePanel({
           className={`an-topics-btn an-session-btn ${open ? "on" : ""}`}
           onClick={() => setOpen((v) => !v)}
           title={title}
-          aria-label={`${title}，${loading ? "加载中" : `${sessions.length} 个 active session`}`}
+          aria-label={`${title},${loading ? "Loading" : `${sessions.length} active sessions`}`}
           aria-expanded={open}
         >
           <AppIcon name="link" />
@@ -307,8 +307,8 @@ export function SessionScopePanel({
             className="an-session-refresh-btn"
             onClick={onRefresh}
             disabled={refreshing}
-            title="刷新 DM Session"
-            aria-label="刷新 DM Session"
+            title="Refresh DM sessions"
+            aria-label="Refresh DM sessions"
           >
             <AppIcon name="refresh" className={refreshing ? "animate-spin" : ""} />
           </button>
@@ -340,7 +340,7 @@ export function SessionScopePanel({
           {title}
         </span>
         <span className="text-xs" style={{ color: "var(--fg-3)" }}>
-          {loading ? "加载中" : `${sessions.length} 个 active session`} · {open ? "收起" : "展开"}
+          {loading ? "Loading" : `${sessions.length} active sessions`} · {open ? "Collapse" : "Expand"}
         </span>
       </button>
       {open && (
@@ -382,7 +382,7 @@ export function BotSessionsPanel({
       })
       .catch((e: unknown) => {
         if (!active) return;
-        setError((e as Error).message || "加载 session 失败");
+        setError((e as Error).message || "Failed to load sessions");
         setSessions([]);
       })
       .finally(() => {
@@ -411,15 +411,15 @@ export function BotSessionsPanel({
         <div>
           <div className="an-rc-title">All Sessions</div>
           <div className="an-rc-sub">
-            该 Bot 的 AgentNexus session、provider session key 与 scope binding
+            AgentNexus sessions, provider session keys, and scope bindings for this bot
           </div>
         </div>
         <button
           type="button"
           onClick={() => setRefreshNonce((v) => v + 1)}
           disabled={loading}
-          title="刷新 sessions"
-          aria-label="刷新 sessions"
+          title="Refresh sessions"
+          aria-label="Refresh sessions"
           style={{
             width: 30,
             height: 30,
@@ -448,8 +448,8 @@ export function BotSessionsPanel({
       >
         <div className="an-rc-sub" style={{ marginTop: 0 }}>
           {loading
-            ? "加载中..."
-            : `${sessions.length} 个 sessions · active:${activeCount} · closed:${closedCount}${sessions.length ? ` · ${sessionScopeCounts(sessions)}` : ""}`}
+            ? "Loading..."
+            : `${sessions.length} sessions · active:${activeCount} · closed:${closedCount}${sessions.length ? ` · ${sessionScopeCounts(sessions)}` : ""}`}
         </div>
         <label className="an-rc-sub" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 0 }}>
           <input
@@ -457,7 +457,7 @@ export function BotSessionsPanel({
             checked={includeClosed}
             onChange={(e) => setIncludeClosed(e.target.checked)}
           />
-          包含 closed
+          Include closed
         </label>
       </div>
 

@@ -1,4 +1,4 @@
-"""Message 业务逻辑层."""
+"""Message service module."""
 from __future__ import annotations
 
 import secrets as _secrets
@@ -28,7 +28,7 @@ class MessageService:
         limit: int = 50,
         before_id: str | None = None,
     ) -> tuple[list[Message], dict[str, MessageFileDTO]]:
-        """返回消息列表及 file_map {file_id: MessageFileDTO}."""
+        """List messages."""
         ch = await self.channel_repo.get_by_id(channel_id)
         if not ch:
             raise NotFoundError("channel not found")
@@ -54,7 +54,7 @@ class MessageService:
         channel_id: str,
         root_msg_id: str,
     ) -> tuple[list[Message], dict[str, MessageFileDTO]]:
-        """返回话题根消息及其所有子孙回复。"""
+        """List topic messages."""
         ch = await self.channel_repo.get_by_id(channel_id)
         if not ch:
             raise NotFoundError("channel not found")
@@ -98,7 +98,7 @@ class MessageService:
         in_reply_to_msg_id: str | None = None,
         is_secret: bool = False,
     ) -> tuple[Message, dict[str, MessageFileDTO]]:
-        """持久化一条消息，返回 (Message, file_map)。不触发 orchestrator（由路由层负责）."""
+        """Send message."""
         ch = await self.channel_repo.get_by_id(channel_id)
         if not ch:
             raise NotFoundError("channel not found")

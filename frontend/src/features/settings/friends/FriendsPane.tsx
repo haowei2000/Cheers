@@ -70,14 +70,14 @@ export function FriendsPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success(data.message || "好友申请已发送");
+        toast.success(data.message || "Friend request sent");
         loadAll();
         setDirectId("");
       } else {
-        toast.error(data?.detail || data?.message || "添加失败");
+        toast.error(data?.detail || data?.message || "Add failed");
       }
     } catch {
-      toast.error("添加失败");
+      toast.error("Add failed");
     }
   };
 
@@ -89,13 +89,13 @@ export function FriendsPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success(action === "accept" ? "已同意好友申请" : "已拒绝好友申请");
+        toast.success(action === "accept" ? "Friend request accepted" : "Friend request rejected");
         loadAll();
       } else {
-        toast.error(data?.detail || data?.message || "操作失败");
+        toast.error(data?.detail || data?.message || "Operation failed");
       }
     } catch {
-      toast.error("操作失败");
+      toast.error("Operation failed");
     }
   };
 
@@ -107,18 +107,18 @@ export function FriendsPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("已撤回好友申请");
+        toast.success("Friend request withdrawn");
         loadAll();
       } else {
-        toast.error(data?.detail || data?.message || "撤回失败");
+        toast.error(data?.detail || data?.message || "Withdraw failed");
       }
     } catch {
-      toast.error("撤回失败");
+      toast.error("Withdraw failed");
     }
   };
 
   const removeFriend = async (friendId: string) => {
-    if (!confirm("确定删除这个好友？")) return;
+    if (!confirm("Delete this friend?")) return;
     try {
       const res = await apiFetch(`/friends/${friendId}`, {
         method: "DELETE",
@@ -126,18 +126,18 @@ export function FriendsPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("已删除");
+        toast.success("Deleted");
         loadAll();
       } else {
-        toast.error(data?.detail || data?.message || "删除失败");
+        toast.error(data?.detail || data?.message || "Delete failed");
       }
     } catch {
-      toast.error("删除失败");
+      toast.error("Delete failed");
     }
   };
 
   const blockFriend = async (friendId: string) => {
-    if (!confirm("确定拉黑这个用户？")) return;
+    if (!confirm("Block this user?")) return;
     try {
       const res = await apiFetch("/friends/blocked", {
         method: "POST",
@@ -146,13 +146,13 @@ export function FriendsPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("已拉黑");
+        toast.success("Blocked");
         loadAll();
       } else {
-        toast.error(data?.detail || data?.message || "拉黑失败");
+        toast.error(data?.detail || data?.message || "Block failed");
       }
     } catch {
-      toast.error("拉黑失败");
+      toast.error("Block failed");
     }
   };
 
@@ -164,13 +164,13 @@ export function FriendsPane({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("已解除拉黑");
+        toast.success("Unblocked");
         loadAll();
       } else {
-        toast.error(data?.detail || data?.message || "解除失败");
+        toast.error(data?.detail || data?.message || "Unblock failed");
       }
     } catch {
-      toast.error("解除失败");
+      toast.error("Unblock failed");
     }
   };
 
@@ -189,25 +189,25 @@ export function FriendsPane({
     if (mode === "friends") {
       return (
         <>
-          {smallButton("私信", () => onOpenDM?.(f.user_id, "user"))}
-          {smallButton("拉黑", () => blockFriend(f.user_id), true)}
-          <DangerButton onClick={() => removeFriend(f.user_id)}>移除</DangerButton>
+          {smallButton("DMs", () => onOpenDM?.(f.user_id, "user"))}
+          {smallButton("Block", () => blockFriend(f.user_id), true)}
+          <DangerButton onClick={() => removeFriend(f.user_id)}>Remove</DangerButton>
         </>
       );
     }
     if (mode === "incoming" && f.friendship_id) {
       return (
         <>
-          {smallButton("拒绝", () => resolveRequest(f.friendship_id!, "reject"), true)}
-          {smallButton("同意", () => resolveRequest(f.friendship_id!, "accept"))}
+          {smallButton("Reject", () => resolveRequest(f.friendship_id!, "reject"), true)}
+          {smallButton("Accept", () => resolveRequest(f.friendship_id!, "accept"))}
         </>
       );
     }
     if (mode === "outgoing" && f.friendship_id) {
-      return <DangerButton onClick={() => cancelRequest(f.friendship_id!)}>撤回</DangerButton>;
+      return <DangerButton onClick={() => cancelRequest(f.friendship_id!)}>Withdraw</DangerButton>;
     }
     if (mode === "blocked") {
-      return <PrimaryButton onClick={() => unblockFriend(f.user_id)}>解除</PrimaryButton>;
+      return <PrimaryButton onClick={() => unblockFriend(f.user_id)}>Unblock</PrimaryButton>;
     }
     return null;
   };
@@ -232,39 +232,39 @@ export function FriendsPane({
     <div className="an-pane">
       <div className="an-pane-head">
         <div>
-          <div className="an-pane-title">好友</div>
+          <div className="an-pane-title">Friends</div>
           <div className="an-pane-sub">
-            {friends.length > 0 ? `共 ${friends.length} 位好友` : "暂无好友"}
+            {friends.length > 0 ? `Total ${friends.length} friends` : "No friends"}
           </div>
         </div>
       </div>
       <div className="an-list-table">
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">添加好友</div>
-          <Field label="通过 UUID">
+          <div className="an-rc-title">Add friend</div>
+          <Field label="By UUID">
             <div style={{ display: "flex", gap: 6 }}>
               <input
                 type="text"
                 value={directId}
                 onChange={(e) => setDirectId(e.target.value)}
-                placeholder="粘贴好友 UUID"
+                placeholder="Paste friend UUID"
                 className={inputCls}
                 style={{ flex: 1, fontFamily: "ui-monospace, monospace" }}
                 onKeyDown={(e) => e.key === "Enter" && addByIdentifier(directId.trim())}
               />
               <PrimaryButton onClick={() => addByIdentifier(directId.trim())} disabled={!directId.trim()}>
-                发送申请
+                Send request
               </PrimaryButton>
             </div>
           </Field>
-          <Field label="或通过用户名搜索">
+          <Field label="Or search by username">
             <SearchPicker
               context="add_friend"
               token={authToken}
               types={["users"]}
               modal
-              placeholder="输入用户名"
-              actionLabel="添加"
+              placeholder="Enter username"
+              actionLabel="Add"
               onSelect={(selection) => {
                 if (selection.type === "user") addByIdentifier(selection.item.user_id);
               }}
@@ -274,10 +274,10 @@ export function FriendsPane({
 
         <div className="an-seg" style={{ alignSelf: "flex-start", margin: "2px 0" }}>
           {[
-            ["friends", `好友 ${friends.length}`],
-            ["incoming", `收到 ${incoming.length}`],
-            ["outgoing", `已发送 ${outgoing.length}`],
-            ["blocked", `黑名单 ${blocked.length}`],
+            ["friends", `Friends ${friends.length}`],
+            ["incoming", `Incoming ${incoming.length}`],
+            ["outgoing", `Sent ${outgoing.length}`],
+            ["blocked", `Blocked ${blocked.length}`],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -292,11 +292,11 @@ export function FriendsPane({
 
         {loading ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
-            加载中…
+            Loading...
           </div>
         ) : visibleRows.length === 0 ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
-            暂无内容
+            No content
           </div>
         ) : (
           visibleRows.map((f) => renderPersonRow(f, tab))

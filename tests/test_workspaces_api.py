@@ -1,4 +1,4 @@
-"""工作空间 API 测试."""
+"""Tests for test workspaces api."""
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,7 @@ from app.db.models import Channel, ChannelMembership, User, Workspace, Workspace
 
 @pytest.mark.asyncio
 async def test_list_workspaces_empty(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/workspaces 无手动创建工作空间时，只返回自动创建的 Personal 空间."""
+    """Covers test list workspaces empty behavior."""
     resp = await client.get("/api/v1/workspaces")
     assert resp.status_code == 200
     data = resp.json()
@@ -20,7 +20,7 @@ async def test_list_workspaces_empty(client: AsyncClient, db_session: AsyncSessi
 
 @pytest.mark.asyncio
 async def test_list_workspaces_returns_created(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/workspaces 返回已存在的工作空间."""
+    """Covers test list workspaces returns created behavior."""
     ws = Workspace(workspace_id="b0000000-0000-0000-0000-000000000001", name="默认空间")
     db_session.add(ws)
     # Add test user as workspace member so list_for_user returns this workspace
@@ -45,7 +45,7 @@ async def test_list_workspaces_returns_created(client: AsyncClient, db_session: 
 
 @pytest.mark.asyncio
 async def test_create_workspace_accepts_avatar_url(client: AsyncClient) -> None:
-    """POST /api/v1/workspaces 支持创建时设置工作空间头像 URL."""
+    """Covers test create workspace accepts avatar url behavior."""
     resp = await client.post(
         "/api/v1/workspaces",
         json={
@@ -69,7 +69,7 @@ async def test_update_workspace_sets_and_clears_avatar_url(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """PUT /api/v1/workspaces/{id} 支持设置和清空工作空间头像 URL."""
+    """Covers test update workspace sets and clears avatar url behavior."""
     ws = Workspace(workspace_id="b0000000-0000-0000-0000-000000000011", name="旧名称")
     db_session.add(ws)
     membership = WorkspaceMembership(

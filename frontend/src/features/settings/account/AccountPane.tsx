@@ -110,7 +110,7 @@ function ProfilePane({
         },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "保存失败");
+      if (!res.ok) throw new Error(data?.detail || "Save failed");
       const user = data?.data || data;
       onProfileUpdated({
         display_name: user?.display_name || displayName,
@@ -118,9 +118,9 @@ function ProfilePane({
         avatar_url: user?.avatar_url ?? (avatarUrl.trim() || null),
       });
       setAvatarUrl(user?.avatar_url || avatarUrl.trim());
-      toast.success("个人资料已更新");
+      toast.success("Profile updated");
     } catch (e: unknown) {
-      toast.error((e as Error).message || "保存失败");
+      toast.error((e as Error).message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -137,9 +137,9 @@ function ProfilePane({
         bio,
         avatar_url: uploaded.avatar_url,
       });
-      toast.success("头像已上传");
+      toast.success("Avatar uploaded");
     } catch (e: unknown) {
-      toast.error((e as Error).message || "头像上传失败");
+      toast.error((e as Error).message || "Avatar upload failed");
     } finally {
       setAvatarUploading(false);
       if (avatarInputRef.current) avatarInputRef.current.value = "";
@@ -148,7 +148,7 @@ function ProfilePane({
 
   const sendEmailCode = async () => {
     if (!email) {
-      toast.error("账号未绑定邮箱");
+      toast.error("Account has no email bound");
       return;
     }
     setEmailCodeLoading(true);
@@ -159,11 +159,11 @@ function ProfilePane({
         body: { email, purpose: "change_password" },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "发送失败");
+      if (!res.ok) throw new Error(data?.detail || "Send failed");
       setEmailCodeSent(true);
-      toast.success(`验证码已发送至 ${email}`);
+      toast.success(`Verification code sent to ${email}`);
     } catch (e: unknown) {
-      toast.error((e as Error).message || "发送失败");
+      toast.error((e as Error).message || "Send failed");
     } finally {
       setEmailCodeLoading(false);
     }
@@ -171,7 +171,7 @@ function ProfilePane({
 
   const changePassword = async () => {
     if (!newPassword || newPassword !== confirmPassword) {
-      toast.error("两次输入的新密码不一致");
+      toast.error("The two new passwords do not match");
       return;
     }
     if (pwMode === "password" && !currentPassword) return;
@@ -187,15 +187,15 @@ function ProfilePane({
         body,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "密码修改失败");
-      toast.success("密码已更新");
+      if (!res.ok) throw new Error(data?.detail || "Password update failed");
+      toast.success("Password updated");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
       setEmailCode("");
       setEmailCodeSent(false);
     } catch (e: unknown) {
-      toast.error((e as Error).message || "密码修改失败");
+      toast.error((e as Error).message || "Password update failed");
     } finally {
       setPwSaving(false);
     }
@@ -211,15 +211,15 @@ function ProfilePane({
       >
         <div>
           <div className="an-pane-title">
-            {accountTab === "profile" ? "编辑资料" : "账号安全"}
+            {accountTab === "profile" ? "Edit profile" : "Account security"}
           </div>
           <div className="an-pane-sub">
             {accountTab === "profile"
-              ? "显示名称、头像与简介。"
-              : "账号标识与密码验证。"}
+              ? "Display name, avatar, and bio."
+              : "Account identity and password verification."}
           </div>
         </div>
-        <div className="an-seg" role="tablist" aria-label="账户设置视图">
+        <div className="an-seg" role="tablist" aria-label="Account settings view">
           <button
             type="button"
             className={accountTab === "profile" ? "on" : ""}
@@ -227,7 +227,7 @@ function ProfilePane({
             role="tab"
             aria-selected={accountTab === "profile"}
           >
-            资料
+            Profile
           </button>
           <button
             type="button"
@@ -236,7 +236,7 @@ function ProfilePane({
             role="tab"
             aria-selected={accountTab === "security"}
           >
-            安全
+            Security
           </button>
         </div>
       </div>
@@ -256,8 +256,8 @@ function ProfilePane({
             </div>
 
             <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
-              <div className="an-rc-title">基本信息</div>
-              <Field label="显示名称">
+              <div className="an-rc-title">Basic information</div>
+              <Field label="Display name">
                 <input
                   type="text"
                   value={displayName}
@@ -265,7 +265,7 @@ function ProfilePane({
                   className={inputCls}
                 />
               </Field>
-              <Field label="头像">
+              <Field label="Avatar">
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input
                     type="url"
@@ -288,7 +288,7 @@ function ProfilePane({
                     disabled={avatarUploading}
                     className="an-btn an-btn-sm"
                   >
-                    {avatarUploading ? "上传中…" : "上传"}
+                    {avatarUploading ? "Uploading..." : "Upload"}
                   </button>
                   {avatarUrl && (
                     <button
@@ -296,12 +296,12 @@ function ProfilePane({
                       onClick={() => setAvatarUrl("")}
                       className="an-btn an-btn-sm"
                     >
-                      清除
+                      Clear
                     </button>
                   )}
                 </div>
               </Field>
-              <Field label="个人简介">
+              <Field label="Bio">
                 <textarea
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
@@ -311,7 +311,7 @@ function ProfilePane({
               </Field>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <PrimaryButton onClick={saveProfile} disabled={saving}>
-                  {saving ? "保存中…" : "保存资料"}
+                  {saving ? "Saving..." : "Save profile"}
                 </PrimaryButton>
               </div>
             </div>
@@ -321,8 +321,8 @@ function ProfilePane({
         {accountTab === "security" && (
           <>
             <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
-              <div className="an-rc-title">账号标识</div>
-              <Field label="UUID（可分享给好友添加）">
+              <div className="an-rc-title">Account identity</div>
+              <Field label="UUID (shareable with friends)">
                 <div style={{ display: "flex", gap: 6 }}>
                   <code className="an-code-pill" style={{ flex: 1 }}>
                     {currentUser.user_id}
@@ -331,36 +331,36 @@ function ProfilePane({
                     type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(currentUser.user_id);
-                      toast.success("UUID 已复制");
+                      toast.success("UUID copied");
                     }}
                     className="an-btn an-btn-sm"
                   >
-                    复制
+                    Copy
                   </button>
                 </div>
               </Field>
             </div>
 
             <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
-              <div className="an-rc-title">修改密码</div>
+              <div className="an-rc-title">Change password</div>
               <div className="an-seg" style={{ alignSelf: "flex-start" }}>
                 <button
                   type="button"
                   className={pwMode === "password" ? "on" : ""}
                   onClick={() => setPwMode("password")}
                 >
-                  密码验证
+                  Password verification
                 </button>
                 <button
                   type="button"
                   className={pwMode === "email" ? "on" : ""}
                   onClick={() => setPwMode("email")}
                 >
-                  邮箱验证
+                  Email verification
                 </button>
               </div>
               {pwMode === "password" ? (
-                <Field label="当前密码">
+                <Field label="Current password">
                   <input
                     type="password"
                     value={currentPassword}
@@ -370,7 +370,7 @@ function ProfilePane({
                   />
                 </Field>
               ) : (
-                <Field label={`邮箱验证码${email ? `（发送至 ${email}）` : "（账号未绑定邮箱）"}`}>
+                <Field label={`Email verification code${email ? ` (sent to ${email})` : "(account has no email bound)"}`}>
                   {email ? (
                     <div style={{ display: "flex", gap: 6 }}>
                       <input
@@ -385,15 +385,15 @@ function ProfilePane({
                         onClick={sendEmailCode}
                         className="an-btn an-btn-sm"
                       >
-                        {emailCodeLoading ? "发送中…" : emailCodeSent ? "重新发送" : "获取验证码"}
+                        {emailCodeLoading ? "Sending..." : emailCodeSent ? "Resend" : "Get code"}
                       </button>
                     </div>
                   ) : (
-                    <div className="an-text-danger">账号未绑定邮箱，无法使用邮箱验证</div>
+                    <div className="an-text-danger">Account has no email bound,Email verification is unavailable</div>
                   )}
                 </Field>
               )}
-              <Field label="新密码">
+              <Field label="New password">
                 <input
                   type="password"
                   value={newPassword}
@@ -402,7 +402,7 @@ function ProfilePane({
                   autoComplete="new-password"
                 />
               </Field>
-              <Field label="确认新密码">
+              <Field label="Confirm new password">
                 <input
                   type="password"
                   value={confirmPassword}
@@ -422,7 +422,7 @@ function ProfilePane({
                     (pwMode === "email" && !emailCode)
                   }
                 >
-                  {pwSaving ? "更新中…" : "更新密码"}
+                  {pwSaving ? "Updating..." : "Update password"}
                 </PrimaryButton>
               </div>
             </div>
@@ -474,15 +474,15 @@ export function KeychainPane({ authToken }: { authToken: string }) {
         },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "创建失败");
+      if (!res.ok) throw new Error(data?.detail || "Create failed");
       setItems((prev) => [...prev, data]);
       setNewName("");
       setNewValue("");
       setNewDesc("");
       setShowValue(false);
-      toast.success("密钥已保存");
+      toast.success("Secret saved");
     } catch (e: unknown) {
-      toast.error((e as Error).message || "创建失败");
+      toast.error((e as Error).message || "Create failed");
     } finally {
       setSaving(false);
     }
@@ -495,11 +495,11 @@ export function KeychainPane({ authToken }: { authToken: string }) {
         method: "DELETE",
         token: authToken,
       });
-      if (!res.ok) throw new Error("删除失败");
+      if (!res.ok) throw new Error("Delete failed");
       setItems((prev) => prev.filter((k) => k.key_id !== keyId));
-      toast.success("密钥已删除");
+      toast.success("Secret deleted");
     } catch (e: unknown) {
-      toast.error((e as Error).message || "删除失败");
+      toast.error((e as Error).message || "Delete failed");
     } finally {
       setDeletingId(null);
     }
@@ -509,20 +509,20 @@ export function KeychainPane({ authToken }: { authToken: string }) {
     <div className="an-pane">
       <div className="an-pane-head">
         <div>
-          <div className="an-pane-title">钥匙链</div>
+          <div className="an-pane-title">Keychain</div>
           <div className="an-pane-sub">
-            在频道消息中使用 <code>$secret&#123;名称&#125;</code> 引用密钥，Bot 会自动获取真实值。
+            Use <code>$secret&#123;Name&#125;</code> in channel messages to reference a secret. Bots will automatically receive the real value.
           </div>
         </div>
       </div>
       <div className="an-list-table">
         {loading ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
-            加载中…
+            Loading...
           </div>
         ) : items.length === 0 ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
-            暂无密钥
+            No secrets
           </div>
         ) : (
           items.map((it) => (
@@ -537,24 +537,24 @@ export function KeychainPane({ authToken }: { authToken: string }) {
                 {it.description && <div className="an-rc-sub">{it.description}</div>}
               </div>
               <DangerButton onClick={() => remove(it.key_id)} disabled={deletingId === it.key_id}>
-                {deletingId === it.key_id ? "删除中…" : "删除"}
+                {deletingId === it.key_id ? "Deleting..." : "Delete"}
               </DangerButton>
             </div>
           ))
         )}
 
         <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-          <div className="an-rc-title">添加新密钥</div>
-          <Field label="名称">
+          <div className="an-rc-title">Add new secret</div>
+          <Field label="Name">
             <input
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="如 openai-key"
+              placeholder="e.g. openai-key"
               className={inputCls}
             />
           </Field>
-          <Field label="密钥值">
+          <Field label="Secret value">
             <div style={{ position: "relative" }}>
               <input
                 type={showValue ? "text" : "password"}
@@ -569,11 +569,11 @@ export function KeychainPane({ authToken }: { authToken: string }) {
                 className="an-over-input-action"
                 tabIndex={-1}
               >
-                {showValue ? "隐藏" : "显示"}
+                {showValue ? "Hide" : "Show"}
               </button>
             </div>
           </Field>
-          <Field label="描述（可选）">
+          <Field label="Description (optional)">
             <input
               type="text"
               value={newDesc}
@@ -583,7 +583,7 @@ export function KeychainPane({ authToken }: { authToken: string }) {
           </Field>
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <PrimaryButton onClick={create} disabled={saving || !newName.trim() || !newValue.trim()}>
-              {saving ? "保存中…" : "保存密钥"}
+              {saving ? "Saving..." : "Save secret"}
             </PrimaryButton>
           </div>
         </div>
@@ -611,8 +611,8 @@ export function AccountPane({
       <div className="an-pane">
         <div className="an-pane-head">
           <div>
-            <div className="an-pane-title">账户</div>
-            <div className="an-pane-sub">尚未登录</div>
+            <div className="an-pane-title">Account</div>
+            <div className="an-pane-sub">Not signed in</div>
           </div>
         </div>
       </div>
@@ -630,10 +630,10 @@ export function AccountPane({
         style={{ justifyContent: "space-between", marginTop: 12, flexShrink: 0 }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="an-rc-title" style={{ color: "var(--red)" }}>退出登录</div>
-          <div className="an-rc-sub">清除本地令牌并返回登录界面。</div>
+          <div className="an-rc-title" style={{ color: "var(--red)" }}>Sign outSign in</div>
+          <div className="an-rc-sub">Clear the local token and return to sign-in.</div>
         </div>
-        <DangerButton onClick={onLogout}>退出登录</DangerButton>
+        <DangerButton onClick={onLogout}>Sign outSign in</DangerButton>
       </div>
     </div>
   );

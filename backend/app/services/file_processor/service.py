@@ -1,4 +1,4 @@
-"""文件上传与解析服务：封装 presign、校验、对象读取与文本解析。"""
+"""Service module."""
 from __future__ import annotations
 
 import asyncio
@@ -73,7 +73,7 @@ _DEFAULT_CONTENT_TYPES: dict[str, str] = {
 
 
 class FileFlowError(Exception):
-    """文件链路业务异常。"""
+    """File Flow Error schema or model."""
 
     def __init__(self, detail: str, *, status_code: int = 400) -> None:
         super().__init__(detail)
@@ -83,7 +83,7 @@ class FileFlowError(Exception):
 
 @dataclass(frozen=True)
 class FileUploadReservation:
-    """前端直传所需的完整信息。"""
+    """File Upload Reservation schema or model."""
 
     file_id: str
     object_key: str
@@ -93,7 +93,7 @@ class FileUploadReservation:
 
 
 class FilePipelineService:
-    """复用存储抽象层，完成文件上传前校验与推理前准备。"""
+    """File Pipeline Service schema or model."""
 
     def __init__(
         self,

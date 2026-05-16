@@ -1,4 +1,4 @@
-"""Mock 适配器 —— 本地测试 + adapter_resolver 的兜底返回值."""
+"""Mock bot module."""
 
 from collections.abc import AsyncIterator
 
@@ -7,13 +7,7 @@ from app.features.bot_runtime.pipeline.adapter_events import AdapterEvent, Final
 
 
 class MockBotAdapter(BotAdapter):
-    """不调用真实后端，直接返回固定文案。
-
-    使用场景：
-    - 单元 / 集成测试替身
-    - ``adapter_resolver`` 对未知 Bot、未配置模型/模板、离线 Bot 等错误状态
-      的兜底返回（``reply`` 写入占位说明，避免消息流中断）。
-    """
+    """Mock Bot Adapter schema or model."""
 
     def __init__(self, reply: str = "Mock bot 已收到。", healthy: bool = True) -> None:
         self.reply = reply

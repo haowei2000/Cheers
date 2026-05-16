@@ -1,20 +1,4 @@
-"""Agent Bridge 路由。
-
-- POST /api/v1/agent-bridge/messages — plugin 回推 Bot 回复
-- WS   /ws/agent-bridge/dispatch       — plugin 订阅派发事件（需 subscribe 握手）
-- GET  /api/v1/agent-bridge/status     — 在线 plugin 数 + pending 数
-- GET  /api/v1/agent-bridge/channels/{channel_id}/bots — 该频道下的 Agent Bridge Bot 清单（精简字段）
-
-鉴权：共享密钥 `AGENT_BRIDGE_TOKEN`（.env 配置）
-  - POST/GET：Header `X-Agent-Bridge-Token`
-  - WS：连接 URL 查询参数 `?token=...`
-
-写入校验（第一阶段最小安全补丁）：
-  - POST /messages：目标 Bot 必须是频道成员、状态 online；file_ids 必须在同频道；
-    in_reply_to_msg_id 必须指向同频道内消息。
-  - GET /channels/{id}/bots：不回 binding_config，只暴露公共字段。
-  - WS 订阅必须在握手时声明 bot_ids，dispatcher 定向推送，未声明前不收事件。
-"""
+"""Agent Bridge API routes."""
 from __future__ import annotations
 
 import asyncio
@@ -364,11 +348,7 @@ async def bridge_list_channel_bots(
     session: AsyncSession = Depends(get_session),
     _: None = Depends(verify_bridge_token),
 ) -> APIResponse:
-    """列出该频道下绑定为 Agent Bridge 的 Bot。
-
-    精简字段：仅暴露 bot_id / username / display_name / status。
-    敏感 binding_config 不回显（留待 per-plugin 凭证上线后按配额回拉）。
-    """
+    """Bridge list channel bots."""
     rows = (await session.execute(
         select(BotAccount)
         .join(ChannelMembership, ChannelMembership.member_id == BotAccount.bot_id)
@@ -414,7 +394,7 @@ def _parse_bearer_header(authorization: str | None) -> str | None:
 async def _resolve_bot_by_bearer(
     session: AsyncSession, authorization: str | None,
 ) -> BotAccount:
-    """Bearer agb_xxx → BotAccount。失败统一抛 401。"""
+    """Resolve bot by bearer."""
     if not settings.agent_bridge_enabled:
         raise HTTPException(status_code=503, detail="Agent Bridge 已禁用")
     token = _parse_bearer_header(authorization)
@@ -474,13 +454,7 @@ async def bridge_read_file_content(
     authorization: str | None = Header(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """Bot 读取一个频道内文件的已转换 markdown 正文。
-
-    鉴权：per-bot token `Authorization: Bearer agb_...`（即 plugin 的 botToken）。
-    授权：bot 必须是文件所在频道的成员。
-    返回：{file_id, filename, content_type, size_bytes, content, truncated, summary}。
-    图片类文件不通过此接口取 base64；此接口仅为文档内容。
-    """
+    """Bridge read file content."""
     bot = await _resolve_bot_by_bearer(session, authorization)
 
     record = (await session.execute(
@@ -533,12 +507,7 @@ async def bridge_read_file_binary(
     authorization: str | None = Header(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """Bot 读取一个频道内文件的原始二进制内容，供 ACP image/resource 输入使用。
-
-    鉴权：per-bot token `Authorization: Bearer agb_...`。
-    授权：bot 必须是文件所在频道的成员。
-    返回 base64，connector 可转换为 ACP `image` 或 blob `resource` content block。
-    """
+    """Bridge read file binary."""
     bot = await _resolve_bot_by_bearer(session, authorization)
 
     record = (await session.execute(
@@ -591,12 +560,7 @@ async def bridge_upload_markdown_file(
     authorization: str | None = Header(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """Bot 上传一段 markdown 文本为频道附件，返回 file_id。
-
-    鉴权：per-bot token `Authorization: Bearer agb_...`。
-    授权：bot 必须是目标频道的成员。
-    用途：agent 产出超长内容时，plugin 可把正文转存为 .md 文件作为消息附件。
-    """
+    """Bridge upload markdown file."""
     bot = await _resolve_bot_by_bearer(session, authorization)
     await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=body.channel_id)
 
@@ -669,19 +633,7 @@ async def bridge_upload_binary_file(
     content_type: str | None = Header(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    """Bot 上传一个二进制文件为频道附件，返回 file_id。
-
-    鉴权：per-bot token `Authorization: Bearer agb_...`。
-    授权：bot 必须是目标频道的成员。
-    用途：provider gateway 抽出 agent 输出的 MEDIA: 行后，bridge plugin 通过
-    `sendMedia({ to, filePath })` 拿到本地媒体文件，调本接口上传并得到 file_id，
-    再在后续 reply/send 帧里带上 file_ids。
-
-    协议（走 raw body 而非 multipart，避免引入 python-multipart 依赖）：
-      - Body：二进制文件原始字节；Content-Type: 文件 MIME（或 application/octet-stream）
-      - Header X-Channel-Id：目标频道 id（必填）
-      - Header X-Filename：原始文件名（必填，用于扩展名 + 展示）
-    """
+    """Bridge upload binary file."""
     bot = await _resolve_bot_by_bearer(session, authorization)
     await _assert_bot_membership(session, bot_id=bot.bot_id, channel_id=x_channel_id)
 
@@ -831,10 +783,7 @@ class _BridgeOutboundWriter:
 async def _resolve_subscribable_bot_ids(
     session: AsyncSession, requested: list[str],
 ) -> tuple[list[str], list[str]]:
-    """过滤 plugin 声明的 bot_ids：只保留确实存在且 binding_type='agent_bridge' 的。
-
-    Returns: (accepted, rejected)
-    """
+    """Resolve subscribable bot ids."""
     if not requested:
         return [], []
     rows = (await session.execute(
@@ -968,7 +917,7 @@ _WS_CLOSE_BOT_UNAVAILABLE = 4403  # Invalid binding_type or status != online.
 
 
 def _extract_bearer_token(websocket: WebSocket) -> str | None:
-    """优先从 Authorization 头取 Bearer；缺失时退化到 ?token= 查询参数（便于 CLI 调试）。"""
+    """Extract bearer token."""
     auth = websocket.headers.get("authorization") or ""
     if auth.lower().startswith("bearer "):
         return auth[7:].strip() or None
@@ -977,11 +926,7 @@ def _extract_bearer_token(websocket: WebSocket) -> str | None:
 
 @ws_router.websocket("/ws/agent-bridge/control")
 async def control_websocket(websocket: WebSocket) -> None:
-    """Agent Bridge control 流 —— membership 事件 + 心跳。
-
-    认证：`Authorization: Bearer agb_...`（推荐）或 `?token=agb_...`（便于 CLI 调试）。
-    同一 bot_id 的新连接会把旧连接以 4402 踢下线。
-    """
+    """Control websocket."""
     from app.db.session import async_session_factory
 
     token = _extract_bearer_token(websocket)
@@ -1070,7 +1015,7 @@ async def _send_send_ack_err(websocket: WebSocket, client_msg_id: str | None, co
 async def _handle_data_reply(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
-    """plugin 回推 Bot 回复：finalize 占位消息或新建消息。"""
+    """Handle data reply."""
     from app.db.session import async_session_factory
     from app.features.agent_bridge.validators import (
         check_bot_in_channel,
@@ -1300,7 +1245,7 @@ async def _handle_data_error(
 async def _handle_data_send(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
-    """plugin 主动在某频道发一条 Bot 消息（非响应式）。"""
+    """Handle data send."""
     from app.db.session import async_session_factory
     from app.features.agent_bridge.validators import (
         check_bot_in_channel,
@@ -1367,22 +1312,7 @@ async def _handle_data_send(
 async def _handle_data_file_upload(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
-    """Plugin 通过 data WS 直传二进制文件，避免依赖 HTTP /files/upload-binary。
-
-    入帧:
-      {
-        "type": "file_upload",
-        "client_file_id": "<plugin 自定关联 id，回 ack 时原样带回>",
-        "channel_id": "<目标频道>",
-        "filename": "report.pdf",
-        "content_type": "application/pdf",   # optional
-        "data_b64": "<base64 of raw bytes>",
-      }
-
-    回帧:
-      成功 -> {type:"file_upload_ack", client_file_id, ok:true, file_id, filename, content_type, size_bytes}
-      失败 -> {type:"file_upload_ack", client_file_id, ok:false, code, error}
-    """
+    """Handle data file upload."""
     import base64
     import mimetypes as _mimetypes
 
@@ -1499,10 +1429,7 @@ async def _handle_data_file_upload(
 
 @ws_router.websocket("/ws/agent-bridge/data")
 async def data_websocket(websocket: WebSocket) -> None:
-    """Agent Bridge data 流 —— 消息入站 + reply/send 回推 + 心跳。
-
-    认证、接管、错误码与 control WS 一致（4401/4402/4403）。
-    """
+    """Data websocket."""
     from app.db.session import async_session_factory
 
     token = _extract_bearer_token(websocket)

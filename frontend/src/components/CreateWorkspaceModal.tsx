@@ -21,20 +21,20 @@ export function CreateWorkspaceModal({
   onClose,
 }: CreateWorkspaceModalProps) {
   return (
-    <Modal open={open} onClose={onClose} title="创建工作空间">
+    <Modal open={open} onClose={onClose} title="Create workspace">
       <div className="space-y-4">
         <div>
           <label
             className="block text-sm font-medium mb-1"
             style={{ color: "var(--fg-2)" }}
           >
-            名称
+            Name
           </label>
           <input
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="输入工作空间名称"
+            placeholder="Enter workspace name"
             className="an-input"
             onKeyDown={(e) => e.key === "Enter" && onSubmit()}
             autoFocus
@@ -46,14 +46,14 @@ export function CreateWorkspaceModal({
               className="block text-sm font-medium mb-1"
               style={{ color: "var(--fg-2)" }}
             >
-              图标
+              Icon
             </label>
             <div className="flex flex-col gap-2">
               <input
                 type="text"
                 value={avatarUrl}
                 onChange={(e) => onAvatarUrlChange(e.target.value)}
-                placeholder="图标 URL 或选择内置图标"
+                placeholder="Icon URL or choose a built-in icon"
                 className="an-input"
               />
               <AvatarIconPicker
@@ -70,14 +70,14 @@ export function CreateWorkspaceModal({
             onClick={onClose}
             className="an-btn an-btn-ghost"
           >
-            取消
+            Cancel
           </button>
           <button
             type="button"
             onClick={onSubmit}
             className="an-btn an-btn-primary"
           >
-            创建
+            created
           </button>
         </ModalFooter>
       </div>

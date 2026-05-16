@@ -1,4 +1,4 @@
-"""单机 WebSocket 连接管理，按频道/用户本地投递。"""
+"""Ws service module."""
 from __future__ import annotations
 
 import asyncio
@@ -104,11 +104,7 @@ class _ManagedConnection:
 
 
 class ConnectionManager:
-    """频道/用户 WebSocket 连接管理，内存实现.
-
-    广播只把 frame 放入每个连接的有界 outbound queue，不再等待所有
-    socket 直接写入完成；慢客户端会被关闭并从本地索引清理。
-    """
+    """Connection Manager schema or model."""
 
     def __init__(self) -> None:
         self._channel_connections: dict[str, list[_ManagedConnection]] = defaultdict(list)
@@ -146,11 +142,11 @@ class ConnectionManager:
             await conn.close()
 
     async def broadcast_to_channel(self, channel_id: str, message: dict) -> None:
-        """向频道内所有本实例连接投递消息。"""
+        """Broadcast to channel."""
         await self._broadcast_local(self._channel_connections, channel_id, message)
 
     async def broadcast_to_user(self, user_id: str, message: dict) -> None:
-        """向某用户的所有本实例连接投递轻量通知。"""
+        """Broadcast to user."""
         await self._broadcast_local(self._user_connections, user_id, message)
 
     async def connected_user_ids(self, user_ids: set[str]) -> set[str]:

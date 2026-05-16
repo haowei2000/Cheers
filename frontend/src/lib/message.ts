@@ -122,7 +122,7 @@ export function parseQuotePrefix(
 }
 
 /**
- * Strip leading `> [Author]: … \n` blockquote-prefix lines from content.
+ * Strip leading `> [Author]: ... \n` blockquote-prefix lines from content.
  * Called on bot-generated messages to remove the name-prefix format that
  * LLMs sometimes hallucinate when they've seen reply-quote prefixes in the
  * conversation history.
@@ -155,7 +155,7 @@ export function formatDayLabel(iso: string | undefined): string {
   const diffDays = Math.round(
     (startOf(d) - startOf(now)) / 86_400_000,
   );
-  if (diffDays === 0) return "今天";
-  if (diffDays === -1) return "昨天";
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  if (diffDays === 0) return "Today";
+  if (diffDays === -1) return "Yesterday";
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }

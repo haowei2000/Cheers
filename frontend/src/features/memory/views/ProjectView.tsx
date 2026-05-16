@@ -24,12 +24,12 @@ export function ProjectView({
         className="flex items-center justify-center h-20 text-xs"
         style={{ color: "var(--fg-3)" }}
       >
-        加载中…
+        Loading...
       </div>
     );
   }
 
-  const doneRe = /done|完成|已做|shipped|merged|resolved|批准|approved/i;
+  const doneRe = /done|Done|\u5df2\u505a|shipped|merged|resolved|\u6279\u51c6|approved/i;
   const isDone = (e: MemoryEntryItem) =>
     doneRe.test(e.content + " " + (e.title || ""));
   const progressDone = progress.filter(isDone).length;
@@ -69,9 +69,9 @@ export function ProjectView({
           className="text-center py-10 text-xs"
           style={{ color: "var(--fg-3)" }}
         >
-          暂无项目锚点与进度。
+          No project anchor or progress yet.
           <br />
-          点击右上角“编辑”添加 Anchor / Progress 后会显示在这里。
+          Click Edit in the top-right to add anchors or progress. They will appear here.
         </div>
       </div>
     );
@@ -110,7 +110,7 @@ export function ProjectView({
                 <MessageMarkdown text={primaryAnchor.content} />
               </div>
               <div className="an-mt">
-                {completed} / {totalSteps} 步
+                {completed} / {totalSteps} steps
                 {primaryAnchor.updated_at && (
                   <> · {new Date(primaryAnchor.updated_at).toLocaleString()}</>
                 )}

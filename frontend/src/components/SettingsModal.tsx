@@ -54,31 +54,31 @@ type SettingsNavGroup = {
 
 const SETTINGS_NAV: SettingsNavGroup[] = [
   {
-    label: "智能体",
+    label: "Agents",
     items: [
-      { id: "bots", icon: "bot", label: "Bot", hint: "账号与状态" },
-      { id: "templates", icon: "note", label: "模板", hint: "Prompt 复用" },
-      { id: "models", icon: "model", label: "模型", hint: "LLM Provider" },
+      { id: "bots", icon: "bot", label: "Bot", hint: "Accounts and status" },
+      { id: "templates", icon: "note", label: "Template", hint: "Prompt reuse" },
+      { id: "models", icon: "model", label: "Models", hint: "LLM Provider" },
     ],
   },
   {
-    label: "个人",
+    label: "Personal",
     items: [
-      { id: "account", icon: "user", label: "账户", hint: "资料与密码" },
-      { id: "friends", icon: "userPlus", label: "好友", hint: "关系与申请" },
-      { id: "keychain", icon: "key", label: "钥匙链", hint: "密钥引用" },
+      { id: "account", icon: "user", label: "Account", hint: "Profile and password" },
+      { id: "friends", icon: "userPlus", label: "Friends", hint: "Relationships and requests" },
+      { id: "keychain", icon: "key", label: "Keychain", hint: "Secret references" },
     ],
   },
   {
-    label: "界面",
+    label: "Interface",
     items: [
-      { id: "appearance", icon: "palette", label: "外观", hint: "主题与密度" },
+      { id: "appearance", icon: "palette", label: "Appearance", hint: "Topics and density" },
     ],
   },
   {
-    label: "反馈",
+    label: "Feedback",
     items: [
-      { id: "bulletin", icon: "messageCircle", label: "留言板", hint: "反馈与记录" },
+      { id: "bulletin", icon: "messageCircle", label: "Bulletin", hint: "Feedback and records" },
     ],
   },
 ];
@@ -137,12 +137,12 @@ export function SettingsModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="设置 · Settings"
+      title="Settings · Settings"
       maxWidth="max-w-4xl"
       panelClassName="overflow-hidden"
     >
       <div className="an-modal-body -mx-5 -my-4">
-        <nav className="an-settings-nav" aria-label="设置导航">
+        <nav className="an-settings-nav" aria-label="Settings navigation">
           {SETTINGS_NAV.map((group) => (
             <div key={group.label} className="an-sn-group">
               <div className="an-sn-group-title">{group.label}</div>
@@ -217,8 +217,8 @@ export function SettingsModal({
             <div className="an-pane">
               <div className="an-pane-head">
                 <div>
-                  <div className="an-pane-title">钥匙链</div>
-                  <div className="an-pane-sub">登录后可管理密钥引用。</div>
+                  <div className="an-pane-title">Keychain</div>
+                  <div className="an-pane-sub">Sign in to manage secret references.</div>
                 </div>
               </div>
             </div>

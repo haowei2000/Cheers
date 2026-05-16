@@ -1,4 +1,4 @@
-"""种子数据：默认工作空间、提示词模板、Bot、测试用户."""
+"""Seed data for workspaces, prompt templates, Bots, and test users."""
 import asyncio
 
 from sqlalchemy import delete, select
@@ -31,7 +31,7 @@ REMOVED_HELP_BOT_IDS = ("bot-guide-001", "bot-guide-helper-001")
 
 
 async def _remove_removed_help_bots(session: AsyncSession) -> bool:
-    """删除旧帮助类内置 Bot，避免和 Coordinator 重复。"""
+    """Remove removed help bots."""
     did_write = False
     result = await session.execute(
         delete(ChannelMembership).where(ChannelMembership.member_id.in_(REMOVED_HELP_BOT_IDS))
@@ -45,7 +45,7 @@ async def _remove_removed_help_bots(session: AsyncSession) -> bool:
 
 
 async def _seed_helper_bot(session: AsyncSession) -> bool:
-    """创建统一内置 Bot（@Coordinator）：帮助 + 协作 + 记忆管理三合一。"""
+    """Seed helper bot."""
     r = await session.execute(select(BotAccount).where(BotAccount.bot_id == HELPER_BOT_ID))
     existing = r.scalar_one_or_none()
     if existing is not None:
@@ -80,7 +80,7 @@ async def _seed_helper_bot(session: AsyncSession) -> bool:
 
 
 async def _seed_templates(session: AsyncSession) -> bool:
-    """创建示例提示词模板."""
+    """Seed templates."""
     did_write = False
 
     r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_GENERAL_ID))
@@ -144,7 +144,7 @@ async def _seed_templates(session: AsyncSession) -> bool:
 
 
 async def _seed_workspace_and_users(session: AsyncSession) -> bool:
-    """创建工作区、频道、管理员用户."""
+    """Seed workspace and users."""
     did_write = False
 
     r = await session.execute(select(Workspace).where(Workspace.workspace_id == WORKSPACE_ID))
@@ -233,7 +233,7 @@ async def _seed_memberships(session: AsyncSession) -> bool:
 
 
 def _dm_name_members(channel_name: str | None) -> set[str]:
-    """解析 ChannelService.get_or_create_dm 写入频道名中的成员 ID。"""
+    """Dm name members."""
     if not channel_name:
         return set()
     if channel_name.startswith("dmchat:"):
@@ -244,7 +244,7 @@ def _dm_name_members(channel_name: str | None) -> set[str]:
 
 
 async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
-    """让内置 Bot 留在普通频道，并从无关 DM 中移除。"""
+    """Ensure builtin bot memberships."""
     await session.flush()
 
     dm_builtin_rows = (
@@ -290,7 +290,7 @@ async def _ensure_builtin_bot_memberships(session: AsyncSession) -> None:
 
 
 async def seed(session: AsyncSession) -> bool:
-    """写入种子数据（若已存在则跳过）。返回是否执行了写入。"""
+    """Seed."""
     did_write = False
 
     did_write |= await _seed_templates(session)
@@ -303,7 +303,7 @@ async def seed(session: AsyncSession) -> bool:
 
 
 async def run_seed() -> None:
-    """在独立会话中执行种子并提交。"""
+    """Run seed."""
     async with async_session_factory() as session:
         try:
             await seed(session)
@@ -314,7 +314,7 @@ async def run_seed() -> None:
 
 
 async def _sync_admin_credentials(session: AsyncSession) -> None:
-    """每次启动时将 admin 账号的用户名/显示名同步为 .env 中的配置；仅在密码变更时重新哈希。"""
+    """Sync admin credentials."""
     r = await session.execute(select(User).where(User.user_id == ADMIN_USER_ID))
     admin = r.scalar_one_or_none()
     if admin is None:
@@ -326,10 +326,7 @@ async def _sync_admin_credentials(session: AsyncSession) -> None:
 
 
 async def ensure_builtin_bot() -> None:
-    """每次启动时无条件确保内置 Coordinator 存在，并加入所有现有普通频道。
-
-    不依赖 SEED_DATA 环境变量，保证升级后旧库也能自动补齐内置 Bot。
-    """
+    """Ensure builtin bot."""
     async with async_session_factory() as session:
         try:
             await _remove_removed_help_bots(session)

@@ -1,7 +1,4 @@
-"""邮件发送服务（SMTP）。
-
-若 SMTP 未配置，则将验证码打印到日志（开发模式）。
-"""
+"""Email service module."""
 import asyncio
 import logging
 import smtplib
@@ -13,7 +10,7 @@ logger = logging.getLogger("app.services.auth.email")
 
 def _send_sync(host: str, port: int, username: str, password: str, use_tls: bool,
                use_ssl: bool, from_addr: str, to_addr: str, subject: str, body: str) -> None:
-    """同步 SMTP 发送（在线程中执行）."""
+    """Send sync."""
     msg = EmailMessage()
     msg["From"] = from_addr
     msg["To"] = to_addr
@@ -40,7 +37,7 @@ def _send_sync(host: str, port: int, username: str, password: str, use_tls: bool
 
 
 async def send_verification_code(to_email: str, code: str, purpose: str) -> None:
-    """发送验证码邮件。"""
+    """Send verification code."""
     from app.config import settings
 
     purpose_labels = {

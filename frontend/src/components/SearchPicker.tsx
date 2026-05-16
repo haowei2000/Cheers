@@ -93,14 +93,14 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       channelId,
       types,
       typeOptions = [],
-      placeholder = "搜索",
+      placeholder = "Search",
       limit = 5,
       keyboardHint,
       enableShortcut = false,
       className = "",
       modal = false,
       autoFocus = false,
-      emptyText = "没有匹配项",
+      emptyText = "No matches",
       actionLabel,
       scopeLabel,
       scopeTitle,
@@ -294,7 +294,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
           }
         }}
         placeholder={placeholder}
-        aria-label={scopeLabel ? `${placeholder}，当前范围：${scopeLabel}` : placeholder}
+        aria-label={scopeLabel ? `${placeholder}, current scope: ${scopeLabel}` : placeholder}
       />
     );
 
@@ -308,8 +308,8 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             <button
               type="button"
               className={`an-search-scope ${canOpenSettings ? "is-clickable" : ""} ${settingsOpen ? "is-active" : ""}`}
-              title={canOpenSettings ? `搜索设置${scopeDescription ? `；${scopeDescription}` : ""}` : scopeDescription}
-              aria-label={canOpenSettings ? "搜索设置" : scopeDescription}
+              title={canOpenSettings ? `Search settings${scopeDescription ? `;${scopeDescription}` : ""}` : scopeDescription}
+              aria-label={canOpenSettings ? "Search settings" : scopeDescription}
               aria-haspopup={canOpenSettings ? "dialog" : undefined}
               aria-expanded={canOpenSettings ? settingsOpen : undefined}
               disabled={!canOpenSettings}
@@ -355,7 +355,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
         )}
         {open && q.trim() && (
           <div className="an-search-pop" role="listbox">
-            {!results && busy && <div className="an-search-empty">搜索中...</div>}
+            {!results && busy && <div className="an-search-empty">Searching...</div>}
             {results && !hasHits && !busy && (
               <div className="an-search-empty">{emptyText}</div>
             )}

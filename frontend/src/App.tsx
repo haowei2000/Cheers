@@ -388,7 +388,7 @@ export default function App() {
       mode: "single",
       sourceMessageIds: [],
       sourceFileIds: [file.file_id],
-      summary: `转发文件：${file.original_filename || file.file_id}`,
+        summary: `Forward file: ${file.original_filename || file.file_id}`,
     });
   }, []);
   const {
@@ -555,7 +555,7 @@ export default function App() {
       })
       .catch((e) => {
         if ((e as { name?: string }).name === "AbortError") return;
-        setPageTopicError("话题消息加载失败");
+        setPageTopicError("Failed to load topic messages");
       })
       .finally(() => {
         if (!controller.signal.aborted) setPageTopicLoading(false);
@@ -596,11 +596,11 @@ export default function App() {
     if (!selectedId || !content.trim()) return Promise.resolve();
     if (!currentUserId) {
       setLoginModalOpen(true);
-      toast.error("请先登录后再发送消息");
+      toast.error("Sign in before sending messages");
       return Promise.resolve();
     }
     if (isSystemDm) {
-      toast.error("好友通知会话不能直接发送消息");
+      toast.error("Friend notification conversations cannot send messages directly");
       return Promise.resolve();
     }
     const targetChannelId = selectedId;
@@ -636,11 +636,11 @@ export default function App() {
     if (!selectedId || (!rawContent.trim() && pendingFileIds.length === 0)) return;
     if (!currentUserId) {
       setLoginModalOpen(true);
-      toast.error("请先登录后再发送消息");
+      toast.error("Sign in before sending messages");
       return;
     }
     if (isSystemDm) {
-      toast.error("好友通知会话不能直接发送消息");
+      toast.error("Friend notification conversations cannot send messages directly");
       return;
     }
     const targetChannelId = selectedId;
@@ -732,13 +732,13 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok || data?.status === "error") {
-        toast.error(data?.detail || data?.message || "刷新 DM Session 失败");
+        toast.error(data?.detail || data?.message || "Failed to refresh DM sessions");
         return;
       }
       setDmSessionRefreshNonce((v) => v + 1);
-      toast.success("DM Session 已刷新");
+      toast.success("DM sessions refreshed");
     } catch {
-      toast.error("刷新 DM Session 失败");
+      toast.error("Failed to refresh DM sessions");
     } finally {
       setRefreshingDmSession(false);
     }
@@ -763,10 +763,10 @@ export default function App() {
             [msgId]: d.data.content,
           }));
         } else {
-          toast.error(d.detail || "无法查看加密内容");
+          toast.error(d.detail || "Cannot view encrypted content");
         }
       })
-      .catch(() => toast.error("请求失败"));
+      .catch(() => toast.error("Request failed"));
   };
 
   // Copy a message's rendered text (stripping think-folds / helper payload
@@ -775,9 +775,9 @@ export default function App() {
     const raw = parseHelperPayload(m.content || "").text || m.content || "";
     try {
       await navigator.clipboard.writeText(raw);
-      toast.success("已复制");
+      toast.success("Copied");
     } catch {
-      toast.error("复制失败");
+      toast.error("Copy failed");
     }
   };
 
@@ -844,7 +844,7 @@ export default function App() {
     if (!text.trim() && attachedFileIds.length === 0) return;
     if (!currentUserId) {
       setLoginModalOpen(true);
-      toast.error("请先登录后再发送回复");
+      toast.error("Sign in before replying");
       return;
     }
     const body: Record<string, unknown> = {
@@ -877,7 +877,7 @@ export default function App() {
     schema: ClarifySchema,
     answers: ClarifyAnswers,
   ) => {
-    const lines = ["@Coordinator 澄清回答："];
+    const lines = ["@Coordinator clarification answer:"];
     const optText = answers.option_text || {};
     for (const q of schema.questions) {
       const picked = new Set(answers.selected[q.id] || []);
@@ -885,31 +885,31 @@ export default function App() {
         .filter((o) => picked.has(o.id))
         .map((o) => {
           const txt = (optText[`${q.id}:${o.id}`] || "").trim();
-          return txt ? `${o.label}：${txt}` : o.label;
+          return txt ? `${o.label}: ${txt}` : o.label;
         });
       if (picked.has(OTHER_CHOICE_ID)) {
         const other = (answers.other_text?.[q.id] || "").trim();
-        if (other) labels.push(`其他：${other}`);
+        if (other) labels.push(`Other: ${other}`);
       }
       lines.push(
-        `- ${q.prompt}：${labels.length > 0 ? labels.join("、") : "未选择"}`,
+        `- ${q.prompt}: ${labels.length > 0 ? labels.join(", ") : "Not selected"}`,
       );
     }
     setPendingClarifyReplyMsgId(msgId);
     sendUserMessage(lines.join("\n"), msgId).catch(() => {
       setPendingClarifyReplyMsgId(null);
-      toast.error("提交失败，请重试");
+      toast.error("Submit failed. Try again.");
     });
   };
 
   const handleClarifySkip = (msgId: string) => {
     setPendingClarifyReplyMsgId(msgId);
     sendUserMessage(
-      "@Coordinator 用户选择跳过澄清，请在当前信息下继续回答。",
+      "@Coordinator The user skipped clarification. Continue with the available context.",
       msgId,
     ).catch(() => {
       setPendingClarifyReplyMsgId(null);
-      toast.error("提交失败，请重试");
+      toast.error("Submit failed. Try again.");
     });
   };
 
@@ -950,7 +950,7 @@ export default function App() {
         .replace(/<think>[\s\S]*?<\/think>/g, "")
         .replace(/\s+/g, " ")
         .trim()
-        .slice(0, 80) || "(无内容)"
+        .slice(0, 80) || "(No content)"
     );
   }, []);
   const forwardMessageById = useMemo(() => {
@@ -965,14 +965,14 @@ export default function App() {
   const openForwardMessage = useCallback(
     (message: Message) => {
       if (message.is_secret) {
-        toast.error("加密消息不能转发");
+        toast.error("Encrypted messages cannot be forwarded");
         return;
       }
       setForwardModalState({
         mode: "single",
         sourceMessageIds: [message.msg_id],
         sourceFileIds: [],
-        summary: `转发 1 条消息：${messagePreviewText(message)}`,
+        summary: `Forward 1 message: ${messagePreviewText(message)}`,
       });
     },
     [messagePreviewText],
@@ -980,7 +980,7 @@ export default function App() {
 
   const toggleForwardSelection = useCallback((message: Message) => {
     if (message.is_secret) {
-      toast.error("加密消息不能转发");
+      toast.error("Encrypted messages cannot be forwarded");
       return;
     }
     setForwardSelectionMode(true);
@@ -999,14 +999,14 @@ export default function App() {
   const openForwardSelectedTopic = useCallback(() => {
     const ids = selectedForwardMsgIds.filter((id) => forwardMessageById.has(id));
     if (ids.length === 0) {
-      toast.error("请先选择要转发的消息");
+      toast.error("Select messages to forward first");
       return;
     }
     setForwardModalState({
       mode: "topic",
       sourceMessageIds: ids,
       sourceFileIds: [],
-      summary: `合并转发 ${ids.length} 条消息为主题`,
+      summary: `Forward ${ids.length} messages as a topic`,
     });
   }, [forwardMessageById, selectedForwardMsgIds]);
 
@@ -1041,7 +1041,7 @@ export default function App() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.status === "error") {
-        throw new Error(data?.detail || data?.message || "转发失败");
+        throw new Error(data?.detail || data?.message || "Forward failed");
       }
       insertForwardedMessages(targetChannelId, data?.data?.messages);
     },
@@ -1053,20 +1053,20 @@ export default function App() {
       if (!forwardModalState) return;
       if (!authToken) {
         setLoginModalOpen(true);
-        toast.error("请先登录后再转发");
+        toast.error("Sign in before forwarding");
         return;
       }
       const state = forwardModalState;
       setForwardSubmitting(true);
       try {
         await postForwardToChannel(targetChannelId, state);
-        toast.success(state.mode === "topic" ? "已合并转发" : "已转发");
+        toast.success(state.mode === "topic" ? "Forwarded as a bundle" : "Forwarded");
         setForwardModalState(null);
         cancelForwardSelection();
         refreshChannels(setChannels, authToken);
         refreshDMs(setDMs, authToken);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "转发失败");
+        toast.error(error instanceof Error ? error.message : "Forward failed");
       } finally {
         setForwardSubmitting(false);
       }
@@ -1086,7 +1086,7 @@ export default function App() {
       if (!forwardModalState) return;
       if (!authToken) {
         setLoginModalOpen(true);
-        toast.error("请先登录后再转发");
+        toast.error("Sign in before forwarding");
         return;
       }
       const workspaceId =
@@ -1095,7 +1095,7 @@ export default function App() {
         forwardWorkspaceId ||
         selectedWorkspaceId;
       if (!workspaceId) {
-        toast.error("请先选择工作空间");
+        toast.error("Select a workspace first");
         return;
       }
       const state = forwardModalState;
@@ -1112,22 +1112,22 @@ export default function App() {
         });
         const dmData = await dmRes.json().catch(() => null);
         if (!dmRes.ok || dmData?.status === "error") {
-          throw new Error(dmData?.detail || dmData?.message || "打开私信失败");
+          throw new Error(dmData?.detail || dmData?.message || "Failed to open DM");
         }
         const dm = dmData?.data;
-        if (!dm?.channel_id) throw new Error("打开私信失败");
+        if (!dm?.channel_id) throw new Error("Failed to open DM");
         setDMs((prev) =>
           prev.some((item) => item.channel_id === dm.channel_id)
             ? prev.map((item) => (item.channel_id === dm.channel_id ? dm : item))
             : [...prev, dm],
         );
         await postForwardToChannel(dm.channel_id, state);
-        toast.success(state.mode === "topic" ? "已合并转发" : "已转发");
+        toast.success(state.mode === "topic" ? "Forwarded as a bundle" : "Forwarded");
         setForwardModalState(null);
         cancelForwardSelection();
         refreshDMs(setDMs, authToken);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "转发失败");
+        toast.error(error instanceof Error ? error.message : "Forward failed");
       } finally {
         setForwardSubmitting(false);
       }
@@ -1158,8 +1158,8 @@ export default function App() {
         <>
           <button
             type="button"
-            title={selected ? "取消选择" : "选择后合并转发"}
-            aria-label={selected ? "取消选择" : "选择后合并转发"}
+            title={selected ? "Cancel selection" : "Select for combined forward"}
+            aria-label={selected ? "Cancel selection" : "Select for combined forward"}
             onClick={(event) => {
               event.stopPropagation();
               toggleForwardSelection(message);
@@ -1174,8 +1174,8 @@ export default function App() {
           </button>
           <button
             type="button"
-            title="转发"
-            aria-label="转发"
+            title="Forward"
+            aria-label="Forward"
             onClick={(event) => {
               event.stopPropagation();
               openForwardMessage(message);
@@ -1505,14 +1505,14 @@ export default function App() {
                 forwardSelectionMode ? (
                   <div className="absolute bottom-24 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-1)] px-3 py-2 text-sm shadow-lg">
                     <span className="whitespace-nowrap text-[var(--fg-2)]">
-                      已选择 {selectedForwardMsgIds.length} 条
+                      Selected {selectedForwardMsgIds.length} items
                     </span>
                     <button
                       type="button"
                       className="rounded-md px-2 py-1 text-xs text-[var(--fg-3)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--fg-1)]"
                       onClick={cancelForwardSelection}
                     >
-                      取消
+                      Cancel
                     </button>
                     <button
                       type="button"
@@ -1521,7 +1521,7 @@ export default function App() {
                       onClick={openForwardSelectedTopic}
                     >
                       <AppIcon name="forward" className="h-3.5 w-3.5" />
-                      合并转发
+                      Forward as bundle
                     </button>
                   </div>
                 ) : null
@@ -1537,16 +1537,16 @@ export default function App() {
                   Boolean(value.trim() || pendingFileIds.length > 0),
                 disabled: isSystemDm,
                 placeholder: isSystemDm
-                  ? "好友通知会话用于处理申请，不能直接发送消息…"
+                  ? "Friend notification conversations handle requests and cannot send messages directly..."
                   : secretMode
-                    ? "输入加密内容（仅 Bot 可读取原文）…"
+                    ? "Enter encrypted content (only bots can read the original)..."
                     : isDmSelected
-                      ? `发消息给 ${activeDm?.counterparty.display_name || activeDm?.counterparty.username || "DM"}…`
+                      ? `Message ${activeDm?.counterparty.display_name || activeDm?.counterparty.username || "DM"}...`
                       : msgKind === "announcement"
-                        ? `发布公告到 #${selectedChannel?.name || "频道"}…`
+                        ? `Post announcement to #${selectedChannel?.name || "Channels"}...`
                         : msgKind === "topic"
-                          ? "开启主题 · 标题将取首行…"
-                          : `发消息到 #${selectedChannel?.name || "频道"}，@ 呼叫 Bot…`,
+                          ? "Start a topic · title comes from the first line..."
+                          : `Message #${selectedChannel?.name || "Channels"}, @ mention bots...`,
                 kind: msgKind,
                 onKindChange: setMsgKind,
                 onCycleKind: cycleMsgKind,

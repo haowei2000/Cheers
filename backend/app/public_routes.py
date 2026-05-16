@@ -1,4 +1,4 @@
-"""对外公开接口（无需鉴权）：供外部 Agent Bridge provider 发现接入指南."""
+"""Public routes module."""
 from fastapi import APIRouter, Request
 
 router = APIRouter(prefix="/api/public", tags=["public"])
@@ -6,7 +6,7 @@ router = APIRouter(prefix="/api/public", tags=["public"])
 
 @router.get("/agentnexus-discovery")
 async def agentnexus_discovery(request: Request) -> dict:
-    """返回 Agent Bridge 可读的发现与注册指南（JSON）。"""
+    """Agentnexus discovery."""
     base = str(request.base_url).rstrip("/")
     return {
         "name": "AgentNexus",

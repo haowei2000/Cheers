@@ -90,7 +90,7 @@ export function ModelListSubPane({ authToken }: { authToken: string | null }) {
   if (view === "new") {
     return (
       <div className="an-pane">
-        <BackBar label="返回模型列表" onBack={() => setView("list")} />
+        <BackBar label="Back to model list" onBack={() => setView("list")} />
         <ModelForm
           authToken={authToken}
           onSaved={() => {
@@ -106,14 +106,14 @@ export function ModelListSubPane({ authToken }: { authToken: string | null }) {
     if (!m) {
       return (
         <div className="an-pane">
-          <BackBar label="返回模型列表" onBack={() => setView("list")} />
-          <div className="an-row-card" style={{ color: "var(--fg-3)" }}>该模型已不存在</div>
+          <BackBar label="Back to model list" onBack={() => setView("list")} />
+          <div className="an-row-card" style={{ color: "var(--fg-3)" }}>This model no longer exists</div>
         </div>
       );
     }
     return (
       <div className="an-pane">
-        <BackBar label="返回模型列表" onBack={() => setView("list")} />
+        <BackBar label="Back to model list" onBack={() => setView("list")} />
         <ModelForm
           authToken={authToken}
           existing={m}
@@ -134,8 +134,8 @@ export function ModelListSubPane({ authToken }: { authToken: string | null }) {
     <div className="an-pane">
       <div className="an-pane-head">
         <div>
-          <div className="an-pane-title">LLM 模型</div>
-          <div className="an-pane-sub">配置可供 Bot 绑定的 LLM Provider。</div>
+          <div className="an-pane-title">LLM models</div>
+          <div className="an-pane-sub">Configure LLM providers that bots can bind to.</div>
         </div>
       </div>
       <div className="an-list-table">
@@ -155,15 +155,15 @@ export function ModelListSubPane({ authToken }: { authToken: string | null }) {
             <AppIcon name="plus" className="h-4 w-4" />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="an-rc-title">新建模型</div>
-            <div className="an-rc-sub">添加一个 OpenAI 兼容的 LLM Provider</div>
+            <div className="an-rc-title">New model</div>
+            <div className="an-rc-sub">Add an OpenAI-compatible LLM provider</div>
           </div>
           <AppIcon name="chevronRight" className="an-rc-chev" />
         </button>
         {loading ? (
-          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>加载中…</div>
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>Loading...</div>
         ) : items.length === 0 ? (
-          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>暂无模型</div>
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>No models</div>
         ) : (
           items.map((m) => (
             <button
@@ -254,7 +254,7 @@ function ModelForm({
 
   const save = async () => {
     if (!name.trim() || !modelName.trim() || !baseUrl.trim()) {
-      toast.error("请填写必填项（名称 / 模型名 / Base URL）");
+      toast.error("Fill required fields (name / model name / base URL)");
       return;
     }
     let parsedHeaders: Record<string, string> | null = null;
@@ -262,7 +262,7 @@ function ModelForm({
       try {
         parsedHeaders = JSON.parse(extraHeaders);
       } catch {
-        toast.error("额外 Headers 必须是合法 JSON 对象");
+        toast.error("Extra headers must be a valid JSON object");
         return;
       }
     }
@@ -296,13 +296,13 @@ function ModelForm({
       );
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success(isEdit ? "已更新" : "已创建");
+        toast.success(isEdit ? "Updated" : "Created");
         onSaved();
       } else {
-        toast.error(data?.message || data?.detail || (isEdit ? "更新失败" : "创建失败"));
+        toast.error(data?.message || data?.detail || (isEdit ? "Update failed" : "Create failed"));
       }
     } catch (e: unknown) {
-      toast.error((e as Error).message || "保存失败");
+      toast.error((e as Error).message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -310,7 +310,7 @@ function ModelForm({
 
   const remove = async () => {
     if (!existing) return;
-    if (!confirm(`确定删除「${existing.name}」？`)) return;
+    if (!confirm(`Delete "${existing.name}"?`)) return;
     setDeleting(true);
     try {
       const res = await apiFetch(`/admin/models/${existing.model_id}`, {
@@ -319,10 +319,10 @@ function ModelForm({
       });
       const data = await res.json();
       if (data?.status === "success") {
-        toast.success("已删除");
+        toast.success("Deleted");
         onDeleted?.();
       } else {
-        toast.error(data?.message || data?.detail || "删除失败");
+        toast.error(data?.message || data?.detail || "Delete failed");
       }
     } finally {
       setDeleting(false);
@@ -336,10 +336,10 @@ function ModelForm({
         style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
       >
         <div>
-          <div className="an-pane-title">{isEdit ? existing!.name : "新建模型"}</div>
-          {isBuiltin && <div className="an-pane-sub">系统内置（只读）</div>}
+          <div className="an-pane-title">{isEdit ? existing!.name : "New model"}</div>
+          {isBuiltin && <div className="an-pane-sub">System built-in (read-only)</div>}
         </div>
-        <div className="an-seg" role="tablist" aria-label="模型设置视图">
+        <div className="an-seg" role="tablist" aria-label="Model settings view">
           <button
             type="button"
             className={settingsTab === "identity" ? "on" : ""}
@@ -347,7 +347,7 @@ function ModelForm({
             role="tab"
             aria-selected={settingsTab === "identity"}
           >
-            基础
+            Basics
           </button>
           <button
             type="button"
@@ -356,7 +356,7 @@ function ModelForm({
             role="tab"
             aria-selected={settingsTab === "runtime"}
           >
-            参数
+            Parameters
           </button>
           <button
             type="button"
@@ -365,43 +365,43 @@ function ModelForm({
             role="tab"
             aria-selected={settingsTab === "access"}
           >
-            权限
+            Permissions
           </button>
         </div>
       </div>
       <div className="an-list-table">
         {settingsTab === "identity" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">基本信息</div>
-            <Field label="名称">
+            <div className="an-rc-title">Basic information</div>
+            <Field label="Name">
               <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
             </Field>
             <Field label="Provider">
               <select value={provider} onChange={(e) => setProvider(e.target.value)} className={inputCls} disabled={isBuiltin}>
                 <option value="ollama">Ollama</option>
-                <option value="openai">OpenAI 兼容</option>
+                <option value="openai">OpenAI compatible</option>
                 <option value="anthropic">Anthropic</option>
                 <option value="azure">Azure OpenAI</option>
-                <option value="custom">自定义</option>
+                <option value="custom">Custom</option>
               </select>
             </Field>
-            <Field label="模型名（model_name，发给 provider）">
-              <input value={modelName} onChange={(e) => setModelName(e.target.value)} className={inputCls} placeholder="如 llama3.2" disabled={isBuiltin} />
+            <Field label="Model name (model_name sent to provider)">
+              <input value={modelName} onChange={(e) => setModelName(e.target.value)} className={inputCls} placeholder="e.g. llama3.2" disabled={isBuiltin} />
             </Field>
             <Field label="Base URL">
-              <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className={inputCls} placeholder="如 http://localhost:11434/v1" disabled={isBuiltin} />
+              <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className={inputCls} placeholder="e.g. http://localhost:11434/v1" disabled={isBuiltin} />
             </Field>
-            <Field label={isEdit ? "API Key（留空则不修改）" : "API Key"}>
+            <Field label={isEdit ? "API key (leave blank to keep unchanged)" : "API Key"}>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 className={inputCls}
-                placeholder={existing?.api_key_masked || "可选"}
+                placeholder={existing?.api_key_masked || "Optional"}
                 disabled={isBuiltin}
               />
             </Field>
-            <Field label="描述">
+            <Field label="Description">
               <input value={description} onChange={(e) => setDescription(e.target.value)} className={inputCls} disabled={isBuiltin} />
             </Field>
           </div>
@@ -409,7 +409,7 @@ function ModelForm({
 
         {settingsTab === "runtime" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">推理参数</div>
+            <div className="an-rc-title">Inference parameters</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label={`Temperature (${temperature})`}>
                 <input
@@ -432,18 +432,18 @@ function ModelForm({
             </div>
             <label className="an-checkline">
               <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} disabled={isBuiltin} />
-              启用流式响应（stream）
+              Enable streaming responses (stream)
             </label>
             <label className="an-checkline">
               <input type="checkbox" checked={supportsVision} onChange={(e) => setSupportsVision(e.target.checked)} disabled={isBuiltin} />
-              支持视觉输入（supports_vision）
+              Supports vision input (supports_vision)
             </label>
-            <Field label="额外 Headers（JSON 对象，可选）">
+            <Field label="Extra headers (optional JSON object)">
               <input
                 value={extraHeaders}
                 onChange={(e) => setExtraHeaders(e.target.value)}
                 className={inputCls}
-                placeholder='如 {"X-Custom":"value"}'
+                placeholder='e.g. {"X-Custom":"value"}'
                 disabled={isBuiltin}
               />
             </Field>
@@ -452,14 +452,14 @@ function ModelForm({
 
         {settingsTab === "access" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <div className="an-rc-title">可见性</div>
+            <div className="an-rc-title">Visibility</div>
             <label className="an-checkline">
               <input type="checkbox" checked={isEnabled} onChange={(e) => setIsEnabled(e.target.checked)} disabled={isBuiltin} />
-              启用
+              Enabled
             </label>
             <label className="an-checkline">
               <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} disabled={isBuiltin} />
-              公开（所有用户可见）
+              Public (visible to all users)
             </label>
           </div>
         )}
@@ -468,11 +468,11 @@ function ModelForm({
           <div style={{ display: "flex", justifyContent: isEdit ? "space-between" : "flex-end" }}>
             {isEdit && (
               <DangerButton onClick={remove} disabled={deleting}>
-                {deleting ? "删除中…" : "删除"}
+                {deleting ? "Deleting..." : "Delete"}
               </DangerButton>
             )}
             <PrimaryButton onClick={save} disabled={saving}>
-              {saving ? "保存中…" : isEdit ? "保存" : "创建"}
+              {saving ? "Saving..." : isEdit ? "Save" : "Create"}
             </PrimaryButton>
           </div>
         )}

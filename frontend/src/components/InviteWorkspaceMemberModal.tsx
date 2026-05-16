@@ -26,8 +26,8 @@ export function InviteWorkspaceMemberModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="邀请成员"
-      description="被邀请的成员将自动加入该工作空间下的所有频道。"
+      title="Invite members"
+      description="Invited members will automatically join all channels in this workspace."
     >
       <div className="space-y-4">
         <div>
@@ -35,13 +35,13 @@ export function InviteWorkspaceMemberModal({
             className="block text-sm font-medium mb-1"
             style={{ color: "var(--fg-2)" }}
           >
-            用户名
+            Username
           </label>
           <input
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="输入用户名"
+            placeholder="Enter username"
             className="an-input"
             onKeyDown={(e) => e.key === "Enter" && onSubmit()}
             autoFocus
@@ -53,8 +53,8 @@ export function InviteWorkspaceMemberModal({
               workspaceId={workspaceId || undefined}
               types={["users"]}
               modal
-              placeholder="搜索用户"
-              actionLabel="邀请"
+              placeholder="Search users"
+              actionLabel="Invite"
               onSelect={(selection) => {
                 if (selection.type === "user") onPickUser(selection.item.user_id);
               }}
@@ -63,14 +63,14 @@ export function InviteWorkspaceMemberModal({
         </div>
         <ModalFooter>
           <button type="button" onClick={onClose} className="an-btn an-btn-ghost">
-            取消
+            Cancel
           </button>
           <button
             type="button"
             onClick={onSubmit}
             className="an-btn an-btn-primary"
           >
-            邀请
+            Invite
           </button>
         </ModalFooter>
       </div>

@@ -42,12 +42,12 @@ export function DragOverlay({ visible, isDark }: DragOverlayProps) {
           className="mb-3 text-center text-2xl font-semibold"
           style={{ color: "var(--fg-1)" }}
         >
-          可拖拽文件到此处
+          Drop files here
         </div>
         <p className="text-center text-sm leading-relaxed" style={{ color: "var(--fg-3)" }}>
-          图片：PNG、JPG、JPEG、WEBP、GIF
+          Images: PNG, JPG, JPEG, WEBP, GIF
           <br />
-          文档：PDF、TXT、MD、DOCX、XLSX
+          Docs:PDF, TXT, MD, DOCX, XLSX
         </p>
       </div>
     </>

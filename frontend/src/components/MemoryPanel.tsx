@@ -105,8 +105,8 @@ export function MemoryPanel({
 
   const isProject = activeLayer === "PROJECT";
   const PROJECT_META = {
-    label: "项目 · Project",
-    desc: "核心目标与进度（Anchor + Progress）",
+    label: "Project · Project",
+    desc: "Core goals and progress (Anchor + Progress)",
     color: "blue",
     icon: "◆",
     readonly: false,
@@ -442,9 +442,9 @@ export function MemoryPanel({
         }),
       });
       if (!res.ok) throw new Error();
-      toast.success("频道资料已更新");
+      toast.success("Channel profile updated");
     } catch {
-      toast.error("保存频道资料失败");
+      toast.error("Failed to save channel profile");
     } finally {
       setProfileSaving(false);
     }
@@ -455,7 +455,7 @@ export function MemoryPanel({
     if (entriesLoading) {
       return (
         <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
-          加载中…
+          Loading...
         </div>
       );
     }
@@ -466,14 +466,14 @@ export function MemoryPanel({
         {entries.length === 0 && !addingNew ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
             <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
-            <p className="text-xs font-medium text-gray-500">暂无内容</p>
+            <p className="text-xs font-medium text-gray-500">No content</p>
             <p className="text-[11px] text-gray-400">{meta.desc}</p>
             <button
               type="button"
               onClick={() => setAddingNew(true)}
               className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
             >
-              添加条目
+              Add entry
             </button>
           </div>
         ) : timelineMode && (activeLayer === "PROGRESS" || activeLayer === "DECISIONS") ? (
@@ -483,7 +483,7 @@ export function MemoryPanel({
             </div>
             <div className="an-timeline">
               {entries.map((entry) => {
-                const isDone = /done|完成|已做|shipped|merged|resolved|批准|approved/i.test(
+                const isDone = /done|Done|\u5df2\u505a|shipped|merged|resolved|\u6279\u51c6|approved/i.test(
                   entry.content + " " + (entry.title || ""),
                 );
                 const kind =
@@ -540,7 +540,7 @@ export function MemoryPanel({
                     <input
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
-                      placeholder="标题（可选）"
+                      placeholder="Title (optional)"
                       className="w-full text-xs rounded px-2 py-1 focus:outline-none"
                       style={{
                         background: "var(--bg-0)",
@@ -569,7 +569,7 @@ export function MemoryPanel({
                           background: "transparent",
                         }}
                       >
-                        取消
+                        Cancel
                       </button>
                       <button
                         onClick={() => handleUpdateEntry(entry.entry_id)}
@@ -580,13 +580,13 @@ export function MemoryPanel({
                           border: 0,
                         }}
                       >
-                        保存
+                        Save
                       </button>
                     </div>
                   </div>
                 );
               }
-              const isDone = /done|完成|已做|shipped|merged|resolved|批准|approved/i.test(
+              const isDone = /done|Done|\u5df2\u505a|shipped|merged|resolved|\u6279\u51c6|approved/i.test(
                 entry.content + " " + (entry.title || ""),
               );
               const cls =
@@ -621,7 +621,7 @@ export function MemoryPanel({
                       onClick={() => startEditEntry(entry)}
                       className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
                       style={{ color: "var(--fg-3)" }}
-                      title="编辑"
+                      title="Edit"
                     >
                       &#9998;
                     </button>
@@ -629,7 +629,7 @@ export function MemoryPanel({
                       onClick={() => handleDeleteEntry(entry.entry_id)}
                       className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
                       style={{ color: "var(--fg-3)" }}
-                      title="删除"
+                      title="Delete"
                     >
                       &#10005;
                     </button>
@@ -646,7 +646,7 @@ export function MemoryPanel({
             <input
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="标题（可选）"
+              placeholder="Title (optional)"
               className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
             />
             <textarea
@@ -657,7 +657,7 @@ export function MemoryPanel({
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                   handleCreateEntry();
               }}
-              placeholder="内容…"
+              placeholder="Content..."
               className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
               autoFocus
             />
@@ -670,13 +670,13 @@ export function MemoryPanel({
                 }}
                 className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
               >
-                取消
+                Cancel
               </button>
               <button
                 onClick={handleCreateEntry}
                 className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
               >
-                添加
+                Add
               </button>
             </div>
           </div>
@@ -701,7 +701,7 @@ export function MemoryPanel({
     if (entriesLoading) {
       return (
         <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
-          加载中…
+          Loading...
         </div>
       );
     }
@@ -732,14 +732,14 @@ export function MemoryPanel({
         {projectEntries.length === 0 && !addingNew ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-400 gap-2 px-4 text-center">
             <p className="text-xs font-medium text-gray-500">
-              暂无 {labels[projectEditLayer]} 内容
+              No {labels[projectEditLayer]} content
             </p>
             <button
               type="button"
               onClick={() => setAddingNew(true)}
               className="mt-1 text-xs px-2.5 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
             >
-              添加条目
+              Add entry
             </button>
           </div>
         ) : (
@@ -759,7 +759,7 @@ export function MemoryPanel({
                     <input
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
-                      placeholder="标题（可选）"
+                      placeholder="Title (optional)"
                       className="w-full text-xs rounded px-2 py-1 focus:outline-none"
                       style={{
                         background: "var(--bg-0)",
@@ -789,7 +789,7 @@ export function MemoryPanel({
                           background: "transparent",
                         }}
                       >
-                        取消
+                        Cancel
                       </button>
                       <button
                         type="button"
@@ -801,7 +801,7 @@ export function MemoryPanel({
                           border: 0,
                         }}
                       >
-                        保存
+                        Save
                       </button>
                     </div>
                   </div>
@@ -835,7 +835,7 @@ export function MemoryPanel({
                       onClick={() => startEditEntry(entry)}
                       className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
                       style={{ color: "var(--fg-3)" }}
-                      title="编辑"
+                      title="Edit"
                     >
                       &#9998;
                     </button>
@@ -844,7 +844,7 @@ export function MemoryPanel({
                       onClick={() => handleProjectDeleteEntry(entry.entry_id)}
                       className="text-[11px] p-1 rounded hover:bg-[var(--surface-soft)]"
                       style={{ color: "var(--fg-3)" }}
-                      title="删除"
+                      title="Delete"
                     >
                       &#10005;
                     </button>
@@ -860,7 +860,7 @@ export function MemoryPanel({
             <input
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="标题（可选）"
+              placeholder="Title (optional)"
               className="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
             />
             <textarea
@@ -871,7 +871,7 @@ export function MemoryPanel({
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                   handleProjectCreateEntry();
               }}
-              placeholder="内容…"
+              placeholder="Content..."
               className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400 font-mono"
               autoFocus
             />
@@ -885,14 +885,14 @@ export function MemoryPanel({
                 }}
                 className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
               >
-                取消
+                Cancel
               </button>
               <button
                 type="button"
                 onClick={handleProjectCreateEntry}
                 className="text-[11px] px-2 py-0.5 rounded bg-[#1264A3] text-white hover:bg-[#0f5a94]"
               >
-                添加
+                Add
               </button>
             </div>
           </div>
@@ -908,7 +908,7 @@ export function MemoryPanel({
           <div className="px-3 py-3 border-b border-gray-100">
             <div className="rounded-md border border-gray-200 p-2.5">
               <div className="text-xs font-semibold text-gray-700 mb-2">
-                邀请成员
+                Invite members
               </div>
               <InviteMemberSearch
                 channelId={channelId}
@@ -923,12 +923,12 @@ export function MemoryPanel({
 
         {membersLoading ? (
           <div className="flex items-center justify-center h-20 text-gray-400 text-xs">
-            加载中…
+            Loading...
           </div>
         ) : members.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-28 text-gray-400 gap-2 text-center px-4">
             <AppIcon name="users" className="w-8 h-8 opacity-30" />
-            <p className="text-xs text-gray-500">暂无成员</p>
+            <p className="text-xs text-gray-500">No members</p>
           </div>
         ) : (
           <MembersView
@@ -952,7 +952,7 @@ export function MemoryPanel({
       {/* Panel header */}
       <div className="an-memory-head flex-shrink-0">
         <div className="min-w-0">
-          <div className="an-t">频道记忆</div>
+          <div className="an-t">Channel memory</div>
           {channelName && <div className="an-sub">#{channelName}</div>}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
@@ -961,7 +961,7 @@ export function MemoryPanel({
             onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--surface-soft)] transition-colors"
             style={{ color: "var(--fg-3)", fontSize: 16, lineHeight: 1 }}
-            title="关闭"
+            title="Close"
           >
             ✕
           </button>
@@ -1021,7 +1021,7 @@ export function MemoryPanel({
               className="text-[10px] flex-shrink-0"
               style={{ color: "var(--fg-3)" }}
             >
-              {entries.length} 条
+              {entries.length} items
             </span>
           )}
           {isReadonly && activeLayer !== "TODO" && !canInviteFromMembers && (
@@ -1029,7 +1029,7 @@ export function MemoryPanel({
               className="text-[10px] flex-shrink-0"
               style={{ color: "var(--fg-3)" }}
             >
-              只读
+              Read-only
             </span>
           )}
         </div>
@@ -1049,7 +1049,7 @@ export function MemoryPanel({
                 background: projectEditing ? "var(--accent-muted)" : "transparent",
               }}
             >
-              {projectEditing ? "完成" : "编辑"}
+              {projectEditing ? "Done" : "Edit"}
             </button>
           )}
           {isProject && projectEditing && !addingNew && (
@@ -1063,7 +1063,7 @@ export function MemoryPanel({
                 background: "transparent",
               }}
             >
-              + 添加
+              + Add
             </button>
           )}
           {isEntryBased &&
@@ -1073,23 +1073,23 @@ export function MemoryPanel({
                 className="an-seg"
                 style={{ height: 24 }}
                 role="group"
-                aria-label="视图切换"
+                aria-label="View switcher"
               >
                 <button
                   type="button"
                   className={!timelineMode ? "on" : ""}
                   onClick={() => setTimelineMode(false)}
-                  title="列表视图"
+                  title="List view"
                 >
-                  列表
+                  List
                 </button>
                 <button
                   type="button"
                   className={timelineMode ? "on" : ""}
                   onClick={() => setTimelineMode(true)}
-                  title="时间线视图"
+                  title="Timeline view"
                 >
-                  时间线
+                  Timeline
                 </button>
               </div>
             )}
@@ -1104,7 +1104,7 @@ export function MemoryPanel({
                 background: "transparent",
               }}
             >
-              + 添加
+              + Add
             </button>
           )}
         </div>
@@ -1124,7 +1124,7 @@ export function MemoryPanel({
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                     handleTodoCreate();
                 }}
-                placeholder="新建任务…"
+                placeholder="NewTasks..."
                 className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
               />
               <div className="flex items-center gap-1.5">
@@ -1133,7 +1133,7 @@ export function MemoryPanel({
                   onChange={(e) => setTodoAssignee(e.target.value)}
                   className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:border-blue-400 text-gray-500"
                 >
-                  <option value="">指派给…</option>
+                  <option value="">Assign to...</option>
                   {members.map((m) => (
                     <option
                       key={m.member_id}
@@ -1148,7 +1148,7 @@ export function MemoryPanel({
                   onClick={handleTodoCreate}
                   className="px-2.5 py-1 text-xs bg-[#1264A3] text-white rounded hover:bg-[#0f5a94] flex-shrink-0"
                 >
-                  添加
+                  Add
                 </button>
               </div>
             </div>
@@ -1156,12 +1156,12 @@ export function MemoryPanel({
             <div className="flex-1 overflow-y-auto">
               {todosLoading ? (
                 <div className="flex items-center justify-center h-12 text-gray-400 text-xs">
-                  加载中…
+                  Loading...
                 </div>
               ) : todos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-20 text-gray-400 gap-1 text-center px-4">
                   <AppIcon name="checkCircle" className="w-6 h-6 opacity-30" />
-                  <p className="text-xs text-gray-400">暂无待办</p>
+                  <p className="text-xs text-gray-400">No todos</p>
                 </div>
               ) : (
                 <ul className="divide-y divide-gray-100">
@@ -1222,12 +1222,12 @@ export function MemoryPanel({
         ) : activeLayer === "FILES_INDEX" ? (
           channelFilesLoading ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-xs">
-              加载中…
+              Loading...
             </div>
           ) : channelFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
               <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
-              <p className="text-xs font-medium text-gray-500">暂无文件</p>
+              <p className="text-xs font-medium text-gray-500">No files</p>
               <p className="text-[11px] text-gray-400">{meta.desc}</p>
             </div>
           ) : (
@@ -1238,9 +1238,9 @@ export function MemoryPanel({
                   channelId={channelId}
                   types={["files"]}
                   modal
-                  placeholder="搜索文件名、摘要或类型"
-                  emptyText="没有匹配文件"
-                  actionLabel="预览"
+                  placeholder="Search file name, summary, or type"
+                  emptyText="No matching files"
+                  actionLabel="Preview"
                   onSelect={(selection) => {
                     if (selection.type !== "file") return;
                     onFilePreview?.({
@@ -1262,8 +1262,8 @@ export function MemoryPanel({
                     : ct.includes("spreadsheetml") || ct.includes("xlsx")
                       ? "Excel"
                       : ct.startsWith("text/")
-                        ? "文本"
-                        : "文件";
+                        ? "Text"
+                        : "Files";
                 const sizeStr = f.size_bytes
                   ? f.size_bytes < 1024
                     ? `${f.size_bytes} B`
@@ -1316,7 +1316,7 @@ export function MemoryPanel({
                       href={`${API}/files/${f.file_id}/download`}
                       onClick={(event) => event.stopPropagation()}
                       className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 transition-colors flex-shrink-0"
-                      title="下载文件"
+                      title="Download file"
                     >
                       <AppIcon name="download" className="w-4 h-4" />
                     </a>
@@ -1334,7 +1334,7 @@ export function MemoryPanel({
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
             <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
-            <p className="text-xs font-medium text-gray-500">暂无内容</p>
+            <p className="text-xs font-medium text-gray-500">No content</p>
             <p className="text-[11px] text-gray-400">{meta.desc}</p>
           </div>
         )}

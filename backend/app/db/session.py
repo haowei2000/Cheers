@@ -1,4 +1,4 @@
-"""异步数据库引擎与会话."""
+"""Asynchronous database engine and session helpers."""
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -28,7 +28,7 @@ async_session_factory = async_sessionmaker(
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """依赖注入用：获取异步会话."""
+    """Get session."""
     async with async_session_factory() as session:
         try:
             yield session
@@ -41,6 +41,6 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """仅测试用：在内存 SQLite 中直接建表。生产环境请用 alembic upgrade head。"""
+    """Init db."""
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

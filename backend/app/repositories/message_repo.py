@@ -1,4 +1,4 @@
-"""Message 数据访问层."""
+"""Message repo module."""
 from __future__ import annotations
 
 from sqlalchemy import and_, false, or_, select
@@ -59,7 +59,7 @@ class MessageRepository:
         channel_id: str,
         root_msg_id: str,
     ) -> list[Message]:
-        """返回某条消息下的全部子孙回复，按创建时间正序排列。"""
+        """List descendants by root."""
         seen = {root_msg_id}
         frontier = [root_msg_id]
         descendants: list[Message] = []

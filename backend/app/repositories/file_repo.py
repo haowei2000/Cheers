@@ -1,4 +1,4 @@
-"""FileRecord 数据访问层."""
+"""File repo module."""
 from __future__ import annotations
 
 from sqlalchemy import select

@@ -1,4 +1,4 @@
-"""Workspace v1 路由（薄层：解析 HTTP → 调 service → 返回 APIResponse）."""
+"""Workspaces API routes."""
 from __future__ import annotations
 
 from typing import Literal

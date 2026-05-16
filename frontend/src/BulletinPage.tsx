@@ -18,13 +18,13 @@ type Issue = {
   updated_at: string;
 };
 
-const PRIORITY_LABEL: Record<string, string> = { low: "低", medium: "中", high: "高" };
+const PRIORITY_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High" };
 const PRIORITY_CHIP_CLASS: Record<string, string> = {
   low: "off",
   medium: "orange",
   high: "red",
 };
-const STATUS_LABEL: Record<Issue["status"], string> = { open: "开放", closed: "已关闭", resolved: "已解决" };
+const STATUS_LABEL: Record<Issue["status"], string> = { open: "Open", closed: "Closed", resolved: "Resolved" };
 const STATUS_CHIP_CLASS: Record<Issue["status"], string> = { open: "green", closed: "off", resolved: "blue" };
 
 function formatDate(iso: string) {
@@ -61,7 +61,7 @@ export default function BulletinPage() {
   const [filterStatus, setFilterStatus] = useState<"" | "open" | "closed" | "resolved">("");
   const [filterPriority, setFilterPriority] = useState<"" | "low" | "medium" | "high">("");
 
-  // Create modal state
+  // created modal state
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newContent, setNewContent] = useState("");
@@ -124,7 +124,7 @@ export default function BulletinPage() {
         fetchIssues();
       } else {
         const d = await res.json();
-        alert(d.detail || "创建失败");
+        alert(d.detail || "Create failed");
       }
     } finally {
       setCreating(false);
@@ -156,12 +156,12 @@ export default function BulletinPage() {
       }
     } else {
       const d = await res.json();
-      alert(d.detail || "操作失败");
+      alert(d.detail || "Operation failed");
     }
   };
 
   const handleDelete = async (issue: Issue) => {
-    if (!confirm(`确定删除「${issue.title}」？`)) return;
+    if (!confirm(`Delete "${issue.title}"?`)) return;
     const res = await authFetch(`${API}/bulletin/issues/${issue.issue_id}`, { method: "DELETE" });
     if (res.ok) {
       fetchIssues();
@@ -178,9 +178,9 @@ export default function BulletinPage() {
       <header className="flex items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-1)] px-6 py-3">
         <Link to="/" className="an-btn an-btn-ghost an-btn-sm">
           <AppIcon name="arrowLeft" className="w-4 h-4" />
-          返回
+          Back
         </Link>
-        <h1 className="an-type-title">公共留言板</h1>
+        <h1 className="an-type-title">Public bulletin</h1>
         <span className="an-type-meta ml-1">Issues</span>
         <div className="flex-1" />
         {authToken && (
@@ -190,7 +190,7 @@ export default function BulletinPage() {
             className="an-btn an-btn-primary"
           >
             <AppIcon name="plus" className="w-4 h-4" />
-            新建 Issue
+            New issue
           </button>
         )}
       </header>
@@ -203,29 +203,29 @@ export default function BulletinPage() {
             onChange={(e) => setFilterStatus(e.target.value as "" | "open" | "closed" | "resolved")}
             className="an-select w-auto min-w-36"
           >
-            <option value="">全部状态</option>
-            <option value="open">开放</option>
-            <option value="closed">已关闭</option>
-            <option value="resolved">已解决</option>
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+            <option value="resolved">Resolved</option>
           </select>
           <select
             value={filterPriority}
             onChange={(e) => setFilterPriority(e.target.value as "" | "low" | "medium" | "high")}
             className="an-select w-auto min-w-36"
           >
-            <option value="">全部优先级</option>
-            <option value="low">低</option>
-            <option value="medium">中</option>
-            <option value="high">高</option>
+            <option value="">All priorities</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
           </select>
-          <span className="an-chip">{issues.length} 条</span>
+          <span className="an-chip">{issues.length} items</span>
         </div>
 
         {/* Issue List */}
         {loading ? (
-          <div className="an-type-meta py-20 text-center">加载中…</div>
+          <div className="an-type-meta py-20 text-center">Loading...</div>
         ) : issues.length === 0 ? (
-          <div className="an-type-meta py-20 text-center">暂无 Issue{authToken ? "，点击右上角新建" : ""}</div>
+          <div className="an-type-meta py-20 text-center">No issues{authToken ? ". Click New in the top-right" : ""}</div>
         ) : (
           <ul className="space-y-2">
             {issues.map((issue) => (
@@ -251,7 +251,7 @@ export default function BulletinPage() {
                   </button>
                   <div className="flex flex-wrap items-center gap-2 mt-1">
                     <span className={`an-chip ${PRIORITY_CHIP_CLASS[issue.priority]}`}>
-                      {PRIORITY_LABEL[issue.priority]}优先级
+                      {PRIORITY_LABEL[issue.priority]}Priority
                     </span>
                     {issue.tags?.map((tag) => (
                       <span key={tag} className="an-chip accent">
@@ -259,7 +259,7 @@ export default function BulletinPage() {
                       </span>
                     ))}
                     <span className="an-type-caption">
-                      {issue.creator_name || "匿名"} · {formatDate(issue.created_at)}
+                      {issue.creator_name || "Anonymous"} · {formatDate(issue.created_at)}
                     </span>
                   </div>
                 </div>
@@ -271,9 +271,9 @@ export default function BulletinPage() {
                       type="button"
                       onClick={() => handleResolve(issue)}
                       className="an-btn an-btn-primary an-btn-sm"
-                      title="标记为已解决"
+                      title="Mark as resolved"
                     >
-                      已解决
+                      Resolved
                     </button>
                   )}
                   {canManage(issue) && (
@@ -281,15 +281,15 @@ export default function BulletinPage() {
                       <button
                         onClick={() => handleToggleStatus(issue)}
                         className="an-btn an-btn-sm"
-                        title={issue.status === "open" ? "关闭" : "重新开放"}
+                        title={issue.status === "open" ? "Close" : "Reopen"}
                       >
-                        {issue.status === "open" ? "关闭" : "开放"}
+                        {issue.status === "open" ? "Close" : "Open"}
                       </button>
                       <button
                         onClick={() => handleDelete(issue)}
                         className="an-btn an-btn-danger an-btn-sm"
                       >
-                        删除
+                        Delete
                       </button>
                     </>
                   )}
@@ -300,62 +300,62 @@ export default function BulletinPage() {
         )}
       </div>
 
-      {/* Create Modal */}
+      {/* created Modal */}
       <Modal
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        title="新建 Issue"
+        title="New issue"
         maxWidth="max-w-lg"
         panelClassName="an-token-panel"
       >
         <div className="space-y-4">
               <div className="an-field">
-                <label className="an-label">标题 *</label>
+                <label className="an-label">Title *</label>
                 <input
                   autoFocus
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="an-input"
-                  placeholder="简要描述问题或想法"
+                  placeholder="Briefly describe the issue or idea"
                 />
               </div>
               <div className="an-field">
-                <label className="an-label">详细描述</label>
+                <label className="an-label">Details</label>
                 <textarea
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
                   rows={4}
                   className="an-textarea resize-none"
-                  placeholder="可选，支持纯文本"
+                  placeholder="Optional, plain text supported"
                 />
               </div>
               <div className="flex gap-4">
                 <div className="an-field flex-1">
-                  <label className="an-label">优先级</label>
+                  <label className="an-label">Priority</label>
                   <select
                     value={newPriority}
                     onChange={(e) => setNewPriority(e.target.value as "low" | "medium" | "high")}
                     className="an-select"
                   >
-                    <option value="low">低</option>
-                    <option value="medium">中</option>
-                    <option value="high">高</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
                   </select>
                 </div>
                 <div className="an-field flex-1">
-                  <label className="an-label">标签（逗号分隔）</label>
+                  <label className="an-label">Tags (comma separated)</label>
                   <input
                     value={newTags}
                     onChange={(e) => setNewTags(e.target.value)}
                     className="an-input"
-                    placeholder="bug, 功能请求"
+                    placeholder="bug, feature request"
                   />
                 </div>
               </div>
         </div>
         <ModalFooter>
           <button type="button" onClick={() => setShowCreate(false)} className="an-btn">
-            取消
+            Cancel
           </button>
           <button
             type="button"
@@ -363,7 +363,7 @@ export default function BulletinPage() {
             disabled={creating || !newTitle.trim()}
             className="an-btn an-btn-primary"
           >
-            {creating ? "提交中…" : "提交"}
+            {creating ? "Submitting..." : "Submit"}
           </button>
         </ModalFooter>
       </Modal>
@@ -383,7 +383,7 @@ export default function BulletinPage() {
                 {STATUS_LABEL[detailIssue.status]}
               </span>
               <span className={`an-chip ${PRIORITY_CHIP_CLASS[detailIssue.priority]}`}>
-                {PRIORITY_LABEL[detailIssue.priority]}优先级
+                {PRIORITY_LABEL[detailIssue.priority]}Priority
               </span>
               {detailIssue.tags?.map((tag) => (
                 <span key={tag} className="an-chip accent">
@@ -395,10 +395,10 @@ export default function BulletinPage() {
               {detailIssue.content ? (
                 <p className="an-type-body whitespace-pre-wrap">{detailIssue.content}</p>
               ) : (
-                <p className="an-type-meta italic">无详细描述</p>
+                <p className="an-type-meta italic">No details</p>
               )}
               <p className="an-type-caption mt-4">
-                由 {detailIssue.creator_name || "匿名"} 于 {formatDate(detailIssue.created_at)} 创建
+                By {detailIssue.creator_name || "Anonymous"} at {formatDate(detailIssue.created_at)} created
               </p>
             </div>
             {(canManage(detailIssue) || isSystemAdmin) && (
@@ -409,7 +409,7 @@ export default function BulletinPage() {
                     onClick={() => handleResolve(detailIssue)}
                     className="an-btn an-btn-primary"
                   >
-                    标记已解决
+                    Mark resolved
                   </button>
                 )}
                 {canManage(detailIssue) && (
@@ -419,14 +419,14 @@ export default function BulletinPage() {
                       onClick={() => handleToggleStatus(detailIssue)}
                       className="an-btn"
                     >
-                      {detailIssue.status === "open" ? "关闭 Issue" : "重新开放"}
+                      {detailIssue.status === "open" ? "Close issue" : "Reopen"}
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(detailIssue)}
                       className="an-btn an-btn-danger"
                     >
-                      删除
+                      Delete
                     </button>
                   </>
                 )}

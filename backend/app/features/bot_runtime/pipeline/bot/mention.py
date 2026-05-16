@@ -1,4 +1,4 @@
-"""@mention 解析：仅识别消息【开头】连续的 @BotName / @用户名，匹配频道已激活 Bot."""
+"""Mention module."""
 from __future__ import annotations
 
 import re
@@ -15,11 +15,7 @@ _WS_CHARS = " \t"
 
 
 def _skip_leading_quote_block(text: str) -> int:
-    """跳过开头的 markdown blockquote 块（> 行及其后空行），返回正文起始位置。
-
-    线程回复在前端会被拼成 `> [RefLabel]: ...\\n\\n<用户输入>`，
-    若不跳过引用块，@mention 将永远落在正文内部而不被识别。
-    """
+    """Skip leading quote block."""
     n = len(text)
     probe = 0
     while probe < n and text[probe] in _WS_CHARS:
@@ -44,20 +40,7 @@ def _skip_leading_quote_block(text: str) -> int:
 
 
 def extract_mentions(text: str, known_space_names: list[str] | None = None) -> list[str]:
-    """从消息文本【开头】提取连续的 @mention（去重，保持顺序）。
-
-    语义：
-      - 允许前导空白；随后是一个或多个 `@name`（彼此可由空格分隔）。
-      - 一旦扫描到非 @mention 的文本即停止，后续文本里的 @ 不再识别。
-      - 例： "@a @b 你好"        → ["a", "b"]
-             "你好 @a"           → []
-             "@a 你好 @b"        → ["a"]
-             "@a@b 你好"         → ["a", "b"]
-
-    known_space_names 用于处理含空格的 Bot 名（历史曾用 "channel bot"，
-    现统一为不含空格的 "Coordinator"，但机制保留以兼容自定义 Bot 含空格的命名）：
-    在每个位置会优先长匹配，确保 "@channel bot ..." 识别为 "channel bot" 而非 "channel"。
-    """
+    """Extract mentions."""
     if not text or not text.strip():
         return []
 
@@ -112,7 +95,7 @@ async def resolve_user_mentions(
     session: "AsyncSession",
     channel_id: str,
 ) -> list[str]:
-    """从 bot 回复文本开头的 @mention 中提取 @username，解析为频道内匹配用户的 user_id 列表。"""
+    """Resolve user mentions."""
     mentioned = extract_mentions(content)
     if not mentioned:
         return []
@@ -137,11 +120,7 @@ def filter_mentioned_bots(
     mentioned_names: list[str],
     channel_bot_usernames: list[str],
 ) -> list[str]:
-    """在已提取的 mention 名字中，只保留属于本频道已激活 Bot 的用户名。
-
-    注：含空格 Bot 名的识别已移到 extract_mentions（通过 known_space_names），
-    所以此函数不再需要原文参与扫描，只做集合过滤即可。
-    """
+    """Filter mentioned bots."""
     channel_set = set(channel_bot_usernames)
     seen: set[str] = set()
     result: list[str] = []

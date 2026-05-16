@@ -1,11 +1,4 @@
-"""Per-bot data stream 事件日志：写入 + 查询 + 单调 seq 计数。
-
-设计：
-  - (bot_id, stream) 为键维护内存计数器；首次使用时从 DB 的 MAX(seq) bootstrap。
-  - dispatch_data 时同步 record_event，把 seq 嵌入 payload 后再发 WS。
-  - plugin resume 时按 last_event_seq 回放。
-  - Phase D 先不做 retention；生产上应按时间/条数 prune 老事件。
-"""
+"""Event log module."""
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +14,7 @@ logger = logging.getLogger("app.features.agent_bridge.event_log")
 
 
 class BotEventSeq:
-    """(bot_id, stream) → 最近一次已发放的 seq。None 表示尚未 bootstrap。"""
+    """Bot Event Seq schema or model."""
 
     def __init__(self) -> None:
         self._counters: dict[tuple[str, str], int] = {}
@@ -53,7 +46,7 @@ class BotEventSeq:
             return self._counters[key]
 
     def reset(self) -> None:
-        """测试用：清空所有计数。"""
+        """Reset."""
         self._counters.clear()
 
 
@@ -61,7 +54,7 @@ bot_event_seq = BotEventSeq()
 
 
 async def record_event(bot_id: str, stream: str, payload: dict[str, Any]) -> int:
-    """发放一个新的 seq 并写入事件日志。返回 seq。"""
+    """Record event."""
     seq = await bot_event_seq.next(bot_id, stream)
     async with async_session_factory() as s:
         try:
@@ -82,10 +75,7 @@ async def record_event(bot_id: str, stream: str, payload: dict[str, Any]) -> int
 async def events_since(
     bot_id: str, stream: str, last_seq: int, *, limit: int = 500,
 ) -> list[dict[str, Any]]:
-    """返回 seq > last_seq 的事件，按 seq 升序，最多 limit 条。
-
-    每个返回项是 payload dict（其中包含 "seq" 字段）。
-    """
+    """Events since."""
     if last_seq < 0:
         last_seq = 0
     async with async_session_factory() as s:
@@ -108,5 +98,5 @@ async def events_since(
 
 
 async def current_seq(bot_id: str, stream: str) -> int:
-    """返回该 bot/stream 当前已用掉的最大 seq（即最新事件的 seq）。"""
+    """Current seq."""
     return await bot_event_seq.current(bot_id, stream)

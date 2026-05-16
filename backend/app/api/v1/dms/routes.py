@@ -1,9 +1,4 @@
-"""Direct-message v1 路由。
-
-DM 模型：type="dm" 的 Channel，仅两位成员（用户 + 用户 或 用户 + bot）。
-- GET  /api/v1/dms         — 列出当前用户所有 DM，并附带对方档案
-- POST /api/v1/dms         — 默认幂等；create_new=true 时新建一个 Bot Chat
-"""
+"""Dms API routes."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

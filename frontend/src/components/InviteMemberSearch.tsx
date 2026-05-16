@@ -39,12 +39,12 @@ export function InviteMemberSearch({
   const [submittingKey, setSubmittingKey] = useState<string | null>(null);
   const hasInvitePermission = canInviteMembers || canAddBots;
   const placeholder = canInviteMembers && canAddBots
-    ? "搜索成员或 Bot"
+    ? "Search members or bots"
     : canInviteMembers
-      ? "搜索成员"
+      ? "Search members"
       : canAddBots
-        ? "搜索 Bot"
-        : "当前仅管理员可邀请";
+        ? "Search bots"
+        : "Only admins can invite right now";
   const types = useMemo<SearchResultType[]>(() => {
     const next: SearchResultType[] = [];
     if (canInviteMembers) next.push("users");
@@ -71,10 +71,10 @@ export function InviteMemberSearch({
           },
         }),
       );
-      toast.success(selection.type === "bot" ? "Bot 已加入频道" : "成员已邀请");
+      toast.success(selection.type === "bot" ? "Bot added to channel" : "Member invited");
       onInvited();
     } catch (err) {
-      toast.error((err as Error).message || "邀请失败");
+      toast.error((err as Error).message || "Invite failed");
     } finally {
       setSubmittingKey(null);
     }
@@ -99,16 +99,16 @@ export function InviteMemberSearch({
       modal
       className={className}
       placeholder={placeholder}
-      emptyText={canInviteMembers ? "没有可邀请的成员或 Bot" : "没有可添加的 Bot"}
+      emptyText={canInviteMembers ? "No members or bots available to invite" : "No bots available to add"}
       actionLabel={(selection) => {
         if (selection.type !== "user" && selection.type !== "bot") return null;
         if (selection.type === "user" && !canInviteMembers) return null;
         if (selection.type === "bot" && !canAddBots) return null;
         return submittingKey === selectionKey(selection)
-          ? "邀请中"
+          ? "Inviting"
           : selection.type === "bot"
-            ? "添加"
-            : "邀请";
+            ? "Add"
+            : "Invite";
       }}
       onSelect={submitSelection}
     />

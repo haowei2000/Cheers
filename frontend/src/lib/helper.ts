@@ -33,9 +33,9 @@ export function parseHelperPayload(content: string): {
 export function isClarifyReplyUserMessage(content: string): boolean {
   const t = (content || "").trim();
   return (
-    t.startsWith("@Helper 澄清回答：") ||
-    t.startsWith("@Coordinator 澄清回答：") ||
-    t.startsWith("@channel bot 澄清回答：") || // Legacy-name fallback.
-    t.includes("用户选择跳过澄清")
+    t.startsWith("@Helper clarification answer:") ||
+    t.startsWith("@Coordinator clarification answer:") ||
+    t.startsWith("@channel bot clarification answer:") || // Legacy-name fallback.
+    t.includes("User skipped clarification")
   );
 }

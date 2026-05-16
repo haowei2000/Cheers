@@ -23,21 +23,21 @@ export function CreateChannelModal({
   onClose,
 }: CreateChannelModalProps) {
   return (
-    <Modal open={open} onClose={onClose} title="创建频道">
+    <Modal open={open} onClose={onClose} title="Create channel">
       <div className="space-y-4">
         <div>
           <label
             className="block text-sm font-medium mb-1"
             style={{ color: "var(--fg-2)" }}
           >
-            工作空间
+            Workspaces
           </label>
           <select
             value={selectedWorkspaceId}
             onChange={(e) => onSelectWorkspace(e.target.value)}
             className="an-select"
           >
-            <option value="">选择工作空间</option>
+            <option value="">Select workspace</option>
             {workspaces.map((w) => (
               <option key={w.workspace_id} value={w.workspace_id}>
                 {w.name}
@@ -50,27 +50,27 @@ export function CreateChannelModal({
             className="block text-sm font-medium mb-1"
             style={{ color: "var(--fg-2)" }}
           >
-            频道名称
+            Channel name
           </label>
           <input
             type="text"
             value={channelName}
             onChange={(e) => onChannelNameChange(e.target.value)}
-            placeholder="输入频道名称"
+            placeholder="Enter channel name"
             className="an-input"
             onKeyDown={(e) => e.key === "Enter" && onSubmit()}
           />
         </div>
         <ModalFooter>
           <button type="button" onClick={onClose} className="an-btn an-btn-ghost">
-            取消
+            Cancel
           </button>
           <button
             type="button"
             onClick={onSubmit}
             className="an-btn an-btn-primary"
           >
-            创建
+            created
           </button>
         </ModalFooter>
       </div>

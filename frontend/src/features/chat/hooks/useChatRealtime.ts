@@ -84,7 +84,7 @@ export function useChatRealtime({
                 ? {
                     ...taskData,
                     status: "streaming",
-                    message: "正在接收 provider 输出。",
+                    message: "Receiving provider output.",
                   }
                 : m._agent_bridge_task,
               _bot_trace: trimBotTraceEvents([
@@ -92,7 +92,7 @@ export function useChatRealtime({
                 makeClientStreamTrace(
                   m,
                   "message_stream",
-                  "收到流式片段",
+                  "Received streaming chunk",
                   {
                     event_type: "message_stream",
                     delta_chars: item.delta.length,
@@ -197,7 +197,7 @@ export function useChatRealtime({
                         makeClientStreamTrace(
                           incoming,
                           "placeholder",
-                          "创建 Bot 回复占位",
+                          "Create bot reply placeholder",
                           { event_type: "message" },
                         ),
                       ],
@@ -208,7 +208,7 @@ export function useChatRealtime({
             if (
               msg.data.sender_type === "bot" &&
               typeof msg.data.content === "string" &&
-              msg.data.content.includes("已更新记忆层")
+              msg.data.content.includes("Updated memory layer")
             ) {
               authFetch(`${API}/channels/${selectedId}/context`)
                 .then((r) => r.json())
@@ -262,8 +262,8 @@ export function useChatRealtime({
                           message: error
                             ? String(error)
                             : is_partial
-                              ? "任务已中断，已保留当前输出。"
-                              : "任务已完成。",
+                              ? "Task was interrupted. Current output was preserved."
+                              : "Task completed.",
                         }
                       : m._agent_bridge_task;
                 return {
@@ -287,10 +287,10 @@ export function useChatRealtime({
                           ? "message_done_partial"
                           : "message_done",
                       error
-                        ? "流式回复出错"
+                        ? "Streaming reply failed"
                         : is_partial
-                          ? "流式回复中断"
-                          : "流式回复完成",
+                          ? "Streaming reply interrupted"
+                          : "Streaming reply completed",
                       {
                         event_type: "message_done",
                         content_chars: String(content || "").length,
@@ -318,7 +318,7 @@ export function useChatRealtime({
             );
             if (
               typeof content === "string" &&
-              content.includes("已更新记忆层")
+              content.includes("Updated memory layer")
             ) {
               authFetch(`${API}/channels/${selectedId}/context`)
                 .then((r) => r.json())

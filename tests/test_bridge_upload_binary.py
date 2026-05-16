@@ -1,8 +1,4 @@
-"""bridge /files/upload-binary 端点测试（sendMedia 协议的 AgentNexus 侧）。
-
-覆盖：鉴权（missing / invalid bearer）、频道成员校验、文件保存 + FileRecord
-创建、size cap、content-type 推断、空 body 拒绝。
-"""
+"""Tests for test bridge upload binary."""
 from __future__ import annotations
 
 import uuid
@@ -26,7 +22,7 @@ from app.features.agent_bridge.tokens import apply_token_to_bot
 async def _seed_bot_in_channel(
     db_session: AsyncSession,
 ) -> tuple[str, str, str]:
-    """返回 (bot_id, channel_id, plaintext_token)."""
+    """Covers seed bot in channel behavior."""
     ws_id = f"ws-{uuid.uuid4().hex[:8]}"
     ch_id = f"ch-{uuid.uuid4().hex[:8]}"
     bot_id = f"bot-{uuid.uuid4().hex[:8]}"
@@ -206,7 +202,7 @@ async def test_upload_binary_infers_content_type_from_filename(
     client: AsyncClient, db_session: AsyncSession,
     tmp_path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Content-Type 缺失或 octet-stream 时用文件名扩展名兜底。"""
+    """Covers test upload binary infers content type from filename behavior."""
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
     monkeypatch.setattr(settings, "agent_bridge_enabled", True)
 

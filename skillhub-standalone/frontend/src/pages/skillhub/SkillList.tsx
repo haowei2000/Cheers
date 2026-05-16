@@ -51,14 +51,14 @@ function getSkillEmoji(skillId: string): string {
 
 // Default category options.
 const DEFAULT_CATEGORIES = [
-  { value: 'development', label: '🦊 开发工具' },
-  { value: 'document', label: '🦋 文档处理' },
-  { value: 'tool', label: '🐝 实用工具' },
-  { value: 'knowledge', label: '🦉 知识管理' },
-  { value: 'ai', label: '🤖 AI 助手' },
+  { value: 'development', label: '🦊 Development Tools' },
+  { value: 'document', label: '🦋 Document Processing' },
+  { value: 'tool', label: '🐝 Utilities' },
+  { value: 'knowledge', label: '🦉 Knowledge Management' },
+  { value: 'ai', label: '🤖 AI Assistants' },
   { value: 'agent', label: '🦁 Agent' },
-  { value: 'debug', label: '🐞 调试分析' },
-  { value: 'imported', label: '🎁 其他' },
+  { value: 'debug', label: '🐞 Debugging & Analysis' },
+  { value: 'imported', label: '🎁 Other' },
 ];
 
 // Card background gradients.
@@ -80,7 +80,7 @@ function getCategoryLabel(skillCategory: string): { value: string; label: string
   const found = DEFAULT_CATEGORIES.find(c => c.value === skillCategory);
   if (found) return found;
   // Fall back to the imported category when no matching category is found.
-  return DEFAULT_CATEGORIES.find(c => c.value === 'imported') || { value: 'imported', label: '🎁 其他' };
+  return DEFAULT_CATEGORIES.find(c => c.value === 'imported') || { value: 'imported', label: '🎁 Other' };
 }
 
 // Import modal component.
@@ -108,11 +108,11 @@ function UploadModal({
 
   async function handleUpload() {
     if (files.length === 0) {
-      setError('请选择文件或文件夹');
+      setError('Choose a file or folder');
       return;
     }
     if (useCustom && !customCategory.trim()) {
-      setError('请输入自定义分类');
+      setError('Enter a custom category');
       return;
     }
 
@@ -163,15 +163,15 @@ function UploadModal({
 
   function getDisplayText(): string {
     if (loading) {
-      return '正在从本地运输skill，请稍等......';
+      return 'Importing local skill. Please wait...';
     }
     if (files.length === 0) {
-      return selectedType === 'file' ? '点击选择压缩包...' : '点击选择文件夹...';
+      return selectedType === 'file' ? 'Click to choose an archive...' : 'Click to choose a folder...';
     }
     if (files.length === 1) {
       return files[0].name;
     }
-    return `已选择 ${files.length} 个文件`;
+    return `Selected ${files.length} files`;
   }
 
   if (!isOpen) return null;
@@ -183,41 +183,41 @@ function UploadModal({
           <div className="modal-upload-overlay">
             <div className="modal-upload-progress">
               <div className="modal-upload-spinner">🌱</div>
-              <div className="modal-upload-text">从本地运输 skill 种子中...</div>
+              <div className="modal-upload-text">Importing local skill package...</div>
               <div className="modal-upload-dots">
                 <span></span><span></span><span></span>
               </div>
             </div>
           </div>
         )}
-        <h2>✨ 导入 Skill</h2>
+        <h2>✨ Import Skill</h2>
 
         <div className="modal-section">
-          <label>选择类型</label>
+          <label>Type</label>
           <div className="import-type-selector">
             <button
               className={`import-type-btn ${selectedType === 'file' ? 'active' : ''}`}
               onClick={() => { setSelectedType('file'); setFiles([]); }}
             >
-              📦 压缩包
+              📦 Archive
             </button>
             <button
               className={`import-type-btn ${selectedType === 'folder' ? 'active' : ''}`}
               onClick={() => { setSelectedType('folder'); setFiles([]); }}
             >
-              📁 文件夹
+              📁 Folder
             </button>
           </div>
         </div>
 
         <div className="modal-section">
-          <label>{selectedType === 'file' ? '选择文件' : '选择文件夹'}</label>
-          <span className="upload-hint">确认上传文件后需要等待一段时间，请勿离开</span>
+          <label>{selectedType === 'file' ? 'Choose File' : 'Choose Folder'}</label>
+          <span className="upload-hint">Processing can take a while after upload. Keep this page open.</span>
           <div className={`file-input-wrapper ${loading ? 'loading' : ''}`}>
             {loading && (
               <div className="file-loading-indicator">
                 <span className="file-loading-spinner">📦</span>
-                <span className="file-loading-text">正在从本地运输skill，请稍等......</span>
+                <span className="file-loading-text">Importing local skill. Please wait...</span>
               </div>
             )}
             {selectedType === 'file' ? (
@@ -237,11 +237,11 @@ function UploadModal({
             )}
             <span className="file-name">{getDisplayText()}</span>
           </div>
-          <p className="hint">{selectedType === 'file' ? '支持 .zip, .tar.gz, .tgz 等格式' : '支持 md/json/py/txt 等常见格式'}</p>
+          <p className="hint">{selectedType === 'file' ? 'Supports .zip, .tar.gz, .tgz, and similar formats' : 'Supports common formats such as md/json/py/txt'}</p>
         </div>
 
         <div className="modal-section">
-          <label>选择分类</label>
+          <label>Category</label>
           <div className="category-options">
             {DEFAULT_CATEGORIES.map(cat => (
               <button
@@ -264,12 +264,12 @@ function UploadModal({
               onChange={e => setUseCustom(e.target.checked)}
               disabled={loading}
             />
-            或者创建新分类
+            Or create a new category
           </label>
           {useCustom && (
             <input
               type="text"
-              placeholder="输入新分类名称..."
+              placeholder="Enter a new category name..."
               value={customCategory}
               onChange={e => setCustomCategory(e.target.value)}
               className="custom-category-input"
@@ -280,7 +280,7 @@ function UploadModal({
         {error && <div className="modal-error">{error}</div>}
 
         <div className="modal-actions">
-          <button className="modal-btn cancel" onClick={onClose} disabled={uploading}>取消</button>
+          <button className="modal-btn cancel" onClick={onClose} disabled={uploading}>Cancel</button>
           <button
             className="modal-btn confirm"
             onClick={handleUpload}
@@ -289,9 +289,9 @@ function UploadModal({
             {uploading ? (
               <span className="upload-loading">
                 <span className="upload-spinner">🌀</span>
-                导入中，请稍候...
+                Importing, please wait...
               </span>
-            ) : '✨ 确认导入'}
+            ) : '✨ Confirm Import'}
           </button>
         </div>
       </div>
@@ -356,10 +356,10 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
         await loadData();
         onRefresh?.();
       } else {
-        setUploadMessage({ type: 'error', text: result.message || '同步失败' });
+        setUploadMessage({ type: 'error', text: result.message || 'Sync failed' });
       }
     } catch (err) {
-      setUploadMessage({ type: 'error', text: `同步失败: ${err}` });
+      setUploadMessage({ type: 'error', text: `Sync failed: ${err}` });
     }
 
     setSyncing(false);
@@ -465,7 +465,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
       const skillsData = await fetchSkills(category || undefined);
       setSkills(skillsData);
     } catch (err) {
-      console.error('加载失败:', err);
+      console.error('Load failed:', err);
     }
     setLoading(false);
   }
@@ -487,22 +487,22 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
 
   async function handleDelete(e: React.MouseEvent, skillId: string, skillName: string) {
     e.stopPropagation();
-    if (!confirm(`确定要删除「${skillName}」吗？`)) return;
+    if (!confirm(`Delete '${skillName}'?`)) return;
 
     setDeleting(skillId);
     try {
       await deleteSkill(skillId);
-      setUploadMessage({ type: 'success', text: `✓ 已删除: ${skillName}` });
+      setUploadMessage({ type: 'success', text: `✓ Deleted: ${skillName}` });
       loadData();
       onRefresh?.();
     } catch (err) {
-      setUploadMessage({ type: 'error', text: `✗ 删除失败: ${err}` });
+      setUploadMessage({ type: 'error', text: `✗ Delete failed: ${err}` });
     }
     setDeleting(null);
   }
 
   function handleUploadSuccess() {
-    setUploadMessage({ type: 'success', text: '✓ 导入成功！' });
+    setUploadMessage({ type: 'success', text: '✓ Import succeeded!' });
     loadData();
     onRefresh?.();
   }
@@ -511,7 +511,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
     return (
       <div className="loading-container">
         <div className="loading-icon">🌸</div>
-        <div className="loading-text">正在加载森林...</div>
+        <div className="loading-text">Loading skills...</div>
         <div className="loading-dots">
           <span></span><span></span><span></span>
         </div>
@@ -544,7 +544,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
           <div className="search-wrapper">
             <input
               type="text"
-              placeholder="🌿 搜索森林中的技能..."
+              placeholder="🌿 Search skills..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="search-input"
@@ -571,10 +571,10 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
               <button
                 className="upload-btn"
                 onClick={() => setShowUploadModal(true)}
-                title="导入 Skill"
+                title="Import Skill"
               >
                 <span className="upload-btn-text">
-                  <span className="upload-btn-leaf">🍃</span>导入本地skill
+                  <span className="upload-btn-leaf">🍃</span>Import local skill
                 </span>
                 <span className="upload-btn-flower">🌸</span>
               </button>
@@ -587,14 +587,14 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
               className="category-chip active back-chip"
               onClick={() => setCategory('')}
             >
-              🌿 返回全部
+              🌿 Back to All
             </button>
           )}
           <button
             className={`category-chip ${category === '' ? 'active' : ''}`}
             onClick={() => setCategory('')}
           >
-            🌈 全部
+            🌈 All
           </button>
           {categories.map(cat => (
             <button
@@ -622,7 +622,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
             </span>
           )}
           <span className="skills-count-text">
-            {category ? `共 ${filteredSkills.length} 个skill` : `共发现 ${filteredSkills.length} 个skill`}
+            {category ? `${filteredSkills.length} skills` : `${filteredSkills.length} skills found`}
           </span>
           <div
             className="update-btn-wrapper"
@@ -648,7 +648,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
                 onClick={handleSync}
                 disabled={syncing}
               >
-                <span className="update-btn-text">{syncing ? '同步中...' : '更新'}</span>
+                <span className="update-btn-text">{syncing ? 'Syncing...' : 'Update'}</span>
                 <span className="update-btn-icon">{syncing ? '⏳' : '🌙'}</span>
               </button>
             </div>
@@ -690,7 +690,7 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
                     className="download-btn"
                     onClick={e => handleDownload(e, skill.id)}
                   >
-                    📥 下载
+                    📥 Download
                   </button>
                 </div>
               </div>
@@ -702,8 +702,8 @@ export default function SkillList({ onSelect, onRefresh }: Props) {
       {filteredSkills.length === 0 && (
         <div className="empty">
           <div className="empty-icon">🦔</div>
-          <p>森林里没有找到这个技能</p>
-          <span>试试导入一个 Skill 吧 🌱</span>
+          <p>No skills found</p>
+          <span>Import a skill to get started 🌱</span>
         </div>
       )}
 

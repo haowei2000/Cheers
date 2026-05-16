@@ -1,8 +1,4 @@
-"""记录已派发给 Agent Bridge provider、等待回推的占位 Bot 消息。
-
-进程内 dict；多副本部署需要换成 DB 持久化（可用 Message.content=''
-+ msg_type=REPLY 作为 implicit pending 的天然表达，但显式 registry 便于超时处理）。
-"""
+"""Pending module."""
 from __future__ import annotations
 
 import asyncio
@@ -51,7 +47,7 @@ class PendingReplyRegistry:
             return p
 
     async def peek_by_msg(self, msg_id: str) -> PendingReply | None:
-        """不消费地查询 pending，用于在 finalize 之前读取 channel_id 等元信息。"""
+        """Peek by msg."""
         async with self._lock:
             return self._by_msg.get(msg_id)
 
@@ -60,11 +56,7 @@ class PendingReplyRegistry:
             return self._by_task.get((task_id, bot_id))
 
     async def resolve(self, *, task_id: str | None, bot_id: str, msg_id: str | None) -> PendingReply | None:
-        """按 msg_id（优先）或 (task_id, bot_id) 定位一个 pending。找到即从 registry 移除。
-
-        所有查找都强制 bot_id 匹配：plugin A 不能用自己的连接去 finalize
-        plugin B 的占位消息（反向 cross-bot 冒充）。
-        """
+        """Resolve."""
         if msg_id:
             async with self._lock:
                 p = self._by_msg.get(msg_id)

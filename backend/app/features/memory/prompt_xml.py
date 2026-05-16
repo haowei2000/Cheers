@@ -5,12 +5,12 @@ from typing import Any
 from xml.sax.saxutils import escape, quoteattr
 
 MEMORY_LAYER_FIELDS = (
-    ("anchor", "项目锚点"),
-    ("progress", "项目进度"),
-    ("decisions", "决策记录"),
-    ("files_index", "资料索引"),
-    ("recent", "近期动态"),
-    ("todos", "待办事项"),
+    ("anchor", "Project Anchor"),
+    ("progress", "Project Progress"),
+    ("decisions", "Decision Records"),
+    ("files_index", "File Index"),
+    ("recent", "Recent Updates"),
+    ("todos", "Todos"),
 )
 
 

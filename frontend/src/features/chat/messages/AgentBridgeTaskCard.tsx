@@ -13,11 +13,11 @@ export function AgentBridgeTaskCard({
   onOpen,
 }: AgentBridgeTaskCardProps) {
   const title =
-    typeof task.title === "string" ? task.title : "后台任务进行中";
+    typeof task.title === "string" ? task.title : "Background task in progress";
   const body =
     typeof task.message === "string"
       ? task.message
-      : "Agent Bridge 已接收任务，完成后会自动更新这条回复。";
+      : "Agent Bridge received the task. This reply updates automatically when it finishes.";
   const taskId =
     typeof task.task_id === "string" ? task.task_id : message.task_id || null;
   const timeout =
@@ -68,7 +68,7 @@ export function AgentBridgeTaskCard({
         className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px]"
         style={{ color: "var(--fg-3)" }}
       >
-        {timeout !== null && <span>等待超过 {timeout}s</span>}
+        {timeout !== null && <span>Waiting over {timeout}s</span>}
         {taskId && <span>task {taskId.slice(0, 8)}</span>}
       </div>
     </button>

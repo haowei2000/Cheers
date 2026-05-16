@@ -1,4 +1,4 @@
-"""Workspace 数据访问层."""
+"""Workspace repo module."""
 from __future__ import annotations
 
 from sqlalchemy import select

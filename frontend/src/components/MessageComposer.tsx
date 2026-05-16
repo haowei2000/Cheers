@@ -22,10 +22,10 @@ export const MESSAGE_COMPOSER_KIND_ORDER: MessageComposerKind[] = [
 ];
 
 const MESSAGE_COMPOSER_KIND_LABEL: Record<MessageComposerKind, string> = {
-  normal: "消息",
-  secret: "加密",
-  announcement: "公告",
-  topic: "主题",
+  normal: "Messages",
+  secret: "Encrypted",
+  announcement: "Announcement",
+  topic: "Topics",
 };
 
 export interface ComposerPendingFile {
@@ -353,8 +353,8 @@ export function MessageComposer({
 
   const titlePlaceholder =
     displayKind === "announcement"
-      ? "标题（可选，例如「周五发布窗口」）…"
-      : "主题标题（可选，例如「升级计划讨论」）…";
+      ? "Title (optional, e.g. “Friday release window”)..."
+      : "Topic title (optional, e.g. “Upgrade planning”)...";
   const shouldShowKindhead = !replyingTo;
   const placementClass =
     mentionPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1";
@@ -368,8 +368,8 @@ export function MessageComposer({
             type="button"
             onClick={() => onCycleKind?.(-1)}
             className="an-msgkind-arrow"
-            title="上一种消息类型 (Shift+Tab)"
-            aria-label="上一种消息类型"
+            title="Previous message type (Shift+Tab)"
+            aria-label="Previous message type"
           >
             ‹
           </button>
@@ -384,7 +384,7 @@ export function MessageComposer({
                     ? " is-topic"
                     : "")
             }
-            title="Tab 切换 · Shift+Tab 反向"
+            title="Tab switches type · Shift+Tab reverses"
           >
             {displayKind === "secret" ? (
               <AppIcon name="lock" className="w-3.5 h-3.5" />
@@ -401,8 +401,8 @@ export function MessageComposer({
             type="button"
             onClick={() => onCycleKind?.(1)}
             className="an-msgkind-arrow"
-            title="下一种消息类型 (Tab)"
-            aria-label="下一种消息类型"
+            title="Next message type (Tab)"
+            aria-label="Next message type"
           >
             ›
           </button>
@@ -423,11 +423,11 @@ export function MessageComposer({
             replyingTo.sender_type === "bot"
               ? refBot?.display_name || refBot?.username || "Bot"
               : replyingTo.sender_id === currentUserId
-                ? "我"
+                ? "Me"
                 : replyingTo.sender_name ||
                   refUser?.display_name ||
                   refUser?.username ||
-                  "用户";
+                  "User";
           const refText =
             parseHelperPayload(replyingTo.content).text || replyingTo.content;
           const refPreview = refText.replace(/\n/g, " ").slice(0, 80);
@@ -437,14 +437,14 @@ export function MessageComposer({
               <span className="an-rq-name">{refLabel}</span>
               <span className="an-rq-snip">
                 {refPreview}
-                {refText.length > 80 ? "…" : ""}
+                {refText.length > 80 ? "..." : ""}
               </span>
               <button
                 type="button"
                 onClick={onCancelReply}
                 className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full hover:bg-[var(--surface-hover)]"
                 style={{ color: "var(--fg-3)" }}
-                title="取消回复"
+                title="CancelReply"
               >
                 <AppIcon name="close" className="w-3 h-3" />
               </button>
@@ -473,8 +473,8 @@ export function MessageComposer({
                   type="button"
                   onClick={() => removePendingFile(index, file.previewUrl)}
                   className="absolute top-1 right-1 w-5 h-5 bg-black/50 text-white rounded-full leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
-                  aria-label="移除附件"
-                  title="移除附件"
+                  aria-label="Remove attachment"
+                  title="Remove attachment"
                 >
                   <AppIcon name="close" className="w-3 h-3" />
                 </button>
@@ -491,14 +491,14 @@ export function MessageComposer({
                   <div className="an-type-label text-[var(--fg-2)] truncate">
                     {file.name}
                   </div>
-                  <div className="an-type-caption text-[var(--fg-3)]">待发送</div>
+                  <div className="an-type-caption text-[var(--fg-3)]">Pending send</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => removePendingFile(index, null)}
                   className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--fg-3)] text-white rounded-full leading-none items-center justify-center flex sm:hidden sm:group-hover:flex"
-                  aria-label="移除附件"
-                  title="移除附件"
+                  aria-label="Remove attachment"
+                  title="Remove attachment"
                 >
                   <AppIcon name="close" className="w-3 h-3" />
                 </button>
@@ -528,8 +528,8 @@ export function MessageComposer({
             onPointerUp={handleResizeUp}
             onPointerCancel={handleResizeUp}
             onDoubleClick={() => setTextareaHeight(null)}
-            title="拖拽调整高度 · 双击重置"
-            aria-label="拖拽调整发送框高度"
+            title="Drag to resize height · double-click to reset"
+            aria-label="Drag to resize composer"
           >
             <span className="an-composer-resize-grip" />
           </div>
@@ -554,18 +554,18 @@ export function MessageComposer({
               )}
               {displayKind === "secret" && (
                 <span className="an-composer-kindhead-hint">
-                  端到端加密 · 仅 @ 的 Bot 可读原文
+                  End-to-end encrypted · only mentioned bots can read the original
                 </span>
               )}
               {displayKind === "normal" && (
                 <span className="an-composer-kindhead-hint">
-                  {normalHint ?? "@ 呼叫 Bot · Tab 切换类型 · ↵ 发送"}
+                  {normalHint ?? "@ mention bot · Tab switches type · Enter sends"}
                 </span>
               )}
               {selectedPromptTemplate && (
                 <span
                   className="an-composer-template-chip"
-                  title={`本次消息强制使用模板：${selectedPromptTemplate.name}`}
+                  title={`This message forces template: ${selectedPromptTemplate.name}`}
                 >
                   / {selectedPromptTemplate.name}
                 </span>
@@ -599,7 +599,7 @@ export function MessageComposer({
                     className={
                       "an-composer-iconbtn" + (keychainOpen ? " is-active" : "")
                     }
-                    title="插入密钥链"
+                    title="Insert keychain secret"
                   >
                     <AppIcon name="key" className="w-4 h-4" />
                   </button>
@@ -623,7 +623,7 @@ export function MessageComposer({
                         "an-composer-iconbtn" +
                         (uploadMenuOpen ? " is-active" : "")
                       }
-                      title="上传文件和图片"
+                      title="Upload files and images"
                     >
                       <AppIcon name="plus" className="w-[18px] h-[18px]" />
                     </button>
@@ -642,10 +642,10 @@ export function MessageComposer({
                     }
                     title={
                       selectedPromptTemplate
-                        ? `强制模板：${selectedPromptTemplate.name}`
-                        : "选择提示词模板覆盖本次消息"
+                        ? `Forced template: ${selectedPromptTemplate.name}`
+                        : "Choose a prompt template override for this message"
                     }
-                    aria-label="选择提示词模板"
+                    aria-label="Choose prompt template"
                   >
 	                    <span className="an-composer-glyph">/</span>
                   </button>
@@ -661,7 +661,7 @@ export function MessageComposer({
                   setMentionOpen(true);
                 }}
                 className="an-composer-iconbtn"
-                title="提及成员或 Bot"
+                title="Mention members or bots"
               >
 	                <span className="an-composer-glyph">@</span>
               </button>
@@ -669,7 +669,7 @@ export function MessageComposer({
                 type="button"
                 onClick={() => insertAtCursor("\n")}
                 className="an-composer-iconbtn is-kbd"
-                title="插入换行（快捷键 Shift+Enter）"
+                title="Insert line break (Shift+Enter)"
               >
                 <span className="an-kbd-glyph">⇧↵</span>
               </button>
@@ -684,8 +684,8 @@ export function MessageComposer({
                     }
                     title={
                       displayKind === "secret"
-                        ? "取消加密模式"
-                        : "开启加密模式（仅 Bot 可读原文）"
+                        ? "Disable encrypted mode"
+                        : "Enable encrypted mode (only bots can read the original)"
                     }
                     className={
                       "an-composer-iconbtn" +
@@ -703,7 +703,7 @@ export function MessageComposer({
               className="an-composer-send"
               disabled={disabled || !effectiveCanSend}
             >
-              {sendButtonLabel ?? (displayKind === "secret" ? "加密发送" : "发送")}
+              {sendButtonLabel ?? (displayKind === "secret" ? "Send encrypted" : "Send")}
             </button>
           </div>
         </div>
@@ -717,14 +717,14 @@ export function MessageComposer({
               overflowY: "auto",
             }}
           >
-            <div className="an-menu-head">插入密钥</div>
+            <div className="an-menu-head">Insert secret</div>
             {keychainLoading ? (
-              <div className="an-menu-empty">加载中…</div>
+              <div className="an-menu-empty">Loading...</div>
             ) : keychainItems.length === 0 ? (
               <div className="an-menu-empty">
-                暂无密钥
+                No secrets
                 <br />
-                <span style={{ opacity: 0.7 }}>点击侧边栏钥匙图标添加</span>
+                <span style={{ opacity: 0.7 }}>Click the key icon in the sidebar to add one</span>
               </div>
             ) : (
               keychainItems.map((item) => (
@@ -763,7 +763,7 @@ export function MessageComposer({
               <span className="an-mi-ico">
                 <AppIcon name="link" className="w-4 h-4" />
               </span>
-              <span>上传文件和图片</span>
+              <span>Upload files and images</span>
             </button>
           </div>
         )}
@@ -777,7 +777,7 @@ export function MessageComposer({
               overflowY: "auto",
             }}
           >
-            <div className="an-menu-head">提示词模板 · 强制覆盖本次消息</div>
+            <div className="an-menu-head">Prompt template · Force override for this message</div>
             {selectedPromptTemplate && (
               <button
                 type="button"
@@ -790,13 +790,13 @@ export function MessageComposer({
                 <span className="an-mi-ico">
                   <AppIcon name="close" className="w-3.5 h-3.5" />
                 </span>
-                <span>清除模板覆盖</span>
+                <span>Clear template override</span>
               </button>
             )}
             {promptTemplatesLoading ? (
-              <div className="an-menu-empty">加载中…</div>
+              <div className="an-menu-empty">Loading...</div>
             ) : promptTemplates.length === 0 ? (
-              <div className="an-menu-empty">暂无可用模板</div>
+              <div className="an-menu-empty">No templates available</div>
             ) : (
               promptTemplates.map((template) => (
                 <button
@@ -839,7 +839,7 @@ export function MessageComposer({
             role="listbox"
           >
             <li className="an-menu-head" style={{ listStyle: "none" }}>
-              @提及 · {matchedMentionItems.length} 项
+              @mentions · {matchedMentionItems.length} items
             </li>
             {matchedMentionItems.map((item) => (
               <li

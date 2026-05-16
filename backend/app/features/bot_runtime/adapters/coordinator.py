@@ -1,19 +1,4 @@
-"""@channel bot 适配器：内置统一 Bot（LangChain Agent + 工具集）。LangChain Agent + 工具集。
-
-工具：
-  call_bot        — @某Bot，将子任务委托给频道内专业 Bot
-  call_user       — 主动 @某位用户，可附带选择题等待其回答（合并原 ask_user）
-  update_anchor   — 更新四层记忆中的锚点层
-  update_decision — 更新四层记忆中的决策层
-  update_progress — 更新四层记忆中的进度层
-  create_file     — 将内容保存为 MD 文件，返回下载链接
-  read_file       — 读取频道内已上传文件的完整正文
-  web_fetch       — 获取网页内容，用于读取外部文档或链接
-  web_search      — 网页搜索，用于查找当前信息或研究主题
-
-Agent：使用 LangChain bind_tools + 手动 agent loop，
-       通过 OpenAI function calling API 实现结构化工具调用。
-"""
+"""Built-in channel coordinator Bot adapter backed by a LangChain agent and tools."""
 
 import json
 import logging
@@ -145,7 +130,10 @@ def _format_call_bot_xml_prompt(*, username: str, message: str, run_ctx: Any) ->
 
 
 def _get_llm_config() -> dict | None:
-    """优先 channel_bot，依次回退 orchestrator / system_llm，最后回退 helper_llm_* 环境变量。"""
+    """
+Resolve LLM configuration, preferring channel_bot, then orchestrator, then system_llm, then
+helper_llm environment variables.
+    """
     for scope in ("channel_bot", "orchestrator", "system_llm"):
         cfg = get_provider_for_scope(scope)
         if cfg and cfg.get("base_url") and cfg.get("model"):
@@ -166,7 +154,7 @@ def _get_llm_config() -> dict | None:
 
 
 def _make_llm(cfg: dict) -> ChatOpenAI:
-    """从配置构建 ChatOpenAI 实例。"""
+    """Build a ChatOpenAI instance from provider configuration."""
     kwargs: dict[str, Any] = {
         "base_url": cfg["base_url"].rstrip("/"),
         "api_key": cfg.get("api_key") or "none",
@@ -222,14 +210,15 @@ def _tool_label(tool_name: str, args: dict) -> str:
 
 
 def _make_tools(ctx: dict) -> list:
-    """创建绑定了执行上下文的工具列表。"""
+    """Make tools."""
 
     @tool
     async def update_anchor(content: str) -> str:
-        """更新项目锚点层（覆盖写入）。用于持久化项目目标、范围、核心约束等关键信息。
+        """
+Update the project anchor memory layer by replacing its content.
 
-        Args:
-            content: 完整的新锚点内容（覆盖写入）
+Args:
+    content: Complete replacement content for the anchor layer.
         """
         if not content.strip():
             return "错误：content 不能为空"
@@ -245,10 +234,11 @@ def _make_tools(ctx: dict) -> list:
 
     @tool
     async def update_progress(content: str) -> str:
-        """更新项目进度层（覆盖写入）。用于记录已完成事项、当前状态、下一步计划。
+        """
+Update the project progress memory layer by replacing its content.
 
-        Args:
-            content: 当前进度、已完成事项、下一步计划（覆盖写入）
+Args:
+    content: Current progress, completed work, and next steps.
         """
         if not content.strip():
             return "错误：content 不能为空"
@@ -264,10 +254,11 @@ def _make_tools(ctx: dict) -> list:
 
     @tool
     async def update_decision(content: str) -> str:
-        """记录重要决策到决策层（覆盖写入）。用于持久化技术选型、方案确认等关键决策。
+        """
+Record important decisions in the decisions memory layer.
 
-        Args:
-            content: 决策内容（覆盖写入）
+Args:
+    content: Replacement decision record content.
         """
         if not content.strip():
             return "错误：content 不能为空"
@@ -283,11 +274,12 @@ def _make_tools(ctx: dict) -> list:
 
     @tool
     async def call_bot(username: str, message: str) -> str:
-        """调用频道内指定专业 Bot 处理子任务，结果会广播到频道并反馈到对话中。
+        """
+Delegate a subtask to a specialist Bot in the current channel.
 
-        Args:
-            username: Bot 用户名（不含 @ 符号）
-            message: 发给该 Bot 的任务描述
+Args:
+    username: Bot username without the at sign.
+    message: Task description sent to that Bot.
         """
         from app.features.bot_runtime.pipeline.bot import Capabilities, dispatch_one
 
@@ -348,19 +340,20 @@ def _make_tools(ctx: dict) -> list:
         manual_label: str = "其他（手动输入）",
         manual_placeholder: str = "请输入您的回答...",
     ) -> str:
-        """主动 @某位用户，向其发送消息或提出选择题，Agent 立即暂停等待其回应。
+        """
+Mention a user, optionally ask a multiple-choice question, and pause for the user's answer.
 
-        仅通知时：填 username 和 message，不填 options。
-        向用户提问时：同时填写 options（至少 2 个），将展示选择题 UI 并等待回答。
+Use username and message for a notification. Provide at least two options to render a choice UI
+and wait for the answer.
 
-        Args:
-            username: 用户名（不含 @ 符号，从对话历史中获取）
-            message: 发给该用户的消息或问题描述
-            options: 选项列表（至少 2 个）；可传列表或 JSON 字符串；留空则仅发送通知消息
-            allow_multiple: 是否允许多选，默认 False（仅 options 不为空时生效）
-            allow_manual: 是否允许手动输入，默认 False
-            manual_label: 手动输入选项的显示标签
-            manual_placeholder: 手动输入框的占位提示文字
+Args:
+    username: Username without the at sign, usually obtained from conversation history.
+    message: Message or question sent to the user.
+    options: Choice list, JSON array string, or empty for notification-only mode.
+    allow_multiple: Whether multiple choices are allowed.
+    allow_manual: Whether freeform manual input is allowed.
+    manual_label: Label for the manual-input option.
+    manual_placeholder: Placeholder for the manual-input field.
         """
         username = (username or "").strip().lstrip("@")
         message = (message or "").strip()
@@ -408,11 +401,12 @@ def _make_tools(ctx: dict) -> list:
 
     @tool
     async def create_file(filename: str, content: str) -> str:
-        """将内容保存为 Markdown 文件并返回下载链接。
+        """
+Save content as a Markdown file and return a preview link.
 
-        Args:
-            filename: 文件名（不含扩展名）
-            content: 文件的完整 Markdown 内容
+Args:
+    filename: File name without an extension.
+    content: Complete Markdown body.
         """
         import uuid
         from datetime import datetime, timezone
@@ -481,12 +475,14 @@ def _make_tools(ctx: dict) -> list:
 
     @tool
     async def read_file(file_id: str) -> str:
-        """读取频道内已上传文件的完整正文内容。
-        使用场景：用户消息中引用了某文件，或文件索引中列出了文件，需要查看具体内容时调用。
-        可从「=== 项目记忆 ===」的「资料索引」部分找到 file_id。
+        """
+Read the full converted text of an uploaded file in the current channel.
 
-        Args:
-            file_id: 文件的唯一 ID（形如 xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx）
+Use this when a user references a file or the file index lists a file whose content must be
+inspected.
+
+Args:
+    file_id: Unique file ID, usually a UUID.
         """
         db_session = ctx.get("_db_session")
         if not db_session:
@@ -529,11 +525,12 @@ def _make_tools(ctx: dict) -> list:
 
     @tool
     async def create_todo(content: str, assignee_username: str | None = None) -> str:
-        """在当前频道创建一个待办事项 (Todo) 并可选地指派给某人或某个Bot。
+        """
+Create a todo item in the current channel and optionally assign it.
 
-        Args:
-            content: 待办事项的内容描述。
-            assignee_username: 可选，指派给某人的用户名（不含@），如果为空则不指派。
+Args:
+    content: Todo description.
+    assignee_username: Optional username without the at sign.
         """
         db_session = ctx.get("_db_session")
         if not db_session:
@@ -581,7 +578,7 @@ def _make_tools(ctx: dict) -> list:
 
     @tool
     async def list_todos() -> str:
-        """列出当前频道所有待办事项，返回编号、状态、内容和指派人。"""
+        """List all todo items in the current channel with index, status, content, and assignee."""
         db_session = ctx.get("_db_session")
         if not db_session:
             return "错误：数据库会话未注入"
@@ -609,13 +606,14 @@ def _make_tools(ctx: dict) -> list:
         status: str | None = None,
         assignee_username: str | None = None,
     ) -> str:
-        """修改当前频道中匹配关键词的待办事项。
+        """
+Update a todo item in the current channel that matches a keyword.
 
-        Args:
-            content_keyword: 用于定位待办的关键词（与待办内容做子串匹配）。
-            new_content: 可选，新的内容文本。
-            status: 可选，新状态，"pending" 或 "completed"。
-            assignee_username: 可选，重新指派给某人的用户名（不含@），传空字符串可清除指派。
+Args:
+    content_keyword: Keyword used to find a todo by substring match.
+    new_content: Optional replacement content.
+    status: Optional new status, either "pending" or "completed".
+    assignee_username: Optional username without the at sign; an empty string clears assignment.
         """
         db_session = ctx.get("_db_session")
         if not db_session:
@@ -667,10 +665,11 @@ def _make_tools(ctx: dict) -> list:
 
     @tool
     async def delete_todo(content_keyword: str) -> str:
-        """删除当前频道中匹配关键词的待办事项。
+        """
+Delete a todo item in the current channel that matches a keyword.
 
-        Args:
-            content_keyword: 用于定位待办的关键词（与待办内容做子串匹配）。
+Args:
+    content_keyword: Keyword used to find a todo by substring match.
         """
         db_session = ctx.get("_db_session")
         if not db_session:
@@ -747,7 +746,7 @@ def _make_tools(ctx: dict) -> list:
 
 
 def _build_file_refs_note(attachments: list[dict[str, str]] | None) -> str:
-    """为文档附件生成简短的文件引用提示（不注入正文，Agent 按需调用 read_file 工具读取）。"""
+    """Build a compact attachment reference note for documents without injecting file bodies."""
     if not attachments:
         return ""
     lines = ["[本次消息关联以下文件，已登记到文件索引，如需查看内容请调用 read_file 工具]"]
@@ -763,7 +762,7 @@ def _build_file_refs_note(attachments: list[dict[str, str]] | None) -> str:
 
 
 def _build_vision_content(user_text: str, attachments: list[dict[str, str]] | None) -> list[dict]:
-    """将文本和图片附件构建为 OpenAI Vision 格式的多模态 content 数组。"""
+    """Build OpenAI Vision multimodal content from text and image attachments."""
     parts: list[dict] = [{"type": "text", "text": user_text}]
     for att in attachments or []:
         if att.get("is_image") != "true":
@@ -782,7 +781,7 @@ def _build_vision_content(user_text: str, attachments: list[dict[str, str]] | No
 
 
 def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str, str]] | None) -> str:
-    """LLM 不可用时，基于已解析的附件内容给出保底回答。"""
+    """Build a fallback reply from parsed attachment content when the LLM is unavailable."""
     if not attachments:
         return ""
     normalized = (user_text or "").lower()
@@ -795,7 +794,7 @@ def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str,
         excerpt = content[:280].strip()
         if len(content) > 280:
             excerpt += "..."
-        sections.append(f"### 文件 {index}: {filename}")
+        sections.append(f"### File {index}: {filename}")
         if wants_summary:
             sections.append("基于已解析文本的概括：")
             if summary:
@@ -826,12 +825,12 @@ _UI_BLOCK_RE = re.compile(
 
 
 def _strip_ui_blocks(text: str) -> str:
-    """移除消息中的 helper-clarify / helper-form JSON 代码块（UI 指令，对 LLM 无意义）。"""
+    """Remove helper-clarify and helper-form JSON code blocks before sending content to the LLM."""
     return _UI_BLOCK_RE.sub("", text).strip()
 
 
 async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
-    """批量解析消息列表中所有发送者的显示名称，返回 {sender_id: name}。"""
+    """Resolve display names for all message senders in a batch."""
     from sqlalchemy import select
 
     from app.db.models import BotAccount, User
@@ -857,7 +856,7 @@ _get_names_for_messages = _resolve_display_names
 
 
 async def _fetch_user_display_name(session, user_id: str) -> str:
-    """获取单个用户的显示名称，失败时返回空字符串。"""
+    """Fetch one user display name and return an empty string on failure."""
     if not user_id:
         return ""
     from sqlalchemy import select
@@ -870,11 +869,7 @@ async def _fetch_user_display_name(session, user_id: str) -> str:
 
 
 async def _fetch_reply_context(session, replied_msg_id: str) -> str:
-    """
-    获取被回复消息的摘要前缀，格式：「回复 [发送者]: <内容摘要>」
-
-    供内置助手理解当前消息所针对的上文，返回空字符串表示无回复上下文。
-    """
+    """Fetch a short prefix summarizing the message being replied to."""
     if not replied_msg_id:
         return ""
     from sqlalchemy import select
@@ -915,13 +910,7 @@ async def _fetch_recent_history(
     before_msg_id: str | None,
     limit: int = HISTORY_MSG_COUNT,
 ) -> list:
-    """
-    从 DB 拉取当前触发消息之前的最近 limit 条非空消息，
-    转换为带发送者标识的 LangChain HumanMessage / AIMessage 列表（时间正序）。
-
-    每条消息格式：[发送者名称]: <内容>
-    使用 before_msg_id 精确定位，避免把当前轮次的消息重复带入。
-    """
+    """Fetch recent non-empty messages before the trigger message and convert them into LangChain messages."""
     from sqlalchemy import select
 
     from app.db.models import Message as MsgModel
@@ -973,12 +962,7 @@ async def _run_agent_iter(
     ctx: dict,
     history: list | None = None,
 ):
-    """使用 LangChain bind_tools + 手动 agent loop 运行 Agent，async-iterator 流式输出。
-
-    Yields ``Delta(text)`` per token chunk and tool-progress marker, then
-    a terminal ``Final(content)`` when the agent settles. Replaces the
-    legacy stream_cb callback path.
-    """
+    """Run the LangChain tool-calling agent loop and stream adapter events."""
     from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
 
     cfg = _get_llm_config()
@@ -1134,7 +1118,7 @@ async def _run_agent_iter(
 
 
 class ChannelBotAdapter(BotAdapter):
-    """@channel bot 内置适配器：LangChain Agent 驱动，支持 call_bot / call_user / update_anchor / update_decision 等工具。"""
+    """Built-in channel Bot adapter powered by a LangChain agent and channel tools."""
 
     async def execute(self, payload: AgentPayload):
         from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
@@ -1190,19 +1174,23 @@ class ChannelBotAdapter(BotAdapter):
                 ),
                 "=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n" + members_section,
                 (
-                    "## 核心行为准则\n\n"
-                    "- 用户消息信息不足、意图模糊或需要关键决策时，**第一步必须调用 call_user** 向相关用户收集信息，不要猜测或直接执行\n"
-                    "- call_user 的 username 从对话历史中获取（历史消息格式为 [用户名]: 消息内容）；需要提问时填写 options\n"
-                    "- 先调用所有必要工具，结果返回后再输出最终回复\n"
-                    "- 最终回复使用简洁专业的 Markdown 格式\n\n"
-                    "## 记忆维护职责（必须严格执行）\n\n"
-                    "在每次对话中，你必须主动判断是否需要更新以下记忆层，**不要等用户主动要求**：\n\n"
-                    "- **update_anchor**：若用户提到项目目标、范围、核心约束、背景发生变化，或锚点为空，立即更新。"
-                    "锚点是最高优先级记忆，必须始终保持最新、准确。\n"
-                    "- **update_progress**：若用户汇报进展、完成了某项任务、提到阶段成果、当前卡点或下一步计划，立即更新进度。"
-                    "进度文件应包含：已完成事项、当前状态、下一步计划。\n"
-                    "- **update_decision**：若对话中产生了重要决策、技术选型、方案确认，立即记录。\n\n"
-                    "**触发原则**：宁可多更新，不要遗漏。每轮对话结束前，先检查是否有需要持久化的信息，再输出最终回复。"
+                    "## Core Behavior Rules\n\n"
+                    "- If a user message lacks enough information, has ambiguous intent, or needs a key decision, "
+                    "**first call call_user** to collect information from the relevant user. Do not guess or execute directly.\n"
+                    "- Read call_user usernames from conversation history, whose format is [username]: message. "
+                    "Provide options when asking a question.\n"
+                    "- Call all necessary tools first, then produce the final reply after tool results return.\n"
+                    "- Final replies should use concise, professional Markdown.\n\n"
+                    "## Memory Maintenance Duties\n\n"
+                    "In every conversation, proactively decide whether these memory layers need updates. "
+                    "Do not wait for the user to ask:\n\n"
+                    "- **update_anchor**: update immediately when project goals, scope, constraints, or background change, "
+                    "or when the anchor is empty. The anchor is the highest-priority memory and must stay current and accurate.\n"
+                    "- **update_progress**: update immediately when the user reports progress, completed work, milestones, "
+                    "blockers, or next steps. Include completed work, current status, and next plan.\n"
+                    "- **update_decision**: record important decisions, technology choices, and confirmed plans immediately.\n\n"
+                    "**Trigger principle**: prefer updating too often over missing important information. "
+                    "Before the final reply, check whether anything should be persisted."
                 ),
             ]
         )
@@ -1216,7 +1204,7 @@ class ChannelBotAdapter(BotAdapter):
                 from app.features.memory.manager import save_layer
 
                 ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                entry = f"### 用户澄清选择（{ts}）\n{answer_body}"
+                entry = f"### User clarification choice ({ts})\n{answer_body}"
                 existing = (memory.get("decisions") or "").rstrip()
                 new_decisions = f"{existing}\n\n{entry}".strip() if existing else entry
                 await save_layer(channel_id, "decisions", new_decisions)

@@ -37,10 +37,10 @@ function fileTypeLabel(file: FileInfo): string {
   if (contentType.includes("pdf") || ext === "pdf") return "PDF";
   if (contentType.includes("html") || ["html", "htm"].includes(ext)) return "HTML";
   if (contentType.includes("wordprocessingml") || ["doc", "docx"].includes(ext)) return "Word";
-  if (contentType.includes("spreadsheetml") || ["xls", "xlsx", "csv"].includes(ext)) return "表格";
-  if (contentType.includes("text/") || ["md", "txt"].includes(ext)) return "文本";
-  if (isImageFile(file)) return "图片";
-  return "文件";
+  if (contentType.includes("spreadsheetml") || ["xls", "xlsx", "csv"].includes(ext)) return "Spreadsheet";
+  if (contentType.includes("text/") || ["md", "txt"].includes(ext)) return "Text";
+  if (isImageFile(file)) return "Image";
+  return "Files";
 }
 
 function fileName(file: FileInfo): string {
@@ -125,12 +125,12 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
           type="button"
           onClick={openPreview}
           className="block w-full bg-gray-50 text-left"
-          title={`预览 ${name}`}
+          title={`Preview ${name}`}
         >
           {imageFailed ? (
             <div className="flex h-32 items-center justify-center gap-2 text-xs text-gray-400">
               <AppIcon name="image" className="h-5 w-5 text-gray-300" />
-              <span>预览不可用</span>
+              <span>Preview unavailable</span>
             </div>
           ) : imagePreviewSrc ? (
             <img
@@ -143,7 +143,7 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
           ) : (
             <div className="flex h-32 items-center justify-center gap-2 text-xs text-gray-400">
               <AppIcon name="image" className="h-5 w-5 text-gray-300" />
-              <span>加载中...</span>
+              <span>Loading...</span>
             </div>
           )}
         </button>
@@ -165,8 +165,8 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
             type="button"
             onClick={openPreview}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-            title="预览"
-            aria-label={`预览 ${name}`}
+            title="Preview"
+            aria-label={`Preview ${name}`}
           >
             <AppIcon name="preview" className="h-4 w-4" />
           </button>
@@ -178,8 +178,8 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
                 onForward(file);
               }}
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-              title="转发文件"
-              aria-label={`转发 ${name}`}
+              title="Forward file"
+              aria-label={`Forward ${name}`}
             >
               <AppIcon name="forward" className="h-4 w-4" />
             </button>
@@ -191,8 +191,8 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
               handleDownload();
             }}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
-            title="下载"
-            aria-label={`下载 ${name}`}
+            title="Download"
+            aria-label={`Download ${name}`}
           >
             <AppIcon name="download" className="h-4 w-4" />
           </button>
@@ -305,7 +305,7 @@ export function MessageContentClamp({
             name={expanded ? "chevronUp" : "chevronDown"}
             className="h-3.5 w-3.5"
           />
-          {expanded ? "收起" : "展开完整消息"}
+          {expanded ? "Collapse" : "Show full message"}
         </button>
       )}
     </div>
@@ -439,11 +439,11 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
     if (!selectionCopy?.text) return;
     try {
       await navigator.clipboard.writeText(selectionCopy.text);
-      toast.success("已复制选中内容");
+      toast.success("Copied selected content");
       window.getSelection()?.removeAllRanges();
       setSelectionCopy(null);
     } catch {
-      toast.error("复制失败");
+      toast.error("Copy failed");
     }
   };
 
@@ -524,8 +524,8 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
                 top: selectionCopy.top,
                 left: selectionCopy.left,
               }}
-              title="复制选中内容"
-              aria-label="复制选中内容"
+              title="Copy selected content"
+              aria-label="Copy selected content"
             >
               <AppIcon name="copy" className="h-3.5 w-3.5" />
             </button>

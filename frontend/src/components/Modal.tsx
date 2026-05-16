@@ -12,10 +12,10 @@
  *
  * Usage:
  *   <Modal open={isOpen} onClose={() => setOpen(false)} title="Title">
- *     <p>body…</p>
+ *     <p>body...</p>
  *     <ModalFooter>
- *       <button …>Cancel</button>
- *       <button …>Confirm</button>
+ *       <button ...>Cancel</button>
+ *       <button ...>Confirm</button>
  *     </ModalFooter>
  *   </Modal>
  */
@@ -129,7 +129,7 @@ export function Modal({
                         onClick={onClose}
                         className="flex-shrink-0 rounded-md p-1 hover:bg-[var(--surface-soft)] transition-colors"
                         style={{ color: "var(--fg-3)" }}
-                        aria-label="关闭"
+                        aria-label="Close"
                       >
                         <AppIcon name="close" className="w-5 h-5" />
                       </button>

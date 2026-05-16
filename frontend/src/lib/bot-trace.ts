@@ -23,13 +23,13 @@ export function streamTraceLabel(trace: BotTraceEvent): string {
   if (trace.stream !== CLIENT_STREAM_TRACE) return botTraceStatusText(trace);
   const phase = trace.phase || "";
   const labels: Record<string, string> = {
-    placeholder: "创建 Bot 回复占位",
-    message_stream: "收到流式片段",
-    message_done: "流式回复完成",
-    message_done_partial: "流式回复中断",
-    message_done_error: "流式回复出错",
+    placeholder: "Create bot reply placeholder",
+    message_stream: "Received streaming chunk",
+    message_done: "Streaming reply completed",
+    message_done_partial: "Streaming reply interrupted",
+    message_done_error: "Streaming reply failed",
   };
-  return [labels[phase] || trace.title || "流式事件", trace.message]
+  return [labels[phase] || trace.title || "Streaming event", trace.message]
     .filter(Boolean)
     .join(" · ");
 }
@@ -61,31 +61,31 @@ export function botTraceStatusText(trace: BotTraceEvent): string {
   const message = trace.message || "";
   if (stream === "agentnexus_plugin") {
     const labels: Record<string, string> = {
-      received: "插件已收到消息",
-      hydrating_attachments: "正在读取附件",
-      attachments_ready: "附件已准备好",
-      loopback_start: "正在启动 provider",
-      loopback_accepted: "provider 已接收任务",
-      loopback_error: "provider 路由异常",
-      subagent_run_started: "provider run 已启动",
-      subagent_run_error: "provider run 启动失败",
+      received: "Plugin received the message",
+      hydrating_attachments: "Reading attachments",
+      attachments_ready: "Attachments are ready",
+      loopback_start: "Starting provider",
+      loopback_accepted: "Provider accepted the task",
+      loopback_error: "Provider routing error",
+      subagent_run_started: "Provider run started",
+      subagent_run_error: "Provider run failed to start",
     };
-    return [labels[phase] || title || "插件处理中", message].filter(Boolean).join(" · ");
+    return [labels[phase] || title || "Plugin processing", message].filter(Boolean).join(" · ");
   }
   if (stream === "lifecycle") {
-    if (phase === "start") return "provider 开始执行";
-    if (phase === "end") return "provider 执行完成";
-    if (phase === "error") return message || "provider 执行异常";
-    return [title || "provider 生命周期", message].filter(Boolean).join(" · ");
+    if (phase === "start") return "Provider started";
+    if (phase === "end") return "Provider completed";
+    if (phase === "error") return message || "Provider execution error";
+    return [title || "Provider lifecycle", message].filter(Boolean).join(" · ");
   }
-  if (stream === "assistant") return message ? `正在生成回复 · ${message}` : "正在生成回复";
-  if (stream === "thinking") return message ? `思考中 · ${message}` : "思考中";
-  if (stream === "plan") return title ? `更新计划 · ${title}` : "更新计划";
+  if (stream === "assistant") return message ? `Generating reply · ${message}` : "Generating reply";
+  if (stream === "thinking") return message ? `Thinking · ${message}` : "Thinking";
+  if (stream === "plan") return title ? `Updating plan · ${title}` : "Updating plan";
   if (stream === "tool" || stream === "item") {
-    return [title || "正在调用工具", trace.status || message].filter(Boolean).join(" · ");
+    return [title || "Calling tool", trace.status || message].filter(Boolean).join(" · ");
   }
-  if (stream === "command_output") return [title || "命令执行中", message].filter(Boolean).join(" · ");
-  if (stream === "approval") return [title || "等待审批", trace.status || message].filter(Boolean).join(" · ");
-  if (stream === "error") return message || title || "provider 内部错误";
+  if (stream === "command_output") return [title || "Command running", message].filter(Boolean).join(" · ");
+  if (stream === "approval") return [title || "Waiting for approval", trace.status || message].filter(Boolean).join(" · ");
+  if (stream === "error") return message || title || "Provider internal error";
   return [title || stream, message].filter(Boolean).join(" · ");
 }

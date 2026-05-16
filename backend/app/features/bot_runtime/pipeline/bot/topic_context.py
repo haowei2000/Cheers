@@ -1,15 +1,4 @@
-"""消息主题（topic）相关工具。
-
-职责拆分：
-- promote_to_topic(msg)：在已加载到 session 里的 Message 上翻 msg_type
-  字段，最轻量的形式。调用者必须持有 Message 对象且在同一 session。
-- ensure_topic_root(session, msg_id)：仅有 id 时使用。自己 fetch 父消息并
-  翻字段。幂等，找不到父消息时安静返回。
-- install_auto_promote_listener(): 注册一次，之后任何新 Message 只要带着
-  in_reply_to_msg_id 写入库，父消息就会被自动升级为 topic 根。
-
-gather_topic_context() 继续只消费 msg_type，不关心谁翻的字段。
-"""
+"""Topic context module."""
 from __future__ import annotations
 
 import logging
@@ -203,17 +192,7 @@ async def gather_topic_context(
     trigger_msg: Message,
     session: AsyncSession,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """
-    收集触发消息的主题上下文，基于 msg_type 判断规则：
-
-    - 规则1: normal，无子回复          → ([], [])
-    - 规则2: reply，链深度=1           → ([parent], [])
-    - 规则3: reply，链深度>1           → ([ancestor...], [])
-    - 规则4: topic，已有子回复          → ([], [child...])
-
-    Returns:
-        (topic_chain, child_replies)
-    """
+    """Gather topic context."""
     if trigger_msg.msg_type == MSG_TYPE_REPLY and trigger_msg.in_reply_to_msg_id:
         # Rules 2/3: collect ancestor messages along the in_reply_to_msg_id chain.
         msgs_in_chain: list[Message] = []

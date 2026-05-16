@@ -103,8 +103,8 @@ export function Sidebar({
   onPreloadChannel,
 }: SidebarProps) {
   const currentWs = workspaces.find((w) => w.workspace_id === selectedWorkspaceId);
-  const currentWsLabel = currentWs ? currentWs.name : "全部工作空间";
-  const currentWsLetter = currentWs ? currentWs.name.slice(0, 1).toUpperCase() : "全";
+  const currentWsLabel = currentWs ? currentWs.name : "All workspaces";
+  const currentWsLetter = currentWs ? currentWs.name.slice(0, 1).toUpperCase() : "A";
   const currentWsAccent = currentWs ? wsColor(currentWs.workspace_id) : "var(--accent)";
   const currentWsAvatarUrl = currentWs?.avatar_url || (!currentWs ? ALL_WORKSPACES_AVATAR : "");
   const [searchWorkspaceId, setSearchWorkspaceId] = useState(selectedWorkspaceId);
@@ -115,29 +115,29 @@ export function Sidebar({
     ? workspaces.find((w) => w.workspace_id === searchWorkspaceId)
     : null;
   const searchScopeName = searchWorkspaceId
-    ? searchWorkspace?.name || "当前工作空间"
-    : "全部工作空间";
-  const searchScopeLabel = searchWorkspaceId ? searchScopeName : "全部空间";
+    ? searchWorkspace?.name || "Current workspace"
+    : "All workspaces";
+  const searchScopeLabel = searchWorkspaceId ? searchScopeName : "All spaces";
   const searchScopeTitle = searchWorkspaceId
-    ? `频道与消息范围：${searchScopeName}；成员和 Bot 全局搜索`
-    : "频道、消息、成员和 Bot 全局搜索";
+    ? `Channel and message scope: ${searchScopeName}; members and bots are searched globally`
+    : "Search channels, messages, members, and bots globally";
   const searchScopeOptions = useMemo<SearchScopeOption[]>(
     () => [
       {
         value: "",
-        label: "全部空间",
-        title: "频道、消息、成员和 Bot 全局搜索",
+        label: "All spaces",
+        title: "Search channels, messages, members, and bots globally",
         marker: "∗",
       },
       ...workspaces.map((w) => {
         const trimmed = w.name.trim();
         const marker = w.kind === "personal"
-          ? "个"
+          ? "P"
           : [...trimmed].slice(0, 2).join("").toUpperCase() || "?";
         return {
           value: w.workspace_id,
           label: w.name,
-          title: w.kind === "personal" ? "Personal · 私信" : "Workspace · 频道",
+          title: w.kind === "personal" ? "Personal · DMs" : "Workspace · Channels",
           marker,
         };
       }),
@@ -146,14 +146,14 @@ export function Sidebar({
   );
   const searchTypeOptions = useMemo<SearchTypeFilterOption[]>(
     () => [
-      { type: "workspaces", label: "空间" },
-      { type: "channels", label: "频道" },
-      { type: "users", label: "成员" },
+      { type: "workspaces", label: "Spaces" },
+      { type: "channels", label: "Channels" },
+      { type: "users", label: "Members" },
       { type: "bots", label: "Bot" },
-      { type: "files", label: "文件" },
-      { type: "messages", label: "消息" },
-      { type: "todos", label: "待办" },
-      { type: "tasks", label: "任务" },
+      { type: "files", label: "Files" },
+      { type: "messages", label: "Messages" },
+      { type: "todos", label: "Todos" },
+      { type: "tasks", label: "Tasks" },
     ],
     [],
   );
@@ -280,7 +280,7 @@ export function Sidebar({
           dm.title ||
           cp.display_name ||
           cp.username ||
-          (cp.member_type === "bot" ? "Bot Chat" : "私信");
+          (cp.member_type === "bot" ? "Bot Chat" : "DMs");
         try {
           const response = await apiFetch(`/files/by-channel/${dm.channel_id}`, {
             token: authToken,
@@ -325,7 +325,7 @@ export function Sidebar({
   };
 
   const workspaceInitials = (workspace: Workspace) => {
-    if (workspace.kind === "personal") return "个";
+    if (workspace.kind === "personal") return "P";
     const trimmed = workspace.name.trim();
     return [...trimmed].slice(0, 4).join("").toUpperCase() || "?";
   };
@@ -352,7 +352,7 @@ export function Sidebar({
     } = {},
   ) => {
     if (!dmWorkspaceId) {
-      toast.error("请先选择工作空间");
+      toast.error("Select a workspace first");
       return;
     }
     try {
@@ -383,7 +383,7 @@ export function Sidebar({
       resetSearch();
       if (isMobile) setSidebarOpen(false);
     } catch {
-      toast.error(options.createNew ? "发起 Chat 失败" : "发起私信失败");
+      toast.error(options.createNew ? "Failed to start chat" : "Failed to start DM");
       // Still refresh so any partial state reconciles.
       if (setDMs) refreshDMs(setDMs, authToken ?? undefined);
     }
@@ -441,7 +441,7 @@ export function Sidebar({
     if (!personalAddDialog) return;
     if (personalAddDialog.kind === "dm") {
       if (selection.type !== "user") {
-        toast.error("请选择成员开始私信");
+        toast.error("Select a member to start a DM");
         return;
       }
       setPersonalAddDialog(null);
@@ -450,7 +450,7 @@ export function Sidebar({
     }
     if (personalAddDialog.kind === "project" || personalAddDialog.kind === "projectChat") {
       if (selection.type !== "bot") {
-        toast.error("请选择 Bot 添加到 Project");
+        toast.error("Select a bot to add to the project");
         return;
       }
       const projectTitle =
@@ -528,7 +528,7 @@ export function Sidebar({
       }}
     >
       {isMobile && (
-        <div className="an-mobile-ws-strip" aria-label="工作空间">
+        <div className="an-mobile-ws-strip" aria-label="Workspaces">
           {workspaces.map((workspace) => {
             const active = selectedWorkspaceId === workspace.workspace_id;
             return (
@@ -563,8 +563,8 @@ export function Sidebar({
               setSidebarOpen(false);
               onOpenCreateWorkspace();
             }}
-            title="创建工作空间"
-            aria-label="创建工作空间"
+            title="Create workspace"
+            aria-label="Create workspace"
           >
             +
           </button>
@@ -596,12 +596,12 @@ export function Sidebar({
             {currentWsLabel}
           </span>
           {selectedWorkspaceId && (
-            <Tooltip content="设置工作空间图标">
+            <Tooltip content="Set workspace icon">
               <button
                 type="button"
                 onClick={() => setWorkspaceSettingsOpen(true)}
-                title="设置工作空间图标"
-                aria-label="设置工作空间图标"
+                title="Set workspace icon"
+                aria-label="Set workspace icon"
                 className="an-btn an-btn-ghost an-btn-icon"
               >
                 <AppIcon name="palette" className="w-4 h-4" />
@@ -612,8 +612,8 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => setWsMenuOpen((o) => !o)}
-              title="工作空间操作"
-              aria-label="工作空间操作"
+              title="Workspace actions"
+              aria-label="Workspace actions"
               aria-haspopup="menu"
               aria-expanded={wsMenuOpen}
               className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
@@ -639,7 +639,7 @@ export function Sidebar({
                 <span className="an-mi-ico inline-flex w-4 h-4">
                   <AppIcon name="settings" className="w-full h-full" />
                 </span>
-                <span>编辑工作空间</span>
+                <span>Edit workspace</span>
               </button>
               <button
                 type="button"
@@ -652,7 +652,7 @@ export function Sidebar({
                 <span className="an-mi-ico inline-flex w-4 h-4">
                   <AppIcon name="userPlus" className="w-full h-full" />
                 </span>
-                <span>邀请成员</span>
+                <span>Invite members</span>
               </button>
               <div className="an-menu-sep" />
               <button
@@ -662,7 +662,7 @@ export function Sidebar({
                 onClick={() => {
                   setWsMenuOpen(false);
                   if (
-                    !confirm("确定删除该工作空间？删除后其下的频道也将被删除。")
+                    !confirm("Delete this workspace? Deleting it will also delete its channels.")
                   )
                     return;
                   apiFetch(`/workspaces/${selectedWorkspaceId}`, {
@@ -672,15 +672,15 @@ export function Sidebar({
                     .then((r) => r.json())
                     .then((d) => {
                       if (d.status === "success") {
-                        toast.success("工作空间已删除");
+                        toast.success("Workspace deleted");
                         setSelectedWorkspaceId("");
                         refreshWorkspaces(setWorkspaces, authToken);
                         refreshChannels(setChannels, authToken);
                       } else {
-                        toast.error(d.detail || "删除失败");
+                        toast.error(d.detail || "Delete failed");
                       }
                     })
-                    .catch(() => toast.error("请求失败"));
+                    .catch(() => toast.error("Request failed"));
                 }}
               >
                 <span
@@ -689,7 +689,7 @@ export function Sidebar({
                 >
                   <AppIcon name="close" className="w-full h-full" />
                 </span>
-                <span>删除工作空间</span>
+                <span>Delete workspace</span>
               </button>
             </div>
           )}
@@ -703,7 +703,7 @@ export function Sidebar({
         token={authToken}
         workspaceId={searchWorkspaceId || undefined}
         placeholder={
-          "搜索消息 / 文件 / 频道 / 成员 / Bot"
+          "Search messages / files / channels / members / bots"
         }
         keyboardHint="⌘K"
         enableShortcut
@@ -721,18 +721,18 @@ export function Sidebar({
       {!isPersonalWorkspace && (
         <>
       <div className="an-rail-section-h">
-        <span>频道</span>
+        <span>Channels</span>
         <button
           type="button"
           onClick={() => {
             if (!selectedWorkspaceId) {
-              toast.error("请先选择工作空间");
+              toast.error("Select a workspace first");
               return;
             }
             onOpenCreateChannel();
           }}
           className="an-add"
-          title="创建频道"
+          title="Create channel"
         >
           +
         </button>
@@ -781,21 +781,21 @@ export function Sidebar({
                 </button>
                 <button
                   type="button"
-                  title="删除频道"
+                  title="Delete channel"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!confirm(`确定删除频道「${c.name}」？此操作不可恢复。`)) return;
+                    if (!confirm(`Delete channel "${c.name}"? This cannot be undone.`)) return;
                     apiFetch(`/channels/${c.channel_id}`, { method: "DELETE", token: authToken })
                       .then(async (r) => {
                         const payload = await r.json().catch(() => null);
                         if (!r.ok || payload?.status === "error") {
-                          throw new Error(payload?.detail || payload?.message || "删除失败");
+                          throw new Error(payload?.detail || payload?.message || "Delete failed");
                         }
                         setChannels((prev) => prev.filter((x) => x.channel_id !== c.channel_id));
                         if (selectedId === c.channel_id) setSelectedId(null);
-                        toast.success("频道已删除");
+                        toast.success("Channel deleted");
                       })
-                      .catch((err) => toast.error(err?.message || "删除频道失败"));
+                      .catch((err) => toast.error(err?.message || "Failed to delete channel"));
                   }}
                   className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                   style={{ color: "var(--fg-3)" }}
@@ -814,11 +814,11 @@ export function Sidebar({
       {isPersonalWorkspace && (
         <>
       <div className="an-rail-section-h">
-        <span>私信</span>
+        <span>DMs</span>
         <button
           type="button"
           className="an-add"
-          title="搜索用户开始私信"
+          title="Search usersStart DM"
           onClick={() => {
             openPersonalAddDialog("dm");
           }}
@@ -834,7 +834,7 @@ export function Sidebar({
             padding: "0 12px 6px",
           }}
         >
-          还没有 DM · 点 ＋ 开始一个
+          No DMs yet · click + to start one
         </div>
       )}
       {directDms.length > 0 && (
@@ -846,7 +846,7 @@ export function Sidebar({
                 const label =
                   cp.display_name ||
                   cp.username ||
-                  (cp.member_type === "system" ? "系统" : "用户");
+                  (cp.member_type === "system" ? "System" : "User");
                 const isSystem = cp.member_type === "system";
                 const memberKind: MemberKind = isSystem ? "system" : "user";
                 return (
@@ -889,14 +889,14 @@ export function Sidebar({
                     {!isSystem && (
                     <button
                       type="button"
-                      title="退出此私信"
-                      aria-label="退出此私信"
+                      title="Leave this DM"
+                      aria-label="Leave this DM"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (!currentUser) return;
                         if (
                           !confirm(
-                            `从列表中移除与「${label}」的私信？对方再次消息时会重新出现。`,
+                            `Remove "${label}" from the DM list? It will reappear when the other person messages again.`,
                           )
                         )
                           return;
@@ -915,7 +915,7 @@ export function Sidebar({
                               setSelectedId(null);
                             }
                           })
-                          .catch(() => toast.error("退出私信失败"));
+                          .catch(() => toast.error("Failed to sign out of DM"));
                       }}
                       className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                       style={{ color: "var(--fg-3)" }}
@@ -931,15 +931,15 @@ export function Sidebar({
       )}
 
       <div className="an-rail-section-h">
-        <span>文件</span>
+        <span>Files</span>
         <span className="an-rail-count">
-          {personalFilesLoading ? "…" : personalFiles.length}
+          {personalFilesLoading ? "..." : personalFiles.length}
         </span>
       </div>
       <ul className="px-2 py-1 pb-2">
         {personalFiles.length === 0 && (
           <li className="an-rail-empty">
-            {personalFilesLoading ? "文件加载中…" : "暂无文件"}
+            {personalFilesLoading ? "Loading files..." : "No files"}
           </li>
         )}
         {personalFiles.map((file) => (
@@ -974,7 +974,7 @@ export function Sidebar({
         <button
           type="button"
           className="an-add"
-          title="创建 Project 并选择 Bot"
+          title="Create project and choose a bot"
           onClick={() => openPersonalAddDialog("project")}
         >
           +
@@ -982,7 +982,7 @@ export function Sidebar({
       </div>
       <ul className="px-2 py-1 pb-2">
         {projectGroups.length === 0 && (
-          <li className="an-rail-empty">还没有 Project · 点 ＋ 选择 Bot 创建一个</li>
+          <li className="an-rail-empty">No projects yet · click + to choose a bot and create one</li>
         )}
         {projectGroups.map((project) => (
           <li key={project.projectId} className="an-project-group">
@@ -996,8 +996,8 @@ export function Sidebar({
               <button
                 type="button"
                 className="an-project-add"
-                title={`给 ${project.projectTitle} 添加 Bot Chat`}
-                aria-label={`给 ${project.projectTitle} 添加 Bot Chat`}
+                title={`Add a bot chat to ${project.projectTitle}`}
+                aria-label={`Add a bot chat to ${project.projectTitle}`}
                 onClick={() => openPersonalAddDialog("projectChat", project)}
               >
                 <AppIcon name="plus" />
@@ -1045,14 +1045,14 @@ export function Sidebar({
                     </button>
                     <button
                       type="button"
-                      title="移除此 Chat"
-                      aria-label="移除此 Chat"
+                      title="Remove this chat"
+                      aria-label="Remove this chat"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (!currentUser) return;
                         if (
                           !confirm(
-                            `从列表中移除「${label}」？Bot 再次消息时会重新出现。`,
+                            `Remove "${label}"? It will reappear when the bot messages again.`,
                           )
                         )
                           return;
@@ -1069,7 +1069,7 @@ export function Sidebar({
                               setSelectedId(null);
                             }
                           })
-                          .catch(() => toast.error("移除 Chat 失败"));
+                          .catch(() => toast.error("Failed to remove chat"));
                       }}
                       className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                       style={{ color: "var(--fg-3)" }}
@@ -1092,12 +1092,12 @@ export function Sidebar({
       <div className="an-rail-foot">
         {currentUser ? (
           <>
-            <Tooltip content="当前在线" placement="top">
+            <Tooltip content="Online now" placement="top">
               <span
                 className="an-account-avatar-wrap"
                 tabIndex={0}
-                aria-label="当前在线"
-                title="当前在线"
+                aria-label="Online now"
+                title="Online now"
               >
                 <AvatarVisual
                   avatarUrl={currentUser.avatar_url}
@@ -1161,23 +1161,23 @@ export function Sidebar({
       onClose={() => setPersonalAddDialog(null)}
       title={
         personalAddDialog?.kind === "dm"
-          ? "开始私信"
+          ? "Start DM"
           : personalAddDialog?.kind === "project"
-            ? "创建 Project"
-            : "添加 Bot Chat"
+            ? "Create Project"
+            : "Add Bot Chat"
       }
       description={
         personalAddDialog?.kind === "dm"
-          ? "搜索成员并创建私信。"
+          ? "Search members and create DMs."
           : personalAddDialog?.kind === "project"
-            ? "命名 Project，然后选择第一个 Bot Chat。"
-            : `给 ${personalAddDialog?.projectTitle || "Project"} 添加一个 Bot Chat。`
+            ? "Name the project, then choose the first bot chat."
+            : `Add a bot chat to ${personalAddDialog?.projectTitle || "Project"}.`
       }
     >
       {personalAddDialog?.kind === "project" && (
         <label className="mb-3 block">
           <span className="mb-1 block text-xs font-medium" style={{ color: "var(--fg-2)" }}>
-            Project 名称
+            Project Name
           </span>
           <input
             value={projectDraftTitle}
@@ -1198,11 +1198,11 @@ export function Sidebar({
         token={authToken}
         workspaceId={searchWorkspaceId || undefined}
         types={personalAddDialog?.kind === "dm" ? ["users"] : ["bots"]}
-        placeholder={personalAddDialog?.kind === "dm" ? "搜索成员" : "搜索 Bot"}
+        placeholder={personalAddDialog?.kind === "dm" ? "Search members" : "Search bots"}
         modal
         autoFocus
-        emptyText={personalAddDialog?.kind === "dm" ? "没有可添加的成员" : "没有可添加的 Bot"}
-        actionLabel={personalAddDialog?.kind === "dm" ? "私信" : "添加"}
+        emptyText={personalAddDialog?.kind === "dm" ? "No members available to add" : "No bots available to add"}
+        actionLabel={personalAddDialog?.kind === "dm" ? "DMs" : "Add"}
         onSelect={handlePersonalAddSelect}
       />
     </Modal>

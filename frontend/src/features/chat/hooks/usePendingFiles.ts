@@ -142,12 +142,12 @@ export function usePendingFiles({
       if (!selectedId) return;
       if (!currentUserId) {
         onRequireLogin();
-        toast.error("请先登录后再上传文件");
+        toast.error("Sign in before uploading files");
         return;
       }
       const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
       if (!PRESIGN_EXTS.has(ext)) {
-        toast.error(`不支持的格式：${ext}`);
+        toast.error(`Unsupported format: ${ext}`);
         return;
       }
       const localPreview = IMAGE_EXTS.has(ext)
@@ -168,7 +168,7 @@ export function usePendingFiles({
         });
         const presignData = await presignRes.json();
         if (!presignRes.ok || !presignData.data?.upload_url) {
-          toast.error(presignData.detail || "获取上传凭证失败");
+          toast.error(presignData.detail || "Failed to get upload credentials");
           if (localPreview) URL.revokeObjectURL(localPreview);
           return;
         }
@@ -183,7 +183,7 @@ export function usePendingFiles({
           body: file,
         });
         if (!putRes.ok) {
-          toast.error("文件上传失败，请重试");
+          toast.error("File upload failed. Try again.");
           if (localPreview) URL.revokeObjectURL(localPreview);
           return;
         }
@@ -195,7 +195,7 @@ export function usePendingFiles({
         }
         appendPendingFile(file_id, file.name, localPreview);
       } catch (err) {
-        toast.error("文件上传出错");
+        toast.error("File upload failed");
         if (localPreview) URL.revokeObjectURL(localPreview);
         console.error(err);
       }

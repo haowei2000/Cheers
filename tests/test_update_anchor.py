@@ -1,4 +1,4 @@
-"""测试 ChannelBotAdapter 能否通过 update_anchor 工具正确更新锚点层。"""
+"""Tests for test update anchor."""
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,7 +22,7 @@ def _payload(channel_id: str, text: str) -> AgentPayload:
 
 @pytest.mark.asyncio
 async def test_update_anchor_persists_content() -> None:
-    """LLM 返回 update_anchor 工具调用时，锚点层应被写入 memory_entries 表。"""
+    """Covers test update anchor persists content behavior."""
     channel_id = "test-ch-anchor-001"
     anchor_content = "项目目标：构建多智能体协作平台，2026 Q2 上线。"
 
@@ -89,7 +89,7 @@ async def test_update_anchor_persists_content() -> None:
 
 @pytest.mark.asyncio
 async def test_update_anchor_empty_content_returns_error() -> None:
-    """update_anchor 传入空 content 时应返回错误而不崩溃。"""
+    """Covers test update anchor empty content returns error behavior."""
     channel_id = "test-ch-anchor-002"
 
     mock_llm = MagicMock()
@@ -120,7 +120,7 @@ async def test_update_anchor_empty_content_returns_error() -> None:
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Background task isolation issue - patches don't propagate to _run_bot_pipeline_bg")
 async def test_update_anchor_via_api(client, db_session) -> None:
-    """通过 HTTP API 发送消息，触发 update_anchor，验证 memory_entries 中锚点已更新。"""
+    """Covers test update anchor via api behavior."""
     from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 
     ws = Workspace(workspace_id="anc0-0000-0000-0000-000000000001", name="AnchorWS")

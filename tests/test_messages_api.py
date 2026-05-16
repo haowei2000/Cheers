@@ -1,4 +1,4 @@
-"""ChatCore 消息 API 测试."""
+"""Tests for test messages api."""
 from __future__ import annotations
 
 import base64
@@ -145,7 +145,7 @@ class FakeStorageProvider(StorageProvider):
 
 @pytest.mark.asyncio
 async def test_list_messages_empty(client: AsyncClient, db_session: AsyncSession) -> None:
-    """GET /api/channels/{id}/messages 无消息时返回空列表."""
+    """Covers test list messages empty behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000001", name="W")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000001",
@@ -165,7 +165,7 @@ async def test_list_messages_empty(client: AsyncClient, db_session: AsyncSession
 
 @pytest.mark.asyncio
 async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSession) -> None:
-    """POST /api/channels/{id}/messages 发送消息，GET 可拉取到."""
+    """Covers test create message and list behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000002", name="W2")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000002",
@@ -202,7 +202,7 @@ async def test_list_topic_messages_includes_nested_replies(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """话题独立页接口返回根消息及所有子孙回复，而不是只返回直接回复。"""
+    """Covers test list topic messages includes nested replies behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000062", name="W62")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000062",
@@ -295,7 +295,7 @@ async def test_dm_message_normalizes_topics_but_preserves_replies(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """DM 不生成 topic 结构，但允许普通消息保留回复关系。"""
+    """Covers test dm message normalizes topics but preserves replies behavior."""
     import app.api.v1.messages.routes as message_routes
 
     monkeypatch.setattr(
@@ -394,7 +394,7 @@ async def test_create_message_survives_bot_pipeline_enqueue_failure(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """Bot 调度失败不能让已发送用户消息回滚或让 REST 失败。"""
+    """Covers test create message survives bot pipeline enqueue failure behavior."""
     import app.api.v1.messages.routes as message_routes
 
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000035", name="W35")
@@ -455,7 +455,7 @@ async def test_create_message_returns_before_bot_pipeline_enqueue_completes(
     monkeypatch,
     db_session: AsyncSession,
 ) -> None:
-    """REST 发送消息不等待 Bot 调度完成，避免队列初始化拖住前端。"""
+    """Covers test create message returns before bot pipeline enqueue completes behavior."""
     import app.api.v1.messages.routes as message_routes
 
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000033", name="W33")
@@ -531,7 +531,7 @@ async def test_create_message_without_bot_target_skips_bot_pipeline_enqueue(
     monkeypatch,
     db_session: AsyncSession,
 ) -> None:
-    """没有 Bot 目标时不入 Bot pipeline 队列。"""
+    """Covers test create message without bot target skips bot pipeline enqueue behavior."""
     import app.api.v1.messages.routes as message_routes
 
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000034", name="W34")
@@ -579,7 +579,7 @@ async def test_secret_message_content_stores_msg_id_reference(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """加密消息正文入库为带 msg_id 的引用，便于后续定位解密对象。"""
+    """Covers test secret message content stores msg id reference behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000022", name="W22")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000022",
@@ -618,7 +618,7 @@ async def test_secret_message_content_stores_msg_id_reference(
 async def test_create_message_uses_authenticated_user_identity(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    """客户端传入的 sender_id/sender_type 不能伪造消息发送者。"""
+    """Covers test create message uses authenticated user identity behavior."""
     ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000021", name="W21")
     ch = Channel(
         channel_id="e1000000-0000-0000-0000-000000000021",
@@ -976,7 +976,7 @@ async def test_file_preview_content_returns_local_markdown(
         type="public",
     )
     file_path = tmp_path / "preview.md"
-    file_path.write_text("# 预览\n\nhello preview", encoding="utf-8")
+    file_path.write_text("# Preview\n\nhello preview", encoding="utf-8")
     record = FileRecord(
         file_id="file-preview-md1",
         channel_id=ch.channel_id,
