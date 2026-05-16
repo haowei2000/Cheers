@@ -17,7 +17,6 @@ from app.config import settings
 from app.db.models import FileRecord
 from app.services.file_processor.convert import (
     ALL_SUPPORTED_TYPES,
-    SUPPORTED_DOCUMENT_TYPES,
     FileParseError,
     ParsedDocument,
     UnsupportedFileTypeError,
@@ -35,6 +34,42 @@ from app.services.storage.base import (
 from app.services.storage.bootstrap import get_storage_service, is_storage_enabled
 
 logger = logging.getLogger("app.services.file_processor.service")
+
+_SUPPORTED_UPLOAD_LABEL = (
+    "pdf / doc / docx / xls / xlsx / ppt / pptx / wps / ofd / rtf / csv / "
+    "txt / md / html / zip / rar / 7z / cad / epub / png / jpg / jpeg / webp / gif"
+)
+
+_DEFAULT_CONTENT_TYPES: dict[str, str] = {
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".ofd": "application/ofd",
+    ".rtf": "application/rtf",
+    ".csv": "text/csv",
+    ".zip": "application/zip",
+    ".rar": "application/vnd.rar",
+    ".7z": "application/x-7z-compressed",
+    ".tar": "application/x-tar",
+    ".gz": "application/gzip",
+    ".bz2": "application/x-bzip2",
+    ".xz": "application/x-xz",
+    ".dxf": "image/vnd.dxf",
+    ".epub": "application/epub+zip",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
 
 
 class FileFlowError(Exception):
@@ -333,7 +368,7 @@ class FilePipelineService:
             raise FileFlowError("文件名不能为空")
         suffix = Path(normalized_name).suffix.lower()
         if suffix not in ALL_SUPPORTED_TYPES:
-            raise FileFlowError("当前仅支持 pdf / docx / xlsx / txt / md / html / png / jpg / jpeg / webp / gif 文件")
+            raise FileFlowError(f"当前仅支持 {_SUPPORTED_UPLOAD_LABEL} 文件")
 
         # allowed_mime_types = self.allowed_mime_types
         normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
@@ -362,7 +397,7 @@ class FilePipelineService:
     def allowed_mime_types(self) -> set[str]:
         raw = (getattr(self.settings, "file_upload_allowed_types", "") or "").strip()
         if not raw:
-            values = {mime for mime_types in SUPPORTED_DOCUMENT_TYPES.values() for mime in mime_types}
+            values = {mime for mime_types in ALL_SUPPORTED_TYPES.values() for mime in mime_types}
             return values
         return {part.strip().lower() for part in raw.split(",") if part.strip()}
 
@@ -520,30 +555,10 @@ class FilePipelineService:
         if guessed:
             return guessed
         suffix = (record.original_filename or path.name).lower()
-        if suffix.endswith(".txt"):
-            return "text/plain"
-        if suffix.endswith(".md"):
-            return "text/markdown"
-        if suffix.endswith(".html") or suffix.endswith(".htm"):
-            return "text/html"
-        if suffix.endswith(".docx"):
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        if suffix.endswith(".pdf"):
-            return "application/pdf"
-        return "application/octet-stream"
+        return _DEFAULT_CONTENT_TYPES.get(Path(suffix).suffix.lower(), "application/octet-stream")
 
     def _default_content_type_for_suffix(self, suffix: str) -> str:
-        if suffix == ".txt":
-            return "text/plain"
-        if suffix == ".md":
-            return "text/markdown"
-        if suffix in {".html", ".htm"}:
-            return "text/html"
-        if suffix == ".docx":
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        if suffix == ".pdf":
-            return "application/pdf"
-        return "application/octet-stream"
+        return _DEFAULT_CONTENT_TYPES.get(suffix.lower(), "application/octet-stream")
 
     async def _persist_parsed_cache(self, record: FileRecord, parsed: ParsedDocument) -> None:
         base = Path(self.settings.data_dir)

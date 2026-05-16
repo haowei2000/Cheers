@@ -26,7 +26,11 @@ services:
       - FILE_UPLOAD_MAX_BYTES=${FILE_UPLOAD_MAX_BYTES:-26214400}
       - FILE_RETENTION_DAYS=${FILE_RETENTION_DAYS:-90}
       - FILE_RETENTION_CLEANUP_INTERVAL_SECONDS=${FILE_RETENTION_CLEANUP_INTERVAL_SECONDS:-86400}
-      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/html,text/plain,text/markdown,image/png,image/jpeg,image/webp,image/gif}
+      - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/ofd,application/rtf,text/csv,text/html,text/plain,text/markdown,application/zip,application/vnd.rar,application/x-7z-compressed,application/x-tar,application/gzip,application/epub+zip,image/png,image/jpeg,image/webp,image/gif}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://agentnexus.epichust.com}
+      - KKFILEVIEW_ENABLED=${KKFILEVIEW_ENABLED:-true}
+      - KKFILEVIEW_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com}
+      - KKFILEVIEW_TOKEN_TTL_SECONDS=${KKFILEVIEW_TOKEN_TTL_SECONDS:-600}
       - LLM_LOCALHOST_ALIAS=${LLM_LOCALHOST_ALIAS:-host.docker.internal}
       - HELPER_LLM_BASE_URL=${HELPER_LLM_BASE_URL:-}
       - HELPER_LLM_MODEL=${HELPER_LLM_MODEL:-}
