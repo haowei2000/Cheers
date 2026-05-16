@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import type { ChannelMember as Member, Friend, BotItem as Bot } from "./types";
 import { AppIcon } from "./components/icons/AppIcon";
 import { MemberAvatar, MemberRow, MemberSection } from "./components/members";
+import { Modal } from "./components/Modal";
 import { SearchPicker } from "./components/SearchPicker";
 
 const API = "/api/v1";
@@ -37,15 +38,14 @@ function BotOnlinePill({ bot }: { bot: Pick<Bot, "binding_type" | "connection_st
   const isPartial = text.includes("部分");
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+      className={`an-chip ${
         isGood
-          ? "bg-green-50 text-green-700"
+          ? "green"
           : isPartial
-            ? "bg-yellow-50 text-yellow-700"
-            : "bg-red-50 text-red-600"
+            ? "orange"
+            : "red"
       }`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${isGood ? "bg-green-500" : isPartial ? "bg-yellow-500" : "bg-red-500"}`} />
       {text}
     </span>
   );
@@ -293,28 +293,15 @@ export default function ChannelMembersModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="an-token-panel bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">频道成员</h2>
-            <p className="text-xs text-gray-500">#{channelName}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-            aria-label="关闭"
-            title="关闭"
-          >
-            <AppIcon name="close" className="w-4 h-4" />
-          </button>
-        </div>
-
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      title="频道成员"
+      description={`#${channelName}`}
+      maxWidth="max-w-lg"
+      panelClassName="an-token-panel max-h-[85vh] overflow-hidden"
+    >
+      <div className="-mx-5 -my-4 flex min-h-0 flex-col">
         {/* Tabs */}
         <div className="an-tabs px-3">
           <button
@@ -348,11 +335,11 @@ export default function ChannelMembersModal({
         </div>
 
         {/* Content */}
-        <div className="p-4 max-h-[60vh] overflow-y-auto">
+        <div className="max-h-[60vh] overflow-y-auto p-4">
           {activeTab === "members" && (
             // Member list.
             loading ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="an-type-meta py-8 text-center">
                 <div className="animate-spin w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full mx-auto mb-2"></div>
                 加载中…
               </div>
@@ -433,8 +420,8 @@ export default function ChannelMembersModal({
                 )}
 
                 {members.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <AppIcon name="users" className="w-10 h-10 mx-auto mb-2 text-gray-400" />
+                  <div className="an-type-meta py-8 text-center">
+                    <AppIcon name="users" className="mx-auto mb-2 h-10 w-10 text-[var(--fg-3)]" />
                     <p>暂无成员</p>
                   </div>
                 )}
@@ -446,15 +433,15 @@ export default function ChannelMembersModal({
             // Invite friends.
             <div>
               {friends.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-2">🤝</div>
-                  <p className="text-gray-500 mb-2">暂无可邀请的好友</p>
-                  <p className="text-xs text-gray-400">所有好友都已在频道中</p>
+                <div className="py-8 text-center">
+                  <AppIcon name="userPlus" className="mx-auto mb-3 h-10 w-10 text-[var(--fg-3)]" />
+                  <p className="an-type-body mb-1">暂无可邀请的好友</p>
+                  <p className="an-type-meta">所有好友都已在频道中</p>
                 </div>
               ) : (
                 <>
                   <div className="mb-4 flex items-center justify-between">
-                    <p className="text-sm text-gray-600">
+                    <p className="an-type-meta">
                       选择好友邀请加入频道 ({selectedFriends.size} 已选)
                     </p>
                     {selectedFriends.size > 0 && (
@@ -484,8 +471,8 @@ export default function ChannelMembersModal({
                               return next;
                             });
                           }}
-                          className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
-                            isSelected ? "bg-blue-50 border border-[#1264A3]/30" : "bg-gray-50 hover:bg-gray-100"
+                          className={`flex cursor-pointer items-center justify-between rounded-md border p-3 transition-colors ${
+                            isSelected ? "border-[var(--accent)] bg-[var(--accent-muted)]" : "border-[var(--border)] bg-[var(--bg-0)] hover:bg-[var(--surface-soft)]"
                           }`}
                         >
                           <div className="flex items-center gap-3">
@@ -494,7 +481,7 @@ export default function ChannelMembersModal({
                               checked={isSelected}
                               onChange={() => {}}
                               onClick={(e) => e.stopPropagation()}
-                              className="accent-[#1264A3]"
+                              className="accent-[var(--accent)]"
                             />
                             <MemberAvatar
                               avatarUrl={friend.avatar_url}
@@ -502,11 +489,11 @@ export default function ChannelMembersModal({
                               label={friend.display_name || friend.username}
                               size={32}
                             />
-                            <div>
-                              <p className="font-medium text-sm text-gray-900">
+                            <div className="min-w-0">
+                              <p className="an-type-body truncate font-medium">
                                 {friend.display_name || friend.username}
                               </p>
-                              <p className="text-xs text-gray-500">@{friend.username}</p>
+                              <p className="an-type-meta truncate">@{friend.username}</p>
                             </div>
                           </div>
                           <button
@@ -531,7 +518,7 @@ export default function ChannelMembersModal({
           {activeTab === "invite_by_id" && (
             <div>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="an-label mb-1 block">
                   用户
                 </label>
                 <SearchPicker
@@ -567,6 +554,6 @@ export default function ChannelMembersModal({
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

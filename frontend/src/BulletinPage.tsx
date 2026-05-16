@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AppIcon } from "./components/icons/AppIcon";
+import { Modal, ModalFooter } from "./components/Modal";
 
 const API = "/api/v1";
 
@@ -18,11 +19,13 @@ type Issue = {
 };
 
 const PRIORITY_LABEL: Record<string, string> = { low: "低", medium: "中", high: "高" };
-const PRIORITY_COLOR: Record<string, string> = {
-  low: "bg-gray-100 text-gray-600",
-  medium: "bg-yellow-100 text-yellow-700",
-  high: "bg-red-100 text-red-700",
+const PRIORITY_CHIP_CLASS: Record<string, string> = {
+  low: "off",
+  medium: "orange",
+  high: "red",
 };
+const STATUS_LABEL: Record<Issue["status"], string> = { open: "开放", closed: "已关闭", resolved: "已解决" };
+const STATUS_CHIP_CLASS: Record<Issue["status"], string> = { open: "green", closed: "off", resolved: "blue" };
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" });
@@ -170,15 +173,15 @@ export default function BulletinPage() {
     authToken && (issue.creator_id === currentUserId || isAdmin);
 
   return (
-    <div className="an-token-page min-h-screen bg-[#F8F9FA] flex flex-col">
+    <div className="an-token-page flex min-h-screen flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4">
-        <Link to="/" className="text-gray-500 hover:text-gray-800 text-sm flex items-center gap-1">
+      <header className="flex items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-1)] px-6 py-3">
+        <Link to="/" className="an-btn an-btn-ghost an-btn-sm">
           <AppIcon name="arrowLeft" className="w-4 h-4" />
           返回
         </Link>
-        <h1 className="text-lg font-semibold text-gray-800">公共留言板</h1>
-        <span className="text-xs text-gray-400 ml-1">Issues</span>
+        <h1 className="an-type-title">公共留言板</h1>
+        <span className="an-type-meta ml-1">Issues</span>
         <div className="flex-1" />
         {authToken && (
           <button
@@ -192,13 +195,13 @@ export default function BulletinPage() {
         )}
       </header>
 
-      <div className="flex-1 max-w-4xl w-full mx-auto px-4 py-6">
+      <div className="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
         {/* Filters */}
-        <div className="flex gap-3 mb-5">
+        <div className="mb-5 flex flex-wrap items-center gap-3">
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value as "" | "open" | "closed" | "resolved")}
-            className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white text-gray-700"
+            className="an-select w-auto min-w-36"
           >
             <option value="">全部状态</option>
             <option value="open">开放</option>
@@ -208,54 +211,54 @@ export default function BulletinPage() {
           <select
             value={filterPriority}
             onChange={(e) => setFilterPriority(e.target.value as "" | "low" | "medium" | "high")}
-            className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white text-gray-700"
+            className="an-select w-auto min-w-36"
           >
             <option value="">全部优先级</option>
             <option value="low">低</option>
             <option value="medium">中</option>
             <option value="high">高</option>
           </select>
-          <span className="text-sm text-gray-500 self-center">{issues.length} 条</span>
+          <span className="an-chip">{issues.length} 条</span>
         </div>
 
         {/* Issue List */}
         {loading ? (
-          <div className="text-center text-gray-400 py-20">加载中…</div>
+          <div className="an-type-meta py-20 text-center">加载中…</div>
         ) : issues.length === 0 ? (
-          <div className="text-center text-gray-400 py-20">暂无 Issue{authToken ? "，点击右上角新建" : ""}</div>
+          <div className="an-type-meta py-20 text-center">暂无 Issue{authToken ? "，点击右上角新建" : ""}</div>
         ) : (
           <ul className="space-y-2">
             {issues.map((issue) => (
               <li
                 key={issue.issue_id}
-                className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-start gap-3 hover:border-gray-300 transition-colors"
+                className="flex items-start gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-1)] px-4 py-3 transition-colors hover:border-[var(--border-strong)]"
               >
                 {/* Status dot */}
                 <span
-                  className={`mt-1 flex-shrink-0 w-2.5 h-2.5 rounded-full ${issue.status === "open" ? "bg-green-500" : issue.status === "resolved" ? "bg-purple-500" : "bg-gray-400"}`}
-                  title={issue.status === "open" ? "开放" : issue.status === "resolved" ? "已解决" : "已关闭"}
+                  className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                  style={{ background: issue.status === "open" ? "var(--green)" : issue.status === "resolved" ? "var(--blue)" : "var(--fg-3)" }}
+                  title={STATUS_LABEL[issue.status]}
                 />
 
                 {/* Main content */}
                 <div className="flex-1 min-w-0">
                   <button
+                    type="button"
                     onClick={() => setDetailIssue(issue)}
-                    className="font-medium text-gray-800 hover:text-[#1264A3] text-left truncate block w-full"
+                    className="block w-full truncate text-left font-medium text-[var(--fg-1)] hover:text-[var(--accent)]"
                   >
                     {issue.title}
                   </button>
                   <div className="flex flex-wrap items-center gap-2 mt-1">
-                    <span
-                      className={`text-xs px-1.5 py-0.5 rounded ${PRIORITY_COLOR[issue.priority]}`}
-                    >
+                    <span className={`an-chip ${PRIORITY_CHIP_CLASS[issue.priority]}`}>
                       {PRIORITY_LABEL[issue.priority]}优先级
                     </span>
                     {issue.tags?.map((tag) => (
-                      <span key={tag} className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+                      <span key={tag} className="an-chip accent">
                         {tag}
                       </span>
                     ))}
-                    <span className="text-xs text-gray-400">
+                    <span className="an-type-caption">
                       {issue.creator_name || "匿名"} · {formatDate(issue.created_at)}
                     </span>
                   </div>
@@ -265,8 +268,9 @@ export default function BulletinPage() {
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {isSystemAdmin && issue.status !== "resolved" && (
                     <button
+                      type="button"
                       onClick={() => handleResolve(issue)}
-                      className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1 rounded hover:bg-purple-50"
+                      className="an-btn an-btn-primary an-btn-sm"
                       title="标记为已解决"
                     >
                       已解决
@@ -276,14 +280,14 @@ export default function BulletinPage() {
                     <>
                       <button
                         onClick={() => handleToggleStatus(issue)}
-                        className="text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-100"
+                        className="an-btn an-btn-sm"
                         title={issue.status === "open" ? "关闭" : "重新开放"}
                       >
                         {issue.status === "open" ? "关闭" : "开放"}
                       </button>
                       <button
                         onClick={() => handleDelete(issue)}
-                        className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50"
+                        className="an-btn an-btn-danger an-btn-sm"
                       >
                         删除
                       </button>
@@ -297,122 +301,113 @@ export default function BulletinPage() {
       </div>
 
       {/* Create Modal */}
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div className="flex items-center justify-between px-5 py-4 border-b">
-              <h2 className="font-semibold text-gray-800">新建 Issue</h2>
-              <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600">
-                <AppIcon name="close" className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="px-5 py-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">标题 *</label>
+      <Modal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        title="新建 Issue"
+        maxWidth="max-w-lg"
+        panelClassName="an-token-panel"
+      >
+        <div className="space-y-4">
+              <div className="an-field">
+                <label className="an-label">标题 *</label>
                 <input
                   autoFocus
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1264A3]"
+                  className="an-input"
                   placeholder="简要描述问题或想法"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">详细描述</label>
+              <div className="an-field">
+                <label className="an-label">详细描述</label>
                 <textarea
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
                   rows={4}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1264A3] resize-none"
+                  className="an-textarea resize-none"
                   placeholder="可选，支持纯文本"
                 />
               </div>
               <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">优先级</label>
+                <div className="an-field flex-1">
+                  <label className="an-label">优先级</label>
                   <select
                     value={newPriority}
                     onChange={(e) => setNewPriority(e.target.value as "low" | "medium" | "high")}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white"
+                    className="an-select"
                   >
                     <option value="low">低</option>
                     <option value="medium">中</option>
                     <option value="high">高</option>
                   </select>
                 </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">标签（逗号分隔）</label>
+                <div className="an-field flex-1">
+                  <label className="an-label">标签（逗号分隔）</label>
                   <input
                     value={newTags}
                     onChange={(e) => setNewTags(e.target.value)}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1264A3]"
+                    className="an-input"
                     placeholder="bug, 功能请求"
                   />
                 </div>
               </div>
-            </div>
-            <div className="flex justify-end gap-2 px-5 py-4 border-t">
-              <button
-                onClick={() => setShowCreate(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={creating || !newTitle.trim()}
-                className="px-4 py-2 text-sm bg-[#1264A3] text-white rounded hover:bg-[#0D5180] disabled:opacity-50"
-              >
-                {creating ? "提交中…" : "提交"}
-              </button>
-            </div>
-          </div>
         </div>
-      )}
+        <ModalFooter>
+          <button type="button" onClick={() => setShowCreate(false)} className="an-btn">
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={creating || !newTitle.trim()}
+            className="an-btn an-btn-primary"
+          >
+            {creating ? "提交中…" : "提交"}
+          </button>
+        </ModalFooter>
+      </Modal>
 
       {/* Detail Modal */}
-      {detailIssue && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
-            <div className="flex items-start justify-between px-5 py-4 border-b gap-3">
-              <div className="flex-1 min-w-0">
-                <h2 className="font-semibold text-gray-800 break-words">{detailIssue.title}</h2>
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  <span
-                    className={`text-xs px-1.5 py-0.5 rounded ${detailIssue.status === "open" ? "bg-green-100 text-green-700" : detailIssue.status === "resolved" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-500"}`}
-                  >
-                    {detailIssue.status === "open" ? "开放" : detailIssue.status === "resolved" ? "已解决" : "已关闭"}
-                  </span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${PRIORITY_COLOR[detailIssue.priority]}`}>
-                    {PRIORITY_LABEL[detailIssue.priority]}优先级
-                  </span>
-                  {detailIssue.tags?.map((tag) => (
-                    <span key={tag} className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <button onClick={() => setDetailIssue(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
-                <AppIcon name="close" className="w-5 h-5" />
-              </button>
+      <Modal
+        open={!!detailIssue}
+        onClose={() => setDetailIssue(null)}
+        title={detailIssue?.title}
+        maxWidth="max-w-lg"
+        panelClassName="an-token-panel max-h-[80vh] overflow-hidden"
+      >
+        {detailIssue && (
+          <div className="flex max-h-[60vh] flex-col">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className={`an-chip ${STATUS_CHIP_CLASS[detailIssue.status]}`}>
+                {STATUS_LABEL[detailIssue.status]}
+              </span>
+              <span className={`an-chip ${PRIORITY_CHIP_CLASS[detailIssue.priority]}`}>
+                {PRIORITY_LABEL[detailIssue.priority]}优先级
+              </span>
+              {detailIssue.tags?.map((tag) => (
+                <span key={tag} className="an-chip accent">
+                  {tag}
+                </span>
+              ))}
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {detailIssue.content ? (
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{detailIssue.content}</p>
+                <p className="an-type-body whitespace-pre-wrap">{detailIssue.content}</p>
               ) : (
-                <p className="text-sm text-gray-400 italic">无详细描述</p>
+                <p className="an-type-meta italic">无详细描述</p>
               )}
-              <p className="text-xs text-gray-400 mt-4">
+              <p className="an-type-caption mt-4">
                 由 {detailIssue.creator_name || "匿名"} 于 {formatDate(detailIssue.created_at)} 创建
               </p>
             </div>
             {(canManage(detailIssue) || isSystemAdmin) && (
-              <div className="flex justify-end gap-2 px-5 py-4 border-t">
+              <ModalFooter>
                 {isSystemAdmin && detailIssue.status !== "resolved" && (
                   <button
+                    type="button"
                     onClick={() => handleResolve(detailIssue)}
-                    className="px-3 py-1.5 text-sm bg-purple-50 text-purple-700 border border-purple-200 rounded hover:bg-purple-100"
+                    className="an-btn an-btn-primary"
                   >
                     标记已解决
                   </button>
@@ -420,24 +415,26 @@ export default function BulletinPage() {
                 {canManage(detailIssue) && (
                   <>
                     <button
+                      type="button"
                       onClick={() => handleToggleStatus(detailIssue)}
-                      className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                      className="an-btn"
                     >
                       {detailIssue.status === "open" ? "关闭 Issue" : "重新开放"}
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDelete(detailIssue)}
-                      className="px-3 py-1.5 text-sm bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100"
+                      className="an-btn an-btn-danger"
                     >
                       删除
                     </button>
                   </>
                 )}
-              </div>
+              </ModalFooter>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }

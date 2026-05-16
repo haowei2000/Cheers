@@ -197,14 +197,14 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
           >
             <AppIcon name="users" className="w-7 h-7 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">
+          <h2 className="an-type-title">
             {authMode === "login"
               ? "登录到智枢"
               : authMode === "register"
                 ? "创建账号"
                 : "重置密码"}
           </h2>
-          <p className="text-gray-500 text-sm mt-1">
+          <p className="an-type-meta mt-1">
             {authMode === "login"
               ? "欢迎回来！"
               : authMode === "register"
@@ -213,7 +213,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
           </p>
         </div>
         {loginError && (
-          <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">
+          <div className="an-alert-danger mb-4">
             {loginError}
           </div>
         )}
@@ -250,7 +250,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setAuthMode("forgot");
                   setLoginError("");
                 }}
-                className="text-xs text-[var(--accent)] hover:underline"
+                className="an-text-link an-type-caption"
               >
                 忘记密码？
               </button>
@@ -402,7 +402,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
           </div>
         )}
 
-        <div className="mt-4 text-center text-sm text-gray-500">
+        <div className="an-type-meta mt-4 text-center">
           {authMode === "login" ? (
             <>
               没有账号？{" "}
@@ -411,7 +411,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                   setAuthMode("register");
                   setLoginError("");
                 }}
-                className="font-medium text-[var(--accent)] hover:underline"
+                className="an-text-link"
               >
                 注册
               </button>
@@ -422,7 +422,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 setAuthMode("login");
                 setLoginError("");
               }}
-              className="font-medium text-[var(--accent)] hover:underline"
+              className="an-text-link"
             >
               返回登录
             </button>

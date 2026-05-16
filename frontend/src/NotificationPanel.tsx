@@ -59,14 +59,14 @@ export default function NotificationPanel({ isOpen, onClose, userToken, onNaviga
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
 
       {/* Panel */}
-      <div className="an-token-panel relative ml-auto h-full w-96 max-w-full bg-white shadow-xl flex flex-col">
+      <div className="an-token-panel relative ml-auto flex h-full w-96 max-w-full flex-col border-l border-[var(--border)] bg-[var(--bg-1)] shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-shrink-0">
-          <span className="text-sm font-semibold text-gray-900">通知</span>
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-4 py-3">
+          <span className="an-type-title">通知</span>
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="an-btn an-btn-ghost an-btn-icon"
             aria-label="关闭通知"
             title="关闭通知"
           >
@@ -76,11 +76,11 @@ export default function NotificationPanel({ isOpen, onClose, userToken, onNaviga
 
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="flex items-center justify-center h-24 text-gray-400 text-sm">加载中…</div>
+            <div className="an-type-meta flex h-24 items-center justify-center">加载中…</div>
           ) : items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 text-gray-400 gap-2">
-              <AppIcon name="notification" className="w-9 h-9 opacity-35" />
-              <p className="text-sm">暂无通知</p>
+            <div className="an-type-meta flex h-40 flex-col items-center justify-center gap-2">
+              <AppIcon name="notification" className="h-9 w-9 opacity-35" />
+              <p>暂无通知</p>
             </div>
           ) : (
             <>
@@ -124,15 +124,16 @@ function Section({
 }) {
   return (
     <div>
-      <div className="px-4 py-2 text-[11px] font-semibold text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
+      <div className="an-type-caption border-b border-[var(--border)] bg-[var(--bg-0)] px-4 py-2 font-semibold uppercase">
         {title}
       </div>
-      <ul className="divide-y divide-gray-100">
+      <ul className="divide-y divide-[var(--border)]">
         {items.map((n) => (
           <li key={n.id}>
             <button
+              type="button"
               onClick={() => onNavigate(n)}
-              className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
+              className="w-full px-4 py-3 text-left transition-colors hover:bg-[var(--surface-soft)]"
             >
               <div className="flex items-start gap-3">
                 <span className="flex-shrink-0 mt-0.5">
@@ -143,17 +144,17 @@ function Section({
                   ) : n.todo_status === "completed" ? (
                     <AppIcon name="checkCircle" className="w-5 h-5 text-[var(--green)]" />
                   ) : (
-                    <AppIcon name="copy" className="w-5 h-5 text-gray-400" />
+                    <AppIcon name="copy" className="h-5 w-5 text-[var(--fg-3)]" />
                   )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-xs font-medium text-[var(--accent)]">
+                    <span className="an-type-label text-[var(--accent)]">
                       {n.notif_type === "friend_request" ? "好友通知" : `#${n.channel_name}`}
                     </span>
-                    <span className="text-[10px] text-gray-400">{timeAgo(n.created_at)}</span>
+                    <span className="an-type-caption">{timeAgo(n.created_at)}</span>
                   </div>
-                  <p className="text-xs text-gray-700 line-clamp-2 leading-relaxed">{n.content}</p>
+                  <p className="an-type-meta line-clamp-2 leading-relaxed">{n.content}</p>
                 </div>
               </div>
             </button>
