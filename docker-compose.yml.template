@@ -94,7 +94,7 @@ services:
     image: ${KKFILEVIEW_IMAGE:-keking/kkfileview:latest}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${KKFILEVIEW_HOST_PORT:-8012}:8012"
+      - "${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}:8012"
     environment:
       - KK_CONTEXT_PATH=/preview
       - KK_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com/preview}
