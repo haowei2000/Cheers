@@ -52,8 +52,8 @@ class Settings(BaseSettings):
     storage_s3_verify_ssl: bool = True
     storage_presign_expires_seconds: int = 900
     file_upload_max_bytes: int = 25 * 1024 * 1024
-    # File retention: default 90 days, roughly 3 months; <=0 disables expiry.
-    file_retention_days: int = 90
+    # File retention: default 365 days; <=0 disables expiry.
+    file_retention_days: int = 365
     file_retention_cleanup_interval_seconds: int = 24 * 60 * 60
     file_upload_allowed_types: str = (
         "application/pdf,"
