@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     stream_delta_flush_interval_seconds: float = 0.08
     stream_delta_flush_chars: int = 512
     unread_fanout_concurrency: int = 64
+    history_debounce_seconds: float | None = None
+    # Deprecated env name kept as fallback for existing deployments.
     recent_debounce_seconds: float = 5.0
 
     # Data directory, relative to project root or absolute.
@@ -102,13 +104,16 @@ class Settings(BaseSettings):
     helper_llm_max_tokens: int = 1000
     llm_localhost_alias: str = ""
 
-    # System LLM for RECENT compression, file summaries, and similar tasks; simple truncation is used when unset.
+    # System LLM for history compression, file summaries, and similar tasks; simple truncation is used when unset.
     system_llm_api_key: str = ""
     system_llm_base_url: str = ""  # OpenAI-compatible
     system_llm_model: str = ""
 
-    # Backend memory pagination and recent context; does not affect frontend message-list pagination.
+    # Backend memory pagination and history context; does not affect frontend message-list pagination.
     memory_history_page_max_chars: int = 50000
+    memory_history_current_message_count: int | None = None
+    memory_history_summary_max_chars: int | None = None
+    # Deprecated env names kept as fallbacks for existing deployments.
     memory_recent_direct_message_count: int = 30
     memory_recent_summary_max_chars: int = 1500
 

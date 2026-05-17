@@ -12,10 +12,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, PromptTemplate, User
+from app.features.bot_runtime.coordinator_profile import build_coordinator_profile
 from app.features.bot_runtime.adapters.base import BotAdapter
 from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_for_bot
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
-from app.features.bot_runtime.pipeline.bot.coordinator_names import first_coordinator_username
+from app.features.bot_runtime.pipeline.bot.coordinator_names import first_coordinator_username, is_coordinator_username
 from app.features.bot_runtime.pipeline.bot.mention import extract_mentions, filter_mentioned_bots
 from app.features.bot_runtime.pipeline.bot.secrets import extract_secret_refs, load_user_secrets
 from app.features.bot_runtime.pipeline.bot.stages.auto_takeover import AutoTakeoverStage
@@ -214,7 +215,11 @@ def _is_helper_clarify_reply(content: str) -> bool:
         or text.startswith("@Helper 澄清回答：")
         or text.startswith("@引导 澄清回答：")
         or text.startswith("@channel bot 澄清回答：")
+        or text.startswith("@Coordinator clarification answer:")
+        or text.startswith("@Helper clarification answer:")
+        or text.startswith("@channel bot clarification answer:")
         or "用户选择跳过澄清" in text
+        or "User skipped clarification" in text
     )
 
 
@@ -325,6 +330,7 @@ class BotWorkflowBuilder:
         await self._unwrap_secret_content(ctx)
         await self._lookup_sender_and_channel(ctx)
         route_mode, reason = await self._route(ctx)
+        self._build_coordinator_profile(ctx)
 
         if not ctx.target_usernames:
             plan = BotWorkflowPlan(
@@ -341,8 +347,13 @@ class BotWorkflowBuilder:
             ctx.workflow = plan
             return plan
 
-        layers = select_memory_layers(ctx.trigger_msg.msg_type)
-        memory_requested = should_build_memory(ctx)
+        only_coordinator = all(is_coordinator_username(username) for username in ctx.target_usernames)
+        if ctx.coordinator_profile is not None and only_coordinator:
+            layers = ctx.coordinator_profile.memory_layers
+            memory_requested = bool(layers)
+        else:
+            layers = select_memory_layers(ctx.trigger_msg.msg_type)
+            memory_requested = should_build_memory(ctx)
         stages: tuple[Stage[BotRunContext], ...]
         if route_mode == "auto_assist":
             stages = (ContextLoadStage(), AutoTakeoverStage())
@@ -429,6 +440,22 @@ class BotWorkflowBuilder:
                 if effective_template
                 else DEFAULT_USER_TEMPLATE
             )
+
+    @staticmethod
+    def _build_coordinator_profile(ctx: BotRunContext) -> None:
+        if not any(is_coordinator_username(username) for username in ctx.target_usernames):
+            ctx.coordinator_profile = None
+            return
+        has_peer_bots = any(
+            not is_coordinator_username(username)
+            for username in ctx.channel_bot_usernames
+        )
+        ctx.coordinator_profile = build_coordinator_profile(
+            ctx.analysis_content,
+            has_attachments=bool(ctx.trigger_msg.file_ids or ctx.original_file_ids),
+            has_peer_bots=has_peer_bots,
+            is_clarify_reply=_is_helper_clarify_reply(ctx.analysis_content),
+        )
 
     @staticmethod
     async def _unwrap_secret_content(ctx: BotRunContext) -> None:

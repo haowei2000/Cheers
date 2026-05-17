@@ -37,13 +37,13 @@ _LAYERS_BY_MSG_TYPE: dict[str, frozenset[str]] = {
     "permission": frozenset({"anchor"}),
 }
 
-_LAYER_ORDER = ("anchor", "progress", "decisions", "files_index", "recent", "todos")
+_LAYER_ORDER = ("anchor", "progress", "decisions", "files_index", "history", "todos")
 _LAYER_LABELS = {
     "anchor": "Project Anchor",
     "progress": "Project Progress",
     "decisions": "Decision Records",
     "files_index": "File Index",
-    "recent": "Recent Updates",
+    "history": "Conversation History",
     "todos": "Todos",
 }
 _LAYER_SOURCES = {
@@ -51,7 +51,7 @@ _LAYER_SOURCES = {
     "progress": "MemoryEntry.PROGRESS",
     "decisions": "MemoryEntry.DECISIONS",
     "files_index": "FileRecord rendered index",
-    "recent": "current_page + message_page summaries",
+    "history": "current_page full + message_page summaries",
     "todos": "TodoItem open items",
 }
 
@@ -92,6 +92,8 @@ def build_memory_load_detail(
     total_chars = 0
     for source in _LAYER_ORDER:
         content = memory_context.get(source) or ""
+        if source == "history" and not content:
+            content = memory_context.get("recent") or ""
         chars = len(content)
         total_chars += chars
         preview = content.strip()

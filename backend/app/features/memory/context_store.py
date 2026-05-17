@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config import settings
 
-LAYERS = ("ANCHOR", "DECISIONS", "FILES_INDEX", "RECENT", "PROGRESS")
+LAYERS = ("ANCHOR", "DECISIONS", "FILES_INDEX", "HISTORY", "PROGRESS")
 
 _engine = None
 _session_factory = None

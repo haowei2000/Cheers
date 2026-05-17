@@ -32,7 +32,7 @@ def test_routing_card_loads_anchor_and_decisions_only() -> None:
     assert layers == frozenset({"anchor", "decisions"})
     # routing cards skip the heavy renders
     assert "files_index" not in layers
-    assert "recent" not in layers
+    assert "history" not in layers
     assert "todos" not in layers
     assert "progress" not in layers
 
@@ -55,7 +55,7 @@ def test_none_msg_type_falls_back_to_all_layers() -> None:
 def test_all_layers_constant_covers_six_known_layers() -> None:
     """If ALL_LAYERS ever drifts, the strategy matrix needs revisiting."""
     assert ChannelMemory.ALL_LAYERS == frozenset({
-        "anchor", "decisions", "progress", "files_index", "recent", "todos",
+        "anchor", "decisions", "progress", "files_index", "history", "todos",
     })
 
 
@@ -67,7 +67,7 @@ def test_memory_load_detail_records_requested_layers_and_previews() -> None:
         memory_context={
             "anchor": "项目目标",
             "decisions": "重要决策",
-            "recent": "不应被请求但可见",
+            "history": "不应被请求但可见",
         },
     )
 
@@ -75,12 +75,12 @@ def test_memory_load_detail_records_requested_layers_and_previews() -> None:
     assert detail["trigger_msg_id"] == "msg-1"
     assert detail["requested_layers"] == ["anchor", "decisions"]
     anchor = next(layer for layer in detail["layers"] if layer["source"] == "anchor")
-    recent = next(layer for layer in detail["layers"] if layer["source"] == "recent")
+    history = next(layer for layer in detail["layers"] if layer["source"] == "history")
     assert anchor["requested"] is True
     assert anchor["preview"] == "项目目标"
-    assert recent["requested"] is False
-    assert recent["chars"] == len("不应被请求但可见")
-    assert recent["loader"] == "current_page + message_page summaries"
+    assert history["requested"] is False
+    assert history["chars"] == len("不应被请求但可见")
+    assert history["loader"] == "current_page full + message_page summaries"
 
 
 class _Ctx:
