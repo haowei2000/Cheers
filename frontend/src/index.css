@@ -251,9 +251,27 @@ body {
   overflow: hidden;
 }
 
-/* Body base — pick up the design token family */
+/* Body base — pick up the design token typography. */
+html {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-kerning: normal;
+  font-size: 16px;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+}
 body {
-  font-family: var(--font-sans, "PingFang SC", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif);
+  color: var(--fg-1);
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: var(--type-body);
+  font-weight: var(--fw-regular);
+  letter-spacing: var(--tracking-ui);
+  line-height: var(--lh-body);
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+}
+:where(button, input, textarea, select) {
+  font-family: inherit;
+  letter-spacing: var(--tracking-ui);
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
