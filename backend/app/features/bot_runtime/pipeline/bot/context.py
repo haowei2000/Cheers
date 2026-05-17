@@ -41,6 +41,7 @@ class BotRunContext:
     # ── filled by BotWorkflowBuilder route planning ─────────────────────
     target_usernames: list[str] = field(default_factory=list)  # resolved valid bots to dispatch
     direct_answer_mode: bool = False  # auto-assist routed to coordinator
+    coordinator_profile: Any = None  # Coordinator-specific context and tool budget
 
     # ── filled by ContextLoadStage ──────────────────────────────────────
     memory_context: dict[str, str] = field(default_factory=dict)

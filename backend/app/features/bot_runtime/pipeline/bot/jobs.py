@@ -66,9 +66,9 @@ async def run_bot_pipeline_job(channel_id: str, msg_id: str) -> None:
                     len(unbroadcast), channel_id, [bm.msg_id for bm in unbroadcast],
                 )
             if bot_messages:
-                from app.features.memory.recent_update import schedule_recent_update
+                from app.features.memory.history_update import schedule_history_update
 
-                schedule_recent_update(channel_id)
+                schedule_history_update(channel_id)
                 logger.info(
                     "bot_pipeline_job: completed channel_id=%s bot_messages=%d",
                     channel_id, len(bot_messages),

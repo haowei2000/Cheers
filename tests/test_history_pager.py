@@ -106,7 +106,7 @@ async def test_short_tail_stays_as_current_page(db_session: AsyncSession) -> Non
     assert "short one" in summary
     assert "short two" in summary
 
-    with patch("app.config.settings.memory_recent_direct_message_count", new=0):
+    with patch("app.config.settings.memory_history_current_message_count", new=0):
         assert await render_current_page_summary(channel_id, db_session) == ""
 
 
@@ -150,12 +150,12 @@ async def test_large_history_can_create_multiple_contiguous_pages(db_session: As
 
 
 @pytest.mark.asyncio
-async def test_channel_memory_recent_combines_current_page_and_page_summaries(db_session: AsyncSession) -> None:
-    channel_id = await _seed_channel(db_session, "recent")
+async def test_channel_memory_history_combines_current_page_and_page_summaries(db_session: AsyncSession) -> None:
+    channel_id = await _seed_channel(db_session, "history")
     await _add_messages(
         db_session,
         channel_id,
-        "recent",
+        "history",
         [
             "first sealed message " * 8,
             "second sealed message " * 4,
@@ -166,12 +166,13 @@ async def test_channel_memory_recent_combines_current_page_and_page_summaries(db
     with patch("app.config.settings.memory_history_page_max_chars", new=360):
         await compact_channel_history(channel_id, db_session)
 
-    mem = await ChannelMemory.load_layers(channel_id, db_session, {"recent"})
-    recent = mem.to_context_dict()["recent"]
-    assert "current_page:" in recent
-    assert "tail-current-page-entry" in recent
-    assert "history_summary_pages:" in recent
-    assert "page_id:" in recent
+    mem = await ChannelMemory.load_layers(channel_id, db_session, {"history"})
+    history = mem.to_context_dict()["history"]
+    assert "current_page:" in history
+    assert "<history-1" in history
+    assert "tail-current-page-entry" in history
+    assert "history_summary_pages:" in history
+    assert "page_id:" in history
 
 
 @pytest.mark.asyncio

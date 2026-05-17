@@ -29,7 +29,7 @@ async def test_context_store_init_and_read_write() -> None:
         all_layers = await get_all_layers("ch1")
         assert all_layers["anchor"] == "项目目标：完成 M1。"
         assert all_layers["decisions"] == ""
-        assert all_layers["recent"] == ""
+        assert all_layers["history"] == ""
 
 
 def test_build_system_prompt_prefix_uses_xml_memory_context() -> None:

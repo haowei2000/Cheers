@@ -125,10 +125,10 @@ async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
     return names
 
 
-async def _fetch_recent_history(
+async def _fetch_chat_history(
     session, channel_id: str, before_msg_id: str | None, limit: int = HISTORY_MSG_COUNT
 ) -> list:
-    """Fetch recent non-empty messages before the trigger message and convert them into LangChain messages."""
+    """Fetch chat messages before the trigger message and convert them into LangChain messages."""
     from sqlalchemy import select
 
     from app.db.models import Message as MsgModel
@@ -278,7 +278,7 @@ class HelpBotAdapter(BotAdapter):
                     f"[Progress]\n{memory.get('progress') or '(none)'}\n\n"
                     f"[Decisions]\n{memory.get('decisions') or '(none)'}\n\n"
                     f"[File Index]\n{memory.get('files_index') or '(none)'}\n\n"
-                    f"[Recent Focus]\n{memory.get('recent') or '(none)'}"
+                    f"[History]\n{memory.get('history') or memory.get('recent') or '(none)'}"
                 ),
             ]
         )
@@ -293,7 +293,7 @@ class HelpBotAdapter(BotAdapter):
 
                 # _fetch_user_display_name is defined later; runtime lookup still resolves it.
                 results = await asyncio.gather(
-                    _fetch_recent_history(db_session, channel_id, trigger_msg_id),
+                    _fetch_chat_history(db_session, channel_id, trigger_msg_id),
                     _fetch_user_display_name(db_session, sender_id),
                     return_exceptions=True,
                 )

@@ -82,18 +82,28 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
 def find_help(user_text: str) -> str | None:
     """Return the best matching help content for user text."""
 
+    entries = find_help_entries(user_text, limit=1)
+    return entries[0].content if entries else None
+
+
+def find_help_entries(user_text: str, limit: int = 3) -> list[HelpEntry]:
+    """Return the best matching help entries for user text."""
+
     if not user_text or not user_text.strip():
-        return None
+        return []
     text = user_text.strip().lower()
-    best: HelpEntry | None = None
-    best_score = 0
+    scored: list[tuple[int, int, HelpEntry]] = []
     for entry in HELP_ENTRIES:
+        score = 0
+        longest_keyword = 0
         for keyword in entry.keywords:
-            if keyword in text and len(keyword) > best_score:
-                best = entry
-                best_score = len(keyword)
-                break
-    return best.content if best else None
+            if keyword in text:
+                score += len(keyword)
+                longest_keyword = max(longest_keyword, len(keyword))
+        if score > 0:
+            scored.append((score, longest_keyword, entry))
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [entry for _, _, entry in scored[: max(0, limit)]]
 
 
 def build_help_content_with_form(user_text: str) -> str:
@@ -102,10 +112,14 @@ def build_help_content_with_form(user_text: str) -> str:
     return find_help(user_text) or ""
 
 
-def get_help_context_for_llm() -> str:
+def get_help_context_for_llm(user_text: str | None = None, limit: int = 3) -> str:
     """Return compact help context for LLM prompts."""
 
+    if limit <= 0:
+        return ""
+    entries = find_help_entries(user_text or "", limit=limit) if user_text else list(HELP_ENTRIES)
+    if not entries and user_text:
+        entries = find_help_entries("帮助", limit=1)
     return "\n\n---\n\n".join(
-        f"## {entry.title}\n{entry.content}" for entry in HELP_ENTRIES
+        f"## {entry.title}\n{entry.content}" for entry in entries
     )
-
