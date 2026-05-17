@@ -39,6 +39,7 @@ interface ChatWorkspaceViewProps {
   taskPageOpen: boolean;
   agentBridgeTaskMessages: AgentBridgeTaskMessage[];
   refreshingDmSession: boolean;
+  canRefreshSessions: boolean;
   taskOverlayProps: ChatTaskOverlayProps;
   topicOverlayProps: ChatTopicOverlayProps;
   messageListProps: ChatMessageListProps;
@@ -71,6 +72,7 @@ export function ChatWorkspaceView({
   taskPageOpen,
   agentBridgeTaskMessages,
   refreshingDmSession,
+  canRefreshSessions,
   taskOverlayProps,
   topicOverlayProps,
   messageListProps,
@@ -161,6 +163,7 @@ export function ChatWorkspaceView({
                   variant="toolbar"
                   onRefresh={onRefreshDmSession}
                   refreshing={refreshingDmSession}
+                  canRefresh={canRefreshSessions}
                 />
               ) : (
                 selectedChannel?.type !== "dm" && (

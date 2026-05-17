@@ -1,11 +1,15 @@
 """Agent Bridge stable session mapping tests."""
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_current_user
+from app.core.dependencies import get_session as get_session_core
 from app.db.models import (
     AgentNexusSession,
     AgentNexusSessionBinding,
@@ -13,8 +17,10 @@ from app.db.models import (
     Channel,
     ChannelMembership,
     Message,
+    User,
     Workspace,
 )
+from app.db.session import get_session as get_session_db
 from app.features.agent_bridge.session_map import (
     SCOPE_CHANNEL,
     SCOPE_DM,
@@ -28,6 +34,7 @@ from app.features.agent_bridge.session_map import (
     resolve_dispatch_session,
 )
 from app.features.bot_runtime.pipeline.bot.topic_context import gather_topic_context
+from app.main import app
 
 
 async def _seed_bot_channel(
@@ -63,6 +70,30 @@ async def _bindings(session: AsyncSession, session_id: str) -> list[AgentNexusSe
         .order_by(AgentNexusSessionBinding.scope_type, AgentNexusSessionBinding.scope_id)
     )
     return list(result.scalars().all())
+
+
+async def _request_as(
+    session: AsyncSession,
+    user: User,
+    method: str,
+    path: str,
+    *,
+    json: dict | None = None,
+) -> Response:
+    async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
+        yield session
+
+    async def override_get_current_user() -> User:
+        return user
+
+    app.dependency_overrides[get_session_core] = override_get_session
+    app.dependency_overrides[get_session_db] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.request(method, path, json=json)
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -690,6 +721,52 @@ async def test_dm_session_visibility_and_refresh_api(
         delete(AgentNexusSession).where(AgentNexusSession.bot_id == bot.bot_id)
     )
     await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_dm_session_refresh_api_requires_admin(db_session: AsyncSession) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="api-dm-perm-001", channel_type="dm")
+    user = User(
+        user_id="sess-map-user-dm-perm-001",
+        username="sess_map_dm_perm_user",
+        password_hash="x",
+        role="member",
+    )
+    db_session.add_all([
+        user,
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=user.user_id,
+            member_type="user",
+            role="member",
+        ),
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
+    await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={"user": user.user_id, "text": "hello dm permission"},
+        task_id="task-api-dm-perm-001",
+        channel=dm,
+    )
+    await db_session.flush()
+
+    denied = await _request_as(
+        db_session,
+        user,
+        "POST",
+        "/api/v1/agent-bridge/sessions/dm/refresh",
+        json={"channel_id": dm.channel_id, "bot_id": bot.bot_id},
+    )
+
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "forbidden"
 
 
 @pytest.mark.asyncio
