@@ -1,9 +1,11 @@
 """Tests for test workspaces api."""
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Channel, ChannelMembership, User, Workspace, WorkspaceMembership
+from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace, WorkspaceMembership
+from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 
 
 @pytest.mark.asyncio
@@ -16,6 +18,63 @@ async def test_list_workspaces_empty(client: AsyncClient, db_session: AsyncSessi
     # list_for_user lazily creates a Personal workspace on first call
     assert len(data["data"]) == 1
     assert data["data"][0]["kind"] == "personal"
+
+
+@pytest.mark.asyncio
+async def test_personal_workspace_bootstraps_helper_dm(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Personal workspace provisioning creates the built-in helper onboarding DM."""
+    db_session.add(
+        BotAccount(
+            bot_id=HELPER_BOT_ID,
+            username="Coordinator",
+            display_name="协作助手",
+            status="online",
+            scope="everyone",
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.get("/api/v1/dms")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "success"
+    helper_dms = [
+        dm for dm in payload["data"]
+        if dm["counterparty"]["member_id"] == HELPER_BOT_ID
+    ]
+    assert len(helper_dms) == 1
+    helper_dm = helper_dms[0]
+    assert helper_dm["counterparty"]["member_id"] == HELPER_BOT_ID
+    assert helper_dm["counterparty"]["username"] == "Coordinator"
+
+    second_resp = await client.get("/api/v1/workspaces")
+    assert second_resp.status_code == 200
+
+    second_dm_resp = await client.get("/api/v1/dms")
+    assert second_dm_resp.status_code == 200
+    second_helper_dms = [
+        dm for dm in second_dm_resp.json()["data"]
+        if dm["counterparty"]["member_id"] == HELPER_BOT_ID
+    ]
+    assert [dm["channel_id"] for dm in second_helper_dms] == [helper_dm["channel_id"]]
+
+    dm_row = await db_session.get(Channel, helper_dm["channel_id"])
+    assert dm_row is not None
+    assert dm_row.type == "dm"
+    assert not dm_row.name.startswith("dmchat:")
+
+    messages = (
+        await db_session.execute(
+            select(Message).where(Message.channel_id == helper_dm["channel_id"])
+        )
+    ).scalars().all()
+    assert len(messages) == 1
+    assert messages[0].sender_id == HELPER_BOT_ID
+    assert "自然语言" in messages[0].content
+    assert "Docs" in messages[0].content
 
 
 @pytest.mark.asyncio

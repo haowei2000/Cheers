@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { Link } from "react-router-dom";
 import type { Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
 import { apiFetch } from "../api";
+import { USER_DOCS_URL } from "../lib/app-config";
 import { makeBuiltinAvatarValue } from "../lib/avatar";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
 import { AvatarVisual } from "./AvatarVisual";
@@ -715,6 +717,22 @@ export function Sidebar({
         onScopeChange={setSearchWorkspaceId}
         onSelect={handleSearchSelect}
       />
+
+      <div className="px-2 pb-1">
+        <Link
+          to={USER_DOCS_URL}
+          className="an-rail-row w-full"
+          title="Read documentation"
+          onClick={() => {
+            if (isMobile) setSidebarOpen(false);
+          }}
+        >
+          <span className="an-sigil">
+            <AppIcon name="note" />
+          </span>
+          <span className="an-name">Docs</span>
+        </Link>
+      </div>
 
       {/* Channels + Direct sections share a single scroller */}
       <div className="overflow-auto flex-1">

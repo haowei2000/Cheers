@@ -6,6 +6,8 @@ import { API } from "../../../lib/app-config";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../../../lib/refresh";
 import type { Channel, DM, Workspace } from "../../../types";
 
+const BUILTIN_HELPER_BOT_ID = "bot-helper-001";
+
 interface UseWorkspaceDirectoryOptions {
   routeWorkspaceId: string;
   routeChannelId: string | null;
@@ -30,6 +32,7 @@ export function useWorkspaceDirectory({
     useState<string>(routeWorkspaceId);
   const [selectedId, setSelectedId] = useState<string | null>(routeChannelId);
   const selectedIdRef = useRef<string | null>(null);
+  const didAutoSelectHelperDmRef = useRef(false);
 
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
@@ -96,6 +99,26 @@ export function useWorkspaceDirectory({
       setSelectedId(null);
     }
   }, [selectedId, selectedIdWorkspaceId, selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (
+      didAutoSelectHelperDmRef.current ||
+      routeChannelId ||
+      selectedId ||
+      !isPersonalWorkspace
+    ) {
+      return;
+    }
+    const helperDm = dms.find(
+      (dm) =>
+        dm.counterparty.member_type === "bot" &&
+        (dm.counterparty.member_id === BUILTIN_HELPER_BOT_ID ||
+          dm.counterparty.username === "Coordinator"),
+    );
+    if (!helperDm) return;
+    didAutoSelectHelperDmRef.current = true;
+    setSelectedId(helperDm.channel_id);
+  }, [dms, isPersonalWorkspace, routeChannelId, selectedId]);
 
   const activeDm = useMemo(
     () => (selectedId ? dms.find((dm) => dm.channel_id === selectedId) ?? null : null),

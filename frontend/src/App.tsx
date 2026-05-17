@@ -25,7 +25,7 @@ import { usePendingFiles } from "./features/chat/hooks/usePendingFiles";
 import { useWorkspaceDirectory } from "./features/chat/hooks/useWorkspaceDirectory";
 import { apiFetch } from "./api";
 import { parseHelperPayload } from "./lib/helper";
-import { API, API_DOCS_URL } from "./lib/app-config";
+import { API, API_DOCS_URL, USER_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
 import { refreshChannels, refreshDMs } from "./lib/refresh";
 import {
@@ -1207,6 +1207,7 @@ export default function App() {
         helpOpen={helpOpen}
         onCloseHelp={() => setHelpOpen(false)}
         apiDocsUrl={API_DOCS_URL}
+        userDocsUrl={USER_DOCS_URL}
         settingsOpen={settingsOpen}
         onCloseSettings={() => setSettingsOpen(false)}
         isDark={isDark}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
@@ -8,6 +8,7 @@ import { AppIcon } from "./components/icons/AppIcon";
 const API = "/api";  // Docs endpoints are provided by manual_routes and omit /v1.
 
 type DocFile = { name: string; stem: string; size: number; category?: string };
+const PREFERRED_DOC_STEMS = ["help/README"];
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -60,10 +61,39 @@ function sanitizeMarkdownUrl(url: string): string {
   return "";
 }
 
+function resolveDocLinkStem(
+  href: string,
+  currentStem: string,
+  docs: DocFile[],
+): string | null {
+  const pathPart = href.split("#", 1)[0].trim();
+  if (!pathPart || !/\.md$/i.test(pathPart)) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(pathPart) || pathPart.startsWith("/")) {
+    return null;
+  }
+
+  const decoded = decodeURIComponent(pathPart);
+  const bare = decoded.replace(/\.md$/i, "").replace(/^\.\//, "");
+  if (docs.some((doc) => doc.stem === bare)) return bare;
+
+  const stack = currentStem.includes("/") ? currentStem.split("/").slice(0, -1) : [];
+  for (const part of decoded.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      stack.pop();
+      continue;
+    }
+    stack.push(part);
+  }
+  const candidate = stack.join("/").replace(/\.md$/i, "");
+  return docs.some((doc) => doc.stem === candidate) ? candidate : null;
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function DocsPage() {
   const [urlParams, setUrlParams] = useSearchParams();
   const selectedStemFromUrl = urlParams.get("file");
+  const canEdit = urlParams.get("edit") === "1";
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -87,6 +117,11 @@ export default function DocsPage() {
   const [search, setSearch] = useState("");
   const [tocOpen, setTocOpen] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
+  const readableFiles = useMemo(() => {
+    const helpDocs = files.filter((file) => file.category === "help");
+    if (helpDocs.length > 0) return helpDocs;
+    return files.filter((file) => file.category !== "develop");
+  }, [files]);
 
   // Load file list
   useEffect(() => {
@@ -100,14 +135,24 @@ export default function DocsPage() {
 
   useEffect(() => {
     if (!files.length) return;
-    if (!selectedStemFromUrl) {
-      if (selected) setSelected(null);
-      return;
-    }
+    if (!selectedStemFromUrl) return;
     if (selected?.stem === selectedStemFromUrl) return;
-    const hit = files.find((f) => f.stem === selectedStemFromUrl);
+    const hit = readableFiles.find((f) => f.stem === selectedStemFromUrl);
     if (hit) setSelected(hit);
-  }, [files, selected?.stem, selectedStemFromUrl]);
+  }, [files.length, readableFiles, selected?.stem, selectedStemFromUrl]);
+
+  useEffect(() => {
+    if (selected || selectedStemFromUrl || readableFiles.length === 0) return;
+    const preferred =
+      PREFERRED_DOC_STEMS
+        .map((stem) => readableFiles.find((file) => file.stem === stem))
+        .find(Boolean) ?? readableFiles[0];
+    if (preferred) setSelected(preferred);
+  }, [readableFiles, selected, selectedStemFromUrl]);
+
+  useEffect(() => {
+    if (!canEdit && mode === "edit") setMode("preview");
+  }, [canEdit, mode]);
 
   useEffect(() => {
     const current = urlParams.get("file");
@@ -167,7 +212,7 @@ export default function DocsPage() {
     setMode("preview");
   };
 
-  const filtered = files.filter((f) => {
+  const filtered = readableFiles.filter((f) => {
     const q = search.toLowerCase();
     return f.stem.toLowerCase().includes(q) || f.name.toLowerCase().includes(q);
   });
@@ -182,8 +227,8 @@ export default function DocsPage() {
           <AppIcon name="arrowLeft" className="w-4 h-4" />
           Back
         </Link>
-        <h1 className="an-type-title">Docs</h1>
-        <span className="an-type-meta ml-1">Docs</span>
+        <h1 className="an-type-title">User Docs</h1>
+        <span className="an-type-meta ml-1">User guides and operations manuals</span>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -195,7 +240,7 @@ export default function DocsPage() {
           {/* Header */}
           <div className="border-b border-[var(--border)] px-4 py-3">
             <div className="flex items-center justify-between mb-2">
-              <span className="an-type-label">Docs list</span>
+              <span className="an-type-label">User docs</span>
             </div>
             <input
               type="text"
@@ -240,7 +285,7 @@ export default function DocsPage() {
 
           {/* Footer */}
           <div className="border-t border-[var(--border)] px-4 py-2">
-            <p className="an-type-meta">{files.length} files</p>
+            <p className="an-type-meta">{readableFiles.length} files</p>
           </div>
         </aside>
 
@@ -258,7 +303,7 @@ export default function DocsPage() {
                   <AppIcon name="file" className="h-7 w-7" />
                 </div>
                 <p className="an-type-body font-medium">Select a document</p>
-                <p className="an-type-meta mt-1">Select a file from the sidebar to view or edit.</p>
+                <p className="an-type-meta mt-1">Select a user guide from the sidebar to read.</p>
               </div>
             </div>
           ) : (
@@ -292,23 +337,24 @@ export default function DocsPage() {
                     </button>
                   )}
 
-                  {/* Mode toggle */}
-                  <div className="an-seg">
-                    <button
-                      type="button"
-                      onClick={() => setMode("preview")}
-                      className={mode === "preview" ? "on" : ""}
-                    >
-                      View
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMode("edit")}
-                      className={mode === "edit" ? "on" : ""}
-                    >
-                      Edit
-                    </button>
-                  </div>
+                  {canEdit && (
+                    <div className="an-seg">
+                      <button
+                        type="button"
+                        onClick={() => setMode("preview")}
+                        className={mode === "preview" ? "on" : ""}
+                      >
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMode("edit")}
+                        className={mode === "edit" ? "on" : ""}
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  )}
 
                   {/* Edit actions */}
                   {mode === "edit" && (
@@ -374,10 +420,25 @@ export default function DocsPage() {
                           },
                           a({ href, children, ...props }) {
                             const safeHref = sanitizeMarkdownUrl(href || "");
+                            const docStem = selected
+                              ? resolveDocLinkStem(safeHref, selected.stem, readableFiles)
+                              : null;
                             const external = /^https?:\/\//i.test(safeHref);
                             return (
                               <a
-                                href={safeHref || "#"}
+                                href={docStem ? `?file=${encodeURIComponent(docStem)}` : safeHref || "#"}
+                                onClick={
+                                  docStem
+                                    ? (event) => {
+                                        event.preventDefault();
+                                        const next = readableFiles.find((file) => file.stem === docStem);
+                                        if (next) {
+                                          setSelected(next);
+                                          setMode("preview");
+                                        }
+                                      }
+                                    : undefined
+                                }
                                 target={external ? "_blank" : undefined}
                                 rel={external ? "noreferrer" : undefined}
 	                                className="text-[var(--accent)] underline hover:text-[var(--accent-hover)]"

@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
-from app.db.models import Channel, ChannelMembership, User, Workspace, WorkspaceMembership
+from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace, WorkspaceMembership
+from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceRepository
 from app.utils.permissions import is_admin
@@ -14,6 +16,13 @@ PERSONAL_WORKSPACE_KIND = "personal"
 TEAM_WORKSPACE_KIND = "team"
 WORKSPACE_CHANNEL_TYPES = ("public", "workspace")
 WORKSPACE_MEMBER_ROLES = {"owner", "admin", "member"}
+HELPER_ONBOARDING_MESSAGE = (
+    "你好，我是 AgentNexus 内置协作助手 @Coordinator。\n\n"
+    "你可以直接用自然语言问我如何使用系统，例如：如何创建工作空间、"
+    "邀请成员、上传文件、@ Bot、查看项目记忆、阅读 Docs，"
+    "或接入 Agent Bridge / OpenClaw。\n\n"
+    "如果你不确定下一步怎么做，可以直接告诉我你的目标，我会把操作步骤拆给你。"
+)
 
 
 class WorkspaceService:
@@ -84,11 +93,97 @@ class WorkspaceService:
         decorate it however it wants."""
         existing = await self.get_personal_workspace(user)
         if existing:
+            await self._ensure_personal_helper_dm(user, existing)
             return existing
         ws = await self.repo.create("Personal", kind=PERSONAL_WORKSPACE_KIND)
         await self.repo.add_member(ws.workspace_id, user.user_id, role="owner")
         await self.session.flush()
+        await self._ensure_personal_helper_dm(user, ws)
         return ws
+
+    async def _ensure_personal_helper_dm(self, user: User, workspace: Workspace) -> None:
+        helper_exists = (
+            await self.session.execute(
+                select(BotAccount.bot_id).where(BotAccount.bot_id == HELPER_BOT_ID)
+            )
+        ).scalar_one_or_none()
+        if not helper_exists:
+            return
+
+        user_member = aliased(ChannelMembership)
+        bot_member = aliased(ChannelMembership)
+        channel = (
+            await self.session.execute(
+                select(Channel)
+                .join(user_member, user_member.channel_id == Channel.channel_id)
+                .join(bot_member, bot_member.channel_id == Channel.channel_id)
+                .where(
+                    Channel.workspace_id == workspace.workspace_id,
+                    Channel.type == "dm",
+                    Channel.name.notlike("dmchat:%"),
+                    user_member.member_id == user.user_id,
+                    user_member.member_type == "user",
+                    bot_member.member_id == HELPER_BOT_ID,
+                    bot_member.member_type == "bot",
+                )
+                .order_by(Channel.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+        if channel is None:
+            left, right = sorted([user.user_id, HELPER_BOT_ID])
+            channel = Channel(
+                workspace_id=workspace.workspace_id,
+                name=f"dm:{left}:{right}"[:255],
+                type="dm",
+            )
+            self.session.add(channel)
+            await self.session.flush()
+            self.session.add_all(
+                [
+                    ChannelMembership(
+                        channel_id=channel.channel_id,
+                        member_id=user.user_id,
+                        member_type="user",
+                        role="member",
+                        added_by=user.user_id,
+                    ),
+                    ChannelMembership(
+                        channel_id=channel.channel_id,
+                        member_id=HELPER_BOT_ID,
+                        member_type="bot",
+                        role="member",
+                        added_by=user.user_id,
+                    ),
+                ]
+            )
+            await self.session.flush()
+
+        opening_exists = (
+            await self.session.execute(
+                select(Message.msg_id)
+                .where(
+                    Message.channel_id == channel.channel_id,
+                    Message.sender_id == HELPER_BOT_ID,
+                    Message.sender_type == "bot",
+                    Message.content == HELPER_ONBOARDING_MESSAGE,
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if opening_exists:
+            return
+
+        self.session.add(
+            Message(
+                channel_id=channel.channel_id,
+                sender_id=HELPER_BOT_ID,
+                sender_type="bot",
+                content=HELPER_ONBOARDING_MESSAGE,
+            )
+        )
+        await self.session.flush()
 
     async def ensure_can_manage(
         self,

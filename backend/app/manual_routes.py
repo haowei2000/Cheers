@@ -143,12 +143,48 @@ def _escape_html(text: str) -> str:
 async def manual_index() -> HTMLResponse:
     """Manual index."""
     help_items: list[tuple[str, str, str]] = [
-        ("使用说明书", "/manual/help/使用说明书", "总索引，按角色分流到其它说明书。"),
-        ("普通用户使用说明", "/manual/help/普通用户使用说明", "日常在项目里聊天、@ Bot、上传文件的使用指南。"),
-        ("系统管理说明书", "/manual/help/系统管理说明书", "系统管理员：工作空间与项目、成员管理、OpenClaw 接入与审核、Orchestrator 配置。"),
-        ("OpenClaw接入指南", "/manual/help/OpenClaw接入指南", "OpenClaw 开发者：发现 AgentNexus、提交注册申请、常见错误排查。"),
-        ("安装部署说明", "/manual/help/安装部署说明", "部署与运维：环境要求、Docker / 本地安装、数据库迁移、种子数据。"),
-        ("技术排查Q&A", "/manual/help/技术排查Q&A", "故障现象 → 原因 → 处理步骤，包含日志说明与接口排查。"),
+        ("帮助文档总索引", "/manual/help/README", "总索引，按角色分流到其它说明书。"),
+        (
+            "普通用户使用说明",
+            "/manual/help/普通用户使用说明",
+            "日常在项目里聊天、@ Bot、上传文件的使用指南。",
+        ),
+        (
+            "AgentNexus 前端操作手册",
+            "/manual/help/AgentNexus 前端操作手册",
+            "前端界面入口、主要控件和常用操作说明。",
+        ),
+        (
+            "AgentNexus 界面交互指南",
+            "/manual/help/AgentNexus 界面交互指南",
+            "界面布局、交互规则和使用建议。",
+        ),
+        (
+            "系统管理说明书",
+            "/manual/help/系统管理说明书",
+            "系统管理员：工作空间与项目、成员管理、OpenClaw 接入与审核、"
+            "Orchestrator 配置。",
+        ),
+        (
+            "AgentBridge 接入指南",
+            "/manual/help/AgentBridge接入指南",
+            "Agent 开发者：发现 AgentNexus、提交注册申请、常见错误排查。",
+        ),
+        (
+            "安装部署说明",
+            "/manual/help/安装部署说明",
+            "部署与运维：环境要求、Docker / 本地安装、数据库迁移、种子数据。",
+        ),
+        (
+            "RustFS 对象存储部署说明",
+            "/manual/help/RustFS对象存储部署说明",
+            "对象存储安装、配置和联调说明。",
+        ),
+        (
+            "kkFileView 配置说明",
+            "/manual/help/kkFileView配置说明",
+            "文档在线预览服务配置和排查。",
+        ),
     ]
     body_parts = [
         "<h1>AgentNexus 使用与管理说明</h1>",

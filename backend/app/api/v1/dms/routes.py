@@ -19,6 +19,7 @@ async def list_dms(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
+    await WorkspaceService(session).ensure_personal_workspace(current_user)
     svc = ChannelService(session)
     rows = await svc.list_dms_with_counterparty(current_user)
     unread = await svc.unread_counts_for(
