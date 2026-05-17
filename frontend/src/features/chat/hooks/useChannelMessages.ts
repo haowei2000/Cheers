@@ -68,6 +68,7 @@ const READING_ANCHOR_VIEWPORT_RATIO = 0.42;
 const INITIAL_SCROLL_SETTLE_FRAMES = 2;
 const EXPLICIT_SCROLL_SETTLE_FRAMES = 3;
 const PREPEND_SCROLL_SETTLE_FRAMES = 2;
+const PAGINATION_EDGE_PX = VIRTUAL_MESSAGE_ESTIMATED_HEIGHT * 2;
 const POSITION_SAVE_DEBOUNCE_MS = 180;
 const POSITION_SAVE_MIN_INTERVAL_MS = 500;
 
@@ -907,11 +908,24 @@ export function useChannelMessages({
     }
     const firstIndex = virtualItems[0]?.index ?? 0;
     const lastIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
-    if (firstIndex <= 2 && hasMore && !loadingMore) {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const bottomGap = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (
+      firstIndex <= 2 &&
+      container.scrollTop <= PAGINATION_EDGE_PX &&
+      hasMore &&
+      !loadingMore
+    ) {
       loadMoreMessages();
       return;
     }
-    if (lastIndex >= topicRoots.length - 3 && hasMoreNewer && !loadingNewer) {
+    if (
+      lastIndex >= topicRoots.length - 3 &&
+      bottomGap <= PAGINATION_EDGE_PX &&
+      hasMoreNewer &&
+      !loadingNewer
+    ) {
       loadNewerMessages();
     }
   }, [
