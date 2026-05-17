@@ -222,7 +222,7 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
 
       <div className="an-sp-card-body">
         <div className="an-sp-key-row">
-          <div className="an-sp-key" title={session.provider_session_key}>
+          <div className="an-sp-key" title={shortKey(session.provider_session_key)}>
             <span>Provider key</span>
             {expanded ? session.provider_session_key : shortKey(session.provider_session_key)}
           </div>
@@ -246,6 +246,12 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
             <dt>Provider</dt>
             <dd title={`${session.provider} / ${session.provider_agent_id}`}>
               {session.provider} / {shortId(session.provider_agent_id)}
+            </dd>
+          </div>
+          <div>
+            <dt>Provider session</dt>
+            <dd title={session.provider_session_id || ""}>
+              {session.provider_session_id ? shortId(session.provider_session_id) : "-"}
             </dd>
           </div>
           <div>

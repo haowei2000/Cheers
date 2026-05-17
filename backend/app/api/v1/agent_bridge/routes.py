@@ -53,6 +53,12 @@ from app.features.agent_bridge.service import (
 from app.features.agent_bridge.service import (
     flush_stream_deltas as bridge_flush_stream_deltas,
 )
+from app.features.agent_bridge.service import (
+    is_agent_bridge_task_content_data as bridge_is_task_content_data,
+)
+from app.features.agent_bridge.service import (
+    register_stream as bridge_register_stream,
+)
 from app.features.agent_bridge.session_map import (
     SCOPE_CHANNEL,
     SCOPE_DM,
@@ -168,11 +174,14 @@ async def list_scope_sessions(
         bot_ids = {row[0] for row in bot_rows}
         if bot_id and bot_id not in bot_ids:
             raise HTTPException(status_code=403, detail="bot is not a member of this DM")
-        allowed_scope_ids = {
-            f"user:{current_user.user_id}:bot:{candidate_bot_id}"
-            for candidate_bot_id in bot_ids
-        }
-        allowed_scope_ids.add(channel_id)
+        if channel.name.startswith("dmchat:"):
+            allowed_scope_ids = {channel_id}
+        else:
+            allowed_scope_ids = {
+                f"user:{current_user.user_id}:bot:{candidate_bot_id}"
+                for candidate_bot_id in bot_ids
+            }
+            allowed_scope_ids.add(channel_id)
         if scope_id not in allowed_scope_ids:
             raise HTTPException(status_code=403, detail="dm scope_id does not belong to this DM")
     sessions = await list_active_sessions_for_scope(
@@ -203,13 +212,15 @@ async def refresh_dm_session(
 
     bot_id = body.bot_id
     if not bot_id:
-        bot_member = (await session.execute(
-            select(ChannelMembership).where(
+        bot_members = list((await session.execute(
+            select(ChannelMembership.member_id).where(
                 ChannelMembership.channel_id == body.channel_id,
                 ChannelMembership.member_type == "bot",
             )
-        )).scalar_one_or_none()
-        bot_id = bot_member.member_id if bot_member else None
+        )).scalars().all())
+        if len(bot_members) > 1:
+            raise HTTPException(status_code=400, detail="DM has multiple bot counterparties; bot_id is required")
+        bot_id = bot_members[0] if bot_members else None
     if not bot_id:
         raise HTTPException(status_code=400, detail="DM has no bot counterparty")
 
@@ -965,12 +976,13 @@ async def control_websocket(websocket: WebSocket) -> None:
         "bot_id": bot.bot_id,
         "bot_username": bot.username,
         "bot_display_name": bot.display_name,
+        "connection_id": sess.connection_id,
         "session_id": sess.session_id,
         "memberships": memberships,
     })
     logger.info(
-        "control_ws: connected bot_id=%s session=%s memberships=%d",
-        bot.bot_id, sess.session_id, len(memberships),
+        "control_ws: connected bot_id=%s connection_id=%s memberships=%d",
+        bot.bot_id, sess.connection_id, len(memberships),
     )
 
     try:
@@ -1124,6 +1136,30 @@ async def _handle_data_delta(
         msg_id=msg_id, bot_id=bot.bot_id, seq=seq, delta=delta,
     )
     if not accepted:
+        from app.db.session import async_session_factory
+
+        async with async_session_factory() as s:
+            placeholder = await s.get(Message, msg_id)
+            can_recover_stream = (
+                placeholder is not None
+                and placeholder.sender_id == bot.bot_id
+                and (
+                    placeholder.is_partial
+                    or not (placeholder.content or "").strip()
+                    or bridge_is_task_content_data(placeholder.content_data)
+                )
+            )
+            if placeholder is not None and can_recover_stream:
+                await bridge_register_stream(
+                    msg_id=msg_id,
+                    bot_id=bot.bot_id,
+                    channel_id=placeholder.channel_id,
+                    task_id=placeholder.task_id,
+                )
+                accepted = await bridge_apply_delta(
+                    msg_id=msg_id, bot_id=bot.bot_id, seq=seq, delta=delta,
+                )
+    if not accepted:
         # Stream unknown / wrong bot / already finalized — log on the plugin side
         # via debug ack; do not 4xx since the plugin can't recover anyway.
         logger.debug(
@@ -1160,6 +1196,52 @@ async def _handle_data_trace(
     accepted = await bridge_apply_trace(msg_id=msg_id, bot_id=bot.bot_id, payload=frame)
     if not accepted:
         logger.debug("data_ws.trace: dropped msg_id=%s bot_id=%s stream=%s", msg_id, bot.bot_id, stream)
+
+
+async def _handle_data_session_update(
+    websocket: WebSocket, bot: BotAccount, frame: dict,
+) -> None:
+    """Provider reports an external session/run identifier for observability."""
+    provider_session_key = frame.get("provider_session_key")
+    provider_session_id = frame.get("provider_session_id")
+    metadata = frame.get("metadata")
+    if not isinstance(provider_session_key, str) or not provider_session_key.strip():
+        await websocket.send_json({"type": "error", "detail": "session_update missing provider_session_key"})
+        return
+    if provider_session_id is not None and not isinstance(provider_session_id, str):
+        await websocket.send_json({"type": "error", "detail": "session_update provider_session_id must be string"})
+        return
+    if metadata is not None and not isinstance(metadata, dict):
+        await websocket.send_json({"type": "error", "detail": "session_update metadata must be object"})
+        return
+    from app.db.session import async_session_factory
+
+    async with async_session_factory() as s:
+        row = (
+            await s.execute(
+                select(AgentNexusSession).where(
+                    AgentNexusSession.bot_id == bot.bot_id,
+                    AgentNexusSession.provider_session_key == provider_session_key.strip(),
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            await websocket.send_json({"type": "error", "detail": "session_update target not found"})
+            return
+        if provider_session_id:
+            row.provider_session_id = provider_session_id.strip()
+        if metadata:
+            existing = dict(row.session_metadata or {})
+            previous_report = existing.get("provider_report")
+            if not isinstance(previous_report, dict):
+                previous_report = {}
+            existing["provider_report"] = {
+                **previous_report,
+                **metadata,
+                "reported_at": datetime.now(timezone.utc).isoformat(),
+            }
+            row.session_metadata = existing
+        await s.commit()
 
 
 async def _handle_data_done(
@@ -1465,12 +1547,13 @@ async def data_websocket(websocket: WebSocket) -> None:
         "type": "hello",
         "stream": "data",
         "bot_id": bot.bot_id,
+        "connection_id": sess.connection_id,
         "session_id": sess.session_id,
         "last_event_seq": last_seq,
     })
     logger.info(
-        "data_ws: connected bot_id=%s session=%s last_event_seq=%d",
-        bot.bot_id, sess.session_id, last_seq,
+        "data_ws: connected bot_id=%s connection_id=%s last_event_seq=%d",
+        bot.bot_id, sess.connection_id, last_seq,
     )
 
     try:
@@ -1492,6 +1575,8 @@ async def data_websocket(websocket: WebSocket) -> None:
                 await _handle_data_delta(websocket, bot, frame)
             elif ftype == "trace":
                 await _handle_data_trace(websocket, bot, frame)
+            elif ftype == "session_update":
+                await _handle_data_session_update(websocket, bot, frame)
             elif ftype == "done":
                 await _handle_data_done(websocket, bot, frame)
             elif ftype == "error":

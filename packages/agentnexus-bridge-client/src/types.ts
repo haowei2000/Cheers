@@ -27,6 +27,7 @@ export interface ControlHello {
   bot_id: string;
   bot_username: string;
   bot_display_name?: string | null;
+  connection_id?: string;
   session_id: string;
   memberships: ChannelInfo[];
 }
@@ -102,6 +103,7 @@ export interface DataHello {
   type: "hello";
   stream: "data";
   bot_id: string;
+  connection_id?: string;
   session_id: string;
   last_event_seq: number;
 }
@@ -235,6 +237,13 @@ export interface TraceFrame {
 export interface ResumeFrame {
   type: "resume";
   last_event_seq: number;
+}
+
+export interface SessionUpdateFrame {
+  type: "session_update";
+  provider_session_key?: string;
+  provider_session_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 // ---- Streaming reply frames (client → server, fire-and-forget, no ack) ----

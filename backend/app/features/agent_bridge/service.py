@@ -193,11 +193,15 @@ async def mark_bot_reply_as_background_task(
 ) -> Message | None:
     """Convert a slow Agent Bridge placeholder into a visible background task.
 
-    Unlike the old timeout path this deliberately keeps ``pending_replies`` in
-    memory, so a late Agent Bridge reply can still finalize the same placeholder.
+    Keeps ``pending_replies`` in memory when available, but can also operate
+    from the durable placeholder after a process restart.
     """
     pending = await pending_replies.peek_by_msg(msg_id)
-    if pending is None or pending.bot_id != bot_id or pending.task_id != task_id:
+    if pending is not None and (
+        pending.bot_id != bot_id
+        or pending.channel_id != channel_id
+        or pending.task_id != task_id
+    ):
         return None
 
     msg = await session.get(Message, msg_id)

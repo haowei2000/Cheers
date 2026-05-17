@@ -1116,6 +1116,15 @@ async function startAccount(rawCtx: unknown): Promise<void> {
               text: `[agentnexus plugin] 内部路由 HTTP ${resp.status}: ${body.slice(0, 120)}`,
             }).catch(() => { /* ignore */ });
           } else {
+            const accepted = await resp.json().catch(() => null) as { runId?: unknown } | null;
+            const runId = typeof accepted?.runId === "string" ? accepted.runId : undefined;
+            if (runId) {
+              session.reportProviderSession({
+                provider_session_key: sk,
+                provider_session_id: runId,
+                metadata: { provider: "openclaw", last_run_id: runId, task_id: m.event.task_id },
+              });
+            }
             emitInboundTrace(session, accountId, sk, m, {
               phase: "loopback_accepted",
               status: "running",
