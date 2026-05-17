@@ -69,6 +69,15 @@ function scopeMeta(type: string): ScopeMeta {
   };
 }
 
+function scopeMapLabel(type: string): string {
+  const tone = normalizeScope(type);
+  if (tone === "channel") return "Channel";
+  if (tone === "topic") return "Topic";
+  if (tone === "task") return "Task";
+  if (tone === "dm") return "DM";
+  return "Scope";
+}
+
 function shortId(value: string): string {
   if (!value) return "-";
   if (value.length <= 18) return value;
@@ -141,7 +150,6 @@ function SessionRefreshAction({
 function SessionPanelHeader({
   title,
   scopeType,
-  scopeId,
   sessions,
   loading,
   canRefresh,
@@ -150,34 +158,26 @@ function SessionPanelHeader({
 }: {
   title: string;
   scopeType: ScopeType;
-  scopeId: string;
   sessions: AgentBridgeSession[];
   loading: boolean;
   canRefresh: boolean;
   onRefresh?: () => void;
   refreshing: boolean;
 }) {
-  const meta = scopeMeta(scopeType);
-  const summary = loading
-    ? "Loading sessions"
-    : sessions.length
-      ? sessionScopeCounts(sessions)
-      : "No active session";
+  const countLabel = loading ? "..." : String(sessions.length);
 
   return (
     <div className="an-sp-head">
       <div className="an-sp-head-main">
-        <span className="an-sp-head-icon" data-scope={meta.tone}>
-          <AppIcon name={meta.icon} />
+        <span className="an-sp-head-icon" data-scope={scopeType}>
+          <AppIcon name={scopeMeta(scopeType).icon} />
         </span>
         <div className="an-sp-head-copy">
           <div className="an-sp-title">{title}</div>
-          <div className="an-sp-sub">
-            <span>{summary}</span>
-            <span className="an-sp-dot" />
-            <span title={scopeId}>{meta.label} · {shortId(scopeId)}</span>
-          </div>
         </div>
+        <span className="an-sp-count" title={loading ? "Loading sessions" : `${sessions.length} active sessions`}>
+          {countLabel}
+        </span>
       </div>
       <SessionRefreshAction canRefresh={canRefresh} onRefresh={onRefresh} refreshing={refreshing} />
     </div>
@@ -293,9 +293,126 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
   );
 }
 
-export function SessionList({ sessions }: { sessions: AgentBridgeSession[] }) {
+type RelationScope = {
+  key: string;
+  scopeType: string;
+  scopeId: string;
+  role: string;
+  detached: boolean;
+};
+
+function sessionScopes(session: AgentBridgeSession): RelationScope[] {
+  const seen = new Set<string>();
+  const bindings = (session.bindings || [])
+    .filter((binding) => !binding.detached_at)
+    .map((binding) => ({
+      key: `${binding.scope_type}:${binding.scope_id}:${binding.role}`,
+      scopeType: binding.scope_type,
+      scopeId: binding.scope_id,
+      role: binding.role,
+      detached: false,
+    }));
+  const source = bindings.length > 0
+    ? bindings
+    : [{
+        key: `${session.current_scope_type}:${session.current_scope_id}:primary`,
+        scopeType: session.current_scope_type,
+        scopeId: session.current_scope_id,
+        role: "primary",
+        detached: false,
+      }];
+  const order: Record<string, number> = { channel: 0, topic: 1, task: 2, dm: 3 };
+  return source
+    .filter((scope) => {
+      const key = `${scope.scopeType}:${scope.scopeId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => {
+      const typeDelta = (order[a.scopeType] ?? 99) - (order[b.scopeType] ?? 99);
+      if (typeDelta !== 0) return typeDelta;
+      return a.scopeId.localeCompare(b.scopeId);
+    });
+}
+
+function statusKey(status: string): string {
+  if (status === "active" || status === "closed" || status === "task_owned") return status;
+  return "unknown";
+}
+
+function SessionRelationMap({ sessions }: { sessions: AgentBridgeSession[] }) {
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const selectedSession = sessions.find((session) => session.session_id === selectedSessionId) || null;
+
+  useEffect(() => {
+    if (selectedSessionId && !selectedSession) {
+      setSelectedSessionId(null);
+    }
+  }, [selectedSession, selectedSessionId]);
+
+  return (
+    <div className="an-sp-map">
+      <div className="an-sp-map-canvas" aria-label="Session scope relation map">
+        {sessions.map((session, index) => {
+          const scopes = sessionScopes(session);
+          const selected = selectedSessionId === session.session_id;
+          return (
+            <button
+              key={session.session_id}
+              type="button"
+              className={`an-sp-map-row ${selected ? "is-selected" : ""}`}
+              onClick={() => setSelectedSessionId((value) => (value === session.session_id ? null : session.session_id))}
+              aria-expanded={selected}
+              title="Show session details"
+            >
+              <span className="an-sp-map-scopes">
+                {scopes.map((scope) => {
+                  const meta = scopeMeta(scope.scopeType);
+                  return (
+                    <span
+                      key={scope.key}
+                      className="an-sp-map-scope"
+                      data-scope={meta.tone}
+                      title={`${scopeMapLabel(scope.scopeType)} · ${scope.scopeId}`}
+                    >
+                      <AppIcon name={meta.icon} />
+                      <span>{scopeMapLabel(scope.scopeType)}</span>
+                    </span>
+                  );
+                })}
+              </span>
+              <span className="an-sp-map-link" aria-hidden="true" />
+              <span className="an-sp-map-session" data-status={statusKey(session.status)}>
+                <span className="an-sp-session-dot" />
+                <span>S{index + 1}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedSession && (
+        <div className="an-sp-map-details">
+          <SessionCard session={selectedSession} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SessionList({
+  sessions,
+  view = "cards",
+}: {
+  sessions: AgentBridgeSession[];
+  view?: "cards" | "map";
+}) {
   if (sessions.length === 0) {
     return <div className="an-sp-empty">No Agent Bridge sessions.</div>;
+  }
+  if (view === "map") {
+    return <SessionRelationMap sessions={sessions} />;
   }
   return (
     <div className="an-sp-list">
@@ -307,7 +424,6 @@ export function SessionList({ sessions }: { sessions: AgentBridgeSession[] }) {
 function SessionPanelContent({
   title,
   scopeType,
-  scopeId,
   sessions,
   loading,
   error,
@@ -317,7 +433,6 @@ function SessionPanelContent({
 }: {
   title: string;
   scopeType: ScopeType;
-  scopeId: string;
   sessions: AgentBridgeSession[];
   loading: boolean;
   error: string | null;
@@ -330,7 +445,6 @@ function SessionPanelContent({
       <SessionPanelHeader
         title={title}
         scopeType={scopeType}
-        scopeId={scopeId}
         sessions={sessions}
         loading={loading}
         canRefresh={canRefresh}
@@ -341,7 +455,7 @@ function SessionPanelContent({
         {error ? (
           <div className="an-sp-error">{error}</div>
         ) : (
-          <SessionList sessions={sessions} />
+          <SessionList sessions={sessions} view="map" />
         )}
       </div>
     </div>
@@ -442,7 +556,6 @@ export function SessionScopePanel({
             <SessionPanelContent
               title={title}
               scopeType={scopeType}
-              scopeId={scopeId}
               sessions={sessions}
               loading={loading}
               error={error}
@@ -474,7 +587,6 @@ export function SessionScopePanel({
         <SessionPanelContent
           title={title}
           scopeType={scopeType}
-          scopeId={scopeId}
           sessions={sessions}
           loading={loading}
           error={error}
