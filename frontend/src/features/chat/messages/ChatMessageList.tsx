@@ -217,7 +217,7 @@ export function ChatMessageList({
                             </div>
                             <div className="an-empty-chips">
                               {[
-                                "@Coordinator summarize recent progress in this channel",
+                                "@Coordinator summarize channel history and progress",
                                 "What is the goal of this channel?",
                                 "@Coordinator help me decide what to do next",
                               ].map((s) => (

@@ -147,14 +147,14 @@ class TestApplyUserTemplate:
         assert result == "[2026-01-01T00:00:00Z] hi"
 
     def test_memory_vars(self) -> None:
-        tpl = "锚点：{{anchor}}\n进度：{{progress}}\n决策：{{decisions}}\n索引：{{files_index}}\n近况：{{recent}}\n待办：{{todos}}\n问题：{{message}}"
+        tpl = "锚点：{{anchor}}\n进度：{{progress}}\n决策：{{decisions}}\n索引：{{files_index}}\n历史：{{history}}\n待办：{{todos}}\n问题：{{message}}"
         adapter = self._adapter(tpl)
         ctx = {
             "anchor": "<anchor>项目目标</anchor>",
             "progress": "<progress>已完成50%</progress>",
             "decisions": "<decisions>用React</decisions>",
             "files_index": "<files_index>README.md</files_index>",
-            "recent": "<recent>昨天讨论了架构</recent>",
+            "history": "<history>昨天讨论了架构</history>",
             "todos": "- 写测试",
         }
         result = adapter._apply_user_template("什么进度？", ctx)
@@ -172,7 +172,7 @@ class TestApplyUserTemplate:
             "bot={{bot_name}} sender={{sender_name}} channel={{channel_name}} "
             "cid={{channel_id}} ts={{timestamp}} "
             "anchor={{anchor}} progress={{progress}} decisions={{decisions}} "
-            "files={{files_index}} recent={{recent}} todos={{todos}} "
+            "files={{files_index}} history={{history}} todos={{todos}} "
             "msg={{message}}"
         )
         adapter = self._adapter(tpl)
@@ -186,7 +186,7 @@ class TestApplyUserTemplate:
             "progress": "P",
             "decisions": "D",
             "files_index": "F",
-            "recent": "R",
+            "history": "H",
             "todos": "TD",
         }
         result = adapter._apply_user_template("问题", ctx)
@@ -297,7 +297,7 @@ async def test_execute_renders_all_context_vars() -> None:
             "progress": "进行中",
             "decisions": "决策A",
             "files_index": "file1.md",
-            "recent": "最近活动",
+            "history": "历史活动",
             "todos": "- TODO1",
         },
         process_config=ProcessConfig(
@@ -331,7 +331,7 @@ async def test_execute_renders_all_context_vars() -> None:
     assert "进行中" in user_content, "progress 未渲染"
     assert "决策A" in user_content, "decisions 未渲染"
     assert "file1.md" in user_content, "files_index 未渲染"
-    assert "最近活动" in user_content, "recent 未渲染"
+    assert "历史活动" in user_content, "history 未渲染"
     assert "TODO1" in user_content, "todos 未渲染"
     assert "模板测试消息" in user_content, "message 未渲染"
 
@@ -355,7 +355,7 @@ async def test_execute_renders_memory_when_default_template_requests_it() -> Non
             "progress": "默认模板进度",
             "decisions": "默认模板决策",
             "files_index": "默认模板索引",
-            "recent": "默认模板近况",
+            "history": "默认模板历史",
             "todos": "- 默认模板待办",
         },
         process_config=ProcessConfig(
@@ -378,7 +378,7 @@ async def test_execute_renders_memory_when_default_template_requests_it() -> Non
     assert "默认模板锚点" in user_content
     assert "默认模板决策" in user_content
     assert "默认模板索引" in user_content
-    assert "默认模板近况" in user_content
+    assert "默认模板历史" in user_content
     assert user_content.index("默认模板锚点") < user_content.index("默认模板问题")
 
 
@@ -432,7 +432,7 @@ async def test_skip_system_prompt_still_renders_memory_template() -> None:
             "progress": "子任务进度",
             "decisions": "子任务决策",
             "files_index": "子任务索引",
-            "recent": "子任务近况",
+            "history": "子任务历史",
             "todos": "- 子任务待办",
         },
         process_config=ProcessConfig(
@@ -452,7 +452,7 @@ async def test_skip_system_prompt_still_renders_memory_template() -> None:
     root = _extract_channel_memory_xml(user_content)
     assert root.find("./layer[@name='anchor']/content").text == "子任务锚点"
     assert "子任务锚点" in user_content
-    assert "子任务近况" in user_content
+    assert "子任务历史" in user_content
     assert user_content.index("子任务锚点") < user_content.index("请处理最终问题")
 
 
@@ -472,7 +472,7 @@ async def test_vision_request_renders_memory_template_in_text_part() -> None:
         },
         memory_context={
             "anchor": "图片请求锚点",
-            "recent": "图片请求近况",
+            "history": "图片请求历史",
         },
         attachments=[{
             "is_image": "true",
@@ -636,7 +636,7 @@ async def test_call_bot_end_to_end_renders_delegated_xml() -> None:
         "progress": "E2E进度",
         "decisions": "E2E决策",
         "files_index": "E2E索引",
-        "recent": "E2E近况",
+        "history": "E2E历史",
         "todos": "E2E待办",
     }
     run_ctx = _make_call_bot_run_ctx(
@@ -683,6 +683,6 @@ async def test_call_bot_end_to_end_renders_delegated_xml() -> None:
     assert root.find("./channel_memory/layer[@name='progress']").text == "E2E进度"
     assert root.find("./channel_memory/layer[@name='decisions']").text == "E2E决策"
     assert root.find("./channel_memory/layer[@name='files_index']").text == "E2E索引"
-    assert root.find("./channel_memory/layer[@name='recent']").text == "E2E近况"
+    assert root.find("./channel_memory/layer[@name='history']").text == "E2E历史"
     assert root.find("./channel_memory/layer[@name='todos']").text == "E2E待办"
     assert root.findtext("./routing/generated_at"), "generated_at 未生成"

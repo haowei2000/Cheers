@@ -15,6 +15,11 @@ from app.features.bot_runtime.adapters.help_catalog import (
     build_help_content_with_form,
     get_help_context_for_llm,
 )
+from app.features.bot_runtime.coordinator_profile import (
+    ALL_COORDINATOR_TOOLS,
+    CoordinatorContextProfile,
+    build_coordinator_profile,
+)
 from app.features.memory.prompt_xml import MEMORY_LAYER_FIELDS, render_channel_memory_xml
 from app.services.admin.settings_store import get_provider_for_scope
 
@@ -23,7 +28,15 @@ logger = logging.getLogger("app.features.bot_runtime.adapters.channel_bot")
 MAX_LOOP_ITERATIONS = 8
 HISTORY_MSG_COUNT = 30  # Maximum number of history messages injected into the LLM.
 HISTORY_MSG_MAX_CHARS = 600  # Maximum characters retained from each history message.
-_CLARIFY_PREFIX = "@channel bot 澄清回答："
+_CLARIFY_PREFIXES = (
+    "@Coordinator 澄清回答：",
+    "@Helper 澄清回答：",
+    "@引导 澄清回答：",
+    "@channel bot 澄清回答：",
+    "@Coordinator clarification answer:",
+    "@Helper clarification answer:",
+    "@channel bot clarification answer:",
+)
 
 _DEFAULT_REPLY = (
     "您可以说：怎么创建项目、怎么加入项目、怎么接入外部 Agent、怎么发消息、"
@@ -33,6 +46,92 @@ _DEFAULT_REPLY = (
 
 
 _MEMORY_XML_FIELDS = MEMORY_LAYER_FIELDS
+
+_MEMORY_LAYER_CHAR_BUDGETS = {
+    "anchor": 1600,
+    "progress": 1400,
+    "decisions": 1600,
+    "files_index": 2200,
+    "history": 1800,
+    "todos": 1200,
+}
+
+
+def _strip_matching_prefix(text: str, prefixes: tuple[str, ...]) -> tuple[bool, str]:
+    stripped = (text or "").strip()
+    for prefix in prefixes:
+        if stripped.startswith(prefix):
+            return True, stripped[len(prefix):].strip()
+    return False, stripped
+
+
+def _clip_text(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n...[truncated]"
+
+
+def _trim_memory_for_profile(
+    memory: dict[str, str],
+    profile: CoordinatorContextProfile,
+) -> dict[str, str]:
+    if not profile.memory_layers or profile.memory_char_budget <= 0:
+        return {}
+
+    remaining = profile.memory_char_budget
+    trimmed: dict[str, str] = {}
+    for key, _label in MEMORY_LAYER_FIELDS:
+        if key not in profile.memory_layers:
+            continue
+        content = (memory.get(key) or "").strip()
+        if key == "history" and not content:
+            content = (memory.get("recent") or "").strip()
+        if not content:
+            continue
+        layer_budget = min(_MEMORY_LAYER_CHAR_BUDGETS.get(key, 1200), remaining)
+        if layer_budget <= 0:
+            break
+        clipped = _clip_text(content, layer_budget)
+        trimmed[key] = clipped
+        remaining -= len(clipped)
+    return trimmed
+
+
+def _build_behavior_rules(profile: CoordinatorContextProfile) -> str:
+    rules = [
+        "## Core Behavior Rules",
+        "",
+        "- Final replies should be concise, professional Markdown.",
+        "- Use only the context included in this prompt. If important context is missing, say what is missing.",
+    ]
+    if "call_user" in profile.enabled_tools:
+        rules.append("- If the user message lacks enough information or needs a key decision, call call_user before guessing.")
+    if "call_bot" in profile.enabled_tools:
+        rules.append("- When another channel Bot is better suited, call call_bot with a focused delegated task.")
+    if "read_file" in profile.enabled_tools:
+        rules.append("- For uploaded documents, use file references first and call read_file only when the body is needed.")
+    if {"web_fetch", "web_search"} & profile.enabled_tools:
+        rules.append("- Use web tools only when the answer depends on current or external web information.")
+    if {"update_anchor", "update_progress", "update_decision"} & profile.enabled_tools:
+        rules.extend([
+            "",
+            "## Memory Maintenance Duties",
+            "",
+            "- update_anchor when project goals, scope, constraints, or background change.",
+            "- update_progress when the user reports progress, blockers, milestones, or next steps.",
+            "- update_decision for important decisions, technology choices, and confirmed plans.",
+            "- Call memory tools only when there is concrete new information to persist.",
+        ])
+    if profile.intent == "help":
+        rules.extend([
+            "",
+            "## Help Answer Rules",
+            "",
+            "- Answer operation questions with concrete UI entry points and short numbered steps.",
+            "- If the help context does not cover the exact request, say so and give the closest safe path.",
+        ])
+    return "\n".join(rules)
 
 
 def _xml_text(value: Any) -> str:
@@ -209,7 +308,7 @@ def _tool_label(tool_name: str, args: dict) -> str:
 # Tool factories.
 
 
-def _make_tools(ctx: dict) -> list:
+def _make_tools(ctx: dict, enabled_tool_names: frozenset[str] | set[str] | None = None) -> list:
     """Make tools."""
 
     @tool
@@ -725,7 +824,7 @@ Args:
         logger.info("channel_bot[tool]: web_search query='%s' num=%d", query, num_results)
         return result
 
-    return [
+    tools = [
         update_anchor,
         update_progress,
         update_decision,
@@ -740,6 +839,10 @@ Args:
         web_fetch,
         web_search,
     ]
+    if enabled_tool_names is None:
+        return tools
+    enabled = set(enabled_tool_names) & ALL_COORDINATOR_TOOLS
+    return [item for item in tools if item.name in enabled]
 
 
 # Attachment handling.
@@ -904,13 +1007,14 @@ async def _fetch_reply_context(session, replied_msg_id: str) -> str:
     return f"「回复：{quoted}」\n\n"
 
 
-async def _fetch_recent_history(
+async def _fetch_chat_history(
     session,
     channel_id: str,
     before_msg_id: str | None,
     limit: int = HISTORY_MSG_COUNT,
+    max_chars: int = HISTORY_MSG_MAX_CHARS,
 ) -> list:
-    """Fetch recent non-empty messages before the trigger message and convert them into LangChain messages."""
+    """Fetch chat messages before the trigger message and convert them into LangChain messages."""
     from sqlalchemy import select
 
     from app.db.models import Message as MsgModel
@@ -941,8 +1045,8 @@ async def _fetch_recent_history(
         content = re.sub(r"^> \[[^\]]+\]: .+?\n\n", "", content, count=1, flags=re.DOTALL).strip()
         if not content:
             continue
-        if len(content) > HISTORY_MSG_MAX_CHARS:
-            content = content[:HISTORY_MSG_MAX_CHARS] + "…"
+        if len(content) > max_chars:
+            content = content[:max_chars] + "…"
         name = display_names.get(m.sender_id, "")
         labeled = f"[{name}]: {content}" if name else content
         if m.sender_type == "user":
@@ -961,6 +1065,7 @@ async def _run_agent_iter(
     user_content: str | list,
     ctx: dict,
     history: list | None = None,
+    enabled_tool_names: frozenset[str] | set[str] | None = None,
 ):
     """Run the LangChain tool-calling agent loop and stream adapter events."""
     from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
@@ -977,9 +1082,9 @@ async def _run_agent_iter(
         yield Final(content="", success=True)
         return
 
-    tools = _make_tools(ctx)
+    tools = _make_tools(ctx, enabled_tool_names)
     tool_map = {t.name: t for t in tools}
-    llm_with_tools = llm.bind_tools(tools)
+    llm_with_tools = llm.bind_tools(tools) if tools else llm
 
     messages: list = [
         SystemMessage(content=system_prompt),
@@ -1011,6 +1116,10 @@ async def _run_agent_iter(
                 "channel_bot[_run_agent]: history=%d messages",
                 len(history),
             )
+        logger.debug(
+            "channel_bot[_run_agent]: enabled_tools=%s",
+            sorted(tool_map.keys()),
+        )
 
     for iteration in range(MAX_LOOP_ITERATIONS):
         response: AIMessage | None = None
@@ -1135,82 +1244,75 @@ class ChannelBotAdapter(BotAdapter):
         if file_refs:
             user_text = (user_text.strip() + "\n\n" + file_refs) if user_text.strip() else file_refs
 
-        memory = payload.context.memory or {}
         channel_id = payload.channel_id
         pconfig = payload.runtime
         channel_bots: list[str] = pconfig.channel_bot_usernames
         bot_details: dict = pconfig.channel_bot_details
         sender_id = payload.message.sender_id
+        is_clarify_reply, clarify_answer_body = _strip_matching_prefix(user_text, _CLARIFY_PREFIXES)
+        profile = (
+            pconfig.coordinator_profile
+            or build_coordinator_profile(
+                user_text,
+                has_attachments=bool(all_attachments),
+                has_peer_bots=bool(channel_bots),
+                is_clarify_reply=is_clarify_reply,
+            )
+        )
+        memory = _trim_memory_for_profile(payload.context.memory or {}, profile)
 
         # 1. Build the system prompt.
         members_lines: list[str] = []
-        for uname in channel_bots:
-            detail = bot_details.get(uname) or {}
-            display = detail.get("display_name") or uname
-            desc = detail.get("description") or ""
-            caps: list[str] = []
-            try:
-                intro = json.loads(detail.get("intro") or "{}")
-                caps = intro.get("capabilities") or []
-            except Exception:
-                pass
-            line = f"- @{uname}（{display}）"
-            if desc:
-                line += f"：{desc}"
-            if caps:
-                line += f"  能力：{'、'.join(caps)}"
-            members_lines.append(line)
-        members_section = "\n".join(members_lines) if members_lines else "（暂无其他专业 Bot）"
+        if profile.include_bot_roster:
+            for uname in channel_bots:
+                detail = bot_details.get(uname) or {}
+                display = detail.get("display_name") or uname
+                desc = _clip_text(detail.get("description") or "", 180)
+                caps: list[str] = []
+                try:
+                    intro = json.loads(detail.get("intro") or "{}")
+                    caps = list(intro.get("capabilities") or [])[:5]
+                except Exception:
+                    pass
+                line = f"- @{uname}（{display}）"
+                if desc:
+                    line += f"：{desc}"
+                if caps:
+                    line += f"  能力：{'、'.join(str(cap) for cap in caps)}"
+                members_lines.append(line)
 
-        system_prompt = "\n\n".join(
-            [
-                "你是 AgentNexus 内置智能协作助手，兼顾使用引导、项目助手、协作协调三个职责。",
-                "=== 系统帮助文档（回答使用类问题时参考）===\n" + get_help_context_for_llm(),
-                render_channel_memory_xml(memory) or '<channel_memory version="1" />',
-                (
-                    f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.context.original_question_text}\n"
-                    if payload.context.original_question_text
-                    else ""
-                ),
-                "=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n" + members_section,
-                (
-                    "## Core Behavior Rules\n\n"
-                    "- If a user message lacks enough information, has ambiguous intent, or needs a key decision, "
-                    "**first call call_user** to collect information from the relevant user. Do not guess or execute directly.\n"
-                    "- Read call_user usernames from conversation history, whose format is [username]: message. "
-                    "Provide options when asking a question.\n"
-                    "- Call all necessary tools first, then produce the final reply after tool results return.\n"
-                    "- Final replies should use concise, professional Markdown.\n\n"
-                    "## Memory Maintenance Duties\n\n"
-                    "In every conversation, proactively decide whether these memory layers need updates. "
-                    "Do not wait for the user to ask:\n\n"
-                    "- **update_anchor**: update immediately when project goals, scope, constraints, or background change, "
-                    "or when the anchor is empty. The anchor is the highest-priority memory and must stay current and accurate.\n"
-                    "- **update_progress**: update immediately when the user reports progress, completed work, milestones, "
-                    "blockers, or next steps. Include completed work, current status, and next plan.\n"
-                    "- **update_decision**: record important decisions, technology choices, and confirmed plans immediately.\n\n"
-                    "**Trigger principle**: prefer updating too often over missing important information. "
-                    "Before the final reply, check whether anything should be persisted."
-                ),
-            ]
-        )
+        system_sections = [
+            "你是 AgentNexus 内置智能协作助手，兼顾使用引导、项目助手、协作协调三个职责。",
+            f"=== Context Policy ===\nintent={profile.intent}; tools={','.join(sorted(profile.enabled_tools)) or 'none'}",
+        ]
+        if profile.include_help:
+            help_context = get_help_context_for_llm(user_text, limit=profile.help_limit)
+            if help_context:
+                system_sections.append("=== 系统帮助文档（按当前问题筛选）===\n" + help_context)
+        memory_xml = render_channel_memory_xml(memory)
+        if memory_xml:
+            system_sections.append(memory_xml)
+        if payload.context.original_question_text:
+            system_sections.append(f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.context.original_question_text}")
+        if members_lines:
+            system_sections.append("=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n" + "\n".join(members_lines))
+        system_sections.append(_build_behavior_rules(profile))
+        system_prompt = "\n\n".join(section for section in system_sections if section)
 
         # 2. Store clarification answers into decisions automatically.
-        if user_text.startswith(_CLARIFY_PREFIX):
-            answer_body = user_text[len(_CLARIFY_PREFIX) :].strip()
-            if answer_body:
-                from datetime import datetime, timezone
+        if is_clarify_reply and clarify_answer_body:
+            from datetime import datetime, timezone
 
-                from app.features.memory.manager import save_layer
+            from app.features.memory.manager import save_layer
 
-                ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                entry = f"### User clarification choice ({ts})\n{answer_body}"
-                existing = (memory.get("decisions") or "").rstrip()
-                new_decisions = f"{existing}\n\n{entry}".strip() if existing else entry
-                await save_layer(channel_id, "decisions", new_decisions)
-                memory = dict(memory)
-                memory["decisions"] = new_decisions
-                logger.info("channel_bot: clarify answer saved to decisions channel=%s", channel_id)
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            entry = f"### User clarification choice ({ts})\n{clarify_answer_body}"
+            existing = ((payload.context.memory or {}).get("decisions") or "").rstrip()
+            new_decisions = f"{existing}\n\n{entry}".strip() if existing else entry
+            await save_layer(channel_id, "decisions", new_decisions)
+            memory = dict(memory)
+            memory["decisions"] = new_decisions
+            logger.info("channel_bot: clarify answer saved to decisions channel=%s", channel_id)
 
         # 3. Tool context.
         # Tools mostly read run_ctx (see call_bot) or task-specific fields;
@@ -1251,7 +1353,17 @@ class ChannelBotAdapter(BotAdapter):
                     return ""
 
                 _results = await _asyncio.gather(
-                    _fetch_recent_history(db_session, channel_id, trigger_msg_id) if trigger_msg_id else _noop_list(),
+                    (
+                        _fetch_chat_history(
+                            db_session,
+                            channel_id,
+                            trigger_msg_id,
+                            limit=profile.history_limit,
+                            max_chars=profile.history_msg_max_chars,
+                        )
+                        if trigger_msg_id and profile.history_limit > 0
+                        else _noop_list()
+                    ),
                     _fetch_user_display_name(db_session, sender_id),
                     _fetch_reply_context(db_session, in_reply_to_msg_id) if in_reply_to_msg_id else _noop_str(),
                     return_exceptions=True,
@@ -1273,11 +1385,10 @@ class ChannelBotAdapter(BotAdapter):
                     channel_id,
                 )
 
-        # Clarification answers strip the "@channel bot clarification answer:" prefix and skip reply_prefix.
+        # Clarification answers strip their prefix and skip reply_prefix.
         # The original question is already in the system prompt clarification context.
-        _is_clarify = user_text.startswith(_CLARIFY_PREFIX)
-        if _is_clarify:
-            user_text = user_text[len(_CLARIFY_PREFIX) :].strip()
+        if is_clarify_reply:
+            user_text = clarify_answer_body
             reply_prefix = ""  # helper-clarify messages are not useful to the LLM.
 
         # Inject reply context and sender identity into the current user message.
@@ -1313,6 +1424,7 @@ class ChannelBotAdapter(BotAdapter):
             user_content,
             tool_ctx,
             history=chat_history,
+            enabled_tool_names=profile.enabled_tools,
         ):
             if isinstance(event, Delta):
                 yield event

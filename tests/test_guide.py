@@ -1,5 +1,9 @@
 """Tests for test guide."""
-from app.features.bot_runtime.adapters.help_catalog import find_help
+from app.features.bot_runtime.adapters.help_catalog import (
+    find_help,
+    find_help_entries,
+    get_help_context_for_llm,
+)
 
 
 def test_find_help_creation() -> None:
@@ -27,3 +31,17 @@ def test_find_help_openclaw() -> None:
 def test_find_help_no_match_returns_none() -> None:
     """Covers test find help no match returns none behavior."""
     assert find_help("随便说点什么xyz") is None
+
+
+def test_help_context_is_ranked_by_question() -> None:
+    context = get_help_context_for_llm("怎么创建项目", limit=1)
+
+    assert "如何创建项目" in context
+    assert "技术排查" not in context
+
+
+def test_find_help_entries_respects_limit() -> None:
+    entries = find_help_entries("怎么创建项目，怎么加入项目", limit=1)
+
+    assert len(entries) == 1
+    assert entries[0].title in {"如何创建项目", "如何加入项目"}

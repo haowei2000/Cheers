@@ -6,7 +6,7 @@
  * - Structured layers (ANCHOR/DECISIONS/PROGRESS): card entries, Markdown
  *   rendering, and an inline write/preview editor.
  * - FILES_INDEX: file card grid with icon, type, and summary.
- * - RECENT: timeline view.
+ * - HISTORY: timeline view.
  * - MEMBERS: member cards.
  * - TODO: task board.
  */
@@ -55,7 +55,7 @@ const LAYERS = [
   "PROGRESS",
   "DECISIONS",
   "FILES_INDEX",
-  "RECENT",
+  "HISTORY",
   "MEMBERS",
   "TODO",
 ] as const;
@@ -109,9 +109,9 @@ const LAYER_META: Record<
 	    borderColor: "border-[var(--border)]",
 	    readonly: true,
 	  },
-	  RECENT: {
-	    label: "Recent activity",
-	    desc: "Conversation history summary",
+	  HISTORY: {
+	    label: "Conversation history",
+	    desc: "Current page details and sealed page summaries",
 	    icon: ico("clock"),
 	    color: "text-[var(--green)]",
 	    bgLight: "bg-[var(--green-muted)]",
@@ -187,7 +187,7 @@ function parseFilesIndex(md: string): FileCard[] {
   });
 }
 
-/* ── RECENT helper: parse page XML into timeline items ─────────────────── */
+/* ── HISTORY helper: parse page XML into timeline items ────────────────── */
 
 type TimelineItem = {
   pageId: string;
@@ -196,7 +196,7 @@ type TimelineItem = {
   summary: string;
 };
 
-function parseRecentXml(xml: string): TimelineItem[] {
+function parseHistoryXml(xml: string): TimelineItem[] {
   if (!xml.trim()) return [];
   const items: TimelineItem[] = [];
   const re =
@@ -703,16 +703,23 @@ export default function MemoryPage({
     );
   };
 
-  /* ── RECENT — timeline view ───────────────────────────────────────────── */
+  /* ── HISTORY — timeline view ──────────────────────────────────────────── */
 
-  const renderRecent = () => {
-    const raw = contextData["recent"] ?? "";
-    const items = parseRecentXml(raw);
+  const renderHistory = () => {
+    const raw = contextData["history"] ?? contextData["recent"] ?? "";
+    const items = parseHistoryXml(raw);
+    if (!items.length && raw.trim()) {
+      return (
+        <div className="an-prose max-w-none">
+          <MessageMarkdown text={raw} />
+        </div>
+      );
+    }
 	    if (!items.length) {
 	      return (
 	        <div className="flex flex-col items-center justify-center py-20 text-center">
 	          <AppIcon name="clock" className="w-12 h-12 mb-4 opacity-20" />
-	          <p className="an-type-body font-medium">No recent activity</p>
+	          <p className="an-type-body font-medium">No conversation history</p>
 	          <p className="an-type-meta">Conversation messages are archived automatically over time</p>
 	        </div>
       );
@@ -917,8 +924,8 @@ export default function MemoryPage({
         return renderEntryCards();
       case "FILES_INDEX":
         return renderFilesIndex();
-      case "RECENT":
-        return renderRecent();
+      case "HISTORY":
+        return renderHistory();
       case "MEMBERS":
         return renderMembers();
       case "TODO":
