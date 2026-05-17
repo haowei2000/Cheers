@@ -3196,43 +3196,59 @@ kbd {
 .an-search-global .an-search-shell {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   min-height: 36px;
-  padding: 5px 6px;
-  border: 1px solid color-mix(in oklab, var(--border) 88%, var(--accent));
+  padding: 5px 8px;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, color-mix(in oklab, var(--surface-soft) 72%, transparent), transparent),
-    var(--bg-2);
-  box-shadow: inset 0 1px 0 color-mix(in oklab, white 6%, transparent);
+  background: var(--bg-2);
   transition:
     border-color var(--motion-fast),
-    background var(--motion-fast),
-    box-shadow var(--motion-fast);
+    background var(--motion-fast);
 }
 .an-search-global.is-open .an-search-shell,
 .an-search-global:focus-within .an-search-shell {
-  border-color: var(--border-focus);
-  background: var(--bg-elevated);
-  box-shadow:
-    0 0 0 2px var(--accent-ring),
-    inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+  border-color: var(--border-strong);
+  background: color-mix(in oklab, var(--bg-2) 84%, var(--bg-elevated));
 }
-.an-search-global .an-search-shell .an-search-ico {
+.an-search-icon-btn,
+.an-search-scope {
   position: static;
   transform: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--fg-3);
   flex: 0 0 auto;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  transition:
+    color var(--motion-fast),
+    opacity var(--motion-fast);
 }
-.an-search-global .an-search-shell .an-search-ico svg {
+.an-search-icon-btn:hover,
+.an-search-scope.is-clickable:hover {
+  color: var(--fg-2);
+}
+.an-search-icon-btn:focus-visible,
+.an-search-scope.is-clickable:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: 1px;
+}
+.an-search-icon-btn svg,
+.an-search-scope-icon {
   width: 15px;
   height: 15px;
+  flex: 0 0 auto;
 }
 .an-search-global .an-search-shell input {
   flex: 1 1 auto;
@@ -3250,43 +3266,20 @@ kbd {
   color: var(--fg-3);
 }
 .an-search-scope {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  min-width: 26px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--border));
-  border-radius: 6px;
-  background: var(--accent-muted);
-  color: var(--fg-2);
-  flex: 0 0 26px;
-  font-family: inherit;
-  outline: none;
+  margin-left: auto;
 }
 .an-search-scope:disabled {
   cursor: default;
+  opacity: 0.45;
 }
 .an-search-scope.is-clickable {
   cursor: pointer;
-  transition:
-    border-color var(--motion-fast),
-    background var(--motion-fast),
-    color var(--motion-fast);
 }
-.an-search-scope.is-clickable:hover,
-.an-search-scope.is-active,
-.an-search-scope.is-clickable:focus-visible {
-  border-color: var(--border-focus);
-  background: color-mix(in oklab, var(--accent-muted) 72%, var(--bg-elevated));
-  color: var(--fg-1);
+.an-search-scope.is-active {
+  color: var(--fg-2);
 }
 .an-search-scope-icon {
-  color: var(--accent);
-  width: 12px;
-  height: 12px;
-  flex: 0 0 auto;
+  color: currentColor;
 }
 .an-search-scope-pop {
   position: absolute;
