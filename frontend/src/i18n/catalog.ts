@@ -160,6 +160,8 @@ export const EN_TO_ZH: Record<string, string> = {
   "Expand": "展开",
   "Collapse": "收起",
   "Show full message": "展开完整消息",
+  "Show more": "展开",
+  "Show less": "收起",
   "Copy paragraph": "复制段落",
   "Copy heading": "复制标题",
   "Copy list": "复制列表",
