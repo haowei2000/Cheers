@@ -64,8 +64,9 @@ const CHANNEL_POSITION_STORAGE_PREFIX = "agentnexus.channel-position.v2";
 const LEGACY_CHANNEL_POSITION_STORAGE_PREFIX = "agentnexus.channel-position.v1";
 const DEFAULT_ANCHOR_OFFSET_TOP = 96;
 const READING_ANCHOR_VIEWPORT_RATIO = 0.42;
-const INITIAL_SCROLL_SETTLE_FRAMES = 6;
-const PREPEND_SCROLL_SETTLE_FRAMES = 3;
+const INITIAL_SCROLL_SETTLE_FRAMES = 2;
+const EXPLICIT_SCROLL_SETTLE_FRAMES = 3;
+const PREPEND_SCROLL_SETTLE_FRAMES = 2;
 const POSITION_SAVE_MIN_INTERVAL_MS = 500;
 
 function positionStorageKey(prefix: string, userId: string, channelId: string): string {
@@ -267,6 +268,7 @@ export function useChannelMessages({
   const downwardScrollDistanceRef = useRef(0);
   const jumpToBottomRafRef = useRef<number | null>(null);
   const restoringInitialScrollRef = useRef(false);
+  const suppressInitialScrollEventsRef = useRef(false);
   const initialScrollTargetRef = useRef<InitialScrollTarget | null>(null);
 
   const setRestoringInitialScroll = useCallback((value: boolean) => {
@@ -376,6 +378,7 @@ export function useChannelMessages({
       setHasMore(true);
       setHasMoreNewer(false);
       setLoading(false);
+      suppressInitialScrollEventsRef.current = false;
       setRestoringInitialScroll(false);
       setJumpToBottomVisible(false);
       return;
@@ -405,7 +408,8 @@ export function useChannelMessages({
     downwardScrollDistanceRef.current = 0;
     lastSavedPositionRef.current = null;
     cancelJumpToBottomRaf();
-    setRestoringInitialScroll(true);
+    suppressInitialScrollEventsRef.current = true;
+    setRestoringInitialScroll(Boolean(pendingAnchorId));
     setJumpToBottomVisible(false);
     if (cached && cachedMatchesAnchor) {
       setMessageStore(cached.store);
@@ -413,6 +417,7 @@ export function useChannelMessages({
       setHasMoreNewer(cached.hasMoreAfter);
       setLoading(false);
       if (cached.store.ids.length === 0) {
+        suppressInitialScrollEventsRef.current = false;
         setRestoringInitialScroll(false);
       }
     } else {
@@ -432,7 +437,11 @@ export function useChannelMessages({
 
     request
       .then((entry) => {
-        if (!entry) return;
+        if (!entry) {
+          suppressInitialScrollEventsRef.current = false;
+          setRestoringInitialScroll(false);
+          return;
+        }
         if (
           controller.signal.aborted ||
           selectedIdRef.current !== targetChannelId
@@ -462,6 +471,7 @@ export function useChannelMessages({
         setHasMore(entry.hasMore);
         setHasMoreNewer(entry.hasMoreAfter);
         if (entry.store.ids.length === 0) {
+          suppressInitialScrollEventsRef.current = false;
           setRestoringInitialScroll(false);
         }
       })
@@ -469,6 +479,7 @@ export function useChannelMessages({
         if ((error as { name?: string }).name === "AbortError") return;
         if (selectedIdRef.current !== targetChannelId) return;
         console.error(error);
+        suppressInitialScrollEventsRef.current = false;
         setRestoringInitialScroll(false);
       })
       .finally(() => {
@@ -506,10 +517,17 @@ export function useChannelMessages({
   const persistCurrentChannelPosition = useCallback(
     (channelId: string | null = selectedId, force = false) => {
       if (!channelId || !currentUserId) return;
-      const position = findVisibleMessageAnchor(messagesContainerRef.current);
-      if (!position) return;
       const now = Date.now();
       const lastSaved = lastSavedPositionRef.current;
+      if (
+        !force &&
+        lastSaved?.channelId === channelId &&
+        now - lastSaved.savedAt < POSITION_SAVE_MIN_INTERVAL_MS
+      ) {
+        return;
+      }
+      const position = findVisibleMessageAnchor(messagesContainerRef.current);
+      if (!position) return;
       if (
         !force &&
         lastSaved?.channelId === channelId &&
@@ -673,7 +691,7 @@ export function useChannelMessages({
       lastScrollTopRef.current = scrollTop;
       stickToBottomRef.current = nearBottom;
 
-      if (restoringInitialScrollRef.current) {
+      if (restoringInitialScrollRef.current || suppressInitialScrollEventsRef.current) {
         return;
       }
 
@@ -868,6 +886,7 @@ export function useChannelMessages({
 
     const finishInitialPlacement = () => {
       if (selectedIdRef.current !== selectedId) return;
+      suppressInitialScrollEventsRef.current = false;
       lastScrollTopRef.current = container.scrollTop;
       setRestoringInitialScroll(false);
       requestAnimationFrame(() => {
@@ -900,7 +919,14 @@ export function useChannelMessages({
         }
         stickToBottomRef.current = false;
         setJumpToBottomVisible(false);
-        settleMessageAnchor(container, initialTarget, finishInitialPlacement);
+        settleMessageAnchor(
+          container,
+          initialTarget,
+          finishInitialPlacement,
+          initialTarget.align === "center"
+            ? EXPLICIT_SCROLL_SETTLE_FRAMES
+            : INITIAL_SCROLL_SETTLE_FRAMES,
+        );
         return;
       }
     }

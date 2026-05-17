@@ -85,14 +85,16 @@ class MessageService:
 
         bounded_limit = max(1, limit)
         side_fetch_limit = bounded_limit + 1
-        before = await self.msg_repo.list_by_channel(
+        before = await self.msg_repo.list_before_cursor(
             channel_id,
+            before_created_at=anchor.created_at,
+            before_msg_id=anchor.msg_id,
             limit=side_fetch_limit,
-            before_id=around_id,
         )
-        after = await self.msg_repo.list_after_id(
+        after = await self.msg_repo.list_after_cursor(
             channel_id,
-            after_id=around_id,
+            after_created_at=anchor.created_at,
+            after_msg_id=anchor.msg_id,
             limit=side_fetch_limit,
         )
 
