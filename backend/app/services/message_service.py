@@ -22,6 +22,21 @@ class MessageService:
         self.channel_repo = ChannelRepository(session)
         self.file_repo = FileRepository(session)
 
+    async def _file_map_for_messages(self, messages: list[Message]) -> dict[str, MessageFileDTO]:
+        file_ids = sorted({fid for m in messages for fid in (m.file_ids or []) if fid})
+        records = await self.file_repo.get_many_by_ids(file_ids)
+        return {
+            fid: MessageFileDTO(
+                file_id=rec.file_id,
+                original_filename=rec.original_filename,
+                content_type=rec.content_type,
+                size_bytes=rec.size_bytes,
+                status=rec.status,
+                expires_at=rec.expires_at,
+            )
+            for fid, rec in records.items()
+        }
+
     async def list_messages(
         self,
         channel_id: str,
@@ -33,21 +48,73 @@ class MessageService:
         if not ch:
             raise NotFoundError("channel not found")
         messages = await self.msg_repo.list_by_channel(channel_id, limit=limit, before_id=before_id)
-        file_ids = sorted({fid for m in messages for fid in (m.file_ids or []) if fid})
-        records = await self.file_repo.get_many_by_ids(file_ids)
+        return messages, await self._file_map_for_messages(messages)
 
-        file_map = {
-            fid: MessageFileDTO(
-                file_id=rec.file_id,
-                original_filename=rec.original_filename,
-                content_type=rec.content_type,
-                size_bytes=rec.size_bytes,
-                status=rec.status,
-                expires_at=rec.expires_at,
-            )
-            for fid, rec in records.items()
-        }
-        return messages, file_map
+    async def list_messages_after(
+        self,
+        channel_id: str,
+        after_id: str,
+        limit: int = 50,
+    ) -> tuple[list[Message], dict[str, MessageFileDTO]]:
+        """List messages newer than a cursor message."""
+        ch = await self.channel_repo.get_by_id(channel_id)
+        if not ch:
+            raise NotFoundError("channel not found")
+        messages = await self.msg_repo.list_after_id(channel_id, after_id=after_id, limit=limit)
+        return messages, await self._file_map_for_messages(messages)
+
+    async def list_messages_around(
+        self,
+        channel_id: str,
+        around_id: str,
+        limit: int = 50,
+    ) -> tuple[list[Message], dict[str, MessageFileDTO], bool, bool, bool]:
+        """List a bounded chronological window centered around a cursor message.
+
+        Returns messages, file map, has_more_before, has_more_after, anchor_found.
+        """
+        ch = await self.channel_repo.get_by_id(channel_id)
+        if not ch:
+            raise NotFoundError("channel not found")
+        anchor = await self.msg_repo.get_by_id(around_id)
+        if not anchor or anchor.channel_id != channel_id:
+            fallback = await self.msg_repo.list_by_channel(channel_id, limit=limit + 1)
+            has_more = len(fallback) > limit
+            messages = fallback[-limit:] if has_more else fallback
+            return messages, await self._file_map_for_messages(messages), has_more, False, False
+
+        bounded_limit = max(1, limit)
+        side_fetch_limit = bounded_limit + 1
+        before = await self.msg_repo.list_by_channel(
+            channel_id,
+            limit=side_fetch_limit,
+            before_id=around_id,
+        )
+        after = await self.msg_repo.list_after_id(
+            channel_id,
+            after_id=around_id,
+            limit=side_fetch_limit,
+        )
+
+        desired_before = (bounded_limit - 1) // 2
+        desired_after = bounded_limit - 1 - desired_before
+        before_take = min(len(before), desired_before)
+        after_take = min(len(after), desired_after)
+
+        remaining = bounded_limit - 1 - before_take - after_take
+        if remaining > 0:
+            extra_before = min(len(before) - before_take, remaining)
+            before_take += extra_before
+            remaining -= extra_before
+        if remaining > 0:
+            extra_after = min(len(after) - after_take, remaining)
+            after_take += extra_after
+
+        visible_before = before[-before_take:] if before_take else []
+        visible_after = after[:after_take] if after_take else []
+        messages = [*visible_before, anchor, *visible_after]
+        file_map = await self._file_map_for_messages(messages)
+        return messages, file_map, len(before) > before_take, len(after) > after_take, True
 
     async def list_topic_messages(
         self,
@@ -68,23 +135,7 @@ class MessageService:
             root_msg_id,
         )
         messages = [root, *descendants]
-        file_ids = sorted({
-            fid for m in messages for fid in (m.file_ids or []) if fid
-        })
-        records = await self.file_repo.get_many_by_ids(file_ids)
-
-        file_map = {
-            fid: MessageFileDTO(
-                file_id=rec.file_id,
-                original_filename=rec.original_filename,
-                content_type=rec.content_type,
-                size_bytes=rec.size_bytes,
-                status=rec.status,
-                expires_at=rec.expires_at,
-            )
-            for fid, rec in records.items()
-        }
-        return messages, file_map
+        return messages, await self._file_map_for_messages(messages)
 
     async def send_message(
         self,
