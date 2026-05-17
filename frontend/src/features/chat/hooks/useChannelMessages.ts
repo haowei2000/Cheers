@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction, UIEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import type { VirtualItem } from "@tanstack/react-virtual";
 import type { AuthFetch } from "../../../api/client";
 import { API } from "../../../lib/app-config";
 import { isClarifyReplyUserMessage } from "../../../lib/helper";
@@ -67,6 +68,7 @@ const READING_ANCHOR_VIEWPORT_RATIO = 0.42;
 const INITIAL_SCROLL_SETTLE_FRAMES = 2;
 const EXPLICIT_SCROLL_SETTLE_FRAMES = 3;
 const PREPEND_SCROLL_SETTLE_FRAMES = 2;
+const POSITION_SAVE_DEBOUNCE_MS = 180;
 const POSITION_SAVE_MIN_INTERVAL_MS = 500;
 
 function positionStorageKey(prefix: string, userId: string, channelId: string): string {
@@ -172,6 +174,36 @@ function findVisibleMessageAnchor(container: HTMLElement | null): ChannelScrollP
   return best;
 }
 
+function findVirtualVisibleMessageAnchor(
+  container: HTMLElement | null,
+  virtualItems: VirtualItem[],
+  topicRoots: Message[],
+): ChannelScrollPosition | null {
+  if (!container || virtualItems.length === 0) return null;
+  const scrollTop = container.scrollTop;
+  const viewportTop = scrollTop;
+  const viewportBottom = scrollTop + container.clientHeight;
+  const targetY = scrollTop + container.clientHeight * READING_ANCHOR_VIEWPORT_RATIO;
+  let best: ChannelScrollPosition | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const item of virtualItems) {
+    if (item.end < viewportTop || item.start > viewportBottom) continue;
+    const message = topicRoots[item.index];
+    if (!message) continue;
+    const distance = Math.abs(item.start - targetY);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = {
+        msgId: message.msg_id,
+        offsetTop: item.start - scrollTop,
+      };
+    }
+  }
+
+  return best;
+}
+
 function settleMessageAnchor(
   container: HTMLElement,
   target: Pick<InitialScrollTarget, "msgId" | "align" | "offsetTop">,
@@ -204,7 +236,7 @@ function settleMessageAnchor(
         : Math.max(0, target.offsetTop ?? DEFAULT_ANCHOR_OFFSET_TOP);
     const delta = rect.top - containerRect.top - desiredOffset;
     if (Math.abs(delta) > 1) {
-      container.scrollTop += delta;
+      container.scrollBy(0, delta);
     }
 
     if (remaining > 0) {
@@ -270,6 +302,9 @@ export function useChannelMessages({
   const restoringInitialScrollRef = useRef(false);
   const suppressInitialScrollEventsRef = useRef(false);
   const initialScrollTargetRef = useRef<InitialScrollTarget | null>(null);
+  const positionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestTopicRootsRef = useRef<Message[]>([]);
+  const latestVirtualItemsRef = useRef<VirtualItem[]>([]);
 
   const setRestoringInitialScroll = useCallback((value: boolean) => {
     if (restoringInitialScrollRef.current === value) return;
@@ -287,6 +322,12 @@ export function useChannelMessages({
     if (jumpToBottomRafRef.current === null) return;
     cancelAnimationFrame(jumpToBottomRafRef.current);
     jumpToBottomRafRef.current = null;
+  }, []);
+
+  const cancelPositionSaveTimer = useCallback(() => {
+    if (positionSaveTimerRef.current === null) return;
+    clearTimeout(positionSaveTimerRef.current);
+    positionSaveTimerRef.current = null;
   }, []);
 
   const fetchInitialMessages = useCallback(
@@ -369,7 +410,12 @@ export function useChannelMessages({
     preloadRequestsRef.current = {};
   }, [authFetch]);
 
-  useEffect(() => cancelJumpToBottomRaf, [cancelJumpToBottomRaf]);
+  useEffect(() => {
+    return () => {
+      cancelJumpToBottomRaf();
+      cancelPositionSaveTimer();
+    };
+  }, [cancelJumpToBottomRaf, cancelPositionSaveTimer]);
 
   useLayoutEffect(() => {
     if (!selectedId) {
@@ -526,7 +572,12 @@ export function useChannelMessages({
       ) {
         return;
       }
-      const position = findVisibleMessageAnchor(messagesContainerRef.current);
+      const position =
+        findVirtualVisibleMessageAnchor(
+          messagesContainerRef.current,
+          latestVirtualItemsRef.current,
+          latestTopicRootsRef.current,
+        ) ?? findVisibleMessageAnchor(messagesContainerRef.current);
       if (!position) return;
       if (
         !force &&
@@ -534,9 +585,6 @@ export function useChannelMessages({
         lastSaved.msgId === position.msgId &&
         Math.abs(lastSaved.offsetTop - position.offsetTop) < 2
       ) {
-        return;
-      }
-      if (!force && lastSaved && now - lastSaved.savedAt < POSITION_SAVE_MIN_INTERVAL_MS) {
         return;
       }
       writeSavedChannelPosition(currentUserId, channelId, position);
@@ -550,11 +598,24 @@ export function useChannelMessages({
     [currentUserId, selectedId],
   );
 
+  const schedulePersistCurrentChannelPosition = useCallback(
+    (channelId: string | null = selectedId) => {
+      if (!channelId || !currentUserId) return;
+      cancelPositionSaveTimer();
+      positionSaveTimerRef.current = setTimeout(() => {
+        positionSaveTimerRef.current = null;
+        persistCurrentChannelPosition(channelId, false);
+      }, POSITION_SAVE_DEBOUNCE_MS);
+    },
+    [cancelPositionSaveTimer, currentUserId, persistCurrentChannelPosition, selectedId],
+  );
+
   useEffect(() => {
     return () => {
+      cancelPositionSaveTimer();
       persistCurrentChannelPosition(selectedId, true);
     };
-  }, [persistCurrentChannelPosition, selectedId]);
+  }, [cancelPositionSaveTimer, persistCurrentChannelPosition, selectedId]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -577,8 +638,12 @@ export function useChannelMessages({
     isLoadingOlderRef.current = true;
     const container = messagesContainerRef.current;
     const prevScrollHeight = container?.scrollHeight ?? 0;
-    const prevScrollTop = container?.scrollTop ?? 0;
-    const scrollAnchor = findVisibleMessageAnchor(container);
+    const scrollAnchor =
+      findVirtualVisibleMessageAnchor(
+        container,
+        latestVirtualItemsRef.current,
+        latestTopicRootsRef.current,
+      ) ?? findVisibleMessageAnchor(container);
     try {
       const response = await authFetch(
         `${API}/channels/${targetChannelId}/messages?before_id=${oldest.msg_id}&limit=${OLDER_MESSAGE_PAGE_SIZE}`,
@@ -612,7 +677,10 @@ export function useChannelMessages({
       );
       requestAnimationFrame(() => {
         if (container) {
-          container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
+          const heightDelta = container.scrollHeight - prevScrollHeight;
+          if (heightDelta) {
+            container.scrollBy(0, heightDelta);
+          }
           stickToBottomRef.current =
             container.scrollHeight - container.scrollTop - container.clientHeight <
             STICK_TO_BOTTOM_GAP;
@@ -711,22 +779,10 @@ export function useChannelMessages({
         setJumpToBottomVisible(false);
       }
 
-      if (target.scrollTop < 100 && hasMore && !loadingMore) {
-        loadMoreMessages();
-      }
-      if (bottomGap < 100 && hasMoreNewer && !loadingNewer) {
-        loadNewerMessages();
-      }
-      persistCurrentChannelPosition(selectedId, false);
+      schedulePersistCurrentChannelPosition(selectedId);
     },
     [
-      hasMore,
-      hasMoreNewer,
-      loadingMore,
-      loadingNewer,
-      loadMoreMessages,
-      loadNewerMessages,
-      persistCurrentChannelPosition,
+      schedulePersistCurrentChannelPosition,
       selectedId,
       setJumpToBottomVisible,
     ],
@@ -833,6 +889,42 @@ export function useChannelMessages({
     getItemKey: (index) => topicRoots[index]?.msg_id ?? index,
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
+
+  useEffect(() => {
+    latestTopicRootsRef.current = topicRoots;
+    latestVirtualItemsRef.current = virtualItems;
+  }, [topicRoots, virtualItems]);
+
+  useEffect(() => {
+    if (
+      loading ||
+      restoringInitialScrollRef.current ||
+      suppressInitialScrollEventsRef.current ||
+      topicRoots.length === 0 ||
+      virtualItems.length === 0
+    ) {
+      return;
+    }
+    const firstIndex = virtualItems[0]?.index ?? 0;
+    const lastIndex = virtualItems[virtualItems.length - 1]?.index ?? 0;
+    if (firstIndex <= 2 && hasMore && !loadingMore) {
+      loadMoreMessages();
+      return;
+    }
+    if (lastIndex >= topicRoots.length - 3 && hasMoreNewer && !loadingNewer) {
+      loadNewerMessages();
+    }
+  }, [
+    hasMore,
+    hasMoreNewer,
+    loadMoreMessages,
+    loadNewerMessages,
+    loading,
+    loadingMore,
+    loadingNewer,
+    topicRoots.length,
+    virtualItems,
+  ]);
 
   const jumpToBottom = useCallback(() => {
     const container = messagesContainerRef.current;
