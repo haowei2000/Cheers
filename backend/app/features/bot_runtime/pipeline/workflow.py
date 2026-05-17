@@ -12,8 +12,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, PromptTemplate, User
-from app.features.bot_runtime.coordinator_profile import build_coordinator_profile
 from app.features.bot_runtime.adapters.base import BotAdapter
+from app.features.bot_runtime.coordinator_profile import build_coordinator_profile
 from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_for_bot
 from app.features.bot_runtime.pipeline.bot.context import BotRunContext
 from app.features.bot_runtime.pipeline.bot.coordinator_names import first_coordinator_username, is_coordinator_username

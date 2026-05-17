@@ -10,15 +10,15 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
-from app.features.bot_runtime.coordinator_profile import (
-    ALL_COORDINATOR_TOOLS,
-    CoordinatorContextProfile,
-    build_coordinator_profile,
-)
 from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.adapters.help_catalog import (
     build_help_content_with_form,
     get_help_context_for_llm,
+)
+from app.features.bot_runtime.coordinator_profile import (
+    ALL_COORDINATOR_TOOLS,
+    CoordinatorContextProfile,
+    build_coordinator_profile,
 )
 from app.features.memory.prompt_xml import MEMORY_LAYER_FIELDS, render_channel_memory_xml
 from app.services.admin.settings_store import get_provider_for_scope

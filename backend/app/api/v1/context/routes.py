@@ -53,7 +53,7 @@ async def update_context(
     if layer_upper not in _PUT_VALID_LAYERS:
         raise BadRequestError(
             "PUT on this endpoint only supports derived layers: FILES_INDEX, HISTORY. "
-            f"For ANCHOR/DECISIONS/PROGRESS, use the /memory/ entries API."
+            "For ANCHOR/DECISIONS/PROGRESS, use the /memory/ entries API."
         )
     channel_repo = ChannelRepository(session)
     channel = await channel_repo.get_by_id(channel_id)

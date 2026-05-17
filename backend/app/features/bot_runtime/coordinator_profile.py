@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 ALL_COORDINATOR_TOOLS = frozenset({
     "update_anchor",
     "update_progress",
