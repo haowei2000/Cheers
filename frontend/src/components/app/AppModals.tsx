@@ -39,6 +39,7 @@ interface AppModalsProps {
   helpOpen: boolean;
   onCloseHelp: () => void;
   apiDocsUrl: string;
+  userDocsUrl: string;
   settingsOpen: boolean;
   onCloseSettings: () => void;
   isDark: boolean;
@@ -108,6 +109,7 @@ export function AppModals({
   helpOpen,
   onCloseHelp,
   apiDocsUrl,
+  userDocsUrl,
   settingsOpen,
   onCloseSettings,
   isDark,
@@ -176,7 +178,12 @@ export function AppModals({
         onClose={onCloseMessageDetail}
       />
 
-      <HelpModal open={helpOpen} onClose={onCloseHelp} apiDocsUrl={apiDocsUrl} />
+      <HelpModal
+        open={helpOpen}
+        onClose={onCloseHelp}
+        apiDocsUrl={apiDocsUrl}
+        userDocsUrl={userDocsUrl}
+      />
 
       {settingsOpen && (
         <Suspense fallback={null}>

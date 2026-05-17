@@ -7,9 +7,10 @@ interface HelpModalProps {
   open: boolean;
   onClose: () => void;
   apiDocsUrl: string;
+  userDocsUrl: string;
 }
 
-export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
+export function HelpModal({ open, onClose, apiDocsUrl, userDocsUrl }: HelpModalProps) {
   return (
     <Modal open={open} onClose={onClose} title="Help">
       <p className="text-sm mb-3" style={{ color: "var(--fg-2)" }}>
@@ -46,6 +47,16 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
           Channel context: select a channel, then click <strong>Channel context</strong>
         </li>
         <li>
+          User docs: open{" "}
+          <a
+            href={userDocsUrl}
+            className="underline"
+            style={{ color: "var(--accent)" }}
+          >
+            /user-docs
+          </a>
+        </li>
+        <li>
           API docs: open{" "}
           <a
             href={apiDocsUrl}
@@ -59,7 +70,7 @@ export function HelpModal({ open, onClose, apiDocsUrl }: HelpModalProps) {
         </li>
       </ul>
       <p className="text-xs" style={{ color: "var(--fg-3)" }}>
-        See project docs for full instructions.
+        See user docs for full instructions.
       </p>
       <ModalFooter>
         <button type="button" onClick={onClose} className="an-btn an-btn-ghost">
