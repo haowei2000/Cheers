@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import { LazyPanelFallback } from "../../../components/app/LazyPanelFallback";
 import { SessionScopePanel } from "../../../components/SessionScopePanel";
+import type { SessionScopeTarget } from "../../../components/SessionScopePanel";
 import type {
   ComposerKeychainItem,
   ComposerPendingFile,
@@ -47,6 +48,7 @@ export interface ChatTopicOverlayProps {
   keychainItems: ComposerKeychainItem[];
   onToggleKeychain: () => void;
   onCloseKeychain: () => void;
+  onOpenSessionScope?: (target: SessionScopeTarget) => void;
 }
 
 export function ChatTopicOverlay({
@@ -82,6 +84,7 @@ export function ChatTopicOverlay({
   keychainItems,
   onToggleKeychain,
   onCloseKeychain,
+  onOpenSessionScope,
 }: ChatTopicOverlayProps) {
   if (!open || !selectedId || !pageTopicId) return null;
 
@@ -140,6 +143,7 @@ export function ChatTopicOverlay({
                 channelId={selectedId}
                 title="Topic sessions"
                 variant="toolbar"
+                onOpenScope={onOpenSessionScope}
               />
             }
           />

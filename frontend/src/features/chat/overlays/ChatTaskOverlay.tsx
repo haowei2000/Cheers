@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { LazyPanelFallback } from "../../../components/app/LazyPanelFallback";
+import type { SessionScopeTarget } from "../../../components/SessionScopePanel";
 import type { Channel, ChannelBot } from "../../../types";
 import type { AgentBridgeTaskMessage } from "../../../lib/agent-bridge";
 
@@ -20,6 +21,7 @@ export interface ChatTaskOverlayProps {
   onSelectTask: (msgId: string) => void;
   onBack: () => void;
   onJumpToMessage: (msgId: string) => void;
+  onOpenSessionScope?: (target: SessionScopeTarget) => void;
 }
 
 export function ChatTaskOverlay({
@@ -33,6 +35,7 @@ export function ChatTaskOverlay({
   onSelectTask,
   onBack,
   onJumpToMessage,
+  onOpenSessionScope,
 }: ChatTaskOverlayProps) {
   if (!open || isDmSelected || !selectedId) return null;
 
@@ -57,6 +60,7 @@ export function ChatTaskOverlay({
           onSelectTask={onSelectTask}
           onBack={onBack}
           onJumpToMessage={onJumpToMessage}
+          onOpenSessionScope={onOpenSessionScope}
         />
       </Suspense>
     </div>
