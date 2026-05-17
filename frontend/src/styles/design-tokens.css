@@ -145,17 +145,22 @@
 }
 
 :root {
-  --font-sans: "Noto Sans SC", "PingFang SC", -apple-system, BlinkMacSystemFont,
-    "Helvetica Neue", Arial, sans-serif;
+  --font-latin: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", system-ui;
+  --font-cjk: "Noto Sans SC", "HarmonyOS Sans SC", "MiSans", "PingFang SC",
+    "Microsoft YaHei UI", "Microsoft YaHei";
+  --font-sans: var(--font-latin), var(--font-cjk), sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
-    Menlo, Consolas, monospace;
+    Menlo, Consolas, "Noto Sans Mono CJK SC", "Sarasa Mono SC", monospace;
 
-  --fs-xs: 10px;
-  --fs-sm: 11px;
-  --fs-base: 13px;
-  --fs-lg: 15px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13.5px;
+  --fs-lg: 15.5px;
   --fs-xl: 20px;
   --fs-2xl: 26px;
+  --fs-code: 12.5px;
+  --fs-inline-code: 0.92em;
 
   /* Semantic type scale. Component CSS should prefer these role tokens over
    * one-off pixel sizes so dense chat, settings, and admin views stay aligned. */
@@ -165,12 +170,13 @@
   --type-meta: var(--fs-sm);
   --type-caption: var(--fs-xs);
   --lh-tight: 1.25;
-  --lh-body: 1.5;
-  --lh-relaxed: 1.65;
+  --lh-body: 1.55;
+  --lh-relaxed: 1.72;
   --fw-regular: 400;
   --fw-medium: 500;
-  --fw-semibold: 650;
+  --fw-semibold: 600;
   --fw-bold: 700;
+  --tracking-ui: 0;
 
   /* Chat-specific type scale — keep message streams on a single ladder
    * so names/meta/body read as one visual system. Body is slightly
@@ -182,9 +188,9 @@
    *   lh    ↔ body line-height (matches the "breathing" look of
    *           Discord/Slack). */
   --fs-chat-name: 14px;
-  --fs-chat-body: 15px;
-  --fs-chat-meta: 11px;
-  --lh-chat-body: 1.6;
+  --fs-chat-body: 15.5px;
+  --fs-chat-meta: 11.5px;
+  --lh-chat-body: 1.68;
 
   --space-xs: 4px;
   --space-sm: 8px;
@@ -210,33 +216,53 @@
 
 .an-type-title {
   color: var(--fg-1);
+  font-family: var(--font-sans);
   font-size: var(--type-title);
   font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-ui);
   line-height: var(--lh-tight);
 }
 .an-type-body {
   color: var(--fg-1);
+  font-family: var(--font-sans);
   font-size: var(--type-body);
   font-weight: var(--fw-regular);
+  letter-spacing: var(--tracking-ui);
   line-height: var(--lh-body);
 }
 .an-type-label {
   color: var(--fg-2);
+  font-family: var(--font-sans);
   font-size: var(--type-label);
   font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-ui);
   line-height: var(--lh-tight);
 }
 .an-type-meta {
   color: var(--fg-3);
+  font-family: var(--font-sans);
   font-size: var(--type-meta);
   font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-ui);
   line-height: var(--lh-body);
 }
 .an-type-caption {
   color: var(--fg-3);
+  font-family: var(--font-sans);
   font-size: var(--type-caption);
   font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-ui);
   line-height: var(--lh-tight);
+}
+
+:where(.an-type-title, .an-type-body, .an-type-label, .an-type-meta, .an-type-caption) {
+  font-kerning: normal;
+  line-break: strict;
+  overflow-wrap: break-word;
+  text-rendering: optimizeLegibility;
+  text-wrap: pretty;
 }
 .an-truncate {
   min-width: 0;
@@ -849,33 +875,51 @@
 }
 .an-chat-sender {
   color: var(--fg-1);
+  font-family: var(--font-sans);
   font-size: var(--fs-chat-name);
   font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-ui);
   line-height: var(--lh-tight);
 }
 .an-chat-meta {
   color: var(--fg-3);
+  font-family: var(--font-sans);
   font-size: var(--fs-chat-meta);
   font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-ui);
   line-height: var(--lh-tight);
 }
 .an-chat-title {
   color: var(--fg-1);
+  font-family: var(--font-sans);
   font-size: var(--type-body);
   font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-ui);
   line-height: var(--lh-tight);
 }
 .an-chat-body {
   color: var(--fg-1);
+  font-family: var(--font-sans);
   font-size: var(--fs-chat-body);
+  letter-spacing: var(--tracking-ui);
+  line-break: strict;
   line-height: var(--lh-chat-body);
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+  word-break: normal;
   word-wrap: break-word;
 }
 .an-chat-bubble {
   border-radius: var(--radius-md);
   padding: 8px 14px;
+  font-family: var(--font-sans);
   font-size: var(--fs-chat-body);
+  letter-spacing: var(--tracking-ui);
+  line-break: strict;
   line-height: var(--lh-chat-body);
+  overflow-wrap: break-word;
+  text-wrap: pretty;
   word-break: break-word;
 }
 .an-chat-bubble.own {
@@ -993,21 +1037,33 @@
   background: var(--bg-2);
   padding: 12px;
   color: var(--fg-1);
-  font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: var(--type-caption);
-  line-height: var(--lh-body);
+  font-family: var(--font-mono);
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-size: var(--fs-code);
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-ui);
+  line-height: var(--lh-relaxed);
+  tab-size: 2;
 }
 .an-md-inline-code {
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
   padding: 0 4px;
   color: var(--fg-1);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: var(--type-caption);
+  font-family: var(--font-mono);
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-size: var(--fs-inline-code);
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-ui);
+  line-height: 1.35;
 }
 .an-md-link {
   color: var(--accent);
+  font-weight: var(--fw-medium);
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .an-md-link:hover {
   color: var(--accent-hover);
@@ -1022,6 +1078,36 @@
 .an-text-link:hover {
   color: var(--accent-hover);
   text-decoration: underline;
+}
+
+.an-md-flow {
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-kerning: normal;
+  letter-spacing: var(--tracking-ui);
+  line-height: inherit;
+  min-width: 0;
+  overflow-wrap: break-word;
+  text-rendering: optimizeLegibility;
+}
+.an-md-flow :where(strong, b) {
+  font-weight: var(--fw-semibold);
+}
+.an-md-flow :where(p, li, blockquote, td, th) {
+  line-break: strict;
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+  word-break: normal;
+}
+.an-chat-body .an-md-flow :where(.an-type-body, .an-type-label),
+.an-chat-bubble .an-md-flow :where(.an-type-body, .an-type-label) {
+  font-size: inherit;
+  line-height: inherit;
+}
+.an-chat-body .an-md-flow :where(.an-type-caption),
+.an-chat-bubble .an-md-flow :where(.an-type-caption) {
+  line-height: var(--lh-body);
 }
 
 .an-chat-scroll {
