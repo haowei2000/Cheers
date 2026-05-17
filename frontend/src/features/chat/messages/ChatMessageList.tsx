@@ -48,6 +48,7 @@ export interface ChatMessageListProps {
   secretInputRef: RefObject<HTMLInputElement>;
   onMessagesScroll: (event: UIEvent<HTMLDivElement>) => void;
   loading: boolean;
+  restoringInitialScroll: boolean;
   loadingMore: boolean;
   hasMore: boolean;
   messages: Message[];
@@ -114,6 +115,7 @@ export function ChatMessageList({
   secretInputRef,
   onMessagesScroll,
   loading,
+  restoringInitialScroll,
   loadingMore,
   hasMore,
   messages,
@@ -172,7 +174,7 @@ export function ChatMessageList({
     <>
                 <div
                   ref={messagesContainerRef}
-                  className="an-chat-scroll flex-1 overflow-auto"
+                  className="an-chat-scroll relative flex-1 overflow-auto"
                   onScroll={onMessagesScroll}
                 >
                   {loading ? (
@@ -180,7 +182,18 @@ export function ChatMessageList({
                       Loading...
                     </div>
                   ) : (
-                    <div className="py-2 px-2">
+                    <>
+                      {restoringInitialScroll && messages.length > 0 && (
+                        <div className="an-type-meta pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                          Loading...
+                        </div>
+                      )}
+                      <div
+                        className="py-2 px-2"
+                        style={{
+                          opacity: restoringInitialScroll ? 0 : 1,
+                        }}
+                      >
                       {loadingMore && (
                         <div className="an-type-caption py-2 text-center">
                           Load more messages...
@@ -204,7 +217,7 @@ export function ChatMessageList({
                             </div>
                             <div className="an-empty-chips">
                               {[
-                                "@Coordinator summarize recent progress in this channel",
+                                "@Coordinator summarize channel history and progress",
                                 "What is the goal of this channel?",
                                 "@Coordinator help me decide what to do next",
                               ].map((s) => (
@@ -1944,6 +1957,7 @@ export function ChatMessageList({
                                 key={virtualItem.key}
                                 ref={rowVirtualizer.measureElement}
                                 data-index={virtualItem.index}
+                                data-message-anchor-id={m.msg_id}
                                 className="an-chat-virtual-row"
                                 style={{
                                   position: "absolute",
@@ -2011,6 +2025,7 @@ export function ChatMessageList({
                         ),
                       )}
                     </div>
+                    </>
                   )}
                 </div>
                 {showJumpToBottom && (

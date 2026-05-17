@@ -52,13 +52,13 @@ class ChannelMemory:
     progress: list[MemoryItem] = field(default_factory=list)
     # Derived layers: rendered text.
     files_index: str = ""
-    recent: str = ""
+    history: str = ""
     todos: str = ""
 
     # Loading.
 
     ALL_LAYERS = frozenset({
-        "anchor", "decisions", "progress", "files_index", "recent", "todos",
+        "anchor", "decisions", "progress", "files_index", "history", "todos",
     })
 
     @classmethod
@@ -72,6 +72,8 @@ class ChannelMemory:
     ) -> ChannelMemory:
         """Load layers."""
         mem = cls(channel_id=channel_id)
+
+        layers = {"history" if layer == "recent" else layer for layer in layers}
 
         # 1) Structured layers from memory_entries, optionally filtered by layer.
         wanted_entry_layers: list[str] = []
@@ -103,8 +105,8 @@ class ChannelMemory:
         # 2) Derived layers, when requested.
         if "files_index" in layers:
             mem.files_index = await cls._render_files_index(channel_id, session)
-        if "recent" in layers:
-            mem.recent = await cls._render_recent(channel_id, session)
+        if "history" in layers:
+            mem.history = await cls._render_history(channel_id, session)
         if "todos" in layers:
             mem.todos = await cls._render_todos(channel_id, session)
 
@@ -119,7 +121,7 @@ class ChannelMemory:
             "decisions": self.export_layer_text("DECISIONS"),
             "progress": self.export_layer_text("PROGRESS"),
             "files_index": self.files_index,
-            "recent": self.recent,
+            "history": self.history,
             "todos": self.todos,
         }
 
@@ -190,8 +192,8 @@ class ChannelMemory:
 
         if self.files_index:
             sections.append(f"## File Index\n\n{self.files_index}")
-        if self.recent:
-            sections.append(f"## Recent Updates\n\n{self.recent}")
+        if self.history:
+            sections.append(f"## Conversation History\n\n{self.history}")
         if self.todos:
             sections.append(f"## Todos\n\n{self.todos}")
 
@@ -207,10 +209,10 @@ class ChannelMemory:
             lines.append(f"  <files_index>{_xml_escape(self.files_index)}</files_index>")
         else:
             lines.append("  <files_index/>")
-        if self.recent:
-            lines.append(f"  <recent>{_xml_escape(self.recent)}</recent>")
+        if self.history:
+            lines.append(f"  <history>{_xml_escape(self.history)}</history>")
         else:
-            lines.append("  <recent/>")
+            lines.append("  <history/>")
         if self.todos:
             lines.append(f"  <todos>{_xml_escape(self.todos)}</todos>")
         else:
@@ -251,11 +253,11 @@ class ChannelMemory:
         return "\n\n".join(parts)
 
     @staticmethod
-    async def _render_recent(channel_id: str, session: AsyncSession) -> str:
-        """Render recent."""
-        from app.features.memory.history_pager import render_recent_context
+    async def _render_history(channel_id: str, session: AsyncSession) -> str:
+        """Render conversation history."""
+        from app.features.memory.history_pager import render_history_context
 
-        return await render_recent_context(channel_id, session)
+        return await render_history_context(channel_id, session)
 
     @staticmethod
     async def _render_todos(channel_id: str, session: AsyncSession) -> str:

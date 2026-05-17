@@ -16,7 +16,7 @@ def _payload(channel_id: str, text: str) -> AgentPayload:
         task_id="test-task-001",
         channel_id=channel_id,
         trigger_message={"user": "user-001", "text": text, "timestamp": ""},
-        memory_context={"anchor": "", "decisions": "", "files_index": "", "recent": ""},
+        memory_context={"anchor": "", "decisions": "", "files_index": "", "history": ""},
     )
 
 

@@ -71,7 +71,7 @@ async def test_call_bot_passes_memory_context():
         "anchor": "项目目标：构建协作平台",
         "decisions": "决策 1: 使用 SQLite\n决策 2: 采用四层记忆架构",
         "files_index": "file-001: 需求文档.md - 系统需求规格说明",
-        "recent": "用户 A: 怎么创建项目？\nBot: 点击左上角 + 号...",
+        "history": "用户 A: 怎么创建项目？\nBot: 点击左上角 + 号...",
     }
 
     sub_adapter = _CapturingAdapter()
@@ -98,7 +98,7 @@ async def test_call_bot_passes_memory_context():
     assert call_args.memory_context["anchor"] == "项目目标：构建协作平台"
     assert call_args.memory_context["decisions"] == "决策 1: 使用 SQLite\n决策 2: 采用四层记忆架构"
     assert call_args.memory_context["files_index"] == "file-001: 需求文档.md - 系统需求规格说明"
-    assert call_args.memory_context["recent"] == "用户 A: 怎么创建项目？\nBot: 点击左上角 + 号..."
+    assert call_args.memory_context["history"] == "用户 A: 怎么创建项目？\nBot: 点击左上角 + 号..."
 
     # Verify the result contains the sub-bot reply.
     assert "@codebot 回复：" in result
@@ -112,7 +112,7 @@ async def test_call_bot_sub_bot_receives_decrypted_secret_parent_text():
         "anchor": "",
         "decisions": "",
         "files_index": "",
-        "recent": "",
+        "history": "",
     }
     sub_adapter = _CapturingAdapter()
     run_ctx = _make_run_ctx(memory_context=memory_context, adapter=sub_adapter)
@@ -181,7 +181,7 @@ async def test_http_bot_receives_memory_as_template_vars():
         "anchor": "锚点内容",
         "decisions": "决策内容",
         "files_index": "文件索引内容",
-        "recent": "近期动态内容",
+        "history": "历史内容",
     }
 
     # Verify _build_messages renders memory through {{memory}}.
@@ -197,5 +197,5 @@ async def test_http_bot_receives_memory_as_template_vars():
     assert "锚点内容" in user_content
     assert "决策内容" in user_content
     assert "文件索引内容" in user_content
-    assert "近期动态内容" in user_content
+    assert "历史内容" in user_content
     assert "用户问题：你好" in user_content

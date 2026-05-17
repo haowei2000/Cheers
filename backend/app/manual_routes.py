@@ -144,6 +144,12 @@ async def manual_index() -> HTMLResponse:
     """Manual index."""
     help_items: list[tuple[str, str, str, str]] = [
         (
+            "Documentation Home",
+            "/manual/help/README",
+            "Role-based entry point for user, administrator, operations, and Agent provider docs.",
+            "/manual/help/README.zh-CN",
+        ),
+        (
             "User Manual",
             "/manual/help/使用说明书",
             "Role-based documentation index.",
@@ -154,6 +160,18 @@ async def manual_index() -> HTMLResponse:
             "/manual/help/普通用户使用说明",
             "Daily chat, bot mentions, file uploads, and channel workflows.",
             "/manual/help/普通用户使用说明.zh-CN",
+        ),
+        (
+            "Frontend Operation Manual",
+            "/manual/help/AgentNexus 前端操作手册",
+            "Main frontend entry points, controls, and common operations.",
+            "/manual/help/AgentNexus 前端操作手册.zh-CN",
+        ),
+        (
+            "Interface Interaction Guide",
+            "/manual/help/AgentNexus 界面交互指南",
+            "Interface layout, interaction rules, and usage recommendations.",
+            "/manual/help/AgentNexus 界面交互指南.zh-CN",
         ),
         (
             "Administrator Guide",
@@ -172,6 +190,18 @@ async def manual_index() -> HTMLResponse:
             "/manual/help/安装部署说明",
             "Environment requirements, Docker/local setup, migrations, and seed data.",
             "/manual/help/安装部署说明.zh-CN",
+        ),
+        (
+            "RustFS Object Storage Guide",
+            "/manual/help/RustFS对象存储部署说明",
+            "S3-compatible object storage setup, configuration, and integration checks.",
+            "/manual/help/RustFS对象存储部署说明.zh-CN",
+        ),
+        (
+            "kkFileView Preview Guide",
+            "/manual/help/kkFileView配置说明",
+            "Online document preview setup and troubleshooting.",
+            "/manual/help/kkFileView配置说明.zh-CN",
         ),
         (
             "Troubleshooting Q&A",

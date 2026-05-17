@@ -305,7 +305,7 @@ export function MessageContentClamp({
             name={expanded ? "chevronUp" : "chevronDown"}
             className="h-3.5 w-3.5"
           />
-          {expanded ? "Collapse" : "Show full message"}
+          {expanded ? "Show less" : "Show more"}
         </button>
       )}
     </div>

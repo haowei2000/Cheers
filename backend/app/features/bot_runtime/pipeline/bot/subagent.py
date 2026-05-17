@@ -130,6 +130,7 @@ def build_payload(
         db_session=ctx.session,
         skip_system_prompt=skip_system_prompt,
         delegated_task_xml=delegated_task_xml,
+        coordinator_profile=getattr(ctx, "coordinator_profile", None),
     )
     if capabilities.can_call_bot:
         # channel_bot_usernames + details still feed the system-prompt

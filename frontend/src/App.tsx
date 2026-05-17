@@ -25,7 +25,7 @@ import { usePendingFiles } from "./features/chat/hooks/usePendingFiles";
 import { useWorkspaceDirectory } from "./features/chat/hooks/useWorkspaceDirectory";
 import { apiFetch } from "./api";
 import { parseHelperPayload } from "./lib/helper";
-import { API, API_DOCS_URL } from "./lib/app-config";
+import { API, API_DOCS_URL, USER_DOCS_URL } from "./lib/app-config";
 import { applyDensity, getStoredDensity } from "./lib/density";
 import { refreshChannels, refreshDMs } from "./lib/refresh";
 import {
@@ -236,6 +236,13 @@ export default function App() {
     currentUserId,
     onCloseSettings: () => setSettingsOpen(false),
   });
+  const canRefreshSessions = useMemo(() => {
+    const userRole = currentUser?.role ?? "";
+    if (userRole === "system_admin" || userRole === "space_admin") return true;
+    if (selectedChannel?.can_manage) return true;
+    const channelRole = selectedChannel?.my_role ?? "";
+    return channelRole === "owner" || channelRole === "admin" || channelRole === "workspace_admin";
+  }, [currentUser?.role, selectedChannel?.can_manage, selectedChannel?.my_role]);
   const selectionResetReadyRef = useRef(false);
   useEffect(() => {
     if (selectionResetReadyRef.current) {
@@ -485,6 +492,7 @@ export default function App() {
     messages,
     setMessages,
     loading,
+    restoringInitialScroll,
     hasMore,
     loadingMore,
     messagesContainerRef,
@@ -503,6 +511,7 @@ export default function App() {
   } = useChannelMessages({
     selectedId,
     isDmSelected,
+    currentUserId,
     authFetch,
     selectedIdRef,
     pendingScrollMsgIdRef,
@@ -1207,6 +1216,7 @@ export default function App() {
         helpOpen={helpOpen}
         onCloseHelp={() => setHelpOpen(false)}
         apiDocsUrl={API_DOCS_URL}
+        userDocsUrl={USER_DOCS_URL}
         settingsOpen={settingsOpen}
         onCloseSettings={() => setSettingsOpen(false)}
         isDark={isDark}
@@ -1391,6 +1401,7 @@ export default function App() {
               taskPageOpen={taskPageOpen}
               agentBridgeTaskMessages={agentBridgeTaskMessages}
               refreshingDmSession={refreshingDmSession}
+              canRefreshSessions={canRefreshSessions}
               taskOverlayProps={{
                 open: taskPageOpen,
                 isDmSelected,
@@ -1450,6 +1461,7 @@ export default function App() {
                 secretInputRef,
                 onMessagesScroll: handleMessagesScroll,
                 loading,
+                restoringInitialScroll,
                 loadingMore,
                 hasMore,
                 messages,

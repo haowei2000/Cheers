@@ -70,9 +70,9 @@ def _normalize_file_ids(file_ids: list[str] | None, file_id: str | None = None) 
     return normalized
 
 
-def _schedule_recent_update(channel_id: str) -> None:
-    from app.features.memory.recent_update import schedule_recent_update
-    schedule_recent_update(channel_id)
+def _schedule_history_update(channel_id: str) -> None:
+    from app.features.memory.history_update import schedule_history_update
+    schedule_history_update(channel_id)
 
 
 def _schedule_bot_pipeline_enqueue(
@@ -149,17 +149,60 @@ async def list_messages(
     channel_id: str,
     limit: int = Query(default=50, ge=1, le=200),
     before_id: str | None = Query(default=None),
+    after_id: str | None = Query(default=None),
+    around_id: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     await ChannelService(session).require_channel_member(channel_id, current_user)
     svc = MessageService(session)
+    if around_id:
+        messages, file_map, has_more_before, has_more_after, anchor_found = await svc.list_messages_around(
+            channel_id,
+            around_id=around_id,
+            limit=limit,
+        )
+        return APIResponse.ok(
+            [_serialize(m, file_map) for m in messages],
+            meta={
+                "has_more": has_more_before,
+                "has_more_before": has_more_before,
+                "has_more_after": has_more_after,
+                "limit": limit,
+                "around_id": around_id,
+                "anchor_found": anchor_found,
+                "position": "around" if anchor_found else "bottom",
+            },
+        )
+
+    if after_id:
+        messages, file_map = await svc.list_messages_after(channel_id, after_id=after_id, limit=limit + 1)
+        has_more = len(messages) > limit
+        visible_messages = messages[:limit] if has_more else messages
+        return APIResponse.ok(
+            [_serialize(m, file_map) for m in visible_messages],
+            meta={
+                "has_more": has_more,
+                "has_more_before": True,
+                "has_more_after": has_more,
+                "limit": limit,
+                "after_id": after_id,
+                "position": "after",
+            },
+        )
+
     messages, file_map = await svc.list_messages(channel_id, limit=limit + 1, before_id=before_id)
     has_more = len(messages) > limit
     visible_messages = messages[-limit:] if has_more else messages
     return APIResponse.ok(
         [_serialize(m, file_map) for m in visible_messages],
-        meta={"has_more": has_more, "limit": limit},
+        meta={
+            "has_more": has_more,
+            "has_more_before": has_more,
+            "has_more_after": False,
+            "limit": limit,
+            "position": "before" if before_id else "bottom",
+        },
     )
 
 
@@ -208,7 +251,7 @@ async def _handle_send_message(
 
     assert ctx.msg is not None and ctx.payload is not None
     await session.commit()
-    _schedule_recent_update(channel_id)
+    _schedule_history_update(channel_id)
     try:
         enqueue_decision = await resolve_bot_enqueue_decision(
             session,
@@ -545,7 +588,7 @@ async def forward_messages(
             )
             created.append(reply_payload.to_wire())
 
-    _schedule_recent_update(channel_id)
+    _schedule_history_update(channel_id)
     return APIResponse.ok(ForwardMessageResponse(messages=created).model_dump())
 
 
@@ -618,7 +661,7 @@ async def send_message_stream(
                     return
                 assert ctx.msg is not None and ctx.payload is not None
                 await session.commit()
-                _schedule_recent_update(channel_id)
+                _schedule_history_update(channel_id)
                 yield _format_sse("user_message", ctx.payload)
 
                 bus = make_event_bus(channel_id, stream_to_ws=False, stream_event=emit)
@@ -638,7 +681,7 @@ async def send_message_stream(
                 bot_messages, _ = await bot_pipeline_task
                 await session.commit()
                 if bot_messages:
-                    _schedule_recent_update(channel_id)
+                    _schedule_history_update(channel_id)
                 yield _format_sse("complete", {"ok": True})
             except Exception as exc:
                 if bot_pipeline_task and not bot_pipeline_task.done():

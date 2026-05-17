@@ -55,7 +55,7 @@ async def test_mock_adapter_execute() -> None:
         task_id="t1",
         channel_id="c1",
         trigger_message={"user": "张三", "text": "@bot 你好", "timestamp": "2026-03-07T00:00:00Z"},
-        memory_context={"anchor": "", "decisions": "", "files_index": "", "recent": ""},
+        memory_context={"anchor": "", "decisions": "", "files_index": "", "history": ""},
     )
     resp = await drain_events_to_response(adapter.execute(payload), task_id=payload.task_id)
     assert resp.success is True
@@ -143,7 +143,7 @@ async def test_channel_bot_attachment_fallback_uses_file_content() -> None:
         task_id="t-file-fallback",
         channel_id="c-file-fallback",
         trigger_message={"user": "u1", "text": "@channel bot 这个文本概括是什么？", "timestamp": "2026-03-19T00:00:00Z"},
-        memory_context={"anchor": "", "decisions": "", "files_index": "", "recent": ""},
+        memory_context={"anchor": "", "decisions": "", "files_index": "", "history": ""},
         attachments=[
             {
                 "file_id": "file-1",

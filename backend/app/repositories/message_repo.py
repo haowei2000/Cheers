@@ -1,6 +1,8 @@
 """Message repo module."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import and_, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,14 +40,12 @@ class MessageRepository:
                 query = query.where(false())
             else:
                 before_created_at, before_msg_id = cursor
-                query = query.where(
-                    or_(
-                        Message.created_at < before_created_at,
-                        and_(
-                            Message.created_at == before_created_at,
-                            Message.msg_id < before_msg_id,
-                        ),
-                    )
+                return await self.list_before_cursor(
+                    channel_id,
+                    before_created_at=before_created_at,
+                    before_msg_id=before_msg_id,
+                    limit=limit,
+                    exclude_empty=exclude_empty,
                 )
         query = query.order_by(Message.created_at.desc(), Message.msg_id.desc()).limit(limit)
         result = await self.session.execute(query)
@@ -53,6 +53,91 @@ class MessageRepository:
         messages = list(result.scalars().all())
         messages.reverse()
         return messages
+
+    async def list_before_cursor(
+        self,
+        channel_id: str,
+        *,
+        before_created_at: datetime,
+        before_msg_id: str,
+        limit: int = 50,
+        exclude_empty: bool = False,
+    ) -> list[Message]:
+        query = select(Message).where(Message.channel_id == channel_id)
+        if exclude_empty:
+            query = query.where(Message.content != "")
+        query = query.where(
+            or_(
+                Message.created_at < before_created_at,
+                and_(
+                    Message.created_at == before_created_at,
+                    Message.msg_id < before_msg_id,
+                ),
+            )
+        )
+        query = query.order_by(Message.created_at.desc(), Message.msg_id.desc()).limit(limit)
+        result = await self.session.execute(query)
+        messages = list(result.scalars().all())
+        messages.reverse()
+        return messages
+
+    async def list_after_id(
+        self,
+        channel_id: str,
+        after_id: str,
+        limit: int = 50,
+        exclude_empty: bool = False,
+    ) -> list[Message]:
+        query = select(Message).where(Message.channel_id == channel_id)
+        if exclude_empty:
+            query = query.where(Message.content != "")
+        cursor = (
+            await self.session.execute(
+                select(Message.created_at, Message.msg_id).where(
+                    Message.channel_id == channel_id,
+                    Message.msg_id == after_id,
+                )
+            )
+        ).one_or_none()
+        if cursor is None:
+            query = query.where(false())
+        else:
+            after_created_at, after_msg_id = cursor
+            return await self.list_after_cursor(
+                channel_id,
+                after_created_at=after_created_at,
+                after_msg_id=after_msg_id,
+                limit=limit,
+                exclude_empty=exclude_empty,
+            )
+        query = query.order_by(Message.created_at.asc(), Message.msg_id.asc()).limit(limit)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
+    async def list_after_cursor(
+        self,
+        channel_id: str,
+        *,
+        after_created_at: datetime,
+        after_msg_id: str,
+        limit: int = 50,
+        exclude_empty: bool = False,
+    ) -> list[Message]:
+        query = select(Message).where(Message.channel_id == channel_id)
+        if exclude_empty:
+            query = query.where(Message.content != "")
+        query = query.where(
+            or_(
+                Message.created_at > after_created_at,
+                and_(
+                    Message.created_at == after_created_at,
+                    Message.msg_id > after_msg_id,
+                ),
+            )
+        )
+        query = query.order_by(Message.created_at.asc(), Message.msg_id.asc()).limit(limit)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
 
     async def list_descendants_by_root(
         self,

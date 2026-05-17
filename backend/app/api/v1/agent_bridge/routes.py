@@ -197,7 +197,9 @@ async def refresh_dm_session(
         raise HTTPException(status_code=404, detail="DM channel not found")
     if channel.type != "dm":
         raise HTTPException(status_code=400, detail="channel is not a DM")
-    await ChannelService(session).require_channel_member(body.channel_id, current_user)
+    channel_service = ChannelService(session)
+    await channel_service.require_channel_member(body.channel_id, current_user)
+    await channel_service.require_channel_admin(body.channel_id, current_user)
 
     bot_id = body.bot_id
     if not bot_id:

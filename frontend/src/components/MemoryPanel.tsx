@@ -1327,7 +1327,7 @@ export function MemoryPanel({
             </div>
           )
         ) : rawContent.trim() ? (
-          /* Readonly derived layers (RECENT) */
+          /* Readonly derived layers (history) */
           <div className="px-3 py-3 text-sm overflow-y-auto">
             <MessageMarkdown text={rawContent} />
           </div>
