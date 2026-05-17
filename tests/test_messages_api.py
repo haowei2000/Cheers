@@ -200,9 +200,9 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
 @pytest.mark.asyncio
 async def test_list_messages_around_cursor(client: AsyncClient, db_session: AsyncSession) -> None:
     """Initial channel loads can request a small window around the saved cursor."""
-    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000072", name="W72")
+    ws = Workspace(workspace_id="f2000000-0000-0000-0000-000000000172", name="W172")
     ch = Channel(
-        channel_id="e1000000-0000-0000-0000-000000000072",
+        channel_id="e2000000-0000-0000-0000-000000000172",
         workspace_id=ws.workspace_id,
         name="cursor-window",
         type="public",
@@ -244,9 +244,9 @@ async def test_list_messages_around_cursor(client: AsyncClient, db_session: Asyn
 @pytest.mark.asyncio
 async def test_list_messages_after_cursor(client: AsyncClient, db_session: AsyncSession) -> None:
     """Anchored windows can page newer messages without loading the whole tail."""
-    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000073", name="W73")
+    ws = Workspace(workspace_id="f2000000-0000-0000-0000-000000000173", name="W173")
     ch = Channel(
-        channel_id="e1000000-0000-0000-0000-000000000073",
+        channel_id="e2000000-0000-0000-0000-000000000173",
         workspace_id=ws.workspace_id,
         name="cursor-after",
         type="public",
