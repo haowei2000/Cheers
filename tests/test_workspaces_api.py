@@ -41,20 +41,30 @@ async def test_personal_workspace_bootstraps_helper_dm(
     assert resp.status_code == 200
     payload = resp.json()
     assert payload["status"] == "success"
-    assert len(payload["data"]) == 1
-    helper_dm = payload["data"][0]
+    helper_dms = [
+        dm for dm in payload["data"]
+        if dm["counterparty"]["member_id"] == HELPER_BOT_ID
+    ]
+    assert len(helper_dms) == 1
+    helper_dm = helper_dms[0]
     assert helper_dm["counterparty"]["member_id"] == HELPER_BOT_ID
     assert helper_dm["counterparty"]["username"] == "Coordinator"
 
     second_resp = await client.get("/api/v1/workspaces")
     assert second_resp.status_code == 200
 
-    dm_rows = (
-        await db_session.execute(
-            select(Channel).where(Channel.type == "dm", Channel.name.notlike("dmchat:%"))
-        )
-    ).scalars().all()
-    assert len(dm_rows) == 1
+    second_dm_resp = await client.get("/api/v1/dms")
+    assert second_dm_resp.status_code == 200
+    second_helper_dms = [
+        dm for dm in second_dm_resp.json()["data"]
+        if dm["counterparty"]["member_id"] == HELPER_BOT_ID
+    ]
+    assert [dm["channel_id"] for dm in second_helper_dms] == [helper_dm["channel_id"]]
+
+    dm_row = await db_session.get(Channel, helper_dm["channel_id"])
+    assert dm_row is not None
+    assert dm_row.type == "dm"
+    assert not dm_row.name.startswith("dmchat:")
 
     messages = (
         await db_session.execute(
