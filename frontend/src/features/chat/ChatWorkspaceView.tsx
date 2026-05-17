@@ -6,6 +6,7 @@ import {
   type MessageComposerProps,
 } from "../../components/MessageComposer";
 import { SessionScopePanel } from "../../components/SessionScopePanel";
+import type { SessionScopeTarget } from "../../components/SessionScopePanel";
 import { formatTs, TOPIC_DISPLAY_THRESHOLD } from "../../lib/message";
 import type { AgentBridgeTaskMessage } from "../../lib/agent-bridge";
 import type { Channel, DM, Message } from "../../types";
@@ -112,10 +113,41 @@ export function ChatWorkspaceView({
     [topicRepliesOf, topicRoots],
   );
 
+  const openSessionScopeTarget = (target: SessionScopeTarget) => {
+    if (target.scopeType === "topic") {
+      setMemoryTab(null);
+      setTaskPageOpen(false);
+      setPageTaskMsgId(null);
+      setPageTopicId(target.scopeId);
+      return;
+    }
+
+    if (target.scopeType === "task") {
+      const task = agentBridgeTaskMessages.find((message) =>
+        message.msg_id === target.scopeId ||
+        message.task_id === target.scopeId ||
+        message.content_data.task_id === target.scopeId,
+      );
+      if (!task) return;
+      setMemoryTab(null);
+      setPageTopicId(null);
+      setPageTaskMsgId(task.msg_id);
+      setTaskPageOpen(true);
+      return;
+    }
+
+    if (target.scopeType === "channel" || target.scopeType === "dm") {
+      setMemoryTab(null);
+      setPageTopicId(null);
+      setPageTaskMsgId(null);
+      setTaskPageOpen(false);
+    }
+  };
+
   return (
     <>
-      <ChatTaskOverlay {...taskOverlayProps} />
-      <ChatTopicOverlay {...topicOverlayProps} />
+      <ChatTaskOverlay {...taskOverlayProps} onOpenSessionScope={openSessionScopeTarget} />
+      <ChatTopicOverlay {...topicOverlayProps} onOpenSessionScope={openSessionScopeTarget} />
 
       {selectedId ? (
         <>
@@ -164,6 +196,7 @@ export function ChatWorkspaceView({
                   onRefresh={onRefreshDmSession}
                   refreshing={refreshingDmSession}
                   canRefresh={canRefreshSessions}
+                  onOpenScope={openSessionScopeTarget}
                 />
               ) : (
                 selectedChannel?.type !== "dm" && (
@@ -173,6 +206,7 @@ export function ChatWorkspaceView({
                     channelId={selectedId}
                     title="Channel sessions"
                     variant="toolbar"
+                    onOpenScope={openSessionScopeTarget}
                   />
                 )
               )

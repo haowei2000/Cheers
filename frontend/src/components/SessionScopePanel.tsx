@@ -6,6 +6,11 @@ import { AppIcon, type AppIconName } from "./icons/AppIcon";
 type ScopeType = "channel" | "dm" | "topic" | "task";
 type ScopeTone = ScopeType | "unknown";
 
+export type SessionScopeTarget = {
+  scopeType: string;
+  scopeId: string;
+};
+
 type ScopeMeta = {
   tone: ScopeTone;
   icon: AppIconName;
@@ -294,46 +299,17 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
 }
 
 type RelationScope = {
-  key: string;
   scopeType: string;
   scopeId: string;
-  role: string;
-  detached: boolean;
 };
 
-function sessionScopes(session: AgentBridgeSession): RelationScope[] {
-  const seen = new Set<string>();
-  const bindings = (session.bindings || [])
-    .filter((binding) => !binding.detached_at)
-    .map((binding) => ({
-      key: `${binding.scope_type}:${binding.scope_id}:${binding.role}`,
-      scopeType: binding.scope_type,
-      scopeId: binding.scope_id,
-      role: binding.role,
-      detached: false,
-    }));
-  const source = bindings.length > 0
-    ? bindings
-    : [{
-        key: `${session.current_scope_type}:${session.current_scope_id}:primary`,
-        scopeType: session.current_scope_type,
-        scopeId: session.current_scope_id,
-        role: "primary",
-        detached: false,
-      }];
-  const order: Record<string, number> = { channel: 0, topic: 1, task: 2, dm: 3 };
-  return source
-    .filter((scope) => {
-      const key = `${scope.scopeType}:${scope.scopeId}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => {
-      const typeDelta = (order[a.scopeType] ?? 99) - (order[b.scopeType] ?? 99);
-      if (typeDelta !== 0) return typeDelta;
-      return a.scopeId.localeCompare(b.scopeId);
-    });
+function activeSessionScope(session: AgentBridgeSession): RelationScope {
+  const scopeType = session.current_scope_type || "unknown";
+  const scopeId = session.current_scope_id || "";
+  return {
+    scopeType,
+    scopeId,
+  };
 }
 
 function statusKey(status: string): string {
@@ -341,7 +317,13 @@ function statusKey(status: string): string {
   return "unknown";
 }
 
-function SessionRelationMap({ sessions }: { sessions: AgentBridgeSession[] }) {
+function SessionRelationMap({
+  sessions,
+  onOpenScope,
+}: {
+  sessions: AgentBridgeSession[];
+  onOpenScope?: (target: SessionScopeTarget) => void;
+}) {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const selectedSession = sessions.find((session) => session.session_id === selectedSessionId) || null;
 
@@ -355,39 +337,40 @@ function SessionRelationMap({ sessions }: { sessions: AgentBridgeSession[] }) {
     <div className="an-sp-map">
       <div className="an-sp-map-canvas" aria-label="Session scope relation map">
         {sessions.map((session, index) => {
-          const scopes = sessionScopes(session);
+          const scope = activeSessionScope(session);
+          const meta = scopeMeta(scope.scopeType);
           const selected = selectedSessionId === session.session_id;
+          const canOpenTarget = Boolean(onOpenScope && scope.scopeId);
           return (
-            <button
+            <div
               key={session.session_id}
-              type="button"
               className={`an-sp-map-row ${selected ? "is-selected" : ""}`}
-              onClick={() => setSelectedSessionId((value) => (value === session.session_id ? null : session.session_id))}
-              aria-expanded={selected}
-              title="Show session details"
             >
-              <span className="an-sp-map-scopes">
-                {scopes.map((scope) => {
-                  const meta = scopeMeta(scope.scopeType);
-                  return (
-                    <span
-                      key={scope.key}
-                      className="an-sp-map-scope"
-                      data-scope={meta.tone}
-                      title={`${scopeMapLabel(scope.scopeType)} · ${scope.scopeId}`}
-                    >
-                      <AppIcon name={meta.icon} />
-                      <span>{scopeMapLabel(scope.scopeType)}</span>
-                    </span>
-                  );
-                })}
-              </span>
-              <span className="an-sp-map-link" aria-hidden="true" />
-              <span className="an-sp-map-session" data-status={statusKey(session.status)}>
+              <button
+                type="button"
+                className="an-sp-session-node"
+                data-status={statusKey(session.status)}
+                onClick={() => setSelectedSessionId((value) => (value === session.session_id ? null : session.session_id))}
+                aria-expanded={selected}
+                title="Show session details"
+              >
                 <span className="an-sp-session-dot" />
                 <span>S{index + 1}</span>
-              </span>
-            </button>
+              </button>
+              <span className="an-sp-map-link" aria-hidden="true" />
+              <button
+                type="button"
+                className="an-sp-object-node"
+                data-scope={meta.tone}
+                disabled={!canOpenTarget}
+                onClick={() => onOpenScope?.({ scopeType: scope.scopeType, scopeId: scope.scopeId })}
+                title={canOpenTarget ? `Open ${scopeMapLabel(scope.scopeType)} · ${scope.scopeId}` : `${scopeMapLabel(scope.scopeType)} · ${scope.scopeId}`}
+              >
+                <AppIcon name={meta.icon} />
+                <span>{scopeMapLabel(scope.scopeType)}</span>
+                {scope.scopeId && <span className="an-sp-object-id">{shortId(scope.scopeId)}</span>}
+              </button>
+            </div>
           );
         })}
       </div>
@@ -404,15 +387,17 @@ function SessionRelationMap({ sessions }: { sessions: AgentBridgeSession[] }) {
 export function SessionList({
   sessions,
   view = "cards",
+  onOpenScope,
 }: {
   sessions: AgentBridgeSession[];
   view?: "cards" | "map";
+  onOpenScope?: (target: SessionScopeTarget) => void;
 }) {
   if (sessions.length === 0) {
     return <div className="an-sp-empty">No Agent Bridge sessions.</div>;
   }
   if (view === "map") {
-    return <SessionRelationMap sessions={sessions} />;
+    return <SessionRelationMap sessions={sessions} onOpenScope={onOpenScope} />;
   }
   return (
     <div className="an-sp-list">
@@ -430,6 +415,7 @@ function SessionPanelContent({
   canRefresh,
   onRefresh,
   refreshing,
+  onOpenScope,
 }: {
   title: string;
   scopeType: ScopeType;
@@ -439,6 +425,7 @@ function SessionPanelContent({
   canRefresh: boolean;
   onRefresh?: () => void;
   refreshing: boolean;
+  onOpenScope?: (target: SessionScopeTarget) => void;
 }) {
   return (
     <div className="an-session-panel">
@@ -455,7 +442,7 @@ function SessionPanelContent({
         {error ? (
           <div className="an-sp-error">{error}</div>
         ) : (
-          <SessionList sessions={sessions} view="map" />
+          <SessionList sessions={sessions} view="map" onOpenScope={onOpenScope} />
         )}
       </div>
     </div>
@@ -473,6 +460,7 @@ export function SessionScopePanel({
   onRefresh,
   refreshing = false,
   canRefresh = false,
+  onOpenScope,
 }: {
   scopeType: ScopeType;
   scopeId: string;
@@ -484,6 +472,7 @@ export function SessionScopePanel({
   onRefresh?: () => void;
   refreshing?: boolean;
   canRefresh?: boolean;
+  onOpenScope?: (target: SessionScopeTarget) => void;
 }) {
   const [open, setOpen] = useState(variant === "block");
   const [loading, setLoading] = useState(false);
@@ -535,6 +524,11 @@ export function SessionScopePanel({
     return () => document.removeEventListener("mousedown", handler);
   }, [open, variant]);
 
+  const handleOpenScope = (target: SessionScopeTarget) => {
+    onOpenScope?.(target);
+    if (variant === "toolbar") setOpen(false);
+  };
+
   if (variant === "toolbar") {
     const summary = loading ? "..." : String(sessions.length);
     return (
@@ -562,6 +556,7 @@ export function SessionScopePanel({
               canRefresh={canRefresh}
               onRefresh={onRefresh}
               refreshing={refreshing}
+              onOpenScope={handleOpenScope}
             />
           </div>
         )}
@@ -593,6 +588,7 @@ export function SessionScopePanel({
           canRefresh={canRefresh}
           onRefresh={onRefresh}
           refreshing={refreshing}
+          onOpenScope={handleOpenScope}
         />
       )}
     </div>

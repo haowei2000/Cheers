@@ -708,60 +708,88 @@
 .an-sp-map-row {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(96px, 1fr) 42px auto;
+  grid-template-columns: auto minmax(42px, 1fr) minmax(116px, auto);
   align-items: center;
-  gap: 0;
+  gap: 8px;
   min-height: 42px;
   padding: 7px 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-0);
   color: var(--fg-2);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
   transition:
     border-color var(--motion-fast),
     background var(--motion-fast);
 }
-.an-sp-map-row:hover,
 .an-sp-map-row.is-selected {
   border-color: var(--border-strong);
   background: var(--surface-soft);
 }
-.an-sp-map-scopes {
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.an-sp-map-scope {
+.an-sp-session-node,
+.an-sp-object-node {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 6px;
   max-width: 100%;
-  padding: 4px 7px;
+  min-height: 28px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg-1);
   color: var(--fg-2);
+  font-family: inherit;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 16px;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    color var(--motion-fast);
 }
-.an-sp-map-scope svg {
+.an-sp-session-node:hover,
+.an-sp-object-node:hover:not(:disabled) {
+  color: var(--fg-1);
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+.an-sp-session-node[aria-expanded="true"] {
+  color: var(--fg-1);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+.an-sp-object-node {
+  min-width: 0;
+  justify-self: end;
+}
+.an-sp-object-node:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+.an-sp-object-node svg {
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
 }
-.an-sp-map-scope[data-scope="channel"] svg { color: var(--blue); }
-.an-sp-map-scope[data-scope="topic"] svg { color: var(--green); }
-.an-sp-map-scope[data-scope="task"] svg { color: var(--orange); }
-.an-sp-map-scope[data-scope="dm"] svg { color: var(--accent); }
+.an-sp-object-node[data-scope="channel"] svg { color: var(--blue); }
+.an-sp-object-node[data-scope="topic"] svg { color: var(--green); }
+.an-sp-object-node[data-scope="task"] svg { color: var(--orange); }
+.an-sp-object-node[data-scope="dm"] svg { color: var(--accent); }
+.an-sp-object-id {
+  min-width: 0;
+  max-width: 82px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+}
 .an-sp-map-link {
   position: relative;
   height: 1px;
-  margin: 0 8px;
   background: var(--border-strong);
   opacity: 0.75;
 }
@@ -778,20 +806,9 @@
 }
 .an-sp-map-link::before { left: -2px; }
 .an-sp-map-link::after { right: -2px; }
-.an-sp-map-session {
+.an-sp-session-node {
   min-width: 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-1);
   color: var(--fg-1);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 16px;
 }
 .an-sp-session-dot {
   width: 7px;
@@ -799,9 +816,9 @@
   border-radius: 999px;
   background: var(--fg-3);
 }
-.an-sp-map-session[data-status="active"] .an-sp-session-dot { background: var(--green); }
-.an-sp-map-session[data-status="task_owned"] .an-sp-session-dot { background: var(--accent); }
-.an-sp-map-session[data-status="closed"] .an-sp-session-dot { background: var(--fg-3); }
+.an-sp-session-node[data-status="active"] .an-sp-session-dot { background: var(--green); }
+.an-sp-session-node[data-status="task_owned"] .an-sp-session-dot { background: var(--accent); }
+.an-sp-session-node[data-status="closed"] .an-sp-session-dot { background: var(--fg-3); }
 .an-sp-map-details {
   display: grid;
   gap: 8px;
