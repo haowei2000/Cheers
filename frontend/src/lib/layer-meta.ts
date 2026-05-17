@@ -46,9 +46,9 @@ export const LAYER_META: Record<string, LayerMeta> = {
     icon: ico("archive"),
     readonly: true,
   },
-  RECENT: {
-    label: "Recent activity",
-    desc: "Latest progress, todos, and conclusions",
+  HISTORY: {
+    label: "Conversation history",
+    desc: "Current page details and sealed page summaries",
     color: "green",
     icon: ico("clock"),
     readonly: true,

@@ -16,7 +16,7 @@ from app.services.channel_service import ChannelService
 router = APIRouter(prefix="/channels", tags=["context"])
 
 # Still allow PUT to overwrite derived layers for backward compatibility.
-_PUT_VALID_LAYERS = {"FILES_INDEX", "RECENT"}
+_PUT_VALID_LAYERS = {"FILES_INDEX", "HISTORY"}
 
 
 class ContextUpdate(BaseModel):
@@ -48,9 +48,11 @@ async def update_context(
 ) -> APIResponse:
     """Update context."""
     layer_upper = body.layer.upper()
+    if layer_upper == "RECENT":
+        layer_upper = "HISTORY"
     if layer_upper not in _PUT_VALID_LAYERS:
         raise BadRequestError(
-            f"PUT on this endpoint only supports derived layers: {', '.join(sorted(_PUT_VALID_LAYERS))}. "
+            "PUT on this endpoint only supports derived layers: FILES_INDEX, HISTORY. "
             f"For ANCHOR/DECISIONS/PROGRESS, use the /memory/ entries API."
         )
     channel_repo = ChannelRepository(session)

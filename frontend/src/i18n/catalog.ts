@@ -337,7 +337,7 @@ export const EN_TO_ZH: Record<string, string> = {
   "No project anchor or progress yet.": "暂无项目锚点与进度。",
   "No uploaded files": "暂无上传文件",
   "After files are uploaded in the channel, the index is generated automatically.": "在频道中上传文件后，索引将自动生成",
-  "No recent activity": "暂无历史动态",
+  "No conversation history": "暂无会话历史",
   "No todos": "暂无待办",
   "No notifications": "暂无通知",
   "Search users": "搜索用户",

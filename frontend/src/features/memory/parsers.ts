@@ -49,7 +49,7 @@ export function parseFilesIndex(md: string): FileCard[] {
   });
 }
 
-export function parseRecentXml(xml: string): TimelineItem[] {
+export function parseHistoryXml(xml: string): TimelineItem[] {
   if (!xml.trim()) return [];
   const items: TimelineItem[] = [];
   const re =

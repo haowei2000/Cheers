@@ -34,5 +34,8 @@ class BotRuntime:
     skip_system_prompt: bool = False
     delegated_task_xml: bool = False
 
+    # ── built-in Coordinator context policy ────────────────────────────
+    coordinator_profile: Any = None
+
 
 ProcessConfig = BotRuntime
