@@ -503,6 +503,7 @@ export default function App() {
   } = useChannelMessages({
     selectedId,
     isDmSelected,
+    currentUserId,
     authFetch,
     selectedIdRef,
     pendingScrollMsgIdRef,

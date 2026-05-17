@@ -198,6 +198,90 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_list_messages_around_cursor(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Initial channel loads can request a small window around the saved cursor."""
+    ws = Workspace(workspace_id="f2000000-0000-0000-0000-000000000172", name="W172")
+    ch = Channel(
+        channel_id="e2000000-0000-0000-0000-000000000172",
+        workspace_id=ws.workspace_id,
+        name="cursor-window",
+        type="public",
+    )
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    messages = [
+        Message(
+            msg_id=f"cursor-message-{i:02d}",
+            channel_id=ch.channel_id,
+            sender_id="a0000000-0000-0000-0000-000000000099",
+            sender_type="user",
+            content=f"message {i}",
+            created_at=base_time + timedelta(seconds=i),
+        )
+        for i in range(10)
+    ]
+    db_session.add_all([ws, ch, *messages])
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/channels/{ch.channel_id}/messages",
+        params={"around_id": "cursor-message-05", "limit": 5},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert [item["msg_id"] for item in payload["data"]] == [
+        "cursor-message-03",
+        "cursor-message-04",
+        "cursor-message-05",
+        "cursor-message-06",
+        "cursor-message-07",
+    ]
+    assert payload["meta"]["anchor_found"] is True
+    assert payload["meta"]["has_more_before"] is True
+    assert payload["meta"]["has_more_after"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_messages_after_cursor(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Anchored windows can page newer messages without loading the whole tail."""
+    ws = Workspace(workspace_id="f2000000-0000-0000-0000-000000000173", name="W173")
+    ch = Channel(
+        channel_id="e2000000-0000-0000-0000-000000000173",
+        workspace_id=ws.workspace_id,
+        name="cursor-after",
+        type="public",
+    )
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    messages = [
+        Message(
+            msg_id=f"after-message-{i:02d}",
+            channel_id=ch.channel_id,
+            sender_id="a0000000-0000-0000-0000-000000000099",
+            sender_type="user",
+            content=f"message {i}",
+            created_at=base_time + timedelta(seconds=i),
+        )
+        for i in range(8)
+    ]
+    db_session.add_all([ws, ch, *messages])
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/channels/{ch.channel_id}/messages",
+        params={"after_id": "after-message-03", "limit": 3},
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert [item["msg_id"] for item in payload["data"]] == [
+        "after-message-04",
+        "after-message-05",
+        "after-message-06",
+    ]
+    assert payload["meta"]["has_more_after"] is True
+
+
+@pytest.mark.asyncio
 async def test_list_topic_messages_includes_nested_replies(
     client: AsyncClient,
     db_session: AsyncSession,
