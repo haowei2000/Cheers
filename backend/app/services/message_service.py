@@ -43,10 +43,7 @@ class MessageService:
         limit: int = 50,
         before_id: str | None = None,
     ) -> tuple[list[Message], dict[str, MessageFileDTO]]:
-        """List messages."""
-        ch = await self.channel_repo.get_by_id(channel_id)
-        if not ch:
-            raise NotFoundError("channel not found")
+        """List messages. API routes perform channel membership validation before calling this."""
         messages = await self.msg_repo.list_by_channel(channel_id, limit=limit, before_id=before_id)
         return messages, await self._file_map_for_messages(messages)
 
@@ -57,9 +54,6 @@ class MessageService:
         limit: int = 50,
     ) -> tuple[list[Message], dict[str, MessageFileDTO]]:
         """List messages newer than a cursor message."""
-        ch = await self.channel_repo.get_by_id(channel_id)
-        if not ch:
-            raise NotFoundError("channel not found")
         messages = await self.msg_repo.list_after_id(channel_id, after_id=after_id, limit=limit)
         return messages, await self._file_map_for_messages(messages)
 
@@ -73,9 +67,6 @@ class MessageService:
 
         Returns messages, file map, has_more_before, has_more_after, anchor_found.
         """
-        ch = await self.channel_repo.get_by_id(channel_id)
-        if not ch:
-            raise NotFoundError("channel not found")
         anchor = await self.msg_repo.get_by_id(around_id)
         if not anchor or anchor.channel_id != channel_id:
             fallback = await self.msg_repo.list_by_channel(channel_id, limit=limit + 1)
