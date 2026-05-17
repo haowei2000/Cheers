@@ -149,17 +149,60 @@ async def list_messages(
     channel_id: str,
     limit: int = Query(default=50, ge=1, le=200),
     before_id: str | None = Query(default=None),
+    after_id: str | None = Query(default=None),
+    around_id: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     await ChannelService(session).require_channel_member(channel_id, current_user)
     svc = MessageService(session)
+    if around_id:
+        messages, file_map, has_more_before, has_more_after, anchor_found = await svc.list_messages_around(
+            channel_id,
+            around_id=around_id,
+            limit=limit,
+        )
+        return APIResponse.ok(
+            [_serialize(m, file_map) for m in messages],
+            meta={
+                "has_more": has_more_before,
+                "has_more_before": has_more_before,
+                "has_more_after": has_more_after,
+                "limit": limit,
+                "around_id": around_id,
+                "anchor_found": anchor_found,
+                "position": "around" if anchor_found else "bottom",
+            },
+        )
+
+    if after_id:
+        messages, file_map = await svc.list_messages_after(channel_id, after_id=after_id, limit=limit + 1)
+        has_more = len(messages) > limit
+        visible_messages = messages[:limit] if has_more else messages
+        return APIResponse.ok(
+            [_serialize(m, file_map) for m in visible_messages],
+            meta={
+                "has_more": has_more,
+                "has_more_before": True,
+                "has_more_after": has_more,
+                "limit": limit,
+                "after_id": after_id,
+                "position": "after",
+            },
+        )
+
     messages, file_map = await svc.list_messages(channel_id, limit=limit + 1, before_id=before_id)
     has_more = len(messages) > limit
     visible_messages = messages[-limit:] if has_more else messages
     return APIResponse.ok(
         [_serialize(m, file_map) for m in visible_messages],
-        meta={"has_more": has_more, "limit": limit},
+        meta={
+            "has_more": has_more,
+            "has_more_before": has_more,
+            "has_more_after": False,
+            "limit": limit,
+            "position": "before" if before_id else "bottom",
+        },
     )
 
 
