@@ -70,9 +70,9 @@ class Settings(BaseSettings):
         "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000
-    public_base_url: str = "https://agentnexus.epichust.com"
+    public_base_url: str = "http://localhost"
     kkfileview_enabled: bool = True
-    kkfileview_base_url: str = "https://agentnexus.epichust.com/preview"
+    kkfileview_base_url: str = "http://localhost/preview"
     kkfileview_token_ttl_seconds: int = 10 * 60
     avatar_upload_max_bytes: int = 2 * 1024 * 1024
     avatar_upload_allowed_types: str = "image/png,image/jpeg,image/webp,image/gif"
@@ -135,7 +135,7 @@ class Settings(BaseSettings):
 
     # Seed data: initial administrator account.
     admin_username: str = "admin"
-    admin_password: str = "admin#Nexus2024"
+    admin_password: str = "change-me-admin-password"
     admin_display_name: str = "系统管理员"
 
     # ===== Agent Bridge =====

@@ -16,8 +16,8 @@ services:
       - STORAGE_S3_ENDPOINT=http://rustfs:9000
       - STORAGE_S3_PUBLIC_ENDPOINT=${STORAGE_S3_PUBLIC_ENDPOINT:-http://localhost:9000}
       - STORAGE_S3_REGION=${STORAGE_S3_REGION:-us-east-1}
-      - STORAGE_S3_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-admin}
-      - STORAGE_S3_SECRET_KEY=${RUSTFS_SECRET_KEY:-123456}
+      - STORAGE_S3_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-agentnexus-local-access-key}
+      - STORAGE_S3_SECRET_KEY=${RUSTFS_SECRET_KEY:-agentnexus-local-secret-key}
       - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-agentnexus-files}
       - STORAGE_S3_FORCE_PATH_STYLE=${STORAGE_S3_FORCE_PATH_STYLE:-true}
       - STORAGE_S3_AUTO_CREATE_BUCKET=${STORAGE_S3_AUTO_CREATE_BUCKET:-true}
@@ -27,9 +27,9 @@ services:
       - FILE_RETENTION_DAYS=${FILE_RETENTION_DAYS:-365}
       - FILE_RETENTION_CLEANUP_INTERVAL_SECONDS=${FILE_RETENTION_CLEANUP_INTERVAL_SECONDS:-86400}
       - FILE_UPLOAD_ALLOWED_TYPES=${FILE_UPLOAD_ALLOWED_TYPES:-application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/ofd,application/rtf,text/csv,text/html,text/plain,text/markdown,application/zip,application/vnd.rar,application/x-7z-compressed,application/x-tar,application/gzip,application/epub+zip,image/png,image/jpeg,image/webp,image/gif}
-      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://agentnexus.epichust.com}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost}
       - KKFILEVIEW_ENABLED=${KKFILEVIEW_ENABLED:-true}
-      - KKFILEVIEW_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com/preview}
+      - KKFILEVIEW_BASE_URL=${KKFILEVIEW_BASE_URL:-http://localhost/preview}
       - KKFILEVIEW_TOKEN_TTL_SECONDS=${KKFILEVIEW_TOKEN_TTL_SECONDS:-600}
       - LLM_LOCALHOST_ALIAS=${LLM_LOCALHOST_ALIAS:-host.docker.internal}
       - HELPER_LLM_BASE_URL=${HELPER_LLM_BASE_URL:-}
@@ -97,8 +97,8 @@ services:
       - "${KKFILEVIEW_HOST_BIND:-127.0.0.1}:${KKFILEVIEW_HOST_PORT:-8012}:8012"
     environment:
       - KK_CONTEXT_PATH=/preview
-      - KK_BASE_URL=${KKFILEVIEW_BASE_URL:-https://agentnexus.epichust.com/preview}
-      - KK_TRUST_HOST=${KKFILEVIEW_TRUST_HOST:-agentnexus.epichust.com}
+      - KK_BASE_URL=${KKFILEVIEW_BASE_URL:-http://localhost/preview}
+      - KK_TRUST_HOST=${KKFILEVIEW_TRUST_HOST:-localhost}
       - KK_FILE_DIR=${KKFILEVIEW_FILE_DIR:-/opt/kkfileview/file/}
       - KK_OFFICE_PREVIEW_TYPE=${KKFILEVIEW_OFFICE_PREVIEW_TYPE:-pdf}
       - KK_PDF_DOWNLOAD_DISABLE=${KKFILEVIEW_PDF_DOWNLOAD_DISABLE:-true}
@@ -143,8 +143,8 @@ services:
       - RUSTFS_CONSOLE_ENABLE=true
       - RUSTFS_CORS_ALLOWED_ORIGINS=${RUSTFS_CORS_ALLOWED_ORIGINS:-*}
       - RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS=${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS:-*}
-      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-agentnexus-dev-access}
-      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-agentnexus-dev-secret}
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-agentnexus-local-access-key}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-agentnexus-local-secret-key}
       - RUSTFS_OBS_LOGGER_LEVEL=${RUSTFS_OBS_LOGGER_LEVEL:-info}
       - RUSTFS_OBJECT_CACHE_ENABLE=${RUSTFS_OBJECT_CACHE_ENABLE:-true}
       - RUSTFS_OBJECT_CACHE_TTL_SECS=${RUSTFS_OBJECT_CACHE_TTL_SECS:-300}

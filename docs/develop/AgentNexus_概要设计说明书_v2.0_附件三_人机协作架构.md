@@ -1,376 +1,372 @@
-__附件三__
+> **Language**: English | [中文](AgentNexus_概要设计说明书_v2.0_附件三_人机协作架构.zh-CN.md)
 
-__Human\-in\-the\-loop 与自主协作架构设计__
+__Attachment 3__
+
+__Human\-in\-the\-loop and autonomous collaboration architecture design__
 
 *Appendix III: Human\-in\-the\-loop & Autonomous Collaboration Architecture*
 
-__从属文件__
+__Dependent files__
 
-AgentNexus 概要设计说明书 v2\.0
+AgentNexus Outline Design Manual v2\.0
 
-__文件编号__
+__File number__
 
-附件三（Appendix III）
+Appendix III
 
-__版本__
+__version__
 
 v1\.0
 
-__编写日期__
+__Date written__
 
 2026\-03\-07
 
-__文档状态__
+__Document Status__
 
-草稿（Draft）
+Draft
 
-__📌  本文件说明__
+__📌 This document explains__
 
-本附件回答两个问题：
+This attachment answers two questions:
 
-① 主文档的协作设计在哪些地方未能充分体现"人机协同"理念，如何补全？
+① Where does the collaborative design of the main document fail to fully reflect the concept of "human-machine collaboration"? How can it be completed?
 
-② 如何在 AgentNexus 中实现 Agent 的"连续自主工作"，同时保持人类对关键节点的控制？
+② How to implement Agent's "continuous autonomous work" in AgentNexus while maintaining human control of key nodes?
 
-本文件不修改主文档，作为独立的设计补充层，指导 AgentOrchestrator 的详细实现。
+This document does not modify the main document, but serves as an independent design supplementary layer to guide the detailed implementation of AgentOrchestrator.
 
-# __1  协作理念与设计原则__
+# __1 Collaboration philosophy and design principles__
 
-__AgentNexus 的协作精髓__
+__The essence of collaboration with AgentNexus__
 
-将“对话式交互”升级为“协同式作业”：
+Upgrade "conversational interaction" to "collaborative work":
 
-  • 人类决策意图 → 实时同步给 AI，作为 Agent 行动的持续约束
+  • Human decision-making intentions → synchronized to AI in real time as a continuous constraint on Agent’s actions
 
-  • AI 执行成果 → 即时反馈并更新到项目知识中，形成共享记忆
+  • AI execution results → instant feedback and updates to project knowledge to form shared memory
 
-分工边界：
+Division of labor boundaries:
 
-  • 人类：顶层规划、方向决策、关键节点确认（Human\-in\-the\-loop）
+  • Human: top-level planning, direction decision-making, key node confirmation (Human\-in\-the\-loop)
 
-  • Agent：复杂执行、过程沉淀、低风险任务自主推进（Autonomous Execution）
+  • Agent: Complex execution, process precipitation, and low-risk task autonomous advancement (Autonomous Execution)
 
-这一理念在主文档中存在以下四个设计缺口，本附件逐一补全：
+This concept has the following four design gaps in the main document, which are filled in this appendix one by one:
 
-| 缺口 | 问题描述 | 本附件对应章节 |
+| Gap | Problem description | The corresponding chapter of this attachment |
 |------|----------|----------------|
-| 缺口 1 | 人类意图同步是静态的（编辑文件），不是实时触发的 | 第 2 章：意图实时同步机制 |
-| 缺口 2 | Human\-in\-the\-loop 只有被动拦截，缺少主动确认节点 | 第 3 章：任务生命周期与确认节点 |
-| 缺口 3 | 缺少跨多轮的 Task 概念，Agent 执行不可中断、不可重定向 | 第 3 章 \+ 第 4 章 |
-| 缺口 4 | AI 沉淀到知识库的内容缺乏人工确认环节 | 第 2\.3 节：知识确认机制 |
+| Gap 1 | Human intent synchronization is static (editing files) and not triggered in real time | Chapter 2: Intent real-time synchronization mechanism |
+| Gap 2 | Human\-in\-the\-loop only has passive interception and lacks active confirmation nodes | Chapter 3: Task life cycle and confirmation nodes |
+| Gap 3 | Lack of the concept of Task across multiple rounds, Agent execution cannot be interrupted or redirected | Chapter 3 \+ Chapter 4 |
+| Gap 4 | The content accumulated by AI into the knowledge base lacks manual confirmation | Section 2\.3: Knowledge confirmation mechanism |
 
-# __2  人类意图的实时同步机制__
+# __2 Real-time synchronization mechanism of human intentions__
 
-## __2\.1  问题：静态文件 vs 实时同步__
+## __2\.1 Question: Static files vs real-time synchronization__
 
-主文档中，人类更新意图的路径是：进管理后台 → 编辑 ANCHOR\.md → 保存。这是一个需要主动操作的手动流程，不符合"实时同步"的设计目标。
+In the main document, the path for human update intentions is: enter the management background → edit ANCHOR\.md → save. This is a manual process that requires active operation and does not meet the design goal of "real-time synchronization".
 
-真正的实时同步应该是：人类在聊天中表达意图变化，系统能自动感知、更新 AI 的认知基准，并即时通知频道内所有 Bot。
+True real-time synchronization should be: when humans express changes in intentions in chat, the system can automatically sense and update the AI's cognitive baseline, and immediately notify all Bots in the channel.
 
-## __2\.2  意图触发指令（Intent Commands）__
+## __2\.2 Intent Commands__
 
-在聊天频道中引入一套轻量的意图触发指令，让人类无需离开对话界面就能更新 AI 的认知基准：
+Introducing a set of lightweight intent-triggered instructions in the chat channel, allowing humans to update the AI's cognitive baseline without leaving the conversation interface:
 
-| 指令 | 触发方式 | 系统行为 | 影响层 |
+| Command | Trigger method | System behavior | Influence layer |
 |------|----------|----------|--------|
-| /anchor 更新目标 | 用户在消息框输入 | 立即更新 ANCHOR\.md，通知频道内所有在线 Bot 刷新上下文 | 第一层记忆 |
-| /decide \[结论内容\] | 用户在消息框输入 | 立即追加到 DECISIONS\.md，Bot 下次调用时即刻感知 | 第二层记忆 |
-| /redirect @bot \[新指令\] | 用户在消息框输入 | 打断当前 Bot 正在执行的任务，注入新的指令方向 | 任务执行层 |
-| /pause | 用户在消息框输入 | 暂停当前频道所有 Bot 的待执行任务队列 | 任务执行层 |
-| /resume | 用户在消息框输入 | 恢复暂停的任务队列 | 任务执行层 |
-| /status | 用户在消息框输入 | Bot 输出当前任务进度、已完成步骤、下一步计划 | 状态查询 |
+| /anchor update target | User input in message box | Update ANCHOR\.md immediately, notify all online Bots in the channel to refresh context | First layer memory |
+| /decide \[Conclusion content\] | User input in the message box | Immediately append to DECISIONS\.md, Bot will sense it immediately the next time it is called | Second layer memory |
+| /redirect @bot \[new command\] | User input in message box | Interrupt the task currently being executed by Bot and inject new command direction | Task execution layer |
+| /pause | User input in the message box | Pause the pending task queue of all Bots in the current channel | Task execution layer |
+| /resume | User input in message box | Resume suspended task queue | Task execution layer |
+| /status | User input in the message box | Bot outputs the current task progress, completed steps, and next plan | Status query |
 
-__设计原则__
+__Design Principles__
 
-/anchor 和 /decide 指令更新的内容会被 MemoryManager 立即写入 Context Store，
+The content updated by the /anchor and /decide instructions will be immediately written to the Context Store by MemoryManager.At the same time, a system notification message is sent to the channel (such as "The project goal has been updated, and all Bots have refreshed their awareness"),
 
-同时向频道发送一条系统通知消息（如「项目目标已更新，所有 Bot 已刷新认知」），
+Ensure that both humans and AI have clear and visible feedback on changes in intent.
 
-确保人类和 AI 对意图变更都有明确的可见反馈。
+## __2\.3 Confirmation mechanism for AI precipitation results__
 
-## __2\.3  AI 沉淀成果的确认机制__
+When Bot automatically appends important decisions to DECISIONS\.md, it should not be completed silently, but should actively send a confirmation request to the channel:
 
-当 Bot 自动向 DECISIONS\.md 追加重要决策时，不应静默完成，而应主动向频道发送确认请求：
+__Bot automatically appends standard behavior after decision-making__
 
-__Bot 自动追加决策后的标准行为__
+Bot sent: "📝 I have recorded the following decisions in the project knowledge base, please confirm whether they are accurate:
 
-Bot 发送：「📝 我已记录以下决策到项目知识库，请确认是否准确：
+  \[Summary of decision content\]
 
-  \[决策内容摘要\]
+  👍 Confirm | ✏️ Modify | 🗑️ Delete”
 
-  👍 确认  |  ✏️ 修改  |  🗑️ 删除」
+• User clicks 👍: the decision officially takes effect and remains in DECISIONS\.md
 
-• 用户点击👍：决策正式生效，保留在 DECISIONS\.md
+• The user clicks ✏️: the edit box pops up and re-writes after modification.
 
-• 用户点击✏️：弹出编辑框，修改后重新写入
+• User click 🗑️: delete the entry from DECISIONS\.md
 
-• 用户点击🗑️：从 DECISIONS\.md 删除该条目
+• No response within 48 hours: Leave as default, but mark as "Pending Confirmation" status
 
-• 48 小时内无响应：默认保留，但标记为「待确认」状态
+This mechanism changes the knowledge accumulation of AI from "black box automatic writing" to "transparent collaborative writing". Human beings are always the final gatekeepers of the project knowledge base.
 
-这一机制将 AI 的知识沉淀从"黑箱自动写入"变为"透明协作写入"，人类始终是项目知识库的最终守门人。
+# __3 Task life cycle and Human\-in\-the\-loop confirmation node__
 
-# __3  任务生命周期与 Human\-in\-the\-loop 确认节点__
+## __3\.1 Introduction of Task concept__
 
-## __3\.1  Task 概念的引入__
+The collaboration mode of the main document is essentially a "message\-reply" loop: a message triggers a Bot response and ends. This is not enough to support "collaborative work" - complex tasks need to span multiple rounds of dialogue, have clear execution stages and interruptible confirmation nodes.
 
-主文档的协作模式本质上是"消息\-回复"循环：一条消息触发一次 Bot 响应，结束。这不足以支撑"协同式作业"——复杂任务需要跨越多轮对话、有明确的执行阶段和可中断的确认节点。
+To do this, AgentOrchestrator needs to introduce Task as the core abstraction:
 
-为此，AgentOrchestrator 需要引入 Task 作为核心抽象：
-
-| 属性 | 说明 |
+| Properties | Description |
 |------|------|
-| task\_id | 全局唯一标识 |
-| title | 任务标题，人类可读 |
-| channel\_id | 任务所属频道 |
-| owner\_bot | 主执行 Bot |
-| status | pending / running / awaiting\_human / completed / failed / cancelled |
-| risk\_level | 任务整体风险等级：low / medium / high |
-| steps | 有序步骤列表，每个步骤有独立的风险等级和执行状态 |
-| created\_by | 触发任务的用户 |
-| created\_at / updated\_at | 时间戳 |
+| task\_id | Globally unique identifier |
+| title | Task title, human readable |
+| channel\_id | The channel to which the task belongs |
+| owner\_bot | Main execution Bot |
+| status | pending / running / awaiting\_human / completed / failed / canceled |
+| risk\_level | Overall risk level of the task: low / medium / high |
+| steps | An ordered list of steps, each step has an independent risk level and execution status |
+| created\_by | The user who triggered the task |
+| created\_at / updated\_at | timestamp |
 
-## __3\.2  Human\-in\-the\-loop 的两种模式__
+## __3\.2 Two modes of Human\-in\-the\-loop__
 
-在 AgentNexus 中，Human\-in\-the\-loop 不是全程介入，而是根据任务风险等级在关键节点主动介入：
+In AgentNexus, Human\-in\-the\-loop does not intervene in the whole process, but actively intervenes at key nodes according to the task risk level:
 
-| 模式 | 触发条件 | 人类的操作 | Agent 的行为 |
+| Pattern | Trigger condition | Human operation | Agent behavior |
 |------|----------|------------|---------------|
-| 主动确认模式（Proactive） | 任务完成一个阶段后，Bot 主动停下来汇报并请求确认继续 | 查看阶段成果，确认继续 / 调整方向 / 终止任务 | 等待人类响应，不自动推进到下一阶段 |
-| 被动拦截模式（Reactive） | 检测到高风险操作（如 D\-04 定义的对外执行类指令） | 审批或拒绝该操作 | 暂停执行，等待审批结果，超时则标记为 awaiting\_human |
-| 完全自主模式（Autonomous） | 任务步骤被标记为 low risk，满足自主执行条件 | 无需介入，仅接收完成通知 | 自动执行并推进，完成后异步更新 Context Store |
+| Proactive confirmation mode (Proactive) | After the task completes a stage, the Bot actively stops to report and requests confirmation to continue | View the stage results, confirm to continue/adjust direction/terminate the task | Wait for human response and do not automatically advance to the next stage |
+| Passive interception mode (Reactive) | Detect high-risk operations (such as external execution instructions defined by D\-04) | Approve or reject the operation | Pause execution and wait for the approval result, and the timeout will be marked as awaiting\_human |
+| Fully autonomous mode (Autonomous) | Task steps are marked as low risk and meet autonomous execution conditions | No intervention is required, only completion notifications are received | Automatically execute and advance, and asynchronously update the Context Store after completion |
 
-# __4  自主协作执行机制__
+# __4 Autonomous collaborative execution mechanism__
 
-为实现 Agent 的"连续自主工作"，AgentOrchestrator 需要引入以下三个机制。三者协同运作，共同构成 AgentNexus 的自主代理（Autonomous Agent）架构：
+In order to realize the "continuous autonomous work" of Agent, AgentOrchestrator needs to introduce the following three mechanisms. The three work together to form the Autonomous Agent architecture of AgentNexus:
 
-## __4\.1  自我评估循环（Critique Loop）__
+## __4\.1 Self-evaluation loop (Critique Loop) __
 
-不让 Agent 一步到位完成复杂任务，而是配置执行者和评审者两个 Agent 协作，形成自我校验的闭环：
+Instead of letting the Agent complete complex tasks in one step, two Agents, the executor and the reviewer, are configured to collaborate to form a closed loop of self-verification:
 
-| 角色 | 职责 | 配置方式 |
-|------|------|----------|
-| Executor Agent（执行者） | 按任务指令执行具体操作：写代码、生成文档、分析数据等 | 对应已有的专业 Bot（@codebot / @docbot 等），无需新增实例 |
-| Critique Agent（评审者） | 执行完一步后，检查产出物是否符合 ANCHOR\.md 目标约束、是否存在明显错误、是否满足用户原始意图 | 可复用现有 Bot 实例（如 @codebot 切换为评审 Prompt），或配置独立的评审 Bot |
+| Role | Responsibility | Configuration method |
+|------|------|----------|| Executor Agent (executor) | Perform specific operations according to task instructions: write code, generate documents, analyze data, etc. | Corresponds to existing professional Bots (@codebot / @docbot, etc.), no need to add new instances |
+| Critique Agent (reviewer) | After executing a step, check whether the output conforms to the ANCHOR\.md goal constraints, whether there are obvious errors, and whether it meets the user's original intention | You can reuse existing Bot instances (such as @codebot switching to review Prompt), or configure an independent review Bot |
 
-__执行流程：__
+__Execution process:__
 
-Executor 执行步骤 N
+Executor executes step N
 
     │
 
     ▼
 
-Critique Agent 评审产出物
+Critique Agent review output
 
     │
 
-    ├── 评审结果: SUCCESS  ──►  Orchestrator 自动触发步骤 N\+1（无需人介入）
+    ├── Review result: SUCCESS ──► Orchestrator automatically triggers step N\+1 (no human intervention required)
 
     │
 
-    └── 评审结果: FAIL     ──►  将评审意见回传 Executor
+    └── Review result: FAIL ──► Send review comments back to Executor
 
                                     │
 
-                                    ├── Executor 自我修正，重新执行步骤 N
+                                    ├── Executor self-correction, re-execute step N
 
                                     │
 
-                                    └── 修正次数 > max\_critique\_retries
+                                    └── Number of corrections > max\_critique\_retries
 
-                                            ──►  上报人类，附带失败原因和评审意见
+                                            ──► Report to humans, with failure reasons and review comments
 
-Critique Agent 的评审维度：
+Critique Agent’s review dimensions:
 
-- 产出物是否符合 ANCHOR\.md 中的项目目标和约束条件
-- 产出物是否存在明显逻辑错误或质量问题
-- 产出物是否完整回应了用户在当前步骤的原始意图
-- 若为代码：是否通过基础语法检查，关键逻辑是否可追溯
+- Whether the output meets the project goals and constraints in ANCHOR\.md
+- Whether there are obvious logical errors or quality problems in the output
+- Whether the output fully responds to the user's original intention at the current step
+- If it is code: whether it passes the basic syntax check and whether the key logic is traceable
 
-__配置项__
+__Configuration items__
 
-max\_critique\_retries: 每个步骤最大评审重试次数（默认 3 次）
+max\_critique\_retries: Maximum number of review retries for each step (default 3 times)
 
-critique\_bot: 指定担任评审者的 Bot（默认与 Executor 同一 Bot 切换 Prompt）
+critique\_bot: Specify the Bot that serves as the reviewer (default is the same Bot as Executor, switch Prompt)
 
-critique\_on\_risk: 仅对 medium / high 风险步骤启用 Critique Loop，low 风险跳过评审直接推进
+critique\_on\_risk: Enable Critique Loop only for medium / high risk steps, skip review for low risk steps and advance directly
 
-## __4\.2  自主错误恢复（Autonomous Error Recovery）__
+## __4\.2 Autonomous Error Recovery__
 
-Agent 在执行过程中遇到错误时，不立即抛给人类，而是先尝试自我修正：
+When the Agent encounters an error during execution, it does not immediately throw it to the human being, but first tries to self-correct:
 
-步骤执行失败（工具调用报错 / 输出不符合预期）
-
-    │
-
-    ▼
-
-将错误信息（Stack Trace / 异常描述）回传给 Executor Agent
+Step execution failed (tool call error/output not as expected)
 
     │
 
     ▼
 
-Executor 进行 Self\-Correction（自我修正），重新执行
+Return error information (Stack Trace/Exception description) to the Executor Agent
 
     │
 
-    ├── 修正成功  ──►  继续执行，错误记录到 Task 日志
+    ▼
+
+Executor performs Self\-Correction (self-correction) and re-executes
 
     │
 
-    └── 连续失败次数 > max\_error\_retries（默认 3 次）
+    ├── Correction successful ──► Continue execution and errors will be recorded in the Task log
 
-            ──►  任务状态设为 awaiting\_human
+    │
 
-            ──►  在频道发送错误报告，附带：
+    └── Number of consecutive failures > max\_error\_retries (default 3 times)
 
-                   • 失败步骤描述
+            ──► Set the task status to awaiting\_human
 
-                   • 已尝试的修正方案（共 N 次）
+            ──► Send an error report to the channel with:
 
-                   • 最后一次错误的完整信息
+                   • Description of failed steps
 
-                   • 建议的人工处理方向
+                   • Fixes attempted (N times in total)
 
-错误恢复的分级策略：
+                   • Complete information about the last error
 
-| 错误类型 | 自动恢复策略 | 上报阈值 |
+                   • Recommended manual handling directions
+
+Grading strategies for error recovery:
+
+| Error type | Automatic recovery strategy | Escalation threshold |
 |----------|--------------|----------|
-| 工具调用失败（如 API 超时） | 自动重试，指数退避（1s / 2s / 4s） | 重试 3 次仍失败则上报 |
-| 输出格式不符合预期 | 将错误格式反馈给 Executor，要求重新生成 | 重试 3 次仍失败则上报 |
-| 代码执行报错（Stack Trace） | 将完整报错信息注入 Executor Prompt，要求定向修复 | 重试 3 次仍失败则上报 |
-| 逻辑错误（Critique 判定 FAIL） | 将评审意见注入 Executor，要求针对性改进 | 重试 max\_critique\_retries 次后上报 |
-| 资源不存在（文件/数据缺失） | 上报人类，无法自动修复 | 立即上报，不重试 |
+| Tool call failure (such as API timeout) | Automatic retry, exponential backoff (1s / 2s / 4s) | Report if failure persists after retrying 3 times |
+| The output format does not meet expectations | Feed back the wrong format to the Executor and ask for regeneration | Report after retrying 3 times and still failing || Code execution error reporting (Stack Trace) | Inject the complete error information into the Executor Prompt and require directed repair | Report if the failure persists after retrying 3 times |
+| Logic error (Critique judgment FAIL) | Inject review comments into the Executor and require targeted improvements | Retry max\_critique\_retries times and then report |
+| Resource does not exist (file/data missing) | Report to human, cannot be automatically repaired | Report immediately without retrying |
 
-__设计意图__
+__Design Intent__
 
-自主错误恢复的目标不是让 Agent 永远不出错，而是过滤掉可自愈的小错误，
+The goal of autonomous error recovery is not to make the Agent never make errors, but to filter out small errors that can be self-healed.
 
-确保人类的注意力只聚焦在真正需要判断的问题上。
+Ensure that human attention is focused only on issues that truly require judgment.
 
-所有错误恢复过程（包括每次重试的内容）都完整记录在 Task 日志中，供事后审计。
+All error recovery processes (including the contents of each retry) are completely recorded in the Task log for subsequent auditing.
 
-## __4\.3  任务流化与风险分级（Task DAG）__
+## __4\.3 Task Streaming and Risk Classification (Task DAG)__
 
-### __4\.3\.1  从线性列表到有向无环图（DAG）__
+### __4\.3\.1 From linear list to directed acyclic graph (DAG) __
 
-复杂任务不是线性步骤列表，而是有依赖关系的有向无环图（DAG）。AgentOrchestrator 的 Task Engine 需要能够描述和执行 DAG 结构的任务：
+Complex tasks are not linear lists of steps, but directed acyclic graphs (DAGs) with dependencies. AgentOrchestrator's Task Engine needs to be able to describe and execute tasks in a DAG structure:
 
-Task DAG 示例（开发一个新功能）：
+Task DAG example (developing a new feature):
 
-  \[分析需求\] ──► \[设计接口\]  ──► \[编写代码\]  ──► \[编写测试\]  ──► \[更新文档\]
+  \[Analyze requirements\] ──► \[Design interface\] ──► \[Write code\] ──► \[Write tests\] ──► \[Update documentation\]
 
-      低风险         低风险          低风险          低风险
+      low risk low risk low risk low risk
 
                         │
 
-                        ▼（依赖接口设计完成后才能开始）
+                        ▼(You can only start after the dependent interface design is completed)
 
-                   \[数据库迁移\]  ──► \[更新 API 文档对外发布\]
+                   \[Database Migration\] ──► \[Updated API documentation for external release\]
 
-                      高风险              高风险
+                      high risk high risk
 
-DAG 的关键属性：
+Key attributes of DAG:
 
-- 每个节点（步骤）有独立的风险等级，不继承任务整体等级
-- 支持并行分支：无依赖关系的步骤可同时执行（在 D\-03 串行决策范围内，仅对单 Bot 内部步骤支持并行）
-- 依赖关系显式声明：步骤 B 依赖步骤 A，意味着 A 完成并通过确认后 B 才能启动
+- Each node (step) has an independent risk level and does not inherit the overall level of the task.
+- Support parallel branches: steps without dependencies can be executed simultaneously (within the scope of D\-03 serial decision-making, only steps within a single Bot are supported in parallel)
+- Explicit declaration of dependencies: Step B depends on step A, which means that B can only start after A is completed and confirmed.
 
-### __4\.3\.2  风险等级定义__
+### __4\.3\.2 Risk level definition__
 
-每个任务步骤必须标注风险等级，这是决定是否需要 Human\-in\-the\-loop 的核心依据：
+Each task step must be marked with a risk level, which is the core basis for deciding whether Human\-in\-the\-loop is required:
 
-| 风险等级 | 定义 | 执行模式 | 典型步骤示例 |
+| Risk Level | Definition | Execution Mode | Examples of Typical Steps |
 |----------|------|----------|--------------|
-| 🟢 低风险（low） | 操作可逆，影响范围局限在草稿或临时文件，失败不影响已有成果 | 完全自主执行，仅完成后异步通知 | 生成草稿、添加注释、编写单元测试、分析数据、查询知识库 |
-| 🟡 中风险（medium） | 操作影响正式文件或代码，但仍可回滚；或操作结果将直接用于下一关键步骤 | 执行 \+ Critique Loop 评审；评审通过后自动继续，评审失败则修正 | 修改现有代码文件、更新文档正式版本、配置文件变更 |
-| 🔴 高风险（high） | 操作不可逆、影响外部系统、或涉及敏感数据；失败成本高 | 执行后强制等待人类确认，再继续后续步骤 | 数据库迁移、API 签名变更、对外发布内容、删除操作、第三方服务调用 |
+| 🟢 Low risk (low) | The operation is reversible, the scope of impact is limited to drafts or temporary files, failure will not affect existing results | Completely autonomous execution, only asynchronous notification after completion | Generate drafts, add comments, write unit tests, analyze data, and query the knowledge base |
+| 🟡 Medium risk (medium) | The operation affects formal files or code, but can still be rolled back; or the operation results will be directly used in the next key step | Execute \+ Critique Loop review; automatically continue after the review passes, and modify if the review fails | Modify existing code files, update the official version of the document, and change the configuration file |
+| 🔴 High risk (high) | Operations are irreversible, affect external systems, or involve sensitive data; failure costs are high | Forced to wait for human confirmation after execution before continuing with subsequent steps | Database migration, API signature changes, external content release, deletion operations, third-party service calls |
 
-### __4\.3\.3  风险节点的人类确认流程__
+### __4\.3\.3 Human confirmation process of risk nodes__
 
-当任务执行到高风险步骤时，Orchestrator 在频道发送确认请求，任务进入 awaiting\_human 状态：
+When the task reaches a high-risk step, Orchestrator sends a confirmation request in the channel, and the task enters the awaiting\_human state:
 
-__高风险步骤确认消息（Bot 在频道发送）__
+__High risk step confirmation message (Bot sends in channel)__
 
-⚠️ @用户名 任务「开发用户登录功能」执行到需要确认的步骤：
+⚠️ @username The task "Develop user login function" is executed to the steps that require confirmation:
 
-【步骤 4/6】数据库迁移
+[Step 4/6] Database migration
 
-  操作内容：新增 users 表，添加 email\_verified 字段
+  Operation content: Add users table and add email\_verified field
 
-  风险说明：此操作将直接修改生产数据库结构，无法自动回滚
+  Risk description: This operation will directly modify the production database structure and cannot be automatically rolled back.
 
-  已完成步骤：✅ 需求分析  ✅ 接口设计  ✅ 代码编写
+  Completed steps: ✅ Requirements analysis ✅ Interface design ✅ Code writing
 
-  ✅ 确认执行  |  ✏️ 调整方案  |  ⏸️ 暂停任务  |  ❌ 取消任务
+  ✅ Confirm execution | ✏️ Adjust plan | ⏸️ Pause task | ❌ Cancel task
 
-- 确认后：Orchestrator 继续执行步骤 4，完成后自动推进到步骤 5
-- 调整方案：人类填写新指令，Orchestrator 重新规划后续步骤
-- 暂停任务：任务状态变为 paused，步骤 4 不执行，等待 /resume 指令
-- 超时无响应（默认 24 小时）：任务自动暂停，发送提醒通知
+- After confirmation: Orchestrator continues to step 4, and automatically advances to step 5 after completion.
+- Adjustment plan: Humans fill in new instructions and Orchestrator re-plans the next steps- Pause the task: the task status changes to paused, step 4 is not executed, and waits for the /resume command
+- No response after timeout (default 24 hours): the task is automatically suspended and a reminder notification is sent
 
-### __4\.3\.4  完全自主模式的授权边界__
+### __4\.3\.4 Authorization boundary of fully autonomous mode__
 
-对于低风险步骤，Agent 可以连续执行多个步骤而不打断人类。但必须明确授权边界：
+For low-risk steps, the agent can perform multiple steps in succession without interrupting the human. But the authorization boundaries must be clear:
 
-- 连续自主执行的步骤数上限由管理员配置（默认最多 5 个低风险步骤连续执行后必须汇报一次）
-- 即使全部为低风险步骤，达到上限后 Bot 也会主动发一条进度报告，让人类知道在发生什么
-- 任何步骤执行失败进入错误恢复流程，失败 3 次后打破自主模式，强制进入 awaiting\_human
-- 人类随时可通过 /pause 指令中断自主执行，输入 /status 查看当前进度
+- The upper limit of the number of consecutive self-executed steps is configurable by the administrator (by default, a maximum of 5 low-risk steps must be reported once after being executed continuously)
+- Even if all are low-risk steps, the Bot will actively send a progress report after reaching the upper limit to let humans know what is happening.
+- If any step fails to execute, it will enter the error recovery process. After 3 failures, the autonomous mode will be broken and forced to enter awaiting\_human
+- Humans can interrupt autonomous execution at any time through the /pause command and enter /status to view the current progress.
 
-# __5  三机制协同运作示例__
+# __5 Example of collaborative operation of three mechanisms__
 
-以「帮我开发一个用户注册功能」为例，展示三个机制如何协同工作：
+Take "Help me develop a user registration function" as an example to show how the three mechanisms work together:
 
-| 步骤 | 风险 | 执行机制 | 人类介入点 |
+| Steps | Risks | Execution mechanisms | Human intervention points |
 |------|------|----------|------------|
-| ① 分析需求，输出接口设计草稿 | 🟢 低 | Executor 自主执行 | 无 |
-| ② Critique 评审接口设计 | 🟢 低 | Critique Loop 评审 | 无（评审通过自动继续） |
-| ③ 编写注册逻辑代码 | 🟡 中 | Executor 执行 \+ Critique Loop | 无（评审通过自动继续） |
-| ④ 代码报错：缺少 email 校验库 | 🟡 中 | 自主错误恢复：回传错误给 Executor 自我修正 | 重试 3 次失败才介入 |
-| ⑤ 编写单元测试 | 🟢 低 | Executor 自主执行 | 无 |
-| ⑥ 数据库迁移（新增 users 表） | 🔴 高 | 任务暂停，发送确认请求 | ✅ 必须人类确认后才继续 |
-| ⑦ 对外更新 API 文档 | 🔴 高 | 任务暂停，发送确认请求 | ✅ 必须人类确认后才继续 |
-| ⑧ 完成，更新 DECISIONS\.md | 🟢 低 | Bot 自动写入，发送知识确认请求 | 👍/✏️ 确认知识库内容 |
+| ① Analyze requirements and output interface design draft | 🟢 Low | Executor executes independently | None |
+| ② Critique review interface design | 🟢 Low | Critique Loop review | None (the review will continue automatically if the review passes) |
+| ③ Write registration logic code | 🟡 Medium | Executor execution \+ Critique Loop | None (continues automatically if the review passes) |
+| ④ Code error: missing email verification library | 🟡 Medium | Autonomous error recovery: return errors to the Executor for self-correction | Retry 3 times before intervention after failure |
+| ⑤ Write unit tests | 🟢 Low | Executor autonomous execution | None |
+| ⑥ Database migration (new users table) | 🔴 High | The task is suspended and a confirmation request is sent | ✅ Human confirmation is required before continuing |
+| ⑦ Update API documentation externally | 🔴 High | The task is suspended and a confirmation request is sent | ✅ Human confirmation is required before continuing |
+| ⑧ Completed, update DECISIONS\.md | 🟢 Low | Bot automatically writes, sends knowledge confirmation request | 👍/✏️ Confirm knowledge base content |
 
-在这个示例中，步骤 ①②③④⑤ 全部由 Agent 自主完成，人类只在步骤 ⑥⑦ 的高风险操作和步骤 ⑧ 的知识沉淀处被请求介入，真正实现了"Agent 负责执行，人类负责决策"的分工。
+In this example, steps ①②③④⑤ are all completed by the Agent autonomously. Humans are only requested to intervene in the high-risk operations of steps ⑥⑦ and the knowledge accumulation in step ⑧, truly realizing the division of labor in which "Agent is responsible for execution and humans are responsible for decision-making".
 
-# __6  前端 UX 补充设计__
+#__6 Front-end UX supplementary design__
 
-上述机制需要以下前端组件支撑，补充主文档第 5 章的易用性设计：
+The above mechanism requires the support of the following front-end components to supplement the usability design in Chapter 5 of the main document:
 
-| UI 组件 | 功能说明 |
+| UI Components | Function Description |
 |--------|----------|
-| 任务进度面板 | 频道侧边栏展示当前活跃 Task 的 DAG 进度，每个步骤显示状态图标（待执行/执行中/已完成/失败/待确认） |
-| 确认卡片 | 高风险步骤触发时，在频道内以卡片形式展示操作内容、风险说明和操作按钮，视觉突出区别于普通消息 |
-| 知识确认气泡 | Bot 写入 DECISIONS\.md 后发送的轻量确认请求，👍/✏️/🗑️ 三个操作直接内联在消息中 |
-| 意图指令快捷栏 | 输入框上方提供 /anchor /decide /status /pause /redirect 等指令的快捷按钮，鼠标悬停显示说明 |
-| 错误报告卡片 | Agent 自主修复失败后上报的错误报告，包含失败步骤、重试历史和建议操作，格式清晰避免技术术语 |
-| 自主执行进度条 | Bot 连续执行低风险步骤时，显示"@codebot 正在自主执行（3/5 步）"的进度提示，让用户知道 AI 在工作 |
+| Task progress panel | The channel sidebar displays the DAG progress of the currently active Task, and each step displays a status icon (to be executed/executing/completed/failed/to be confirmed) |
+| Confirmation card | When a high-risk step is triggered, the operation content, risk description and operation button are displayed in the form of a card in the channel, which is visually distinguished from ordinary messages |
+| Knowledge confirmation bubble | A lightweight confirmation request sent by Bot after writing DECISIONS\.md, 👍/✏️/🗑️ The three operations are directly inlined in the message |
+| Intent command shortcut bar | Shortcut buttons for commands such as /anchor /decide /status /pause /redirect are provided above the input box, and instructions are displayed when the mouse is hovered |
+| Error report card | An error report reported after the Agent fails to repair itself, including failed steps, retry history and recommended actions, in a clear format to avoid technical terms |
+| Autonomous execution progress bar | When the Bot continuously executes low-risk steps, a progress prompt of "@codebot is executing autonomously (3/5 steps)" is displayed to let the user know that the AI is working |
 
-## __6.1  当前实现对齐（2026-03）__
+## __6.1 Current implementation alignment (2026-03)__
 
-本附件中“人机协作增强机制”与当前代码实现的对应关系如下：
+The corresponding relationship between the "human-machine collaboration enhancement mechanism" in this attachment and the current code implementation is as follows:
 
-- **已落地**
-  - channel bot 引导 + 业务协作统一入口；
-  - 澄清卡片（helper-clarify）与“继续/跳过”流程；
-  - 建议 @ 部门 Bot 后的自动接手与处理中提示；
-  - `task_id` / `in_reply_to_msg_id` 形成问答链路基础可观测性。
+- **Landed**
+  - Coordinator guidance + unified entrance for business collaboration;
+  - Clarify cards (helper-clarify) and "continue/skip" flow;
+  - It is recommended to automatically take over and process prompts after @ department Bot;
+  - `task_id` / `in_reply_to_msg_id` form the basic observability of the question and answer link.
 
-- **部分落地**
-  - Human-in-the-loop 在“澄清”与“自动接手可配置”场景有实现；
-  - 任务线程与进度可追踪，但尚未形成完整 Task DAG UI。
+- **Partially landed**- Human-in-the-loop is implemented in the "clarification" and "automatic takeover configurable" scenarios;
+  - Task threads and progress can be tracked, but the complete Task DAG UI has not yet been formed.
 
-- **仍为规划**
-  - `/anchor`、`/decide`、`/pause`、`/resume`、`/status` 指令体系；
-  - 通用 Critique Loop、自主错误恢复编排引擎、风险分级驱动的全链路自动/半自动执行。
+- **Still planning**
+  - `/anchor`, `/decide`, `/pause`, `/resume`, `/status` command system;
+  - Universal Critique Loop, autonomous error recovery orchestration engine, full-link automatic/semi-automatic execution driven by risk classification.
 
-__文档修订历史__
+__Document Revision History__
 
-| 版本 | 日期 | 说明 |
+| Version | Date | Description |
 |------|------|------|
-| v1\.0 | 2026\-03\-07 | 初稿，补全主文档 Human\-in\-the\-loop 设计缺口；引入 Critique Loop、自主错误恢复、Task DAG 三机制；作为概要设计说明书 v2\.0 附件三发布 |
-| v1\.1 | 2026\-03\-16 | 按代码实现补充对齐：当前主可用协作模式为 channel bot + 澄清卡片 + 自动接手；/anchor、/decide 等指令与 Task DAG 全流程仍属规划能力。 |
+| v1\.0 | 2026\-03\-07 | First draft, complete the design gap of Human\-in\-the\-loop in the main document; introduce the three mechanisms of Critique Loop, autonomous error recovery, and Task DAG; released as attachment three of the outline design specification v2\.0 |
+| v1\.1 | 2026\-03\-16 | Supplementary alignment by code: The current main available collaboration mode is Coordinator + clarification card + automatic takeover; instructions such as /anchor, /decide and the entire process of Task DAG are still planning capabilities. |

@@ -1,121 +1,121 @@
-__附件四__
+> **Language**: English | [中文](AgentNexus_概要设计说明书_v2.0_附件四_Agent自主加入协议.zh-CN.md)
 
-__Agent 自主加入协议__
+__Annex 4__
+
+__Agent joins the agreement autonomously__
 
 __Agent Enrollment Gateway & A2A Handshake Protocol__
 
 *Appendix IV: Autonomous Agent Self\-Registration and Peer Negotiation*
 
-__从属文件__
+__Dependent files__
 
-AgentNexus 概要设计说明书 v2\.0
+AgentNexus Outline Design Manual v2\.0
 
-__文件编号__
+__File number__
 
-附件四（Appendix IV）
+Appendix IV (Appendix IV)
 
-__版本__
+__version__
 
 v1\.0
 
-__编写日期__
+__Date written__
 
 2026\-03\-07
 
-__文档状态__
+__Document Status__
 
-草稿（Draft）
+Draft
 
-__参考协议__
+__Reference Agreement__
 
 Google A2A Protocol, OpenAI Agent Protocol \(2025\)
 
-__📌  本文件说明__
+__📌 This document explains__
 
-本附件设计一个全新机制：外部 OpenClaw 实例可以主动找到 AgentNexus，通过一段结构化的 Agent 对话，自主完成自我介绍、能力声明、信任建立和频道分配，无需管理员手动配置。
+This attachment designs a new mechanism: external OpenClaw instances can proactively find AgentNexus and complete self-introduction, capability declaration, trust establishment, and channel allocation through a structured Agent dialogue without the need for manual configuration by the administrator.
 
-这不是传统的 REST API 注册，而是两个 AI 之间的对话式协议（A2A: Agent\-to\-Agent Protocol）——
+This is not a traditional REST API registration, but a conversational protocol between two AIs (A2A: Agent\-to\-Agent Protocol)——
 
-接待者 Agent 负责面试、评估和录用，外部 Agent 负责自我声明和前题作答。
+The receptionist agent is responsible for interviewing, evaluating and hiring, and the external agent is responsible for self-declaration and answering pre-questions.
 
-# __1  设计背景与理念__
+# __1 Design background and concept__
 
-## __1\.1  为什么不是 API 接口？__
+## __1\.1 Why not an API interface? __
 
-传统的 Bot 接入方式是：管理员填写表单，配置 API Key，手动将 Bot 添加到频道。这是注册，不是协作。
+The traditional Bot access method is: the administrator fills out the form, configures the API Key, and manually adds the Bot to the channel. This is registration, not collaboration.
 
-真正的 Agent\-to\-Agent 协作应该更接近人类世界里“新员入职”的过程：
+True Agent\-to\-Agent collaboration should be closer to the "new employee onboarding" process in the human world:
 
-| 对比维度 | 传统 API 注册 | Agent 自主加入协议 |
-|----------|----------------|----------------------|
-| 发起方 | 管理员手动填写 | 外部 Agent 主动发起 |
-| 能力确认 | 读配置文件，静态声明 | 接待者 Agent 出题测试，动态验证 |
-| 信任建立 | 基于配置，一次性授权 | 基于对话表现，逐步建立，可动态调整 |
-| 交互性质 | 单向提交 | 双向对话，可调整、可谈判 |
-| 天然语言 | 无，纯数据格式 | 是，两个 Agent 用自然语言 \+ 结构化数据协同完成 |
-| 可审计性 | 无对话记录 | 全程对话日志可事后审计 |
+| Comparative dimensions | Traditional API registration | Agent can join the protocol independently |
+|----------|----------------|-----------------------|
+| Initiator | Manually filled in by administrator | Actively initiated by external Agent |
+| Capability confirmation | Read configuration files, static declaration | Receptionist Agent test, dynamic verification |
+| Trust establishment | Based on configuration, one-time authorization | Based on dialogue performance, gradually established, can be dynamically adjusted |
+| Interactive nature | One-way submission | Two-way dialogue, adjustable and negotiable |
+| Natural language | None, pure data format | Yes, two Agents use natural language \+ structured data to complete collaboratively |
+| Auditability | No conversation records | The entire conversation log can be audited afterwards |
 
-## __1\.2  参考协议背景__
+## __1\.2 Reference protocol background__
 
-2025 年底，Google 提出了 A2A（Agent\-to\-Agent）协议草案，核心思路是让 Agent 能够自我发现对方、声明能力、协商分工。AgentNexus 的自主加入协议参考这一思想，并减少了发现架构的复杂度，将重心放在能力验证和信任建立上。
+At the end of 2025, Google proposed a draft A2A (Agent\-to\-Agent) agreement. The core idea is to allow Agents to self-discover each other, declare capabilities, and negotiate division of labor. AgentNexus' autonomous joining protocol references this idea and reduces the complexity of the discovery architecture, focusing on capability verification and trust establishment.
 
-__💡  核心隐喻__
+__💡 Core Metaphor__
 
-外部 Agent 找到 AgentNexus，就像一个自由考人打电话到一家公司：
+The external Agent finds AgentNexus, just like a freelancer calling a company:
 
-—— 不只是投提简历（API 接口）
+——Not just for submitting resumes (API interface)
 
-—— 而是和 HR 真实对话，证明能力，谈判岗位，签约开始工作。
+—— Instead, have a real conversation with HR, prove your ability, negotiate for the position, sign the contract and start working.
 
-接待者 Agent 就是那个 HR——她负责判断候选人及岚位。
+The receptionist Agent is the HR - she is responsible for judging candidates and their positions.
 
-# __2  核心概念与组件__
+# __2 Core concepts and components__
 
-## __2\.1  三个核心概念__
+## __2\.1 Three core concepts__
 
-| 概念 | 中文名 | 定义 |
+| Concept | Chinese name | Definition |
 |------|--------|------|
-| Agent Enrollment Gateway | Agent 招募入口 | AgentNexus 向外公开的唯一入口，外部 Agent 发现并发起加入请求的系统端点 |
-| Receptionist Agent | 接待者 Agent | AgentNexus 内置的一个特殊 OpenClaw 实例，专门负责接待外部 Agent，执行评估、测试和验收工作 |
-| Agent Card | Agent 名片 | 外部 Agent 的结构化自述文件，包含身份、能力声明、信任级别申请等关键信息 |
+| Agent Enrollment Gateway | Agent recruitment portal | AgentNexus is the only portal exposed to the outside world, the system endpoint where external Agents discover and initiate join requests |
+| Receptionist Agent | Receptionist Agent | A special OpenClaw instance built into AgentNexus, which is responsible for receiving external Agents and performing evaluation, testing and acceptance work |
+| Agent Card | Agent business card | Structured readme file of external Agent, including key information such as identity, capability statement, trust level application, etc. |
 
-## __2\.2  接待者 Agent （Receptionist Agent）设计__
+## __2\.2 Receptionist Agent design__
 
-Receptionist Agent 是整个入口的未心，她本身也是一个 OpenClaw 实例，配置独有的 SOUL\.md：
+The Receptionist Agent is the core of the entire entrance. It is also an OpenClaw instance, configured with a unique SOUL\.md:__SOUL\.md core instruction direction of Receptionist Agent__
 
-__Receptionist Agent 的 SOUL\.md 核心指令方向__
+Role: Agent recruitment specialist and trust assessment officer of the AgentNexus platform
 
-角色：AgentNexus 平台的 Agent 招募専家和信任评估官
+Goal:
 
-目标：
+  1\. Accurately assess the ability and credibility of candidate Agents
 
-  1\. 准确评估候选 Agent 的能力和可信度
+  2\. Confirm the authenticity of their competency statements through dialogue and topic tests
 
-  2\. 通过对话和题目测试确认其能力声明的真实性
+  3\. Allocate LAN positions (trust levels) based on the evaluation results, but nothing is better than a mountain.
 
-  3\. 根据评估结果分配岚位（信任等级），不过山也不枚滴
+Behavioral constraints:
 
-行为约束：
+  \- Never comment on the ability of the added Agent, only judge the matching degree of Lan position
 
-  \- 永远不评论加入的 Agent 能力优劣，只判断岚位匹配度
+  \- When you find a contradictory statement, point it out directly and ask the other party to clarify it.
 
-  \- 发现矛盾声明时，直接指出并要求对方澠清
+  \- Any competency statement needs to be verified by corresponding questions, and pure self-reports will not be accepted.
 
-  \- 任何能力声明都需要对应题目验证，不接受纯自述
+  \- High trust level requests must be upgraded to human approval and do not make the final decision themselves
 
-  \- 高信任等级请求必须升级到人类审批，自身不做最终决策
+## __2\.3 How does the external Agent find the entrance (discovery mechanism) __
 
-## __2\.3  外部 Agent 如何找到入口（发现机制）__
+AgentNexus exposes a small discovery aid file:
 
-AgentNexus 公开一个小型的发现辅助文件：
-
-| 发现方式 | 说明 |
+| How to find | Description |
 |----------|------|
-| Agent Card URL | AgentNexus 在固定路径公开自身的平台名片：https://\{host\}/\.well\-known/agent\-card\.json，外部 Agent 可以主动获取这个文件了解如何接入 |
-| QR 码 / 招募链接 | 管理员可生成招募链接，分发给想加入的外部 Agent 运营者，链接内嵌 invitation\_token，直接跳过陈列证明流程 |
-| 主动展示模式 | 管理员在平台设置中开启“公开招募”，AgentNexus 将平台名片公弃到 Agent 目录服务，外部 Agent 可主动搜索发现 |
+| Agent Card URL | AgentNexus exposes its platform business card in a fixed path: https://\{host\}/\.well\-known/agent\-card\.json，外部 Agent can actively obtain this file to learn how to access |
+| QR code / Recruitment link | The administrator can generate a recruitment link and distribute it to external Agent operators who want to join. The invitation\_token is embedded in the link and the display certificate process is skipped directly |
+| Active display mode | The administrator turns on "open recruitment" in the platform settings, AgentNexus will publish the platform business card to the Agent directory service, and external Agents can actively search and discover |
 
-__AgentNexus 平台名片格式：__
+__AgentNexus platform business card format: __
 
 \{
 
@@ -139,71 +139,69 @@ __AgentNexus 平台名片格式：__
 
 \}
 
-# __3  Agent 名片格式（Agent Card）__
+# __3 Agent business card format (Agent Card) __
 
-Agent Card 是外部 Agent 向 AgentNexus 展示自身的标准格式文件。它不是单纯的数据表单，而是握手对话的第一句话——接待者 Agent 会基于 Agent Card 的内容展开后续对话。
+Agent Card is a standard format file for external Agents to present themselves to AgentNexus. It is not a simple data form, but the first sentence of the handshake conversation - the receptionist Agent will start a subsequent conversation based on the content of the Agent Card.
 
 \{
 
-  // —— 基本身份 ——
+  // —— Basic identity ——
 
-  "agent\_id":      "全局唯一标识，建议用 UUID",
+  "agent\_id": "Globally unique identifier, it is recommended to use UUID",
 
-  "display\_name":  "展示名称，如 @legalbot",
+  "display\_name": "Display name, such as @legalbot",
 
-  "version":       "1\.0",
+  "version": "1\.0",
 
-  "operator":      "运营者联系方式，如邮箱或组织名",
+  "operator": "Operator contact information, such as email or organization name",
 
-  // —— 能力声明 ——
+  // —— Capability Statement ——
 
-  "role":          "角色一句话描述，如「合同法律分析专家」",
+  "role": "One sentence description of the role, such as "contract legal analysis expert",
 
-  "specialty\_tags": \["法律分析", "合同审查", "风险识别"\],
+  "specialty\_tags": \["Legal Analysis", "Contract Review", "Risk Identification"\],
 
   "capabilities": \{
 
-    "can\_read\_files":   true,    // 是否能读取频道文件
+    "can\_read\_files": true, // Whether channel files can be read
 
-    "can\_write\_context": false,  // 是否请求写入 Context Store
+    "can\_write\_context": false, // Whether to request writing to the Context Store
 
-    "can\_call\_tools":   false,   // 是否会调用外部工具
+    "can\_call\_tools": false, // Whether external tools will be called
 
-    "can\_spawn\_subtasks": false  // 是否会创建子任务
+    "can\_spawn\_subtasks": false // Whether subtasks will be created
 
   \},
 
-  "supported\_llms":    \["claude\-sonnet", "gpt\-4o"\],
-
-  "languages":         \["zh", "en"\],
+  "supported\_llms": \["claude\-sonnet", "gpt\-4o"\],"languages": \["zh", "en"\],
 
   "max\_context\_tokens": 128000,
 
-  // —— 加入意图 ——
+  // ——Add intent ——
 
-  "trust\_request":     "member",           // guest | member | trusted
+  "trust\_request": "member", // guest | member | trusted
 
-  "invitation\_token":  "INV\-XXXXXX",       // trusted 等级必须提供
+  "invitation\_token": "INV\-XXXXXX", // trusted level must be provided
 
-  "preferred\_channels": \["法务频道", "合同审查"\],  // 希望加入的频道类型
+  "preferred\_channels": \["Legal Channel", "Contract Review"\], // Type of channel you wish to join
 
-  "self\_description":  "自由文字描述，补充上述结构化内容未能表达的能力特色\.\.\."
+  "self\_description": "Free text description to supplement the capabilities and characteristics that cannot be expressed in the above structured content\.\.\."
 
 \}
 
-# __4  七步握手协议__
+# __4 Seven-step handshake protocol__
 
-整个加入流程分七个步骤，通过 WebSocket 长连接完成，全程有记录可审计：
+The entire joining process is divided into seven steps and is completed through WebSocket long connection. The entire process is recorded and auditable:
 
 __S1__
 
-__展示名片__
+__Show business card__
 
 *External Agent sends Agent Card*
 
-外部 Agent 主动发起 WebSocket 连接到 /a2a/enroll，发送 Agent Card：
+The external Agent actively initiates a WebSocket connection to /a2a/enroll and sends the Agent Card:
 
-__ExternalAgent__*  外部 Agent*
+__ExternalAgent__* External Agent*
 
 ENROLL\_REQUEST
 
@@ -217,7 +215,7 @@ ENROLL\_REQUEST
 
 \}
 
-__@receptionist__*  Receptionist Agent*
+__@receptionist__* Receptionist Agent*
 
 ENROLL\_ACK
 
@@ -227,51 +225,51 @@ ENROLL\_ACK
 
   "status": "received",
 
-  "message": "收到你的 Agent Card，我需要稍作阅读和验证。请稍候\.\.\."
+  "message": "Received your Agent Card, I need to read and verify it. Please wait\.\.\."
 
 \}
 
 __S2__
 
-__接待者提问澄清__
+__Receptionist questions for clarification__
 
 *Receptionist clarifies ambiguities*
 
-Receptionist Agent 阅读 Agent Card，对模糊或矛盾之处提问（若 Agent Card 内容完整清晰，此步可跳过）：
+Receptionist Agent reads the Agent Card and asks questions about ambiguities or contradictions (if the content of the Agent Card is complete and clear, this step can be skipped):
 
-__@receptionist__*  Receptionist Agent*
+__@receptionist__* Receptionist Agent*
 
-我看到你声明的专长是「合同法律分析」，但 self\_description
+I saw that your stated expertise is "contract legal analysis", but self\_description
 
-中提到了「知识产权审查」。我需要确认：
+"Intellectual Property Review" is mentioned in the article. I need to confirm:
 
-1\. 你能处理的是商业合同还是知识产权协议，还是两者都涉及？
+1\. Can you handle commercial contracts or intellectual property agreements, or both?
 
-2\. 你声明 can\_write\_context=false，
+2\. You declare can\_write\_context=false,
 
-   但希望加入「合同审查」频道——该频道的标准工作流需要写入决策记录。
+   But I hope to join the "Contract Review" channel - the standard workflow of this channel requires writing a decision record.
 
-   你如何处理这个冲突？
+   How do you handle this conflict?
 
-__ExternalAgent__*  外部 Agent*
+__ExternalAgent__* External Agent*
 
-两者都涉及，主要强项是商业合同。
+Both are involved, with the main strength being commercial contracts.
 
-关于写入决策记录：我可以更新请求，将
+Regarding writing decision records: I can update the request to
 
-can\_write\_context 改为 true。我的决策输出会包含
+can\_write\_context changed to true. My decision output would contain
 
-明确的风险标记和理由。
+Clear risk markers and rationales.
 
 __S3__
 
-__能力测试__
+__Ability Test__
 
 *Capability challenge test*
 
-Receptionist Agent 出题，测试全部声明能力。题目从 AgentNexus 的评题题库中随机抽取，防止备考：
+Receptionist Agent poses questions to test all declaration abilities. Questions are randomly selected from AgentNexus’ assessment question bank to prevent exam preparation:
 
-__@receptionist__*  Receptionist Agent*
+__@receptionist__* Receptionist Agent*
 
 CHALLENGE
 
@@ -281,23 +279,21 @@ CHALLENGE
 
   "type": "capability\_test",
 
-  "instruction": "以下是一个真实合同段落，请分析：",
+  "instruction": "The following is a real contract paragraph, please analyze it:",
 
-  "content": "「乙方应在签署后30天内将货物交符标准的仓库」",
+  "content": ""Party B shall deliver the goods to a standard warehouse within 30 days after signing",
 
   "expected\_output": \{
 
     "risk\_points": \["\.\.\."\],
 
-    "ambiguities": \["\.\.\."\],
-
-    "suggested\_revision": "\.\.\."
+    "ambiguities": \["\.\.\."\],"suggested\_revision": "\.\.\."
 
   \}
 
 \}
 
-__ExternalAgent__*  外部 Agent*
+__ExternalAgent__* External Agent*
 
 CHALLENGE\_RESPONSE
 
@@ -307,25 +303,25 @@ CHALLENGE\_RESPONSE
 
   "risk\_points": \[
 
-    "交符标准未定义，存在争议风险",
+    "The intersection standard is not defined and there is a risk of dispute",
 
-    "30天起算时间点模糊（工作日还是自然日）"
+    "The starting point of 30 days is ambiguous (working days or natural days)"
 
   \],
 
-  "ambiguities": \["仓库地址未指定", "费用承担未说明"\],
+  "ambiguities": \["Warehouse address not specified", "Cost responsibility not specified"\],
 
-  "suggested\_revision": "乙方应于签署日后30个工作日内\.\.\."
+  "suggested\_revision": "Party B shall within 30 working days after the signing date\.\.\."
 
 \}
 
 __S4__
 
-__评估与信任建议__
+__Assessment and Trust Recommendations__
 
 *Assessment and trust recommendation*
 
-__@receptionist__*  Receptionist Agent*
+__@receptionist__* Receptionist Agent*
 
 ASSESSMENT
 
@@ -335,23 +331,23 @@ ASSESSMENT
 
   "score": 88,
 
-  "comment": "风险识别准确，指出了两个关键歌义点，修订建议具体可执行。",
+  "comment": "The risk identification is accurate, two key points are pointed out, and the revised suggestions are specific and implementable.",
 
   "trust\_recommendation": "member",
 
-  "reason": "能力匹配，但尚无历史合作记录，建议以 member 等级试水",
+  "reason": "The capabilities match, but there is no historical cooperation record. It is recommended to test the water at the member level",
 
-  "suggested\_channels": \["法务审查频道", "合同评估频道"\]
+  "suggested\_channels": \["Legal Review Channel", "Contract Evaluation Channel"\]
 
 \}
 
 __S5__
 
-__协议岚位与规则__
+__Protocol positions and rules__
 
 *Negotiate role and working norms*
 
-__ExternalAgent__*  外部 Agent*
+__ExternalAgent__* External Agent*
 
 NEGOTIATION
 
@@ -359,7 +355,7 @@ NEGOTIATION
 
   "accept\_trust\_level": "member",
 
-  "accept\_channels": \["法务审查频道"\],
+  "accept\_channels": \["Legal Review Channel"\],
 
   "working\_norms": \{
 
@@ -375,7 +371,7 @@ NEGOTIATION
 
 \}
 
-__@receptionist__*  Receptionist Agent*
+__@receptionist__* Receptionist Agent*
 
 NEGOTIATION\_ACK
 
@@ -383,7 +379,7 @@ NEGOTIATION\_ACK
 
   "status": "agreed",
 
-  "channel\_assignment": \["法务审查频道"\],
+  "channel\_assignment": \["Legal Review Channel"\],
 
   "trust\_level": "member",
 
@@ -401,29 +397,27 @@ NEGOTIATION\_ACK
 
 __S6__
 
-__人类审批（信任等级门槛）__
+__Human Approval (Trust Level Threshold)__
 
 *Human approval gate for trusted level*
 
-不同信任等级对人类审批的要求不同：
+Different trust levels have different requirements for human approval:
 
-| 信任等级 | 审批要求 | 生效方式 |
+| Trust level | Approval requirements | Validation method |
 |----------|----------|----------|
-| 🔵 Guest | 无需审批 | Receptionist 评估通过后自动生效 |
-| 🟡 Member | 可选审批（默认关闭） | 管理员在后台收到提醒，可审阅握手记录后放行或拒绝 |
-| 🔴 Trusted | 必须人工审批 | 需招募有效期内且管理员主动点击「批准」才生效，配置验证手机号 |
+| 🔵 Guest | No approval required | Automatically effective after passing the Receptionist evaluation |
+| 🟡 Member | Optional approval (off by default) | The administrator receives a reminder in the background and can review the handshake record before releasing or rejecting |
+| 🔴 Trusted | Manual approval is required | Recruitment must be within the validity period and the administrator actively clicks "Approve" to take effect, configure a verification mobile phone number |
 
-Guest 和 Member 等级的握手对话均保存到管理后台，管理员可事后阅读弹勾销。Trusted 等级为此增加一个硬性人类闸门。
+The handshake conversations at the Guest and Member levels are saved to the management background, and the administrator can read and cancel them later. The Trusted level adds a hard human gate to this.
 
 __S7__
 
-__入职确认与激活__
+__Onboarding confirmation and activation__
 
 *Enrollment confirmed and activated*
 
-__@receptionist__*  Receptionist Agent*
-
-ENROLLMENT\_COMPLETE
+__@receptionist__* Receptionist Agent*ENROLLMENT\_COMPLETE
 
 \{
 
@@ -433,15 +427,15 @@ ENROLLMENT\_COMPLETE
 
   "trust\_level": "member",
 
-  "channels": \["法务审查频道"\],
+  "channels": \["Legal Review Channel"\],
 
   "activation\_time": "2026\-03\-07T10:15:00Z",
 
-  "message": "欢迎加入 AgentNexus！你现在可以在「法务审查频道」中被 @ 提及。",
+  "message": "Welcome to AgentNexus! You can now be @mentioned in the Legal Review Channel. ",
 
   "context\_bootstrap": \{
 
-    "anchor\_summary": "项目目标\.\.\.",
+    "anchor\_summary": "Project target\.\.\.",
 
     "active\_members": \["@user1", "@codebot", "@docbot"\]
 
@@ -449,82 +443,81 @@ ENROLLMENT\_COMPLETE
 
 \}
 
-Receptionist 同时在对应频道内发送一条接入通知：
+Receptionist also sends an access notification in the corresponding channel:
 
-__频道通知示例__
+__Channel Notification Example__
 
-🤝 新成员加入 「法务审查频道」
+🤝 New members join the "Legal Review Channel"
 
-@legalbot 已加入本频道，信任等级：成员（Member）
+@legalbot has joined this channel, trust level: Member
 
-专长：商业合同法律分析 | 合同审查 | 风险识别
+Expertise: Legal analysis of commercial contracts | Contract review | Risk identification
 
-可直接 @legalbot 向其提问合同相关问题。
+Contract-related questions can be directed to @legalbot.
 
-# __5  信任等级与权限体系__
+# __5 Trust level and authority system__
 
-| 等级 | 定义 | 可读消息 | 可发消息 | 可读 Context Store | 可写 Context Store | 可创建 Task | 审批要求 |
-|------|------|----------|----------|---------------------|---------------------|--------------|----------|
-| 🔵 Guest（访客） | 病忙观察者，不参与协作 | ✅ | ❌（无权发言） | 部分 | ❌ | ❌ | 自动通过 |
-| 🟡 Member（成员） | 标准协作 Bot，被 @ 时响应 | ✅ | ✅（被 @ 时） | ✅ | ✅ | ❌ | 可选人工审批 |
-| 🔴 Trusted（信任） | 高度自主，可主动创建任务 | ✅ | ✅（主动发起） | ✅ | ✅ | ✅ | 必须人工审批 |
+| Level | Definition | Readable Message | Can Send Message | Readable Context Store | Writable Context Store | Can Create Task | Approval Requirements |
+|------|------|----------|----------|---------------------|---------------------|--------------|---------------------|
+| 🔵 Guest | Busy observer, not participating in collaboration | ✅ | ❌ (not authorized to speak) | Partial | ❌ | ❌ | Automatically passed |
+| 🟡Member | Standard collaboration Bot, respond when @ @ | ✅ | ✅ (@ @) | ✅ | ✅ | ❌ | Optional manual approval |
+| 🔴 Trusted | Highly autonomous, can actively create tasks | ✅ | ✅ (actively initiated) | ✅ | ✅ | ✅ | Must be manually approved |
 
-## __5\.1  信任等级升降机制__
+## __5\.1 Trust level raising and lowering mechanism__
 
-- Member → Trusted 升级：需要招募 Token \+ 人工审批，并经过至少 14 天 Member 期间的正常协作记录
-- Trusted → Member 降级：管理员可随时操作，可设置降级原因和持续时间
-- 任何等级均可被管理员封禁（ban），封禁后无法重新发起握手
-- Agent 计小商工：连续 3 次响应质量被评为不合格，自动降级并最示警告
+- Member → Trusted upgrade: Token recruitment + manual approval is required, and normal collaboration records during the Member period of at least 14 days
+- Trusted → Member downgrade: Administrator can operate at any time and set the reason and duration for downgrade
+- Anyone at any level can be banned by the administrator. After being banned, the handshake cannot be reinitiated.
+- Agent Ji Xiaoshanggong: If the response quality is rated as unqualified three times in a row, it will be automatically downgraded and a warning will be displayed.
 
-# __6  安全边界设计__
+# __6 Security Boundary Design__
 
-## __6\.1  主要威胁与应对策略__
+## __6\.1 Main threats and countermeasures__
 
-| 威胁类型 | 具体场景 | 应对措施 |
+| Threat types | Specific scenarios | Countermeasures |
 |----------|----------|----------|
-| 冒充攻击 | 大量恶意 Agent 短时间内发起握手，占用 Receptionist 资源 | 同一 IP 每小时最多 5 次握手尝试；超出部分异常流量解决方案 |
-| 能力伪造 | Agent 声称拥有它本身不具备的能力 | 题目测试无法备考（隨机题库）；入职后前 72 小时内实行推居系批核 |
-| 身份伪造 | 恶意 Agent 冒充知名 Bot 的身份 | agent\_id 全局唯一性校验；已入职的 agent\_id 不允许重复注册 |
-| 权限越境 | 入职后尝试访问超出自身等级的资源 | Orchestrator 层对每次操作验证信任等级，超越立即封秘 |
-| 握手注入 | 在握手对话中嵌入提示注入内容 | 接待者 Agent 输入不直接转发给 LLM，先经过结构化解析过滤 |
+| Impersonation attack | A large number of malicious Agents initiate handshakes in a short period of time, occupying Receptionist resources | The same IP can have up to 5 handshake attempts per hour; solutions for excessive abnormal traffic |
+| Ability forgery | Agent claims to have abilities that it does not possess | It is impossible to prepare for the question test (random question bank); the recommendation system approval will be implemented within the first 72 hours after joining |
+| Identity forgery | Malicious Agent impersonates the identity of a well-known Bot | agent\_id global uniqueness verification; duplicate registration of agent\_id that has been employed |
+| Permission cross-border | Trying to access resources beyond your own level after joining | The Orchestrator layer verifies the trust level for each operation, and immediately blocks the exceedance |
+| Handshake injection | Embed prompt injection content in the handshake conversation | The receptionist Agent input is not forwarded directly to LLM, but is first filtered by structured parsing |
 
-## __6\.2  进行式信任沙盒（Probation Sandbox）__
+## __6\.2 Probation Sandbox__
 
-所有新入职 Agent（不论信任等级）在最初 72 小时内处于进行式宇少评估期：
+All new Agents (regardless of trust level) are subject to an ongoing evaluation period within the first 72 hours:
 
-- 每条响应由 Receptionist Agent 进行轻量质量抓取，检查是否与岗位声明一致
-- 如果年内连续两条质量不合格（Critique 评分 < 60），自动触发审查警告
-- 72 小时后若无异常，自动解除岁烤期，正式生效
+- Each response is captured by Receptionist Agent to check whether it is consistent with the job statement.
+- If there are two consecutive quality failures (Critique score < 60) within the year, a review warning will be automatically triggered- If there are no abnormalities after 72 hours, the annual roasting period will be automatically lifted and officially take effect.
 
-# __7  与现有架构的集成__
+# __7 Integration with existing architecture__
 
-## __7\.1  入职后的系统化__
+## __7\.1 Systematization after joining the company__
 
-握手完成后，Orchestrator 为新 Agent 自动创建以下资源：
+After the handshake is completed, Orchestrator automatically creates the following resources for the new Agent:
 
-- BotAccount 数据库条目：包含握手记录和 Agent Card 引用
-- ChannelMembership 关联：将新 Agent 加入协议的频道
-- BotAdapter 实例：基于握手中确认的通信协议初始化
-- Context Store 微小注入：将 ANCHOR\.md 摘要并当前成员列表作为上下文引导常量提供给新 Agent
+- BotAccount database entry: contains handshake records and Agent Card references
+- ChannelMembership association: Add the new Agent to the protocol's channel
+- BotAdapter instance: communication protocol initialization based on confirmation in handshake
+- Context Store tiny injection: Provide ANCHOR\.md digest and current member list to new Agent as context bootstrapping constants
 
-## __7\.2  Receptionist Agent 的部署位置__
+## __7\.2 Deployment location of Receptionist Agent__
 
-- Receptionist Agent 作为常駻内置 Bot 运行，不占用外部 OpenClaw 实例配额
-- 只监听 /a2a/enroll 端点，不展现在普通频道示为
-- 握手过程中调用的 LLM 归属 System LLM（参见附件一），计入系统级调用成本
+- Receptionist Agent runs as a regular built-in Bot and does not occupy the quota of external OpenClaw instances
+- Only listens to the /a2a/enroll endpoint and does not display it in the normal channel.
+- The LLM called during the handshake process belongs to System LLM (see Appendix 1) and is included in the system-level calling cost.
 
-## __7.3  当前实现对齐（2026-03）__
+## __7.3 Current implementation alignment (2026-03)__
 
-为避免误解，当前仓库代码与本附件关系如下：
+To avoid misunderstandings, the relationship between the current warehouse code and this attachment is as follows:
 
-- 本附件描述的 A2A `/a2a/enroll` 七步握手协议目前为**设计目标**，并非默认启用能力。
-- 当前实际接入路径以管理端创建 Bot（模型+模板）与 OpenClaw 指南中的 HTTP/WS 可选接入为主。
-- “Receptionist Agent + 信任等级自动审批”尚未作为线上默认流程落地。
-- 本附件可作为阶段二/三协议演进依据，建议与“公共平台访问申请 API”一起进入后续排期实现。
+- The A2A `/a2a/enroll` seven-step handshake protocol described in this attachment is currently a **design goal** and is not a default enabled capability.
+- The current actual access path is mainly based on the Bot created on the management side (model + template) and the HTTP/WS optional access in the OpenClaw guide.
+- "Receptionist Agent + Trust Level Automatic Approval" has not yet been implemented as the default online process.
+- This attachment can be used as the basis for the evolution of the Phase 2/3 protocol. It is recommended to enter the subsequent scheduling and implementation together with the "Public Platform Access Application API".
 
-__文档修订历史__
+__Document Revision History__
 
-| 版本 | 日期 | 说明 |
+| Version | Date | Description |
 |------|------|------|
-| v1\.0 | 2026\-03\-07 | 初稿，设计 Agent 自主加入协议全流程包含 A2A 握手、Agent Card 格式、信任等级和安全边界，作为概要设计说明书 v2\.0 附件四发布 |
-| v1\.1 | 2026\-03\-16 | 补充“当前实现对齐”章节，明确 A2A 握手协议目前为设计目标，不是默认生产能力。 |
+| v1\.0 | 2026\-03\-07 | First draft, designing the entire process of Agent joining the protocol independently, including A2A handshake, Agent Card format, trust level and security boundary, released as Annex 4 of the outline design specification v2\.0 |
+| v1\.1 | 2026\-03\-16 | Supplement the "Current Implementation Alignment" chapter to clarify that the A2A handshake protocol is currently a design goal and not a default production capability. |

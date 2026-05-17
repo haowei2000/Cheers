@@ -1,5 +1,7 @@
 # @haowei0520/bridge-client
 
+> **Language**: English | [Chinese](README.zh-CN.md)
+
 Shared Node.js client for the AgentNexus Agent Bridge WebSocket protocol.
 
 It manages the per-bot `control` and `data` streams, reconnect/resume, reply

@@ -80,7 +80,7 @@ def _effective_content_type(rec: FileRecord, fallback: str = "application/octet-
     return content_type or fallback
 
 
-def _normalize_absolute_base_url(url: str, fallback: str = "https://agentnexus.epichust.com") -> str:
+def _normalize_absolute_base_url(url: str, fallback: str = "https://agentnexus.example.com") -> str:
     base = (url or "").strip().rstrip("/")
     if not base:
         base = fallback

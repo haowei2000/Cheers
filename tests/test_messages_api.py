@@ -1092,9 +1092,9 @@ async def test_file_kkfileview_url_uses_signed_public_source(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "public_base_url", "agentnexus.epichust.com")
+    monkeypatch.setattr(settings, "public_base_url", "agentnexus.example.com")
     monkeypatch.setattr(settings, "kkfileview_enabled", True)
-    monkeypatch.setattr(settings, "kkfileview_base_url", "https://agentnexus.epichust.com/preview/")
+    monkeypatch.setattr(settings, "kkfileview_base_url", "https://agentnexus.example.com/preview/")
     monkeypatch.setattr(settings, "kkfileview_token_ttl_seconds", 600)
     monkeypatch.setattr(settings, "jwt_secret_key", "x" * 64)
 
@@ -1127,14 +1127,14 @@ async def test_file_kkfileview_url_uses_signed_public_source(
 
     viewer = urlparse(data["viewer_url"])
     assert viewer.scheme == "https"
-    assert viewer.netloc == "agentnexus.epichust.com"
+    assert viewer.netloc == "agentnexus.example.com"
     assert viewer.path == "/preview/onlinePreview"
 
     encoded_source = parse_qs(viewer.query)["url"][0]
     source_url = base64.b64decode(encoded_source).decode("utf-8")
     source = urlparse(source_url)
     assert source.scheme == "https"
-    assert source.netloc == "agentnexus.epichust.com"
+    assert source.netloc == "agentnexus.example.com"
     assert source.path == f"/api/v1/files/{record.file_id}/public-preview"
     assert parse_qs(source.query)["fullfilename"] == ["deck.pptx"]
 

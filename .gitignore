@@ -44,6 +44,7 @@ htmlcov/
 
 # 本地生成输出
 /outputs/
+/artifacts/
 
 # 构建与日志
 *.log
@@ -68,13 +69,3 @@ packages/openclaw-channel-agentnexus/*.tgz
 .tmp_pytest/
 .pytest_tmp/
 tmp_pytest/
-
-*.md
-*.html
-*.png
-outputs
-artifacts
-!AGENTS.md
-!FRONTEND.md
-!CLAUDE.md
-!README.md

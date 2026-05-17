@@ -1,5 +1,7 @@
 # AgentNexus icon system
 
+> **Language**: English | [Chinese](README.zh-CN.md)
+
 Use this folder as the only frontend entry point for icon libraries. Feature
 components should import from `components/icons`, not from third-party icon
 packages directly.

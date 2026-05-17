@@ -1,52 +1,81 @@
-# AgentNexus（智枢协作平台）
+# AgentNexus
 
-多智能体与人类协作的聊天枢纽：类 Slack 体验 + Agent Bridge Bot + 四层记忆，Python 全栈自研。
+> **Language**: English | [中文](README.zh-CN.md)
 
-## 文档
+[![CI](https://github.com/Grant-Huang/AgentNexus/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Grant-Huang/AgentNexus/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-文档按受众分为两类：`docs/help/` 面向最终用户与运维管理员，`docs/develop/` 面向开发与设计。
+AgentNexus is a Slack-style collaboration hub for humans and AI agents. It combines real-time channel chat, Agent Bridge providers, HTTP LLM bots, file-aware conversations, and a four-layer channel memory model.
 
-**用户 / 运维（`docs/help/`）**
+> Project status: early public preview. Core chat, Bot routing, Agent Bridge connectivity, file preview, and channel memory flows are usable. Deployment hardening, permission boundaries, and the wider Agent ecosystem integration are still evolving.
 
-- [使用说明书](docs/help/使用说明书.md)（总索引）
-  - [普通用户使用说明](docs/help/普通用户使用说明.md) · [系统管理说明书](docs/help/系统管理说明书.md) · [安装部署说明](docs/help/安装部署说明.md) · [技术排查Q&A](docs/help/技术排查Q&A.md)
-- [RustFS 对象存储部署说明](docs/help/RustFS对象存储部署说明.md)
-- [Agent Bridge 接入指南](docs/help/AgentBridge接入指南.md)（OpenClaw 与 ACP / Codex ACP）
+## Documentation
 
-**开发 / 设计（`docs/develop/`）**
+English is the default documentation language. Chinese mirrors use the `.zh-CN.md` suffix.
 
-- [总体架构设计](docs/develop/总体架构设计.md) · [详细设计](docs/develop/详细设计.md) · [关键技术文档](docs/develop/关键技术文档.md)
-- [易用性设计](docs/develop/易用性设计.md)（交互、用语与扩展点）
-- [需求汇总](docs/develop/需求汇总.md)
-- [开发计划与里程碑](docs/develop/开发计划与里程碑.md) · [TodoList](docs/develop/TodoList.md) · [功能测试清单](docs/develop/功能测试清单.md)
+**User and operations docs**
 
-## 技术栈
+- [Documentation Home](docs/help/README.md) / [中文](docs/help/README.zh-CN.md)
+- [User Manual](docs/help/使用说明书.md) / [中文](docs/help/使用说明书.zh-CN.md)
+- [User Guide](docs/help/普通用户使用说明.md) / [中文](docs/help/普通用户使用说明.zh-CN.md)
+- [Admin Guide](docs/help/系统管理说明书.md) / [中文](docs/help/系统管理说明书.zh-CN.md)
+- [Installation Guide](docs/help/安装部署说明.md) / [中文](docs/help/安装部署说明.zh-CN.md)
+- [Troubleshooting Q&A](docs/help/技术排查Q&A.md) / [中文](docs/help/技术排查Q&A.zh-CN.md)
+- [Agent Bridge Integration Guide](docs/help/AgentBridge接入指南.md) / [中文](docs/help/AgentBridge接入指南.zh-CN.md)
+- [RustFS Object Storage Guide](docs/help/RustFS对象存储部署说明.md) / [中文](docs/help/RustFS对象存储部署说明.zh-CN.md)
+- [kkFileView Preview Guide](docs/help/kkFileView配置说明.md) / [中文](docs/help/kkFileView配置说明.zh-CN.md)
 
-- **后端**：Python 3.13+ / FastAPI / WebSocket / SQLite（主库 + Context Store）/ Redis（可选）
-- **前端**：React / Tailwind CSS
-- **Agent**：Agent Bridge（OpenClaw / ACP provider）与 HTTP Bot
-- **部署**：Docker Compose
+**Development and design docs**
 
-## 本地开发
+- [Roadmap](docs/ROADMAP.md) / [中文](docs/ROADMAP.zh-CN.md)
+- [Architecture](docs/develop/总体架构设计.md) / [中文](docs/develop/总体架构设计.zh-CN.md)
+- [Detailed Design](docs/develop/详细设计.md) / [中文](docs/develop/详细设计.zh-CN.md)
+- [Key Technical Notes](docs/develop/关键技术文档.md) / [中文](docs/develop/关键技术文档.zh-CN.md)
+- [Open Source Release Checklist](docs/develop/开源发布检查清单.md) / [中文](docs/develop/开源发布检查清单.zh-CN.md)
 
-### 环境要求
+## Stack
 
-- Python 3.13+
-- Node.js 18+
-- SQLite 3
-- Redis 7+（可选，用于异步队列）
+- Backend: Python 3.13+, FastAPI, WebSocket, PostgreSQL, Redis, SQLAlchemy, Alembic
+- Frontend: React, TypeScript, Tailwind CSS, Vite
+- Agent runtime: built-in Coordinator, HTTP Bot, Agent Bridge provider over control/data WebSockets
+- Storage: PostgreSQL for business data and memory, S3-compatible object storage for files, optional kkFileView for complex document preview
+- Deployment: Docker Compose
 
-### 后端
+## Quick Start
+
+```bash
+cp docker-compose.yml.template docker-compose.yml
+cp .env.example .env
+
+# Before first startup, change at least ADMIN_PASSWORD, JWT_SECRET_KEY,
+# POSTGRES_PASSWORD, RUSTFS_ACCESS_KEY, and RUSTFS_SECRET_KEY.
+docker compose up -d
+```
+
+Default local endpoints:
+
+- Frontend: http://localhost
+- API: http://localhost:8000
+- Swagger: http://localhost:8000/docs
+- Health check: http://localhost:8000/health
+
+If document preview is enabled, make sure `PUBLIC_BASE_URL` is reachable from the kkFileView container. Never use `.env.example` secrets in production.
+
+## Local Development
+
+```bash
+cp docker-compose.yml.template docker-compose.yml
+cp .env.example .env
+docker compose up -d postgres redis rustfs kkfileview
 
 cd backend
-# 推荐使用 uv（基于 astral uv）进行包管理和虚拟环境管理
-uv venv          # 创建虚拟环境（首次）
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-uv sync          # 安装依赖（包括 dev 依赖）
-cp ../.env.example ../.env  # 编辑 .env 填写数据库等
+uv venv
+source .venv/bin/activate
+uv sync --extra dev
+uv run alembic upgrade head
+uv run alembic -c alembic_context.ini upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-### 前端
+```
 
 ```bash
 cd frontend
@@ -54,35 +83,23 @@ npm install
 npm run dev
 ```
 
-### 一键部署（推荐）
+## Seed Data
 
-```bash
-cp docker-compose.yml.template docker-compose.yml
-cp .env.example .env
-docker compose up -d
+With `SEED_DATA=1`, the backend creates a default workspace, a test channel, an administrator, and the built-in Coordinator Bot. Open the test channel and send:
 
-# 前端: http://localhost:80   API: http://localhost:8000
-# 默认会写入种子数据：默认工作空间、测试项目、引导 Bot（@引导）、Orchestrator（@coordinator）。打开前端进入「测试项目」，输入 @引导 怎么用 即可获取使用引导。
-# 若需手动初始化，可设环境变量 SEED_DATA=0 并见 docs/help/安装部署说明.md。
+```text
+@Coordinator how do I use this?
 ```
 
-## 验收（里程碑 1）
+## Contributing
 
-- 频道内 @bot 能正确回复
-- 上传 docx 后 Bot 能读取内容
-- 前端可登录、发消息、看历史
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
-## Roadmap
+- Work branches must target `develop`.
+- `main` only accepts merges from `develop`.
+- Run the relevant backend tests and frontend build before submitting changes.
+- Report security issues privately according to [SECURITY.md](SECURITY.md).
 
-- [x] 里程碑 1：核心链路（ChatCore + 单 Bot + 文件转 MD + 前端基础版）
-- [x] 里程碑 2：多 Agent 协作（多 Bot 串行 + MemoryManager + 管理后台）
-- [x] 里程碑 3：智能调度（Coordinator + 质量监控看板）
-- [ ] 门户阶段一：门户基础（Orchestrator 内置 + 自动接手 + Bot 澄清）
-- [ ] 门户阶段二：公共平台（公共知识/数据平台 + 访问申请 API）
-- [ ] 门户阶段三：能力发现与编排增强（skills/MCP + A2A 握手）
+## License
 
-详细里程碑规划与当前进度见 [ROADMAP.md](docs/ROADMAP.md)。
-
-## 许可证
-
-见项目仓库说明。
+MIT. See [LICENSE](LICENSE).
