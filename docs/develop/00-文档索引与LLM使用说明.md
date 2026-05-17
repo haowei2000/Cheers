@@ -1,164 +1,28 @@
-# AgentNexus 文档索引与 LLM 使用说明
+# Documentation Index and LLM Usage Guide
 
-> 本文档面向**大模型（LLM）**与自动化脚本：说明各文档的用途、术语表、以及「用户问题 → 应引用文档与章节」的映射，便于 LLM 正确检索与回答。
+> **Language**: English | [中文](00-文档索引与LLM使用说明.zh-CN.md)
 
----
+Map of user, operations, and design documents for humans and automated assistants.
 
-## 一、文档地图（帮助文档 vs 设计文档）
+This is the English default edition prepared for the open-source documentation set. The full Chinese version is preserved next to this file for readers who prefer Chinese or need the original historical wording.
 
-> **约定**：
-> - **帮助文档（HELP）**：面向终端用户、管理员、运维、OpenClaw 开发者，通过 `/manual/…` 提供网页访问，是网站上的「使用说明书体系」。
-> - **设计文档（DESIGN）**：面向架构/研发/规划，不在网站菜单中展示，可通过文件系统或直接 `/manual/文档名` 访问，供内部与 LLM 使用。
+## Key Topics
 
-### 1.1 帮助文档（HELP，网站可见）
+- Help vs design documentation
+- Canonical terminology
+- Question-to-document mapping
+- Manual URL rules
+- Bilingual documentation policy
 
-| 文档文件名 | 用途简述 | 适用问题类型 | 主要章节锚点 |
-|------------|----------|--------------|--------------|
-| **使用说明书.md** | 帮助文档总索引；按角色分流到下述类文档 | 不知道看哪份文档时 | 文档分类与适用读者、快速跳转 |
-| **普通用户使用说明.md** | 日常使用：聊天、@ Bot、上传文件 | 用户怎么用、发消息、@ 没反应（用户侧）、左侧没项目 | 一～五；§三 在项目里怎么用；§四 常见问题 |
-| **系统管理说明书.md** | 管理员：建空间/项目、加人、接 Bot、审核申请、配置 | 怎么建项目、加人、接入 Agent Bridge provider、创建 Bot、待审核申请、引导 LLM、日志配置 | 一～七；§二 创建工作空间与项目；§三 成员；§四 Agent Bridge 接入；§五 发现与自动注册；§六 速查表；日志文件 |
-| **安装部署说明.md** | 部署与首次安装：环境、Docker/本地、迁移、初始化 | 怎么安装、部署、环境要求、数据库迁移、种子数据 | 一～六；§二 Docker；§三 本地安装；§四 配置 |
-| **技术排查Q&A.md** | 故障排查：现象→原因→步骤→解决；日志与接口 | 报错、503/404、连不上、列表为空、日志在哪、如何排查 | 一～五；§二 日志与诊断；§三 现象与处理；§四 常见 Q&A |
-| **AgentBridge接入指南.md** | OpenClaw、ACP/Codex ACP 开发者与管理员：统一接入文档 | OpenClaw plugin 接入、ACP Connector 接入、Codex ACP 示例、文件/图片输入与文件回传 | 一～六；完整接入流程 |
+## Current Guidance
 
-### 1.2 设计文档（DESIGN，内部/LLM 使用）
+- Prefer the English `.md` file as the default public entry point.
+- Use the `.zh-CN.md` file as the Chinese mirror.
+- For implementation details, verify against the current code and the user/operations documentation first.
+- Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
-| 文档文件名 | 用途简述 | 适用问题类型 |
-|------------|----------|--------------|
-| **需求汇总.md** | 项目整体需求与场景梳理 | 为什么要做 AgentNexus、核心目标、主要场景 |
-| **总体架构设计.md** | 系统总体架构、技术选型 | 架构视图、组件划分、技术栈 |
-| **详细设计.md** | 模块内部设计、数据结构、接口细节 | 某模块如何实现、字段含义、接口契约 |
-| **关键技术文档.md** | 关键技术点的专门说明 | 某一关键技术/机制的设计与实现 |
-| **记忆加载与Session映射策略.md** | Bot 记忆按需加载、Agent Bridge 稳定会话映射 | Bot 为什么加载/跳过某层记忆、Agent Bridge 如何复用 provider session |
-| **AgentNexus_概要设计说明书_v2.0*.md** | 概要设计主文档及附件（架构决策、人机协作架构、LLM 规范等） | 设计背景、架构决策记录、LLM 使用规范、人机协作架构 |
-| **易用性设计.md** | 交互与易用性设计约定 | 界面约定、提示语、错误提示策略 |
-| **AgentNexus门户与知识平台设计.md** | 门户与知识平台整体设计 | 内置 Bot 体系、知识与记忆、公共平台对接 |
-| **公共平台访问申请API规范.md** | 公共平台访问申请 API 规范 | 部门 Bot 如何申请访问公共知识/数据平台 |
-| **LongBOT与AgentNexus设计比较.md** | LongBOT 与 AgentNexus 设计对比 | 设计对比与可借鉴点 |
-| **开发计划与里程碑.md**、**TodoList.md** | 版本规划与任务拆解 | 路线图、里程碑、当前开发阶段 |
+## Related Documentation
 
-**引用建议**：回答时优先引用具体文档与章节，例如「详见《系统管理说明书》§二」「见《技术排查Q&A》§二 日志与诊断」。
-
----
-
-## 二、术语表（统一表述）
-
-LLM 在回答中应使用以下统一术语，与文档内表述一致。
-
-| 术语 | 含义 | 备注 |
-|------|------|------|
-| **工作空间（Workspace）** | 顶层组织容器；创建项目前必须先有工作空间 | 对应 API/DB：workspace_id |
-| **项目 / 频道（Channel）** | 协作单元，用户在此聊天、@ Bot、发文件 | 用户面称「项目」，API/DB 称 channel，channel_id 即项目 ID |
-| **成员** | 项目内的用户（user）或 Bot（bot）；须被「加入」项目后才在该项目生效 | member_id 为 user_id 或 bot_id |
-| **Bot** | 可被 @ 的 AI 助手；每个 Bot 有唯一 bot_id 与 username（@ 时使用的名字） | 统一内置 Bot 的 username 为 `channel bot`，bot_id 为 `bot-helper-001` |
-| **内置 Bot** | 系统自带的 Bot，如Helper Bot、Orchestrator | 可 @ 部门 Bot 或人类；详见《AgentNexus门户与知识平台设计》§二 |
-| **外部 Bot / 部门 Bot** | 部门注册的 OpenClaw 实例 | 仅可 @ 人类，不可 @ 另一个 Bot |
-| **Orchestrator** | 系统内置的业务问答 Bot，可建议 @ 部门 Bot | 可配置：必须 @ 才回答，或直接回答未 @ 的问题 |
-| **@channel bot** | 在消息中 @ 内置统一 Bot，用于使用引导、澄清表单、路由建议 | 仅当内置 Bot 已加入当前项目时有效 |
-| **Agent Bridge 配置** | 外部 provider 通过 control/data WebSocket 反向连接 AgentNexus | OpenClaw 与 ACP Connector 都是 provider |
-| **API 基础地址** | 后端服务根 URL，默认 `http://localhost:8000` | 文档中示例均以此为准，实际部署需替换 |
-| **前端地址** | 用户打开的网页；Docker 默认 80，本地开发 5173 | 与后端 8000 分离 |
-| **管理** | 前端左侧入口，内含创建项目、添加成员、创建 Bot 等 | 无独立管理后台，与用户同前端 |
-
----
-
-## 三、锚点与 URL 规则（LLM 必须遵循）
-
-为确保 LLM 返回的文档链接可点击并定位，统一使用 `/manual/<文档名>#<锚点>`。
-
-- **标题锚点自动生成规则**：
-  - 转小写（仅影响英文）；
-  - 空白字符替换为 `-`；
-  - 去掉特殊字符（保留中文、英文小写、数字、`-`）。
-- **推荐输出格式**：`/manual/系统管理说明书#二如何创建工作空间与项目`
-- **新页面打开**：前端消息链接会以新标签页打开，点击后直接定位到对应章节。
-
-示例：
-
-```markdown
-## 安装步骤
-## API 参考
-## 常见问题 FAQ
-
-[跳转到安装步骤](#安装步骤)
-[跳转到API参考](#api-参考)
-[跳转到FAQ](#常见问题-faq)
-```
-
----
-
-## 四、问题类型 → 文档与章节映射
-
-以下为典型用户/管理员问题与应引用的文档位置，供 LLM 快速定位。
-
-| 用户问题或意图 | 推荐引用 |
-|----------------|----------|
-| 怎么用、怎么发消息、怎么 @ Bot、上传文件 | 《普通用户使用说明》§三 在项目里怎么用 |
-| 左侧没有项目、看不到项目列表 | 《普通用户使用说明》§二、§四；《系统管理说明书》§二（需先建工作空间与项目） |
-| @ Bot 没反应 | 《普通用户使用说明》§四；《技术排查Q&A》§三 表：@ Bot 无回复 |
-| 问答列表太长、如何折叠/展开问题、怎么导出/总结问答 | 《普通用户使用说明》§3.4 问答折叠、导出与总结 |
-| 怎么创建项目、怎么建工作空间 | 《系统管理说明书》§二 如何创建工作空间与项目 |
-| 怎么加人、怎么把别人/Bot 加进项目 | 《系统管理说明书》§三 如何管理项目成员；聊天内 @ 邀请 Bot 见《普通用户使用说明》§3.2.1 |
-| 怎么把 Bot 拉进群、聊天加 Bot、@ 没在群里 | 《普通用户使用说明》§3.2.1 在聊天里把 Bot 拉进群； 可回答 |
-| 怎么接入 OpenClaw、怎么注册 Agent Bridge Bot | 《AgentBridge接入指南》§三；《系统管理说明书》§四 |
-| 怎么接入 ACP / Codex ACP、怎么传图片或返回文件 | 《AgentBridge接入指南》§四；《系统管理说明书》§四 |
-| 外部 provider 怎么发现并自动注册 | 《AgentBridge接入指南》§二；《系统管理说明书》§五 |
-| 怎么安装、怎么部署、环境要求 | 《安装部署说明》§一 环境、§二 Docker、§三 本地安装 |
-| Orchestrator、Helper Bot、自动接手、Bot 层级 | 《AgentNexus门户与知识平台设计》§二 内置 Bot 体系 |
-| Orchestrator 是什么、怎么用、直接回答、@coordinator | 《普通用户使用说明》§3.0.1； 可回答 |
-| Orchestrator 配置、直接回答、自动接手 | 《系统管理说明书》「Orchestrator 配置」 |
-| Bot 记忆加载策略、memory_load 调试、Agent Bridge session 映射 | 《记忆加载与Session映射策略》 |
-| 资源监控、任务统计、性能监控 | 《系统管理说明书》「资源监控」；GET /api/tasks/stats |
-| 如何申请公共平台访问、申请 API | 《公共平台访问申请API规范》； 可回答此问题 |
-| 数据库迁移、首次初始化、种子数据 | 《安装部署说明》§2.2/§3.3 迁移、§2.3/§3.4 初始化 |
-| 报错、503、404、连不上、列表为空 | 《技术排查Q&A》§三 故障现象与处理、§四 常见 Q&A |
-| 日志在哪、怎么查错误、error.log | 《技术排查Q&A》§二 日志与诊断；《系统管理说明书》日志文件小节 |
-| 健康检查、API 文档地址 | 《技术排查Q&A》§二；《系统管理说明书》管理员入口地址表 |
-|  没反应、Helper Bot 不回复 | 《系统管理说明书》「 无反应时如何排查」；《技术排查Q&A》@ Bot 无回复 |
-| Helper Bot 用本地 LLM 配置 | 《系统管理说明书》「Helper Bot 使用本地 LLM（可选）」 |
-
----
-
-## 五、关键入口与路径（速查）
-
-便于 LLM 直接给出可操作的地址或命令。
-
-| 项目 | 值 |
-|------|-----|
-| 前端（用户/管理同入口） | Docker：`http://localhost:80`；本地开发：`http://localhost:5173` |
-| 后端 API 根地址 | 默认 `http://localhost:8000` |
-| API 文档（Swagger） | `http://localhost:8000/docs` |
-| 健康检查 | `GET http://localhost:8000/health`，正常返回 `{"status":"ok"}` |
-| OpenClaw 发现与注册指南（机器可读） | `GET http://localhost:8000/api/public/agentnexus-discovery` |
-| 后端日志目录（默认） | 相对 backend：`data/logs`；通用日志 `agentnexus.log`，仅错误 `error.log` |
-| 内置 channel bot 的 bot_id | `bot-helper-001`（加入项目时添加成员填此 ID，类型选 bot） |
-| 协调者 username | `channel bot`（统一内置协作入口） |
-| 数据库迁移命令 | 在 backend 目录：`alembic upgrade head`；Docker：`docker compose exec backend sh -c "cd /app && alembic upgrade head"` |
-| 种子数据（创建测试项目与 ） | 启动时 `SEED_DATA=1` 或执行：`cd backend && python -m app.db.seed` |
-| 资源监控 API | `GET http://localhost:8000/api/tasks/stats?limit_days=7` |
-
----
-
-## 六、文档内章节编号约定
-
-- **普通用户使用说明**：一（概念）、二（打开并进入项目）、三（在项目里怎么用）、四（常见问题）、五（相关文档）。
-- **系统管理说明书**：一（概念）、二（工作空间与项目）、三（成员）、四（Agent Bridge 接入）、五（发现与自动注册）、六（管理操作速查）、七（相关文档）；各节内 2.1、2.2 等子节。
-- **安装部署说明**：一（环境）、二（Docker）、三（本地安装）、四（配置）、五（部署后检查）、六（相关文档）。
-- **技术排查Q&A**：一（故障现象与处理表）、二（日志与错误码/诊断）、三（现象与处理）、四（常见技术 Q&A）、五（相关文档）。
-
-引用时使用「§二」「§三 表」「§四 Q」等，与各文档内标题一致。
-
----
-
-## 七、相关文档
-
-- [使用说明书](使用说明书.md)（总索引）
-- [普通用户使用说明](普通用户使用说明.md)
-- [系统管理说明书](系统管理说明书.md)
-- [AgentBridge接入指南](../help/AgentBridge接入指南.md)（OpenClaw 与 ACP / Codex ACP 快速接入）
-- [安装部署说明](安装部署说明.md)
-- [技术排查Q&A](技术排查Q&A.md)
-- [AgentNexus门户与知识平台设计](AgentNexus门户与知识平台设计.md)（门户定位、内置 Bot、分阶段实现）
-- [记忆加载与Session映射策略](记忆加载与Session映射策略.md)（Bot 记忆按需加载、Agent Bridge 稳定会话映射）
-- [公共平台访问申请API规范](公共平台访问申请API规范.md)（阶段二参考，Helper Bot 可引用）
-- [LongBOT与AgentNexus设计比较](LongBOT与AgentNexus设计比较.md)（设计对比与借鉴）
+- [Documentation Home](../help/README.md)
+- [User Manual](../help/使用说明书.md)
+- [Roadmap](../ROADMAP.md)

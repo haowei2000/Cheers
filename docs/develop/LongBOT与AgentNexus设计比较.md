@@ -1,49 +1,26 @@
-# LongBOT 与 AgentNexus 设计比较
+# LongBOT and AgentNexus Design Comparison
 
-> 基于 LongBOT（longbot-system）介绍文档与 AgentNexus 设计文档的对比分析，提炼可借鉴点。LongBOT 仓库：https://www.gitcc.com/xujinrang/longbot-system
+> **Language**: English | [中文](LongBOT与AgentNexus设计比较.zh-CN.md)
 
----
+Comparison notes between LongBOT ideas and AgentNexus design choices.
 
-## 一、产品定位对比
+This is the English default edition prepared for the open-source documentation set. The full Chinese version is preserved next to this file for readers who prefer Chinese or need the original historical wording.
 
-| 维度 | LongBOT（龙虾管理平台） | AgentNexus（智枢协作平台） |
-|------|------------------------|----------------------------|
-| **核心定位** | 企业级 AI 员工（龙虾）管理、分发与规模化复制平台 | OpenClaw 门户，多 Agent 人机协作聊天平台 |
-| **价值主张** | 将 AI 能力以「龙虾」形式分发给岗位/部门，集中管理、提高效率 | 让普通用户通过聊天界面调度多个 AI 专家 Bot，能力上浮形成跨部门服务 |
-| **隐喻/概念** | 「龙虾」= AI 员工，场景化命名（发票龙虾、招聘龙虾、管理龙虾） | 「智枢」= 多智能体与人类协作的枢纽 |
-| **目标用户** | 企业（财务、HR、综合等岗位） | 项目团队、低计算机能力用户 |
+## Key Topics
 
----
+- Memory strategy comparison
+- Agent orchestration comparison
+- Practical implementation differences
 
-## 二、功能与能力对比
+## Current Guidance
 
-| 功能 | LongBOT | AgentNexus |
-|------|---------|------------|
-| **AI 能力分发** | 将龙虾授权给岗位、部门 | 将 Bot 加入频道，@ 提及调用；部门 Bot 能力上浮 |
-| **集中管理** | 集中管理龙虾、资源管理 | 管理后台 Bot 与频道管理、向导式配置 |
-| **复制/模板** | 复制龙虾、岗位能力建模、规模化复制 | Bot 模板、SOUL.md 配置 |
-| **RPA 融合** | 智能 RPA：跨系统流程自动化，决策→动作闭环 | 无显式 RPA，依赖 OpenClaw 工具能力 |
-| **记忆/上下文** | 未在介绍中详述 | 四层记忆（ANCHOR/DECISIONS/FILES_INDEX/RECENT） |
-| **知识平台** | 未详述 | 公共知识平台 + 部门私有知识库（阶段二） |
-| **协作形态** | 岗位/部门级，偏任务自动化 | 频道/项目级，聊天 + @ 提及 + 多 Bot 协作 |
+- Prefer the English `.md` file as the default public entry point.
+- Use the `.zh-CN.md` file as the Chinese mirror.
+- For implementation details, verify against the current code and the user/operations documentation first.
+- Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
----
+## Related Documentation
 
-## 三、可借鉴点与采纳情况
-
-| 可借鉴点 | 采纳情况 | 说明 |
-|----------|----------|------|
-| 趣味化命名降低心理门槛 | 暂不采纳 | 可继续讨论 |
-| 岗位/部门级授权与规模化复制 | 暂不采纳 | 可继续讨论 |
-| 智能 RPA 与决策→动作闭环 | 暂不采纳 | 可继续讨论 |
-| 即用工具生态与快速接入 | 暂不采纳 | 可继续讨论 |
-| **资源监控** | **采纳** | 门户阶段一纳入资源监控基础版 |
-| **对齐 OpenClaw 设计** | **采纳** | Lane Queue、上下文守护、记忆等设计继续对齐 |
-
----
-
-## 四、相关文档
-
-- [AgentNexus 门户与知识平台设计](AgentNexus门户与知识平台设计.md)
-- [AgentNexus 概要设计说明书](AgentNexus_概要设计说明书_v2.0.md)
-- [开发计划与里程碑](开发计划与里程碑.md)
+- [Documentation Home](../help/README.md)
+- [User Manual](../help/使用说明书.md)
+- [Roadmap](../ROADMAP.md)

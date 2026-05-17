@@ -1,579 +1,571 @@
-# AgentNexus 面向工业软件的竞品分析
+# AgentNexus Competitive product analysis for industrial software
 
-调研日期：2026-05-13
+> **Language**: English | [中文](AgentNexus_工业软件竞品分析.zh-CN.md)
 
-## 1. 结论摘要
+Survey date: 2026-05-13
 
-AgentNexus 如果面向工业软件，不应简单对标 Slack、Slock 或通用企业协作软件，而应放在“工业 AI Agent / 工业 Copilot / 工业智能体协作中台”这个赛道中比较。
+## 1. Conclusion Summary
 
-目前市场上已经出现大量工业 AI Copilot 产品，但它们多数是嵌入在既有工业软件体系中的垂直能力，例如自动化工程、设备维护、工业数据分析、MES、一线作业指导、资产绩效管理等。真正像 AgentNexus 这样以“频道协作 + 多 Bot 编排 + 项目记忆 + 外部 Agent 接入”为核心的产品还不多。
+If AgentNexus is oriented towards industrial software, it should not simply benchmark against Slack, Slock or general enterprise collaboration software, but should be compared in the track of "Industrial AI Agent/Industrial Copilot/Industrial Intelligence Collaboration Platform".
 
-因此，AgentNexus 的差异化机会在于：
+There are currently a large number of industrial AI Copilot products on the market, but most of them are vertical capabilities embedded in existing industrial software systems, such as automation engineering, equipment maintenance, industrial data analysis, MES, front-line operation guidance, asset performance management, etc. There are not many products that truly focus on "channel collaboration + multi-bot orchestration + project memory + external agent access" like AgentNexus.
 
-- 做工业企业内部的多 Agent 协作入口，而不是单点 Copilot。
-- 做跨 MES、ERP、SCADA、CMMS、QMS、LIMS、知识库的数据与智能体连接层。
-- 用频道记忆沉淀项目上下文、决策、文件、过程记录，而不是只做一次性问答。
-- 通过 OpenClaw / Agent Bridge / WebSocket Bot 接入外部工业智能体。
-- 支持私有化部署、二次开发和行业模板化交付。
+Therefore, the differentiation opportunities for AgentNexus are:
 
-建议定位为：
+- Create a multi-Agent collaboration portal within industrial enterprises instead of a single point of Copilot.
+- Create data and agent connection layers across MES, ERP, SCADA, CMMS, QMS, LIMS, and knowledge bases.
+- Use channel memory to store project context, decisions, documents, and process records instead of just doing one-time questions and answers.
+- Connect to external industrial agents through OpenClaw / Agent Bridge / WebSocket Bot.
+- Support privatized deployment, secondary development and industry template delivery.
 
-> AgentNexus 是面向工业企业私有化场景的多 Agent 协作中台，将项目频道、工业知识库、文件资料、业务 Bot、外部 Agent、任务执行和过程记忆统一到一个可持续协作空间。
+Recommended positioning is:
 
-## 2. 竞品总览
+> AgentNexus is a multi-Agent collaboration platform for industrial enterprise privatization scenarios. It unifies project channels, industrial knowledge bases, documents, business Bots, external Agents, task execution and process memory into a sustainable collaboration space.
 
-| 产品 | 公司/生态 | 工业定位 | 与 AgentNexus 的重叠点 | 主要差异 |
+## 2. Overview of competitive products
+
+| Products | Company/Ecosystem | Industrial Positioning | Overlap with AgentNexus | Main Differences |
 | --- | --- | --- | --- | --- |
-| Siemens Industrial Copilot / Industrial AI Agents | Siemens | 工业全生命周期 Copilot，覆盖设计、计划、工程、运营、服务 | 多 Agent、工业流程自动化、外部工具调用、Orchestrator 思路 | 深度绑定 Siemens Xcelerator、TIA Portal、NX、Insights Hub；AgentNexus 更开放、更偏协作中台 |
-| Cognite Atlas AI | Cognite | 基于 Cognite Data Fusion 的工业 AI Agent 工作台 | 创建和管理工业 Agent，接入工业知识图谱和工具 | 更偏工业数据底座与知识图谱；AgentNexus 更偏频道协作、项目记忆和 Bot 编排 |
-| AVEVA Industrial AI Assistant | AVEVA | 工程设计、工业数据和项目知识助手 | 工业知识问答、工程协作、项目知识沉淀 | 深嵌 AVEVA Unified Engineering / CONNECT；AgentNexus 更通用、可私有化二开 |
-| Rockwell FactoryTalk Design Studio Copilot | Rockwell Automation | 面向自动化工程师的 PLC / Logix 设计 Copilot | 多用户协作、自然语言生成和解释控制代码 | 专注自动化控制设计；AgentNexus 可覆盖更广的项目、知识库和多 Bot 协作 |
-| ABB Genix Copilot / APM Copilot | ABB | 资产绩效、预测维护、工业运营洞察 | 自然语言查询、异常分析、维护建议、工作流动作 | 更偏 APM / 资产管理；AgentNexus 可作为跨系统协作入口 |
-| Tulip AI / Frontline Copilot | Tulip | 面向一线制造运营的 AI-native 平台 | 一线作业、质量、生产追踪、AI Agent、自然语言分析 | 更像可组合 MES / 一线应用平台；AgentNexus 更像 AI 协作与 Agent 中台 |
-| Augmentir / Augie | Augmentir | AI Connected Worker 平台 | 工业知识助手、AI Agent Studio、作业指导、培训、质量/安全/维护 | 强在一线工人流程和技能管理；AgentNexus 强在多人多 Bot 对话协作 |
-| C3 Generative AI | C3 AI | 企业级/工业级生成式 AI 与 Agent 编排平台 | Agent 检索、分析、洞察、流程编排 | 更偏大型企业 AI 应用平台；AgentNexus 更轻、更适合自研集成 |
-| IFS Loops Industrial Digital Workers | IFS | 工业数字员工 / Agentic AI 平台 | 多系统工作流、自治执行、治理、审计 | 更偏 ERP/EAM/FSM 场景中的数字员工；AgentNexus 更偏协作空间和 Bot 生态 |
-| Nexus Intelligence | Nexus Intelligence | 工厂 Ops Agents，连接 PLC/MES/SCADA/CMMS/ERP | 工厂现场 Agent、监控、分析、建议与动作 | 更垂直工厂运营；AgentNexus 更通用、可扩展到项目交付和知识协作 |
-| supOS / supOS X AI 工厂操作系统 | 蓝卓 | 工业操作系统、工业数据底座、工业 APP 与 AI 工厂能力 | 工业数据接入、低代码、工业 APP、AI 技术底座、多 Agent 协同方向 | 更偏工业操作系统和工业 APP 生态；AgentNexus 更偏 AI 协作入口和智能体调度 |
+| Siemens Industrial Copilot / Industrial AI Agents | Siemens | Industrial life cycle Copilot, covering design, planning, engineering, operation, service | Multi-Agent, industrial process automation, external tool calling, Orchestrator ideas | Deep binding to Siemens Xcelerator, TIA Portal, NX, Insights Hub; AgentNexus is more open and more collaborative middle platform |
+| Cognite Atlas AI | Cognite | Industrial AI Agent workbench based on Cognite Data Fusion | Create and manage industrial Agents, access industrial knowledge graphs and tools | More focused on industrial data base and knowledge graph; AgentNexus is more focused on channel collaboration, project memory and Bot orchestration |
+| AVEVA Industrial AI Assistant | AVEVA | Engineering design, industrial data and project knowledge assistant | Industrial knowledge Q&A, engineering collaboration, project knowledge accumulation | Deeply embedded in AVEVA Unified Engineering / CONNECT; AgentNexus is more versatile and can be privatized |
+| Rockwell FactoryTalk Design Studio Copilot | Rockwell Automation | PLC/Logix design for automation engineers Copilot | Multi-user collaboration, natural language generation and interpretation of control code | Focus on automation control design; AgentNexus can cover a wider range of projects, knowledge bases and multi-Bot collaboration |
+| ABB Genix Copilot / APM Copilot | ABB | Asset performance, predictive maintenance, industrial operation insights | Natural language query, exception analysis, maintenance recommendations, workflow actions | More biased towards APM / asset management; AgentNexus can be used as a cross-system collaboration portal |
+| Tulip AI / Frontline Copilot | Tulip | AI-native platform for front-line manufacturing operations | Front-line operations, quality, production tracking, AI Agent, natural language analysis | More like a composable MES / front-line application platform; AgentNexus is more like AI collaboration and Agent middle platform || Augmentir / Augie | Augmentir | AI Connected Worker Platform | Industrial knowledge assistant, AI Agent Studio, job guidance, training, quality/safety/maintenance | Strong in front-line worker process and skill management; AgentNexus is strong in multi-person and multi-Bot dialogue collaboration |
+C3 Generative AI
+| IFS Loops Industrial Digital Workers | IFS | Industrial Digital Workers / Agentic AI Platform | Multi-system workflow, autonomous execution, governance, auditing | More focused on digital workers in ERP/EAM/FSM scenarios; AgentNexus is more focused on collaboration space and Bot ecosystem |
+| Nexus Intelligence | Nexus Intelligence | Factory Ops Agents, connected to PLC/MES/SCADA/CMMS/ERP | Factory site Agents, monitoring, analysis, recommendations and actions | More vertical factory operations; AgentNexus is more versatile and scalable to project delivery and knowledge collaboration |
+| supOS / supOS
 
-## 3. 重点竞品分析
+## 3. Analysis of key competitive products
 
 ### 3.1 Siemens Industrial Copilot / Industrial AI Agents
 
-Siemens 是工业 AI Agent 方向最值得关注的标杆之一。它已经明确提出 Industrial Copilot 背后由工业 AI Agents 支撑，并引入 Orchestrator、第三方 Agent 生态、Xcelerator Marketplace 等概念。
+Siemens is one of the most noteworthy benchmarks in the direction of industrial AI agents. It has clearly stated that Industrial Copilot is supported by industrial AI Agents, and introduced concepts such as Orchestrator, third-party Agent ecosystem, and Xcelerator Marketplace.
 
-其覆盖范围包括：
+Its coverage includes:
 
-- Design Copilot：产品设计、CAD、NX 场景。
-- Planning Copilot：生产计划、资源分配、排程优化。
-- Engineering Copilot：自动化工程、TIA Portal、SCL 代码生成。
-- Operations Copilot：工厂运营洞察、设备数据问答、错误处理指导。
-- Services / Maintenance Copilot：维护诊断、预测性维护、维修建议。
+- Design Copilot: Product design, CAD, NX scenarios.
+- Planning Copilot: production planning, resource allocation, and schedule optimization.
+- Engineering Copilot: Automation engineering, TIA Portal, SCL code generation.
+- Operations Copilot: Factory operation insights, equipment data Q&A, and error handling guidance.
+- Services/Maintenance Copilot: Maintenance diagnostics, predictive maintenance, repair recommendations.
 
-对 AgentNexus 的启发：
+Inspiration for AgentNexus:
 
-- “Copilot 是用户入口，Agent 是后台能力”的设计非常适合作为 AgentNexus 的产品叙事。
-- AgentNexus 可以把频道作为 Copilot 入口，把外部 Bot/Agent 作为后台可编排能力。
-- Siemens 的强项是工业软件生态绑定，AgentNexus 的机会是跨系统、跨供应商、可私有化。
+- The design of "Copilot is the user portal, Agent is the backend capability" is very suitable as the product narrative of AgentNexus.
+- AgentNexus can use channels as Copilot entrances and external Bots/Agents as background orchestration capabilities.
+- Siemens' strength is industrial software ecosystem binding, and AgentNexus's opportunities are cross-system, cross-vendor, and privatizable.
 
 ### 3.2 Cognite Atlas AI
 
-Cognite Atlas AI 是一个工业 AI Agent 工作台，基于 Cognite Data Fusion。它强调：
+Cognite Atlas AI is an industrial AI Agent workbench based on Cognite Data Fusion. It emphasizes:
 
-- 创建和管理工业 AI Agent。
-- Agent 可使用生成式 AI、语言模型、提示词指令、工业工具。
-- Agent 可访问 CDF 中的工业数据和知识图谱。
-- 提供示例 Agent 模板和低代码创建能力。
+- Create and manage industrial AI agents.
+- Agent can use generative AI, language models, prompt word instructions, and industrial tools.
+- Agent can access industrial data and knowledge graph in CDF.
+- Provides sample Agent templates and low-code creation capabilities.
 
-它与 AgentNexus 的重合度较高，尤其是在 Agent 创建、Agent 模板、工业数据访问、低代码配置方面。
+It has a high degree of overlap with AgentNexus, especially in terms of Agent creation, Agent templates, industrial data access, and low-code configuration.
 
-差异在于：
+The difference is:
 
-- Cognite 的核心底座是工业数据和知识图谱。
-- AgentNexus 的核心底座是协作空间、频道记忆和 Bot 编排。
-- 如果 AgentNexus 打通 RAGFlow、NL2SQL、MES 数据、设备数据，就可以形成类似 Atlas AI 的轻量替代方案。
+- The core foundation of Cognite is industrial data and knowledge graph.
+- The core foundation of AgentNexus is collaboration space, channel memory and bot orchestration.
+- If AgentNexus connects RAGFlow, NL2SQL, MES data, and device data, it can form a lightweight alternative similar to Atlas AI.
 
-### 3.3 AVEVA Industrial AI Assistant
+### 3.3 AVEVA Industrial AI AssistantAVEVA's industrial AI Assistant is mainly embedded in the Unified Engineering and CONNECT platforms, focusing on engineering design, project engineering, industrial data query and knowledge reuse.
 
-AVEVA 的工业 AI Assistant 主要嵌入在 Unified Engineering 和 CONNECT 平台中，重点面向工程设计、项目工程、工业数据查询和知识复用。
+Typical capabilities include:
 
-典型能力包括：
+- Engineering project information Q&A.
+- Industrial Data Q&A.
+- Project knowledge capture and dissemination.
+- Generative design assistance.
+- Predictive design and intelligent processing of point clouds.
 
-- 工程项目资料问答。
-- 工业数据问答。
-- 项目知识捕获与传播。
-- 生成式设计辅助。
-- 预测式设计和点云智能处理。
+Inspiration for AgentNexus:
 
-对 AgentNexus 的启发：
-
-- 工业项目交付过程中的文档、方案、会议纪要、变更记录、设备资料，可以沉淀为频道记忆。
-- AgentNexus 可为实施顾问、项目经理、客户方 IT/OT 人员提供统一协作入口。
-- 与 AVEVA 相比，AgentNexus 不应只做工程设计助手，而应做“项目协作 + 智能体调度”。
+- Documents, plans, meeting minutes, change records, and equipment information during the delivery of industrial projects can be stored as channel memories.
+- AgentNexus can provide a unified collaboration portal for implementation consultants, project managers, and client IT/OT personnel.
+- Compared with AVEVA, AgentNexus should not only be an engineering design assistant, but should be a "project collaboration + agent scheduling".
 
 ### 3.4 Rockwell FactoryTalk Design Studio Copilot
 
-Rockwell 的 FactoryTalk Design Studio Copilot 专注自动化工程开发，尤其是 Logix / PLC 控制设计。
+Rockwell's FactoryTalk Design Studio Copilot focuses on automation engineering development, specifically Logix/PLC control design.
 
-能力包括：
+Capabilities include:
 
-- 自然语言生成 PLC 代码。
-- 解释现有控制逻辑。
-- 排查代码和工程错误。
-- 云端多用户协同设计。
-- 从云端部署到控制器或仿真环境。
+- Natural language generation of PLC code.
+- Explain existing control logic.
+- Troubleshoot code and engineering errors.
+- Multi-user collaborative design in the cloud.
+- Deploy from the cloud to a controller or simulation environment.
 
-对 AgentNexus 的启发：
+Inspiration for AgentNexus:
 
-- 可构建“自动化工程 Bot”或“PLC 代码审查 Bot”。
-- 可在频道中完成代码解释、设计评审、问题追踪、变更沉淀。
-- AgentNexus 不需要直接替代 FactoryTalk，而是可作为工程团队围绕项目沟通和 AI 协作的上层空间。
+- Can build "Automation Engineering Bot" or "PLC Code Review Bot".
+- Code explanation, design review, issue tracking, and change precipitation can be completed in the channel.
+- AgentNexus does not need to be a direct replacement for FactoryTalk, but rather serves as a top-level space for engineering teams to communicate and collaborate on AI around projects.
 
 ### 3.5 ABB Genix Copilot / APM Copilot
 
-ABB Genix Copilot 重点面向资产绩效管理、预测维护和工业运营优化。
+ABB Genix Copilot focuses on asset performance management, predictive maintenance and industrial operations optimization.
 
-能力包括：
+Capabilities include:
 
-- 自然语言查询设备和资产状态。
-- 结合实时数据、预测模型和维护记录进行诊断。
-- 辅助根因分析。
-- 生成维护建议。
-- 在 APM 工作流中触发后续动作。
+- Natural language query for equipment and asset status.
+- Diagnostics using a combination of real-time data, predictive models and maintenance records.
+- Assist root cause analysis.
+- Generate maintenance recommendations.
+- Trigger follow-up actions in APM workflows.
 
-对 AgentNexus 的启发：
+Inspiration for AgentNexus:
 
-- 可设计“设备维护 Bot”“预测维护 Bot”“异常根因分析 Bot”。
-- 支持从设备报警、维修记录、OEE、停机原因中生成可解释分析。
-- AgentNexus 可作为维护问题跨班组、跨部门协作空间。
+- "Equipment Maintenance Bot", "Predictive Maintenance Bot" and "Abnormal Root Cause Analysis Bot" can be designed.
+- Supports generating explainable analysis from equipment alarms, maintenance records, OEE, and shutdown reasons.
+- AgentNexus can be used as a cross-team and cross-department collaboration space for maintenance issues.
 
 ### 3.6 Tulip AI / Frontline Copilot
 
-Tulip 是面向一线制造运营的可组合平台，近年明显转向 AI-native 和 Agentic Operations。
+Tulip is a composable platform for front-line manufacturing operations, with a clear shift to AI-native and Agentic Operations in recent years.
 
-能力包括：
+Capabilities include:
 
-- 一线作业应用构建。
-- 质量检查、生产追踪、电子批记录、工位指导。
-- 通过 AI 将 SOP、文档和图片转为应用或流程。
-- 自然语言查询生产数据并生成图表和报告。
-- AI Agents 支持预测维护、缺陷识别、资源平衡等场景。
+- Front-line operation application construction.
+- Quality inspection, production tracking, electronic batch records, workstation guidance.
+- Turn SOPs, documents and images into applications or processes through AI.
+- Natural language queries production data and generate charts and reports.
+- AI Agents support scenarios such as predictive maintenance, defect identification, resource balancing, etc.
 
-对 AgentNexus 的启发：
+Inspiration for AgentNexus:
 
-- AgentNexus 可以补充“生产统计员 Bot”“质量分析 Bot”“班组日报 Bot”。
-- 可将频道与工单、批次、产线、设备、质量事件绑定。
-- 与 Tulip 相比，AgentNexus 更适合作为协作和知识中台，而不是直接承担一线 MES 执行。
+- AgentNexus can supplement "Production Statistician Bot", "Quality Analysis Bot" and "Team Daily Bot".
+- Channels can be bound to work orders, batches, production lines, equipment, and quality events.
+- Compared with Tulip, AgentNexus is more suitable as a collaboration and knowledge middle platform, rather than directly undertaking front-line MES execution.
 
 ### 3.7 Augmentir / Augie
 
-Augmentir 是 AI Connected Worker 平台，面向一线工人的培训、作业指导、技能管理、维护、质量、安全和协作。
+Augmentir is an AI Connected Worker platform for frontline worker training, job guidance, skills management, maintenance, quality, safety and collaboration.
 
-能力包括：
+Capabilities include:
 
-- AI Agent Studio，用 no-code 创建工业 Agent。
-- Augie 工业生成式 AI 助手。
-- 从 Excel、Word、PDF、图片、视频生成标准作业流程。
-- 作业指导、培训、故障排查。
-- 技能管理和一线绩效洞察。
+- AI Agent Studio, create industrial agents with no-code.
+- Augie, a generative AI assistant for industry.
+- Generate standard operating procedures from Excel, Word, PDF, pictures, and videos.
+- Operation guidance, training, troubleshooting.
+- Skills management and frontline performance insights.
 
-对 AgentNexus 的启发：
+Inspiration for AgentNexus:
 
-- AgentNexus 可引入工业 Bot 模板市场。
-- 可将技能、岗位、SOP、作业指导文档作为 Bot 知识源。
-- 可支持项目交付场景中的“培训助手”“现场实施助手”“操作手册问答助手”。
+- AgentNexus can introduce the industrial Bot template market.
+- Skills, positions, SOPs, and work instruction documents can be used as Bot knowledge sources.
+- Can support "Training Assistant", "On-site Implementation Assistant" and "Operation Manual Q&A Assistant" in project delivery scenarios.
 
 ### 3.8 C3 Generative AI
 
-C3 Generative AI 是大型企业级生成式 AI 平台，强调 Agent 检索、分析、洞察和流程编排。
+C3 Generative AI is a large-scale enterprise-level generative AI platform that emphasizes Agent retrieval, analysis, insight, and process orchestration.Capabilities include:
 
-能力包括：
+- Retrieval and analysis across enterprise data sources.
+- Pre-built AI applications for manufacturing, oil and gas, utilities and more.
+- Agent orchestration and execution of complex workflows.
+- Source verification, human review, and enterprise security governance.
 
-- 跨企业数据源检索和分析。
-- 面向制造、油气、公用事业等行业的预构建 AI 应用。
-- Agent 编排和复杂工作流执行。
-- 来源验证、人审、企业安全治理。
+Inspiration for AgentNexus:
 
-对 AgentNexus 的启发：
-
-- C3 的强项是企业级治理、行业应用和大客户交付。
-- AgentNexus 可借鉴其“行业预构建 Agent + 自定义 Agent”的组合。
-- AgentNexus 更适合轻量私有化、项目级协作和快速二开。
+- C3’s strengths are enterprise-level governance, industry applications and key account delivery.
+- AgentNexus can draw on its combination of “industry pre-built Agents + custom Agents”.
+-AgentNexus is more suitable for lightweight privatization, project-level collaboration and rapid deployment.
 
 ### 3.9 IFS Loops Industrial Digital Workers
 
-IFS Loops 强调工业数字员工，面向工业企业中的多系统业务流程执行。
+IFS Loops emphasizes the industrial digital workforce and is geared toward multi-system business process execution in industrial enterprises.
 
-能力包括：
+Capabilities include:
 
-- Digital Workers 执行复杂多系统工作流。
-- Agent Studio 配置、测试、部署和监控数字员工。
-- 上下文感知、治理、审批、审计。
-- 适配任务包括供应链、现场服务、资产管理等。
+- Digital Workers execute complex multi-system workflows.
+- Agent Studio Configure, test, deploy and monitor digital workers.
+- Context awareness, governance, approvals, auditing.
+- Adaptation tasks include supply chain, field service, asset management, etc.
 
-对 AgentNexus 的启发：
+Inspiration for AgentNexus:
 
-- AgentNexus 的 Bot 不应只回答问题，还应逐步具备任务执行能力。
-- 任务执行必须配套权限、审批、人审和审计。
-- “Bot 处理进度 + 人工确认 + 频道沉淀”可以成为 AgentNexus 的核心闭环。
+- AgentNexus' Bot should not only answer questions, but also gradually become capable of executing tasks.
+- Task execution must be supported by authority, approval, human review and audit.
+- "Bot processing progress + manual confirmation + channel precipitation" can become the core closed loop of AgentNexus.
 
 ### 3.10 Nexus Intelligence
 
-Nexus Intelligence 面向工厂 Ops Agents，强调连接 PLC、MES、SCADA、CMMS、ERP 等现场系统。
+Nexus Intelligence is geared toward factory Ops Agents, emphasizing connecting field systems such as PLC, MES, SCADA, CMMS, ERP, and more.
 
-能力包括：
+Capabilities include:
 
-- 工厂运营、维护和控制相关 AI 助手。
-- 持续监控 PLC、Historian、CMMS 历史等数据。
-- 分析上下文，建议下一步动作。
-- 生成工单、通知和可解释结论。
-- 拖拽式工作流、审批、审计。
+- AI assistants related to factory operations, maintenance and control.
+- Continuously monitor PLC, Historian, CMMS history and other data.
+- Analyze the context and recommend next steps.
+- Generate tickets, notifications and explainable conclusions.
+- Drag-and-drop workflow, approval, and auditing.
 
-对 AgentNexus 的启发：
+Inspiration for AgentNexus:
 
-- 工业 Agent 需要深入连接现场系统，而不仅是文档 RAG。
-- AgentNexus 应优先支持 MES/ERP/SCADA/CMMS 数据连接器。
-- 工业场景的关键价值在“从洞察到动作”，例如创建任务、推送责任人、跟踪整改。
+- Industrial Agents need to be deeply connected to field systems, not just document RAGs.
+- AgentNexus should prioritize support for MES/ERP/SCADA/CMMS data connectors.
+- The key value of industrial scenarios is "from insight to action", such as creating tasks, pushing responsible persons, and tracking rectification.
 
-### 3.11 蓝卓 supOS / supOS X AI 工厂操作系统
+### 3.11 Lanzhuo supOS / supOS X AI factory operating system
 
-supOS 是国内工业软件中值得关注的对标对象。它不是单纯 AI 协作工具，而是工业操作系统和工业 APP 平台。
+supOS is a benchmark worthy of attention among domestic industrial software. It is not a pure AI collaboration tool, but an industrial operating system and industrial APP platform.
 
-能力包括：
+Capabilities include:
 
-- 多协议设备接入。
-- 工业数据湖和数据治理。
-- 低代码/高代码工业 APP 开发。
-- 统一应用管理、统一权限、统一桌面。
-- 工业 AI 技术引擎。
-- 多 Agent 协同训练、一站式智能分析、因果分析、趋势发现。
-- 工业 APP 生态和应用商店。
+- Multi-protocol device access.
+- Industrial data lakes and data governance.
+- Low-code/high-code industrial APP development.
+- Unified application management, unified permissions, and unified desktop.
+- Industrial AI technology engine.
+- Multi-Agent collaborative training, one-stop intelligent analysis, causal analysis, and trend discovery.
+- Industrial APP ecosystem and application store.
 
-对 AgentNexus 的启发：
+Inspiration for AgentNexus:
 
-- AgentNexus 如果面向工业软件，需要建立工业对象和工业数据连接能力。
-- supOS 更像工业数字底座，AgentNexus 更像智能协作入口。
-- 两者不是完全同类，但在“工业智能体底座”和“工业应用生态”方向会发生竞争。
+- AgentNexus If it is oriented to industrial software, it needs to establish the ability to connect industrial objects and industrial data.
+- supOS is more like an industrial digital base, and AgentNexus is more like an intelligent collaboration portal.
+- The two are not exactly the same, but they will compete in the directions of "industrial intelligence base" and "industrial application ecology".
 
-## 4. 竞品分层
+## 4. Stratification of competing products
 
-### 第一类：工业全生命周期 AI Copilot
+### Category 1: Industrial life cycle AI Copilot
 
-代表产品：
+Representative products:
 
 - Siemens Industrial Copilot
 - AVEVA Industrial AI Assistant
 - Rockwell FactoryTalk Design Studio Copilot
 - ABB Genix Copilot
 
-特点：
+Features:
 
-- 依附于大型工业软件厂商生态。
-- 垂直能力强，工业场景深。
-- 通常绑定既有软件套件，不够开放。
-- 适合成熟工业客户，但私有二开和跨系统协作成本高。
+- Dependent on the ecosystem of large-scale industrial software manufacturers.
+- Strong vertical capabilities and deep industrial scenarios.
+- Usually bundled with existing software suites and not open enough.
+- Suitable for mature industrial customers, but the cost of private development and cross-system collaboration is high.
 
-AgentNexus 的机会：
+Opportunities with AgentNexus:
 
-- 作为跨工业系统的协作入口。
-- 不绑定单一工业软件生态。
-- 支持客户自有 Bot、外部 Bot 和自研 Agent 接入。
+- Serves as a collaborative portal across industrial systems.
+- Not bound to a single industrial software ecosystem.
+- Supports customer-owned Bot, external Bot and self-developed Agent access.
 
-### 第二类：工业数据与 Agent 平台
+### Category 2: Industrial Data and Agent Platform
 
-代表产品：
+Representative products:
 
 - Cognite Atlas AI
 - C3 Generative AI
 - Nexus Intelligence
 - Tyrion.ai
 
-特点：
+Features:
 
-- 强调工业数据、知识图谱、Agent 工具调用和多系统联动。
-- 面向资产、设备、生产、质量、维护等场景。
-- 通常部署和实施较重。
+- Emphasis on industrial data, knowledge graphs, Agent tool calls and multi-system linkage.
+- For assets, equipment, production, quality, maintenance and other scenarios.
+- Typically heavier to deploy and implement.Opportunities with AgentNexus:
 
-AgentNexus 的机会：
+- Create a more lightweight multi-Bot collaboration layer.
+- Gradually complete data capabilities through RAGFlow, NL2SQL, and industrial connectors.
+- Prioritize service project delivery, knowledge collaboration, production statistics, quality analysis and other high-frequency scenarios.
 
-- 做更轻量的多 Bot 协作层。
-- 通过 RAGFlow、NL2SQL、工业连接器逐步补齐数据能力。
-- 优先服务项目交付、知识协作、生产统计、质量分析等高频场景。
+### Category 3: Front-line operations and Connected Worker platform
 
-### 第三类：一线作业与 Connected Worker 平台
+Representative products:
 
-代表产品：
-
-- Tulip
+-Tulip
 - Augmentir
-- Poka
-- Parsable
+-Poka
+-Parsable
 
-特点：
+Features:
 
-- 面向一线工人、工位、SOP、作业指导、质量检查。
-- 强调无代码/低代码、现场应用和移动端。
-- 与 MES、QMS、CMMS 等系统集成。
+- For front-line workers, workstations, SOPs, work instructions, and quality inspections.
+- Emphasis on no-code/low-code, live apps, and mobile.
+- Integrate with MES, QMS, CMMS and other systems.
 
-AgentNexus 的机会：
+Opportunities with AgentNexus:
 
-- 不直接替代一线执行系统。
-- 作为班组、工艺、质量、设备、项目团队的 AI 协作层。
-- 将 SOP、手册、日报、工单、异常记录转化为可被 Bot 使用的知识。
+- Does not directly replace the front-line execution system.
+- Serves as the AI ​​collaboration layer for crew, process, quality, equipment, and project teams.
+- Convert SOPs, manuals, daily reports, work orders, and exception records into knowledge that can be used by Bots.
 
-### 第四类：工业操作系统和工业 APP 平台
+### Category 4: Industrial operating system and industrial APP platform
 
-代表产品：
+Representative products:
 
-- 蓝卓 supOS
-- 树根互联根云
-- 航天云网 INDICS
+- Lanzhuo supOS
+- Tree Root Internet Root Cloud
+- Aerospace Cloud Network INDICS
 - Siemens Xcelerator
 
-特点：
+Features:
 
-- 更偏工业数据底座、设备连接、应用承载和生态平台。
-- 能力范围广，但建设周期长。
-- 通常作为企业数字化基础设施。
+- More focused on industrial data base, device connection, application hosting and ecological platform.
+- Wide range of capabilities, but long construction period.
+- Often as enterprise digital infrastructure.
 
-AgentNexus 的机会：
+Opportunities with AgentNexus:
 
-- 作为这些平台之上的“智能协作前台”。
-- 用频道组织工业项目、生产问题、质量问题和交付任务。
-- 通过 Bot 访问底层工业系统，而不是重建整个工业操作系统。
+- Serves as an "intelligent collaboration front-end" on top of these platforms.
+- Use channels to organize industrial projects, production issues, quality issues and delivery tasks.
+- Access underlying industrial systems through Bots rather than rebuilding entire industrial operating systems.
 
-## 5. AgentNexus 的差异化定位
+## 5. Differentiated positioning of AgentNexus
 
-### 5.1 不做“大而全工业操作系统”
+### 5.1 Do not build a “large and fully industrial operating system”
 
-AgentNexus 不应直接与 supOS、Siemens Xcelerator、Cognite Data Fusion 这类平台拼底座能力。它们有重资产工业连接、数据治理、应用市场和行业生态优势。
+AgentNexus should not directly compete with platforms such as supOS, Siemens Xcelerator, and Cognite Data Fusion for base capabilities. They have the advantages of heavy-asset industrial connection, data governance, application market and industry ecology.
 
-AgentNexus 更适合做：
+AgentNexus is more suitable for:
 
-- 工业项目协作入口。
-- 多 Bot 调度入口。
-- 工业知识与文件问答入口。
-- 工业问题闭环处理入口。
-- 外部智能体接入入口。
+- Portal for industrial project collaboration.
+- Multiple Bot scheduling entrance.
+- Q&A portal for industrial knowledge and documents.
+- Entrance to closed-loop processing of industrial issues.
+- Access portal for external agents.
 
-### 5.2 不做单一 Copilot
+### 5.2 Do not do a single Copilot
 
-单一 Copilot 通常只能解决一个场景，例如 PLC 代码生成、设备维修问答、质量分析、生产日报。
+A single Copilot can usually only solve one scenario, such as PLC code generation, equipment maintenance Q&A, quality analysis, and production daily reports.
 
-AgentNexus 应强调：
+AgentNexus should emphasize:
 
-- 一个频道可以容纳多个 Bot。
-- 一个问题可以由多个 Bot 协同处理。
-- 一个项目可以持续沉淀文件、决策、进展和历史上下文。
-- 一个外部系统可以通过 Agent Bridge 被接入协作空间。
+- A channel can contain multiple Bots.
+- A problem can be handled collaboratively by multiple Bots.
+- A project can continuously accumulate documents, decisions, progress and historical context.
+- An external system can be connected to the collaboration space via Agent Bridge.
 
-### 5.3 做“工业智能体协作空间”
+### 5.3 Build an “Industrial Intelligence Collaboration Space”
 
-AgentNexus 的核心卖点可以概括为：
+The core selling points of AgentNexus can be summarized as:
 
-> 让工业企业把人、知识、数据、系统和智能体放到同一个协作空间里持续工作。
+> Let industrial enterprises put people, knowledge, data, systems and intelligence into the same collaborative space to continue working.
 
-对应产品能力包括：
+Corresponding product capabilities include:
 
-- 频道：按项目、产线、工厂、客户、实施阶段组织协作。
-- Bot：按岗位创建生产、质量、设备、工艺、交付、知识库等 Bot。
-- 记忆：沉淀项目锚点、决策记录、资料索引、近期动态。
-- 文件：上传需求表、方案、手册、SOP、验收材料、日报。
-- 编排：Orchestrator 根据 @提及、频道上下文和任务类型调用 Bot。
-- 外部接入：通过 OpenClaw / Agent Bridge 接入 RAGFlow、NL2SQL、MES 查询、设备诊断等 Agent。
+- Channel: Organize collaboration by project, production line, factory, customer, and implementation stage.
+- Bot: Create production, quality, equipment, process, delivery, knowledge base, etc. Bots by position.
+- Memory: Precipitating project anchor points, decision records, data indexes, and recent developments.
+- Documents: Upload demand forms, plans, manuals, SOPs, acceptance materials, and daily reports.
+- Orchestration: Orchestrator calls Bots based on @mentions, channel context, and task type.
+- External access: Access RAGFlow, NL2SQL, MES query, device diagnosis and other agents through OpenClaw/Agent Bridge.
 
-## 6. 建议优先打造的工业 Bot 模板
+## 6. Industrial Bot templates recommended as priority
 
-### 6.1 生产统计员 Bot
+### 6.1 Production Statistician Bot
 
-用途：
+Purpose:
 
-- 查询产量、计划达成率、工单进度、工时、WIP、报废、返工。
-- 生成日报、周报、月报。
-- 分析产量波动和未达成原因。
-- 支持自然语言查询和图表生成。
+- Query output, plan achievement rate, work order progress, working hours, WIP, scrap, and rework.
+- Generate daily, weekly and monthly reports.
+- Analyze production fluctuations and reasons for non-achievement.
+- Supports natural language query and chart generation.
 
-所需数据：
+Required data:
 
-- MES 工单。
-- ERP 计划。
-- 产线产量。
-- 工时记录。
-- 质量记录。
-- 库存和在制品数据。
+- MES work order.
+- ERP planning.
+- Production line output.
+- Timekeeping records.
+- Quality records.
+- Inventory and work-in-progress data.
 
-### 6.2 质量分析 Bot
+### 6.2 Quality Analysis Bot
 
-用途：
+Purpose:
 
-- 分析不合格品、缺陷、报废、返工、巡检异常。
-- 生成 8D、CAPA、质量问题跟踪。
-- 从历史问题中检索类似案例。
+- Analyze unqualified products, defects, scrap, rework, and inspection abnormalities.
+- Generate 8D, CAPA, quality issue tracking.
+- Retrieve similar cases from historical issues.
 
-所需数据：
+Required data:
 
-- QMS。
-- MES 质检记录。
-- LIMS。
-- 缺陷库。
-- 客诉记录。
+-QMS.
+- MES quality inspection records.
+- LIMS.
+- Defect library.
+- Customer complaint records.
 
-### 6.3 设备维护 Bot
+### 6.3 Equipment Maintenance Bot
 
-用途：
+Purpose:
 
-- 设备故障问答。
-- 停机原因分析。
-- 维修手册检索。
-- 预测性维护建议。
-- 创建维修任务。
+- Equipment troubleshooting Q&A.
+- Analysis of causes of downtime.
+- Service manual search.
+- Predictive maintenance recommendations.
+- Create maintenance tasks.
 
-所需数据：
+Required data:-CMMS.
+- Equipment ledger.
+- Maintenance records.
+- Inspection records.
+- SCADA/Historian data.
 
-- CMMS。
-- 设备台账。
-- 维修记录。
-- 点检记录。
-- SCADA / Historian 数据。
+### 6.4 Craft Knowledge Bot
 
-### 6.4 工艺知识 Bot
+Purpose:
 
-用途：
+- Questions and answers on process routes, recipes, BOM, SOP, and work instructions.
+- Change impact analysis.
+- Suggestions for handling process exceptions.
 
-- 工艺路线、配方、BOM、SOP、作业指导问答。
-- 变更影响分析。
-- 工艺异常处理建议。
+Required data:
 
-所需数据：
+- Process documentation.
+- Recipe version.
+-BOM.
+-SOP.
+- Change log.
 
-- 工艺文件。
-- 配方版本。
-- BOM。
-- SOP。
-- 变更记录。
+### 6.5 Project Delivery Bot
 
-### 6.5 项目交付 Bot
+Purpose:
 
-用途：
+- Requirements sorting.
+- Summary of meeting minutes.
+-Task breakdown.
+- Risk list.
+- Deliverable inspection.
+- Preparation of materials for acceptance.
 
-- 需求梳理。
-- 会议纪要总结。
-- 任务拆解。
-- 风险清单。
-- 交付物检查。
-- 验收材料准备。
+Required data:
 
-所需数据：
+- Project documentation.
+- Minutes of meetings.
+- Requirements table.
+- Implementation plan.
+- Acceptance criteria.
 
-- 项目文档。
-- 会议记录。
-- 需求表。
-- 实施计划。
-- 验收标准。
+## 7. Suggested product route
 
-## 7. 建议产品路线
+### Stage 1: Industrial knowledge collaboration entrance
 
-### 阶段一：工业知识协作入口
+Goal:
 
-目标：
+- Make AgentNexus a collaborative space for industrial project teams.
+- Supports file upload, channel memory, knowledge retrieval, and Bot Q&A.
 
-- 把 AgentNexus 打造成工业项目团队的协作空间。
-- 支持文件上传、频道记忆、知识检索、Bot 问答。
+Key competencies:
 
-重点能力：
+- Industrial project channel template.
+-Industrial document index.
+- Production Statistician Bot.
+- Quality Analysis Bot.
+- Equipment maintenance Bot.
+- RAGFlow knowledge base access.
 
-- 工业项目频道模板。
-- 工业文件索引。
-- 生产统计员 Bot。
-- 质量分析 Bot。
-- 设备维护 Bot。
-- RAGFlow 知识库接入。
+### Phase 2: Industrial data query and analysis
 
-### 阶段二：工业数据查询和分析
+Goal:
 
-目标：
+- Upgrade from document Q&A to structured data analysis.
 
-- 从文档问答升级到结构化数据分析。
+Key competencies:
 
-重点能力：
+- NL2SQL indicator query.
+- MES / ERP / QMS / CMMS data connector.
+- Indicator cards and charts.
+- Production daily report, quality daily report and equipment daily report are automatically generated.
+- Bot results can be traced back to the data source.
 
-- NL2SQL 指标查询。
-- MES / ERP / QMS / CMMS 数据连接器。
-- 指标卡片和图表。
-- 生产日报、质量日报、设备日报自动生成。
-- Bot 结果可追溯到数据来源。
+### Phase 3: Task closed loop and external agent orchestration
 
-### 阶段三：任务闭环和外部 Agent 编排
+Goal:
 
-目标：
+- Upgrade from analysis and suggestions to closed-loop action.
 
-- 从分析建议升级到行动闭环。
+Key competencies:
 
-重点能力：
+- Create tasks.
+- Assign responsible persons.
+- Track status.
+- Approval confirmation.
+- Audit log.
+- Agent Bridge connects to third-party Agents.
+- Bot calls external tools to perform actions.
 
-- 创建任务。
-- 指派责任人。
-- 跟踪状态。
-- 审批确认。
-- 审计日志。
-- Agent Bridge 接入第三方 Agent。
-- Bot 调用外部工具执行动作。
+### Stage 4: Industrial Intelligence Market
 
-### 阶段四：工业智能体市场
+Goal:
 
-目标：
+- Form an ecosystem of reusable industrial Bot templates and plug-ins.
 
-- 形成可复用工业 Bot 模板和插件生态。
+Key competencies:
 
-重点能力：
+- Bot template market.
+- Industrial scene template.
+- Model and prompt word configuration.
+- Tool permission management.
+- Industry knowledge package.
+- Third-party Agent access specifications.
 
-- Bot 模板市场。
-- 工业场景模板。
-- 模型和提示词配置。
-- 工具权限管理。
-- 行业知识包。
-- 第三方 Agent 接入规范。
+## 8. Competitive Risks
 
-## 8. 竞争风险
+### 8.1 Ecological squeeze by giants
 
-### 8.1 巨头生态挤压
+Manufacturers such as Siemens, ABB, AVEVA, and Rockwell will deeply embed AI Agents into their own industrial software ecosystems. They have clear advantages in customer base, industrial models, equipment connections and industry knowledge.
 
-Siemens、ABB、AVEVA、Rockwell 等厂商会把 AI Agent 深度嵌入自己的工业软件生态。它们在客户基础、工业模型、设备连接和行业知识上有明显优势。
+Coping strategies:
 
-应对策略：
+- Avoid head-on replacements for their core industrial software.
+- Emphasis on cross-system collaboration, privatization, secondary development and multi-Bot ecology.
+- Form connections with existing MES/SCADA/ERP/knowledge base.
 
-- 避免正面替代它们的核心工业软件。
-- 强调跨系统协作、私有化、二开和多 Bot 生态。
-- 与现有 MES/SCADA/ERP/知识库形成连接关系。
+### 8.2 The threshold for industrial data connection is high
 
-### 8.2 工业数据连接门槛高
+The value of industrial scenarios not only comes from question and answer, but also from real-time data, work order data, equipment data, quality data and historical data.
 
-工业场景价值不只来自问答，还来自实时数据、工单数据、设备数据、质量数据和历史数据。
+Coping strategies:
 
-应对策略：
+- Let’s start with documents and structured reports.
+- Then open up the MES/NL2SQL/indicator platform.
+- Finally, gradually connect to SCADA, Historian, CMMS and other systems.
 
-- 先从文档和结构化报表切入。
-- 再打通 MES/NL2SQL/指标平台。
-- 最后逐步接入 SCADA、Historian、CMMS 等系统。
+### 8.3 High security and trustworthiness requirements
 
-### 8.3 安全和可信要求高
+Industrial companies are wary of AI automating actions. Any suggestions involving production, equipment, quality, and compliance require sourcing, approval, and auditing.
 
-工业企业对 AI 自动执行动作非常谨慎。任何涉及生产、设备、质量、合规的建议都需要来源、审批和审计。
+Coping strategies:
 
-应对策略：
+- Default is human review confirmation.
+- All Bot actions leave traces.
+- Important operations require permissions and approval.
+- Output conclusions with data sources and basis.
 
-- 默认人审确认。
-- 所有 Bot 动作留痕。
-- 重要操作需要权限和审批。
-- 输出结论附带数据来源和依据。
+### 8.4 Product boundaries are too wide
 
-### 8.4 产品边界过宽
+If AgentNexus wants to do collaboration, MES, industrial data lake, low code, knowledge base, and Agent platform at the same time, it will easily lose focus.
 
-如果 AgentNexus 同时想做协作、MES、工业数据湖、低代码、知识库、Agent 平台，容易失焦。
+Coping strategies:
 
-应对策略：
+- The core boundary remains as "collaboration center + agent orchestration + memory system".
+- Industrial data lake, MES execution, SCADA control and other capabilities are accessed through connectors and external agents.
 
-- 核心边界保持为“协作中台 + Agent 编排 + 记忆系统”。
-- 工业数据湖、MES 执行、SCADA 控制等能力通过连接器和外部 Agent 接入。
+## 9. Recommended external expression
 
-## 9. 推荐对外表述
+### Positioning in one sentence
 
-### 一句话定位
+AgentNexus is a multi-Agent collaboration platform for industrial enterprise privatization scenarios.
 
-AgentNexus 是面向工业企业私有化场景的多 Agent 协作中台。
+### Detailed positioning
 
-### 详细定位
+AgentNexus unifies channel collaboration, industrial knowledge bases, documentation, project memories, business bots, and external Agent access into one platform to help production, quality, equipment, process, IT, and project delivery teams continuously collaborate around real business issues, rather than staying in one-time AI Q&A.
 
-AgentNexus 将频道协作、工业知识库、文件资料、项目记忆、业务 Bot 和外部 Agent 接入统一到一个平台中，帮助生产、质量、设备、工艺、IT 和项目交付团队围绕真实业务问题持续协同，而不是停留在一次性 AI 问答。
+### Core differences
 
-### 核心差异
+- Compared with industrial Copilot: AgentNexus is not limited to a single software module, but supports multi-Bot, multi-system, and multi-role collaboration.- Compared with industrial data platforms: AgentNexus is closer to the user collaboration process, emphasizing channels, messages, files, tasks and memories.
+- Compared with general collaboration software: AgentNexus is natively oriented to Bots, Agents and industrial knowledge scenarios.
+- Compared with general Agent platforms: AgentNexus is more suitable for privatized delivery, project-based implementation and industrial enterprise scenarios.
 
-- 相比工业 Copilot：AgentNexus 不局限于单一软件模块，而是支持多 Bot、多系统、多角色协同。
-- 相比工业数据平台：AgentNexus 更贴近用户协作过程，强调频道、消息、文件、任务和记忆。
-- 相比通用协作软件：AgentNexus 原生面向 Bot、Agent 和工业知识场景。
-- 相比通用 Agent 平台：AgentNexus 更适合私有化交付、项目制实施和工业企业场景。
-
-## 10. 参考资料
+## 10. References
 
 - Siemens Industrial AI Agents: https://press.siemens.com/global/en/pressrelease/siemens-introduces-ai-agents-industrial-automation
 - Cognite Atlas AI: https://docs.cognite.com/cdf/atlas_ai
@@ -585,4 +577,4 @@ AgentNexus 将频道协作、工业知识库、文件资料、项目记忆、业
 - C3 Generative AI: https://c3.ai/c3-generative-ai/
 - IFS Loops Industrial Agentic AI: https://www.ifs.com/en/products/ai/agentic-ai
 - Nexus Intelligence: https://getnexus.ai/
-- 蓝卓 supOS: https://www.supos.com/
+- Lanzhuo supOS: https://www.supos.com/

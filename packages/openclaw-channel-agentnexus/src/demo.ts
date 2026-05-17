@@ -3,8 +3,8 @@
  *
  * Usage:
  *   export AGENTNEXUS_BOT_TOKEN=agb_xxxxx
- *   export AGENTNEXUS_CONTROL_URL=ws://localhost:8002/ws/agent-bridge/control
- *   export AGENTNEXUS_DATA_URL=ws://localhost:8002/ws/agent-bridge/data
+ *   export AGENTNEXUS_CONTROL_URL=ws://localhost:8000/ws/agent-bridge/control
+ *   export AGENTNEXUS_DATA_URL=ws://localhost:8000/ws/agent-bridge/data
  *   npm run demo
  *
  * Bypasses the OpenClaw SDK and uses BotSession directly to verify the bridge protocol without the SDK.

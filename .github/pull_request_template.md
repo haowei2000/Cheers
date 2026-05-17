@@ -1,27 +1,35 @@
-## 变更描述
+## Change description
+
+> **Language**: English | [中文](pull_request_template.zh-CN.md)
 
 <!-- 简述本次变更内容及原因 -->
 
-## 变更类型
+## Change type
 
-- [ ] 新功能 (feat)
-- [ ] Bug 修复 (fix)
-- [ ] 重构 (refactor)
-- [ ] 文档 (docs)
-- [ ] 测试 (test)
-- [ ] 其他: ___
+- [ ] New features (feat)
+- [ ] Bug fix (fix)
+- [ ] Refactor
+- [ ] Documentation (docs)
+- [ ] test
+- [ ] Others: ___
 
-## 测试
+## Test
 
-- [ ] 已添加/更新单元测试
-- [ ] 本地 `pytest` 全量通过
-- [ ] 前端 `npm run build` 无报错
+- [ ] Unit tests added/updated
+- [ ] Local `pytest` passed in full
+- [ ] Front-end `npm run build` no error reported
+- [ ] When it comes to npm packages, the `npm run lint` / `npm test` / `npm run build` of the corresponding package has passed
 
-## 数据库迁移
+## Database migration
 
-- [ ] 不涉及数据库变更
-- [ ] 已添加 Alembic 迁移文件并本地验证 (`alembic upgrade head`)
+- [ ] Does not involve database changes
+- [ ] Alembic migration file added and verified locally (`alembic upgrade head`)
 
-## 相关 Issue
+## Security and Release Impact
+
+- [ ] Does not contain `.env`, logs, databases, uploaded files, private keys, tokens or production configurations
+- [ ] Updated documentation when it comes to configuration, deployment, permissions, file uploads, or Agent Bridge
+
+## Related Issues
 
 Closes #

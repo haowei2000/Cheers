@@ -142,21 +142,54 @@ def _escape_html(text: str) -> str:
 @router.get("/manual", response_class=HTMLResponse)
 async def manual_index() -> HTMLResponse:
     """Manual index."""
-    help_items: list[tuple[str, str, str]] = [
-        ("使用说明书", "/manual/help/使用说明书", "总索引，按角色分流到其它说明书。"),
-        ("普通用户使用说明", "/manual/help/普通用户使用说明", "日常在项目里聊天、@ Bot、上传文件的使用指南。"),
-        ("系统管理说明书", "/manual/help/系统管理说明书", "系统管理员：工作空间与项目、成员管理、OpenClaw 接入与审核、Orchestrator 配置。"),
-        ("OpenClaw接入指南", "/manual/help/OpenClaw接入指南", "OpenClaw 开发者：发现 AgentNexus、提交注册申请、常见错误排查。"),
-        ("安装部署说明", "/manual/help/安装部署说明", "部署与运维：环境要求、Docker / 本地安装、数据库迁移、种子数据。"),
-        ("技术排查Q&A", "/manual/help/技术排查Q&A", "故障现象 → 原因 → 处理步骤，包含日志说明与接口排查。"),
+    help_items: list[tuple[str, str, str, str]] = [
+        (
+            "User Manual",
+            "/manual/help/使用说明书",
+            "Role-based documentation index.",
+            "/manual/help/使用说明书.zh-CN",
+        ),
+        (
+            "End User Guide",
+            "/manual/help/普通用户使用说明",
+            "Daily chat, bot mentions, file uploads, and channel workflows.",
+            "/manual/help/普通用户使用说明.zh-CN",
+        ),
+        (
+            "Administrator Guide",
+            "/manual/help/系统管理说明书",
+            "Workspace, member, OpenClaw access, and Orchestrator administration.",
+            "/manual/help/系统管理说明书.zh-CN",
+        ),
+        (
+            "AgentBridge Integration Guide",
+            "/manual/help/AgentBridge接入指南",
+            "Connect external agents and troubleshoot registration.",
+            "/manual/help/AgentBridge接入指南.zh-CN",
+        ),
+        (
+            "Deployment Guide",
+            "/manual/help/安装部署说明",
+            "Environment requirements, Docker/local setup, migrations, and seed data.",
+            "/manual/help/安装部署说明.zh-CN",
+        ),
+        (
+            "Troubleshooting Q&A",
+            "/manual/help/技术排查Q&A",
+            "Common symptoms, causes, checks, logs, and recovery steps.",
+            "/manual/help/技术排查Q&A.zh-CN",
+        ),
     ]
     body_parts = [
-        "<h1>AgentNexus 使用与管理说明</h1>",
-        "<p>以下为面向终端用户、系统管理员、OpenClaw 开发者的帮助文档入口。</p>",
+        "<h1>AgentNexus Documentation</h1>",
+        "<p>English is the default documentation language. Each public guide has a Chinese mirror with the <code>.zh-CN.md</code> suffix.</p>",
         "<ul>",
     ]
-    for title, href, desc in help_items:
-        body_parts.append(f'<li><a href="{href}">{title}</a> - {desc}</li>')
+    for title, href, desc, zh_href in help_items:
+        body_parts.append(
+            f'<li><a href="{href}">{title}</a> - {desc} '
+            f'<a href="{zh_href}">Chinese</a></li>'
+        )
     body_parts.append("</ul>")
     style = (
         "body{font-family:system-ui,sans-serif;max-width:800px;"
@@ -165,7 +198,7 @@ async def manual_index() -> HTMLResponse:
     )
     html = (
         "<!DOCTYPE html><html><head><meta charset='utf-8'/>"
-        "<title>AgentNexus 说明书索引</title>"
+        "<title>AgentNexus Documentation</title>"
         f"<style>{style}</style></head><body>"
         + "".join(body_parts)
         + "</body></html>"
