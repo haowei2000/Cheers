@@ -48,9 +48,9 @@ function Tile({
   title?: string;
   onClick: () => void;
 }) {
-  // Scale font down as initials grow so a 4-char label still fits in a 40px tile.
+  // Keep the tile readable; full workspace names stay in title/tooltips.
   const len = [...initials].length;
-  const fontSize = len >= 4 ? 9 : len === 3 ? 11 : len === 2 ? 13 : 14;
+  const fontSize = len === 2 ? 13 : 14;
   return (
     <button
       type="button"
@@ -104,10 +104,10 @@ export function WorkspaceRail({
         </>
       )}
       {teams.map((w) => {
-        // Pick up to the first 4 visually meaningful chars from the name.
-        // Trim whitespace so " AgentNexus " doesn't render as " Age".
+        // Pick up to the first 2 visually meaningful chars from the name.
+        // Trim whitespace so " AgentNexus " doesn't render as " A".
         const trimmed = w.name.trim();
-        const initials = [...trimmed].slice(0, 4).join("").toUpperCase();
+        const initials = [...trimmed].slice(0, 2).join("").toUpperCase();
         return (
           <Tile
             key={w.workspace_id}

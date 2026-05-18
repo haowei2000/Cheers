@@ -112,9 +112,10 @@ export default function TodoPanel({ channelId, onClose }: TodoPanelProps) {
     <div className="flex flex-col h-full bg-white">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-gray-100 flex-shrink-0">
-        <span className="text-sm font-semibold text-gray-800">Todo items</span>
+        <span className="text-sm font-semibold text-gray-800">Todos</span>
         <button
           onClick={onClose}
+          aria-label="Close panel"
           className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
         >
           ✕

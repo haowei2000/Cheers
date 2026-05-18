@@ -169,7 +169,7 @@ function SessionPanelHeader({
   onRefresh?: () => void;
   refreshing: boolean;
 }) {
-  const countLabel = loading ? "..." : String(sessions.length);
+  const countLabel = loading ? "Loading" : String(sessions.length);
 
   return (
     <div className="an-sp-head">
@@ -400,7 +400,7 @@ export function SessionList({
   onOpenScope?: (target: SessionScopeTarget) => void;
 }) {
   if (sessions.length === 0) {
-    return <div className="an-sp-empty">No Agent Bridge sessions.</div>;
+    return <div className="an-sp-empty">No Agent Bridge sessions</div>;
   }
   if (view === "map") {
     return <SessionRelationMap sessions={sessions} onOpenScope={onOpenScope} />;
@@ -554,11 +554,7 @@ export function SessionScopePanel({
   };
 
   if (variant === "toolbar") {
-    const summary = visibleLoading
-      ? "..."
-      : isCurrentScopeLoaded
-        ? String(visibleSessions.length)
-        : "-";
+    const summary = visibleLoading ? "Loading" : String(visibleSessions.length);
     return (
       <div className="an-session-control" ref={wrapRef}>
         <button
@@ -566,7 +562,7 @@ export function SessionScopePanel({
           className={`an-topics-btn an-session-btn ${open ? "on" : ""}`}
           onClick={() => setOpen((v) => !v)}
           title={title}
-          aria-label={`${title},${visibleLoading ? "Loading" : isCurrentScopeLoaded ? `${visibleSessions.length} active sessions` : "not loaded"}`}
+          aria-label={`${title}, ${visibleLoading ? "Loading" : `${visibleSessions.length} active sessions`}`}
           aria-expanded={open}
         >
           <AppIcon name="link" />

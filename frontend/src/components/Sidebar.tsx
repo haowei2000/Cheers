@@ -153,7 +153,7 @@ export function Sidebar({
           : [...trimmed].slice(0, 2).join("").toUpperCase() || "?";
         return {
           value: w.workspace_id,
-          label: w.name,
+          label: w.kind === "personal" ? "Personal" : w.name,
           title: w.kind === "personal" ? "Personal · DMs" : "Workspace · Channels",
           marker,
         };
@@ -790,6 +790,7 @@ export function Sidebar({
         }
         keyboardHint="⌘K"
         enableShortcut
+        wide
         typeOptions={searchTypeOptions}
         scopeLabel={searchScopeLabel}
         scopeTitle={searchScopeTitle}
@@ -848,7 +849,7 @@ export function Sidebar({
             const ws = !selectedWorkspaceId && c.workspace_id
               ? workspaces.find((w) => w.workspace_id === c.workspace_id)
               : null;
-            const abbrev = ws ? ws.name.slice(0, 4) : "";
+            const abbrev = ws ? [...ws.name.trim()].slice(0, 2).join("").toUpperCase() : "";
             return (
               <li
                 key={c.channel_id}

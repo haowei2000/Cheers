@@ -77,7 +77,7 @@ export function CreateWorkspaceModal({
             onClick={onSubmit}
             className="an-btn an-btn-primary"
           >
-            created
+            Create
           </button>
         </ModalFooter>
       </div>
