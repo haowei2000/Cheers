@@ -7,8 +7,7 @@ from datetime import datetime
 from sqlalchemy import asc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import FileRecord, MemoryEntry, TodoItem
-from app.services.file_retention import active_file_filter
+from app.db.models import MemoryEntry, TodoItem
 
 # Layers that support structured CRUD.
 ENTRY_LAYERS = ("ANCHOR", "DECISIONS", "PROGRESS")
@@ -225,16 +224,14 @@ class ChannelMemory:
     @staticmethod
     async def _render_files_index(channel_id: str, session: AsyncSession) -> str:
         """Render files index."""
-        result = await session.execute(
-            select(FileRecord)
-            .where(
-                FileRecord.channel_id == channel_id,
-                FileRecord.content_type.notlike("image/%"),
-                active_file_filter(),
-            )
-            .order_by(asc(FileRecord.created_at))
-        )
-        records = result.scalars().all()
+        from app.services.file_scope_service import FileScopeService
+
+        records = [
+            record
+            for record in await FileScopeService(session).list_for_channel(channel_id)
+            if not (record.content_type or "").lower().startswith("image/")
+        ]
+        records.sort(key=lambda record: record.created_at)
         if not records:
             return ""
         parts: list[str] = []

@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import FileRecord
+from app.db.models import FileRecord, User
 from app.services.file_processor.convert import (
     ALL_SUPPORTED_TYPES,
     FileParseError,
@@ -101,13 +101,22 @@ class FilePipelineService:
         *,
         app_settings=settings,
     ) -> None:
-        self.storage = storage or (get_storage_service() if is_storage_enabled() else None)
+        if storage is not None:
+            self.storage = storage
+        elif is_storage_enabled():
+            try:
+                self.storage = get_storage_service()
+            except RuntimeError:
+                self.storage = None
+        else:
+            self.storage = None
         self.settings = app_settings
 
     def create_presigned_upload(
         self,
         *,
         channel_id: str,
+        workspace_id: str | None = None,
         uploader_id: str,
         filename: str,
         content_type: str,
@@ -129,6 +138,7 @@ class FilePipelineService:
         record = FileRecord(
             file_id=file_id,
             channel_id=channel_id,
+            workspace_id=workspace_id,
             uploader_id=uploader_id,
             original_path=upload.object_key,
             object_key=upload.object_key,
@@ -141,6 +151,7 @@ class FilePipelineService:
         )
         metadata = {
             "channel_id": channel_id,
+            "workspace_id": workspace_id or "",
             "uploader_id": uploader_id,
             "filename": normalized_name,
             "content_type": normalized_type,
@@ -164,9 +175,16 @@ class FilePipelineService:
         session: AsyncSession,
         *,
         channel_id: str,
+        user: User | None = None,
         file_ids: list[str],
     ) -> list[FileRecord]:
         records = await self._load_records(session, channel_id=channel_id, file_ids=file_ids)
+        if user is not None:
+            from app.services.file_scope_service import FileScopeService
+
+            scope_service = FileScopeService(session)
+            for record in records:
+                await scope_service.require_user_access(record, user)
         for record in records:
             await self._ensure_object_ready(record)
         return records
@@ -414,7 +432,6 @@ class FilePipelineService:
 
         result = await session.execute(
             select(FileRecord).where(
-                FileRecord.channel_id == channel_id,
                 FileRecord.file_id.in_(unique_ids),
                 active_file_filter(),
             )

@@ -601,9 +601,11 @@ async def bridge_upload_markdown_file(
     md_path.write_text(text, encoding="utf-8")
 
     now = datetime.now(timezone.utc)
+    channel = await session.get(Channel, body.channel_id)
     record = FileRecord(
         file_id=file_id,
         channel_id=body.channel_id,
+        workspace_id=channel.workspace_id if channel else None,
         uploader_id=bot.bot_id,
         original_path=str(md_path),
         original_filename=safe_name,
@@ -616,6 +618,11 @@ async def bridge_upload_markdown_file(
         expires_at=file_expires_at(now),
     )
     session.add(record)
+    await session.flush()
+    from app.services.file_scope_service import FileScopeService
+
+    if channel:
+        await FileScopeService(session).link_file_to_channel(record, channel, created_by=bot.bot_id)
     await session.commit()
 
     return APIResponse.ok({
@@ -697,9 +704,11 @@ async def bridge_upload_binary_file(
         header_ctype = _mimetypes.guess_type(raw_name)[0] or "application/octet-stream"
 
     now = datetime.now(timezone.utc)
+    channel = await session.get(Channel, x_channel_id)
     record = FileRecord(
         file_id=file_id,
         channel_id=x_channel_id,
+        workspace_id=channel.workspace_id if channel else None,
         uploader_id=bot.bot_id,
         original_path=str(dst),
         original_filename=raw_name,
@@ -710,6 +719,11 @@ async def bridge_upload_binary_file(
         expires_at=file_expires_at(now),
     )
     session.add(record)
+    await session.flush()
+    from app.services.file_scope_service import FileScopeService
+
+    if channel:
+        await FileScopeService(session).link_file_to_channel(record, channel, created_by=bot.bot_id)
     await session.commit()
 
     return APIResponse.ok({
@@ -1480,9 +1494,11 @@ async def _handle_data_file_upload(
             header_ctype = _mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
 
         now = datetime.now(timezone.utc)
+        channel = await s.get(Channel, channel_id)
         record = FileRecord(
             file_id=file_id,
             channel_id=channel_id,
+            workspace_id=channel.workspace_id if channel else None,
             uploader_id=bot.bot_id,
             original_path=str(dst),
             original_filename=safe_name,
@@ -1493,6 +1509,11 @@ async def _handle_data_file_upload(
             expires_at=file_expires_at(now),
         )
         s.add(record)
+        await s.flush()
+        from app.services.file_scope_service import FileScopeService
+
+        if channel:
+            await FileScopeService(s).link_file_to_channel(record, channel, created_by=bot.bot_id)
         await s.commit()
 
     logger.info(

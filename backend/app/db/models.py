@@ -141,7 +141,7 @@ class Channel(Base):
     memberships: Mapped[list["ChannelMembership"]] = relationship(
         "ChannelMembership", back_populates="channel", cascade="all, delete-orphan"
     )
-    file_records: Mapped[list["FileRecord"]] = relationship("FileRecord", back_populates="channel", cascade="all, delete-orphan")
+    file_records: Mapped[list["FileRecord"]] = relationship("FileRecord", back_populates="channel")
     history_pages: Mapped[list["HistoryPage"]] = relationship("HistoryPage", cascade="all, delete-orphan")
 
 
@@ -293,8 +293,12 @@ class FileRecord(Base):
     __tablename__ = "file_records"
 
     file_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    channel_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("channels.channel_id"), nullable=False
+    # Legacy origin channel. File visibility is now driven by FileScopeLink.
+    channel_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("channels.channel_id"), nullable=True
+    )
+    workspace_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("workspaces.workspace_id"), nullable=True, index=True
     )
     uploader_id: Mapped[str] = mapped_column(String(36), nullable=False)
     original_path: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -317,6 +321,31 @@ class FileRecord(Base):
     __table_args__ = (
         Index("ix_file_records_channel_created_at", "channel_id", "created_at"),
         Index("ix_file_records_expires_at", "expires_at"),
+    )
+
+
+class FileScopeLink(Base):
+    """Visibility/context link between a file and a product scope."""
+    __tablename__ = "file_scope_links"
+
+    link_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    file_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("file_records.file_id", ondelete="CASCADE"), nullable=False
+    )
+    scope_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("workspaces.workspace_id"), nullable=True
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    file: Mapped["FileRecord"] = relationship("FileRecord")
+
+    __table_args__ = (
+        UniqueConstraint("file_id", "scope_type", "scope_id", name="uq_file_scope_links_file_scope"),
+        Index("ix_file_scope_links_scope", "scope_type", "scope_id"),
+        Index("ix_file_scope_links_file", "file_id"),
     )
 
 

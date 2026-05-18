@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError
-from app.db.models import Channel, FileRecord, User, Workspace
+from app.db.models import Channel, FileRecord, FileScopeLink, User, Workspace
 from app.services.file_service import FileService
 from app.services.storage.base import StorageObjectNotFoundError
 
@@ -87,6 +88,15 @@ async def test_confirm_upload_marks_uploaded_when_object_exists(
     assert result.uploaded_at is not None
     assert result.last_error is None
     assert fake.head_calls == [(rec.file_id, "uploads")]
+    links = (
+        await db_session.execute(
+            select(FileScopeLink).where(FileScopeLink.file_id == rec.file_id)
+        )
+    ).scalars().all()
+    assert {(link.scope_type, link.scope_id) for link in links} == {
+        ("personal", user.user_id),
+        ("channel", rec.channel_id),
+    }
 
 
 @pytest.mark.asyncio

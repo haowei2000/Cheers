@@ -372,6 +372,37 @@ async def test_message_prompt_template_override_forces_channel_bot_template(db_s
     assert overrides[bot.bot_id].template_id == forced_template.template_id
     assert ctx.bot_user_templates_by_username[bot.username] == forced_template.user_template
 
+    for index, content_data in enumerate(
+        (
+            None,
+            {},
+            {"prompt_template_override_id": None},
+            {"prompt_template_override_id": ""},
+        ),
+        start=1,
+    ):
+        plain_trigger = Message(
+            msg_id=f"template-message-plain-{index}",
+            channel_id=ch.channel_id,
+            sender_id=user.user_id,
+            sender_type="user",
+            content="@template_bot hi again",
+            content_data=content_data,
+        )
+        plain_ctx = BotRunContext(
+            channel_id=ch.channel_id,
+            bus=NullEventBus(),
+            session=db_session,
+            trigger_msg=plain_trigger,
+            adapter_factory=lambda _bot_id: None,  # type: ignore[return-value]
+        )
+
+        plain_rows, plain_overrides = await BotWorkflowBuilder._load_channel_bots(plain_ctx)
+        BotWorkflowBuilder._build_bot_templates(plain_ctx, plain_rows, plain_overrides)
+
+        assert plain_overrides[bot.bot_id].template_id == channel_template.template_id
+        assert plain_ctx.bot_user_templates_by_username[bot.username] == channel_template.user_template
+
 
 @pytest.mark.asyncio
 async def test_visible_non_owner_cannot_edit_bot(db_session: AsyncSession) -> None:
