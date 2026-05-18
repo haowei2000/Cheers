@@ -20,6 +20,7 @@ from app.db.models import (
     AgentNexusSessionBinding,
     BotAccount,
     Channel,
+    ChannelMembership,
     gen_uuid,
 )
 
@@ -140,7 +141,8 @@ def _topic_id_from_trigger(trigger_message: dict[str, Any]) -> str | None:
     return None
 
 
-def _dm_scope_id(
+async def _dm_scope_id(
+    db: AsyncSession,
     *,
     bot_id: str,
     channel_id: str,
@@ -157,15 +159,25 @@ def _dm_scope_id(
     """
     if channel is not None and channel.name.startswith("dmchat:"):
         return channel.channel_id
+    rows = (
+        await db.execute(
+            select(ChannelMembership.member_id).where(
+                ChannelMembership.channel_id == channel_id,
+                ChannelMembership.member_type == "user",
+            )
+        )
+    ).all()
+    user_ids = sorted({row[0] for row in rows if isinstance(row[0], str) and row[0].strip()})
     user_id = trigger_message.get("user")
-    if isinstance(user_id, str) and user_id.strip():
+    if isinstance(user_id, str) and user_id.strip() and (not user_ids or user_id.strip() in user_ids):
         return f"user:{user_id.strip()}:bot:{bot_id}"
-    # Defensive fallback for malformed legacy dispatch frames. Normal Bot DM
-    # dispatches always carry trigger_message["user"].
-    return f"channel:{channel_id}:bot:{bot_id}"
+    if len(user_ids) == 1:
+        return f"user:{user_ids[0]}:bot:{bot_id}"
+    raise ValueError(f"cannot resolve stable DM scope for channel_id={channel_id} bot_id={bot_id}")
 
 
-def _primary_scope(
+async def _primary_scope(
+    db: AsyncSession,
     *,
     bot_id: str,
     channel: Channel | None,
@@ -173,7 +185,8 @@ def _primary_scope(
     trigger_message: dict[str, Any],
 ) -> tuple[str, str]:
     if channel is not None and channel.type == "dm":
-        return SCOPE_DM, _dm_scope_id(
+        return SCOPE_DM, await _dm_scope_id(
+            db,
             bot_id=bot_id,
             channel_id=channel_id,
             trigger_message=trigger_message,
@@ -313,9 +326,12 @@ async def _rotate_primary_binding_to_new_session(
     """
     metadata = {
         "rotated_from_session_id": binding.session_id,
+        "rotated_from_binding_id": binding.binding_id,
         "rotation_reason": reason,
         "rotated_at": now.isoformat(),
     }
+    old_session_id = binding.session_id
+    old_binding_id = binding.binding_id
     new_session = _new_session_row(
         bot_id=bot_id,
         provider=provider,
@@ -328,11 +344,102 @@ async def _rotate_primary_binding_to_new_session(
     )
     db.add(new_session)
     await db.flush()
+    old_session = await db.get(AgentNexusSession, old_session_id)
+    if old_session is not None:
+        old_metadata = _session_metadata(old_session)
+        history = old_metadata.get("rotated_bindings")
+        if not isinstance(history, list):
+            history = []
+        history.append({
+            "binding_id": old_binding_id,
+            "scope_type": binding.scope_type,
+            "scope_id": binding.scope_id,
+            "rotated_to_session_id": new_session.session_id,
+            "rotation_reason": reason,
+            "rotated_at": now.isoformat(),
+        })
+        old_metadata["rotated_bindings"] = history
+        old_session.session_metadata = old_metadata
     binding.session_id = new_session.session_id
     binding.role = "primary"
     binding.detached_at = None
     await db.flush()
     return new_session
+
+
+def _metadata_has_parent_topic(
+    metadata: dict[str, Any],
+    *,
+    topic_id: str,
+) -> bool:
+    parent_scopes = metadata.get("parent_scopes")
+    if isinstance(parent_scopes, list):
+        for scope in parent_scopes:
+            if (
+                isinstance(scope, dict)
+                and scope.get("scope_type") == SCOPE_TOPIC
+                and scope.get("scope_id") == topic_id
+            ):
+                return True
+    parent_scope = metadata.get("parent_scope")
+    return (
+        isinstance(parent_scope, dict)
+        and parent_scope.get("scope_type") == SCOPE_TOPIC
+        and parent_scope.get("scope_id") == topic_id
+    )
+
+
+async def _restore_rotated_topic_binding(
+    db: AsyncSession,
+    *,
+    binding: AgentNexusSessionBinding,
+    session_row: AgentNexusSession,
+    now: datetime,
+) -> AgentNexusSession | None:
+    if binding.scope_type != SCOPE_TOPIC:
+        return None
+    metadata = _session_metadata(session_row)
+    rotated_from_session_id = metadata.get("rotated_from_session_id")
+    rotation_reason = metadata.get("rotation_reason")
+    if (
+        not isinstance(rotated_from_session_id, str)
+        or not rotated_from_session_id
+        or not isinstance(rotation_reason, str)
+        or not rotation_reason.startswith("task_adopted:")
+    ):
+        return None
+
+    original_session = await db.get(AgentNexusSession, rotated_from_session_id)
+    if original_session is None:
+        return None
+    original_metadata = _session_metadata(original_session)
+    if not _metadata_has_parent_topic(original_metadata, topic_id=binding.scope_id):
+        return None
+
+    binding.session_id = original_session.session_id
+    binding.role = "primary"
+    binding.detached_at = None
+
+    original_metadata.update({
+        "ownership": "topic",
+        "retained_topic_scope": True,
+        "restored_topic_binding_from_session_id": session_row.session_id,
+        "restored_topic_binding_at": now.isoformat(),
+    })
+    original_session.status = SESSION_STATUS_ACTIVE
+    original_session.session_metadata = original_metadata
+    original_session.current_scope_type = SCOPE_TOPIC
+    original_session.current_scope_id = binding.scope_id
+    original_session.last_used_at = now
+    metadata.update({
+        "closed_reason": "restored_rotated_topic_binding",
+        "restored_to_session_id": original_session.session_id,
+        "closed_at": now.isoformat(),
+    })
+    session_row.status = SESSION_STATUS_CLOSED
+    session_row.session_metadata = metadata
+    await db.flush()
+    return original_session
 
 
 async def _ensure_binding(
@@ -412,15 +519,18 @@ async def resolve_dispatch_session(
     first-class scope alongside topic/task, so a DM turn never creates a task
     alias. For non-DM scopes, ``task_id`` starts as an alias to the dispatch
     session. If the placeholder later becomes a visible background task,
-    ``adopt_session_for_task`` promotes that alias to the task primary session
-    and rotates the parent scope onto a new clean session.
+    ``adopt_session_for_task`` promotes channel aliases to task primary sessions
+    and rotates the channel scope onto a new clean session. Topic scopes keep
+    their provider session so topic conversations do not lose context when a
+    turn becomes a background task.
     """
     channel = await _load_channel(db, channel_id, channel)
     provider = provider_for(bot)
     provider_agent_id = provider_agent_id_for(bot)
     provider_account_id = provider_account_id_for(bot)
     now = datetime.utcnow()
-    scope_type, scope_id = _primary_scope(
+    scope_type, scope_id = await _primary_scope(
+        db,
         bot_id=bot.bot_id,
         channel=channel,
         channel_id=channel_id,
@@ -443,6 +553,17 @@ async def resolve_dispatch_session(
         )
         if task_binding is not None:
             session_row = await _load_session_for_binding(db, task_binding)
+            if session_row.status == SESSION_STATUS_CLOSED:
+                session_row = await _rotate_primary_binding_to_new_session(
+                    db,
+                    binding=task_binding,
+                    bot_id=bot.bot_id,
+                    provider=provider,
+                    provider_agent_id=provider_agent_id,
+                    provider_account_id=provider_account_id,
+                    now=now,
+                    reason="closed_task_scope_reentered",
+                )
             found_via_task = True
     if session_row is None:
         primary_binding = await _find_binding_by_scope(
@@ -470,7 +591,27 @@ async def resolve_dispatch_session(
             )
         if primary_binding is not None:
             session_row = await _load_session_for_binding(db, primary_binding)
-            if session_row.status == SESSION_STATUS_TASK_OWNED:
+            if session_row.status == SESSION_STATUS_CLOSED:
+                session_row = await _rotate_primary_binding_to_new_session(
+                    db,
+                    binding=primary_binding,
+                    bot_id=bot.bot_id,
+                    provider=provider,
+                    provider_agent_id=provider_agent_id,
+                    provider_account_id=provider_account_id,
+                    now=now,
+                    reason="closed_scope_reentered",
+                )
+            if scope_type == SCOPE_TOPIC:
+                restored_session = await _restore_rotated_topic_binding(
+                    db,
+                    binding=primary_binding,
+                    session_row=session_row,
+                    now=now,
+                )
+                if restored_session is not None:
+                    session_row = restored_session
+            if session_row.status == SESSION_STATUS_TASK_OWNED and scope_type != SCOPE_TOPIC:
                 session_row = await _rotate_primary_binding_to_new_session(
                     db,
                     binding=primary_binding,
@@ -604,7 +745,8 @@ async def refresh_dm_session_scope(
     provider_agent_id = provider_agent_id_for(bot)
     provider_account_id = provider_account_id_for(bot)
     now = datetime.utcnow()
-    scope_id = _dm_scope_id(
+    scope_id = await _dm_scope_id(
+        db,
         bot_id=bot.bot_id,
         channel_id=channel_id,
         trigger_message={"user": user_id},
@@ -715,9 +857,11 @@ async def adopt_session_for_task(
 
     This is called only once the Agent Bridge placeholder becomes a visible
     background task. The provider session that was already running is kept for
-    the task, so OpenClaw does not have to restart work. Any parent channel/topic
-    binding is rotated to a fresh session for future normal messages. DM is a
-    peer scope, not a task parent, so legacy DM task aliases are ignored.
+    the task, so OpenClaw does not have to restart work. Channel bindings are
+    rotated to a fresh session for future normal channel messages. Topic
+    bindings stay on the same session so future turns in that topic keep their
+    provider context. DM is a peer scope, not a task parent, so legacy DM task
+    aliases are ignored.
     """
     bot = await db.get(BotAccount, bot_id)
     if bot is None or not task_id:
@@ -745,6 +889,12 @@ async def adopt_session_for_task(
     )
     if any(binding.scope_type == SCOPE_DM for binding in parent_bindings):
         return None
+    topic_parent_bindings = [
+        binding for binding in parent_bindings if binding.scope_type == SCOPE_TOPIC
+    ]
+    rotatable_parent_bindings = [
+        binding for binding in parent_bindings if binding.scope_type != SCOPE_TOPIC
+    ]
     rotated_parent_sessions: list[AgentNexusSession] = []
     parent_scopes: list[dict[str, Any]] = []
     for parent_binding in parent_bindings:
@@ -755,6 +905,7 @@ async def adopt_session_for_task(
             "topic_id": parent_binding.topic_id,
             "dm_id": parent_binding.dm_id,
         })
+    for parent_binding in rotatable_parent_bindings:
         rotated_parent_sessions.append(await _rotate_primary_binding_to_new_session(
             db,
             binding=parent_binding,
@@ -766,18 +917,24 @@ async def adopt_session_for_task(
             reason=f"task_adopted:{task_id}",
         ))
 
-    task_binding.role = "primary"
+    retains_topic_scope = bool(topic_parent_bindings)
+    if not retains_topic_scope:
+        task_binding.role = "primary"
     if channel_id and not task_binding.channel_id:
         task_binding.channel_id = channel_id
 
     metadata = _session_metadata(session_row)
     metadata.update({
-        "ownership": "task",
         "adopted_by_task_id": task_id,
         "adopted_at": now.isoformat(),
         "adoption_reason": reason,
         "source_msg_id": source_msg_id,
     })
+    if retains_topic_scope:
+        metadata["ownership"] = "topic"
+        metadata["retained_topic_scope"] = True
+    else:
+        metadata["ownership"] = "task"
     if parent_scopes:
         metadata["parent_scope"] = parent_scopes[0]
         metadata["parent_scopes"] = parent_scopes
@@ -785,10 +942,17 @@ async def adopt_session_for_task(
         metadata["rotated_parent_session_id"] = rotated_parent_sessions[0].session_id
         metadata["rotated_parent_session_ids"] = [row.session_id for row in rotated_parent_sessions]
 
-    session_row.status = SESSION_STATUS_TASK_OWNED
+    if retains_topic_scope:
+        primary_scope_type = SCOPE_TOPIC
+        primary_scope_id = topic_parent_bindings[0].scope_id
+        session_row.status = SESSION_STATUS_ACTIVE
+    else:
+        primary_scope_type = SCOPE_TASK
+        primary_scope_id = task_id
+        session_row.status = SESSION_STATUS_TASK_OWNED
     session_row.session_metadata = metadata
-    session_row.current_scope_type = SCOPE_TASK
-    session_row.current_scope_id = task_id
+    session_row.current_scope_type = primary_scope_type
+    session_row.current_scope_id = primary_scope_id
     session_row.last_used_at = now
     await db.flush()
 
@@ -798,7 +962,7 @@ async def adopt_session_for_task(
         provider_session_key=session_row.provider_session_key,
         provider_account_id=provider_account_id,
         provider_agent_id=provider_agent_id,
-        primary_scope_type=SCOPE_TASK,
-        primary_scope_id=task_id,
+        primary_scope_type=primary_scope_type,
+        primary_scope_id=primary_scope_id,
         task_scope_id=task_id,
     )

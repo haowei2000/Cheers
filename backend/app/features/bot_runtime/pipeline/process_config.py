@@ -21,6 +21,7 @@ class BotRuntime:
     user_secrets: dict[str, str] = field(default_factory=dict)
     sender_name: str = ""
     channel_name: str = ""
+    locale: str = "en"
     event_bus: Any = None  # EventBus (typed Any to avoid circular import)
     cancel_event: Any = None  # asyncio.Event; set when the user cancels this bot reply
 
@@ -33,6 +34,9 @@ class BotRuntime:
     # ── call_bot tool flag ──────────────────────────────────────────────
     skip_system_prompt: bool = False
     delegated_task_xml: bool = False
+
+    # ── built-in Coordinator context policy ────────────────────────────
+    coordinator_profile: Any = None
 
 
 ProcessConfig = BotRuntime

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import type { AuthFetch } from "../../../api/client";
 import { API } from "../../../lib/app-config";
@@ -22,6 +22,16 @@ type MemberPayload = {
   scope?: BotItem["scope"];
   owner?: BotItem["owner"];
 };
+
+type ParticipantCacheEntry = {
+  bots: ChannelBot[];
+  users: ChannelUser[];
+  receivedAt: number;
+};
+
+const PARTICIPANT_CACHE_REVALIDATE_MS = 15_000;
+const PARTICIPANT_FETCH_DELAY_MS = 120;
+const PARTICIPANT_REVALIDATE_DELAY_MS = 400;
 
 function mapBots(items: MemberPayload[]): ChannelBot[] {
   return items
@@ -63,47 +73,89 @@ export function useChannelParticipants({
   const [allBots, setAllBots] = useState<BotItem[]>([]);
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
   const [addingBots, setAddingBots] = useState(false);
+  const participantCacheRef = useRef<Partial<Record<string, ParticipantCacheEntry>>>({});
+
+  useEffect(() => {
+    if (!selectedId) {
+      setAutoAssist(false);
+      return;
+    }
+    const targetChannelId = selectedId;
+    const channel = channels.find((item) => item.channel_id === targetChannelId);
+    setAutoAssist(channel?.auto_assist ?? false);
+  }, [channels, selectedId]);
 
   useEffect(() => {
     if (!selectedId) {
       setChannelBots([]);
       setChannelUsers([]);
-      setAutoAssist(false);
       return;
     }
     const targetChannelId = selectedId;
     const controller = new AbortController();
-    const channel = channels.find((item) => item.channel_id === targetChannelId);
-    setAutoAssist(channel?.auto_assist ?? false);
+    let fetchTimer: ReturnType<typeof setTimeout> | null = null;
+    const cached = participantCacheRef.current[targetChannelId];
+    if (cached) {
+      setChannelBots(cached.bots);
+      setChannelUsers(cached.users);
+      if (Date.now() - cached.receivedAt < PARTICIPANT_CACHE_REVALIDATE_MS) {
+        return () => controller.abort();
+      }
+    } else {
+      setChannelBots([]);
+      setChannelUsers([]);
+    }
 
-    authFetch(`${API}/channels/${targetChannelId}/members?with_username=1`, {
-      signal: controller.signal,
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (
-          controller.signal.aborted ||
-          selectedIdRef.current !== targetChannelId
-        ) {
-          return;
-        }
-        if (data.data) {
-          setChannelBots(mapBots(data.data));
-          setChannelUsers(mapUsers(data.data));
-        } else {
+    const fetchMembers = () => {
+      authFetch(`${API}/channels/${targetChannelId}/members?with_username=1`, {
+        signal: controller.signal,
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (
+            controller.signal.aborted ||
+            selectedIdRef.current !== targetChannelId
+          ) {
+            return;
+          }
+          if (data.data) {
+            const bots = mapBots(data.data);
+            const users = mapUsers(data.data);
+            participantCacheRef.current[targetChannelId] = {
+              bots,
+              users,
+              receivedAt: Date.now(),
+            };
+            setChannelBots(bots);
+            setChannelUsers(users);
+          } else {
+            participantCacheRef.current[targetChannelId] = {
+              bots: [],
+              users: [],
+              receivedAt: Date.now(),
+            };
+            setChannelBots([]);
+            setChannelUsers([]);
+          }
+        })
+        .catch((error) => {
+          if ((error as { name?: string }).name === "AbortError") return;
+          if (selectedIdRef.current !== targetChannelId) return;
           setChannelBots([]);
           setChannelUsers([]);
-        }
-      })
-      .catch((error) => {
-        if ((error as { name?: string }).name === "AbortError") return;
-        if (selectedIdRef.current !== targetChannelId) return;
-        setChannelBots([]);
-        setChannelUsers([]);
-      });
+        });
+    };
 
-    return () => controller.abort();
-  }, [authFetch, channels, selectedId, selectedIdRef]);
+    fetchTimer = setTimeout(
+      fetchMembers,
+      cached ? PARTICIPANT_REVALIDATE_DELAY_MS : PARTICIPANT_FETCH_DELAY_MS,
+    );
+
+    return () => {
+      if (fetchTimer) clearTimeout(fetchTimer);
+      controller.abort();
+    };
+  }, [authFetch, selectedId, selectedIdRef]);
 
   useEffect(() => {
     if (!addBotOpen) return;
@@ -130,8 +182,15 @@ export function useChannelParticipants({
           .then((response) => response.json())
           .then((nextData) => {
             if (nextData.data) {
-              setChannelBots(mapBots(nextData.data));
-              setChannelUsers(mapUsers(nextData.data));
+              const bots = mapBots(nextData.data);
+              const users = mapUsers(nextData.data);
+              participantCacheRef.current[selectedId] = {
+                bots,
+                users,
+                receivedAt: Date.now(),
+              };
+              setChannelBots(bots);
+              setChannelUsers(users);
             }
           });
       })
@@ -147,9 +206,18 @@ export function useChannelParticipants({
       .then((response) => response.json())
       .then((data) => {
         if (data.status === "success") {
-          setChannelBots((prev) =>
-            prev.filter((bot) => bot.member_id !== memberId),
-          );
+          setChannelBots((prev) => {
+            const bots = prev.filter((bot) => bot.member_id !== memberId);
+            const cached = participantCacheRef.current[selectedId];
+            if (cached) {
+              participantCacheRef.current[selectedId] = {
+                ...cached,
+                bots,
+                receivedAt: Date.now(),
+              };
+            }
+            return bots;
+          });
         }
       })
       .catch(console.error);

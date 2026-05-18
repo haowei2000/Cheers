@@ -1,5 +1,7 @@
 # Release Artifacts
 
+> **Language**: English | [Chinese](README.zh-CN.md)
+
 Put the AgentNexus OpenClaw plugin tarball here when you want the backend to serve an offline installer:
 
 ```text

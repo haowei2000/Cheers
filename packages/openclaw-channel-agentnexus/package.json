@@ -1,6 +1,6 @@
 {
   "name": "@haowei0520/openclaw-channel-agentnexus",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "OpenClaw channel plugin for AgentNexus — connects an OpenClaw agent to AgentNexus via the per-bot control + data WebSocket bridge.",
   "type": "module",
   "main": "./dist/index.js",

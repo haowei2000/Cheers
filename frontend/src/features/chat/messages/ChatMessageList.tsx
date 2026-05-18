@@ -1,32 +1,20 @@
-import type {
-  Dispatch,
-  ReactNode,
-  RefObject,
-  SetStateAction,
-  UIEvent,
+import {
+  memo,
+  useMemo,
+  type Dispatch,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+  type UIEvent,
 } from "react";
 import type { VirtualItem, Virtualizer } from "@tanstack/react-virtual";
 import toast from "react-hot-toast";
 import { AvatarVisual } from "../../../components/AvatarVisual";
 import { BotAvatar } from "../../../components/BotAvatar";
 import { ClarifyInlineBlock } from "../../../components/ClarifyInlineBlock";
-import {
-  ChatMessageRenderer,
-  MessageContentClamp,
-} from "../../../components/ChatMessageRenderer";
+import { ChatMessageRenderer } from "../../../components/ChatMessageRenderer";
 import { AppIcon } from "../../../components/icons/AppIcon";
 import { apiFetch } from "../../../api";
-import {
-  isClarifyReplyUserMessage,
-  parseHelperPayload,
-} from "../../../lib/helper";
-import {
-  formatDayLabel,
-  formatTs,
-  parseQuotePrefix,
-  stripLeadingQuotePrefixes,
-  TOPIC_DISPLAY_THRESHOLD,
-} from "../../../lib/message";
 import { patchMessage, type MessageStore } from "../../../lib/message-store";
 import { refreshDMs } from "../../../lib/refresh";
 import type {
@@ -41,6 +29,42 @@ import type {
   Message,
 } from "../../../types";
 import { getSecretSecondsLeft, SecretMessageVeil } from "./SecretMessageVeil";
+import {
+  createMessageViewModel,
+  type MessageRenderItem,
+  type MessageViewModel,
+} from "./renderModel";
+
+const CHAT_TIME_CACHE_LIMIT = 2000;
+const chatTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const chatReplyTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const chatTimeCache = new Map<string, string>();
+
+function formatChatTime(iso: string | undefined, compact = false): string {
+  if (!iso) return "";
+  const cacheKey = `${compact ? "compact" : "full"}:${iso}`;
+  const cached = chatTimeCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const parsed = Date.parse(iso);
+  const value = Number.isFinite(parsed)
+    ? (compact ? chatReplyTimeFormatter : chatTimeFormatter).format(parsed)
+    : "";
+  chatTimeCache.set(cacheKey, value);
+  if (chatTimeCache.size > CHAT_TIME_CACHE_LIMIT) {
+    const oldest = chatTimeCache.keys().next().value;
+    if (oldest) chatTimeCache.delete(oldest);
+  }
+  return value;
+}
 
 export interface ChatMessageListProps {
   messagesContainerRef: RefObject<HTMLDivElement>;
@@ -48,6 +72,7 @@ export interface ChatMessageListProps {
   secretInputRef: RefObject<HTMLInputElement>;
   onMessagesScroll: (event: UIEvent<HTMLDivElement>) => void;
   loading: boolean;
+  restoringInitialScroll: boolean;
   loadingMore: boolean;
   hasMore: boolean;
   messages: Message[];
@@ -57,8 +82,7 @@ export interface ChatMessageListProps {
   currentUser: CurrentUser;
   currentUserId: string | null;
   authToken: string | null;
-  topicRoots: Message[];
-  topicRepliesOf: (msgId: string) => Message[];
+  renderItems: MessageRenderItem[];
   virtualItems: VirtualItem[];
   rowVirtualizer: Virtualizer<HTMLDivElement, Element>;
   showJumpToBottom: boolean;
@@ -67,12 +91,10 @@ export interface ChatMessageListProps {
   botByUsername: Map<string, ChannelBot>;
   coordinatorBot?: ChannelBot;
   userById: Map<string, ChannelUser>;
-  msgById: Map<string, Message>;
   revealedSecrets: Record<string, string>;
   secretTokens: Record<string, string>;
   clarifyAnsweredParentIds: Set<string>;
   pendingClarifyReplyMsgId: string | null;
-  expandedTopics: Set<string>;
   collapsedMessages: Set<string>;
   processingBots: Record<string, string>;
   secretMode: boolean;
@@ -108,12 +130,978 @@ export interface ChatMessageListProps {
   ) => ReactNode;
 }
 
-export function ChatMessageList({
+type RowActionProps = {
+  actionVisibilityClass: string;
+  inputRef: RefObject<HTMLTextAreaElement>;
+  secretInputRef: RefObject<HTMLInputElement>;
+  secretMode: boolean;
+  message: Message;
+  senderBot?: ChannelBot;
+  setComposerInput: (value: string) => void;
+  setReplyingTo: Dispatch<SetStateAction<Message | null>>;
+  copyMessageText: (message: Message) => void;
+  renderMemoryLoadButton: (message: Message) => ReactNode;
+  renderForwardActionButtons?: ChatMessageListProps["renderForwardActionButtons"];
+  showReply: boolean;
+};
+
+const RowActions = memo(function RowActions({
+  actionVisibilityClass,
+  inputRef,
+  secretInputRef,
+  secretMode,
+  message,
+  senderBot,
+  setComposerInput,
+  setReplyingTo,
+  copyMessageText,
+  renderMemoryLoadButton,
+  renderForwardActionButtons,
+  showReply,
+}: RowActionProps) {
+  return (
+    <div className={`${actionVisibilityClass} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
+      <button
+        type="button"
+        title="Copy message content"
+        onClick={() => copyMessageText(message)}
+        className="an-chat-action"
+      >
+        <AppIcon name="copy" className="w-3.5 h-3.5" />
+      </button>
+      {renderForwardActionButtons?.(message)}
+      {renderMemoryLoadButton(message)}
+      {showReply && (
+        <button
+          type="button"
+          title="Reply"
+          onClick={() => {
+            setReplyingTo(message);
+            const mention =
+              message.sender_type === "bot" && senderBot?.username
+                ? `@${senderBot.username} `
+                : "";
+            if (mention) setComposerInput(mention);
+            (secretMode ? secretInputRef.current : inputRef.current)?.focus();
+          }}
+          className="an-chat-action"
+        >
+          <AppIcon name="reply" className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
+  );
+});
+
+function MessageAvatar({
+  vm,
+  size,
+  className,
+}: {
+  vm: MessageViewModel;
+  size: 24 | 32 | 36;
+  className?: string;
+}) {
+  if (vm.isBot) {
+    return (
+      <BotAvatar
+        label={vm.senderLabel}
+        avatarUrl={vm.senderBot?.avatar_url}
+        brandName={vm.senderBot?.display_name || vm.senderBot?.username || vm.senderLabel}
+        size={size}
+        className={className}
+      />
+    );
+  }
+  if (vm.avatarUrl) {
+    return (
+      <img
+        src={vm.avatarUrl}
+        alt={vm.senderLabel}
+        className={`${size === 36 ? "w-9 h-9" : size === 32 ? "w-8 h-8" : "w-6 h-6"} rounded-xl object-cover select-none ${className ?? ""}`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${size === 36 ? "an-chat-avatar lg" : size === 32 ? "an-chat-avatar md" : "an-chat-avatar sm"} ${className ?? ""}`}
+      style={{ background: vm.isOwn ? "var(--accent)" : "var(--fg-3)" }}
+    >
+      {vm.isOwn ? "Me" : vm.initials}
+    </div>
+  );
+}
+
+type MessageBodyProps = {
+  vm: MessageViewModel;
+  selectedId: string | null;
+  secretTokens: Record<string, string>;
+  revealSecretMessage: (msgId: string) => void;
+  activeAgentBridgeTaskData: (message: Message) => AgentBridgeTaskContentData | null;
+  renderAgentBridgeTaskCard: (message: Message) => ReactNode;
+  renderStopStreamButton: (message: Message) => ReactNode;
+  renderPartialBadge: (message: Message) => ReactNode;
+  renderBotTraceStatus: (message: Message) => ReactNode;
+  handleMarkdownImageClick: (src: string) => void;
+  handleMarkdownFileClick: (url: string, name: string) => void;
+  handleClarifyContinue: ChatMessageListProps["handleClarifyContinue"];
+  handleClarifySkip: (msgId: string) => void;
+  compact?: boolean;
+};
+
+function MessageBody({
+  vm,
+  selectedId,
+  secretTokens,
+  revealSecretMessage,
+  activeAgentBridgeTaskData,
+  renderAgentBridgeTaskCard,
+  renderStopStreamButton,
+  renderPartialBadge,
+  renderBotTraceStatus,
+  handleMarkdownImageClick,
+  handleMarkdownFileClick,
+  handleClarifyContinue,
+  handleClarifySkip,
+  compact = false,
+}: MessageBodyProps) {
+  const message = vm.message;
+  const secretSecsLeft =
+    message.is_secret && !vm.secretRevealedContent && message.created_at
+      ? getSecretSecondsLeft(message.created_at)
+      : null;
+  const isSecretExpired = secretSecsLeft !== null && secretSecsLeft <= 0;
+  const isSecretUnrevealed =
+    Boolean(message.is_secret) && !vm.secretRevealedContent && !isSecretExpired;
+  const taskData = activeAgentBridgeTaskData(message);
+  const quote = vm.quote;
+
+  return (
+    <>
+      {quote && !isSecretExpired && !isSecretUnrevealed && (
+        <div className="an-reply-quote" title={`Reply ${quote.label}`}>
+          <span className="an-rq-arrow">↪</span>
+          <span className="an-rq-name">{quote.label}</span>
+          <span className="an-rq-snip">
+            {quote.quote.replace(/\s+/g, " ").trim()}
+          </span>
+        </div>
+      )}
+      {isSecretExpired || isSecretUnrevealed ? (
+        <SecretMessageVeil
+          createdAt={message.created_at}
+          canReveal={Boolean(secretTokens[message.msg_id])}
+          onReveal={() => revealSecretMessage(message.msg_id)}
+        />
+      ) : taskData ? (
+        renderAgentBridgeTaskCard(message)
+      ) : message._streaming && !vm.bodyContent ? (
+        <span className="an-chat-typing-dot" />
+      ) : (
+        <ChatMessageRenderer
+          collapseKey={message.msg_id}
+          content={vm.bodyContent}
+          keyPrefix={`${message.msg_id}-${compact ? "compact" : "body"}-`}
+          streaming={Boolean(message._streaming)}
+          showStreamingCursor={false}
+          disableAutoCollapse={compact}
+          onImageClick={handleMarkdownImageClick}
+          onFileClick={handleMarkdownFileClick}
+        />
+      )}
+      {message._streaming && Boolean(vm.bodyContent) && (
+        <span className="an-chat-typing-dot slim" />
+      )}
+      {renderStopStreamButton(message)}
+      {renderPartialBadge(message)}
+      {renderBotTraceStatus(message)}
+      {vm.clarifyStatus !== null && selectedId && vm.clarify && (
+        <ClarifyInlineBlock
+          msgId={message.msg_id}
+          schema={vm.clarify}
+          status={vm.clarifyStatus}
+          replyContent={undefined}
+          onContinue={(answers) =>
+            handleClarifyContinue(message.msg_id, vm.clarify!, answers)
+          }
+          onSkip={() => handleClarifySkip(message.msg_id)}
+        />
+      )}
+    </>
+  );
+}
+
+type MessageRowProps = {
+  item: Extract<MessageRenderItem, { kind: "message" | "inline-reply" | "topic-reply" }>;
+  vm: MessageViewModel;
+  selectedChannel: Channel | null;
+  selectedId: string | null;
+  isDmSelected: boolean;
+  inputRef: RefObject<HTMLTextAreaElement>;
+  secretInputRef: RefObject<HTMLInputElement>;
+  secretMode: boolean;
+  secretTokens: Record<string, string>;
+  renderFileAttachments: (message: Message, alignRight?: boolean) => ReactNode;
+  revealSecretMessage: (msgId: string) => void;
+  copyMessageText: (message: Message) => void;
+  renderMemoryLoadButton: (message: Message) => ReactNode;
+  renderStopStreamButton: (message: Message) => ReactNode;
+  renderPartialBadge: (message: Message) => ReactNode;
+  renderBotTraceStatus: (message: Message) => ReactNode;
+  renderAgentBridgeTaskCard: (message: Message) => ReactNode;
+  activeAgentBridgeTaskData: (message: Message) => AgentBridgeTaskContentData | null;
+  handleMarkdownImageClick: (src: string) => void;
+  handleMarkdownFileClick: (url: string, name: string) => void;
+  handleClarifyContinue: ChatMessageListProps["handleClarifyContinue"];
+  handleClarifySkip: (msgId: string) => void;
+  setComposerInput: (value: string) => void;
+  setReplyingTo: Dispatch<SetStateAction<Message | null>>;
+  toggleMessage: (msgId: string) => void;
+  collapsedMessages: Set<string>;
+  renderForwardActionButtons?: ChatMessageListProps["renderForwardActionButtons"];
+  forwardSelectionMode: boolean;
+};
+
+const MessageRow = memo(function MessageRow({
+  item,
+  vm,
+  selectedChannel,
+  selectedId,
+  isDmSelected,
+  inputRef,
+  secretInputRef,
+  secretMode,
+  secretTokens,
+  renderFileAttachments,
+  revealSecretMessage,
+  copyMessageText,
+  renderMemoryLoadButton,
+  renderStopStreamButton,
+  renderPartialBadge,
+  renderBotTraceStatus,
+  renderAgentBridgeTaskCard,
+  activeAgentBridgeTaskData,
+  handleMarkdownImageClick,
+  handleMarkdownFileClick,
+  handleClarifyContinue,
+  handleClarifySkip,
+  setComposerInput,
+  setReplyingTo,
+  toggleMessage,
+  collapsedMessages,
+  renderForwardActionButtons,
+  forwardSelectionMode,
+}: MessageRowProps) {
+  const message = vm.message;
+  const isTopicReply = item.kind === "topic-reply";
+  const isInlineReply = item.kind === "inline-reply";
+  const isDMRender = selectedChannel?.type === "dm";
+  const showReply = !isDmSelected;
+  const actionVisibilityClass = `${forwardSelectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"} focus-within:opacity-100 transition-opacity`;
+
+  if (isTopicReply) {
+    const collapsed = collapsedMessages.has(message.msg_id);
+    const preview =
+      vm.displayContent.replace(/\s+/g, " ").slice(0, 42) +
+      (vm.displayContent.length > 42 ? "..." : "");
+    return (
+      <div
+        id={`msg-${message.msg_id}`}
+        className="an-chat-msg group flex items-start gap-2 px-8 py-1"
+      >
+        <MessageAvatar vm={vm} size={24} className="mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
+            <span className="an-type-label" style={{ color: "var(--fg-1)" }}>
+              {vm.isOwn ? "Me" : vm.senderLabel}
+            </span>
+            {vm.isBot && <span className="an-chip green">Bot</span>}
+            <span className="an-chat-meta">
+              {formatChatTime(message.created_at, true)}
+            </span>
+            {collapsed && (
+              <span className="an-chat-meta truncate max-w-[220px]">
+                {preview}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => toggleMessage(message.msg_id)}
+              className="an-chat-mini-action ml-0.5 opacity-0 group-hover:opacity-100"
+              title={collapsed ? "Expand" : "Collapse"}
+            >
+              <AppIcon name={collapsed ? "chevronDown" : "chevronUp"} className="w-3 h-3" />
+            </button>
+          </div>
+          {!collapsed && renderFileAttachments(message)}
+          {!collapsed && (
+            <div className={`an-chat-bubble topic-reply ${vm.isOwn ? "own" : "other"}`}>
+              <MessageBody
+                vm={vm}
+                selectedId={selectedId}
+                secretTokens={secretTokens}
+                revealSecretMessage={revealSecretMessage}
+                activeAgentBridgeTaskData={activeAgentBridgeTaskData}
+                renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
+                renderStopStreamButton={renderStopStreamButton}
+                renderPartialBadge={renderPartialBadge}
+                renderBotTraceStatus={renderBotTraceStatus}
+                handleMarkdownImageClick={handleMarkdownImageClick}
+                handleMarkdownFileClick={handleMarkdownFileClick}
+                handleClarifyContinue={handleClarifyContinue}
+                handleClarifySkip={handleClarifySkip}
+                compact
+              />
+            </div>
+          )}
+        </div>
+        <RowActions
+          actionVisibilityClass={actionVisibilityClass}
+          inputRef={inputRef}
+          secretInputRef={secretInputRef}
+          secretMode={secretMode}
+          message={message}
+          senderBot={vm.senderBot}
+          setComposerInput={setComposerInput}
+          setReplyingTo={setReplyingTo}
+          copyMessageText={copyMessageText}
+          renderMemoryLoadButton={renderMemoryLoadButton}
+          renderForwardActionButtons={renderForwardActionButtons}
+          showReply={showReply}
+        />
+      </div>
+    );
+  }
+
+  if (isDMRender && vm.isOwn) {
+    return (
+      <div
+        id={`msg-${message.msg_id}`}
+        className="an-chat-msg group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
+      >
+        <MessageAvatar vm={vm} size={32} />
+        <div className="an-dm-bubble-stack flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
+          <div className="flex items-baseline gap-1.5 mb-1 justify-end">
+            <span className="an-chat-meta mr-0.5">{vm.time}</span>
+          </div>
+          {message.content_data?.title ? (
+            <div className="an-chat-title mb-1 mr-0.5 text-right">
+              {message.content_data.title as string}
+            </div>
+          ) : null}
+          {renderFileAttachments(message, true)}
+          <div className="an-chat-bubble own">
+            <MessageBody
+              vm={vm}
+              selectedId={selectedId}
+              secretTokens={secretTokens}
+              revealSecretMessage={revealSecretMessage}
+              activeAgentBridgeTaskData={activeAgentBridgeTaskData}
+              renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
+              renderStopStreamButton={renderStopStreamButton}
+              renderPartialBadge={renderPartialBadge}
+              renderBotTraceStatus={renderBotTraceStatus}
+              handleMarkdownImageClick={handleMarkdownImageClick}
+              handleMarkdownFileClick={handleMarkdownFileClick}
+              handleClarifyContinue={handleClarifyContinue}
+              handleClarifySkip={handleClarifySkip}
+            />
+          </div>
+        </div>
+        <RowActions
+          actionVisibilityClass={actionVisibilityClass}
+          inputRef={inputRef}
+          secretInputRef={secretInputRef}
+          secretMode={secretMode}
+          message={message}
+          senderBot={vm.senderBot}
+          setComposerInput={setComposerInput}
+          setReplyingTo={setReplyingTo}
+          copyMessageText={copyMessageText}
+          renderMemoryLoadButton={renderMemoryLoadButton}
+          renderForwardActionButtons={renderForwardActionButtons}
+          showReply={showReply}
+        />
+      </div>
+    );
+  }
+
+  if (isDMRender) {
+    return (
+      <div
+        id={`msg-${message.msg_id}`}
+        className="an-chat-msg group flex items-start gap-2.5 px-4 py-1 transition-all"
+      >
+        <MessageAvatar vm={vm} size={32} className="mt-0.5" />
+        <div className="an-dm-bubble-stack flex flex-col max-w-[85%] sm:max-w-[72%]">
+          <div className="flex items-baseline gap-1.5 mb-1">
+            <span className="an-chat-sender">{vm.senderLabel}</span>
+            {vm.isBot && <span className="an-chip green">Bot</span>}
+            <span className="an-chat-meta">{vm.time}</span>
+          </div>
+          {message.content_data?.title ? (
+            <div className="an-chat-title mb-1">{message.content_data.title as string}</div>
+          ) : null}
+          {renderFileAttachments(message)}
+          <div className="an-chat-bubble other">
+            <MessageBody
+              vm={vm}
+              selectedId={selectedId}
+              secretTokens={secretTokens}
+              revealSecretMessage={revealSecretMessage}
+              activeAgentBridgeTaskData={activeAgentBridgeTaskData}
+              renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
+              renderStopStreamButton={renderStopStreamButton}
+              renderPartialBadge={renderPartialBadge}
+              renderBotTraceStatus={renderBotTraceStatus}
+              handleMarkdownImageClick={handleMarkdownImageClick}
+              handleMarkdownFileClick={handleMarkdownFileClick}
+              handleClarifyContinue={handleClarifyContinue}
+              handleClarifySkip={handleClarifySkip}
+            />
+          </div>
+        </div>
+        <RowActions
+          actionVisibilityClass={actionVisibilityClass}
+          inputRef={inputRef}
+          secretInputRef={secretInputRef}
+          secretMode={secretMode}
+          message={message}
+          senderBot={vm.senderBot}
+          setComposerInput={setComposerInput}
+          setReplyingTo={setReplyingTo}
+          copyMessageText={copyMessageText}
+          renderMemoryLoadButton={renderMemoryLoadButton}
+          renderForwardActionButtons={renderForwardActionButtons}
+          showReply={showReply}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      id={`msg-${message.msg_id}`}
+      className={`an-chat-msg group relative px-4 transition-colors ${isInlineReply ? "pl-12" : ""}`}
+      style={{ paddingTop: isInlineReply ? 4 : 8, paddingBottom: 2 }}
+    >
+      <div
+        className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ background: "var(--surface-soft)" }}
+      />
+      <div className="relative flex gap-3">
+        <div className="w-9 flex-shrink-0">
+          <MessageAvatar vm={vm} size={36} className="mt-0.5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
+            <span className="an-chat-sender">{vm.isOwn ? "Me" : vm.senderLabel}</span>
+            {vm.isBot && <span className="an-chip green">Bot</span>}
+            <span className="an-chat-meta">{vm.time}</span>
+          </div>
+          {message.content_data?.title ? (
+            <div className="an-chat-title mb-1">{message.content_data.title as string}</div>
+          ) : null}
+          {renderFileAttachments(message)}
+          <div className="an-chat-body">
+            <MessageBody
+              vm={vm}
+              selectedId={selectedId}
+              secretTokens={secretTokens}
+              revealSecretMessage={revealSecretMessage}
+              activeAgentBridgeTaskData={activeAgentBridgeTaskData}
+              renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
+              renderStopStreamButton={renderStopStreamButton}
+              renderPartialBadge={renderPartialBadge}
+              renderBotTraceStatus={renderBotTraceStatus}
+              handleMarkdownImageClick={handleMarkdownImageClick}
+              handleMarkdownFileClick={handleMarkdownFileClick}
+              handleClarifyContinue={handleClarifyContinue}
+              handleClarifySkip={handleClarifySkip}
+            />
+          </div>
+        </div>
+        <RowActions
+          actionVisibilityClass={actionVisibilityClass}
+          inputRef={inputRef}
+          secretInputRef={secretInputRef}
+          secretMode={secretMode}
+          message={message}
+          senderBot={vm.senderBot}
+          setComposerInput={setComposerInput}
+          setReplyingTo={setReplyingTo}
+          copyMessageText={copyMessageText}
+          renderMemoryLoadButton={renderMemoryLoadButton}
+          renderForwardActionButtons={renderForwardActionButtons}
+          showReply={showReply}
+        />
+      </div>
+    </div>
+  );
+});
+
+const RoutingRow = memo(function RoutingRow({
+  message,
+  coordinatorBot,
+  botByUsername,
+}: {
+  message: Message;
+  coordinatorBot?: ChannelBot;
+  botByUsername: Map<string, ChannelBot>;
+}) {
+  const cd = (message.content_data ?? {}) as Record<string, unknown>;
+  const q = typeof cd.q === "string" ? cd.q : null;
+  const plan = typeof cd.plan === "string" ? cd.plan : null;
+  const picksRaw = Array.isArray(cd.picks)
+    ? (cd.picks as Array<Record<string, unknown>>)
+    : [];
+  const picks = picksRaw.map((pick) => ({
+    agent: typeof pick.agent === "string" ? pick.agent : "agent",
+    score: typeof pick.score === "string" ? pick.score : null,
+    why: typeof pick.why === "string" ? pick.why : null,
+    picked: pick.picked === true,
+  }));
+  return (
+    <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
+      <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+        <span className="an-chat-sender">
+          {coordinatorBot?.display_name || coordinatorBot?.username || "Assistant"}
+        </span>
+        <span className="an-chip accent">COORDINATOR</span>
+        {message.created_at && (
+          <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
+        )}
+      </div>
+      <div className="an-routing">
+        {q && <div className="an-rq">Route: <b>{q}</b></div>}
+        {picks.length > 0 && (
+          <div className="an-picks">
+            {picks.map((pick) => {
+              const bot = botByUsername.get(pick.agent);
+              return (
+                <span
+                  key={pick.agent}
+                  className={`an-pick${pick.picked ? " picked" : ""}`}
+                  title={pick.why || undefined}
+                >
+                  <span
+                    className="an-dot"
+                    style={{ background: bot?.avatar_url ? "var(--accent)" : "var(--fg-3)" }}
+                  />
+                  @{pick.agent}
+                  {pick.score && <span className="an-type-caption ml-0.5">{pick.score}</span>}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        {plan && <div className="an-plan"><b>Plan:</b> {plan}</div>}
+      </div>
+    </div>
+  );
+});
+
+const AnnouncementRow = memo(function AnnouncementRow({
+  message,
+  userById,
+  currentUserId,
+}: {
+  message: Message;
+  userById: Map<string, ChannelUser>;
+  currentUserId: string | null;
+}) {
+  const cd = (message.content_data ?? {}) as Record<string, unknown>;
+  const title = typeof cd.title === "string" ? cd.title : null;
+  const pinnedById = typeof cd.pinned_by === "string" ? cd.pinned_by : null;
+  const pinnedUser = pinnedById
+    ? pinnedById === currentUserId
+      ? { display_name: "Me", username: "me" }
+      : userById.get(pinnedById)
+    : null;
+  const pinnedLabel =
+    pinnedUser?.display_name ||
+    pinnedUser?.username ||
+    pinnedById ||
+    "Channel administrator";
+  return (
+    <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
+      <div className="an-announce">
+        <div className="an-ann-ico" aria-hidden="true">!</div>
+        <div className="an-ann-tag">Announcement · Announcement</div>
+        {title && <div className="an-ann-title">{title}</div>}
+        <div className="an-ann-body">{message.content}</div>
+        <div className="an-ann-foot">
+          <span>By {pinnedLabel} pinned</span>
+          {message.created_at && (
+            <>
+              <span>·</span>
+              <span>{formatChatTime(message.created_at)}</span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const PermissionRow = memo(function PermissionRow({
+  message,
+  selectedId,
+  authToken,
+  botById,
+  setMessageStore,
+}: {
+  message: Message;
+  selectedId: string | null;
+  authToken: string | null;
+  botById: Map<string, ChannelBot>;
+  setMessageStore: Dispatch<SetStateAction<MessageStore>>;
+}) {
+  const cd = (message.content_data ?? {}) as Record<string, unknown>;
+  const tool = typeof cd.tool === "string" ? cd.tool : null;
+  const body = typeof cd.body === "string" ? cd.body : message.content || "";
+  const resolved = cd.resolved === true;
+  const resolution =
+    cd.resolution === "allow" || cd.resolution === "deny" ? cd.resolution : null;
+  const senderBot =
+    message.sender_type === "bot" ? botById.get(message.sender_id) : null;
+  const senderLabel = senderBot?.display_name || senderBot?.username || "Bot";
+
+  const submitResolution = async (value: "allow" | "deny") => {
+    if (!selectedId) return;
+    try {
+      const response = await apiFetch(
+        `/channels/${selectedId}/messages/${message.msg_id}/resolve`,
+        { method: "POST", body: { resolution: value }, token: authToken },
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.data?.content_data) {
+        setMessageStore((prev) =>
+          patchMessage(prev, message.msg_id, (current) => ({
+            ...current,
+            content_data: data.data.content_data,
+          })),
+        );
+      }
+    } catch {
+      /* keep unresolved so the user can retry */
+    }
+  };
+
+  return (
+    <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
+      <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+        <span className="an-chat-sender">{senderLabel}</span>
+        <span className="an-chip off">BOT</span>
+        {message.created_at && (
+          <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
+        )}
+      </div>
+      <div className={`an-approval${resolved ? " resolved" : ""}`}>
+        <div className="an-body">
+          <b>Approval needed.</b> {body}
+          {tool && <span className="an-type-caption ml-1.5 font-mono">({tool})</span>}
+          {resolved && resolution && (
+            <span style={{ marginLeft: 8, color: "var(--fg-3)" }}>
+              · {resolution === "allow" ? "Approved" : "Denied"}
+            </span>
+          )}
+        </div>
+        {!resolved && (
+          <>
+            <button type="button" className="deny" onClick={() => submitResolution("deny")}>
+              Reject
+            </button>
+            <button type="button" className="allow" onClick={() => submitResolution("allow")}>
+              Allow
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const FriendRequestRow = memo(function FriendRequestRow({
+  message,
+  currentUserId,
+  authToken,
+  setMessageStore,
+  setDMs,
+}: {
+  message: Message;
+  currentUserId: string | null;
+  authToken: string | null;
+  setMessageStore: Dispatch<SetStateAction<MessageStore>>;
+  setDMs: Dispatch<SetStateAction<DM[]>>;
+}) {
+  const cd = (message.content_data ?? {}) as Record<string, unknown>;
+  const requester =
+    cd.requester && typeof cd.requester === "object"
+      ? (cd.requester as Record<string, unknown>)
+      : {};
+  const receiver =
+    cd.receiver && typeof cd.receiver === "object"
+      ? (cd.receiver as Record<string, unknown>)
+      : {};
+  const friendshipId = typeof cd.friendship_id === "string" ? cd.friendship_id : "";
+  const status = typeof cd.status === "string" ? cd.status : "pending";
+  const requesterName =
+    (requester.display_name as string | undefined) ||
+    (requester.username as string | undefined) ||
+    "User";
+  const requesterUsername = requester.username as string | undefined;
+  const canResolve =
+    status === "pending" &&
+    friendshipId &&
+    (receiver.user_id as string | undefined) === currentUserId;
+
+  const submitFriendRequest = async (action: "accept" | "reject") => {
+    try {
+      const response = await apiFetch(`/friends/requests/${friendshipId}/${action}`, {
+        method: "POST",
+        token: authToken,
+      });
+      const data = await response.json();
+      if (data?.status !== "success") {
+        toast.error(data?.detail || data?.message || "Operation failed");
+        return;
+      }
+      const nextStatus = action === "accept" ? "accepted" : "rejected";
+      setMessageStore((prev) =>
+        patchMessage(prev, message.msg_id, (current) => ({
+          ...current,
+          content_data: {
+            ...(current.content_data || {}),
+            status: nextStatus,
+            resolved_by: currentUserId,
+          },
+        })),
+      );
+      refreshDMs(setDMs, authToken ?? undefined);
+      toast.success(action === "accept" ? "Friend request accepted" : "Friend request rejected");
+    } catch {
+      toast.error("Operation failed");
+    }
+  };
+
+  return (
+    <div id={`msg-${message.msg_id}`} className="an-chat-msg pl-16 pr-4 pt-2">
+      <div className="flex items-baseline gap-1.5 mb-1 pl-1">
+        <span className="an-chat-sender">Friend notifications</span>
+        {message.created_at && (
+          <span className="an-chat-meta">{formatChatTime(message.created_at)}</span>
+        )}
+      </div>
+      <div className={`an-approval${status !== "pending" ? " resolved" : ""}`}>
+        <div className="an-body">
+          <b>{requesterName}</b>
+          {requesterUsername && (
+            <span style={{ color: "var(--fg-3)", marginLeft: 6 }}>
+              @{requesterUsername}
+            </span>
+          )}
+          <span style={{ marginLeft: 6 }}>
+            {status === "pending"
+              ? "wants to add you as a friend"
+              : status === "accepted"
+                ? "is now your friend"
+                : status === "rejected"
+                  ? "Friend request rejected"
+                  : status === "cancelled"
+                    ? "Friend request withdrawn"
+                    : "Friend request handled"}
+          </span>
+        </div>
+        {canResolve && (
+          <>
+            <button type="button" className="deny" onClick={() => submitFriendRequest("reject")}>
+              Reject
+            </button>
+            <button type="button" className="allow" onClick={() => submitFriendRequest("accept")}>
+              Accept
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const TopicChipRow = memo(function TopicChipRow({
+  item,
+  botById,
+  currentUser,
+  currentUserId,
+  userById,
+  setPageTopicId,
+  toggleTopic,
+}: {
+  item: Extract<MessageRenderItem, { kind: "topic-chip" }>;
+  botById: Map<string, ChannelBot>;
+  currentUser: CurrentUser;
+  currentUserId: string | null;
+  userById: Map<string, ChannelUser>;
+  setPageTopicId: Dispatch<SetStateAction<string | null>>;
+  toggleTopic: (rootId: string) => void;
+}) {
+  const root = item.message;
+  const titleSummary =
+    (root.content_data?.title as string | undefined) ||
+    root.content.replace(/\s+/g, " ").trim().slice(0, 90) ||
+    "(No title)";
+  type Participant = {
+    key: string;
+    label: string;
+    avatarUrl?: string | null;
+    color: string;
+    initial: string;
+  };
+  const participants: Participant[] = [];
+  const addParticipant = (message: Message) => {
+    const key = `${message.sender_type}:${message.sender_id}`;
+    if (participants.some((participant) => participant.key === key)) return;
+    if (message.sender_type === "bot") {
+      const bot = botById.get(message.sender_id);
+      const label = bot?.display_name || bot?.username || "Bot";
+      participants.push({
+        key,
+        label,
+        avatarUrl: bot?.avatar_url,
+        color: "var(--green)",
+        initial: label.slice(0, 1).toUpperCase(),
+      });
+      return;
+    }
+    const isSelf = message.sender_id === currentUserId;
+    const user = isSelf ? null : userById.get(message.sender_id);
+    const label = isSelf
+      ? "Me"
+      : user?.display_name || user?.username || "User";
+    participants.push({
+      key,
+      label,
+      avatarUrl: isSelf ? currentUser?.avatar_url || undefined : user?.avatar_url,
+      color: isSelf ? "var(--accent)" : "var(--fg-3)",
+      initial: isSelf ? "Me" : label.slice(0, 1).toUpperCase(),
+    });
+  };
+  addParticipant(root);
+  for (const reply of item.replies) addParticipant(reply);
+  const visibleAvatars = participants.slice(0, 5);
+  const extraCount = participants.length - visibleAvatars.length;
+
+  return (
+    <div id={`msg-${root.msg_id}`} className="an-chat-msg pl-16 my-1.5 pr-4">
+      <div className="an-topic-chip w-full">
+        <button
+          type="button"
+          onClick={() => toggleTopic(root.msg_id)}
+          className="an-topic-chip-faces"
+          title={item.expanded ? "Collapse topic replies" : "Expand topic replies"}
+        >
+          {visibleAvatars.map((participant) =>
+            participant.avatarUrl ? (
+              <AvatarVisual
+                key={participant.key}
+                avatarUrl={participant.avatarUrl}
+                className="an-topic-chip-face"
+                fallback={participant.initial}
+                label={participant.label}
+                radius={8}
+                size={24}
+              />
+            ) : (
+              <span
+                key={participant.key}
+                className="an-topic-chip-face"
+                style={{ background: participant.color }}
+              >
+                {participant.initial}
+              </span>
+            ),
+          )}
+          {extraCount > 0 && (
+            <span
+              className="an-topic-chip-face"
+              style={{ background: "var(--bg-2)", color: "var(--fg-2)" }}
+            >
+              +{extraCount}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleTopic(root.msg_id)}
+          className="an-topic-chip-body text-left"
+          title={titleSummary}
+        >
+          <span className="an-topic-chip-title">{titleSummary}</span>
+          <span className="an-topic-chip-meta">
+            Topic · {item.replies.length + 1} messages · {participants.length} participants
+            {item.hiddenReplyCount > 0 ? ` · ${item.hiddenReplyCount} older replies hidden` : ""}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPageTopicId(root.msg_id)}
+          className="an-topic-chip-open"
+          title="Open standalone topic view"
+        >
+          Open ›
+        </button>
+      </div>
+    </div>
+  );
+});
+
+function DayDivider({ label }: { label: string }) {
+  return (
+    <div className="an-day-divider">
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function ProcessingBots({ processingBots }: { processingBots: Record<string, string> }) {
+  return (
+    <>
+      {Object.entries(processingBots).map(([botId, username]) => (
+        <div key={botId} className="an-chat-msg flex gap-3 px-3 py-2">
+          <div
+            className="an-chat-avatar lg"
+            style={{ background: "var(--green-muted)", color: "var(--green)" }}
+          >
+            {username.slice(0, 1).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="an-chat-sender">{username}</span>
+              <span className="an-chip green">Bot</span>
+            </div>
+            <div className="an-type-meta flex items-center gap-1.5">
+              <span className="inline-flex gap-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce" style={{ animationDelay: "300ms" }} />
+              </span>
+              Typing...
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function ChatMessageListBase({
   messagesContainerRef,
   inputRef,
   secretInputRef,
   onMessagesScroll,
   loading,
+  restoringInitialScroll,
   loadingMore,
   hasMore,
   messages,
@@ -123,8 +1111,7 @@ export function ChatMessageList({
   currentUser,
   currentUserId,
   authToken,
-  topicRoots,
-  topicRepliesOf,
+  renderItems,
   virtualItems,
   rowVirtualizer,
   showJumpToBottom,
@@ -133,12 +1120,10 @@ export function ChatMessageList({
   botByUsername,
   coordinatorBot,
   userById,
-  msgById,
   revealedSecrets,
   secretTokens,
   clarifyAnsweredParentIds,
   pendingClarifyReplyMsgId,
-  expandedTopics,
   collapsedMessages,
   processingBots,
   secretMode,
@@ -165,1866 +1150,245 @@ export function ChatMessageList({
   forwardSelectionMode = false,
   renderForwardActionButtons,
 }: ChatMessageListProps) {
-  const actionVisibilityClass = (hoverClass = "group-hover:opacity-100") =>
-    `${forwardSelectionMode ? "opacity-100" : `opacity-0 ${hoverClass}`} focus-within:opacity-100 transition-opacity`;
+  const viewModels = useMemo(() => {
+    const byId = new Map<string, MessageViewModel>();
+    for (const item of renderItems) {
+      if (item.kind === "day-divider") continue;
+      const message = item.message;
+      if (!message || byId.has(message.msg_id)) continue;
+      byId.set(
+        message.msg_id,
+        createMessageViewModel({
+          message,
+          botById,
+          userById,
+          currentUser,
+          currentUserId,
+          revealedContent: revealedSecrets[message.msg_id],
+          clarifyAnsweredParentIds,
+          pendingClarifyReplyMsgId,
+          formatTime: formatChatTime,
+        }),
+      );
+    }
+    return byId;
+  }, [
+    botById,
+    clarifyAnsweredParentIds,
+    currentUser,
+    currentUserId,
+    pendingClarifyReplyMsgId,
+    renderItems,
+    revealedSecrets,
+    userById,
+  ]);
+
+  const renderItem = (item: MessageRenderItem): ReactNode => {
+    if (item.kind === "day-divider") return <DayDivider label={item.dayLabel} />;
+    if (item.kind === "topic-chip") {
+      return (
+        <TopicChipRow
+          item={item}
+          botById={botById}
+          currentUser={currentUser}
+          currentUserId={currentUserId}
+          userById={userById}
+          setPageTopicId={setPageTopicId}
+          toggleTopic={toggleTopic}
+        />
+      );
+    }
+
+    const message = item.message;
+    if (item.kind === "message") {
+      if (message.msg_type === "routing") {
+        return (
+          <RoutingRow
+            message={message}
+            coordinatorBot={coordinatorBot}
+            botByUsername={botByUsername}
+          />
+        );
+      }
+      if (message.msg_type === "friend_request") {
+        return (
+          <FriendRequestRow
+            message={message}
+            currentUserId={currentUserId}
+            authToken={authToken}
+            setMessageStore={setMessageStore}
+            setDMs={setDMs}
+          />
+        );
+      }
+      if (message.msg_type === "permission") {
+        return (
+          <PermissionRow
+            message={message}
+            selectedId={selectedId}
+            authToken={authToken}
+            botById={botById}
+            setMessageStore={setMessageStore}
+          />
+        );
+      }
+      if (message.msg_type === "announcement") {
+        return (
+          <AnnouncementRow
+            message={message}
+            userById={userById}
+            currentUserId={currentUserId}
+          />
+        );
+      }
+    }
+
+    const vm = viewModels.get(message.msg_id);
+    if (!vm) return null;
+    return (
+      <MessageRow
+        item={item}
+        vm={vm}
+        selectedChannel={selectedChannel}
+        selectedId={selectedId}
+        isDmSelected={isDmSelected}
+        inputRef={inputRef}
+        secretInputRef={secretInputRef}
+        secretMode={secretMode}
+        secretTokens={secretTokens}
+        renderFileAttachments={renderFileAttachments}
+        revealSecretMessage={revealSecretMessage}
+        copyMessageText={copyMessageText}
+        renderMemoryLoadButton={renderMemoryLoadButton}
+        renderStopStreamButton={renderStopStreamButton}
+        renderPartialBadge={renderPartialBadge}
+        renderBotTraceStatus={renderBotTraceStatus}
+        renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
+        activeAgentBridgeTaskData={activeAgentBridgeTaskData}
+        handleMarkdownImageClick={handleMarkdownImageClick}
+        handleMarkdownFileClick={handleMarkdownFileClick}
+        handleClarifyContinue={handleClarifyContinue}
+        handleClarifySkip={handleClarifySkip}
+        setComposerInput={setComposerInput}
+        setReplyingTo={setReplyingTo}
+        toggleMessage={toggleMessage}
+        collapsedMessages={collapsedMessages}
+        renderForwardActionButtons={renderForwardActionButtons}
+        forwardSelectionMode={forwardSelectionMode}
+      />
+    );
+  };
 
   return (
     <>
-                <div
-                  ref={messagesContainerRef}
-                  className="an-chat-scroll flex-1 overflow-auto"
-                  onScroll={onMessagesScroll}
-                >
-                  {loading ? (
-                    <div className="an-type-meta flex h-full items-center justify-center">
-                      Loading...
-                    </div>
-                  ) : (
-                    <div className="py-2 px-2">
-                      {loadingMore && (
-                        <div className="an-type-caption py-2 text-center">
-                          Load more messages...
-                        </div>
-                      )}
-                      {!hasMore && messages.length > 0 && (
-                        <div className="an-type-caption py-2 text-center">
-                          — All messages loaded —
-                        </div>
-                      )}
-                      {!loading &&
-                        !loadingMore &&
-                        messages.length === 0 &&
-                        selectedChannel && (
-                          <div className="an-empty">
-                            <div className="an-empty-big">
-                              # {selectedChannel.name}
-                            </div>
-                            <div className="an-empty-sm">
-                              No messages yet. Mention a bot or start chatting directly.
-                            </div>
-                            <div className="an-empty-chips">
-                              {[
-                                "@Coordinator summarize recent progress in this channel",
-                                "What is the goal of this channel?",
-                                "@Coordinator help me decide what to do next",
-                              ].map((s) => (
-                                <button
-                                  key={s}
-                                  type="button"
-                                  className="an-empty-chip"
-                                  onClick={() => {
-                                    setComposerInput(s);
-                                    setTimeout(
-                                      () => inputRef.current?.focus(),
-                                      0,
-                                    );
-                                  }}
-                                >
-                                  {s}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      {(() => {
-                      const renderedRows = virtualItems.map((virtualItem) => {
-                        const m = topicRoots[virtualItem.index];
-                        if (!m) return null;
-                        // isDM gates the "intimate" bubble + self-right
-                        // treatment; channel rendering is Discord-style
-                        // flat, all-left, always with sender identity.
-                        const isDMRender =
-                          selectedChannel?.type === "dm";
-                        // ── routing card: coordinator picks + plan ──────────
-                        if (m.msg_type === "routing") {
-                          const cd = (m.content_data ?? {}) as Record<
-                            string,
-                            unknown
-                          >;
-                          const q = typeof cd.q === "string" ? cd.q : null;
-                          const plan =
-                            typeof cd.plan === "string" ? cd.plan : null;
-                          const picksRaw = Array.isArray(cd.picks)
-                            ? (cd.picks as Array<Record<string, unknown>>)
-                            : [];
-                          const picks = picksRaw.map((p) => ({
-                            agent:
-                              typeof p.agent === "string" ? p.agent : "agent",
-                            score:
-                              typeof p.score === "string" ? p.score : null,
-                            why: typeof p.why === "string" ? p.why : null,
-                            picked: p.picked === true,
-                            secondary: p.secondary === true,
-                          }));
-                          const coordBot = coordinatorBot;
-                          const rTime = m.created_at
-                            ? formatTs(m.created_at)
-                            : "";
-                          return (
-                            <div
-                              key={m.msg_id}
-                              id={`msg-${m.msg_id}`}
-                              className="an-chat-msg pl-16 pr-4 pt-2"
-                            >
-                              <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-                                <span className="an-chat-sender">
-                                  {coordBot?.display_name ||
-                                    coordBot?.username ||
-                                    "Assistant"}
-                                </span>
-                                <span className="an-chip accent">
-                                  COORDINATOR
-                                </span>
-                                {rTime && (
-                                  <span className="an-chat-meta">
-                                    {rTime}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="an-routing">
-                                {q && (
-                                  <div className="an-rq">
-                                    Route: <b>{q}</b>
-                                  </div>
-                                )}
-                                {picks.length > 0 && (
-                                  <div className="an-picks">
-                                    {picks.map((p) => {
-                                      const bot = botByUsername.get(p.agent);
-                                      const color =
-                                        bot?.avatar_url ?? null;
-                                      return (
-                                        <span
-                                          key={p.agent}
-                                          className={
-                                            "an-pick" +
-                                            (p.picked ? " picked" : "")
-                                          }
-                                          title={p.why || undefined}
-                                        >
-                                          <span
-                                            className="an-dot"
-                                            style={{
-                                              background: color
-                                                ? "var(--accent)"
-                                                : "var(--fg-3)",
-                                            }}
-                                          />
-                                          @{p.agent}
-                                          {p.score && (
-                                            <span className="an-type-caption ml-0.5">
-                                              {p.score}
-                                            </span>
-                                          )}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                                {plan && (
-                                  <div className="an-plan">
-                                    <b>Plan:</b> {plan}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        // ── friend request card: Personal system notice ──────
-                        if (m.msg_type === "friend_request") {
-                          const cd = (m.content_data ?? {}) as Record<string, unknown>;
-                          const requester =
-                            cd.requester && typeof cd.requester === "object"
-                              ? (cd.requester as Record<string, unknown>)
-                              : {};
-                          const receiver =
-                            cd.receiver && typeof cd.receiver === "object"
-                              ? (cd.receiver as Record<string, unknown>)
-                              : {};
-                          const friendshipId =
-                            typeof cd.friendship_id === "string"
-                              ? cd.friendship_id
-                              : "";
-                          const status =
-                            typeof cd.status === "string" ? cd.status : "pending";
-                          const requesterName =
-                            (requester.display_name as string | undefined) ||
-                            (requester.username as string | undefined) ||
-                            "User";
-                          const requesterUsername =
-                            requester.username as string | undefined;
-                          const canResolve =
-                            status === "pending" &&
-                            friendshipId &&
-                            (receiver.user_id as string | undefined) === currentUserId;
-                          const submitFriendRequest = async (
-                            action: "accept" | "reject",
-                          ) => {
-                            try {
-                              const r = await apiFetch(
-                                `/friends/requests/${friendshipId}/${action}`,
-                                { method: "POST", token: authToken },
-                              );
-                              const data = await r.json();
-                              if (data?.status !== "success") {
-                                toast.error(data?.detail || data?.message || "Operation failed");
-                                return;
-                              }
-                              const nextStatus =
-                                action === "accept" ? "accepted" : "rejected";
-                              setMessageStore((prev) =>
-                                patchMessage(prev, m.msg_id, (x) => ({
-                                  ...x,
-                                  content_data: {
-                                    ...(x.content_data || {}),
-                                    status: nextStatus,
-                                    resolved_by: currentUserId,
-                                  },
-                                })),
-                              );
-                              refreshDMs(setDMs, authToken ?? undefined);
-                              toast.success(action === "accept" ? "Friend request accepted" : "Friend request rejected");
-                            } catch {
-                              toast.error("Operation failed");
-                            }
-                          };
-                          const friendTime = m.created_at ? formatTs(m.created_at) : "";
-                          return (
-                            <div
-                              key={m.msg_id}
-                              id={`msg-${m.msg_id}`}
-                              className="an-chat-msg pl-16 pr-4 pt-2"
-                            >
-                              <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-                                <span className="an-chat-sender">
-                                  Friend notifications
-                                </span>
-                                {friendTime && (
-                                  <span className="an-chat-meta">
-                                    {friendTime}
-                                  </span>
-                                )}
-                              </div>
-                              <div className={"an-approval" + (status !== "pending" ? " resolved" : "")}>
-                                <div className="an-body">
-                                  <b>{requesterName}</b>
-                                  {requesterUsername && (
-                                    <span style={{ color: "var(--fg-3)", marginLeft: 6 }}>
-                                      @{requesterUsername}
-                                    </span>
-                                  )}
-                                  <span style={{ marginLeft: 6 }}>
-                                    {status === "pending"
-                                      ? "wants to add you as a friend"
-                                      : status === "accepted"
-                                        ? "is now your friend"
-                                        : status === "rejected"
-                                          ? "Friend request rejected"
-                                          : status === "cancelled"
-                                            ? "Friend request withdrawn"
-                                            : "Friend request handled"}
-                                  </span>
-                                </div>
-                                {canResolve && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="deny"
-                                      onClick={() => submitFriendRequest("reject")}
-                                    >
-                                      Reject
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="allow"
-                                      onClick={() => submitFriendRequest("accept")}
-                                    >
-                                      Accept
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        // ── permission card: Allow/Deny for tool writes ──────
-                        if (m.msg_type === "permission") {
-                          const cd = (m.content_data ?? {}) as Record<
-                            string,
-                            unknown
-                          >;
-                          const tool =
-                            typeof cd.tool === "string" ? cd.tool : null;
-                          const body =
-                            typeof cd.body === "string"
-                              ? cd.body
-                              : m.content || "";
-                          const resolved = cd.resolved === true;
-                          const resolution =
-                            cd.resolution === "allow" ||
-                            cd.resolution === "deny"
-                              ? cd.resolution
-                              : null;
-                          const senderBot =
-                            m.sender_type === "bot"
-                              ? botById.get(m.sender_id)
-                              : null;
-                          const senderLabel =
-                            senderBot?.display_name ||
-                            senderBot?.username ||
-                            "Bot";
-                          const pTime = m.created_at
-                            ? formatTs(m.created_at)
-                            : "";
-                          const submitResolution = async (
-                            res: "allow" | "deny",
-                          ) => {
-                            try {
-                              const r = await apiFetch(
-                                `/channels/${selectedId}/messages/${m.msg_id}/resolve`,
-                                {
-                                  method: "POST",
-                                  body: { resolution: res },
-                                  token: authToken,
-                                },
-                              );
-                              if (!r.ok) return;
-                              const data = await r.json();
-                              // Optimistic local update — the WS broadcast also
-                              // merges it back in, so this mainly covers the case
-                              // where the user clicks while offline-ish.
-                              if (data?.data?.content_data) {
-                                setMessageStore((prev) =>
-                                  patchMessage(prev, m.msg_id, (x) => ({
-                                    ...x,
-                                    content_data: data.data.content_data,
-                                  })),
-                                );
-                              }
-                            } catch {
-                              /* ignore — UI stays un-resolved so user can retry */
-                            }
-                          };
-                          return (
-                            <div
-                              key={m.msg_id}
-                              id={`msg-${m.msg_id}`}
-                              className="an-chat-msg pl-16 pr-4 pt-2"
-                            >
-                              <div className="flex items-baseline gap-1.5 mb-1 pl-1">
-                                <span className="an-chat-sender">
-                                  {senderLabel}
-                                </span>
-                                <span className="an-chip off">
-                                  BOT
-                                </span>
-                                {pTime && (
-                                  <span className="an-chat-meta">
-                                    {pTime}
-                                  </span>
-                                )}
-                              </div>
-                              <div
-                                className={
-                                  "an-approval" +
-                                  (resolved ? " resolved" : "")
-                                }
-                              >
-                                <div className="an-body">
-                                  <b>Approval needed.</b> {body}
-                                  {tool && (
-                                    <span className="an-type-caption ml-1.5 font-mono">
-                                      ({tool})
-                                    </span>
-                                  )}
-                                  {resolved && resolution && (
-                                    <span
-                                      style={{
-                                        marginLeft: 8,
-                                        color: "var(--fg-3)",
-                                      }}
-                                    >
-                                      ·{" "}
-                                      {resolution === "allow"
-                                        ? "Approved"
-                                        : "Denied"}
-                                    </span>
-                                  )}
-                                </div>
-                                {!resolved && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className="deny"
-                                      onClick={() => submitResolution("deny")}
-                                    >
-                                      Reject
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="allow"
-                                      onClick={() => submitResolution("allow")}
-                                    >
-                                      Allow
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        // ── announcement card: pinned banner, no bubble ──────
-                        if (m.msg_type === "announcement") {
-                          const cd = (m.content_data ?? {}) as Record<
-                            string,
-                            unknown
-                          >;
-                          const title =
-                            typeof cd.title === "string" ? cd.title : null;
-                          const pinnedById =
-                            typeof cd.pinned_by === "string"
-                              ? cd.pinned_by
-                              : null;
-                          const pinnedUser = pinnedById
-                            ? pinnedById === currentUserId
-                              ? { display_name: "Me", username: "me" }
-                              : userById.get(pinnedById)
-                            : null;
-                          const pinnedLabel =
-                            pinnedUser?.display_name ||
-                            pinnedUser?.username ||
-                            pinnedById ||
-                            "Channel administrator";
-                          const annTime = m.created_at
-                            ? formatTs(m.created_at)
-                            : "";
-                          return (
-                            <div
-                              key={m.msg_id}
-                              id={`msg-${m.msg_id}`}
-                              className="an-chat-msg pl-16 pr-4 pt-2"
-                            >
-                              <div className="an-announce">
-                                <div className="an-ann-ico" aria-hidden="true">
-                                  !
-                                </div>
-                                <div className="an-ann-tag">Announcement · Announcement</div>
-                                {title && (
-                                  <div className="an-ann-title">{title}</div>
-                                )}
-                                <div className="an-ann-body">{m.content}</div>
-                                <div className="an-ann-foot">
-                                  <span>By {pinnedLabel} pinned</span>
-                                  {annTime && (
-                                    <>
-                                      <span>·</span>
-                                      <span>{annTime}</span>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        const replies = topicRepliesOf(m.msg_id);
-
-                        // ── helpers shared by root & replies ──────────────────
-                        const replyIcon = (
-                          <AppIcon name="reply" className="w-3.5 h-3.5" />
-                        );
-
-                        // ── root message ───────────────────────────────────────
-                        const revealedContent = revealedSecrets[m.msg_id];
-                        const effectiveContent = m.is_secret
-                          ? (revealedContent ?? m.content)
-                          : m.content;
-                        const { text, clarify } =
-                          parseHelperPayload(effectiveContent);
-                        const clarifyAnswered =
-                          !!clarify &&
-                          clarifyAnsweredParentIds.has(m.msg_id);
-                        const clarifyWaiting =
-                          pendingClarifyReplyMsgId === m.msg_id;
-                        const clarifyStatus:
-                          | "form"
-                          | "waiting"
-                          | "answered"
-                          | null =
-                          clarify && m.sender_type === "bot"
-                            ? clarifyWaiting
-                              ? "waiting"
-                              : clarifyAnswered
-                                ? "answered"
-                                : "form"
-                            : null;
-                        const displayContent = (() => {
-                          const base = isClarifyReplyUserMessage(effectiveContent)
-                            ? effectiveContent
-                                .replace(
-                                  /^@(?:Helper|Coordinator|channel bot|\u5f15\u5bfc)\s*(?:Clarification answer|\u6f84\u6e05\u56de\u7b54)[\uFF1A:]\s*/i,
-                                  "",
-                                )
-                                .trim()
-                            : text || effectiveContent;
-                          return m.sender_type === "bot"
-                            ? stripLeadingQuotePrefixes(base)
-                            : base;
-                        })();
-                        const isOwn =
-                          m.sender_type === "user" &&
-                          m.sender_id === currentUserId;
-                        const senderBot =
-                          m.sender_type === "bot"
-                            ? botById.get(m.sender_id)
-                            : undefined;
-                        const botLabel =
-                          m.sender_name ||
-                          senderBot?.display_name ||
-                          senderBot?.username ||
-                          "Bot";
-                        const senderUser =
-                          m.sender_type === "user" && !isOwn
-                            ? userById.get(m.sender_id)
-                            : undefined;
-                        const userLabel =
-                          m.sender_name ||
-                          (isOwn
-                            ? currentUser?.display_name || currentUser?.username
-                            : senderUser?.display_name || senderUser?.username) ||
-                          "User";
-                        const userAvatarUrl = isOwn
-                          ? currentUser?.avatar_url
-                          : senderUser?.avatar_url;
-                        const userInitials = userLabel
-                          .slice(0, 1)
-                          .toUpperCase();
-                        const msgTime = m.created_at
-                          ? new Date(m.created_at).toLocaleString("zh-CN", {
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "";
-
-                        const secretSecsLeft =
-                          m.is_secret && !revealedContent && m.created_at
-                            ? getSecretSecondsLeft(m.created_at)
-                            : null;
-                        const isSecretExpired =
-                          secretSecsLeft !== null && secretSecsLeft <= 0;
-                        const isSecretUnrevealed =
-                          m.is_secret && !revealedContent && !isSecretExpired;
-                        const secretVeil = (
-                          <SecretMessageVeil
-                            createdAt={m.created_at}
-                            canReveal={Boolean(secretTokens[m.msg_id])}
-                            onReveal={() => revealSecretMessage(m.msg_id)}
-                          />
-                        );
-                        const rootBubble = !isDMRender ? (
-                          // ── Channel flat render — Discord style ────────
-                          // All-left alignment, no bubble, always with avatar.
-                          <div
-                            id={`msg-${m.msg_id}`}
-                            className="an-chat-msg group relative px-4 transition-colors"
-                            style={{
-                              paddingTop: 8,
-                              paddingBottom: 2,
-                            }}
-                          >
-                            {/* subtle hover tint covering the full row width */}
-                            <div
-                              className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
-                              style={{ background: "var(--surface-soft)" }}
-                            />
-                            <div className="relative flex gap-3">
-                              <div className="w-9 flex-shrink-0">
-                                {m.sender_type === "bot" ? (
-                                  <BotAvatar
-                                    label={botLabel}
-                                    avatarUrl={senderBot?.avatar_url}
-                                    brandName={senderBot?.display_name || senderBot?.username || botLabel}
-                                    size={36}
-                                    className="mt-0.5"
-                                  />
-                                ) : userAvatarUrl ? (
-                                  <img
-                                    src={userAvatarUrl}
-                                    alt={userLabel}
-                                    className="w-9 h-9 rounded-xl object-cover select-none mt-0.5"
-                                  />
-                                ) : (
-                                  <div
-                                    className="an-chat-avatar lg mt-0.5"
-                                    style={{
-                                      background: isOwn
-                                        ? "var(--accent)"
-                                        : "var(--fg-3)",
-                                    }}
-                                  >
-                                    {isOwn ? "Me" : userInitials}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
-                                  <span className="an-chat-sender">
-                                    {isOwn
-                                      ? "Me"
-                                      : m.sender_type === "bot"
-                                        ? botLabel
-                                        : userLabel}
-                                  </span>
-                                  <span className="an-chat-meta">
-                                    {msgTime}
-                                  </span>
-                                </div>
-                                {m.content_data?.title ? (
-                                  <div className="an-chat-title mb-1">
-                                    {m.content_data.title as string}
-                                  </div>
-                                ) : null}
-                                {/* Unified reply-quote: lifted out of the
-                                    body so all 4 message paths render the
-                                    "Reply to a message" indicator the exact same
-                                    way (.an-reply-quote with elbow connector). */}
-                                {(() => {
-                                  const mq = parseQuotePrefix(displayContent);
-                                  if (!mq || isSecretExpired || isSecretUnrevealed)
-                                    return null;
-                                  return (
-                                    <div
-                                      className="an-reply-quote"
-                                      title={`Reply ${mq.label}`}
-                                    >
-                                      <span className="an-rq-arrow">↪</span>
-                                      <span className="an-rq-name">{mq.label}</span>
-                                      <span className="an-rq-snip">
-                                        {mq.quote.replace(/\s+/g, " ").trim()}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-                                {renderFileAttachments(m)}
-                                <div className="an-chat-body">
-                                  {isSecretExpired || isSecretUnrevealed ? (
-                                    secretVeil
-                                  ) : activeAgentBridgeTaskData(m) ? (
-                                    renderAgentBridgeTaskCard(m)
-                                  ) : (
-                                    <ChatMessageRenderer
-                                      collapseKey={m.msg_id}
-                                      content={
-                                        // Strip the `> [Author]: ...\n\n` prefix
-                                        // (rendered separately as .an-reply-quote
-                                        // above) so the body shows only the
-                                        // actual content.
-                                        parseQuotePrefix(displayContent)?.rest ??
-                                        displayContent
-                                      }
-                                      keyPrefix={`${m.msg_id}-`}
-                                      streaming={!!m._streaming}
-                                      showStreamingCursor={false}
-                                      onImageClick={handleMarkdownImageClick}
-                                      onFileClick={handleMarkdownFileClick}
-                                    />
-                                  )}
-                                  {m._streaming &&
-                                    !!(parseHelperPayload(displayContent).text ||
-                                      displayContent) && (
-                                      <span className="an-chat-typing-dot slim" />
-                                    )}
-                                  {renderStopStreamButton(m)}
-                                  {renderPartialBadge(m)}
-                                </div>
-                                {renderBotTraceStatus(m)}
-                                {clarifyStatus !== null && selectedId && (
-                                  <ClarifyInlineBlock
-                                    msgId={m.msg_id}
-                                    schema={clarify!}
-                                    status={clarifyStatus}
-                                    replyContent={undefined}
-                                    onContinue={(answers) =>
-                                      handleClarifyContinue(
-                                        m.msg_id,
-                                        clarify!,
-                                        answers,
-                                      )
-                                    }
-                                    onSkip={() =>
-                                      handleClarifySkip(m.msg_id)
-                                    }
-                                  />
-                                )}
-                              </div>
-                              <div className={`${actionVisibilityClass()} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
-                                <button
-                                  type="button"
-                                  title="Copy message content"
-                                  onClick={() => copyMessageText(m)}
-                                  className="an-chat-action"
-                                >
-                                  <AppIcon name="copy" className="w-3.5 h-3.5" />
-                                </button>
-                                {renderForwardActionButtons?.(m)}
-                                {renderMemoryLoadButton(m)}
-                                <button
-                                  type="button"
-                                  title="Reply"
-                                  onClick={() => {
-                                    setReplyingTo(m);
-                                    const mention =
-                                      m.sender_type === "bot" &&
-                                      senderBot?.username
-                                        ? `@${senderBot.username} `
-                                        : "";
-                                    if (mention) setComposerInput(mention);
-                                    (secretMode
-                                      ? secretInputRef.current
-                                      : inputRef.current
-                                    )?.focus();
-                                  }}
-                                  className="an-chat-action"
-                                >
-                                  {replyIcon}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ) : isOwn ? (
-                          <div
-                            id={`msg-${m.msg_id}`}
-                            className="an-chat-msg group flex flex-row-reverse items-end gap-2.5 px-4 py-1 transition-all"
-                          >
-                            <div
-                              className="an-chat-avatar md"
-                              style={{ background: "var(--accent)" }}
-                            >
-                              Me
-                            </div>
-                            <div className="flex items-end gap-1.5">
-                              {renderForwardActionButtons?.(
-                                m,
-                                `${actionVisibilityClass()} an-chat-action mb-1`,
-                                "w-3.5 h-3.5",
-                              )}
-                              {!isDmSelected && (
-                                <button
-                                  type="button"
-                                  title="Reply"
-                                  onClick={() => {
-                                    setReplyingTo(m);
-                                    const mention =
-                                      m.sender_type === "bot" &&
-                                      senderBot?.username
-                                        ? `@${senderBot.username} `
-                                        : "";
-                                    if (mention) setComposerInput(mention);
-                                    (secretMode
-                                      ? secretInputRef.current
-                                      : inputRef.current
-                                    )?.focus();
-                                  }}
-                                  className={`${actionVisibilityClass()} an-chat-action mb-1`}
-                                >
-                                  {replyIcon}
-                                </button>
-                              )}
-                              <div className="an-dm-bubble-stack flex flex-col items-end max-w-[85%] sm:max-w-[72%]">
-                                <div className="flex items-baseline gap-1.5 mb-1 justify-end">
-                                  {!isDmSelected && m.msg_type === "topic" && (
-                                    <span className="an-chip blue">
-                                      Topics
-                                    </span>
-                                  )}
-                                  <span className="an-chat-meta mr-0.5">
-                                    {msgTime}
-                                  </span>
-                                </div>
-                                {m.content_data?.title ? (
-                                  <div className="an-chat-title mb-1 mr-0.5 text-right">
-                                    {m.content_data.title as string}
-                                  </div>
-                                ) : null}
-                                {renderFileAttachments(m, true)}
-                                {/* If this user message starts with a "> [X]: ..."
-                                    quote prefix (set when the user used the
-                                    reply UI), surface it as a small-gray
-                                    .an-reply-quote ABOVE the bubble. The
-                                    bubble itself then renders just `q.rest`
-                                    so the parent context doesn't intrude on
-                                    the body. The CSS connector elbow visually
-                                    bridges quote → body. */}
-                                {(() => {
-                                  const q = parseQuotePrefix(displayContent);
-                                  if (!q || isSecretExpired || isSecretUnrevealed)
-                                    return null;
-                                  return (
-                                    <div
-                                      className="an-reply-quote"
-                                      title={`Reply ${q.label}`}
-                                    >
-                                      <span className="an-rq-arrow">↪</span>
-                                      <span className="an-rq-name">{q.label}</span>
-                                      <span className="an-rq-snip">
-                                        {q.quote.replace(/\s+/g, " ").trim()}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-                                {isSecretExpired || isSecretUnrevealed ? (
-                                  secretVeil
-                                ) : (
-                                  <div className="an-chat-bubble own">
-                                    {(() => {
-                                      // The quote prefix (if any) is already
-                                      // rendered above as .an-reply-quote;
-                                      // here we render only the body text.
-                                      const q =
-                                        parseQuotePrefix(displayContent);
-                                      const body = q ? q.rest : displayContent;
-                                      return (
-                                        <MessageContentClamp contentKey={m.msg_id}>
-                                          <span className="whitespace-pre-wrap">
-                                            {body
-                                              .replace(/!\[.*?\]\(.*?\)\s*/g, "")
-                                              .trim() || body}
-                                          </span>
-                                        </MessageContentClamp>
-                                      );
-                                    })()}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            id={`msg-${m.msg_id}`}
-                            className="an-chat-msg group flex items-start gap-2.5 px-4 py-1 transition-all"
-                          >
-                            <div className="flex-shrink-0 mt-0.5">
-                              {m.sender_type === "bot" ? (
-                                <BotAvatar
-                                  label={botLabel}
-                                  avatarUrl={senderBot?.avatar_url}
-                                  brandName={senderBot?.display_name || senderBot?.username || botLabel}
-                                  size={32}
-                                />
-                              ) : userAvatarUrl ? (
-                                <img
-                                  src={userAvatarUrl}
-                                  alt={userLabel}
-                                  className="w-8 h-8 rounded-xl object-cover select-none"
-                                />
-                              ) : (
-                                <div
-                                  className="an-chat-avatar md"
-                                  style={{ background: "var(--fg-3)" }}
-                                >
-                                  {userInitials}
-                                </div>
-                              )}
-                            </div>
-                            <div className="an-dm-bubble-stack flex flex-col max-w-[85%] sm:max-w-[72%]">
-                              <div className="flex items-baseline gap-1.5 mb-1">
-                                <span className="an-chat-sender">
-                                  {m.sender_type === "bot"
-                                    ? botLabel
-                                    : userLabel}
-                                </span>
-                                {m.sender_type === "bot" && (
-                                  <span className="an-chip green">
-                                    Bot
-                                  </span>
-                                )}
-                                {!isDmSelected && m.msg_type === "topic" && (
-                                  <span className="an-chip blue">
-                                    Topics
-                                  </span>
-                                )}
-                                <span className="an-chat-meta">
-                                  {msgTime}
-                                </span>
-                              </div>
-                              {m.content_data?.title ? (
-                                <div className="an-chat-title mb-1">
-                                  {m.content_data.title as string}
-                                </div>
-                              ) : null}
-                              {(() => {
-                                const cq = parseQuotePrefix(text);
-                                if (!cq) return null;
-                                return (
-                                  <div
-                                    className="an-reply-quote"
-                                    title={`Reply ${cq.label}`}
-                                  >
-                                    <span className="an-rq-arrow">↪</span>
-                                    <span className="an-rq-name">
-                                      {cq.label}
-                                    </span>
-                                    <span className="an-rq-snip">
-                                      {cq.quote.replace(/\s+/g, " ").trim()}
-                                    </span>
-                                  </div>
-                                );
-                              })()}
-                              {renderFileAttachments(m)}
-                              <div
-                                className="an-chat-bubble other"
-                                style={
-                                  isSecretUnrevealed
-                                    ? { background: "var(--orange-muted)" }
-                                    : undefined
-                                }
-                              >
-                                {isSecretExpired || isSecretUnrevealed ? (
-                                  secretVeil
-                                ) : activeAgentBridgeTaskData(m) ? (
-                                  renderAgentBridgeTaskCard(m)
-                                ) : m._streaming && !text ? (
-                                  <span className="an-chat-typing-dot" />
-                                ) : (
-                                  <ChatMessageRenderer
-                                    collapseKey={m.msg_id}
-                                    content={parseQuotePrefix(text)?.rest ?? text}
-                                    keyPrefix={`${m.msg_id}-`}
-                                    streaming={!!m._streaming}
-                                    showStreamingCursor={false}
-                                    onImageClick={handleMarkdownImageClick}
-                                    onFileClick={handleMarkdownFileClick}
-                                  />
-                                )}
-                                {!isSecretUnrevealed &&
-                                  m._streaming &&
-                                  !!text && (
-                                    <span className="an-chat-typing-dot slim" />
-                                  )}
-                                {!isSecretUnrevealed && renderStopStreamButton(m)}
-                                {!isSecretUnrevealed && renderPartialBadge(m)}
-                              </div>
-                              {renderBotTraceStatus(m)}
-                              {clarifyStatus !== null && selectedId && (
-                                <ClarifyInlineBlock
-                                  msgId={m.msg_id}
-                                  schema={clarify!}
-                                  status={clarifyStatus}
-                                  replyContent={undefined}
-                                  onContinue={(answers) =>
-                                    handleClarifyContinue(
-                                      m.msg_id,
-                                      clarify!,
-                                      answers,
-                                    )
-                                  }
-                                  onSkip={() => handleClarifySkip(m.msg_id)}
-                                />
-                              )}
-                            </div>
-                            <div className={`${actionVisibilityClass()} an-msg-actions self-center flex items-center gap-1 flex-shrink-0`}>
-                              {renderForwardActionButtons?.(
-                                m,
-                                "an-chat-action",
-                                "w-3.5 h-3.5",
-                              )}
-                              {renderMemoryLoadButton(m)}
-                              {!isDmSelected && (
-                                <button
-                                  type="button"
-                                  title="Reply"
-                                  onClick={() => {
-                                    setReplyingTo(m);
-                                    const mention =
-                                      m.sender_type === "bot" && senderBot?.username
-                                        ? `@${senderBot.username} `
-                                        : "";
-                                    if (mention) setComposerInput(mention);
-                                    (secretMode
-                                      ? secretInputRef.current
-                                      : inputRef.current
-                                    )?.focus();
-                                  }}
-                                  className="an-chat-action"
-                                >
-                                  {replyIcon}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-
-                        // ── topic card ───────────────────────────────────────
-                        // An explicit topic message (msg_type="topic") should render
-                        // as a topic card regardless of reply count, so the
-                        // user sees the intent reflected immediately. The
-                        // 4-reply threshold only gates implicit promotion of
-                        // a normal message that's accumulated replies.
-                        const isExplicitTopic = !isDmSelected && m.msg_type === "topic";
-                        // Force expansion when there's nothing to collapse
-                        // (0-reply explicit topic) — otherwise the collapsed
-                        // preview path would blow up on replies[length-1].
-                        const isExpanded =
-                          expandedTopics.has(m.msg_id) ||
-                          (isExplicitTopic && replies.length === 0);
-
-                        // No replies and not an explicit topic — render as a
-                        // plain standalone bubble.
-                        if (!isExplicitTopic && replies.length === 0) {
-                          return <div key={m.msg_id}>{rootBubble}</div>;
-                        }
-
-                        // 1–3 replies on a plain message — inline render, no
-                        // topic chrome. Explicit topic messages fall through
-                        // to the topic-card branch below regardless of count.
-                        if (
-                          !isExplicitTopic &&
-                          replies.length < TOPIC_DISPLAY_THRESHOLD
-                        ) {
-                          const renderReplyRow = (r: Message) => {
-                          const rIsOwn =
-                            r.sender_type === "user" &&
-                            r.sender_id === currentUserId;
-                          const rBot =
-                            r.sender_type === "bot"
-                              ? botById.get(r.sender_id)
-                              : undefined;
-                          const rSenderUser =
-                            r.sender_type === "user" && !rIsOwn
-                              ? userById.get(r.sender_id)
-                              : undefined;
-                          const rLabel = rBot
-                            ? rBot.display_name || rBot.username || "Bot"
-                            : rIsOwn
-                              ? "Me"
-                              : rSenderUser?.display_name ||
-                                rSenderUser?.username ||
-                                "User";
-                          const rInitials = rLabel.slice(0, 2).toUpperCase();
-                          const rTime = r.created_at
-                            ? new Date(r.created_at).toLocaleString("zh-CN", {
-                                month: "2-digit",
-                                day: "2-digit",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "";
-                          const {
-                            text: rTextRaw,
-                            clarify: rClarify,
-                          } = parseHelperPayload(r.content);
-                          const rDisplay = (() => {
-                            const base = isClarifyReplyUserMessage(r.content)
-                              ? r.content
-                                  .replace(
-                                    /^@(?:Helper|Coordinator|channel bot|\u5f15\u5bfc)\s*(?:Clarification answer|\u6f84\u6e05\u56de\u7b54)[\uFF1A:]\s*/i,
-                                    "",
-                                  )
-                                  .trim()
-                              : rTextRaw || r.content;
-                            return r.sender_type === "bot"
-                              ? stripLeadingQuotePrefixes(base)
-                              : base;
-                          })();
-                          const rClarifyAnswered =
-                            !!rClarify &&
-                            clarifyAnsweredParentIds.has(r.msg_id);
-                          const rClarifyWaiting =
-                            pendingClarifyReplyMsgId === r.msg_id;
-                          const rClarifyStatus:
-                            | "form"
-                            | "waiting"
-                            | "answered"
-                            | null =
-                            rClarify && r.sender_type === "bot"
-                              ? rClarifyWaiting
-                                ? "waiting"
-                                : rClarifyAnswered
-                                  ? "answered"
-                                  : "form"
-                              : null;
-                          // Channel flat-reply render: no bubble, all-left,
-                          // iridescent outline on bot replies. DMs keep the
-                          // bubble treatment below.
-                          const rFlat = !isDMRender;
-                          return (
-                            <div
-                              key={r.msg_id}
-                              id={`msg-${r.msg_id}`}
-                              className={
-                                rFlat
-                                  ? "an-chat-msg group flex gap-3 px-4 py-1 items-start transition-colors"
-                                  : `an-chat-msg group flex gap-2.5 px-4 py-1 transition-all ${
-                                      rIsOwn
-                                        ? "flex-row-reverse items-end"
-                                        : "items-start"
-                                    }`
-                              }
-                            >
-                                <div className="flex-shrink-0 mt-0.5">
-                                  {r.sender_type === "bot" ? (
-                                    <BotAvatar
-                                      label={rLabel}
-                                      avatarUrl={rBot?.avatar_url}
-                                      brandName={rBot?.display_name || rBot?.username || rLabel}
-                                      size={rFlat ? 36 : 32}
-                                    />
-                                  ) : (
-                                    <div
-                                      className={
-                                        rFlat
-                                          ? "an-chat-avatar lg"
-                                          : "an-chat-avatar md"
-                                      }
-                                      style={{
-                                        background: rIsOwn
-                                          ? "var(--accent)"
-                                          : "var(--fg-3)",
-                                      }}
-                                    >
-                                      {rIsOwn ? "Me" : rInitials}
-                                    </div>
-                                  )}
-                                </div>
-                                <div
-                                  className={
-                                    rFlat
-                                      ? "flex-1 min-w-0 flex flex-col"
-                                      : `an-dm-bubble-stack flex flex-col max-w-[85%] sm:max-w-[72%] ${rIsOwn ? "items-end" : ""}`
-                                  }
-                                >
-                                  <div
-                                    className={
-                                      rFlat
-                                        ? "flex items-baseline gap-2 mb-0.5 flex-wrap"
-                                        : `flex items-baseline gap-1.5 mb-1 ${rIsOwn ? "justify-end" : ""}`
-                                    }
-                                  >
-                                    <span className="an-chat-sender">
-                                      {rIsOwn ? "Me" : rLabel}
-                                    </span>
-                                    <span className="an-chat-meta">
-                                      {rTime}
-                                    </span>
-                                  </div>
-                                  {(() => {
-                                    // Unified reply-quote rendering for the
-                                    // rFlat (channel-list reply) path. Source
-                                    // of truth = the `> [Author]: snippet`
-                                    // prefix on the message text, set by the
-                                    // reply UI. We strip it from the body
-                                    // and surface it as .an-reply-quote so
-                                    // the visual exactly matches the topic-
-                                    // view and own-bubble paths.
-                                    const rq = parseQuotePrefix(rDisplay);
-                                    if (!rq) return null;
-                                    return (
-                                      <div
-                                        className="an-reply-quote"
-                                        title={`Reply ${rq.label}`}
-                                      >
-                                        <span className="an-rq-arrow">↪</span>
-                                        <span className="an-rq-name">
-                                          {rq.label}
-                                        </span>
-                                        <span className="an-rq-snip">
-                                          {rq.quote.replace(/\s+/g, " ").trim()}
-                                        </span>
-                                      </div>
-                                    );
-                                  })()}
-                                  {renderFileAttachments(r)}
-                                  <div
-                                    className={
-                                      rFlat
-                                        ? "an-chat-body"
-                                        : `an-chat-bubble ${rIsOwn ? "own" : "other"}`
-                                    }
-                                  >
-                                    {activeAgentBridgeTaskData(r) ? (
-                                      renderAgentBridgeTaskCard(r)
-                                    ) : r._streaming && !rTextRaw ? (
-                                      <span className="an-chat-typing-dot" />
-                                    ) : (
-                                      <ChatMessageRenderer
-                                        collapseKey={r.msg_id}
-                                        content={
-                                          // Drop the `> [Author]: ...\n\n` prefix
-                                          // (now rendered above as an
-                                          // .an-reply-quote) so the body shows
-                                          // only the actual content.
-                                          parseQuotePrefix(rDisplay)?.rest ?? rDisplay
-                                        }
-                                        keyPrefix={`${r.msg_id}-`}
-                                        streaming={!!r._streaming}
-                                        showStreamingCursor={false}
-                                        onImageClick={handleMarkdownImageClick}
-                                        onFileClick={handleMarkdownFileClick}
-                                      />
-                                    )}
-                                    {r._streaming && !!rTextRaw && (
-                                      <span className="an-chat-typing-dot slim" />
-                                    )}
-                                    {renderStopStreamButton(r)}
-                                    {renderPartialBadge(r)}
-                                  </div>
-                                  {renderBotTraceStatus(r)}
-                                  {rClarifyStatus !== null && selectedId && (
-                                    <ClarifyInlineBlock
-                                      msgId={r.msg_id}
-                                      schema={rClarify!}
-                                      status={rClarifyStatus}
-                                      replyContent={undefined}
-                                      onContinue={(answers) =>
-                                        handleClarifyContinue(
-                                          r.msg_id,
-                                          rClarify!,
-                                          answers,
-                                        )
-                                      }
-                                      onSkip={() => handleClarifySkip(r.msg_id)}
-                                    />
-                                  )}
-                                </div>
-                                <div className={`${actionVisibilityClass()} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
-                                  <button
-                                    type="button"
-                                    title="Copy message content"
-                                    onClick={() => copyMessageText(r)}
-                                    className="an-chat-action"
-                                  >
-                                    <AppIcon name="copy" className="w-3.5 h-3.5" />
-                                  </button>
-                                  {renderForwardActionButtons?.(r)}
-                                  {renderMemoryLoadButton(r)}
-                                  <button
-                                    type="button"
-                                    title="Reply"
-                                    onClick={() => {
-                                      setReplyingTo(r);
-                                      const mention =
-                                        r.sender_type === "bot" && rBot?.username
-                                          ? `@${rBot.username} `
-                                          : "";
-                                      if (mention) setComposerInput(mention);
-                                      (secretMode
-                                        ? secretInputRef.current
-                                        : inputRef.current
-                                      )?.focus();
-                                    }}
-                                    className="an-chat-action"
-                                  >
-                                    <AppIcon name="reply" className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                          );
-                          };
-                          return (
-                            <div key={m.msg_id}>
-                              {rootBubble}
-                              {replies.map(renderReplyRow)}
-                            </div>
-                          );
-                        }
-
-                        // ≥ TOPIC_DISPLAY_THRESHOLD replies — Collapsed topic
-                        // card (overview) ───────────────────────────────────────
-                        // Compact form: stacked participant avatars + summary.
-                        // No full question/last-reply preview — click to expand.
-                        if (!isExpanded) {
-                          const titleSummary =
-                            (m.content_data?.title as string | undefined) ||
-                            displayContent
-                              .replace(/\s+/g, " ")
-                              .trim()
-                              .slice(0, 80) ||
-                            "(No title)";
-                          // Participants = root sender ∪ all unique reply
-                          // senders. Keep insertion order so the root comes
-                          // first and reads as the "owner" of the topic.
-                          type Participant = {
-                            key: string;
-                            kind: "user" | "bot";
-                            label: string;
-                            color: string;
-                            avatarUrl?: string;
-                            initial: string;
-                            isSelf?: boolean;
-                          };
-                          const addParticipant = (
-                            acc: Participant[],
-                            sid: string,
-                            stype: string,
-                          ) => {
-                            const key = `${stype}:${sid}`;
-                            if (acc.some((p) => p.key === key)) return;
-                            if (stype === "bot") {
-                              const b = botById.get(sid);
-                              const label =
-                                b?.display_name || b?.username || "Bot";
-                              acc.push({
-                                key,
-                                kind: "bot",
-                                label,
-                                color: "var(--green)",
-                                avatarUrl: b?.avatar_url,
-                                initial: label.slice(0, 1).toUpperCase(),
-                              });
-                            } else {
-                              const isSelf = sid === currentUserId;
-                              const u = isSelf
-                                ? null
-                                : userById.get(sid);
-                              const label = isSelf
-                                ? "Me"
-                                : u?.display_name ||
-                                  u?.username ||
-                                  "User";
-                              acc.push({
-                                key,
-                                kind: "user",
-                                label,
-                                color: isSelf
-                                  ? "var(--accent)"
-                                  : "var(--fg-3)",
-                                avatarUrl: isSelf
-                                  ? currentUser?.avatar_url || undefined
-                                  : u?.avatar_url || undefined,
-                                initial: isSelf
-                                  ? "Me"
-                                  : label.slice(0, 1).toUpperCase(),
-                                isSelf,
-                              });
-                            }
-                          };
-                          const participants: Participant[] = [];
-                          addParticipant(
-                            participants,
-                            m.sender_id,
-                            m.sender_type,
-                          );
-                          for (const r of replies) {
-                            addParticipant(
-                              participants,
-                              r.sender_id,
-                              r.sender_type,
-                            );
-                          }
-                          const visibleAvatars = participants.slice(0, 5);
-                          const extraCount =
-                            participants.length - visibleAvatars.length;
-
-                          return (
-                            <div
-                              key={m.msg_id}
-                              id={`msg-${m.msg_id}`}
-                              className="an-chat-msg pl-16 my-1.5"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => toggleTopic(m.msg_id)}
-                                className="an-topic-chip"
-                                title={titleSummary}
-                              >
-                                <span className="an-topic-chip-faces">
-                                  {visibleAvatars.map((p) =>
-                                    p.avatarUrl ? (
-                                      <AvatarVisual
-                                        key={p.key}
-                                        avatarUrl={p.avatarUrl}
-                                        className="an-topic-chip-face"
-                                        fallback={p.initial}
-                                        label={p.label}
-                                        radius={8}
-                                        size={24}
-                                      />
-                                    ) : (
-                                      <span
-                                        key={p.key}
-                                        className="an-topic-chip-face"
-                                        style={{ background: p.color }}
-                                      >
-                                        {p.initial}
-                                      </span>
-                                    ),
-                                  )}
-                                  {extraCount > 0 && (
-                                    <span
-                                      className="an-topic-chip-face"
-                                      style={{
-                                        background: "var(--bg-2)",
-                                        color: "var(--fg-2)",
-                                      }}
-                                    >
-                                      +{extraCount}
-                                    </span>
-                                  )}
-                                </span>
-                                <span className="an-topic-chip-body">
-                                  <span className="an-topic-chip-title">
-                                    {titleSummary}
-                                  </span>
-                                  <span className="an-topic-chip-meta">
-                                    Topics · {replies.length + 1} messages ·{" "}
-                                    {participants.length} participants
-                                  </span>
-                                </span>
-                                <span className="an-topic-chip-open">
-                                  Expand ›
-                                </span>
-                              </button>
-                            </div>
-                          );
-                        }
-
-                        // ── Expanded topic card ───────────────────────────────
-                        return (
-                          <div
-                            key={m.msg_id}
-                            className="an-chat-msg pl-16 my-1.5"
-                          >
-                            <div className="an-topic-card">
-                              {/* Topic header */}
-                              <div className="an-topic-card-head">
-                                <div className="an-topic-card-title">
-                                  <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
-                                  <span className="truncate">
-                                    Topics · {replies.length + 1} messages
-                                  </span>
-                                </div>
-                                <div className="an-topic-card-actions">
-                                  <button
-                                    type="button"
-                                    onClick={() => setPageTopicId(m.msg_id)}
-                                    className="an-topic-card-action"
-                                    title="Open topic as a standalone page"
-                                  >
-                                    <AppIcon name="externalLink" className="w-3 h-3" />
-                                    Open standalone
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleTopic(m.msg_id)}
-                                    className="an-topic-card-action"
-                                  >
-                                    <AppIcon name="chevronUp" className="w-3 h-3" />
-                                    Collapse
-                                  </button>
-                                </div>
-                              </div>
-                              {/* Root message */}
-                              {rootBubble}
-                              {/* Replies divider */}
-                              <div className="an-topic-card-divider">
-                                <span>{replies.length} replies</span>
-                              </div>
-                              {/* Reply messages */}
-                              <div className="flex flex-col gap-0.5 pb-1.5">
-                                {replies.map((r) => {
-                                const rIsOwn =
-                                  r.sender_type === "user" &&
-                                  r.sender_id === currentUserId;
-                                const rBot =
-                                  r.sender_type === "bot"
-                                    ? botById.get(r.sender_id)
-                                    : undefined;
-                                const rSenderUser =
-                                  r.sender_type === "user" && !rIsOwn
-                                    ? userById.get(r.sender_id)
-                                    : undefined;
-                                const rLabel = rBot
-                                  ? rBot.display_name || rBot.username || "Bot"
-                                  : rIsOwn
-                                    ? "Me"
-                                    : rSenderUser?.display_name ||
-                                      rSenderUser?.username ||
-                                      "User";
-                                const rInitials = rLabel
-                                  .slice(0, 2)
-                                  .toUpperCase();
-                                const rTime = r.created_at
-                                  ? new Date(r.created_at).toLocaleTimeString(
-                                      "zh-CN",
-                                      { hour: "2-digit", minute: "2-digit" },
-                                    )
-                                  : "";
-                                const {
-                                  text: rTextRaw,
-                                  clarify: rClarify,
-                                } = parseHelperPayload(r.content);
-                                const rDisplay = (() => {
-                                  const base = isClarifyReplyUserMessage(r.content)
-                                    ? r.content
-                                        .replace(
-                                          /^@(?:Helper|Coordinator|channel bot|\u5f15\u5bfc)\s*(?:Clarification answer|\u6f84\u6e05\u56de\u7b54)[\uFF1A:]\s*/i,
-                                          "",
-                                        )
-                                        .trim()
-                                    : rTextRaw || r.content;
-                                  return r.sender_type === "bot"
-                                    ? stripLeadingQuotePrefixes(base)
-                                    : base;
-                                })();
-                                const rClarifyAnswered =
-                                  !!rClarify &&
-                                  clarifyAnsweredParentIds.has(r.msg_id);
-                                const rClarifyWaiting =
-                                  pendingClarifyReplyMsgId === r.msg_id;
-                                const rClarifyStatus:
-                                  | "form"
-                                  | "waiting"
-                                  | "answered"
-                                  | null =
-                                  rClarify && r.sender_type === "bot"
-                                    ? rClarifyWaiting
-                                      ? "waiting"
-                                      : rClarifyAnswered
-                                        ? "answered"
-                                        : "form"
-                                    : null;
-                                const rDirectParent =
-                                  r.in_reply_to_msg_id !== m.msg_id
-                                    ? msgById.get(r.in_reply_to_msg_id || "")
-                                    : null;
-                                const rParentBot =
-                                  rDirectParent?.sender_type === "bot"
-                                    ? botById.get(rDirectParent.sender_id)
-                                    : null;
-                                const rParentSenderUser =
-                                  rDirectParent?.sender_type === "user" &&
-                                  rDirectParent.sender_id !== currentUserId
-                                    ? userById.get(rDirectParent.sender_id)
-                                    : undefined;
-                                const rParentLabel = rDirectParent
-                                  ? rDirectParent.sender_type === "bot"
-                                    ? rParentBot?.display_name ||
-                                      rParentBot?.username ||
-                                      "Bot"
-                                    : rDirectParent.sender_id === currentUserId
-                                      ? "Me"
-                                      : rParentSenderUser?.display_name ||
-                                        rParentSenderUser?.username ||
-                                        "User"
-                                  : null;
-                                const rCollapsed = collapsedMessages.has(
-                                  r.msg_id,
-                                );
-                                const rPreview =
-                                  rDisplay.replace(/\s+/g, " ").slice(0, 10) +
-                                  (rDisplay.length > 10 ? "..." : "");
-                                return (
-                                  <div
-                                    key={r.msg_id}
-                                    id={`msg-${r.msg_id}`}
-                                    className="group/tr flex items-start gap-2 px-3 py-1"
-                                  >
-                                    {r.sender_type === "bot" ? (
-                                      <BotAvatar
-                                        label={rLabel}
-                                        avatarUrl={rBot?.avatar_url}
-                                        brandName={rBot?.display_name || rBot?.username || rLabel}
-                                        size={24}
-                                        className="mt-0.5"
-                                      />
-                                    ) : (
-                                      <div
-                                        className="an-chat-avatar sm mt-0.5"
-                                        style={{
-                                          background: rIsOwn
-                                            ? "var(--accent)"
-                                            : "var(--fg-3)",
-                                        }}
-                                      >
-                                        {rIsOwn ? "Me" : rInitials}
-                                      </div>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
-                                        <span
-                                          className="an-type-label"
-                                          style={{ color: "var(--fg-1)" }}
-                                        >
-                                          {rLabel}
-                                        </span>
-                                        {r.sender_type === "bot" && (
-                                          <span className="an-chip green">
-                                            Bot
-                                          </span>
-                                        )}
-                                        <span className="an-chat-meta">
-                                          {rTime}
-                                        </span>
-                                        {rCollapsed && (
-                                          <span className="an-chat-meta truncate max-w-[120px]">
-                                            {rPreview}
-                                          </span>
-                                        )}
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            toggleMessage(r.msg_id)
-                                          }
-                                          className="an-chat-mini-action ml-0.5 opacity-0 group-hover/tr:opacity-100"
-                                          title={rCollapsed ? "Expand" : "Collapse"}
-                                        >
-                                          {rCollapsed ? (
-                                            <AppIcon name="chevronDown" className="w-3 h-3" />
-                                          ) : (
-                                            <AppIcon name="chevronUp" className="w-3 h-3" />
-                                          )}
-                                        </button>
-                                      </div>
-                                      {!rCollapsed && rDirectParent && rParentLabel && (
-                                        <button
-                                          type="button"
-                                          className="an-reply-quote"
-                                          onClick={() => {
-                                            const el = document.getElementById(
-                                              `msg-${rDirectParent.msg_id}`,
-                                            );
-                                            if (!el) return;
-                                            el.scrollIntoView({
-                                              block: "center",
-                                              behavior: "smooth",
-                                            });
-                                            const origT = el.style.transition;
-                                            const prevBg = el.style.background;
-                                            el.style.transition =
-                                              "background 200ms";
-                                            el.style.background =
-                                              "var(--accent-muted)";
-                                            setTimeout(() => {
-                                              el.style.background = prevBg;
-                                              el.style.transition = origT;
-                                            }, 1200);
-                                          }}
-                                          title="Jump to replied message"
-                                        >
-                                          <span className="an-rq-arrow">↪</span>
-                                          <span className="an-rq-name">
-                                            {rParentLabel}
-                                          </span>
-                                          <span className="an-rq-snip">
-                                            {(
-                                              rDirectParent.content || ""
-                                            )
-                                              .replace(/<think>[\s\S]*?<\/think>/g, "")
-                                              .replace(/\s+/g, " ")
-                                              .trim()
-                                              .slice(0, 80) ||
-                                              "(No content)"}
-                                          </span>
-                                        </button>
-                                      )}
-                                      {!rCollapsed && (
-                                        <>
-                                          {renderFileAttachments(r)}
-                                          <div
-                                            className={`an-chat-bubble topic-reply ${
-                                              rIsOwn
-                                                ? "own whitespace-pre-wrap break-words"
-                                                : "other"
-                                            }`}
-                                          >
-                                            {r._streaming && !rTextRaw ? (
-                                              <span className="an-chat-typing-dot" />
-                                            ) : (
-                                              <ChatMessageRenderer
-                                                collapseKey={r.msg_id}
-                                                content={rDisplay}
-                                                keyPrefix={`${r.msg_id}-t-`}
-                                                streaming={!!r._streaming}
-                                                showStreamingCursor={false}
-                                                onImageClick={handleMarkdownImageClick}
-                                                onFileClick={handleMarkdownFileClick}
-                                              />
-                                            )}
-                                            {r._streaming && !!rTextRaw && (
-                                              <span className="an-chat-typing-dot slim" />
-                                            )}
-                                            {renderStopStreamButton(r)}
-                                            {renderPartialBadge(r)}
-                                          </div>
-                                          {renderBotTraceStatus(r)}
-                                          {rClarifyStatus !== null &&
-                                            selectedId && (
-                                              <ClarifyInlineBlock
-                                                msgId={r.msg_id}
-                                                schema={rClarify!}
-                                                status={rClarifyStatus}
-                                                replyContent={undefined}
-                                                onContinue={(answers) =>
-                                                  handleClarifyContinue(
-                                                    r.msg_id,
-                                                    rClarify!,
-                                                    answers,
-                                                  )
-                                                }
-                                                onSkip={() =>
-                                                  handleClarifySkip(r.msg_id)
-                                                }
-                                              />
-                                            )}
-                                        </>
-                                      )}
-                                    </div>
-                                    <div className={`${actionVisibilityClass("group-hover/tr:opacity-100")} an-msg-actions self-center flex items-center gap-1 flex-shrink-0`}>
-                                      {renderForwardActionButtons?.(
-                                        r,
-                                        "an-chat-action",
-                                        "w-3 h-3",
-                                      )}
-                                      {renderMemoryLoadButton(r)}
-                                      <button
-                                        type="button"
-                                        title="Reply"
-                                        onClick={() => {
-                                          setReplyingTo(r);
-                                          const mention =
-                                            r.sender_type === "bot" &&
-                                            rBot?.username
-                                              ? `@${rBot.username} `
-                                              : "";
-                                          if (mention) setComposerInput(mention);
-                                          (secretMode
-                                            ? secretInputRef.current
-                                            : inputRef.current
-                                          )?.focus();
-                                        }}
-                                        className="an-chat-action"
-                                      >
-                                        <AppIcon name="reply" className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                                })}
-                              </div>
-                              {/* Bottom collapse button */}
-                              <div className="an-topic-card-foot">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleTopic(m.msg_id)}
-                                  className="an-topic-card-action"
-                                >
-                                  <AppIcon name="chevronUp" className="w-3 h-3" />
-                                  Collapse topics
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      });
-                      return (
-                        <div
-                          style={{
-                            height: rowVirtualizer.getTotalSize(),
-                            position: "relative",
-                            width: "100%",
-                          }}
-                        >
-                          {virtualItems.map((virtualItem, i) => {
-                            const m = topicRoots[virtualItem.index];
-                            if (!m) return null;
-                            const day = formatDayLabel(m.created_at);
-                            const prevDay =
-                              virtualItem.index > 0
-                                ? formatDayLabel(
-                                    topicRoots[virtualItem.index - 1]?.created_at,
-                                  )
-                                : "";
-                            return (
-                              <div
-                                key={virtualItem.key}
-                                ref={rowVirtualizer.measureElement}
-                                data-index={virtualItem.index}
-                                className="an-chat-virtual-row"
-                                style={{
-                                  position: "absolute",
-                                  top: 0,
-                                  left: 0,
-                                  width: "100%",
-                                  transform: `translateY(${virtualItem.start}px)`,
-                                }}
-                              >
-                                {day && day !== prevDay ? (
-                                  <div
-                                    key={`day-${virtualItem.index}-${day}`}
-                                    className="an-day-divider"
-                                  >
-                                    <span>{day}</span>
-                                  </div>
-                                ) : null}
-                                {renderedRows[i]}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                      })()}
-                      {Object.entries(processingBots).map(
-                        ([botId, username]) => (
-                          <div key={botId} className="an-chat-msg flex gap-3 px-3 py-2">
-                            <div
-                              className="an-chat-avatar lg"
-                              style={{
-                                background: "var(--green-muted)",
-                                color: "var(--green)",
-                              }}
-                            >
-                              {username.slice(0, 1).toUpperCase()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-baseline gap-2 mb-1">
-                                <span className="an-chat-sender">
-                                  {username}
-                                </span>
-                                <span className="an-chip green">
-                                  Bot
-                                </span>
-                              </div>
-                              <div className="an-type-meta flex items-center gap-1.5">
-                                <span className="inline-flex gap-0.5">
-                                  <span
-                                    className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce"
-                                    style={{ animationDelay: "0ms" }}
-                                  />
-                                  <span
-                                    className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce"
-                                    style={{ animationDelay: "150ms" }}
-                                  />
-                                  <span
-                                    className="w-1.5 h-1.5 rounded-full bg-[var(--fg-3)] animate-bounce"
-                                    style={{ animationDelay: "300ms" }}
-                                  />
-                                </span>
-                                Typing...
-                              </div>
-                            </div>
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  )}
+      <div
+        ref={messagesContainerRef}
+        className="an-chat-scroll relative flex-1 overflow-auto"
+        onScroll={onMessagesScroll}
+      >
+        {loading ? (
+          <div className="an-type-meta flex h-full items-center justify-center">
+            Loading...
+          </div>
+        ) : (
+          <>
+            {restoringInitialScroll && messages.length > 0 && (
+              <div className="an-type-meta pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                Loading...
+              </div>
+            )}
+            <div
+              className="py-2 px-2"
+              style={{ opacity: restoringInitialScroll ? 0 : 1 }}
+            >
+              {loadingMore && (
+                <div className="an-type-caption py-2 text-center">
+                  Load more messages...
                 </div>
-                {showJumpToBottom && (
-                  <button
-                    type="button"
-                    className="an-chat-jump-bottom"
-                    onClick={onJumpToBottom}
-                    title="Jump to bottom"
-                    aria-label="Jump to bottom"
-                  >
-                    <AppIcon name="chevronDown" className="h-4 w-4" />
-                    <span>Bottom</span>
-                  </button>
-                )}
+              )}
+              {!hasMore && messages.length > 0 && (
+                <div className="an-type-caption py-2 text-center">
+                  — All messages loaded —
+                </div>
+              )}
+              {!loading && !loadingMore && messages.length === 0 && selectedChannel && (
+                <div className="an-empty">
+                  <div className="an-empty-big"># {selectedChannel.name}</div>
+                  <div className="an-empty-sm">
+                    No messages yet. Mention a bot or start chatting directly.
+                  </div>
+                  <div className="an-empty-chips">
+                    {[
+                      "@Coordinator summarize channel history and progress",
+                      "What is the goal of this channel?",
+                      "@Coordinator help me decide what to do next",
+                    ].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        className="an-empty-chip"
+                        onClick={() => {
+                          setComposerInput(suggestion);
+                          setTimeout(() => inputRef.current?.focus(), 0);
+                        }}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div
+                style={{
+                  height: rowVirtualizer.getTotalSize(),
+                  position: "relative",
+                  width: "100%",
+                }}
+              >
+                {virtualItems.map((virtualItem) => {
+                  const item = renderItems[virtualItem.index];
+                  if (!item) return null;
+                  const anchorId = item.msgId ?? item.rootId;
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      ref={rowVirtualizer.measureElement}
+                      data-index={virtualItem.index}
+                      data-message-anchor-id={anchorId}
+                      className="an-chat-virtual-row"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualItem.start}px)`,
+                      }}
+                    >
+                      {renderItem(item)}
+                    </div>
+                  );
+                })}
+              </div>
+              <ProcessingBots processingBots={processingBots} />
+            </div>
+          </>
+        )}
+      </div>
+      {showJumpToBottom && (
+        <button
+          type="button"
+          className="an-chat-jump-bottom"
+          onClick={onJumpToBottom}
+          title="Jump to bottom"
+          aria-label="Jump to bottom"
+        >
+          <AppIcon name="chevronDown" className="h-4 w-4" />
+          <span>Bottom</span>
+        </button>
+      )}
     </>
   );
 }
+
+export const ChatMessageList = memo(ChatMessageListBase);
+ChatMessageList.displayName = "ChatMessageList";

@@ -15,9 +15,14 @@ logger = logging.getLogger("app.features.agent_bridge.registry")
 @dataclass(eq=False)
 class BotSession:
     bot_id: str
-    session_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    connection_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     control_ws: WebSocket | None = None
     data_ws: WebSocket | None = None
+
+    @property
+    def session_id(self) -> str:
+        """Backward-compatible alias for the live WebSocket connection id."""
+        return self.connection_id
 
     async def send_control(self, event: dict[str, Any]) -> bool:
         if self.control_ws is None:
@@ -55,8 +60,8 @@ class BotSessionRegistry:
                 self._sessions[bot_id] = sess
             sess.control_ws = ws
         logger.info(
-            "registry.bind_control bot_id=%s session_id=%s replaced_old=%s",
-            bot_id, sess.session_id, old is not None,
+            "registry.bind_control bot_id=%s connection_id=%s replaced_old=%s",
+            bot_id, sess.connection_id, old is not None,
         )
         return sess, old
 
@@ -80,8 +85,8 @@ class BotSessionRegistry:
                 self._sessions[bot_id] = sess
             sess.data_ws = ws
         logger.info(
-            "registry.bind_data bot_id=%s session_id=%s replaced_old=%s",
-            bot_id, sess.session_id, old is not None,
+            "registry.bind_data bot_id=%s connection_id=%s replaced_old=%s",
+            bot_id, sess.connection_id, old is not None,
         )
         return sess, old
 

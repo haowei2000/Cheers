@@ -254,6 +254,13 @@ export default function App() {
     currentUserId,
     onCloseSettings: () => setSettingsOpen(false),
   });
+  const canRefreshSessions = useMemo(() => {
+    const userRole = currentUser?.role ?? "";
+    if (userRole === "system_admin" || userRole === "space_admin") return true;
+    if (selectedChannel?.can_manage) return true;
+    const channelRole = selectedChannel?.my_role ?? "";
+    return channelRole === "owner" || channelRole === "admin" || channelRole === "workspace_admin";
+  }, [currentUser?.role, selectedChannel?.can_manage, selectedChannel?.my_role]);
   const selectionResetReadyRef = useRef(false);
   useEffect(() => {
     setPromptTemplateOverrideId(null);
@@ -504,12 +511,14 @@ export default function App() {
     messages,
     setMessages,
     loading,
+    restoringInitialScroll,
     hasMore,
     loadingMore,
     messagesContainerRef,
     handleMessagesScroll,
     topicRoots,
     topicRepliesOf,
+    renderItems,
     msgById,
     clarifyAnsweredParentIds,
     rowVirtualizer,
@@ -519,6 +528,7 @@ export default function App() {
     pageTopicSourceMessages,
     pageTopicRepliesOf,
     preloadChannelMessages,
+    ensureMessageLoaded,
   } = useChannelMessages({
     selectedId,
     isDmSelected,
@@ -526,6 +536,7 @@ export default function App() {
     selectedIdRef,
     pendingScrollMsgIdRef,
     pageTopicMessages,
+    expandedTopics,
     setExpandedTopics,
   });
   const [processingBots, setProcessingBots] = useState<Record<string, string>>(
@@ -534,12 +545,30 @@ export default function App() {
 
   const [qcOpen, setQcOpen] = useState(false);
 
+  const handleMessageNavigate = useCallback(
+    (channelId: string, msgId?: string) => {
+      const workspaceId = getWorkspaceIdForChannel(channelId);
+      if (workspaceId) setSelectedWorkspaceId(workspaceId);
+      if (msgId) {
+        if (selectedIdRef.current === channelId) {
+          void ensureMessageLoaded(msgId);
+        } else {
+          pendingScrollMsgIdRef.current = msgId;
+        }
+      }
+      setSelectedId(channelId);
+    },
+    [
+      ensureMessageLoaded,
+      getWorkspaceIdForChannel,
+      selectedIdRef,
+      setSelectedId,
+      setSelectedWorkspaceId,
+    ],
+  );
 
   const handleNotifNavigate = (channelId: string, msgId?: string) => {
-    const workspaceId = getWorkspaceIdForChannel(channelId);
-    if (workspaceId) setSelectedWorkspaceId(workspaceId);
-    setSelectedId(channelId);
-    if (msgId) pendingScrollMsgIdRef.current = msgId;
+    handleMessageNavigate(channelId, msgId);
     setNotifPanelOpen(false);
   };
 
@@ -1344,6 +1373,7 @@ export default function App() {
             onOpenFilePreview={openFilePreview}
             onOpenPersonalFileMain={openPersonalFileInMain}
             onPreloadChannel={preloadChannelMessages}
+            onOpenMessage={handleMessageNavigate}
           />
         }
       >
@@ -1416,6 +1446,7 @@ export default function App() {
               taskPageOpen={taskPageOpen}
               agentBridgeTaskMessages={agentBridgeTaskMessages}
               refreshingDmSession={refreshingDmSession}
+              canRefreshSessions={canRefreshSessions}
               taskOverlayProps={{
                 open: taskPageOpen,
                 isDmSelected,
@@ -1475,6 +1506,7 @@ export default function App() {
                 secretInputRef,
                 onMessagesScroll: handleMessagesScroll,
                 loading,
+                restoringInitialScroll,
                 loadingMore,
                 hasMore,
                 messages,
@@ -1484,8 +1516,7 @@ export default function App() {
                 currentUser,
                 currentUserId,
                 authToken,
-                topicRoots,
-                topicRepliesOf,
+                renderItems,
                 virtualItems,
                 rowVirtualizer,
                 showJumpToBottom,
@@ -1494,12 +1525,10 @@ export default function App() {
                 botByUsername,
                 coordinatorBot,
                 userById,
-                msgById,
                 revealedSecrets,
                 secretTokens,
                 clarifyAnsweredParentIds,
                 pendingClarifyReplyMsgId,
-                expandedTopics,
                 collapsedMessages,
                 processingBots,
                 secretMode,

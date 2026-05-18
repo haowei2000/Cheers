@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+from app.core.localization import is_zh, normalize_locale
+
 
 @dataclass(frozen=True)
 class HelpEntry:
@@ -15,7 +17,7 @@ class HelpEntry:
     content: str
 
 
-HELP_ENTRIES: Sequence[HelpEntry] = (
+HELP_ENTRIES_ZH: Sequence[HelpEntry] = (
     HelpEntry(
         ("创建项目", "建项目", "新建项目", "怎么建", "如何创建项目"),
         "如何创建项目",
@@ -78,34 +80,118 @@ HELP_ENTRIES: Sequence[HelpEntry] = (
     ),
 )
 
+HELP_ENTRIES_EN: Sequence[HelpEntry] = (
+    HelpEntry(
+        ("create workspace", "create project", "create a project", "new workspace", "new project", "create channel"),
+        "How to Create a Project",
+        "Frontend entry: click the create entry in the workspace or channel list, choose the workspace, enter the project/channel name, then click Create.\n\n"
+        "If there is no workspace yet, create one first or ask an administrator to initialize one. API option: POST /api/channels with workspace_id, name, and type in the body. See the system administration guide for details.",
+    ),
+    HelpEntry(
+        ("join project", "join channel", "added to project", "add me"),
+        "How to Join a Project",
+        "Joining a project usually means being added to a channel/project member list. Ask a channel administrator to add you in member management, or use the invite entry if that channel allows invitations. The project appears in the left channel list after you are added.",
+    ),
+    HelpEntry(
+        ("add bot", "invite bot", "bot to channel", "bot not in channel"),
+        "How to Add a Bot to a Channel",
+        "Type @ in a channel to open the Bot list. If you select a Bot that is not in the channel, AgentNexus asks whether to invite it; after confirmation, the Bot joins the channel and the composer inserts the @Bot mention. Administrators can also add Bots from channel member management.",
+    ),
+    HelpEntry(
+        ("agent bridge", "openclaw", "connect agent", "register bot", "external agent"),
+        "How to Connect an External Agent",
+        "External Agents can read `/docs/agent-bridge/discovery`, then register through `/docs/agent-bridge/register` as Agent Bridge Bots. Registration returns bot_token, controlUrl, dataUrl, and a provider config snippet. The OpenClaw provider package is available at `/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz`.",
+    ),
+    HelpEntry(
+        ("send message", "chat", "mention", "at bot", "@"),
+        "How to Use a Project",
+        "Type text in the bottom composer, then click Send or use the send shortcut. Type @ to choose a Bot or user in the channel. Uploaded files can be sent with the next message to the channel or to mentioned Bots.",
+    ),
+    HelpEntry(
+        ("no project", "empty list", "cannot see project", "left sidebar empty"),
+        "No Projects in the Sidebar",
+        "This usually means no channels exist yet, or you have not been added to any channel. Ask an administrator to create a workspace/channel and add you to the member list.",
+    ),
+    HelpEntry(
+        ("bot no response", "bot not responding", "@ not working", "mention not working"),
+        "@Bot Does Not Respond",
+        "Check whether the Bot has joined the current channel, whether the @ username exactly matches, whether the HTTP/LLM Bot has an available model and template, and whether the Agent Bridge provider is online and connected to the control/data WebSocket.",
+    ),
+    HelpEntry(
+        ("install", "deploy", "setup", "environment"),
+        "Installation and Deployment",
+        "Docker is recommended: run `docker compose up -d` from the project root. After startup, open the frontend and `/health`, and confirm database migrations completed. See the installation guide for details.",
+    ),
+    HelpEntry(
+        ("error", "cannot connect", "503", "404", "troubleshoot", "debug"),
+        "Troubleshooting",
+        "First check backend logs, database connectivity, migration state, frontend reverse proxy settings, object storage configuration, and Agent Bridge Bot token/online status.",
+    ),
+    HelpEntry(
+        ("help", "how to use", "manual", "docs", "entry", "feature entry"),
+        "Usage Overview",
+        "You can ask how to create a project, join a project, add Bots to a channel, connect an external Agent, send messages, troubleshoot @Bot responses, install/deploy, or diagnose errors.",
+    ),
+)
 
-def find_help(user_text: str) -> str | None:
+# Backward-compatible Chinese default used by the docs routes.
+HELP_ENTRIES = HELP_ENTRIES_ZH
+
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _entries_for(user_text: str | None = None, locale: str | None = None) -> Sequence[HelpEntry]:
+    if locale:
+        return HELP_ENTRIES_ZH if is_zh(locale) else HELP_ENTRIES_EN
+    if user_text and _contains_cjk(user_text):
+        return HELP_ENTRIES_ZH
+    return HELP_ENTRIES_EN
+
+
+def find_help(user_text: str, locale: str | None = None) -> str | None:
     """Return the best matching help content for user text."""
 
+    entries = find_help_entries(user_text, limit=1, locale=locale)
+    return entries[0].content if entries else None
+
+
+def find_help_entries(user_text: str, limit: int = 3, locale: str | None = None) -> list[HelpEntry]:
+    """Return the best matching help entries for user text."""
+
     if not user_text or not user_text.strip():
-        return None
+        return []
     text = user_text.strip().lower()
-    best: HelpEntry | None = None
-    best_score = 0
-    for entry in HELP_ENTRIES:
+    scored: list[tuple[int, int, HelpEntry]] = []
+    for entry in _entries_for(user_text, locale):
+        score = 0
+        longest_keyword = 0
         for keyword in entry.keywords:
-            if keyword in text and len(keyword) > best_score:
-                best = entry
-                best_score = len(keyword)
-                break
-    return best.content if best else None
+            if keyword in text:
+                score += len(keyword)
+                longest_keyword = max(longest_keyword, len(keyword))
+        if score > 0:
+            scored.append((score, longest_keyword, entry))
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [entry for _, _, entry in scored[: max(0, limit)]]
 
 
-def build_help_content_with_form(user_text: str) -> str:
+def build_help_content_with_form(user_text: str, locale: str | None = None) -> str:
     """Historical form emission is gone; return compact rule-based help."""
 
-    return find_help(user_text) or ""
+    return find_help(user_text, locale=locale) or ""
 
 
-def get_help_context_for_llm() -> str:
+def get_help_context_for_llm(user_text: str | None = None, limit: int = 3, locale: str | None = None) -> str:
     """Return compact help context for LLM prompts."""
 
+    if limit <= 0:
+        return ""
+    locale = normalize_locale(locale) if locale else None
+    entries = find_help_entries(user_text or "", limit=limit, locale=locale) if user_text else list(_entries_for(locale=locale))
+    if not entries and user_text:
+        entries = find_help_entries("帮助" if is_zh(locale) else "help", limit=1, locale=locale)
     return "\n\n---\n\n".join(
-        f"## {entry.title}\n{entry.content}" for entry in HELP_ENTRIES
+        f"## {entry.title}\n{entry.content}" for entry in entries
     )
-

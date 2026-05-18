@@ -9,7 +9,7 @@ Test strategy:
     tests finish.
 
 Prerequisites:
-  - Docker backend is running at http://localhost:8002.
+  - Docker backend is running at http://localhost:8000.
   - The admin account and cafe channel (ba30fc1a-...) exist.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ import pytest_asyncio
 import websockets
 
 BASE = os.getenv("TEST_BASE_URL")
-DEFAULT_BASE = "http://localhost:8002"
+DEFAULT_BASE = "http://localhost:8000"
 E2E_BASE = BASE or DEFAULT_BASE
 WS_BASE = E2E_BASE.replace("http://", "ws://").replace("https://", "wss://")
 

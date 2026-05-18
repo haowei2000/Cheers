@@ -1,270 +1,267 @@
-__附件二__
+> **Language**: English | [中文](AgentNexus_概要设计说明书_v2.0_附件二_架构决策记录.zh-CN.md)
 
-__架构待决策事项决议__
+__Attachment 2__
+
+__Resolution of structured matters to be decided__
 
 *Appendix II: Architecture Decision Records \(ADR\)*
 
-__从属文件__
+__Dependent files__
 
-AgentNexus 概要设计说明书 v2\.0
+AgentNexus Outline Design Manual v2\.0
 
-__文件编号__
+__File number__
 
-附件二（Appendix II）
+Appendix II (Appendix II)
 
-__版本__
+__version__
 
 v1\.0
 
-__编写日期__
+__Date written__
 
 2026\-03\-07
 
-__文档状态__
+__Document Status__
 
-草稿（Draft）
+Draft
 
-__涉及决策__
+__Involves decision-making__
 
-D\-01 至 D\-05
+D\-01 to D\-05
 
-__📌  本文件说明__
+__📌 This document explains__
 
-本附件记录主文档第 9 章「待决策事项」中 D\-01 至 D\-05 的分析与最终决议。
+This attachment records the analysis and final resolution of D\-01 to D\-05 in Chapter 9 of the main document, "Items to be Decision-Maked."
 
-每条决策采用 ADR（Architecture Decision Record）格式，包含背景、方案对比、决议和实施要点。
+Each decision adopts ADR (Architecture Decision Record) format, including background, solution comparison, resolution and implementation points.
 
-决议一旦确定，后续开发应以本文件为准，如需变更需更新版本并注明原因。
+Once the resolution is determined, subsequent development should be based on this document. If changes are needed, the version must be updated and the reasons must be noted.
 
-# __D\-01  Bot 响应是否支持流式输出（Streaming）__
+# __D\-01 Does Bot response support streaming output (Streaming)__
 
-| 项目 | 内容 |
+| Project | Content |
 |------|------|
-| 影响范围 | 用户体验、WebSocket 协议设计、前端渲染逻辑 |
-| 决策阶段 | 第一阶段不实施，第二阶段末期按需评估 |
+| Scope of influence | User experience, WebSocket protocol design, front-end rendering logic |
+| Decision-making stage | The first phase will not be implemented, and the second phase will be evaluated as needed at the end of the second phase |
 
-## __背景与分析__
+## __Background and Analysis__
 
-流式输出（Streaming）可让用户看到 Bot 逐字输出的过程，视觉上显著降低等待焦虑。但其代价是：WebSocket 需要支持分片推送协议，前端需实时拼接渲染，调试难度倍增，错误定位也更复杂。
+Streaming output allows users to see the process of Bot outputting word by word, visually significantly reducing waiting anxiety. But the price is: WebSocket needs to support the fragmented push protocol, the front end needs to be spliced ​​and rendered in real time, debugging is twice as difficult, and error location is more complicated.
 
-更关键的是：AgentNexus 的实际等待时间瓶颈在 LLM 推理本身，流式只是视觉优化，不缩短实际完成时间。对于目标用户规模和第一阶段的验证目标而言，非流式已经足够。
+More importantly: the actual waiting time bottleneck of AgentNexus lies in the LLM inference itself. Streaming is only a visual optimization and does not shorten the actual completion time. For the target user size and first-stage validation goals, non-streaming is sufficient.
 
-__⏳  推迟决策__
+__⏳ Postpone decision__
 
-第一阶段采用非流式响应。待链路稳定、用户反馈明确后，在第二阶段末期重新评估。架构上预留流式接口扩展点，不做破坏性设计。
+The first stage uses non-streaming responses. After the link is stable and user feedback is clear, it will be re-evaluated at the end of the second phase. Streaming interface extension points are reserved in the architecture and no destructive design is done.
 
-## __实施要点__
+## __Implementation Points__
 
-- Bot 响应以完整消息一次性通过 WebSocket 推送，前端展示"Bot 正在处理\.\.\."动画过渡
-- WebSocket 消息格式设计时预留 stream: bool 字段，升级时无需改动数据结构
-- 第二阶段评估标准：非流式情况下用户投诉等待体验的频率；若超过 10% 的负面反馈则优先升级
+- The Bot response is pushed through WebSocket as a complete message at once, and the front end displays the "Bot is processing \.\.\." animation transition
+- The stream: bool field is reserved when designing the WebSocket message format, so there is no need to change the data structure when upgrading.
+- Second stage evaluation criteria: frequency of user complaints and waiting experience in non-streaming situations; if more than 10% of negative feedback is received, priority will be given to upgrades
 
-# __D\-02  Context Store 存储方案__
+# __D\-02 Context Store storage solution__
 
-| 项目 | 内容 |
+| Project | Content |
 |------|------|
-| 影响范围 | 记忆读写性能、并发安全、管理员可维护性 |
-| 决策阶段 | 第一阶段实施 |
+| Scope of impact | Memory read and write performance, concurrency security, administrator maintainability |
+| Decision-making phase | Phase 1 implementation |
 
-## __背景与分析__
+## __Background and Analysis__
 
-Context Store 的核心矛盾：MD 文件对管理员友好（可直接打开编辑），数据库对并发写入安全。两者不必二选一，关键是找到最轻量的组合方案。
+The core contradiction of Context Store: MD files are administrator-friendly (can be opened and edited directly), and the database is safe for concurrent writes. You don’t have to choose one or the other, the key is to find the lightest combination.
 
-并发写入风险实际上只集中在 RECENT\.md——多个 Bot 同时响应时可能同时写入。其余三层（ANCHOR / DECISIONS / FILES\_INDEX）写入频率很低，几乎不存在并发冲突。
+The risk of concurrent writes is actually only concentrated on RECENT\.md - multiple Bots may write at the same time when responding at the same time. The writing frequency of the remaining three layers (ANCHOR / DECISIONS / FILES\_INDEX) is very low, and there are almost no concurrency conflicts.
 
-__✅  已决策__
+__✅Decided__
 
-采用「SQLite \+ MD 文件」双轨方案：SQLite 作为主存储负责并发安全，MD 文件作为人工可编辑的镜像。两者保持同步，读取走 SQLite 缓存，管理员编辑 MD 文件后触发同步写回数据库。
+A dual-track solution of "SQLite + MD file" is adopted: SQLite is used as the main storage to be responsible for concurrency security, and the MD file is used as a manually editable mirror. The two are kept in sync, the SQLite cache is read, and the administrator edits the MD file and triggers a synchronous write back to the database.
 
-## __为什么选 SQLite 而非 PostgreSQL？__
+## __Why choose SQLite instead of PostgreSQL? __
 
-PostgreSQL 已作为消息数据库存在于系统中，但 Context Store 的访问模式与消息库截然不同：
+PostgreSQL already exists in the system as a message database, but the access pattern of the Context Store is completely different from that of the message store:
 
-- 读多写少：每次 Bot 调用读取，但写入只在 Bot 响应后异步触发
-- 数据量极小：四个 MD 文件合计不超过 1 万字，完全驻留内存
-- 无跨表关联查询需求：只按 channel\_id \+ layer 做简单 key\-value 查找
+- Read more and write less: every time the Bot is called, it reads, but the writing is only triggered asynchronously after the Bot responds.
+- The amount of data is extremely small: the total size of the four MD files does not exceed 10,000 words and is completely resident in memory.
+- No cross-table related query requirements: only simple key\-value search based on channel\_id \+ layer
 
-SQLite 的优势：
+Advantages of SQLite:
 
-- 零部署成本：无需额外服务进程，数据库就是一个文件，随 Docker 卷挂载
-- 读性能极高：整个数据库常驻内存，读取延迟 < 1ms
-- WAL 模式支持并发读写：开启 WAL（Write\-Ahead Logging）后，并发写入安全且不阻塞读取
-- 运维简单：备份即复制一个文件，管理员无需学习数据库操作
+- Zero deployment cost: no additional service process is required, the database is just a file, mounted with the Docker volume
+- Extremely high read performance: the entire database is resident in memory, and the read latency is < 1ms
+- WAL mode supports concurrent reading and writing: after turning on WAL (Write\-Ahead Logging), concurrent writing is safe and does not block reading.
+- Simple operation and maintenance: backup means copying a file, and administrators do not need to learn database operations.
 
-__SQLite WAL 模式说明__
+__SQLite WAL mode description__The default SQLite uses an exclusive lock, blocking all reads while writing. After turning on WAL mode, writing and reading can be performed concurrently.
 
-默认的 SQLite 使用排他锁，写入时阻塞所有读取。开启 WAL 模式后，写入和读取可并发进行，
+Queuing is only required between multiple writes. For the writing frequency of the Context Store (asynchronous writing once after each Bot response),
 
-只有多个写入之间才需要排队。对于 Context Store 的写入频率（每次 Bot 响应后异步写入一次），
+The WAL mode is fully sufficient to ensure concurrency safety without introducing a heavier database solution.
 
-WAL 模式完全足以保障并发安全，无需引入更重的数据库方案。
+Opening method: Execute PRAGMA journal\_mode=WAL when connecting;
 
-开启方式：连接时执行 PRAGMA journal\_mode=WAL;
+## __Dual-rail synchronization mechanism__
 
-## __双轨同步机制__
+- Writing process: MemoryManager first writes SQLite and asynchronously synchronizes to the corresponding MD file
+- Reading process: always read from SQLite (fast, latest data), do not read MD files directly
+- After the administrator edits the MD file, the management backend provides a "Synchronize to database" button, or it is automatically triggered after detecting file changes.
+- When starting up for the first time, if SQLite is empty, the import will be initialized from the MD file.
 
-- 写入流程：MemoryManager 先写 SQLite，异步同步到对应 MD 文件
-- 读取流程：始终从 SQLite 读取（速度快、数据最新），不直接读 MD 文件
-- 管理员编辑 MD 文件后，管理后台提供「同步到数据库」按钮，或检测文件变更后自动触发
-- 初次启动时，若 SQLite 为空则从 MD 文件初始化导入
+# __D\-03 Execution mode when multiple Bots are @ at the same time__
 
-# __D\-03  多 Bot 同时被 @ 时的执行模式__
-
-| 项目 | 内容 |
+| Project | Content |
 |------|------|
-| 影响范围 | 响应时间、消息排序、用户等待体验、Context Store 写入一致性 |
-| 决策阶段 | 第一阶段实施（串行）；并行方案暂不设计 |
+| Scope of impact | Response time, message sequencing, user waiting experience, Context Store write consistency |
+| Decision-making stage | First phase implementation (serial); parallel solution is not yet designed |
 
-## __背景与分析__
+## __Background and Analysis__
 
-并行执行的核心风险不只是消息乱序，还有 Context Store 的写入冲突：两个 Bot 同时读取相同的 RECENT\.md、同时写入更新，后写的会覆盖前写的，导致一个 Bot 的响应从记忆中消失。此外两个 Bot 可能给出互相矛盾的结论，用户无从判断。
+The core risk of parallel execution is not only message out-of-order, but also writing conflicts in the Context Store: two Bots read the same RECENT\.md and write updates at the same time. The later one will overwrite the earlier one, causing one Bot's response to disappear from the memory. In addition, two Bots may give conflicting conclusions, leaving users unable to judge.
 
-串行执行的真实代价是等待时间叠加，但对于目标用户场景（小团队协作，非实时高频交互），这是可接受的。
+The real cost of serial execution is the superposition of waiting time, but for the target user scenario (small team collaboration, non-real-time high-frequency interaction), this is acceptable.
 
-__✅  已决策__
+__✅Decided__
 
-采用默认串行执行模式。多个 Bot 按 @mention 顺序依次响应，前一个 Bot 完成后下一个才开始。并行模式在当前阶段不设计，不作为待实现的备选项保留。
+Use the default serial execution mode. Multiple Bots respond in sequence according to @mention, and the next one starts after the previous Bot completes. Parallel mode is not designed at the current stage and is not reserved as an alternative to be implemented.
 
-## __串行等待的用户体验设计__
+## __User Experience Design for Serial Waiting__
 
-串行模式的关键是让用户清楚知道"系统在工作，不是卡住了"。需在前端实现以下 UX：
+The key to serial mode is to let users know clearly that "the system is working, not stuck." The following UX needs to be implemented on the front end:
 
-__① 响应队列状态栏__
+__① Response queue status bar__
 
-- 用户 @ 多个 Bot 后，频道顶部或输入框上方出现队列进度条
-- 格式示例：「队列：@codebot 处理中（预计 15 秒）→ @docbot 等待中 → @planbot 等待中」
-- 当前处理的 Bot 头像旁显示旋转动画，等待中的 Bot 显示灰色时钟图标
+- After a user @ multiple Bots, a queue progress bar appears at the top of the channel or above the input box
+- Format example: "Queue: @codebot processing (estimated 15 seconds) → @docbot waiting → @planbot waiting"
+- A rotation animation is displayed next to the avatar of the currently processed Bot, and a gray clock icon is displayed next to the waiting Bot.
 
-__② 预估等待时间__
+__② Estimated waiting time__
 
-- 基于该 Bot 最近 10 次响应时间的滑动平均值，动态估算剩余时间
-- 显示格式：「@docbot 预计还需 20 秒」，精度到 5 秒即可，无需精确
-- 首次使用无历史数据时显示「预计 10–30 秒」作为默认提示
+- Dynamically estimate the remaining time based on the sliding average of the Bot's last 10 response times
+- Display format: "@docbot is expected to take another 20 seconds", the accuracy is 5 seconds, no need to be precise
+- When using without historical data for the first time, "Estimated 10-30 seconds" is displayed as the default prompt
 
-__③ Bot 助理模式（针对高频用户的进阶选项）__
+__③ Bot assistant mode (advanced option for high-frequency users)__
 
-当用户需要频繁让同一组 Bot 协作时，可为频道设置「默认协作组」，避免每次手动 @ 多个 Bot：
+When users need to frequently collaborate with the same group of Bots, they can set a "Default Collaboration Group" for the channel to avoid manually @ multiple Bots each time:
 
-- 管理员或频道创建者可在频道设置中配置「默认协作组」，选择 2–5 个 Bot
-- 用户发消息时选择「协作模式」开关，消息将自动依次发送给默认协作组中的所有 Bot
-- 协作组内 Bot 的执行顺序可拖拽排列，靠前的先执行
-- 此功能为可选增强，不影响基础 @mention 流程，第二阶段实现
+- The administrator or channel creator can configure the "Default Collaboration Group" in the channel settings and select 2–5 Bots
+- When the user selects the "Collaboration Mode" switch when sending a message, the message will be automatically sent to all Bots in the default collaboration group in sequence.
+- The execution order of Bots in the collaboration group can be arranged by dragging and dropping, with the frontmost being executed first.
+- This feature is an optional enhancement and does not affect the basic @mention process. It will be implemented in the second phase.
 
-# __D\-04  Bot 响应内容的审核策略__
+# __D\-04 Bot response content audit policy__
 
-| 项目 | 内容 |
+| Project | Content |
 |------|------|
-| 影响范围 | 内容安全、工作流设计、用户体验 |
-| 决策阶段 | 第一阶段实施基础拦截；全量审核不实施 |
+| Scope of influence | Content security, workflow design, user experience |
+| Decision-making stage | Basic interception will be implemented in the first stage; full review will not be implemented |
 
-## __背景与分析__
+## __Background and Analysis__
 
-全量人工审核（每条 Bot 回复都需要人批准才能发出）会严重破坏协作流畅性，且对于内部团队协作场景没有必要。真正的风险点是：Bot 被误引导执行了有实际副作用的操作指令。
+Full manual review (every Bot reply needs human approval before being sent) will seriously damage the smoothness of collaboration and is unnecessary for internal team collaboration scenarios. The real risk point is that the Bot is misdirected to execute operation instructions with actual side effects.
 
-__✅  已决策__
+__✅Decided__
 
-不做全量审核。在 Orchestrator 层实现「高风险操作拦截」：检测 Bot 回复中是否包含对外执行类指令，若命中则暂停发送并通知管理员确认，其余全部直接发出。
+No full review will be done. Implement "high-risk operation interception" at the Orchestrator layer: detect whether the Bot reply contains external execution instructions. If there is a hit, the sending will be suspended and the administrator will be notified for confirmation. The rest will be sent directly.
 
-## __高风险操作拦截规则__
+## __High-risk operation interception rules__
 
-拦截基于关键词 \+ 语义模式匹配，第一阶段使用规则匹配，第二阶段可升级为轻量 LLM 判断：
+Interception is based on keyword \+ semantic pattern matching. The first stage uses rule matching, and the second stage can be upgraded to lightweight LLM judgment:
 
-| 风险类型 | 触发示例 | 处理方式 |
-|----------|----------|----------|
-| 对外发送 | 「我已帮你发送邮件给客户」「已提交工单」 | 拦截 \+ 通知管理员确认 |
-| 代码部署 | 「已推送到 main 分支」「已执行 deploy」 | 拦截 \+ 通知管理员确认 |
-| 文件删除 | 「已删除该文件」「已清空目录」 | 拦截 \+ 通知管理员确认 |
-| 外部 API 调用 | 「已调用接口完成支付」「已更新数据库」 | 拦截 \+ 通知管理员确认 |
-| 普通建议/分析 | 「建议你发送邮件给客户」「推荐部署步骤」 | 直接发出，不拦截 |
+| Risk Types | Trigger Examples | Handling Methods ||----------|----------|----------|
+| External sending | "I have sent the email to the customer for you" "The work order has been submitted" | Intercept \+ Notify the administrator for confirmation |
+| Code deployment | "Pushed to main branch" "Deploy executed" | Interception \+ Notify administrator for confirmation |
+| File deletion | "The file has been deleted" "The directory has been cleared" | Intercept \+ Notify the administrator for confirmation |
+| External API call | "Interface called to complete payment" "Database updated" | Interception \+ Notify administrator for confirmation |
+| General suggestions/analysis | "It is recommended that you send emails to customers" "Recommended deployment steps" | Send directly without interception |
 
-__设计边界__
+__Design Boundaries__
 
-拦截针对的是 Bot 声称"已完成"某个对外操作，而非建议或分析类内容。
+The interception is targeted at the Bot's claim to have "completed" an external operation, rather than advice or analysis content.
 
-AgentNexus 当前阶段的 OpenClaw 实例不具备直接执行外部操作的能力，
+The current OpenClaw instance of AgentNexus does not have the ability to directly perform external operations.
 
-因此拦截主要是防御性设计，应对未来 Bot 能力扩展后的潜在风险。
+Therefore, interception is mainly a defensive design to deal with potential risks after the expansion of Bot capabilities in the future.
 
-# __D\-05  OpenClaw 版本升级兼容策略__
+# __D\-05 OpenClaw version upgrade compatibility strategy__
 
-| 项目 | 内容 |
+| Project | Content |
 |------|------|
-| 影响范围 | 长期维护成本、升级风险、系统稳定性 |
-| 决策阶段 | 第一阶段随 Orchestrator 一起实施 |
+| Scope of impact | Long-term maintenance costs, upgrade risks, system stability |
+| Decision phase | First phase implemented with Orchestrator |
 
-## __背景与分析__
+## __Background and Analysis__
 
-OpenClaw 是外部开源项目，版本升级时 API 可能发生破坏性变更。如果 AgentOrchestrator 直接调用 OpenClaw 的接口，每次升级都可能需要修改编排层代码，风险高且难以测试。
+OpenClaw is an external open source project, and the API may undergo destructive changes when the version is upgraded. If AgentOrchestrator directly calls the OpenClaw interface, each upgrade may require modification of the orchestration layer code, which is high risk and difficult to test.
 
-__✅  已决策__
+__✅Decided__
 
-在 AgentOrchestrator 与 OpenClaw 之间建立 BotAdapter 接口隔离层。Orchestrator 只调用 Adapter 定义的标准内部接口，Adapter 负责将标准调用翻译为具体版本的 OpenClaw API。版本升级时只改 Adapter，Orchestrator 不动。
+Establish a BotAdapter interface isolation layer between AgentOrchestrator and OpenClaw. Orchestrator only calls the standard internal interface defined by the Adapter, and the Adapter is responsible for translating the standard calls into a specific version of the OpenClaw API. When upgrading the version, only the Adapter is changed and the Orchestrator remains unchanged.
 
-## __接口隔离层设计__
+## __Interface isolation layer design__
 
-标准内部接口（Orchestrator 侧，永远不变）：
+Standard internal interface (Orchestrator side, never changed):
 
 class BotAdapter:
 
     def execute\(self, payload: AgentPayload\) \-> AgentResponse:
 
-        """唯一对外接口：输入标准 Payload，输出标准 Response"""
+        """The only external interface: input standard Payload, output standard Response"""
 
         raise NotImplementedError
 
     def health\_check\(self\) \-> bool:
 
-        """检查 OpenClaw 实例是否在线"""
+        """Check if the OpenClaw instance is online"""
 
         raise NotImplementedError
 
-版本适配实现（每个版本一个子类）：
+Version adaptation implementation (one subclass per version):
 
 class OpenClawV2Adapter\(BotAdapter\):
 
-    """适配 OpenClaw v2\.x API"""
+    """Adapt to OpenClaw v2\.x API"""
 
     def execute\(self, payload\):
 
-        \# 将 AgentPayload 翻译为 v2\.x 的请求格式
+        \# Translate AgentPayload to v2\.x request format
 
         \.\.\.
 
 class OpenClawV3Adapter\(BotAdapter\):
 
-    """适配 OpenClaw v3\.x API（未来升级时新增此类）"""
+    """Adapt to OpenClaw v3\.x API (this class will be added in future upgrades)"""
 
     def execute\(self, payload\):
 
-        \# 翻译为 v3\.x 的请求格式，其余不动
+        \# Translate to the request format of v3\.x, and leave the rest unchanged
 
         \.\.\.
 
-## __版本管理规范__
+## __Version Management Specifications__
 
-- Docker Compose 中锁定每个 OpenClaw 实例的镜像版本号，不使用 latest 标签
-- 升级前在独立测试环境运行完整回归测试套件，通过后才更新生产环境
-- 新旧版本 Adapter 同时保留，通过环境变量配置当前使用哪个版本的 Adapter
-- 如遇重大 API 变更无法平滑适配，可保持旧版 OpenClaw 运行，不强制跟进
+- Lock the image version number of each OpenClaw instance in Docker Compose without using the latest tag
+- Run a complete regression test suite in an independent test environment before upgrading, and only update the production environment after passing it
+- The old and new versions of the Adapter are retained at the same time, and the environment variable is used to configure which version of the Adapter is currently used.
+- If major API changes cannot be smoothly adapted, you can keep the old version of OpenClaw running without being forced to follow up.
 
-__额外收益__
+__Extra Benefits__
 
-Adapter 隔离层的另一个好处是：未来若替换 OpenClaw 为其他 Agent 框架（如 CrewAI 原生、AutoGen 等），
+Another benefit of the Adapter isolation layer is that if OpenClaw is replaced by other Agent frameworks (such as CrewAI native, AutoGen, etc.) in the future,Just add the corresponding Adapter, and the Orchestrator layer will not be affected at all. This keeps the system open to the entire Agent framework ecosystem.
 
-只需新增对应 Adapter，Orchestrator 层完全不受影响。这让系统对整个 Agent 框架生态保持开放。
+# __Decision Summary__
 
-# __决策汇总__
-
-| 编号 | 问题 | 状态 | 决议摘要 |
+| Number | Issue | Status | Summary of Resolution |
 |------|------|------|----------|
-| D\-01 | 是否支持流式输出 | ⏳ 推迟 | 第一阶段不实施；预留接口扩展点；第二阶段末期按用户反馈评估 |
-| D\-02 | Context Store 存储方案 | ✅ 已决 | SQLite（WAL 模式）主存储 \+ MD 文件镜像；双轨同步；零额外部署成本 |
-| D\-03 | 多 Bot 执行模式 | ✅ 已决 | 默认串行；前端展示队列状态和预估时间；第二阶段支持默认协作组 |
-| D\-04 | Bot 响应审核策略 | ✅ 已决 | 不做全量审核；仅拦截对外执行类指令；基于规则匹配，第二阶段升级为 LLM 判断 |
-| D\-05 | OpenClaw 版本升级兼容 | ✅ 已决 | 建立 BotAdapter 隔离层；锁定版本号；升级只改 Adapter，不动 Orchestrator |
+| D\-01 | Whether to support streaming output | ⏳ Postponed | Not implemented in the first phase; reserved interface extension points; evaluated based on user feedback at the end of the second phase |
+| D\-02 | Context Store storage solution | ✅ Determined | SQLite (WAL mode) main storage \+ MD file mirroring; dual-rail synchronization; zero additional deployment cost |
+| D\-03 | Multi-Bot execution mode | ✅ Determined | Default serial; front-end displays queue status and estimated time; second phase supports default collaboration group |
+| D\-04 | Bot response review strategy | ✅ Determined | No full review; only intercepting external execution instructions; based on rule matching, the second stage is upgraded to LLM judgment |
+| D\-05 | Compatible with OpenClaw version upgrade | ✅ Determined | Establish BotAdapter isolation layer; lock version number; upgrade only changes Adapter, not Orchestrator |
 
-__文档修订历史__
+__Document Revision History__
 
-| 版本 | 日期 | 说明 |
+| Version | Date | Description |
 |------|------|------|
-| v1\.0 | 2026\-03\-07 | 初稿，记录 D\-01 至 D\-05 的分析与最终决议，作为概要设计说明书 v2\.0 附件二发布 |
+| v1\.0 | 2026\-03\-07 | First draft, recording the analysis and final resolution from D\-01 to D\-05, released as Appendix 2 of the outline design specification v2\.0 |

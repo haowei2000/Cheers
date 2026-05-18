@@ -109,7 +109,7 @@
   flex-shrink: 0;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.6px;
+  letter-spacing: var(--tracking-ui);
   text-transform: uppercase;
   color: var(--fg-2);
   padding: 2px 8px;
@@ -137,9 +137,10 @@
   outline: 0;
   color: var(--fg-1);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: var(--type-body);
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: var(--tracking-ui);
+  line-height: var(--lh-body);
   padding: 2px 0;
 }
 .an-composer-title::placeholder {
@@ -154,7 +155,7 @@
   min-width: 0;
   font-size: 11.5px;
   color: var(--fg-3);
-  letter-spacing: 0.1px;
+  letter-spacing: var(--tracking-ui);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -163,18 +164,30 @@
   color: color-mix(in oklab, var(--orange) 70%, var(--fg-3));
 }
 
-/* Kind switcher: the Normal / Encrypted / Announcement / Topic bar above the composer. */
-.an-msgkind-switcher {
+/* Top control row: vertical mode switcher on the left, templates on the right. */
+.an-composer-toprow {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
   gap: 8px;
   margin: 0 auto 6px;
   max-width: 920px;
+}
+
+.an-msgkind-switcher {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 4px;
   color: var(--fg-3);
 }
+.an-msgkind-arrowstack {
+  display: grid;
+  grid-template-rows: repeat(2, 1fr);
+  gap: 4px;
+}
 .an-msgkind-arrow {
-  width: 24px;
+  width: 28px;
   height: 24px;
   display: inline-grid;
   place-items: center;
@@ -197,14 +210,15 @@
   background: var(--accent-muted);
 }
 .an-msgkind-label {
+  min-height: 52px;
   font-size: 11.5px;
   font-weight: 600;
-  padding: 3px 12px;
+  padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 10px;
   background: var(--bg-1);
   color: var(--fg-2);
-  letter-spacing: 0.2px;
+  letter-spacing: var(--tracking-ui);
   transition:
     border-color var(--motion-fast),
     background var(--motion-fast),
@@ -226,6 +240,139 @@
   color: var(--green);
 }
 
+/* ── Comfortable-density prompt template strip ───────────────────────────── */
+.an-composer-template-banner {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.an-composer-template-scroll {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  background: transparent;
+  scrollbar-color: transparent transparent;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.an-composer-template-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.an-composer-template-scroll::-webkit-scrollbar-thumb,
+.an-composer-template-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.an-composer-template-item {
+  flex: 0 0 auto;
+  min-width: 132px;
+  max-width: 220px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid color-mix(in oklab, var(--border) 88%, var(--accent));
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--bg-1) 92%, var(--accent-muted));
+  color: var(--fg-2);
+  font-family: inherit;
+  text-align: left;
+  padding: 8px 12px;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--motion-fast);
+}
+.an-composer-template-item:hover {
+  border-color: color-mix(in oklab, var(--accent) 46%, var(--border));
+  background: var(--surface-soft);
+  color: var(--fg-1);
+}
+.an-composer-template-item.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.an-composer-template-item-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.an-composer-template-item-name,
+.an-composer-template-item-desc {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-composer-template-item-name {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.15;
+}
+.an-composer-template-item-desc,
+.an-composer-template-state {
+  color: var(--fg-3);
+  font-size: 11px;
+  line-height: 1.2;
+}
+.an-composer-template-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.an-composer-template-clear {
+  width: 34px;
+  flex: 0 0 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    color var(--motion-fast);
+}
+.an-composer-template-clear:hover {
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--border));
+  background: var(--surface-soft);
+  color: var(--accent);
+}
+.an-composer-template-trigger,
+.an-composer-template-menu {
+  display: none;
+}
+html[data-density="compact"] .an-composer-template-banner {
+  display: none;
+}
+html[data-density="compact"] .an-composer-toprow:has(.an-composer-template-banner:only-child) {
+  display: none;
+}
+html[data-density="compact"] .an-composer-template-trigger,
+html[data-density="compact"] .an-composer-template-menu {
+  display: block;
+}
+html:not([data-density="compact"]) .an-composer-template-chip {
+  display: none;
+}
+
 /* ── Textarea (shared) ────────────────────────────────────────────────────── */
 .an-composer-textarea {
   width: 100%;
@@ -236,8 +383,8 @@
   padding: 12px 14px 4px;
   color: var(--fg-1);
   font-family: inherit;
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: var(--type-body);
+  line-height: var(--lh-body);
   max-height: 180px;
   min-height: 40px;
 }
@@ -327,7 +474,7 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--tracking-ui);
   line-height: 1;
 }
 
@@ -375,9 +522,20 @@
 }
 
 @media (max-width: 720px) {
-  .an-msgkind-switcher {
+  .an-composer-toprow {
     max-width: none;
     margin: 0 4px 6px;
+    gap: 6px;
+  }
+  .an-msgkind-label {
+    min-height: 50px;
+    padding: 0 10px;
+  }
+  .an-composer-template-banner {
+    min-width: 0;
+  }
+  .an-composer-template-item {
+    max-width: min(72vw, 220px);
   }
   .an-composer {
     max-width: none;

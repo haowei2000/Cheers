@@ -89,6 +89,21 @@ export class ReconnectingClient {
     }
   }
 
+  reconnectNow(reason = "client requested reconnect"): void {
+    if (this.stopped) return;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      try {
+        this.ws.close(1011, reason);
+      } catch {
+        this.scheduleReconnect();
+      }
+      return;
+    }
+    if (!this.reconnectTimer) {
+      this.scheduleReconnect();
+    }
+  }
+
   send(frame: unknown): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
     try {
@@ -151,6 +166,7 @@ export class ReconnectingClient {
     this.attempt += 1;
     const delay = computeBackoff(this.attempt, this.opts);
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       void this.connect();
     }, delay);
   }

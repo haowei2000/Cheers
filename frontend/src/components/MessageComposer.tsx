@@ -5,6 +5,7 @@ import type {
   PointerEvent,
   ReactNode,
   RefObject,
+  WheelEvent,
 } from "react";
 import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
@@ -346,6 +347,20 @@ export function MessageComposer({
     }
   };
 
+  const handleTemplateWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const scroller = event.currentTarget;
+    if (scroller.scrollWidth <= scroller.clientWidth) return;
+
+    const delta =
+      Math.abs(event.deltaX) > Math.abs(event.deltaY)
+        ? event.deltaX
+        : event.deltaY;
+    if (delta === 0) return;
+
+    scroller.scrollLeft += delta;
+    event.preventDefault();
+  };
+
   const removePendingFile = (index: number, previewUrl: string | null) => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     onRemovePendingFile?.(index);
@@ -359,56 +374,12 @@ export function MessageComposer({
   const placementClass =
     mentionPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1";
   const toolbarMenuClass = "an-menu absolute left-0 right-0 bottom-full mb-1";
+  const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
+  const shouldShowKindSwitcher =
+    showKindSwitcher && !replyingTo && !normalOnly;
 
   return (
     <>
-      {showKindSwitcher && !replyingTo && !normalOnly && (
-        <div className="an-msgkind-switcher">
-          <button
-            type="button"
-            onClick={() => onCycleKind?.(-1)}
-            className="an-msgkind-arrow"
-            title="Previous message type (Shift+Tab)"
-            aria-label="Previous message type"
-          >
-            ‹
-          </button>
-          <span
-            className={
-              "an-msgkind-label inline-flex items-center gap-1.5" +
-              (displayKind === "secret"
-                ? " is-secret"
-                : displayKind === "announcement"
-                  ? " is-announcement"
-                  : displayKind === "topic"
-                    ? " is-topic"
-                    : "")
-            }
-            title="Tab switches type · Shift+Tab reverses"
-          >
-            {displayKind === "secret" ? (
-              <AppIcon name="lock" className="w-3.5 h-3.5" />
-            ) : displayKind === "announcement" ? (
-              <AppIcon name="announcement" className="w-3.5 h-3.5" />
-            ) : displayKind === "topic" ? (
-              <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
-            ) : (
-              <AppIcon name="message" className="w-3.5 h-3.5" />
-            )}
-            {MESSAGE_COMPOSER_KIND_LABEL[displayKind]}
-          </span>
-          <button
-            type="button"
-            onClick={() => onCycleKind?.(1)}
-            className="an-msgkind-arrow"
-            title="Next message type (Tab)"
-            aria-label="Next message type"
-          >
-            ›
-          </button>
-        </div>
-      )}
-
       {replyingTo &&
         (() => {
           const refBot =
@@ -504,6 +475,121 @@ export function MessageComposer({
                 </button>
               </div>
             ),
+          )}
+        </div>
+      )}
+
+      {(shouldShowKindSwitcher || hasPromptTemplateControl) && (
+        <div className="an-composer-toprow">
+          {shouldShowKindSwitcher && (
+            <div className="an-msgkind-switcher">
+              <div className="an-msgkind-arrowstack">
+                <button
+                  type="button"
+                  onClick={() => onCycleKind?.(-1)}
+                  className="an-msgkind-arrow"
+                  title="Previous message type (Shift+Tab)"
+                  aria-label="Previous message type"
+                >
+                  <AppIcon name="chevronUp" className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onCycleKind?.(1)}
+                  className="an-msgkind-arrow"
+                  title="Next message type (Tab)"
+                  aria-label="Next message type"
+                >
+                  <AppIcon name="chevronDown" className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <span
+                className={
+                  "an-msgkind-label inline-flex items-center gap-1.5" +
+                  (displayKind === "secret"
+                    ? " is-secret"
+                    : displayKind === "announcement"
+                      ? " is-announcement"
+                      : displayKind === "topic"
+                        ? " is-topic"
+                        : "")
+                }
+                title="Tab switches type · Shift+Tab reverses"
+              >
+                {displayKind === "secret" ? (
+                  <AppIcon name="lock" className="w-3.5 h-3.5" />
+                ) : displayKind === "announcement" ? (
+                  <AppIcon name="announcement" className="w-3.5 h-3.5" />
+                ) : displayKind === "topic" ? (
+                  <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
+                ) : (
+                  <AppIcon name="message" className="w-3.5 h-3.5" />
+                )}
+                {MESSAGE_COMPOSER_KIND_LABEL[displayKind]}
+              </span>
+            </div>
+          )}
+
+          {hasPromptTemplateControl && (
+            <div className="an-composer-template-banner">
+              <div
+                className="an-composer-template-scroll"
+                aria-label="Prompt templates"
+                onWheel={handleTemplateWheel}
+              >
+                {promptTemplatesLoading ? (
+                  <span className="an-composer-template-state">Loading...</span>
+                ) : promptTemplates.length === 0 ? (
+                  <span className="an-composer-template-state">No templates available</span>
+                ) : (
+                  promptTemplates.map((template) => {
+                    const isSelected = template.template_id === selectedPromptTemplateId;
+                    return (
+                      <button
+                        key={template.template_id}
+                        type="button"
+                        className={
+                          "an-composer-template-item" + (isSelected ? " is-selected" : "")
+                        }
+                        onClick={() =>
+                          onPromptTemplateChange?.(
+                            isSelected ? null : template.template_id,
+                          )
+                        }
+                        aria-pressed={isSelected}
+                        title={
+                          isSelected
+                            ? `Clear template override: ${template.name}`
+                            : `Force template: ${template.name}`
+                        }
+                      >
+                        <span className="an-composer-template-item-text">
+                          <span className="an-composer-template-item-name">
+                            {template.name}
+                          </span>
+                          {template.description && (
+                            <span className="an-composer-template-item-desc">
+                              {template.description}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              {selectedPromptTemplate && (
+                <button
+                  type="button"
+                  className="an-composer-template-clear"
+                  onClick={() => onPromptTemplateChange?.(null)}
+                  title="Clear template override"
+                  aria-label="Clear prompt template override"
+                >
+                  <AppIcon name="close" className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -632,7 +718,7 @@ export function MessageComposer({
               )}
 
               {onPromptTemplateChange && (
-                <div ref={templateTriggerRef} className="relative">
+                <div ref={templateTriggerRef} className="an-composer-template-trigger relative">
                   <button
                     type="button"
                     onClick={() => setTemplateMenuOpen((open) => !open)}
@@ -647,7 +733,7 @@ export function MessageComposer({
                     }
                     aria-label="Choose prompt template"
                   >
-	                    <span className="an-composer-glyph">/</span>
+                    <span className="an-composer-glyph">/</span>
                   </button>
                 </div>
               )}
@@ -663,7 +749,7 @@ export function MessageComposer({
                 className="an-composer-iconbtn"
                 title="Mention members or bots"
               >
-	                <span className="an-composer-glyph">@</span>
+                <span className="an-composer-glyph">@</span>
               </button>
               <button
                 type="button"
@@ -771,7 +857,7 @@ export function MessageComposer({
         {templateMenuOpen && (
           <div
             ref={templateMenuRef}
-            className={toolbarMenuClass}
+            className={`${toolbarMenuClass} an-composer-template-menu`}
             style={{
               maxHeight: 300,
               overflowY: "auto",
@@ -812,14 +898,14 @@ export function MessageComposer({
                     {template.template_id === selectedPromptTemplateId ? (
                       <AppIcon name="check" className="w-3.5 h-3.5" />
                     ) : (
-	                      <span className="an-composer-glyph">/</span>
+                      <span className="an-composer-glyph">/</span>
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{template.name}</span>
                     {template.description && (
                       <span
-	                        className="an-type-caption block truncate"
+                        className="an-type-caption block truncate"
                         style={{ color: "var(--fg-3)" }}
                       >
                         {template.description}

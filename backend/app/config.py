@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     stream_delta_flush_interval_seconds: float = 0.08
     stream_delta_flush_chars: int = 512
     unread_fanout_concurrency: int = 64
+    history_debounce_seconds: float | None = None
+    # Deprecated env name kept as fallback for existing deployments.
     recent_debounce_seconds: float = 5.0
 
     # Data directory, relative to project root or absolute.
@@ -70,9 +72,9 @@ class Settings(BaseSettings):
         "image/png,image/jpeg,image/webp,image/gif"
     )
     file_parse_max_chars: int = 12000
-    public_base_url: str = "https://agentnexus.epichust.com"
+    public_base_url: str = "http://localhost"
     kkfileview_enabled: bool = True
-    kkfileview_base_url: str = "https://agentnexus.epichust.com/preview"
+    kkfileview_base_url: str = "http://localhost/preview"
     kkfileview_token_ttl_seconds: int = 10 * 60
     avatar_upload_max_bytes: int = 2 * 1024 * 1024
     avatar_upload_allowed_types: str = "image/png,image/jpeg,image/webp,image/gif"
@@ -102,13 +104,16 @@ class Settings(BaseSettings):
     helper_llm_max_tokens: int = 1000
     llm_localhost_alias: str = ""
 
-    # System LLM for RECENT compression, file summaries, and similar tasks; simple truncation is used when unset.
+    # System LLM for history compression, file summaries, and similar tasks; simple truncation is used when unset.
     system_llm_api_key: str = ""
     system_llm_base_url: str = ""  # OpenAI-compatible
     system_llm_model: str = ""
 
-    # Backend memory pagination and recent context; does not affect frontend message-list pagination.
+    # Backend memory pagination and history context; does not affect frontend message-list pagination.
     memory_history_page_max_chars: int = 50000
+    memory_history_current_message_count: int | None = None
+    memory_history_summary_max_chars: int | None = None
+    # Deprecated env names kept as fallbacks for existing deployments.
     memory_recent_direct_message_count: int = 30
     memory_recent_summary_max_chars: int = 1500
 
@@ -134,9 +139,10 @@ class Settings(BaseSettings):
     log_json: bool = False
 
     # Seed data: initial administrator account.
+    app_default_locale: str = "en"
     admin_username: str = "admin"
-    admin_password: str = "admin#Nexus2024"
-    admin_display_name: str = "系统管理员"
+    admin_password: str = "change-me-admin-password"
+    admin_display_name: str = "System Administrator"
 
     # ===== Agent Bridge =====
     agent_bridge_enabled: bool = True

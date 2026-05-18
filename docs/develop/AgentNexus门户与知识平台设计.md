@@ -1,226 +1,28 @@
-# AgentNexus 门户与知识平台设计
+# Portal and Knowledge Platform Design
 
-> 本文档描述 AgentNexus 作为 OpenClaw 门户的定位、内置 Bot 体系、知识/记忆分层、公共平台（知识/数据）设计，以及分阶段实现计划。**第一阶段开发不涉及公共平台。**
+> **Language**: English | [中文](AgentNexus门户与知识平台设计.zh-CN.md)
 
----
+Design for AgentNexus as an agent portal with Coordinator, memory, and future public knowledge/data platforms.
 
-## 一、门户定位与愿景
+This is the English default edition prepared for the open-source documentation set. The full Chinese version is preserved next to this file for readers who prefer Chinese or need the original historical wording.
 
-### 1.1 核心定位
+## Key Topics
 
-AgentNexus 定位为 **OpenClaw 门户**：企业各部门自建的 OpenClaw 实例不仅服务本部门，其能力通过 AgentNexus 向上汇聚，形成跨部门服务能力。
+- Built-in Coordinator
+- Knowledge and memory separation
+- Public platform phases
+- Access review model
+- Current implementation alignment
 
-### 1.2 能力上浮
+## Current Guidance
 
-- 部门 OpenClaw 以 Bot 身份注册到 AgentNexus
-- 其他部门用户可通过 @ 部门 Bot 调用其能力
-- 门户提供统一编排、知识平台、数据平台，支撑跨部门协作
+- Prefer the English `.md` file as the default public entry point.
+- Use the `.zh-CN.md` file as the Chinese mirror.
+- For implementation details, verify against the current code and the user/operations documentation first.
+- Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
----
+## Related Documentation
 
-## 二、内置 Bot 体系
-
-### 2.1 Bot 分类
-
-| 类型 | 说明 | 示例 |
-|------|------|------|
-| **内置 Bot（Built-in）** | 系统自带，不可删除 | Helper Bot、Orchestrator |
-| **外部 Bot（External）** | 部门注册的 OpenClaw 实例 | 部门 Bot |
-
-### 2.2 @ 规则
-
-| 发起方 | 可 @ 的对象 |
-|--------|-------------|
-| 内置 Bot | 可 @ 部门 Bot（建议）、可 @ 人类用户 |
-| 外部 Bot | 仅可 @ 人类用户；**不可 @ 另一个 Bot** |
-
-### 2.3 Helper Bot
-
-| 属性 | 说明 |
-|------|------|
-| **职责** | 仅回答 AgentNexus 系统使用问题（如何用、如何申请、API 文档等） |
-| **触发** | 必须被 @ 才活跃；不被 @ 则不参与 |
-| **知识源** | 系统使用说明、公共平台访问申请 API 规范等文档，供Helper Bot 检索引用 |
-
-### 2.4 Orchestrator
-
-| 属性 | 说明 |
-|------|------|
-| **职责** | 回答业务问题；在需要时建议 @ 部门 Bot |
-| **触发** | 可配置两种模式：<br>① 必须 @ 才回答<br>② 直接回答频道内所有未 @ 任何人的问题（此模式可关闭） |
-| **参与范围** | 按频道：仅在被加入的频道内参与；未加入的频道不回答 |
-| **建议与自动接手** | 发出「建议 @部门bot 回答 XXX」后，被建议的部门 Bot 可自动接手回答；自动接手功能可关闭 |
-
-### 2.5 自动接手 UI
-
-- 部门 Bot 自动接手时：**直接显示该 Bot 的回复框**，先展示「正在处理...」，待回复生成后替换为完整内容
-- 与用户手动 @ 部门 Bot 的体验一致
-
----
-
-## 三、澄清能力
-
-- **所有 Bot**（内置 + 外部）均可使用 **澄清**：在信息不足时向用户提问，待用户补充后再继续回答
-
----
-
-## 四、记忆与知识库
-
-### 4.1 概念区分
-
-| 维度 | 记忆（Memory） | 知识库（Knowledge Base） |
-|------|----------------|---------------------------|
-| **本质** | 动态、会话相关的上下文与经验 | 相对静态、可复用的领域知识 |
-| **时效** | 有生命周期（近期/决策/锚点） | 长期有效，按需更新 |
-| **粒度** | 消息摘要、决策、项目锚点 | 文档、条目、FAQ、规则 |
-| **更新** | 随对话/决策自动更新 | 人工或流程驱动更新 |
-| **检索** | 多为顺序/分层注入 | 多为检索（向量/关键词） |
-| **归属** | 频道/项目/会话级 | 可公共、可部门私有 |
-
-### 4.2 与现有四层记忆的关系
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  公共知识平台（Knowledge）—— 阶段二实现                            │
-│  - 企业通用文档、FAQ、制度、流程                                   │
-│  - 各部门贡献的共享知识                                            │
-│  - 检索式使用（向量/关键词）                                       │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓ 按需注入
-┌─────────────────────────────────────────────────────────────────┐
-│  四层记忆（Memory）—— 频道级，已有                                 │
-│  ANCHOR（项目锚点）← 可引用公共知识中的「本频道相关规则」             │
-│  DECISIONS（决策记录）                                             │
-│  FILES_INDEX（本频道已上传资料）                                    │
-│  RECENT（近期动态）                                                │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-- 公共知识平台为**独立体系**，通过检索注入到各 Bot 的上下文中
-- 部门 Bot 可维护**私有知识库**，仅本 Bot 使用
-
----
-
-## 五、公共平台（阶段二实现，第一阶段不涉及）
-
-### 5.1 公共知识平台
-
-- 企业通用知识、各部门贡献的共享知识
-- 部门 Bot 可申请访问，审核通过后长期有效，直至被取消
-
-### 5.2 公共数据平台
-
-- 结构化数据（表、视图、API）
-- 部门 Bot 可申请访问，审核通过后长期有效，直至被取消
-
-### 5.3 访问控制：申请-审核
-
-```
-部门 Bot 需要访问公共知识/数据平台
-        ↓
-通过 HTTP API 向 AgentNexus 提交结构化申请
-        ↓
-AgentNexus 接收 → 待审批列表
-        ↓
-管理员在系统内审核（通过/拒绝）
-        ↓
-通过 → 该 Bot 获得长期访问权限（直至被取消）
-```
-
-- **申请入口**：HTTP API，非聊天对话
-- **申请说明**： Bot 可回答如何发起申请、URL、请求结构等
-- **详细规范**：见《公共平台访问申请API规范》
-
----
-
-## 六、问答与执行分流
-
-| 场景 | 处理方式 | 负责方 |
-|------|----------|--------|
-| **仅需问答** | Orchestrator 优先回答 | AgentNexus 中心 |
-| **需引用部门能力** | 在回答中建议 @部门bot | Orchestrator 建议，用户或自动接手 |
-| **需执行动作** | 用户直接 @部门bot | 部门 Bot 执行 |
-
----
-
-## 七、分阶段实现计划
-
-### 阶段一：门户基础（不涉及公共平台）—— 已实现
-
-| 序号 | 交付物 | 实现状态 | 实现说明 |
-|------|--------|----------|----------|
-| 1 | Orchestrator 作为系统内置 Bot | ✅ | bot_id=bot-coordinator-001，username=coordinator，Agent Bridge 配置=coordinator://internal；与Helper Bot 并列，可加入频道 |
-| 2 | Orchestrator 触发模式配置 | ✅ | 管理→LLM 设置→Orchestrator 配置：「直接回答未 @ 的问题」可开关；需绑定 system_llm 或 orchestrator |
-| 3 | Helper Bot 职责明确 | ✅ | 仅系统使用问题，必须 @ 才活跃 |
-| 4 | 自动接手机制 | ✅ | Orchestrator 回复含「建议 @xxx」时，可自动触发被建议 Bot；配置项 orchestrator_auto_takeover |
-| 5 | 自动接手 UI | ✅ | WebSocket 推送 bot_processing 事件，前端显示「@xxx 正在处理...」 |
-| 6 | Bot 层级与 @ 规则 | ✅ | 内置 Bot（helper 内置 Bot、coordinator://）可建议 @ 部门 Bot；外部 Bot 不可 @ 另一 Bot |
-| 7 | 所有 Bot 支持澄清 | 部分 | Helper Bot 已支持；HTTP Bot 待扩展 execute 契约 |
-| 8 | 资源监控（基础版） | ✅ | GET /api/tasks/stats?limit_days=7，按 Bot 汇总任务数、平均耗时；管理→性能监控展示 |
-
-### 阶段二：公共平台与申请流程
-
-| 序号 | 交付物 | 说明 |
-|------|--------|------|
-| 1 | 公共知识平台 | 企业通用知识、共享知识、检索注入 |
-| 2 | 公共数据平台 | 结构化数据、访问控制 |
-| 3 | 访问申请 API | 见《公共平台访问申请API规范》 |
-| 4 | 待审批列表与审核 | 管理员审核、权限生效 |
-| 5 | Helper Bot 知识扩展 | 纳入申请 API 文档，可回答申请流程 |
-
-### 阶段三：能力发现与编排增强
-
-| 序号 | 交付物 | 说明 |
-|------|--------|------|
-| 1 | Bot 注册时能力描述 | 详细描述 + 标准接口拉取 skills/MCP |
-| 2 | Orchestrator 学习 Bot 能力 | 根据能力清单给出更精准的 @ 建议 |
-| 3 | 资源监控增强 | 更细粒度监控与告警 |
-
----
-
-## 八、阶段一实现要点（供开发参考）
-
-### 8.1 配置存储
-
-- `admin_settings.json` 新增：`orchestrator_direct_answer`、`orchestrator_auto_takeover`（默认均为 false）
-- LLM 绑定新增 scope：`orchestrator`（未绑定时回退到 system_llm）
-
-### 8.2 关键 API
-
-| 接口 | 说明 |
-|------|------|
-| GET /api/admin/settings/orchestrator | 获取 Orchestrator 配置 |
-| PUT /api/admin/settings/orchestrator | 更新 Orchestrator 配置 |
-| GET /api/tasks/stats?limit_days=7 | 资源监控：总任务数、按 Bot 任务数与平均耗时 |
-
-### 8.3 WebSocket 事件
-
-- `bot_processing`：自动接手时推送，data 含 `bot_id`、`username`，前端显示「正在处理...」
-
----
-
-## 九、相关文档
-
-- [AgentNexus 概要设计说明书](AgentNexus_概要设计说明书_v2.0.md)
-- [公共平台访问申请API规范](公共平台访问申请API规范.md)（阶段二参考）
-- [开发计划与里程碑](开发计划与里程碑.md)
-- [系统管理说明书](系统管理说明书.md)（Orchestrator 配置、资源监控）
-- [00-文档索引与LLM使用说明](00-文档索引与LLM使用说明.md)
-
----
-
-## 十、当前实现对齐（2026-03）
-
-### 10.1 已实现并应作为默认认知
-
-- 内置体系已收敛为统一 `channel bot`（`bot-helper-001`），承担帮助、协作、路由建议能力。
-- `auto_assist` 支持频道级自动接管；全局与频道配置共同决定未 @ 场景是否自动回复。
-- 自动接手机制与前端“正在处理”提示已实现，可配置开关。
-- SSE 消息流式接口已落地，支持更细粒度的处理反馈。
-- 资源监控基础能力已实现（按 Bot 聚合任务量与耗时）。
-
-### 10.2 仍属规划项（未在当前代码完整实现）
-
-- 公共知识平台 / 公共数据平台本体能力仍处于阶段二规划。
-- 访问申请 API 规范目前为设计文档，尚未在后端提供正式实现路由。
-- 全量能力发现与自动精准路由（依赖统一技能卡生态）仍为后续演进方向。
+- [Documentation Home](../help/README.md)
+- [User Manual](../help/使用说明书.md)
+- [Roadmap](../ROADMAP.md)

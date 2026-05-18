@@ -3,7 +3,7 @@ export const LAYERS = [
   "PROGRESS",
   "DECISIONS",
   "FILES_INDEX",
-  "RECENT",
+  "HISTORY",
   "MEMBERS",
   "TODO",
 ] as const;

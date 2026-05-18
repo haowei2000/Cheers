@@ -42,6 +42,7 @@ export type {
   SendAckErr,
   SendAckOk,
   SendFrame,
+  SessionUpdateFrame,
   TraceFrame,
   TriggerMessage,
   TypingFrame,

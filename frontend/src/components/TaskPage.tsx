@@ -2,6 +2,7 @@ import type { BotTraceEvent, Channel, ChannelBot, Message, AgentBridgeTaskConten
 import { formatTs } from "../lib/message";
 import { AppIcon } from "./icons/AppIcon";
 import { SessionScopePanel } from "./SessionScopePanel";
+import type { SessionScopeTarget } from "./SessionScopePanel";
 
 type TaskMessage = Message & {
   content_data: AgentBridgeTaskContentData;
@@ -15,6 +16,7 @@ interface TaskPageProps {
   onSelectTask: (msgId: string) => void;
   onBack: () => void;
   onJumpToMessage: (msgId: string) => void;
+  onOpenSessionScope?: (target: SessionScopeTarget) => void;
 }
 
 function taskTitle(task: TaskMessage): string {
@@ -42,6 +44,7 @@ export function TaskPage({
   onSelectTask,
   onBack,
   onJumpToMessage,
+  onOpenSessionScope,
 }: TaskPageProps) {
   const selected = tasks.find((t) => t.msg_id === selectedMsgId) || tasks[0] || null;
   const traces = selected?._bot_trace || [];
@@ -75,6 +78,7 @@ export function TaskPage({
           channelId={channel.channel_id}
           botId={selectedBotId}
           title="Task sessions"
+          onOpenScope={onOpenSessionScope}
         />
       )}
 

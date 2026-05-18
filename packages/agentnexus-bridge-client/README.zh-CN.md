@@ -1,0 +1,17 @@
+# @haowei0520/bridge-client
+
+> **语言**：中文 | [English](README.md)
+
+Shared Node.js client for the AgentNexus Agent Bridge WebSocket protocol.
+
+It manages the per-bot `control` and `data` streams, reconnect/resume, reply
+acks, streaming deltas, traces, and file-upload frames. It is intentionally
+provider-agnostic so connectors for OpenClaw, ACP stdio agents, or other local
+runtimes can reuse the same bridge transport.
+
+## Release
+
+`@haowei0520/bridge-client` is published by the ACP connector release workflow
+before `@haowei0520/acp-connector`. Configure the repository secret `NPM_TOKEN`,
+then push a tag named `agentnexus-acp-connector-v<version>` that matches the
+connector package version.

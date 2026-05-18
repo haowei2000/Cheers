@@ -3,8 +3,8 @@
  *
  * Required environment variables; the test is skipped when any are missing:
  *   AGENTNEXUS_BOT_TOKEN     - agb_... token returned when creating an Agent Bridge bot
- *   AGENTNEXUS_CONTROL_URL   - for example ws://localhost:8002/ws/agent-bridge/control
- *   AGENTNEXUS_DATA_URL      - for example ws://localhost:8002/ws/agent-bridge/data
+ *   AGENTNEXUS_CONTROL_URL   - for example ws://localhost:8000/ws/agent-bridge/control
+ *   AGENTNEXUS_DATA_URL      - for example ws://localhost:8000/ws/agent-bridge/data
  *
  * Run by manually creating a WS bot through /api/v1/bots, adding it to a channel, exporting env, then:
  *   npm run test -- session.integration
