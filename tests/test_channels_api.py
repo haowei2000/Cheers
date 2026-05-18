@@ -109,14 +109,14 @@ async def test_create_channel_adds_initial_users_and_bots(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000023", name="Initial Channel WS")
+    ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000323", name="Initial Channel WS")
     user = User(
-        user_id="a0000000-0000-0000-0000-000000000223",
+        user_id="a0000000-0000-0000-0000-000000000423",
         username="channel_initial_member",
         password_hash="x",
     )
     bot = BotAccount(
-        bot_id="b1000000-0000-0000-0000-000000000223",
+        bot_id="b1000000-0000-0000-0000-000000000523",
         username="channel_initial_bot",
         display_name="Channel Initial Bot",
         status="online",
