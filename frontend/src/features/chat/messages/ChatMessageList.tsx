@@ -424,85 +424,14 @@ const MessageRow = memo(function MessageRow({
   const message = vm.message;
   const isTopicReply = item.kind === "topic-reply";
   const isInlineReply = item.kind === "inline-reply";
+  const isReplyRow = isInlineReply || isTopicReply;
   const isDMRender = selectedChannel?.type === "dm";
   const showReply = !isDmSelected;
   const actionVisibilityClass = `${forwardSelectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"} focus-within:opacity-100 transition-opacity`;
-
-  if (isTopicReply) {
-    const collapsed = collapsedMessages.has(message.msg_id);
-    const preview =
-      vm.displayContent.replace(/\s+/g, " ").slice(0, 42) +
-      (vm.displayContent.length > 42 ? "..." : "");
-    return (
-      <div
-        id={`msg-${message.msg_id}`}
-        className="an-chat-msg group flex items-start gap-2 px-8 py-1"
-      >
-        <MessageAvatar vm={vm} size={24} className="mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-1.5 mb-0.5 flex-wrap">
-            <span className="an-type-label" style={{ color: "var(--fg-1)" }}>
-              {vm.isOwn ? "Me" : vm.senderLabel}
-            </span>
-            {vm.isBot && <span className="an-chip green">Bot</span>}
-            <span className="an-chat-meta">
-              {formatChatTime(message.created_at, true)}
-            </span>
-            {collapsed && (
-              <span className="an-chat-meta truncate max-w-[220px]">
-                {preview}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => toggleMessage(message.msg_id)}
-              className="an-chat-mini-action ml-0.5 opacity-0 group-hover:opacity-100"
-              title={collapsed ? "Expand" : "Collapse"}
-            >
-              <AppIcon name={collapsed ? "chevronDown" : "chevronUp"} className="w-3 h-3" />
-            </button>
-          </div>
-          {!collapsed && !message.is_deleted && renderFileAttachments(message)}
-          {!collapsed && (
-            <div className={`an-chat-bubble topic-reply ${vm.isOwn ? "own" : "other"}`}>
-              <MessageBody
-                vm={vm}
-                selectedId={selectedId}
-                secretTokens={secretTokens}
-                revealSecretMessage={revealSecretMessage}
-                activeAgentBridgeTaskData={activeAgentBridgeTaskData}
-                renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
-                renderStopStreamButton={renderStopStreamButton}
-                renderPartialBadge={renderPartialBadge}
-                renderBotTraceStatus={renderBotTraceStatus}
-                handleMarkdownImageClick={handleMarkdownImageClick}
-                handleMarkdownFileClick={handleMarkdownFileClick}
-                handleClarifyContinue={handleClarifyContinue}
-                handleClarifySkip={handleClarifySkip}
-                compact
-              />
-            </div>
-          )}
-        </div>
-        <RowActions
-          actionVisibilityClass={actionVisibilityClass}
-          inputRef={inputRef}
-          secretInputRef={secretInputRef}
-          secretMode={secretMode}
-          message={message}
-          senderBot={vm.senderBot}
-          setComposerInput={setComposerInput}
-          setReplyingTo={setReplyingTo}
-          copyMessageText={copyMessageText}
-          renderMemoryLoadButton={renderMemoryLoadButton}
-          renderForwardActionButtons={renderForwardActionButtons}
-          showReply={showReply}
-          canDelete={canDelete}
-          onDeleteMessage={onDeleteMessage}
-        />
-      </div>
-    );
-  }
+  const topicReplyCollapsed = isTopicReply && collapsedMessages.has(message.msg_id);
+  const topicReplyPreview =
+    vm.displayContent.replace(/\s+/g, " ").slice(0, 42) +
+    (vm.displayContent.length > 42 ? "..." : "");
 
   if (isDMRender && vm.isOwn) {
     return (
@@ -617,8 +546,8 @@ const MessageRow = memo(function MessageRow({
   return (
     <div
       id={`msg-${message.msg_id}`}
-      className={`an-chat-msg group relative px-4 transition-colors ${isInlineReply ? "pl-12" : ""}`}
-      style={{ paddingTop: isInlineReply ? 4 : 8, paddingBottom: 2 }}
+      className={`an-chat-msg group relative px-4 transition-colors ${isReplyRow ? "an-chat-reply-row" : ""}`}
+      style={{ paddingTop: isReplyRow ? 4 : 8, paddingBottom: 2 }}
     >
       <div
         className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
@@ -633,28 +562,45 @@ const MessageRow = memo(function MessageRow({
             <span className="an-chat-sender">{vm.isOwn ? "Me" : vm.senderLabel}</span>
             {vm.isBot && <span className="an-chip green">Bot</span>}
             <span className="an-chat-meta">{vm.time}</span>
+            {topicReplyCollapsed && (
+              <span className="an-chat-meta truncate max-w-[220px]">
+                {topicReplyPreview}
+              </span>
+            )}
+            {isTopicReply && (
+              <button
+                type="button"
+                onClick={() => toggleMessage(message.msg_id)}
+                className="an-chat-mini-action ml-0.5 opacity-0 group-hover:opacity-100"
+                title={topicReplyCollapsed ? "Expand" : "Collapse"}
+              >
+                <AppIcon name={topicReplyCollapsed ? "chevronDown" : "chevronUp"} className="w-3 h-3" />
+              </button>
+            )}
           </div>
           {message.content_data?.title ? (
             <div className="an-chat-title mb-1">{message.content_data.title as string}</div>
           ) : null}
-          {!message.is_deleted && renderFileAttachments(message)}
-          <div className="an-chat-body">
-            <MessageBody
-              vm={vm}
-              selectedId={selectedId}
-              secretTokens={secretTokens}
-              revealSecretMessage={revealSecretMessage}
-              activeAgentBridgeTaskData={activeAgentBridgeTaskData}
-              renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
-              renderStopStreamButton={renderStopStreamButton}
-              renderPartialBadge={renderPartialBadge}
-              renderBotTraceStatus={renderBotTraceStatus}
-              handleMarkdownImageClick={handleMarkdownImageClick}
-              handleMarkdownFileClick={handleMarkdownFileClick}
-              handleClarifyContinue={handleClarifyContinue}
-              handleClarifySkip={handleClarifySkip}
-            />
-          </div>
+          {!topicReplyCollapsed && !message.is_deleted && renderFileAttachments(message)}
+          {!topicReplyCollapsed && (
+            <div className="an-chat-body">
+              <MessageBody
+                vm={vm}
+                selectedId={selectedId}
+                secretTokens={secretTokens}
+                revealSecretMessage={revealSecretMessage}
+                activeAgentBridgeTaskData={activeAgentBridgeTaskData}
+                renderAgentBridgeTaskCard={renderAgentBridgeTaskCard}
+                renderStopStreamButton={renderStopStreamButton}
+                renderPartialBadge={renderPartialBadge}
+                renderBotTraceStatus={renderBotTraceStatus}
+                handleMarkdownImageClick={handleMarkdownImageClick}
+                handleMarkdownFileClick={handleMarkdownFileClick}
+                handleClarifyContinue={handleClarifyContinue}
+                handleClarifySkip={handleClarifySkip}
+              />
+            </div>
+          )}
         </div>
         <RowActions
           actionVisibilityClass={actionVisibilityClass}

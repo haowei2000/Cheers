@@ -183,13 +183,14 @@ export function TopicPage({
       m.in_reply_to_msg_id && m.in_reply_to_msg_id !== rootMsg.msg_id
         ? messageById.get(m.in_reply_to_msg_id) ?? null
         : null;
+    const isReplyRow = m.msg_id !== rootMsg.msg_id;
 
     return (
       <div
         key={m.msg_id}
         id={`msg-${m.msg_id}`}
-        className="an-chat-msg group relative px-4 transition-colors"
-        style={{ paddingTop: 8, paddingBottom: 2 }}
+        className={`an-chat-msg group relative px-4 transition-colors ${isReplyRow ? "an-chat-reply-row" : ""}`}
+        style={{ paddingTop: isReplyRow ? 4 : 8, paddingBottom: 2 }}
       >
         <div
           className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
