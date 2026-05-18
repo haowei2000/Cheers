@@ -359,6 +359,7 @@ export function MessageComposer({
   const placementClass =
     mentionPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1";
   const toolbarMenuClass = "an-menu absolute left-0 right-0 bottom-full mb-1";
+  const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
 
   return (
     <>
@@ -508,6 +509,74 @@ export function MessageComposer({
         </div>
       )}
 
+      {hasPromptTemplateControl && (
+        <div className="an-composer-template-banner">
+          <div
+            className="an-composer-template-scroll"
+            aria-label="Prompt templates"
+          >
+            {promptTemplatesLoading ? (
+              <span className="an-composer-template-state">Loading...</span>
+            ) : promptTemplates.length === 0 ? (
+              <span className="an-composer-template-state">No templates available</span>
+            ) : (
+              promptTemplates.map((template) => {
+                const isSelected = template.template_id === selectedPromptTemplateId;
+                return (
+                  <button
+                    key={template.template_id}
+                    type="button"
+                    className={
+                      "an-composer-template-card" + (isSelected ? " is-selected" : "")
+                    }
+                    onClick={() =>
+                      onPromptTemplateChange?.(
+                        isSelected ? null : template.template_id,
+                      )
+                    }
+                    aria-pressed={isSelected}
+                    title={
+                      isSelected
+                        ? `Clear template override: ${template.name}`
+                        : `Force template: ${template.name}`
+                    }
+                  >
+                    <span className="an-composer-template-card-mark">
+                      {isSelected ? (
+                        <AppIcon name="check" className="w-3.5 h-3.5" />
+                      ) : (
+                        <span className="an-composer-template-card-slash">/</span>
+                      )}
+                    </span>
+                    <span className="an-composer-template-card-text">
+                      <span className="an-composer-template-card-name">
+                        {template.name}
+                      </span>
+                      {template.description && (
+                        <span className="an-composer-template-card-desc">
+                          {template.description}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+          {selectedPromptTemplate && (
+            <button
+              type="button"
+              className="an-composer-template-clear"
+              onClick={() => onPromptTemplateChange?.(null)}
+              title="Clear template override"
+              aria-label="Clear prompt template override"
+            >
+              <AppIcon name="close" className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="relative">
         <div
           className={
@@ -632,7 +701,7 @@ export function MessageComposer({
               )}
 
               {onPromptTemplateChange && (
-                <div ref={templateTriggerRef} className="relative">
+                <div ref={templateTriggerRef} className="an-composer-template-trigger relative">
                   <button
                     type="button"
                     onClick={() => setTemplateMenuOpen((open) => !open)}
@@ -647,7 +716,7 @@ export function MessageComposer({
                     }
                     aria-label="Choose prompt template"
                   >
-	                    <span className="an-composer-glyph">/</span>
+                    <span className="an-composer-glyph">/</span>
                   </button>
                 </div>
               )}
@@ -663,7 +732,7 @@ export function MessageComposer({
                 className="an-composer-iconbtn"
                 title="Mention members or bots"
               >
-	                <span className="an-composer-glyph">@</span>
+                <span className="an-composer-glyph">@</span>
               </button>
               <button
                 type="button"
@@ -771,7 +840,7 @@ export function MessageComposer({
         {templateMenuOpen && (
           <div
             ref={templateMenuRef}
-            className={toolbarMenuClass}
+            className={`${toolbarMenuClass} an-composer-template-menu`}
             style={{
               maxHeight: 300,
               overflowY: "auto",
@@ -812,14 +881,14 @@ export function MessageComposer({
                     {template.template_id === selectedPromptTemplateId ? (
                       <AppIcon name="check" className="w-3.5 h-3.5" />
                     ) : (
-	                      <span className="an-composer-glyph">/</span>
+                      <span className="an-composer-glyph">/</span>
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{template.name}</span>
                     {template.description && (
                       <span
-	                        className="an-type-caption block truncate"
+                        className="an-type-caption block truncate"
                         style={{ color: "var(--fg-3)" }}
                       >
                         {template.description}
