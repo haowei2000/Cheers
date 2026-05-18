@@ -21,7 +21,7 @@ export function AvatarIconPicker({
 
   return (
     <div
-      aria-label="Built-inAvatarIcon"
+      aria-label="Built-in avatar icons"
       className="grid grid-cols-[repeat(auto-fill,minmax(38px,1fr))] gap-2"
       role="group"
     >
@@ -31,7 +31,7 @@ export function AvatarIconPicker({
           <button
             key={option.value}
             type="button"
-            aria-label={`Select${option.label}`}
+            aria-label={`Select ${option.label} icon`}
             aria-pressed={active}
             disabled={disabled}
             onClick={() => onChange(option.value)}

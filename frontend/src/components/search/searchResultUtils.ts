@@ -12,7 +12,27 @@ export function botOwnerText(bot: Pick<SearchBotHit, "owner">) {
 
 export function channelTypeText(type?: string | null) {
   if (type === "private") return "Private";
+  if (type === "dm") return "Direct message";
   return "Workspace";
+}
+
+function looksLikeTechnicalId(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f-]{13,}$/i.test(value) || /^[a-z]+_[0-9a-f-]{10,}$/i.test(value);
+}
+
+export function readableChannelName(name?: string | null) {
+  const value = (name || "").trim();
+  if (!value) return "Channels";
+  if (value.startsWith("dm:") || value.startsWith("dmchat:")) return "Direct message";
+  if (looksLikeTechnicalId(value)) return "Channel";
+  return value;
+}
+
+function readableStatus(status?: string | null) {
+  if (!status) return "Status unavailable";
+  return status
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 export function formatBytes(size?: number | null) {
@@ -35,13 +55,13 @@ export function fileTypeText(contentType?: string | null) {
 export function labelFor(selection: SearchSelection) {
   const { type, item } = selection;
   if (type === "workspace") return item.name;
-  if (type === "channel") return item.name;
+  if (type === "channel") return readableChannelName(item.name);
   if (type === "user") return item.display_name || item.username;
   if (type === "bot") return item.display_name || item.username;
   if (type === "file") return item.original_filename || item.file_id;
   if (type === "todo") return item.content;
-  if (type === "task") return item.bot_name || item.task_id;
-  return item.snippet || item.channel_name;
+  if (type === "task") return item.bot_name || "Agent task";
+  return item.snippet || readableChannelName(item.channel_name);
 }
 
 export function subFor(selection: SearchSelection) {
@@ -52,11 +72,11 @@ export function subFor(selection: SearchSelection) {
   if (type === "bot") return `@${item.username} · ${botScopeText(item.scope)} · Owner: ${botOwnerText(item)}`;
   if (type === "file") {
     const size = formatBytes(item.size_bytes);
-    return `${item.channel_name || "Channels"} · ${fileTypeText(item.content_type)}${size ? ` · ${size}` : ""}`;
+    return `${readableChannelName(item.channel_name)} · ${fileTypeText(item.content_type)}${size ? ` · ${size}` : ""}`;
   }
-  if (type === "todo") return `${item.channel_name || "Channels"} · ${item.status}`;
-  if (type === "task") return `${item.channel_name || "Channels"} · ${item.task_id}`;
-  return `${item.channel_name || "Channels"} · ${item.sender_label}`;
+  if (type === "todo") return `${readableChannelName(item.channel_name)} · ${readableStatus(item.status)}`;
+  if (type === "task") return `${readableChannelName(item.channel_name)} · Agent task`;
+  return `${readableChannelName(item.channel_name)} · ${item.sender_label || "Message"}`;
 }
 
 export function sigilFor(type: SearchSelection["type"]) {

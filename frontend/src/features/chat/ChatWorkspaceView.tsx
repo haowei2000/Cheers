@@ -88,7 +88,7 @@ export function ChatWorkspaceView({
   onJumpToMessage,
   onRefreshDmSession,
 }: ChatWorkspaceViewProps) {
-  const mobileBrandLabel = "AgentNEXUS";
+  const mobileBrandLabel = "AgentNexus";
   const topics = useMemo(
     () =>
       topicRoots
@@ -230,6 +230,7 @@ export function ChatWorkspaceView({
               <button
                 type="button"
                 onClick={onOpenSidebar}
+                aria-label="Open navigation"
                 className="w-8 h-8 flex items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 flex-shrink-0"
               >
                 <AppIcon name="menu" className="w-6 h-6" />

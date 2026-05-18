@@ -29,6 +29,15 @@ const MESSAGE_COMPOSER_KIND_LABEL: Record<MessageComposerKind, string> = {
   topic: "Topics",
 };
 
+function promptTemplateDisplayName(template?: ComposerPromptTemplate | null): string {
+  if (!template) return "";
+  const name = template.name.trim();
+  if (!name || /^__.*__$/.test(name) || name.includes("__openclaw_passthrough__")) {
+    return "System passthrough template";
+  }
+  return name;
+}
+
 export interface ComposerPendingFile {
   name: string;
   previewUrl: string | null;
@@ -159,6 +168,7 @@ export function MessageComposer({
       ) || null,
     [promptTemplates, selectedPromptTemplateId],
   );
+  const selectedPromptTemplateName = promptTemplateDisplayName(selectedPromptTemplate);
 
   useEffect(() => {
     setDraftValue(value);
@@ -651,9 +661,9 @@ export function MessageComposer({
               {selectedPromptTemplate && (
                 <span
                   className="an-composer-template-chip"
-                  title={`This message forces template: ${selectedPromptTemplate.name}`}
+                  title={`This message forces template: ${selectedPromptTemplateName}`}
                 >
-                  / {selectedPromptTemplate.name}
+                  / {selectedPromptTemplateName}
                 </span>
               )}
             </div>
@@ -686,6 +696,7 @@ export function MessageComposer({
                       "an-composer-iconbtn" + (keychainOpen ? " is-active" : "")
                     }
                     title="Insert keychain secret"
+                    aria-label="Insert keychain secret"
                   >
                     <AppIcon name="key" className="w-4 h-4" />
                   </button>
@@ -710,6 +721,7 @@ export function MessageComposer({
                         (uploadMenuOpen ? " is-active" : "")
                       }
                       title="Upload files and images"
+                      aria-label="Upload files and images"
                     >
                       <AppIcon name="plus" className="w-[18px] h-[18px]" />
                     </button>
@@ -728,7 +740,7 @@ export function MessageComposer({
                     }
                     title={
                       selectedPromptTemplate
-                        ? `Forced template: ${selectedPromptTemplate.name}`
+                        ? `Forced template: ${selectedPromptTemplateName}`
                         : "Choose a prompt template override for this message"
                     }
                     aria-label="Choose prompt template"
@@ -741,13 +753,14 @@ export function MessageComposer({
               <button
                 type="button"
                 onClick={() => {
-                  insertAtCursor("@");
+                  inputRef.current?.focus();
                   setMentionFilter("");
                   setMentionPlacement("top");
                   setMentionOpen(true);
                 }}
                 className="an-composer-iconbtn"
                 title="Mention members or bots"
+                aria-label="Mention members or bots"
               >
                 <span className="an-composer-glyph">@</span>
               </button>
@@ -756,6 +769,7 @@ export function MessageComposer({
                 onClick={() => insertAtCursor("\n")}
                 className="an-composer-iconbtn is-kbd"
                 title="Insert line break (Shift+Enter)"
+                aria-label="Insert line break"
               >
                 <span className="an-kbd-glyph">⇧↵</span>
               </button>
@@ -777,6 +791,11 @@ export function MessageComposer({
                       "an-composer-iconbtn" +
                       (displayKind === "secret" ? " is-secret-on" : "")
                     }
+                    aria-label={
+                      displayKind === "secret"
+                        ? "Disable encrypted mode"
+                        : "Enable encrypted mode"
+                    }
                   >
                     <AppIcon name="lock" className="w-4 h-4" />
                   </button>
@@ -788,6 +807,7 @@ export function MessageComposer({
               onClick={() => onSend(inputRef.current?.value ?? draftValue)}
               className="an-composer-send"
               disabled={disabled || !effectiveCanSend}
+              aria-label={sendButtonLabel ?? (displayKind === "secret" ? "Send encrypted" : "Send")}
             >
               {sendButtonLabel ?? (displayKind === "secret" ? "Send encrypted" : "Send")}
             </button>
@@ -902,7 +922,7 @@ export function MessageComposer({
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate">{template.name}</span>
+                    <span className="block truncate">{promptTemplateDisplayName(template)}</span>
                     {template.description && (
                       <span
                         className="an-type-caption block truncate"

@@ -110,6 +110,9 @@ async def lifespan(app: FastAPI):
         try:
             from app.db.seed import run_seed
             await run_seed()
+        except RuntimeError as e:
+            logger.exception("seed data failed: %s", e)
+            raise
         except Exception as e:
             logger.exception("seed data failed: %s", e)
 

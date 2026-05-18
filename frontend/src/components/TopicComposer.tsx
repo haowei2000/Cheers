@@ -50,11 +50,13 @@ export function TopicComposer({
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const canSend = Boolean(value.trim() || pendingFiles.length > 0);
+  const trimmedValue = value.trim();
+  const canSend = Boolean((trimmedValue && trimmedValue !== "@") || pendingFiles.length > 0);
 
   const submit = async (draftValue: string) => {
     const content = draftValue.trim() ? draftValue : value;
-    if ((!content.trim() && pendingFiles.length === 0) || busy) return;
+    const trimmedContent = content.trim();
+    if (((!trimmedContent || trimmedContent === "@") && pendingFiles.length === 0) || busy) return;
     setBusy(true);
     try {
       await onSend(content);

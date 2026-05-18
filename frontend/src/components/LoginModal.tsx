@@ -187,7 +187,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     <Modal
       open={open}
       onClose={handleClose}
-      maxWidth="max-w-sm"
+      maxWidth="max-w-xs sm:max-w-sm"
       hideCloseButton={!currentUser}
       panelClassName="p-2"
     >
@@ -201,7 +201,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
           </div>
           <h2 className="an-type-title">
             {authMode === "login"
-              ? "Sign in to AgentNEXUS"
+              ? "Sign in to AgentNexus"
               : authMode === "register"
                 ? "Create account"
                 : "Reset password"}
@@ -415,7 +415,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
                 }}
                 className="an-text-link"
               >
-                created account
+                Create account
               </button>
             </>
           ) : (

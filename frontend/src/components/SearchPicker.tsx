@@ -45,6 +45,7 @@ type SearchPickerProps = {
   enableShortcut?: boolean;
   className?: string;
   modal?: boolean;
+  wide?: boolean;
   autoFocus?: boolean;
   emptyText?: string;
   actionLabel?: string | ((selection: SearchSelection) => string | null);
@@ -99,6 +100,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       enableShortcut = false,
       className = "",
       modal = false,
+      wide = false,
       autoFocus = false,
       emptyText = "No matches",
       actionLabel,
@@ -261,6 +263,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
     const searchClasses = [
       "an-search",
       modal ? "in-modal" : "",
+      wide ? "is-wide" : "",
       scopeLabel ? "an-search-global" : "",
       scopeLabel && (open || settingsOpen) ? "is-open" : "",
       className,
@@ -283,6 +286,19 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       if (options?.showResults ?? true) {
         setOpen(true);
       }
+    };
+    const clearSearch = () => {
+      setQ("");
+      setResults(null);
+      setOpen(false);
+      inputRef.current?.focus();
+    };
+    const resetSearchSettings = () => {
+      setActiveTypes(typeOptions.map((option) => option.type));
+      onScopeChange?.("");
+      setQ("");
+      setResults(null);
+      setOpen(false);
     };
     const input = (
       <input
@@ -321,7 +337,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             <button
               type="button"
               className={`an-search-scope ${canOpenSettings ? "is-clickable" : ""} ${settingsOpen ? "is-active" : ""}`}
-              title={canOpenSettings ? `Search settings${scopeDescription ? `;${scopeDescription}` : ""}` : scopeDescription}
+              title={canOpenSettings ? `Open search settings${scopeDescription ? `;${scopeDescription}` : ""}` : scopeDescription}
               aria-label={canOpenSettings ? "Open search settings" : scopeDescription}
               aria-haspopup={canOpenSettings ? "dialog" : undefined}
               aria-expanded={canOpenSettings ? settingsOpen : undefined}
@@ -334,11 +350,34 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             >
               <AppIcon name="sliders" className="an-search-scope-icon" />
             </button>
+            {q && (
+              <button
+                type="button"
+                className="an-search-clear"
+                title="Clear search"
+                aria-label="Clear search"
+                onClick={clearSearch}
+              >
+                <AppIcon name="close" />
+              </button>
+            )}
+            {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
           </div>
         ) : (
           <>
             <span className="an-search-ico">⌕</span>
             {input}
+            {q && (
+              <button
+                type="button"
+                className="an-search-clear"
+                title="Clear search"
+                aria-label="Clear search"
+                onClick={clearSearch}
+              >
+                <AppIcon name="close" />
+              </button>
+            )}
             {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
           </>
         )}
@@ -362,6 +401,8 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             typeOptions={typeOptions}
             activeTypes={activeTypes}
             onTypeToggle={(type) => toggleType(type, { showResults: false })}
+            onReset={resetSearchSettings}
+            onClose={() => setSettingsOpen(false)}
           />
         )}
         {open && q.trim() && (
