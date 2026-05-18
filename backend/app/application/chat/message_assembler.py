@@ -89,15 +89,16 @@ class MessageAssembler:
             for fid in file_ids
             if fid in file_map
         ]
+        is_deleted = bool(getattr(message, "is_deleted", False))
         return MessageUpdateDTO(
             msg_id=message.msg_id,
             content=message.content,
             file_ids=file_ids,
             files=files,
             is_partial=is_partial,
-            is_deleted=bool(getattr(message, "is_deleted", False)),
-            deleted_at=_datetime_wire(getattr(message, "deleted_at", None)),
-            deleted_by=getattr(message, "deleted_by", None),
+            is_deleted=True if is_deleted else None,
+            deleted_at=_datetime_wire(getattr(message, "deleted_at", None)) if is_deleted else None,
+            deleted_by=getattr(message, "deleted_by", None) if is_deleted else None,
             error=error,
             content_data=content_data,
             clear_content_data=clear_content_data,
