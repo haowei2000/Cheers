@@ -514,6 +514,8 @@ export function MessageComposer({
                 </button>
               </div>
               <span
+                key={displayKind}
+                data-kind={displayKind}
                 className={
                   "an-msgkind-label inline-flex items-center gap-1.5" +
                   (displayKind === "secret"
@@ -535,7 +537,9 @@ export function MessageComposer({
                 ) : (
                   <AppIcon name="message" className="w-3.5 h-3.5" />
                 )}
-                {MESSAGE_COMPOSER_KIND_LABEL[displayKind]}
+                <span className="an-msgkind-label-text">
+                  {MESSAGE_COMPOSER_KIND_LABEL[displayKind]}
+                </span>
               </span>
             </div>
           )}

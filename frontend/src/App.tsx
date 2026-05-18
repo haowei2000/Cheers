@@ -698,14 +698,16 @@ export default function App() {
     // We intentionally do NOT prepend a markdown blockquote of the parent
     // message: that would duplicate what the chip already shows AND pollute
     // bot adapters' user-message text.
-    const isSecretSend = secretMode;
+    const isSecretSend = msgKind === "secret";
     // Resolve msg_type: a pending reply-to always wins; otherwise use the
     // user's current msgKind pick from the composer switcher.
-    const effectiveKind: typeof msgKind | "reply" = isDmSelected
+    const effectiveKind = isDmSelected
       ? "normal"
       : replyingTo
         ? "reply"
-        : msgKind;
+        : msgKind === "secret"
+          ? "normal"
+          : msgKind;
     const body: Record<string, unknown> = {
       content,
       sender_id: currentUserId,
@@ -1592,7 +1594,7 @@ export default function App() {
                 disabled: isSystemDm,
                 placeholder: isSystemDm
                   ? "Friend notification conversations handle requests and cannot send messages directly..."
-                  : secretMode
+                  : msgKind === "secret"
                     ? "Enter encrypted content (only bots can read the original)..."
                     : isDmSelected
                       ? `Message ${activeDm?.counterparty.display_name || activeDm?.counterparty.username || "DM"}...`
