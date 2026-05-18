@@ -468,50 +468,37 @@ export function MessageComposer({
         <div className="an-composer-toprow">
           {shouldShowKindSwitcher && (
             <div className="an-msgkind-switcher">
-              <div className="an-msgkind-arrowstack">
+              {MESSAGE_COMPOSER_KIND_ORDER.map((option) => (
                 <button
+                  key={option}
                   type="button"
-                  onClick={() => onCycleKind?.(-1)}
-                  className="an-msgkind-arrow"
-                  title="Previous message type (Shift+Tab)"
-                  aria-label="Previous message type"
+                  onClick={() => onKindChange?.(option)}
+                  className={
+                    "an-msgkind-option" +
+                    (displayKind === option ? " is-active" : "") +
+                    (option === "secret"
+                      ? " is-secret"
+                      : option === "announcement"
+                        ? " is-announcement"
+                        : option === "topic"
+                          ? " is-topic"
+                          : "")
+                  }
+                  aria-pressed={displayKind === option}
+                  title={`Switch to ${MESSAGE_COMPOSER_KIND_LABEL[option]}`}
                 >
-                  <AppIcon name="chevronUp" className="w-3.5 h-3.5" />
+                  {option === "secret" ? (
+                    <AppIcon name="lock" className="w-3.5 h-3.5" />
+                  ) : option === "announcement" ? (
+                    <AppIcon name="announcement" className="w-3.5 h-3.5" />
+                  ) : option === "topic" ? (
+                    <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
+                  ) : (
+                    <AppIcon name="message" className="w-3.5 h-3.5" />
+                  )}
+                  <span>{MESSAGE_COMPOSER_KIND_LABEL[option]}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onCycleKind?.(1)}
-                  className="an-msgkind-arrow"
-                  title="Next message type (Tab)"
-                  aria-label="Next message type"
-                >
-                  <AppIcon name="chevronDown" className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <span
-                className={
-                  "an-msgkind-label inline-flex items-center gap-1.5" +
-                  (displayKind === "secret"
-                    ? " is-secret"
-                    : displayKind === "announcement"
-                      ? " is-announcement"
-                      : displayKind === "topic"
-                        ? " is-topic"
-                        : "")
-                }
-                title="Tab switches type · Shift+Tab reverses"
-              >
-                {displayKind === "secret" ? (
-                  <AppIcon name="lock" className="w-3.5 h-3.5" />
-                ) : displayKind === "announcement" ? (
-                  <AppIcon name="announcement" className="w-3.5 h-3.5" />
-                ) : displayKind === "topic" ? (
-                  <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
-                ) : (
-                  <AppIcon name="message" className="w-3.5 h-3.5" />
-                )}
-                {MESSAGE_COMPOSER_KIND_LABEL[displayKind]}
-              </span>
+              ))}
             </div>
           )}
 
