@@ -6,10 +6,11 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from app.docs_paths import resolve_docs_dir
+
 router = APIRouter(tags=["manual"])
 
-# The backend directory sits below the project root; docs live at the project root.
-DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
+DOCS_DIR = resolve_docs_dir(Path(__file__))
 
 
 # ── JSON API for docs dashboard ───────────────────────────────────────────────
