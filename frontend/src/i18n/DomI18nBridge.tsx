@@ -18,7 +18,6 @@ export function DomI18nBridge() {
     };
 
     schedule();
-    if (language === "en") return;
 
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, {
