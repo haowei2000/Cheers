@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Channel, Message
+from app.config import settings
+from app.db.models import BotRun, Channel, Message
 from app.features.agent_bridge.pending import pending_replies
 from app.features.agent_bridge.service import mark_bot_reply_as_background_task
 from app.features.bot_runtime.pipeline.runner import Pipeline
@@ -48,6 +51,15 @@ class ValidatePendingStage(Stage[AgentBridgeTaskTimeoutContext]):
             and pending.channel_id == ctx.channel_id
             and pending.task_id == ctx.task_id
         )
+        if not ctx.pending_exists:
+            msg = await ctx.session.get(Message, ctx.msg_id)
+            if msg is not None:
+                ctx.pending_exists = (
+                    msg.channel_id == ctx.channel_id
+                    and msg.sender_id == ctx.bot_id
+                    and msg.task_id == ctx.task_id
+                    and not (msg.content or "").strip()
+                )
         if not ctx.pending_exists:
             logger.info(
                 "agent_bridge_task_timeout: skip; pending already resolved bot_id=%s task_id=%s msg_id=%s",
@@ -121,3 +133,33 @@ def make_agent_bridge_task_timeout_pipeline() -> Pipeline[AgentBridgeTaskTimeout
         ],
         name="agent-bridge-task-timeout",
     )
+
+
+async def recover_agent_bridge_task_timeouts_once(session: AsyncSession) -> int:
+    """Convert stale dispatched Agent Bridge placeholders after process restart."""
+    timeout_s = max(5, int(settings.agent_bridge_timeout_seconds or 600))
+    cutoff = datetime.now(UTC) - timedelta(seconds=timeout_s)
+    rows = (
+        await session.execute(
+            select(BotRun).where(
+                BotRun.binding_type == "agent_bridge",
+                BotRun.status == "dispatched_async",
+                BotRun.updated_at <= cutoff,
+            )
+        )
+    ).scalars().all()
+    converted = 0
+    pipeline = make_agent_bridge_task_timeout_pipeline()
+    for run in rows:
+        ctx = AgentBridgeTaskTimeoutContext(
+            session=session,
+            bot_id=run.bot_id,
+            channel_id=run.channel_id,
+            task_id=run.task_id,
+            msg_id=run.placeholder_msg_id,
+            timeout_s=timeout_s,
+        )
+        await pipeline.run(ctx)
+        if ctx.converted:
+            converted += 1
+    return converted

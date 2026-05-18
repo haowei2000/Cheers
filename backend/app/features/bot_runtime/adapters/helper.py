@@ -8,6 +8,8 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from app.core.localization import localized, normalize_locale
+from app.docs_paths import resolve_docs_dir
 from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
 from app.services.admin.settings_store import get_provider_for_scope
@@ -17,10 +19,7 @@ logger = logging.getLogger("app.features.bot_runtime.adapters.help_bot")
 HISTORY_MSG_COUNT = 20
 HISTORY_MSG_MAX_CHARS = 500
 
-# Project root path from this adapter module.
-_BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
-# docs/help lives under the project root.
-_DOCS_DIR = _BACKEND_ROOT / "docs" / "help"
+_DOCS_DIR = resolve_docs_dir(Path(__file__)) / "help"
 
 # Cache loaded documentation content.
 _cached_docs: str | None = None
@@ -125,10 +124,10 @@ async def _resolve_display_names(session, msgs: list) -> dict[str, str]:
     return names
 
 
-async def _fetch_recent_history(
+async def _fetch_chat_history(
     session, channel_id: str, before_msg_id: str | None, limit: int = HISTORY_MSG_COUNT
 ) -> list:
-    """Fetch recent non-empty messages before the trigger message and convert them into LangChain messages."""
+    """Fetch chat messages before the trigger message and convert them into LangChain messages."""
     from sqlalchemy import select
 
     from app.db.models import Message as MsgModel
@@ -165,6 +164,7 @@ async def _stream_llm(
     system_prompt: str,
     user_content: str,
     history: list | None = None,
+    locale: str | None = None,
 ):
     """Stream LLM tokens. Yields ``(delta_text, final_text_or_None)``. The
     last tuple has delta_text="" and final_text=accumulated content.
@@ -174,14 +174,14 @@ async def _stream_llm(
     """
     cfg = _get_llm_config()
     if not cfg:
-        yield "", "LLM 服务未配置，无法回答。"
+        yield "", localized(locale, en="LLM service is not configured, so I cannot answer right now.", zh="LLM 服务未配置，无法回答。")
         return
 
     try:
         llm = _make_llm(cfg)
     except Exception as e:
         logger.exception("help_bot: failed to create LLM: %s", e)
-        yield "", f"LLM 初始化失败：{e}"
+        yield "", localized(locale, en=f"LLM initialization failed: {e}", zh=f"LLM 初始化失败：{e}")
         return
 
     messages: list = [
@@ -229,6 +229,7 @@ class HelpBotAdapter(BotAdapter):
         channel_id = payload.channel_id
         memory = payload.context.memory or {}
         db_session = pconfig.db_session
+        locale = normalize_locale(getattr(pconfig, "locale", None) or payload.message.extra.get("locale"))
         trigger_meta = payload.trigger_message or {}
         trigger_msg_id = trigger_meta.get("msg_id")
         sender_id = payload.message.sender_id
@@ -242,7 +243,12 @@ class HelpBotAdapter(BotAdapter):
                 (
                     "You are AgentNexus's dedicated operation-guide assistant. When the user asks how to do something, "
                     "provide clear, actionable step-by-step guidance with concrete button names, icons, and menu locations.\n\n"
-                    "## Interface Quick Reference\n"
+                    + localized(
+                        locale,
+                        en="Reply in English unless the user explicitly asks for another language.\n\n",
+                        zh="请默认使用中文回复，除非用户明确要求其他语言。\n\n",
+                    )
+                    + "## Interface Quick Reference\n"
                     "• **Left sidebar**: logo, search, notifications, user avatar/menu\n"
                     "• **Workspace list**: click + to create a workspace\n"
                     "• **Channel list**: click + to create a channel; use the channel ⋮ menu for channel management\n"
@@ -270,15 +276,23 @@ class HelpBotAdapter(BotAdapter):
                 ),
                 (
                     "=== Help Documents (Full Reference) ===\n"
-                    + (docs_content if docs_content else "(Documents failed to load; check whether docs/help/ exists.)")
+                    + (
+                        docs_content
+                        if docs_content
+                        else localized(
+                            locale,
+                            en="(Documents failed to load; check whether docs/help/ exists.)",
+                            zh="（文档加载失败；请检查 docs/help/ 是否存在。）",
+                        )
+                    )
                 ),
                 (
                     "=== Current Channel Context ===\n"
-                    f"[Anchor]\n{memory.get('anchor') or '(none)'}\n\n"
-                    f"[Progress]\n{memory.get('progress') or '(none)'}\n\n"
-                    f"[Decisions]\n{memory.get('decisions') or '(none)'}\n\n"
-                    f"[File Index]\n{memory.get('files_index') or '(none)'}\n\n"
-                    f"[Recent Focus]\n{memory.get('recent') or '(none)'}"
+                    f"[Anchor]\n{memory.get('anchor') or localized(locale, en='(none)', zh='（无）')}\n\n"
+                    f"[Progress]\n{memory.get('progress') or localized(locale, en='(none)', zh='（无）')}\n\n"
+                    f"[Decisions]\n{memory.get('decisions') or localized(locale, en='(none)', zh='（无）')}\n\n"
+                    f"[File Index]\n{memory.get('files_index') or localized(locale, en='(none)', zh='（无）')}\n\n"
+                    f"[History]\n{memory.get('history') or memory.get('recent') or localized(locale, en='(none)', zh='（无）')}"
                 ),
             ]
         )
@@ -293,7 +307,7 @@ class HelpBotAdapter(BotAdapter):
 
                 # _fetch_user_display_name is defined later; runtime lookup still resolves it.
                 results = await asyncio.gather(
-                    _fetch_recent_history(db_session, channel_id, trigger_msg_id),
+                    _fetch_chat_history(db_session, channel_id, trigger_msg_id),
                     _fetch_user_display_name(db_session, sender_id),
                     return_exceptions=True,
                 )
@@ -310,7 +324,7 @@ class HelpBotAdapter(BotAdapter):
 
         # Call the LLM and stream delta tokens directly.
         full_content = ""
-        async for delta_text, final_text in _stream_llm(system_prompt, user_content, history=chat_history):
+        async for delta_text, final_text in _stream_llm(system_prompt, user_content, history=chat_history, locale=locale):
             if delta_text:
                 full_content += delta_text
                 yield Delta(text=delta_text)
@@ -319,10 +333,17 @@ class HelpBotAdapter(BotAdapter):
                 break
 
         if not full_content:
-            full_content = (
-                "抱歉，帮助助手暂时无法回答您的问题，可能是 LLM 服务不可用。"
-                "您可以查看 docs/help/使用说明书.md 获取帮助，"
-                "或联系管理员检查 LLM 配置。"
+            full_content = localized(
+                locale,
+                en=(
+                    "Sorry, the help assistant cannot answer right now, likely because the LLM service is unavailable. "
+                    "You can read docs/help/使用说明书.md or ask an administrator to check the LLM configuration."
+                ),
+                zh=(
+                    "抱歉，帮助助手暂时无法回答您的问题，可能是 LLM 服务不可用。"
+                    "您可以查看 docs/help/使用说明书.md 获取帮助，"
+                    "或联系管理员检查 LLM 配置。"
+                ),
             )
         yield Final(content=full_content, success=True)
 

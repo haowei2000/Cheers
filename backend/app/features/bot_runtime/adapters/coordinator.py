@@ -10,10 +10,16 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
+from app.core.localization import is_zh, localized, normalize_locale
 from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.adapters.help_catalog import (
     build_help_content_with_form,
     get_help_context_for_llm,
+)
+from app.features.bot_runtime.coordinator_profile import (
+    ALL_COORDINATOR_TOOLS,
+    CoordinatorContextProfile,
+    build_coordinator_profile,
 )
 from app.features.memory.prompt_xml import MEMORY_LAYER_FIELDS, render_channel_memory_xml
 from app.services.admin.settings_store import get_provider_for_scope
@@ -23,16 +29,158 @@ logger = logging.getLogger("app.features.bot_runtime.adapters.channel_bot")
 MAX_LOOP_ITERATIONS = 8
 HISTORY_MSG_COUNT = 30  # Maximum number of history messages injected into the LLM.
 HISTORY_MSG_MAX_CHARS = 600  # Maximum characters retained from each history message.
-_CLARIFY_PREFIX = "@channel bot 澄清回答："
+_CLARIFY_PREFIXES = (
+    "@Coordinator 澄清回答：",
+    "@Helper 澄清回答：",
+    "@引导 澄清回答：",
+    "@channel bot 澄清回答：",
+    "@Coordinator clarification answer:",
+    "@Helper clarification answer:",
+    "@channel bot clarification answer:",
+)
 
-_DEFAULT_REPLY = (
+_DEFAULT_REPLY_ZH = (
     "您可以说：怎么创建项目、怎么加入项目、怎么接入外部 Agent、怎么发消息、"
     "左边没有项目、@ 没反应、怎么安装、报错排查 等，我会根据说明书为您引导。"
     "也可以直接问项目相关问题，我会结合频道上下文回答。"
 )
+_DEFAULT_REPLY_EN = (
+    "You can ask how to create a project, join a project, connect an external Agent, send messages, "
+    "fix an empty left sidebar, troubleshoot @ mentions, install/deploy, or diagnose errors. "
+    "You can also ask project-specific questions and I will answer using the channel context."
+)
 
 
 _MEMORY_XML_FIELDS = MEMORY_LAYER_FIELDS
+
+_MEMORY_LAYER_CHAR_BUDGETS = {
+    "anchor": 1600,
+    "progress": 1400,
+    "decisions": 1600,
+    "files_index": 2200,
+    "history": 1800,
+    "todos": 1200,
+}
+
+
+def _t(locale: str | None, en: str, zh: str) -> str:
+    return localized(locale, en=en, zh=zh)
+
+
+def _default_reply(locale: str | None) -> str:
+    return _t(locale, _DEFAULT_REPLY_EN, _DEFAULT_REPLY_ZH)
+
+
+def _strip_matching_prefix(text: str, prefixes: tuple[str, ...]) -> tuple[bool, str]:
+    stripped = (text or "").strip()
+    for prefix in prefixes:
+        if stripped.startswith(prefix):
+            return True, stripped[len(prefix):].strip()
+    return False, stripped
+
+
+def _clip_text(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n...[truncated]"
+
+
+def _trim_memory_for_profile(
+    memory: dict[str, str],
+    profile: CoordinatorContextProfile,
+) -> dict[str, str]:
+    if not profile.memory_layers or profile.memory_char_budget <= 0:
+        return {}
+
+    remaining = profile.memory_char_budget
+    trimmed: dict[str, str] = {}
+    for key, _label in MEMORY_LAYER_FIELDS:
+        if key not in profile.memory_layers:
+            continue
+        content = (memory.get(key) or "").strip()
+        if key == "history" and not content:
+            content = (memory.get("recent") or "").strip()
+        if not content:
+            continue
+        layer_budget = min(_MEMORY_LAYER_CHAR_BUDGETS.get(key, 1200), remaining)
+        if layer_budget <= 0:
+            break
+        clipped = _clip_text(content, layer_budget)
+        trimmed[key] = clipped
+        remaining -= len(clipped)
+    return trimmed
+
+
+def _build_behavior_rules(profile: CoordinatorContextProfile, locale: str | None = None) -> str:
+    if is_zh(locale):
+        rules = [
+            "## 核心行为规则",
+            "",
+            "- 最终回复使用简洁、专业的 Markdown。",
+            "- 只基于本提示词包含的上下文回答。若关键信息缺失，明确说明缺少什么。",
+        ]
+        if "call_user" in profile.enabled_tools:
+            rules.append("- 当用户信息不足或需要关键决策时，先调用 call_user，不要直接猜测。")
+        if "call_bot" in profile.enabled_tools:
+            rules.append("- 当频道内其他 Bot 更适合处理时，使用 call_bot 派发聚焦的子任务。")
+        if "read_file" in profile.enabled_tools:
+            rules.append("- 对上传文档优先使用文件引用；只有需要正文时再调用 read_file。")
+        if {"web_fetch", "web_search"} & profile.enabled_tools:
+            rules.append("- 只有当答案依赖实时或外部网页信息时才使用网页工具。")
+        if {"update_anchor", "update_progress", "update_decision"} & profile.enabled_tools:
+            rules.extend([
+                "",
+                "## 记忆维护职责",
+                "",
+                "- 当项目目标、范围、约束或背景变化时调用 update_anchor。",
+                "- 当用户报告进展、阻塞、里程碑或下一步时调用 update_progress。",
+                "- 对重要决策、技术选择和确认计划调用 update_decision。",
+                "- 只有存在具体的新信息需要持久化时才调用记忆工具。",
+            ])
+        if profile.intent == "help":
+            rules.extend([
+                "",
+                "## 帮助回答规则",
+                "",
+                "- 操作类问题要给出具体 UI 入口和简短编号步骤。",
+                "- 如果帮助上下文没有覆盖精确问题，说明这一点并给出最接近的安全路径。",
+            ])
+        return "\n".join(rules)
+
+    rules = [
+        "## Core Behavior Rules",
+        "",
+        "- Final replies should be concise, professional Markdown.",
+        "- Use only the context included in this prompt. If important context is missing, say what is missing.",
+    ]
+    if "call_user" in profile.enabled_tools:
+        rules.append("- If the user message lacks enough information or needs a key decision, call call_user before guessing.")
+    if "call_bot" in profile.enabled_tools:
+        rules.append("- When another channel Bot is better suited, call call_bot with a focused delegated task.")
+    if "read_file" in profile.enabled_tools:
+        rules.append("- For uploaded documents, use file references first and call read_file only when the body is needed.")
+    if {"web_fetch", "web_search"} & profile.enabled_tools:
+        rules.append("- Use web tools only when the answer depends on current or external web information.")
+    if {"update_anchor", "update_progress", "update_decision"} & profile.enabled_tools:
+        rules.extend([
+            "",
+            "## Memory Maintenance Duties",
+            "",
+            "- update_anchor when project goals, scope, constraints, or background change.",
+            "- update_progress when the user reports progress, blockers, milestones, or next steps.",
+            "- update_decision for important decisions, technology choices, and confirmed plans.",
+            "- Call memory tools only when there is concrete new information to persist.",
+        ])
+    if profile.intent == "help":
+        rules.extend([
+            "",
+            "## Help Answer Rules",
+            "",
+            "- Answer operation questions with concrete UI entry points and short numbered steps.",
+            "- If the help context does not cover the exact request, say so and give the closest safe path.",
+        ])
+    return "\n".join(rules)
 
 
 def _xml_text(value: Any) -> str:
@@ -173,35 +321,35 @@ def _make_llm(cfg: dict) -> ChatOpenAI:
 # Tool labels.
 
 
-def _tool_label(tool_name: str, args: dict) -> str:
+def _tool_label(tool_name: str, args: dict, locale: str | None = None) -> str:
     """Human-readable label for a tool call notification."""
     args = args or {}
     match tool_name:
         case "call_bot":
-            return f"调用 @{args.get('username', '?')}"
+            return _t(locale, f"Call @{args.get('username', '?')}", f"调用 @{args.get('username', '?')}")
         case "update_anchor":
-            return "更新项目锚点"
+            return _t(locale, "Update project anchor", "更新项目锚点")
         case "update_decision":
-            return "记录决策"
+            return _t(locale, "Record decision", "记录决策")
         case "update_progress":
-            return "更新项目进度"
+            return _t(locale, "Update project progress", "更新项目进度")
         case "call_user":
-            return f"呼叫 @{args.get('username', '?')}"
+            return _t(locale, f"Call @{args.get('username', '?')}", f"呼叫 @{args.get('username', '?')}")
         case "create_file":
             filename = args.get("filename") or "?"
-            return f"创建文件 {filename}.md"
+            return _t(locale, f"Create file {filename}.md", f"创建文件 {filename}.md")
         case "read_file":
             file_id = args.get("file_id") or "?"
             preview = (file_id[:8] + "…") if len(file_id) > 8 else file_id
-            return f"读取文件 {preview}"
+            return _t(locale, f"Read file {preview}", f"读取文件 {preview}")
         case "web_fetch":
             url = args.get("url") or "?"
             suffix = "..." if len(url) > 50 else ""
-            return f"获取网页：{url[:50]}{suffix}"
+            return _t(locale, f"Fetch web page: {url[:50]}{suffix}", f"获取网页：{url[:50]}{suffix}")
         case "web_search":
             query = args.get("query") or "?"
             suffix = "..." if len(query) > 40 else ""
-            return f"搜索：{query[:40]}{suffix}"
+            return _t(locale, f"Search: {query[:40]}{suffix}", f"搜索：{query[:40]}{suffix}")
         case _:
             return tool_name
 
@@ -209,8 +357,9 @@ def _tool_label(tool_name: str, args: dict) -> str:
 # Tool factories.
 
 
-def _make_tools(ctx: dict) -> list:
+def _make_tools(ctx: dict, enabled_tool_names: frozenset[str] | set[str] | None = None) -> list:
     """Make tools."""
+    locale = normalize_locale(ctx.get("locale"))
 
     @tool
     async def update_anchor(content: str) -> str:
@@ -221,7 +370,7 @@ Args:
     content: Complete replacement content for the anchor layer.
         """
         if not content.strip():
-            return "错误：content 不能为空"
+            return _t(locale, "Error: content cannot be empty", "错误：content 不能为空")
         from app.features.memory.manager import save_layer
 
         await save_layer(ctx["channel_id"], "anchor", content.strip())
@@ -230,7 +379,7 @@ Args:
             ctx["channel_id"],
             len(content),
         )
-        return "已更新项目锚点"
+        return _t(locale, "Project anchor updated", "已更新项目锚点")
 
     @tool
     async def update_progress(content: str) -> str:
@@ -241,7 +390,7 @@ Args:
     content: Current progress, completed work, and next steps.
         """
         if not content.strip():
-            return "错误：content 不能为空"
+            return _t(locale, "Error: content cannot be empty", "错误：content 不能为空")
         from app.features.memory.manager import save_layer
 
         await save_layer(ctx["channel_id"], "progress", content.strip())
@@ -250,7 +399,7 @@ Args:
             ctx["channel_id"],
             len(content),
         )
-        return "已更新项目进度"
+        return _t(locale, "Project progress updated", "已更新项目进度")
 
     @tool
     async def update_decision(content: str) -> str:
@@ -261,7 +410,7 @@ Args:
     content: Replacement decision record content.
         """
         if not content.strip():
-            return "错误：content 不能为空"
+            return _t(locale, "Error: content cannot be empty", "错误：content 不能为空")
         from app.features.memory.manager import save_layer
 
         await save_layer(ctx["channel_id"], "decisions", content.strip())
@@ -270,7 +419,7 @@ Args:
             ctx["channel_id"],
             len(content),
         )
-        return "已更新决策记录"
+        return _t(locale, "Decision records updated", "已更新决策记录")
 
     @tool
     async def call_bot(username: str, message: str) -> str:
@@ -286,15 +435,20 @@ Args:
         username = username.strip().lstrip("@")
         message = message.strip()
         if not username or not message:
-            return "错误：需要提供 username 和 message"
+            return _t(locale, "Error: username and message are required", "错误：需要提供 username 和 message")
 
         run_ctx = ctx.get("_run_ctx")
         if run_ctx is None:
-            return "错误：_run_ctx 未注入（内部错误）"
+            return _t(locale, "Error: _run_ctx was not injected (internal error)", "错误：_run_ctx 未注入（内部错误）")
 
         bot_id = run_ctx.bot_id_by_username.get(username)
         if bot_id is None:
-            return f"错误：频道内没有 @{username}，可用 Bot：{list(run_ctx.bot_id_by_username.keys())}"
+            available = list(run_ctx.bot_id_by_username.keys())
+            return _t(
+                locale,
+                f"Error: @{username} is not in this channel. Available Bots: {available}",
+                f"错误：频道内没有 @{username}，可用 Bot：{available}",
+            )
 
         logger.debug(
             "channel_bot[tool]: call_bot @%s message(%d chars):\n%s",
@@ -318,17 +472,17 @@ Args:
                 skip_attachment_error=True,
             )
             if resp is None:
-                return f"@{username} 调用失败（异步派发或错误）"
-            result = resp.content if resp.success else (resp.error_message or "Bot 执行出错")
+                return _t(locale, f"@{username} call failed (async dispatch or error)", f"@{username} 调用失败（异步派发或错误）")
+            result = resp.content if resp.success else (resp.error_message or _t(locale, "Bot execution failed", "Bot 执行出错"))
             logger.info(
                 "channel_bot[tool]: call_bot @%s completed channel=%s",
                 username,
                 run_ctx.channel_id,
             )
-            return f"@{username} 回复：\n{result}"
+            return _t(locale, f"@{username} reply:\n{result}", f"@{username} 回复：\n{result}")
         except Exception as e:
             logger.exception("channel_bot[tool]: call_bot @%s failed: %s", username, e)
-            return f"@{username} 调用出错：{e}"
+            return _t(locale, f"@{username} call error: {e}", f"@{username} 调用出错：{e}")
 
     @tool(return_direct=True)
     async def call_user(
@@ -337,8 +491,8 @@ Args:
         options: list[str] | str | None = None,
         allow_multiple: bool = False,
         allow_manual: bool = False,
-        manual_label: str = "其他（手动输入）",
-        manual_placeholder: str = "请输入您的回答...",
+        manual_label: str = "Other (manual input)",
+        manual_placeholder: str = "Enter your answer...",
     ) -> str:
         """
 Mention a user, optionally ask a multiple-choice question, and pause for the user's answer.
@@ -358,7 +512,7 @@ Args:
         username = (username or "").strip().lstrip("@")
         message = (message or "").strip()
         if not username or not message:
-            return "错误：需要提供 username 和 message"
+            return _t(locale, "Error: username and message are required", "错误：需要提供 username 和 message")
 
         # Be tolerant of options arriving as a JSON string.
         if isinstance(options, str) and options.strip().startswith("["):
@@ -379,7 +533,14 @@ Args:
             return mention_prefix
 
         if len(options) < 2:
-            return "错误：options 至少需要 2 个选项"
+            return _t(locale, "Error: options must contain at least 2 choices", "错误：options 至少需要 2 个选项")
+
+        default_manual_label = _t(locale, "Other (manual input)", "其他（手动输入）")
+        default_manual_placeholder = _t(locale, "Enter your answer...", "请输入您的回答...")
+        if manual_label in {"Other (manual input)", "其他（手动输入）", ""}:
+            manual_label = default_manual_label
+        if manual_placeholder in {"Enter your answer...", "请输入您的回答...", ""}:
+            manual_placeholder = default_manual_placeholder
 
         clarify_schema = {
             "title": message,
@@ -391,8 +552,8 @@ Args:
                     "allow_multiple": allow_multiple,
                     "options": [{"id": f"a{i}", "label": str(opt)} for i, opt in enumerate(options)],
                     "other_enabled": allow_manual,
-                    "other_label": manual_label or "其他（手动输入）",
-                    "other_placeholder": manual_placeholder or "请输入您的回答...",
+                    "other_label": manual_label or default_manual_label,
+                    "other_placeholder": manual_placeholder or default_manual_placeholder,
                 }
             ],
         }
@@ -415,7 +576,7 @@ Args:
         safe_name = re.sub(r"[^\w\-. ]", "_", filename.strip()) or "output"
         body = content.strip()
         if not body:
-            return "错误：content 不能为空"
+            return _t(locale, "Error: content cannot be empty", "错误：content 不能为空")
 
         from app.config import settings
         from app.db.models import Channel, FileRecord
@@ -487,7 +648,11 @@ Args:
         # Collect file_ids so they can be attached to the final bot reply.
         ctx.setdefault("_created_file_ids", []).append(file_id)
 
-        return f"文件已创建：[{original_filename}]({preview_url})\n\n预览链接：`{preview_url}`"
+        return _t(
+            locale,
+            f"File created: [{original_filename}]({preview_url})\n\nPreview URL: `{preview_url}`",
+            f"文件已创建：[{original_filename}]({preview_url})\n\n预览链接：`{preview_url}`",
+        )
 
     @tool
     async def read_file(file_id: str) -> str:
@@ -502,7 +667,7 @@ Args:
         """
         db_session = ctx.get("_db_session")
         if not db_session:
-            return "错误：数据库会话未注入（内部错误）"
+            return _t(locale, "Error: database session was not injected (internal error)", "错误：数据库会话未注入（内部错误）")
 
         from app.services.file_processor.service import FileFlowError, FilePipelineService
 
@@ -514,29 +679,37 @@ Args:
                 file_ids=[file_id.strip()],
             )
         except FileFlowError as exc:
-            return f"读取文件失败：{exc.detail}"
+            return _t(locale, f"Failed to read file: {exc.detail}", f"读取文件失败：{exc.detail}")
         except Exception as exc:
             logger.exception("channel_bot[tool]: read_file error file_id=%s", file_id)
-            return f"读取文件出错：{exc}"
+            return _t(locale, f"File read error: {exc}", f"读取文件出错：{exc}")
 
         if not results:
-            return f"未找到 file_id={file_id!r} 的文件，请检查文件索引中的 file_id 是否正确"
+            return _t(
+                locale,
+                f"No file found for file_id={file_id!r}. Check whether the file_id in the file index is correct.",
+                f"未找到 file_id={file_id!r} 的文件，请检查文件索引中的 file_id 是否正确",
+            )
 
         att = results[0]
         if att.get("is_image") == "true":
-            return f"文件「{att.get('filename')}」是图片，请直接查看图片附件，无需读取文本。"
+            return _t(
+                locale,
+                f"File \"{att.get('filename')}\" is an image. View the image attachment directly; no text read is needed.",
+                f"文件「{att.get('filename')}」是图片，请直接查看图片附件，无需读取文本。",
+            )
 
-        parts = [f"=== 文件: {att.get('filename') or file_id} ==="]
+        parts = [f"=== {_t(locale, 'File', '文件')}: {att.get('filename') or file_id} ==="]
         if att.get("summary"):
-            parts.append(f"摘要: {att['summary']}")
+            parts.append(f"{_t(locale, 'Summary', '摘要')}: {att['summary']}")
         content = (att.get("content") or "").strip()
         if content:
-            parts.append("正文:")
+            parts.append(_t(locale, "Body:", "正文:"))
             parts.append(content)
             if att.get("truncated") == "true":
-                parts.append("（注：文件内容已按长度限制截断，若需完整内容请联系上传者。）")
+                parts.append(_t(locale, "(Note: file content was truncated by length limit. Contact the uploader if the full content is needed.)", "（注：文件内容已按长度限制截断，若需完整内容请联系上传者。）"))
         else:
-            parts.append("（文件内容为空或无法解析文本。）")
+            parts.append(_t(locale, "(The file is empty or text could not be parsed.)", "（文件内容为空或无法解析文本。）"))
         return "\n".join(parts)
 
     @tool
@@ -550,7 +723,7 @@ Args:
         """
         db_session = ctx.get("_db_session")
         if not db_session:
-            return "错误：数据库会话未注入"
+            return _t(locale, "Error: database session was not injected", "错误：数据库会话未注入")
 
         channel_id = ctx["channel_id"]
         creator_id = ctx.get("_bot_id") or "system"
@@ -577,7 +750,7 @@ Args:
                     assignee_id = bot.bot_id
                     assignee_type = "bot"
                 else:
-                    return f"错误：找不到名为 {username} 的用户或Bot。"
+                    return _t(locale, f"Error: no user or Bot named {username} was found.", f"错误：找不到名为 {username} 的用户或Bot。")
 
         todo = TodoItem(
             channel_id=channel_id,
@@ -590,14 +763,14 @@ Args:
         )
         db_session.add(todo)
         await db_session.commit()
-        return "成功创建待办事项！"
+        return _t(locale, "Todo created.", "成功创建待办事项！")
 
     @tool
     async def list_todos() -> str:
         """List all todo items in the current channel with index, status, content, and assignee."""
         db_session = ctx.get("_db_session")
         if not db_session:
-            return "错误：数据库会话未注入"
+            return _t(locale, "Error: database session was not injected", "错误：数据库会话未注入")
         from sqlalchemy import select
 
         from app.db.models import TodoItem
@@ -607,11 +780,15 @@ Args:
         )
         todos = result.scalars().all()
         if not todos:
-            return "当前频道没有待办事项。"
+            return _t(locale, "There are no todos in the current channel.", "当前频道没有待办事项。")
         lines = []
         for i, t in enumerate(todos, 1):
             status = "✅" if t.status == "completed" else "⬜"
-            assignee = f"（指派给：{t.assignee_id}）" if t.assignee_id else ""
+            assignee = (
+                _t(locale, f" (assigned to: {t.assignee_id})", f"（指派给：{t.assignee_id}）")
+                if t.assignee_id
+                else ""
+            )
             lines.append(f"{i}. {status} {t.content}{assignee}")
         return "\n".join(lines)
 
@@ -633,7 +810,7 @@ Args:
         """
         db_session = ctx.get("_db_session")
         if not db_session:
-            return "错误：数据库会话未注入"
+            return _t(locale, "Error: database session was not injected", "错误：数据库会话未注入")
         from sqlalchemy import select
 
         from app.db.models import BotAccount, TodoItem, User
@@ -646,16 +823,20 @@ Args:
         )
         matches = result.scalars().all()
         if not matches:
-            return f"错误：找不到包含'{content_keyword}'的待办事项。"
+            return _t(locale, f"Error: no todo containing '{content_keyword}' was found.", f"错误：找不到包含'{content_keyword}'的待办事项。")
         if len(matches) > 1:
             preview = "、".join(f"'{t.content}'" for t in matches[:5])
-            return f"错误：关键词'{content_keyword}'匹配到多条（{preview}），请提供更精确的关键词。"
+            return _t(
+                locale,
+                f"Error: keyword '{content_keyword}' matched multiple todos ({preview}). Provide a more specific keyword.",
+                f"错误：关键词'{content_keyword}'匹配到多条（{preview}），请提供更精确的关键词。",
+            )
         todo = matches[0]
         if new_content is not None:
             todo.content = new_content
         if status is not None:
             if status not in ("pending", "completed"):
-                return "错误：status 只能是 'pending' 或 'completed'。"
+                return _t(locale, "Error: status must be 'pending' or 'completed'.", "错误：status 只能是 'pending' 或 'completed'。")
             todo.status = status
         if assignee_username is not None:
             if assignee_username == "":
@@ -675,9 +856,9 @@ Args:
                         todo.assignee_id = bot.bot_id
                         todo.assignee_type = "bot"
                     else:
-                        return f"错误：找不到名为 {username} 的用户或Bot。"
+                        return _t(locale, f"Error: no user or Bot named {username} was found.", f"错误：找不到名为 {username} 的用户或Bot。")
         await db_session.commit()
-        return f"成功更新待办事项：'{todo.content}'"
+        return _t(locale, f"Todo updated: '{todo.content}'", f"成功更新待办事项：'{todo.content}'")
 
     @tool
     async def delete_todo(content_keyword: str) -> str:
@@ -689,7 +870,7 @@ Args:
         """
         db_session = ctx.get("_db_session")
         if not db_session:
-            return "错误：数据库会话未注入"
+            return _t(locale, "Error: database session was not injected", "错误：数据库会话未注入")
         from sqlalchemy import select
 
         from app.db.models import TodoItem
@@ -702,15 +883,19 @@ Args:
         )
         matches = result.scalars().all()
         if not matches:
-            return f"错误：找不到包含'{content_keyword}'的待办事项。"
+            return _t(locale, f"Error: no todo containing '{content_keyword}' was found.", f"错误：找不到包含'{content_keyword}'的待办事项。")
         if len(matches) > 1:
             preview = "、".join(f"'{t.content}'" for t in matches[:5])
-            return f"错误：关键词'{content_keyword}'匹配到多条（{preview}），请提供更精确的关键词。"
+            return _t(
+                locale,
+                f"Error: keyword '{content_keyword}' matched multiple todos ({preview}). Provide a more specific keyword.",
+                f"错误：关键词'{content_keyword}'匹配到多条（{preview}），请提供更精确的关键词。",
+            )
         todo = matches[0]
         content = todo.content
         await db_session.delete(todo)
         await db_session.commit()
-        return f"成功删除待办事项：'{content}'"
+        return _t(locale, f"Todo deleted: '{content}'", f"成功删除待办事项：'{content}'")
 
     @tool
     async def web_fetch(url: str) -> str:
@@ -741,7 +926,7 @@ Args:
         logger.info("channel_bot[tool]: web_search query='%s' num=%d", query, num_results)
         return result
 
-    return [
+    tools = [
         update_anchor,
         update_progress,
         update_decision,
@@ -756,16 +941,26 @@ Args:
         web_fetch,
         web_search,
     ]
+    if enabled_tool_names is None:
+        return tools
+    enabled = set(enabled_tool_names) & ALL_COORDINATOR_TOOLS
+    return [item for item in tools if item.name in enabled]
 
 
 # Attachment handling.
 
 
-def _build_file_refs_note(attachments: list[dict[str, str]] | None) -> str:
+def _build_file_refs_note(attachments: list[dict[str, str]] | None, locale: str | None = None) -> str:
     """Build a compact attachment reference note for documents without injecting file bodies."""
     if not attachments:
         return ""
-    lines = ["[本次消息关联以下文件，已登记到文件索引，如需查看内容请调用 read_file 工具]"]
+    lines = [
+        _t(
+            locale,
+            "[This message has the following linked files. They are recorded in the file index; call read_file if the content is needed.]",
+            "[本次消息关联以下文件，已登记到文件索引，如需查看内容请调用 read_file 工具]",
+        )
+    ]
     for att in attachments:
         fname = att.get("filename") or att.get("file_id") or "unknown"
         fid = att.get("file_id") or ""
@@ -796,13 +991,19 @@ def _build_vision_content(user_text: str, attachments: list[dict[str, str]] | No
     return parts
 
 
-def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str, str]] | None) -> str:
+def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str, str]] | None, locale: str | None = None) -> str:
     """Build a fallback reply from parsed attachment content when the LLM is unavailable."""
     if not attachments:
         return ""
     normalized = (user_text or "").lower()
     wants_summary = any(kw in normalized for kw in ("概括", "摘要", "总结", "概述", "summary", "summar"))
-    sections = ["当前 LLM 服务暂时不可用，但我已经成功读取了上传文件内容。"]
+    sections = [
+        _t(
+            locale,
+            "The LLM service is currently unavailable, but I was able to read the uploaded file content.",
+            "当前 LLM 服务暂时不可用，但我已经成功读取了上传文件内容。",
+        )
+    ]
     for index, attachment in enumerate(attachments, start=1):
         filename = attachment.get("filename") or attachment.get("file_id") or f"文件 {index}"
         summary = (attachment.get("summary") or "").strip()
@@ -812,23 +1013,29 @@ def _build_attachment_fallback_reply(user_text: str, attachments: list[dict[str,
             excerpt += "..."
         sections.append(f"### File {index}: {filename}")
         if wants_summary:
-            sections.append("基于已解析文本的概括：")
+            sections.append(_t(locale, "Summary based on parsed text:", "基于已解析文本的概括："))
             if summary:
                 sections.append(summary)
             elif excerpt:
                 sections.append(f"- {excerpt}")
             else:
-                sections.append("- 文件已读取，但暂时没有可提取的文本内容。")
+                sections.append(_t(locale, "- The file was read, but no extractable text is available yet.", "- 文件已读取，但暂时没有可提取的文本内容。"))
         else:
             if summary:
-                sections.append("我先提取出文件的关键内容：")
+                sections.append(_t(locale, "Key content extracted from the file:", "我先提取出文件的关键内容："))
                 sections.append(summary)
             elif excerpt:
-                sections.append("我先提取出文件的关键片段：")
+                sections.append(_t(locale, "Key excerpt extracted from the file:", "我先提取出文件的关键片段："))
                 sections.append(f"- {excerpt}")
             else:
-                sections.append("文件已读取，但暂时没有可提取的文本内容。")
-    sections.append("如果你配置好可用的 LLM 服务后再次提问，我会在完整上下文上继续给出更深入的回答。")
+                sections.append(_t(locale, "The file was read, but no extractable text is available yet.", "文件已读取，但暂时没有可提取的文本内容。"))
+    sections.append(
+        _t(
+            locale,
+            "After an available LLM service is configured, ask again and I can continue with a deeper answer using the full context.",
+            "如果你配置好可用的 LLM 服务后再次提问，我会在完整上下文上继续给出更深入的回答。",
+        )
+    )
     return "\n\n".join(part for part in sections if part).strip()
 
 
@@ -884,7 +1091,7 @@ async def _fetch_user_display_name(session, user_id: str) -> str:
     return (u.display_name or u.username) if u else ""
 
 
-async def _fetch_reply_context(session, replied_msg_id: str) -> str:
+async def _fetch_reply_context(session, replied_msg_id: str, locale: str | None = None) -> str:
     """Fetch a short prefix summarizing the message being replied to."""
     if not replied_msg_id:
         return ""
@@ -916,17 +1123,18 @@ async def _fetch_reply_context(session, replied_msg_id: str) -> str:
         sender_label = (b.display_name or b.username) if b else ""
 
     if sender_label:
-        return f"「回复 [{sender_label}]：{quoted}」\n\n"
-    return f"「回复：{quoted}」\n\n"
+        return _t(locale, f"Replying to [{sender_label}]: {quoted}\n\n", f"「回复 [{sender_label}]：{quoted}」\n\n")
+    return _t(locale, f"Replying to: {quoted}\n\n", f"「回复：{quoted}」\n\n")
 
 
-async def _fetch_recent_history(
+async def _fetch_chat_history(
     session,
     channel_id: str,
     before_msg_id: str | None,
     limit: int = HISTORY_MSG_COUNT,
+    max_chars: int = HISTORY_MSG_MAX_CHARS,
 ) -> list:
-    """Fetch recent non-empty messages before the trigger message and convert them into LangChain messages."""
+    """Fetch chat messages before the trigger message and convert them into LangChain messages."""
     from sqlalchemy import select
 
     from app.db.models import Message as MsgModel
@@ -957,8 +1165,8 @@ async def _fetch_recent_history(
         content = re.sub(r"^> \[[^\]]+\]: .+?\n\n", "", content, count=1, flags=re.DOTALL).strip()
         if not content:
             continue
-        if len(content) > HISTORY_MSG_MAX_CHARS:
-            content = content[:HISTORY_MSG_MAX_CHARS] + "…"
+        if len(content) > max_chars:
+            content = content[:max_chars] + "…"
         name = display_names.get(m.sender_id, "")
         labeled = f"[{name}]: {content}" if name else content
         if m.sender_type == "user":
@@ -977,6 +1185,8 @@ async def _run_agent_iter(
     user_content: str | list,
     ctx: dict,
     history: list | None = None,
+    enabled_tool_names: frozenset[str] | set[str] | None = None,
+    locale: str | None = None,
 ):
     """Run the LangChain tool-calling agent loop and stream adapter events."""
     from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
@@ -993,9 +1203,9 @@ async def _run_agent_iter(
         yield Final(content="", success=True)
         return
 
-    tools = _make_tools(ctx)
+    tools = _make_tools(ctx, enabled_tool_names)
     tool_map = {t.name: t for t in tools}
-    llm_with_tools = llm.bind_tools(tools)
+    llm_with_tools = llm.bind_tools(tools) if tools else llm
 
     messages: list = [
         SystemMessage(content=system_prompt),
@@ -1027,6 +1237,10 @@ async def _run_agent_iter(
                 "channel_bot[_run_agent]: history=%d messages",
                 len(history),
             )
+        logger.debug(
+            "channel_bot[_run_agent]: enabled_tools=%s",
+            sorted(tool_map.keys()),
+        )
 
     for iteration in range(MAX_LOOP_ITERATIONS):
         response: AIMessage | None = None
@@ -1091,18 +1305,18 @@ async def _run_agent_iter(
             tool_args = tc.get("args") or {}
             tool_call_id = tc.get("id") or tool_name
 
-            label = _tool_label(tool_name, tool_args if isinstance(tool_args, dict) else {})
+            label = _tool_label(tool_name, tool_args if isinstance(tool_args, dict) else {}, locale)
             yield Delta(text=f"\n\n`🔧 {label}…`")
 
             t = tool_map.get(tool_name)
             if t is None:
-                result_str = f"错误：未知工具 {tool_name}"
+                result_str = _t(locale, f"Error: unknown tool {tool_name}", f"错误：未知工具 {tool_name}")
             else:
                 try:
                     result_str = str(await t.ainvoke(tool_args))
                 except Exception as e:
                     logger.exception("channel_bot[tool]: %s failed: %s", tool_name, e)
-                    result_str = f"工具执行出错：{e}"
+                    result_str = _t(locale, f"Tool execution error: {e}", f"工具执行出错：{e}")
 
             if tool_name != "call_user":
                 yield Delta(text=" ✓\n\n")
@@ -1141,92 +1355,96 @@ class ChannelBotAdapter(BotAdapter):
 
         user_text = payload.message.text
         all_attachments = payload.context.attachments or []
+        pconfig = payload.runtime
+        locale = normalize_locale(getattr(pconfig, "locale", None) or payload.message.extra.get("locale"))
 
         # Split image and document attachments.
         image_attachments = [a for a in all_attachments if a.get("is_image") == "true"]
         doc_attachments = [a for a in all_attachments if a.get("is_image") != "true"]
 
         # Document attachments only inject file references; agents call read_file on demand for body text.
-        file_refs = _build_file_refs_note(doc_attachments)
+        file_refs = _build_file_refs_note(doc_attachments, locale)
         if file_refs:
             user_text = (user_text.strip() + "\n\n" + file_refs) if user_text.strip() else file_refs
 
-        memory = payload.context.memory or {}
         channel_id = payload.channel_id
-        pconfig = payload.runtime
         channel_bots: list[str] = pconfig.channel_bot_usernames
         bot_details: dict = pconfig.channel_bot_details
         sender_id = payload.message.sender_id
+        is_clarify_reply, clarify_answer_body = _strip_matching_prefix(user_text, _CLARIFY_PREFIXES)
+        profile = (
+            pconfig.coordinator_profile
+            or build_coordinator_profile(
+                user_text,
+                has_attachments=bool(all_attachments),
+                has_peer_bots=bool(channel_bots),
+                is_clarify_reply=is_clarify_reply,
+            )
+        )
+        memory = _trim_memory_for_profile(payload.context.memory or {}, profile)
 
         # 1. Build the system prompt.
         members_lines: list[str] = []
-        for uname in channel_bots:
-            detail = bot_details.get(uname) or {}
-            display = detail.get("display_name") or uname
-            desc = detail.get("description") or ""
-            caps: list[str] = []
-            try:
-                intro = json.loads(detail.get("intro") or "{}")
-                caps = intro.get("capabilities") or []
-            except Exception:
-                pass
-            line = f"- @{uname}（{display}）"
-            if desc:
-                line += f"：{desc}"
-            if caps:
-                line += f"  能力：{'、'.join(caps)}"
-            members_lines.append(line)
-        members_section = "\n".join(members_lines) if members_lines else "（暂无其他专业 Bot）"
+        if profile.include_bot_roster:
+            for uname in channel_bots:
+                detail = bot_details.get(uname) or {}
+                display = detail.get("display_name") or uname
+                desc = _clip_text(detail.get("description") or "", 180)
+                caps: list[str] = []
+                try:
+                    intro = json.loads(detail.get("intro") or "{}")
+                    caps = list(intro.get("capabilities") or [])[:5]
+                except Exception:
+                    pass
+                line = f"- @{uname}（{display}）" if is_zh(locale) else f"- @{uname} ({display})"
+                if desc:
+                    line += f"：{desc}" if is_zh(locale) else f": {desc}"
+                if caps:
+                    line += _t(locale, f"  Capabilities: {', '.join(str(cap) for cap in caps)}", f"  能力：{'、'.join(str(cap) for cap in caps)}")
+                members_lines.append(line)
 
-        system_prompt = "\n\n".join(
-            [
-                "你是 AgentNexus 内置智能协作助手，兼顾使用引导、项目助手、协作协调三个职责。",
-                "=== 系统帮助文档（回答使用类问题时参考）===\n" + get_help_context_for_llm(),
-                render_channel_memory_xml(memory) or '<channel_memory version="1" />',
-                (
-                    f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.context.original_question_text}\n"
-                    if payload.context.original_question_text
-                    else ""
-                ),
-                "=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n" + members_section,
-                (
-                    "## Core Behavior Rules\n\n"
-                    "- If a user message lacks enough information, has ambiguous intent, or needs a key decision, "
-                    "**first call call_user** to collect information from the relevant user. Do not guess or execute directly.\n"
-                    "- Read call_user usernames from conversation history, whose format is [username]: message. "
-                    "Provide options when asking a question.\n"
-                    "- Call all necessary tools first, then produce the final reply after tool results return.\n"
-                    "- Final replies should use concise, professional Markdown.\n\n"
-                    "## Memory Maintenance Duties\n\n"
-                    "In every conversation, proactively decide whether these memory layers need updates. "
-                    "Do not wait for the user to ask:\n\n"
-                    "- **update_anchor**: update immediately when project goals, scope, constraints, or background change, "
-                    "or when the anchor is empty. The anchor is the highest-priority memory and must stay current and accurate.\n"
-                    "- **update_progress**: update immediately when the user reports progress, completed work, milestones, "
-                    "blockers, or next steps. Include completed work, current status, and next plan.\n"
-                    "- **update_decision**: record important decisions, technology choices, and confirmed plans immediately.\n\n"
-                    "**Trigger principle**: prefer updating too often over missing important information. "
-                    "Before the final reply, check whether anything should be persisted."
-                ),
-            ]
-        )
+        system_sections = [
+            _t(
+                locale,
+                "You are AgentNexus's built-in intelligent collaboration assistant, responsible for usage guidance, project assistance, and coordination. Reply in English unless the user explicitly asks for another language.",
+                "你是 AgentNexus 内置智能协作助手，兼顾使用引导、项目助手、协作协调三个职责。请默认使用中文回复，除非用户明确要求其他语言。",
+            ),
+            f"=== Context Policy ===\nintent={profile.intent}; tools={','.join(sorted(profile.enabled_tools)) or 'none'}",
+        ]
+        if profile.include_help:
+            help_context = get_help_context_for_llm(user_text, limit=profile.help_limit, locale=locale)
+            if help_context:
+                system_sections.append(_t(locale, "=== System Help Context (filtered for the current question) ===\n", "=== 系统帮助文档（按当前问题筛选）===\n") + help_context)
+        memory_xml = render_channel_memory_xml(memory)
+        if memory_xml:
+            system_sections.append(memory_xml)
+        if payload.context.original_question_text:
+            system_sections.append(
+                _t(
+                    locale,
+                    f"=== Current Clarification Context ===\n[Original question]\n{payload.context.original_question_text}",
+                    f"=== 当前澄清上下文 ===\n【原始问题】\n{payload.context.original_question_text}",
+                )
+            )
+        if members_lines:
+            system_sections.append(_t(locale, "=== Channel Bot Members (callable with call_bot) ===\n", "=== 频道 Bot 成员（可通过 call_bot 工具调用）===\n") + "\n".join(members_lines))
+        system_sections.append(_build_behavior_rules(profile, locale))
+        system_prompt = "\n\n".join(section for section in system_sections if section)
 
         # 2. Store clarification answers into decisions automatically.
-        if user_text.startswith(_CLARIFY_PREFIX):
-            answer_body = user_text[len(_CLARIFY_PREFIX) :].strip()
-            if answer_body:
-                from datetime import datetime, timezone
+        if is_clarify_reply and clarify_answer_body:
+            from datetime import datetime, timezone
 
-                from app.features.memory.manager import save_layer
+            from app.features.memory.manager import save_layer
 
-                ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                entry = f"### User clarification choice ({ts})\n{answer_body}"
-                existing = (memory.get("decisions") or "").rstrip()
-                new_decisions = f"{existing}\n\n{entry}".strip() if existing else entry
-                await save_layer(channel_id, "decisions", new_decisions)
-                memory = dict(memory)
-                memory["decisions"] = new_decisions
-                logger.info("channel_bot: clarify answer saved to decisions channel=%s", channel_id)
+            ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            entry = f"### User clarification choice ({ts})\n{clarify_answer_body}"
+            existing = ((payload.context.memory or {}).get("decisions") or "").rstrip()
+            new_decisions = f"{existing}\n\n{entry}".strip() if existing else entry
+            await save_layer(channel_id, "decisions", new_decisions)
+            memory = dict(memory)
+            memory["decisions"] = new_decisions
+            logger.info("channel_bot: clarify answer saved to decisions channel=%s", channel_id)
 
         # 3. Tool context.
         # Tools mostly read run_ctx (see call_bot) or task-specific fields;
@@ -1239,6 +1457,7 @@ class ChannelBotAdapter(BotAdapter):
             "sender_id": sender_id,
             "sender_name": pconfig.sender_name or payload.message.sender_name,
             "channel_name": pconfig.channel_name,
+            "locale": locale,
             "attachments": payload.context.attachments or [],
             "original_question_text": payload.context.original_question_text,
             "_db_session": pconfig.db_session,
@@ -1267,9 +1486,19 @@ class ChannelBotAdapter(BotAdapter):
                     return ""
 
                 _results = await _asyncio.gather(
-                    _fetch_recent_history(db_session, channel_id, trigger_msg_id) if trigger_msg_id else _noop_list(),
+                    (
+                        _fetch_chat_history(
+                            db_session,
+                            channel_id,
+                            trigger_msg_id,
+                            limit=profile.history_limit,
+                            max_chars=profile.history_msg_max_chars,
+                        )
+                        if trigger_msg_id and profile.history_limit > 0
+                        else _noop_list()
+                    ),
                     _fetch_user_display_name(db_session, sender_id),
-                    _fetch_reply_context(db_session, in_reply_to_msg_id) if in_reply_to_msg_id else _noop_str(),
+                    _fetch_reply_context(db_session, in_reply_to_msg_id, locale) if in_reply_to_msg_id else _noop_str(),
                     return_exceptions=True,
                 )
                 chat_history = _results[0] if not isinstance(_results[0], BaseException) else []
@@ -1289,11 +1518,10 @@ class ChannelBotAdapter(BotAdapter):
                     channel_id,
                 )
 
-        # Clarification answers strip the "@channel bot clarification answer:" prefix and skip reply_prefix.
+        # Clarification answers strip their prefix and skip reply_prefix.
         # The original question is already in the system prompt clarification context.
-        _is_clarify = user_text.startswith(_CLARIFY_PREFIX)
-        if _is_clarify:
-            user_text = user_text[len(_CLARIFY_PREFIX) :].strip()
+        if is_clarify_reply:
+            user_text = clarify_answer_body
             reply_prefix = ""  # helper-clarify messages are not useful to the LLM.
 
         # Inject reply context and sender identity into the current user message.
@@ -1308,8 +1536,12 @@ class ChannelBotAdapter(BotAdapter):
 
         # When images are attached, inject file_id into text so the LLM can reference attachment context.
         if image_attachments:
-            img_ids_note = "\n\n[系统提示] 用户本次上传了以下图片附件：\n" + "\n".join(
-                f"- file_id: {a['file_id']}  文件名: {a.get('filename') or a.get('file_id')}"
+            img_ids_note = "\n\n" + _t(locale, "[System note] The user uploaded these image attachments:\n", "[系统提示] 用户本次上传了以下图片附件：\n") + "\n".join(
+                _t(
+                    locale,
+                    f"- file_id: {a['file_id']}  filename: {a.get('filename') or a.get('file_id')}",
+                    f"- file_id: {a['file_id']}  文件名: {a.get('filename') or a.get('file_id')}",
+                )
                 for a in image_attachments
                 if a.get("file_id")
             )
@@ -1319,7 +1551,7 @@ class ChannelBotAdapter(BotAdapter):
             user_content: str | list = _build_vision_content(user_text, image_attachments)
         else:
             if image_attachments:
-                user_text += "\n\n（注：当前 LLM 未启用图片识别，已忽略图片附件。）"
+                user_text += "\n\n" + _t(locale, "(Note: the current LLM does not have image recognition enabled, so image attachments were ignored.)", "（注：当前 LLM 未启用图片识别，已忽略图片附件。）")
             user_content = user_text
 
         # Stream Delta tokens directly out; capture the agent's final content.
@@ -1329,6 +1561,8 @@ class ChannelBotAdapter(BotAdapter):
             user_content,
             tool_ctx,
             history=chat_history,
+            enabled_tool_names=profile.enabled_tools,
+            locale=locale,
         ):
             if isinstance(event, Delta):
                 yield event
@@ -1341,9 +1575,9 @@ class ChannelBotAdapter(BotAdapter):
         # 5. Keyword fallback when the LLM is unavailable.
         if not content:
             content = (
-                _build_attachment_fallback_reply(user_text, payload.context.attachments)
-                or build_help_content_with_form(user_text)
-                or _DEFAULT_REPLY
+                _build_attachment_fallback_reply(user_text, payload.context.attachments, locale)
+                or build_help_content_with_form(user_text, locale=locale)
+                or _default_reply(locale)
             )
             logger.info(
                 "channel_bot: LLM unavailable, keyword fallback channel=%s msg=%s",

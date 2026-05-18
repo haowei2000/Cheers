@@ -266,6 +266,12 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       className,
     ].filter(Boolean).join(" ");
     const scopeDescription = scopeTitle || scopeLabel || "";
+    const openSearch = (select = false) => {
+      setSettingsOpen(false);
+      setOpen(true);
+      inputRef.current?.focus();
+      if (select) inputRef.current?.select();
+    };
     const toggleType = (type: SearchResultType, options?: { showResults?: boolean }) => {
       setActiveTypes((prev) => {
         if (prev.includes(type)) {
@@ -302,14 +308,21 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       <div className={searchClasses} ref={wrapRef}>
         {scopeLabel ? (
           <div className="an-search-shell">
-            <span className="an-search-ico" aria-hidden="true">
+            <button
+              type="button"
+              className="an-search-icon-btn"
+              title={keyboardHint ? `${placeholder} (${keyboardHint})` : placeholder}
+              aria-label={placeholder}
+              onClick={() => openSearch(true)}
+            >
               <AppIcon name="search" />
-            </span>
+            </button>
+            {input}
             <button
               type="button"
               className={`an-search-scope ${canOpenSettings ? "is-clickable" : ""} ${settingsOpen ? "is-active" : ""}`}
               title={canOpenSettings ? `Search settings${scopeDescription ? `;${scopeDescription}` : ""}` : scopeDescription}
-              aria-label={canOpenSettings ? "Search settings" : scopeDescription}
+              aria-label={canOpenSettings ? "Open search settings" : scopeDescription}
               aria-haspopup={canOpenSettings ? "dialog" : undefined}
               aria-expanded={canOpenSettings ? settingsOpen : undefined}
               disabled={!canOpenSettings}
@@ -319,10 +332,8 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
                 setSettingsOpen((v) => !v);
               }}
             >
-              <AppIcon name="settings" className="an-search-scope-icon" />
+              <AppIcon name="sliders" className="an-search-scope-icon" />
             </button>
-            {input}
-            {keyboardHint && <kbd className="an-search-kbd">{keyboardHint}</kbd>}
           </div>
         ) : (
           <>

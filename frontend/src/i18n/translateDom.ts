@@ -1,4 +1,4 @@
-import { LANGUAGE_BY_CODE, translateToChinese, type AppLanguage } from "./catalog";
+import { LANGUAGE_BY_CODE, translateToChinese, translateToEnglish, type AppLanguage } from "./catalog";
 
 type TranslationCache = Map<string, Promise<string | null>>;
 
@@ -41,7 +41,7 @@ declare global {
 
 export function translateDom(root: ParentNode, language: AppLanguage): void {
   const option = LANGUAGE_BY_CODE.get(language);
-  if (!option || language === "en") {
+  if (!option) {
     restoreDom(root);
     return;
   }
@@ -82,13 +82,14 @@ function translateTextNode(node: Text, targetLanguage: string): void {
   }
 
   const translated = translateFromEnglish(original, targetLanguage);
-  if (targetLanguage === "zh-CN") {
+  if (targetLanguage === "zh-CN" || targetLanguage === "en") {
     if (node.nodeValue !== translated) node.nodeValue = translated;
     return;
   }
 
-  if (node.nodeValue !== original) node.nodeValue = original;
-  void translateAutomatically(original, targetLanguage).then((translated) => {
+  const autoSource = translateToEnglish(original);
+  if (node.nodeValue !== autoSource) node.nodeValue = autoSource;
+  void translateAutomatically(autoSource, targetLanguage).then((translated) => {
     if (translated && textOriginals.get(node) === original) {
       node.nodeValue = translated;
     }
@@ -115,8 +116,14 @@ function translateAttributes(root: ParentNode, targetLanguage: string): void {
       originals[attr] = original;
       const nextValue = translateFromEnglish(original, targetLanguage);
       if (element.getAttribute(attr) !== nextValue) element.setAttribute(attr, nextValue);
+      if (targetLanguage === "en") {
+        touched = true;
+        continue;
+      }
       if (targetLanguage !== "zh-CN") {
-        void translateAutomatically(original, targetLanguage).then((translated) => {
+        const autoSource = translateToEnglish(original);
+        if (element.getAttribute(attr) !== autoSource) element.setAttribute(attr, autoSource);
+        void translateAutomatically(autoSource, targetLanguage).then((translated) => {
           if (translated && attrOriginals.get(element)?.[attr] === original) {
             element.setAttribute(attr, translated);
           }
@@ -129,6 +136,7 @@ function translateAttributes(root: ParentNode, targetLanguage: string): void {
 }
 
 function translateFromEnglish(value: string, targetLanguage: string): string {
+  if (targetLanguage === "en") return translateToEnglish(value);
   if (targetLanguage === "zh-CN") return translateToChinese(value);
   return value;
 }

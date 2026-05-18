@@ -9,7 +9,7 @@ MEMORY_LAYER_FIELDS = (
     ("progress", "Project Progress"),
     ("decisions", "Decision Records"),
     ("files_index", "File Index"),
-    ("recent", "Recent Updates"),
+    ("history", "Conversation History"),
     ("todos", "Todos"),
 )
 
@@ -30,6 +30,8 @@ def render_channel_memory_xml(memory_context: dict[str, str] | None) -> str:
     layers: list[tuple[str, str, str]] = []
     for key, label in MEMORY_LAYER_FIELDS:
         content = (memory_context.get(key) or "").strip()
+        if key == "history" and not content:
+            content = (memory_context.get("recent") or "").strip()
         if content:
             layers.append((key, label, content))
     if not layers:

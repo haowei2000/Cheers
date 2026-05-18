@@ -893,9 +893,10 @@ export const MessageMarkdown = memo(function MessageMarkdown({
 }: MessageMarkdownProps) {
   const processedText = useMemo(() => preprocessMentions(text), [text]);
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
+    <div className="an-md-flow">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         code({ node: _node, className, children, ...props }: any) {
           const inline = !className && typeof children === "string" && !/\n/.test(String(children));
@@ -983,7 +984,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         p({ children, ...props }: any) {
           return (
             <CopyableMarkdownBlock title="Copy paragraph">
-              <p className="an-type-body my-0.5 pr-7 leading-relaxed" {...props}>
+              <p className="an-type-body my-0.5 pr-7" {...props}>
                 {children}
               </p>
             </CopyableMarkdownBlock>
@@ -1065,9 +1066,10 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         hr() {
           return <hr className="my-3 border-[var(--border)]" />;
         },
-      }}
-    >
-      {processedText}
-    </ReactMarkdown>
+        }}
+      >
+        {processedText}
+      </ReactMarkdown>
+    </div>
   );
 });

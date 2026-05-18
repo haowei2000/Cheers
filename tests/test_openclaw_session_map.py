@@ -1,11 +1,15 @@
 """Agent Bridge stable session mapping tests."""
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_current_user
+from app.core.dependencies import get_session as get_session_core
 from app.db.models import (
     AgentNexusSession,
     AgentNexusSessionBinding,
@@ -13,13 +17,16 @@ from app.db.models import (
     Channel,
     ChannelMembership,
     Message,
+    User,
     Workspace,
 )
+from app.db.session import get_session as get_session_db
 from app.features.agent_bridge.session_map import (
     SCOPE_CHANNEL,
     SCOPE_DM,
     SCOPE_TASK,
     SCOPE_TOPIC,
+    SESSION_STATUS_ACTIVE,
     SESSION_STATUS_CLOSED,
     SESSION_STATUS_TASK_OWNED,
     adopt_session_for_task,
@@ -28,6 +35,7 @@ from app.features.agent_bridge.session_map import (
     resolve_dispatch_session,
 )
 from app.features.bot_runtime.pipeline.bot.topic_context import gather_topic_context
+from app.main import app
 
 
 async def _seed_bot_channel(
@@ -63,6 +71,30 @@ async def _bindings(session: AsyncSession, session_id: str) -> list[AgentNexusSe
         .order_by(AgentNexusSessionBinding.scope_type, AgentNexusSessionBinding.scope_id)
     )
     return list(result.scalars().all())
+
+
+async def _request_as(
+    session: AsyncSession,
+    user: User,
+    method: str,
+    path: str,
+    *,
+    json: dict | None = None,
+) -> Response:
+    async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
+        yield session
+
+    async def override_get_current_user() -> User:
+        return user
+
+    app.dependency_overrides[get_session_core] = override_get_session
+    app.dependency_overrides[get_session_db] = override_get_session
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.request(method, path, json=json)
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -183,6 +215,39 @@ async def test_bot_dm_reply_topic_context_does_not_split_session(db_session: Asy
     assert (SCOPE_TASK, "task-dm-topic-001") not in {
         (b.scope_type, b.scope_id) for b in bindings
     }
+
+
+@pytest.mark.asyncio
+async def test_bot_dm_scope_falls_back_to_membership_user(db_session: AsyncSession) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="dm-member-001", channel_type="dm")
+    user_id = "sess-map-user-dm-member-001"
+    db_session.add_all([
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=user_id,
+            member_type="user",
+            role="member",
+        ),
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
+    await db_session.flush()
+
+    resolved = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={"text": "missing user still stable"},
+        task_id="task-dm-member-001",
+        channel=dm,
+    )
+
+    assert resolved.primary_scope_type == SCOPE_DM
+    assert resolved.primary_scope_id == f"user:{user_id}:bot:{bot.bot_id}"
 
 
 @pytest.mark.asyncio
@@ -493,6 +558,180 @@ async def test_topic_task_session_does_not_claim_channel_scope(db_session: Async
 
 
 @pytest.mark.asyncio
+async def test_background_task_in_topic_keeps_topic_session(db_session: AsyncSession) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="topic-adopt-001")
+    topic_root_id = "topic-root-adopt-001"
+    first_task_id = "task-topic-adopt-001"
+
+    topic_session = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={
+            "text": "start long topic work",
+            "topic_chain": [{"msg_id": topic_root_id, "msg_type": SCOPE_TOPIC}],
+        },
+        task_id=first_task_id,
+        channel=channel,
+    )
+
+    adopted = await adopt_session_for_task(
+        db_session,
+        bot_id=bot.bot_id,
+        channel_id=channel.channel_id,
+        task_id=first_task_id,
+        source_msg_id="placeholder-topic-adopt-001",
+        reason="test",
+    )
+    assert adopted is not None
+    assert adopted.session_id == topic_session.session_id
+    assert adopted.provider_session_key == topic_session.provider_session_key
+    assert adopted.primary_scope_type == SCOPE_TOPIC
+    assert adopted.primary_scope_id == topic_root_id
+
+    session_row = await db_session.get(AgentNexusSession, topic_session.session_id)
+    assert session_row is not None
+    assert session_row.status == SESSION_STATUS_ACTIVE
+    assert session_row.current_scope_type == SCOPE_TOPIC
+    assert session_row.current_scope_id == topic_root_id
+    assert session_row.session_metadata["retained_topic_scope"] is True
+
+    bindings = await _bindings(db_session, topic_session.session_id)
+    assert (SCOPE_TOPIC, topic_root_id, "primary") in {
+        (b.scope_type, b.scope_id, b.role) for b in bindings
+    }
+    assert (SCOPE_TASK, first_task_id, "alias") in {
+        (b.scope_type, b.scope_id, b.role) for b in bindings
+    }
+
+    next_topic_turn = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={
+            "text": "continue the same topic",
+            "topic_chain": [{"msg_id": topic_root_id, "msg_type": SCOPE_TOPIC}],
+        },
+        task_id="task-topic-adopt-002",
+        channel=channel,
+    )
+    assert next_topic_turn.session_id == topic_session.session_id
+    assert next_topic_turn.provider_session_key == topic_session.provider_session_key
+    assert next_topic_turn.primary_scope_type == SCOPE_TOPIC
+
+    old_task_surface = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "continue from task surface"},
+        task_id=first_task_id,
+        channel=channel,
+    )
+    assert old_task_surface.session_id == topic_session.session_id
+
+
+@pytest.mark.asyncio
+async def test_existing_rotated_topic_binding_is_restored(db_session: AsyncSession) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="topic-repair-001")
+    topic_root_id = "topic-root-repair-001"
+    first_task_id = "task-topic-repair-001"
+
+    original = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={
+            "text": "topic work before old rotation",
+            "topic_chain": [{"msg_id": topic_root_id, "msg_type": SCOPE_TOPIC}],
+        },
+        task_id=first_task_id,
+        channel=channel,
+    )
+    topic_binding = (
+        await db_session.execute(
+            select(AgentNexusSessionBinding).where(
+                AgentNexusSessionBinding.bot_id == bot.bot_id,
+                AgentNexusSessionBinding.scope_type == SCOPE_TOPIC,
+                AgentNexusSessionBinding.scope_id == topic_root_id,
+            )
+        )
+    ).scalar_one()
+    original_row = await db_session.get(AgentNexusSession, original.session_id)
+    assert original_row is not None
+    original_row.status = SESSION_STATUS_TASK_OWNED
+    original_row.current_scope_type = SCOPE_TASK
+    original_row.current_scope_id = first_task_id
+    original_row.session_metadata = {
+        "ownership": "task",
+        "parent_scope": {
+            "scope_type": SCOPE_TOPIC,
+            "scope_id": topic_root_id,
+            "channel_id": channel.channel_id,
+            "topic_id": topic_root_id,
+            "dm_id": None,
+        },
+        "parent_scopes": [
+            {
+                "scope_type": SCOPE_TOPIC,
+                "scope_id": topic_root_id,
+                "channel_id": channel.channel_id,
+                "topic_id": topic_root_id,
+                "dm_id": None,
+            }
+        ],
+    }
+    rotated_session_id = "rot-topic-repair-001"
+    rotated_session = AgentNexusSession(
+        session_id=rotated_session_id,
+        bot_id=bot.bot_id,
+        provider=original.provider,
+        provider_agent_id=original.provider_agent_id,
+        provider_account_id=original.provider_account_id,
+        provider_session_key=build_provider_session_key(
+            provider_agent_id=original.provider_agent_id,
+            provider_account_id=original.provider_account_id,
+            session_id=rotated_session_id,
+        ),
+        current_scope_type=SCOPE_TOPIC,
+        current_scope_id=topic_root_id,
+        status=SESSION_STATUS_ACTIVE,
+        session_metadata={
+            "rotated_from_session_id": original.session_id,
+            "rotation_reason": f"task_adopted:{first_task_id}",
+        },
+    )
+    db_session.add(rotated_session)
+    topic_binding.session_id = rotated_session_id
+    await db_session.flush()
+
+    repaired = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={
+            "text": "topic turn after repair",
+            "topic_chain": [{"msg_id": topic_root_id, "msg_type": SCOPE_TOPIC}],
+        },
+        task_id="task-topic-repair-002",
+        channel=channel,
+    )
+    assert repaired.session_id == original.session_id
+    assert repaired.provider_session_key == original.provider_session_key
+    assert repaired.primary_scope_type == SCOPE_TOPIC
+    assert repaired.primary_scope_id == topic_root_id
+
+    await db_session.refresh(topic_binding)
+    await db_session.refresh(original_row)
+    await db_session.refresh(rotated_session)
+    assert topic_binding.session_id == original.session_id
+    assert original_row.status == SESSION_STATUS_ACTIVE
+    assert original_row.session_metadata["retained_topic_scope"] is True
+    assert original_row.session_metadata["restored_topic_binding_from_session_id"] == rotated_session_id
+    assert rotated_session.status == SESSION_STATUS_CLOSED
+    assert rotated_session.session_metadata["closed_reason"] == "restored_rotated_topic_binding"
+
+
+@pytest.mark.asyncio
 async def test_same_channel_is_isolated_by_openclaw_account(db_session: AsyncSession) -> None:
     bot_a, channel = await _seed_bot_channel(db_session, suffix="acct-001")
     bot_b = BotAccount(
@@ -526,6 +765,36 @@ async def test_same_channel_is_isolated_by_openclaw_account(db_session: AsyncSes
     assert other_account.session_id != first.session_id
     assert other_account.provider_session_key != first.provider_session_key
     assert "account:acct-other" in other_account.provider_session_key
+
+
+@pytest.mark.asyncio
+async def test_closed_scope_binding_rotates_to_fresh_session(db_session: AsyncSession) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="closed-001")
+    original = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "first turn"},
+        task_id="task-closed-001",
+        channel=channel,
+    )
+    row = await db_session.get(AgentNexusSession, original.session_id)
+    assert row is not None
+    row.status = SESSION_STATUS_CLOSED
+    await db_session.flush()
+
+    fresh = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "after close"},
+        task_id="task-closed-002",
+        channel=channel,
+    )
+
+    assert fresh.session_id != original.session_id
+    assert fresh.provider_session_key != original.provider_session_key
+    assert fresh.primary_scope_type == SCOPE_CHANNEL
 
 
 @pytest.mark.asyncio
@@ -690,6 +959,139 @@ async def test_dm_session_visibility_and_refresh_api(
         delete(AgentNexusSession).where(AgentNexusSession.bot_id == bot.bot_id)
     )
     await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_dm_session_refresh_requires_bot_id_when_multiple_bots(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="api-dm-multi-001", channel_type="dm")
+    second_bot = BotAccount(
+        bot_id="sess-map-bot-api-dm-multi-002",
+        username="sess_map_bot_api_dm_multi_002",
+        display_name="Second DM Bot",
+        status="online",
+        binding_type="agent_bridge",
+        binding_config={"account_id": "acct-api-dm-multi-002", "agent_id": "agent-main"},
+    )
+    db_session.add(second_bot)
+    db_session.add_all([
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=second_bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/v1/agent-bridge/sessions/dm/refresh",
+        json={"channel_id": dm.channel_id},
+    )
+
+    assert resp.status_code == 400
+    assert "bot_id is required" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_dmchat_session_visibility_requires_channel_scope(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="api-dmchat-001", channel_type="dm")
+    dm.name = f"dmchat:a0000000-0000-0000-0000-000000000099:{bot.bot_id}:x"
+    user_id = "a0000000-0000-0000-0000-000000000099"
+    db_session.add_all([
+        ChannelMembership(channel_id=dm.channel_id, member_id=user_id, member_type="user", role="member"),
+        ChannelMembership(channel_id=dm.channel_id, member_id=bot.bot_id, member_type="bot", role="member"),
+    ])
+    resolved = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={"user": user_id, "text": "dmchat"},
+        task_id="task-api-dmchat-001",
+        channel=dm,
+    )
+    await db_session.commit()
+    assert resolved.primary_scope_id == dm.channel_id
+
+    denied = await client.get(
+        "/api/v1/agent-bridge/sessions/scope",
+        params={
+            "scope_type": SCOPE_DM,
+            "scope_id": f"user:{user_id}:bot:{bot.bot_id}",
+            "channel_id": dm.channel_id,
+            "bot_id": bot.bot_id,
+        },
+    )
+    assert denied.status_code == 403
+
+    allowed = await client.get(
+        "/api/v1/agent-bridge/sessions/scope",
+        params={
+            "scope_type": SCOPE_DM,
+            "scope_id": dm.channel_id,
+            "channel_id": dm.channel_id,
+            "bot_id": bot.bot_id,
+        },
+    )
+    assert allowed.status_code == 200
+    assert [row["session_id"] for row in allowed.json()["data"]] == [resolved.session_id]
+
+
+@pytest.mark.asyncio
+async def test_dm_session_refresh_api_requires_admin(db_session: AsyncSession) -> None:
+    bot, dm = await _seed_bot_channel(db_session, suffix="api-dm-perm-001", channel_type="dm")
+    user = User(
+        user_id="sess-map-user-dm-perm-001",
+        username="sess_map_dm_perm_user",
+        password_hash="x",
+        role="member",
+    )
+    db_session.add_all([
+        user,
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=user.user_id,
+            member_type="user",
+            role="member",
+        ),
+        ChannelMembership(
+            channel_id=dm.channel_id,
+            member_id=bot.bot_id,
+            member_type="bot",
+            role="member",
+        ),
+    ])
+    await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=dm.channel_id,
+        trigger_message={"user": user.user_id, "text": "hello dm permission"},
+        task_id="task-api-dm-perm-001",
+        channel=dm,
+    )
+    await db_session.flush()
+
+    denied = await _request_as(
+        db_session,
+        user,
+        "POST",
+        "/api/v1/agent-bridge/sessions/dm/refresh",
+        json={"channel_id": dm.channel_id, "bot_id": bot.bot_id},
+    )
+
+    assert denied.status_code == 403
+    assert denied.json()["code"] == "forbidden"
 
 
 @pytest.mark.asyncio

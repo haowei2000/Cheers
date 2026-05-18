@@ -1,5 +1,7 @@
 # @haowei0520/acp-connector
 
+> **Language**: English | [Chinese](README.zh-CN.md)
+
 Runs local ACP stdio agents, such as Codex or Claude-compatible agents, and
 reverse-connects them to a public AgentNexus server through the existing Agent
 Bridge WebSocket protocol.

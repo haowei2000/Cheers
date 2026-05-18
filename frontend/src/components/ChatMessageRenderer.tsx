@@ -18,11 +18,124 @@ import { FileTypeIcon } from "./icons/FileTypeIcon";
 const IMAGE_TYPES = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff"]);
 const MESSAGE_COLLAPSE_MAX_HEIGHT = 360;
 const MESSAGE_COLLAPSE_THRESHOLD = 40;
+const PROTECTED_IMAGE_PREVIEW_CACHE_LIMIT = 100;
+const THINK_BLOCK_RE = /<think>([\s\S]*?)<\/think>/gi;
+const OPEN_THINK_TAG = "<think>";
+const RICH_MARKDOWN_RE =
+  /(```|`[^`]+`|\*\*|__|~~|!\[[^\]]*]\(|\[[^\]]+]\(|<think>|<\/think>|^\s{0,3}#{1,6}\s|^\s{0,3}>|^\s{0,3}[-*+]\s|^\s{0,3}\d+\.\s|^\s*\|.*\|)/m;
+const protectedImagePreviewCache = new Map<string, string>();
+const protectedImagePreviewInFlight = new Map<string, Promise<string>>();
 const ThinkMarkdownContent = lazy(() =>
   import("./ThinkMarkdownContent").then((module) => ({
     default: module.ThinkMarkdownContent,
   })),
 );
+
+function pruneProtectedImagePreviewCache(): void {
+  while (protectedImagePreviewCache.size > PROTECTED_IMAGE_PREVIEW_CACHE_LIMIT) {
+    const oldest = protectedImagePreviewCache.keys().next().value;
+    if (!oldest) return;
+    const objectUrl = protectedImagePreviewCache.get(oldest);
+    protectedImagePreviewCache.delete(oldest);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function loadProtectedImagePreview(previewUrl: string): Promise<string> {
+  const cached = protectedImagePreviewCache.get(previewUrl);
+  if (cached) return Promise.resolve(cached);
+  const inFlight = protectedImagePreviewInFlight.get(previewUrl);
+  if (inFlight) return inFlight;
+
+  const request = createProtectedFileObjectUrl(previewUrl)
+    .then((objectUrl) => {
+      protectedImagePreviewCache.set(previewUrl, objectUrl);
+      pruneProtectedImagePreviewCache();
+      return objectUrl;
+    })
+    .finally(() => {
+      protectedImagePreviewInFlight.delete(previewUrl);
+    });
+  protectedImagePreviewInFlight.set(previewUrl, request);
+  return request;
+}
+
+function StreamingThinkFold({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="my-1 rounded border border-gray-200 bg-gray-50 overflow-hidden text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="w-full px-2 py-1 text-left text-gray-400 hover:bg-gray-100 flex items-center gap-1"
+      >
+        <span
+          className="inline-block transition-transform"
+          style={{ transform: open ? "rotate(90deg)" : "none" }}
+        >
+          ▶
+        </span>
+        <span>{"<think> "}{open ? "Collapse" : "Expand"}</span>
+      </button>
+      {open && (
+        <pre className="p-2 text-xs text-gray-500 whitespace-pre-wrap border-t border-gray-100 max-h-48 overflow-auto">
+          {content}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function StreamingPlainContent({
+  content,
+  keyPrefix = "",
+}: {
+  content: string;
+  keyPrefix?: string;
+}) {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  let match: RegExpExecArray | null;
+  THINK_BLOCK_RE.lastIndex = 0;
+
+  const pushText = (text: string) => {
+    if (!text) return;
+    parts.push(
+      <span key={`${keyPrefix}stream-${key++}`} className="whitespace-pre-wrap break-words">
+        {text}
+      </span>,
+    );
+  };
+
+  while ((match = THINK_BLOCK_RE.exec(content)) !== null) {
+    pushText(content.slice(lastIndex, match.index));
+    parts.push(
+      <StreamingThinkFold
+        key={`${keyPrefix}stream-think-${key++}`}
+        content={match[1]?.trim() || ""}
+      />,
+    );
+    lastIndex = THINK_BLOCK_RE.lastIndex;
+  }
+
+  const tail = content.slice(lastIndex);
+  const lowerTail = tail.toLowerCase();
+  const openThinkIndex = lowerTail.lastIndexOf(OPEN_THINK_TAG);
+  if (openThinkIndex >= 0 && lowerTail.indexOf("</think>", openThinkIndex) < 0) {
+    pushText(tail.slice(0, openThinkIndex));
+    parts.push(
+      <StreamingThinkFold
+        key={`${keyPrefix}stream-think-open-${key++}`}
+        content={tail.slice(openThinkIndex + OPEN_THINK_TAG.length).trim()}
+      />,
+    );
+  } else {
+    pushText(tail);
+  }
+
+  return <>{parts}</>;
+}
 
 function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return "";
@@ -51,6 +164,11 @@ function isImageFile(file: FileInfo): boolean {
   const contentType = file.content_type ?? "";
   const ext = (file.original_filename?.split(".").pop() ?? "").toLowerCase();
   return contentType.startsWith("image/") || IMAGE_TYPES.has(ext);
+}
+
+function shouldUseRichMarkdown(content: string): boolean {
+  if (!content) return false;
+  return RICH_MARKDOWN_RE.test(content);
 }
 
 interface ChatAttachmentCardProps {
@@ -86,22 +204,15 @@ const ChatAttachmentCard = memo(function ChatAttachmentCard({
       return;
     }
     let cancelled = false;
-    let objectUrl: string | null = null;
     setImageFailed(false);
     setImagePreviewSrc(null);
-    createProtectedFileObjectUrl(previewUrl)
+    loadProtectedImagePreview(previewUrl)
       .then((url) => {
-        objectUrl = url;
-        if (cancelled) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        setImagePreviewSrc(url);
+        if (!cancelled) setImagePreviewSrc(url);
       })
       .catch(() => setImageFailed(true));
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [image, previewUrl]);
 
@@ -305,7 +416,7 @@ export function MessageContentClamp({
             name={expanded ? "chevronUp" : "chevronDown"}
             className="h-3.5 w-3.5"
           />
-          {expanded ? "Collapse" : "Show full message"}
+          {expanded ? "Show less" : "Show more"}
         </button>
       )}
     </div>
@@ -364,6 +475,24 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
     left: number;
   } | null>(null);
   const hasContent = content.trim().length > 0;
+  const richMarkdown = hasContent ? shouldUseRichMarkdown(content) : false;
+  const [richReady, setRichReady] = useState(!richMarkdown);
+
+  useEffect(() => {
+    if (!richMarkdown || streaming) {
+      setRichReady(!richMarkdown);
+      return;
+    }
+    setRichReady(false);
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(() => setRichReady(true), {
+        timeout: 500,
+      });
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const timer = window.setTimeout(() => setRichReady(true), 80);
+    return () => window.clearTimeout(timer);
+  }, [content, richMarkdown, streaming]);
 
   const hideSelectionButton = useCallback(() => {
     setSelectionCopy(null);
@@ -454,6 +583,10 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
     <>
       {streaming && !hasContent ? (
         <span className="inline-block h-4 w-2 animate-pulse rounded-sm bg-gray-400 align-middle" />
+      ) : hasContent && streaming ? (
+        <StreamingPlainContent content={content} keyPrefix={keyPrefix} />
+      ) : hasContent && (!richMarkdown || !richReady) ? (
+        markdownFallback
       ) : hasContent ? (
         <Suspense fallback={markdownFallback}>
           <ThinkMarkdownContent
@@ -506,7 +639,7 @@ export const ChatMessageRenderer = memo(function ChatMessageRenderer({
         >
           <MessageContentClamp
             contentKey={collapseKey ?? content}
-            disabled={disableAutoCollapse || !hasContent}
+            disabled={disableAutoCollapse || !hasContent || !!streaming}
             maxHeight={collapseMaxHeight}
           >
             {renderBody ? renderBody(body) : body}

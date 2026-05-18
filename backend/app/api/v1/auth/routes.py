@@ -1,16 +1,27 @@
 """Auth API routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.core.builtin_defaults import seed_workspace_defaults
 from app.core.dependencies import get_current_user, get_session
+from app.core.localization import locale_from_headers
 from app.core.responses import APIResponse
 from app.db.models import User
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_DEFAULT_ADMIN_DISPLAY_NAMES = {"System Administrator", "系统管理员"}
+
+
+def _localized_admin_display_name(locale: str | None) -> str:
+    if settings.admin_display_name in _DEFAULT_ADMIN_DISPLAY_NAMES:
+        return seed_workspace_defaults(locale)["admin_display_name"]
+    return settings.admin_display_name
 
 
 class UserOut(BaseModel):
@@ -25,11 +36,18 @@ class UserOut(BaseModel):
     created_at: str | None = None
 
     @classmethod
-    def from_user(cls, user: User) -> "UserOut":
+    def from_user(cls, user: User, locale: str | None = None) -> "UserOut":
+        display_name = user.display_name
+        if (
+            user.role == "system_admin"
+            and user.username == settings.admin_username
+            and (not display_name or display_name in _DEFAULT_ADMIN_DISPLAY_NAMES or display_name == settings.admin_display_name)
+        ):
+            display_name = _localized_admin_display_name(locale)
         return cls(
             user_id=user.user_id,
             username=user.username,
-            display_name=user.display_name,
+            display_name=display_name,
             email=user.email,
             role=user.role,
             avatar_url=user.avatar_url,
@@ -103,6 +121,7 @@ async def send_verification_code(
 @router.post("/register", response_model=APIResponse[UserOut])
 async def register(
     body: RegisterBody,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = AuthService(session)
@@ -112,20 +131,20 @@ async def register(
         display_name=body.display_name,
         email=body.email,
     )
-    return APIResponse.ok(UserOut.from_user(user))
+    return APIResponse.ok(UserOut.from_user(user, locale_from_headers(request.headers)))
 
 
 @router.post("/login", response_model=APIResponse[LoginOut])
 async def login(
     body: LoginBody,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    from app.config import settings
     svc = AuthService(session)
     user, token = await svc.login(body.username, body.password)
     return APIResponse.ok(LoginOut(
         access_token=token,
-        user=UserOut.from_user(user),
+        user=UserOut.from_user(user, locale_from_headers(request.headers)),
         expires_in=settings.jwt_access_token_expire_minutes * 60,
     ))
 
@@ -142,14 +161,16 @@ async def forgot_password(
 
 @router.get("/users/me", response_model=APIResponse[UserOut])
 async def get_me(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> APIResponse:
-    return APIResponse.ok(UserOut.from_user(current_user))
+    return APIResponse.ok(UserOut.from_user(current_user, locale_from_headers(request.headers)))
 
 
 @router.put("/users/me", response_model=APIResponse[UserOut])
 async def update_profile(
     body: UpdateProfileBody,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
@@ -161,7 +182,7 @@ async def update_profile(
         avatar_url=body.avatar_url,
         avatar_url_provided="avatar_url" in body.model_fields_set,
     )
-    return APIResponse.ok(UserOut.from_user(user))
+    return APIResponse.ok(UserOut.from_user(user, locale_from_headers(request.headers)))
 
 
 @router.put("/users/me/password", response_model=APIResponse[None])
@@ -178,6 +199,5 @@ async def change_password(
         email_code=body.email_code,
     )
     return APIResponse.ok(None, message="密码已更新")
-
 
 

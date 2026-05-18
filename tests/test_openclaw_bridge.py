@@ -45,7 +45,7 @@ def _payload(task_id: str = "t-ws-001", channel_id: str = "c-001") -> AgentPaylo
         task_id=task_id,
         channel_id=channel_id,
         trigger_message={"user": "u1", "text": "@ws-bot hi", "timestamp": "2026-04-21T00:00:00Z"},
-        memory_context={"anchor": "", "decisions": "", "files_index": "", "recent": ""},
+        memory_context={"anchor": "", "decisions": "", "files_index": "", "history": ""},
     )
 
 

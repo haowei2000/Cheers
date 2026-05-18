@@ -242,6 +242,33 @@ describe("BotSession with mock bridge", () => {
     await session.stop();
   });
 
+  it("does not advance resume seq until onMessage succeeds", async () => {
+    const errors: unknown[] = [];
+    let calls = 0;
+    const session = await makeSession(bridge, {
+      onMessage: async () => {
+        calls += 1;
+        throw new Error("handler failed");
+      },
+      onError: (err) => errors.push(err),
+    });
+    session.start();
+    await session.waitReady();
+
+    const beforeCount = bridge.receivedResumes.length;
+    bridge.pushMessage({ task_id: "t-fail", channel_id: "C1", seq: 7 });
+    bridge.pushMessage({ task_id: "t-skip", channel_id: "C1", seq: 8 });
+    await waitFor(() => errors.length > 0);
+    expect(session.lastProcessedSeq).toBe(0);
+    expect(calls).toBe(1);
+
+    await waitFor(() => bridge.receivedResumes.length > beforeCount, 5000);
+    const lastResume = bridge.receivedResumes[bridge.receivedResumes.length - 1];
+    expect(lastResume.last_event_seq).toBe(0);
+
+    await session.stop();
+  });
+
   it("invalid token (401) prevents accept; session eventually becomes fatal", async () => {
     // Create a session with an invalid token.
     const fatals: string[] = [];

@@ -12,10 +12,12 @@ _VAR_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
 def template_uses_memory(template: str | None) -> bool:
     """Return whether a user template explicitly asks for built memory."""
-    return "memory" in {
+    variables = {
         match.group(1)
         for match in _VAR_PATTERN.finditer(template or "")
     }
+    memory_vars = {"memory", "recent"} | {key for key, _ in MEMORY_LAYER_FIELDS}
+    return bool(variables & memory_vars)
 
 
 def render_memory_context(memory_context: dict[str, str] | None) -> str:
@@ -61,4 +63,6 @@ def build_template_context(
     }
     for key, _ in MEMORY_LAYER_FIELDS:
         context[key] = memory_context.get(key, "")
+    # Deprecated template variable kept as a read-only alias while prompts migrate.
+    context["recent"] = context.get("history") or memory_context.get("recent", "")
     return context

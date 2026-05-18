@@ -1,10 +1,11 @@
 """Dms API routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
+from app.core.localization import locale_from_headers
 from app.core.responses import APIResponse
 from app.core.schemas import DMCounterparty, DMCreateRequest, DMInResponse
 from app.db.models import User
@@ -16,10 +17,14 @@ router = APIRouter(prefix="/dms", tags=["dms"])
 
 @router.get("", response_model=APIResponse[list[DMInResponse]])
 async def list_dms(
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    await WorkspaceService(session).ensure_personal_workspace(current_user)
+    await WorkspaceService(session).ensure_personal_workspace(
+        current_user,
+        locale=locale_from_headers(request.headers),
+    )
     svc = ChannelService(session)
     rows = await svc.list_dms_with_counterparty(current_user)
     unread = await svc.unread_counts_for(
@@ -47,6 +52,7 @@ async def list_dms(
 @router.post("", response_model=APIResponse[DMInResponse])
 async def upsert_dm(
     body: DMCreateRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
@@ -55,7 +61,10 @@ async def upsert_dm(
     lives in the caller's Personal workspace — DMs are a personal-space
     concept in this product."""
     ws_svc = WorkspaceService(session)
-    personal = await ws_svc.ensure_personal_workspace(current_user)
+    personal = await ws_svc.ensure_personal_workspace(
+        current_user,
+        locale=locale_from_headers(request.headers),
+    )
     svc = ChannelService(session)
     ch = await svc.get_or_create_dm(
         workspace_id=personal.workspace_id,

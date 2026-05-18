@@ -1,4 +1,4 @@
-"""History Pager: backend-only memory pagination and recent rendering.
+"""History Pager: backend-only memory pagination and history rendering.
 
 HistoryPage is intentionally independent from the frontend message list
 pagination. The UI keeps using ``before_id + limit`` over ``messages``;
@@ -36,12 +36,18 @@ def _history_page_max_chars() -> int:
     return max(1, int(settings.memory_history_page_max_chars or 50000))
 
 
-def _recent_direct_message_count() -> int:
-    return max(0, int(settings.memory_recent_direct_message_count))
+def _history_current_message_count() -> int:
+    configured = settings.memory_history_current_message_count
+    if configured is None:
+        configured = settings.memory_recent_direct_message_count
+    return max(0, int(configured))
 
 
 def _summary_max_chars() -> int:
-    return max(1, int(settings.memory_recent_summary_max_chars or 1500))
+    configured = settings.memory_history_summary_max_chars
+    if configured is None:
+        configured = settings.memory_recent_summary_max_chars
+    return max(1, int(configured or 1500))
 
 
 async def _compress_with_system_llm(messages_text: str) -> str | None:
@@ -66,7 +72,7 @@ async def _compress_with_system_llm(messages_text: str) -> str | None:
             "messages": [
                 {
                     "role": "system",
-                    "content": "将以下频道历史对话压缩为一段简洁的「近期动态」摘要，不超过"
+                    "content": "将以下频道历史对话压缩为一段简洁的「历史摘要」，不超过"
                     f"{max_chars}字，用于 AI 上下文背景。只输出摘要正文，不要标题。",
                 },
                 {"role": "user", "content": messages_text[:12000]},
@@ -88,7 +94,7 @@ async def _compress_with_system_llm(messages_text: str) -> str | None:
         return None
 
 
-def _truncate_recent(messages_text: str, max_chars: int | None = None) -> str:
+def _truncate_history(messages_text: str, max_chars: int | None = None) -> str:
     """Simple truncation fallback for page summaries."""
     if not messages_text.strip():
         return ""
@@ -214,7 +220,7 @@ async def _create_history_page(
     raw_text_for_summary = "\n".join(summary_lines)
     summary = await _compress_with_system_llm(raw_text_for_summary)
     if not summary:
-        summary = _truncate_recent(raw_text_for_summary)
+        summary = _truncate_history(raw_text_for_summary)
 
     page = HistoryPage(
         channel_id=channel_id,
@@ -382,7 +388,7 @@ async def render_current_page_summary(channel_id: str, session: AsyncSession) ->
     """Render ``current_page:summary`` from the unsealed tail page."""
     current_page = await _load_current_page(session, channel_id)
     messages = current_page.messages
-    direct_count = _recent_direct_message_count()
+    direct_count = _history_current_message_count()
     if direct_count <= 0:
         return ""
     messages = messages[-direct_count:]
@@ -393,12 +399,26 @@ async def render_current_page_summary(channel_id: str, session: AsyncSession) ->
         _render_summary_line(m, names.get(m.sender_id, "Unknown"))
         for m in messages
     )
-    return _truncate_recent(raw)
+    return _truncate_history(raw)
 
 
-async def render_recent_context(channel_id: str, session: AsyncSession) -> str:
-    """Render ``memory_context['recent']`` from current_page + message_page."""
-    current = await render_current_page_summary(channel_id, session)
+async def render_current_page_full(channel_id: str, session: AsyncSession) -> str:
+    """Render the unsealed current page as full history fragments."""
+    current_page = await _load_current_page(session, channel_id)
+    messages = current_page.messages
+    if not messages:
+        return ""
+    names = await _resolve_display_names(session, messages)
+    raw = "\n".join(
+        _render_history_fragment(idx, msg, names.get(msg.sender_id, "Unknown"))
+        for idx, msg in enumerate(messages, start=1)
+    )
+    return _truncate_history(raw, _history_page_max_chars())
+
+
+async def render_history_context(channel_id: str, session: AsyncSession) -> str:
+    """Render ``memory_context['history']`` from current_page + message_page."""
+    current = await render_current_page_full(channel_id, session)
     pages = await render_message_page_summaries(channel_id, session)
     sections: list[str] = []
     if current:
@@ -406,6 +426,11 @@ async def render_recent_context(channel_id: str, session: AsyncSession) -> str:
     if pages:
         sections.append(f"history_summary_pages:\n{pages}")
     return "\n\n".join(sections)
+
+
+async def render_recent_context(channel_id: str, session: AsyncSession) -> str:
+    """Deprecated compatibility alias for ``render_history_context``."""
+    return await render_history_context(channel_id, session)
 
 
 async def _scheduled_history_compaction(channel_id: str) -> None:
@@ -431,6 +456,6 @@ def schedule_history_compaction(channel_id: str) -> None:
 
 
 async def update_recent_pages_layer(channel_id: str, session=None) -> None:
-    """Compatibility no-op-ish hook: recent is now rendered at load time."""
+    """Compatibility hook: history is rendered at load time."""
     if session is not None:
         await compact_channel_history(channel_id, session)

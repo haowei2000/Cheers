@@ -92,6 +92,17 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("file retention startup cleanup failed")
 
+    try:
+        from app.db.session import async_session_factory
+        from app.features.bot_runtime.pipeline.bot.task_timeout import recover_agent_bridge_task_timeouts_once
+
+        async with async_session_factory() as session:
+            count = await recover_agent_bridge_task_timeouts_once(session)
+            if count:
+                logger.info("agent bridge timeout recovery converted %d stale tasks", count)
+    except Exception:
+        logger.exception("agent bridge timeout recovery failed")
+
     if int(getattr(settings, "file_retention_cleanup_interval_seconds", 24 * 60 * 60) or 0) > 0:
         _file_retention_task = asyncio.create_task(_file_retention_cleanup_loop())
 

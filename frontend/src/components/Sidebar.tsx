@@ -54,6 +54,7 @@ interface SidebarProps {
   onOpenFilePreview?: (file: FileInfo) => void;
   onOpenPersonalFileMain?: (file: FileInfo) => void;
   onPreloadChannel?: (channelId: string) => void;
+  onOpenMessage?: (channelId: string, msgId: string) => void;
 }
 
 const WS_LETTER_COLORS = ["#7c6cf5", "#3ecf8e", "#f5a623", "#56a7ff", "#f05454", "#9586ff"];
@@ -106,6 +107,7 @@ export function Sidebar({
   onOpenFilePreview,
   onOpenPersonalFileMain,
   onPreloadChannel,
+  onOpenMessage,
 }: SidebarProps) {
   const currentWs = workspaces.find((w) => w.workspace_id === selectedWorkspaceId);
   const currentWsLabel = currentWs
@@ -430,14 +432,18 @@ export function Sidebar({
   };
 
   const openMessageHit = (channelId: string, msgId: string) => {
-    const channel = channels.find((c) => c.channel_id === channelId);
-    const dm = dms.find((d) => d.channel_id === channelId);
-    if (channel?.workspace_id) {
-      setSelectedWorkspaceId(channel.workspace_id);
-    } else if (dm?.workspace_id) {
-      setSelectedWorkspaceId(dm.workspace_id);
+    if (onOpenMessage) {
+      onOpenMessage(channelId, msgId);
+    } else {
+      const channel = channels.find((c) => c.channel_id === channelId);
+      const dm = dms.find((d) => d.channel_id === channelId);
+      if (channel?.workspace_id) {
+        setSelectedWorkspaceId(channel.workspace_id);
+      } else if (dm?.workspace_id) {
+        setSelectedWorkspaceId(dm.workspace_id);
+      }
+      setSelectedId(channelId);
     }
-    setSelectedId(channelId);
     resetSearch();
     if (isMobile) setSidebarOpen(false);
     // Give the chat column time to mount / fetch before we scroll.
@@ -784,7 +790,6 @@ export function Sidebar({
         }
         keyboardHint="⌘K"
         enableShortcut
-        wide
         typeOptions={searchTypeOptions}
         scopeLabel={searchScopeLabel}
         scopeTitle={searchScopeTitle}

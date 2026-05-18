@@ -47,11 +47,11 @@
                 },
                 "controlUrl": {
                   "type": "string",
-                  "description": "AgentNexus control WS URL, e.g. ws://localhost:8002/ws/agent-bridge/control"
+                  "description": "AgentNexus control WS URL, e.g. ws://localhost:8000/ws/agent-bridge/control"
                 },
                 "dataUrl": {
                   "type": "string",
-                  "description": "AgentNexus data WS URL, e.g. ws://localhost:8002/ws/agent-bridge/data"
+                  "description": "AgentNexus data WS URL, e.g. ws://localhost:8000/ws/agent-bridge/data"
                 },
                 "advanced": {
                   "type": "object",

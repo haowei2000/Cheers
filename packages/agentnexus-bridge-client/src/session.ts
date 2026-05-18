@@ -32,6 +32,7 @@ import type {
   ReplyFrame,
   SendAck,
   SendFrame,
+  SessionUpdateFrame,
   TraceFrame,
   TriggerMessage,
 } from "./types.js";
@@ -134,6 +135,8 @@ export class BotSession {
   private readonly reconnectMaxMs: number;
   private readonly heartbeatIntervalMs: number;
   private readonly sendAckTimeoutMs: number;
+  private dataEverOpened = false;
+  private dataBlockedUntilReconnect = false;
 
   constructor(
     private readonly config: SessionConfig,
@@ -164,7 +167,7 @@ export class BotSession {
     });
     this.data = new ReconnectingClient(config.dataUrl, headers, reconnectOpts, {
       onOpen: () => this.onDataOpen(),
-      onFrame: (f) => this.onDataFrame(f),
+      onFrame: (f) => this.enqueueDataFrame(f),
       onClose: (code, reason) => this.onStreamClose("data", code, reason),
       onFatal: (reason) => this.onFatalEscalate("data", reason),
     });
@@ -279,18 +282,34 @@ export class BotSession {
 
   // =================== data stream ===================
 
+  private dataFrameQueue: Promise<void> = Promise.resolve();
+
   private onDataOpen(): void {
+    const shouldResume = this.dataEverOpened || this.lastProcessedSeq > 0;
+    this.dataEverOpened = true;
+    this.dataBlockedUntilReconnect = false;
     this.events.onConnectionChange?.("data", "open");
     this.startHeartbeat("data");
-    // Resume missed events immediately after reconnect.
-    if (this.lastProcessedSeq > 0) {
+    // Resume missed events after reconnect. A failed first event keeps seq=0,
+    // so reconnects still need to request replay from the beginning.
+    if (shouldResume) {
       this.data.send({ type: "resume", last_event_seq: this.lastProcessedSeq });
     }
   }
 
-  private onDataFrame(raw: unknown): void {
+  private enqueueDataFrame(raw: unknown): Promise<void> {
+    this.dataFrameQueue = this.dataFrameQueue
+      .then(() => this.onDataFrame(raw))
+      .catch((err) => {
+        this.events.onError?.(err);
+      });
+    return this.dataFrameQueue;
+  }
+
+  private async onDataFrame(raw: unknown): Promise<void> {
     if (!isObject(raw) || typeof raw.type !== "string") return;
     const frame = raw as DataInbound;
+    if (this.dataBlockedUntilReconnect) return;
     try {
       switch (frame.type) {
         case "hello":
@@ -302,13 +321,18 @@ export class BotSession {
           break;
         case "message": {
           const ev = frame as MessageEvent;
-          // Update local seq. Callers may bump after business logic for stricter
-          // exactly-once handling; this permissive path updates on sight.
+          const normalized = this.normalizeInbound(ev);
+          try {
+            await this.events.onMessage?.(normalized);
+          } catch (err) {
+            this.events.onError?.(err);
+            this.dataBlockedUntilReconnect = true;
+            this.data.reconnectNow("message handler failed");
+            break;
+          }
           if (typeof ev.seq === "number" && ev.seq > this.lastProcessedSeq) {
             this.lastProcessedSeq = ev.seq;
           }
-          const normalized = this.normalizeInbound(ev);
-          void this.events.onMessage?.(normalized);
           break;
         }
         case "send_ack": {
@@ -427,6 +451,13 @@ export class BotSession {
   trace(args: Omit<TraceFrame, "type">): boolean {
     if (!this.data.isOpen) return false;
     const frame: TraceFrame = { type: "trace", ...args };
+    return this.data.send(frame);
+  }
+
+  /** Report provider-side session/run identity for debugging and audits. */
+  reportProviderSession(args: Omit<SessionUpdateFrame, "type">): boolean {
+    if (!this.data.isOpen) return false;
+    const frame: SessionUpdateFrame = { type: "session_update", ...args };
     return this.data.send(frame);
   }
 

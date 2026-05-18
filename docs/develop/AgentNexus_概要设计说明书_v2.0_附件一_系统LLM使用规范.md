@@ -1,297 +1,293 @@
-__附件一__
+> **Language**: English | [中文](AgentNexus_概要设计说明书_v2.0_附件一_系统LLM使用规范.zh-CN.md)
 
-__AgentNexus 系统自身 LLM 使用规范__
+__Attachment 1__
+
+__AgentNexus system’s own LLM usage specifications__
 
 *Appendix I: AgentNexus Internal LLM Usage Specification*
 
-__从属文件__
+__Dependent files__
 
-AgentNexus 概要设计说明书 v2\.0
+AgentNexus Outline Design Manual v2\.0
 
-__文件编号__
+__File number__
 
-附件一（Appendix I）
+Appendix I (Appendix I)
 
-__版本__
+__version__
 
 v1\.0
 
-__编写日期__
+__Date written__
 
 2026\-03\-07
 
-__文档状态__
+__Document Status__
 
-草稿（Draft）
+Draft
 
-__📌  本文件说明__
+__📌 This document explains__
 
-AgentNexus 系统本身（底层基础设施层）也需要直接调用 LLM，与用户通过 OpenClaw 实例执行任务的 LLM 调用性质不同。
+The AgentNexus system itself (the underlying infrastructure layer) also needs to call LLM directly, unlike the nature of LLM calls where users perform tasks through OpenClaw instances.
 
-两者的职责边界若不明确划分，将导致成本失控、权限混乱、日志难以追溯等问题。
+If the boundaries of responsibilities between the two are not clearly defined, it will lead to problems such as out-of-control costs, confusing permissions, and difficulty in tracing logs.
 
-本附件专门定义：系统自身在哪些场景下调用 LLM、调用哪些模型、成本如何控制，以补充主文档未展开的内容。
+This appendix specifically defines: in which scenarios the system itself calls LLM, which models are called, and how costs are controlled, to supplement the unexpanded content of the main document.
 
-# __1  两类 LLM 调用的根本区别__
+# __1 The fundamental difference between the two types of LLM calls__
 
-AgentNexus 中的 LLM 调用分为两类，必须严格区分：
+LLM calls in AgentNexus are divided into two categories, which must be strictly distinguished:
 
-| 维度 | 系统级调用（System LLM） | 任务级调用（Task LLM，经 OpenClaw） |
-|------|---------------------------|--------------------------------------|
-| 调用发起方 | AgentNexus 内部组件自动触发 | 用户 @mention Bot，由 OpenClaw 实例发起 |
-| 调用目的 | 维护系统基础设施（记忆、索引、摘要） | 执行用户交代的专业任务 |
-| 用户可见性 | 用户不直接看到此类调用的过程 | 用户直接看到 Bot 的回复 |
-| 对话历史 | 无多轮对话，每次独立的单次调用 | 携带完整上下文，模拟多轮对话 |
-| 输出格式 | 结构化（JSON / Markdown 固定模板） | 自然语言，按任务需求灵活输出 |
-| 模型选择策略 | 优先选最廉价、最快的模型 | 按专业任务需求选最合适的模型 |
-| API Key 归属 | 系统统一管理的 System LLM Key | 各 Bot 独立配置的 Task LLM Key |
-| 成本承担 | 平台运营成本 | 可按 Bot 或用户分摊 |
+| Dimensions | System-level calls (System LLM) | Task-level calls (Task LLM, via OpenClaw) |
+|------|---------------------------|------------------------------------------|
+| Call initiator | Automatically triggered by AgentNexus internal components | User @mention Bot, initiated by OpenClaw instance |
+| Purpose of call | Maintain system infrastructure (memory, index, summary) | Perform professional tasks assigned by users |
+| User visibility | The user does not directly see the process of such calls | The user directly sees the Bot's reply |
+| Dialogue history | No multiple rounds of dialogue, each independent single call | Carrying complete context, simulating multiple rounds of dialogue |
+| Output format | Structured (JSON/Markdown fixed template) | Natural language, flexible output according to task requirements |
+| Model selection strategy | Prioritize the cheapest and fastest model | Select the most appropriate model according to professional task requirements |
+| API Key ownership | System LLM Key managed uniformly by the system | Task LLM Key independently configured for each Bot |
+| Cost borne | Platform operating costs | Can be shared by Bot or user |
 
-# __2  系统级 LLM 调用场景清单__
+# __2 System-level LLM calling scenario list__
 
-以下是 AgentNexus 自身需要调用 LLM 的全部场景，共 5 类：
+The following are all scenarios where AgentNexus itself needs to call LLM, totaling 5 categories:
 
-## __场景 1：RECENT\.md 滚动摘要压缩__
+## __Scenario 1: RECENT\.md rolling summary compression__
 
-| 项目 | 说明 |
+| Project | Description |
 |------|------|
-| 触发时机 | 每次 Bot 完成响应后，异步触发（不阻塞用户体验） |
-| 调用组件 | MemoryManager |
-| 输入内容 | 当前 RECENT\.md 内容 \+ 本次新增的消息（用户消息 \+ Bot 回复） |
-| 输出要求 | 更新后的 RECENT\.md，固定不超过 1500 字，保留最关键信息 |
-| 推荐模型 | Claude Haiku / GPT\-4o\-mini（低成本、速度快，摘要任务不需要强推理） |
-| 调用频率 | 每次 Bot 响应触发一次，频繁但 token 量小 |
-| 失败处理 | 失败则保留旧版 RECENT\.md，下次响应时重试；不影响当前对话 |
+| Trigger timing | Triggered asynchronously every time the Bot completes its response (without blocking the user experience) |
+| Call component | MemoryManager |
+| Input content | Current RECENT\.md content \+ This new message (user message \+ Bot reply) |
+| Output requirements | Updated RECENT\.md, fixed to no more than 1500 words, retaining the most critical information |
+| Recommended model | Claude Haiku / GPT\-4o\-mini (low cost, fast, summary tasks do not require strong reasoning) |
+| Call frequency | Triggered once per Bot response, frequent but small amount of token |
+| Failure handling | If it fails, keep the old version of RECENT\.md and try again the next time you respond; it will not affect the current conversation |
 
-__Prompt 模板示意：__
+__Prompt template indication: __
 
-你是一个信息压缩助手。请将以下频道消息记录压缩为不超过1500字的摘要，
+You are an information compression assistant. Please compress the following channel message record into a summary of no more than 1500 words,
 
-优先保留：决策内容、任务进展、关键数字、人名与职责分工。
+Prioritize retention: decision-making content, task progress, key figures, names of people and division of responsibilities.
 
-原有摘要：\{旧 RECENT\.md\}
+Original summary: \{Old RECENT\.md\}
 
-新增消息：\{本次用户消息 \+ Bot回复\}
+New message: \{This user message \+ Bot reply\}
 
-输出格式：直接输出更新后的摘要 Markdown，不要任何前缀说明。
+Output format: Directly output the updated summary Markdown without any prefix description.
 
-## __场景 2：文件摘要生成（FILES\_INDEX\.md 条目）__
+## __Scenario 2: File summary generation (FILES\_INDEX\.md entry)__
 
-| 项目 | 说明 |
+| Project | Description |
 |------|------|
-| 触发时机 | 文件转 Markdown 完成后，自动触发 |
-| 调用组件 | FileProcessor → MemoryManager |
-| 输入内容 | 文件转换后的完整 Markdown 内容 |
-| 输出要求 | 3 句话摘要（文件核心内容概述），写入 FILES\_INDEX\.md |
-| 推荐模型 | Claude Haiku / GPT\-4o\-mini |
-| 调用频率 | 每次文件上传触发一次，频率较低 |
-| 失败处理 | 失败则写入"摘要生成失败，请手动描述"占位符，不阻断文件处理流程 |
+| Trigger timing | Automatically triggered after the file is converted to Markdown |
+| Calling component | FileProcessor → MemoryManager |
+| Input content | Complete Markdown content after file conversion || Output requirements | 3-sentence summary (overview of the core content of the file), written to FILES\_INDEX\.md |
+| Recommended models | Claude Haiku / GPT\-4o\-mini |
+| Calling frequency | Triggered once per file upload, with a low frequency |
+| Failure handling | If it fails, write "Summary generation failed, please describe manually" placeholder, without blocking the file processing flow |
 
-## __场景 3：图片与 PDF 图片页的视觉描述__
+## __Scenario 3: Visual description of images and PDF image pages__
 
-| 项目 | 说明 |
+| Project | Description |
 |------|------|
-| 触发时机 | 上传图片文件（\.png/\.jpg）或 PDF 中包含图片页时触发 |
-| 调用组件 | FileProcessor（Vision 模块） |
-| 输入内容 | 图片 base64 编码 |
-| 输出要求 | 图片内容的文字描述，存为 Markdown，供 Bot 后续引用 |
-| 推荐模型 | Claude Haiku Vision / GPT\-4o\-mini Vision（有 Vision 能力的轻量模型） |
-| 调用频率 | 按图片数量触发，通常频率低 |
-| 失败处理 | 失败则写入"图片内容无法解析"占位符，记录错误日志 |
+| Trigger timing | Triggered when an image file (\.png/\.jpg) is uploaded or a PDF contains an image page |
+| Calling component | FileProcessor (Vision module) |
+| Input content | Image base64 encoding |
+| Output requirements | Text description of the image content, saved as Markdown for subsequent reference by Bot |
+| Recommended model | Claude Haiku Vision / GPT\-4o\-mini Vision (lightweight model with Vision capability) |
+| Call frequency | Triggered by the number of pictures, usually low frequency |
+| Failure handling | If it fails, write the "image content cannot be parsed" placeholder and record the error log |
 
-## __场景 4：重要决策自动识别与追加（DECISIONS\.md）__
+## __Scenario 4: Automatic identification and addition of important decisions (DECISIONS\.md)__
 
-| 项目 | 说明 |
+| Project | Description |
 |------|------|
-| 触发时机 | Bot 完成响应后，异步触发判断 |
-| 调用组件 | MemoryManager（决策检测模块） |
-| 输入内容 | 本次用户消息 \+ Bot 回复内容 |
-| 输出要求 | JSON：\{ is\_decision: bool, summary: string, decision\_by: string \} |
-| 推荐模型 | Claude Haiku / GPT\-4o\-mini（结构化输出任务） |
-| 调用频率 | 每次 Bot 响应触发一次判断，但实际写入 DECISIONS\.md 的频率很低 |
-| 失败处理 | 判断失败则跳过本次，不写入；下次响应时不补充追溯 |
+| Trigger timing | After the Bot completes the response, the asynchronous trigger judgment |
+| Calling component | MemoryManager (decision detection module) |
+| Input content | This user message \+ Bot reply content |
+| Output requirements | JSON: \{ is\_decision: bool, summary: string, decision\_by: string \} |
+| Recommended model | Claude Haiku / GPT\-4o\-mini (structured output task) |
+| Call frequency | Each Bot response triggers a judgment, but the frequency of actual writing to DECISIONS\.md is very low |
+| Failure processing | If the judgment fails, skip this time and do not write; no traceback will be added in the next response |
 
-__Prompt 模板示意：__
+__Prompt template indication: __
 
-判断以下对话是否包含明确的决策（如方案确定、方向选择、责任分配等）。
+Determine whether the following dialogue contains clear decisions (such as program determination, direction selection, responsibility allocation, etc.).
 
-如果是，提取决策摘要（一句话）和决策人（若无法判断则填"团队"）。
+If so, extract the decision summary (one sentence) and the decision-maker (fill in "team" if unable to determine).
 
-对话内容：\{用户消息 \+ Bot回复\}
+Conversation content: \{User message \+ Bot reply\}
 
-以 JSON 格式输出，字段：is\_decision（bool）、summary（string）、decision\_by（string）。
+Output in JSON format, fields: is\_decision (bool), summary (string), decision\_by (string).
 
-只输出 JSON，不要任何其他内容。
+Output only JSON and nothing else.
 
-## __场景 5：目标对齐偏差检测（可选，第二阶段启用）__
+## __Scenario 5: Target alignment deviation detection (optional, enabled in the second stage)__
 
-| 项目 | 说明 |
+| Project | Description |
 |------|------|
-| 触发时机 | Bot 完成响应后，异步触发（仅在管理员开启此功能时生效） |
-| 调用组件 | MemoryManager（目标对齐检测模块） |
-| 输入内容 | ANCHOR\.md 内容 \+ Bot 本次回复内容 |
-| 输出要求 | JSON：\{ aligned: bool, deviation\_score: 0\-10, warning\_msg: string \} |
-| 推荐模型 | Claude Haiku（语义理解，轻量即可） |
-| 调用频率 | 每次 Bot 响应触发，默认关闭，管理员按需开启 |
-| 失败处理 | 失败则跳过检测，不影响主流程 |
-| 偏差处理 | deviation\_score > 7 时，在管理后台生成告警通知，不直接干预对话 |
+| Trigger timing | Triggered asynchronously after the Bot completes the response (only takes effect when the administrator turns on this function) |
+| Calling component | MemoryManager (target alignment detection module) |
+| Input content | ANCHOR\.md content \+ Bot content of this reply |
+| Output requirements | JSON: \{ aligned: bool, deviation\_score: 0\-10, warning\_msg: string \} |
+| Recommended model | Claude Haiku (semantic understanding, lightweight) |
+| Call frequency | Triggered every time Bot responds, closed by default, enabled by administrator on demand |
+| Failure handling | If it fails, the detection will be skipped and the main process will not be affected |
+| Deviation processing | When deviation\_score > 7, an alarm notification is generated in the management background without directly intervening in the conversation |
 
-# __3  成本控制策略__
+# __3 Cost Control Strategy__
 
-## __3\.1  模型选用原则__
+## __3\.1 Principles for model selection__
 
-系统级调用遵循"够用即可，优先廉价"原则：
+System-level calls follow the principle of "enough is enough, cheap first":
 
-| 调用场景 | 推荐模型 | 理由 |
+| Calling scenarios | Recommended models | Reasons |
 |----------|----------|------|
-| RECENT\.md 摘要压缩 | Claude Haiku 或 GPT\-4o\-mini | 纯摘要任务，不需要强推理能力，速度和成本优先 |
-| 文件 3 句话摘要 | Claude Haiku 或 GPT\-4o\-mini | 同上 |
-| 图片视觉描述 | Claude Haiku Vision 或 GPT\-4o\-mini Vision | Vision 能力轻量版已足够描述图片内容 |
-| 决策识别（结构化输出） | Claude Haiku 或 GPT\-4o\-mini | 固定 JSON 输出，轻量模型稳定性足够 |
-| 目标对齐偏差检测 | Claude Haiku | 语义相似度判断，Haiku 足够 |
+| RECENT\.md summary compression | Claude Haiku or GPT\-4o\-mini | Pure summary task, no strong reasoning ability is required, speed and cost are prioritized |
+| File 3 sentence summary | Claude Haiku or GPT\-4o\-mini | Same as above || Image visual description | Claude Haiku Vision or GPT\-4o\-mini Vision | The lightweight version of Vision capability is sufficient to describe the image content |
+| Decision recognition (structured output) | Claude Haiku or GPT\-4o\-mini | Fixed JSON output, lightweight model with sufficient stability |
+| Target alignment deviation detection | Claude Haiku | Semantic similarity judgment, Haiku is enough |
 
-## __3\.2  Token 用量估算（单频道日均）__
+## __3\.2 Token usage estimate (single channel daily average) __
 
-| 场景 | 单次 Token 估算 | 日均调用次数 | 日均 Token 消耗 |
-|------|------------------|--------------|------------------|
-| RECENT\.md 摘要压缩 | 输入 ~2000 \+ 输出 ~500 = ~2500 | 约 20 次（每次 Bot 响应触发） | ~50,000 |
-| 文件 3 句话摘要 | 输入 ~3000 \+ 输出 ~100 = ~3100 | 约 5 次（按文件上传频率） | ~15,500 |
-| 图片视觉描述 | 图片 \+ 输出 ~200 = ~500（含图片） | 约 3 次 | ~1,500 |
-| 决策识别 | 输入 ~800 \+ 输出 ~50 = ~850 | 约 20 次（同 RECENT） | ~17,000 |
-| 目标对齐检测（可选） | 输入 ~1500 \+ 输出 ~100 = ~1600 | 约 20 次（可配置） | ~32,000 |
+| Scenario | Single Token estimation | Average number of daily calls | Average daily Token consumption |
+|------|------------------|-----------------|------------------|
+| RECENT\.md Summary Compression | Input ~2000 \+ Output ~500 = ~2500 | About 20 times (fired per Bot response) | ~50,000 |
+| File 3-sentence summary | Input ~3000 \+ Output ~100 = ~3100 | About 5 times (based on file upload frequency) | ~15,500 |
+| Image visual description | Image \+ Output ~200 = ~500 (including image) | About 3 times | ~1,500 |
+| Decision recognition | Input ~800 \+ Output ~50 = ~850 | About 20 times (same as RECENT) | ~17,000 |
+| Target alignment detection (optional) | Input ~1500 \+ Output ~100 = ~1600 | About 20 times (configurable) | ~32,000 |
 
-约 20 次（同 RECENT）
+About 20 times (same as RECENT)
 
-~32,000（关闭则为 0）
+~32,000 (0 if off)
 
-合计（含可选）
-
-—
+Total (including optional)
 
 —
 
-~116,000 tokens/天/频道
+—
 
-__💡  成本参考__
+~116,000 tokens/day/channel
 
-以 Claude Haiku 为例，约 $0\.25 / 百万 input tokens，$1\.25 / 百万 output tokens。
+__💡 Cost Reference__
 
-单频道日均系统级 LLM 成本估算 < $0\.05 美元（约人民币 0\.36 元），对大多数用户规模可以忽略不计。
+Taking Claude Haiku as an example, it is about $0\.25/million input tokens and $1\.25/million output tokens.
 
-若关闭目标对齐检测，成本可降低约 28%。
+The average daily system-level LLM cost estimate for a single channel is < $0\.05 USD (approximately RMB 0\.36 yuan), which is negligible for most user sizes.
 
-以上估算仅针对系统级调用，不含 OpenClaw 实例执行用户任务产生的 Task LLM 费用。
+If target alignment detection is turned off, the cost can be reduced by approximately 28%.
 
-## __3\.3  独立 API Key 管理__
+The above estimates are only for system-level calls and do not include Task LLM charges incurred by OpenClaw instances to perform user tasks.
 
-- 系统级 LLM 调用使用专属的 System LLM API Key，与各 OpenClaw 实例使用的 Task API Key 完全隔离
-- System API Key 在 Docker Compose 环境变量中统一配置，管理员在后台设置页填写，不暴露给普通用户
-- 后台监控面板单独展示系统级 LLM 的调用次数和 token 消耗，方便管理员了解平台运营成本
-- 建议为 System API Key 在 LLM 服务商处设置月度用量上限，防止异常调用导致费用失控
+## __3\.3 Independent API Key Management__
 
-# __4  系统 LLM 调用架构示意__
+- System-level LLM calls use a dedicated System LLM API Key, which is completely isolated from the Task API Key used by each OpenClaw instance.
+- System API Key is configured uniformly in the Docker Compose environment variable, and the administrator fills it in on the background settings page, and is not exposed to ordinary users.
+- The background monitoring panel separately displays the number of system-level LLM calls and token consumption, making it easier for administrators to understand platform operating costs
+- It is recommended to set a monthly usage limit for System API Key at the LLM service provider to prevent abnormal calls from causing out-of-control expenses.
 
-__调用路径总览__
+# __4 System LLM calling architecture diagram__
 
-【用户发送消息 / 上传文件】
+__Call path overview__
 
-         │
-
-         ├──►  AgentOrchestrator  ──►  OpenClaw 实例  ──►  Task LLM（用户任务执行）
-
-         │              │
-
-         │              └──►  MemoryManager（异步）  ──►  System LLM（基础设施维护）
-
-         │                        │
-
-         │                        ├── RECENT\.md 压缩
-
-         │                        ├── 决策识别 → DECISIONS\.md
-
-         │                        └── 目标对齐检测（可选）
+[User sends message/uploads file]
 
          │
 
-         └──►  FileProcessor（上传触发）  ──►  System LLM
+         ├──► AgentOrchestrator ──► OpenClaw instance ──► Task LLM (user task execution)
 
-                        ├── 3句话摘要 → FILES\_INDEX\.md
+         │ │
 
-                        └── 图片视觉描述 → 转换为 Markdown
+         │ └──► MemoryManager (asynchronous) ──► System LLM (infrastructure maintenance)
 
-关键设计约束：
+         │ │
 
-- System LLM 调用全部为异步操作，不阻塞用户主消息流
-- System LLM 调用失败不影响用户对话，均有 fallback 降级处理
-- System LLM 与 Task LLM 使用独立的 API Key，互不影响配额
-- System LLM 调用结果写入 Context Store 后，下一次 Task LLM 调用可立即感知更新
+         │ ├── RECENT\.md compression
 
-# __5  系统级 LLM 配置项__
+         │ ├── Decision Identification → DECISIONS\.md
 
-以下配置项在管理后台「系统设置 → AI 基础配置」页面提供向导式填写：
+         │ └── Target alignment detection (optional)
 
-| 配置项 | 类型 | 默认值 | 说明 |
+         │
+
+         └──► FileProcessor (upload trigger) ──► System LLM├── 3-sentence summary → FILES\_INDEX\.md
+
+                        └── Image visual description → Convert to Markdown
+
+Key design constraints:
+
+- System LLM calls are all asynchronous operations and do not block the user's main message flow.
+- System LLM call failure does not affect user dialogue, and fallback degradation processing is provided.
+- System LLM and Task LLM use independent API Keys and do not affect each other's quotas
+- After the System LLM call result is written to the Context Store, the next Task LLM call can immediately sense the update.
+
+# __5 System-level LLM configuration items__
+
+The following configuration items are provided with a wizard to fill in on the "System Settings → AI Basic Configuration" page of the management backend:
+
+| Configuration item | Type | Default value | Description |
 |--------|------|--------|------|
-| system\_llm\_provider | 下拉选择 | anthropic | 系统级 LLM 提供商（anthropic / openai / deepseek） |
-| system\_llm\_model | 下拉选择 | claude\-haiku\-4\-5 | 系统级调用使用的具体模型 |
-| system\_llm\_api\_key | 密码输入框 | （必填） | 系统级 LLM API Key，与 OpenClaw Bot Key 独立 |
-| enable\_memory\_compression | 开关 | 开启 | 是否启用 RECENT\.md 自动摘要压缩 |
-| enable\_decision\_detection | 开关 | 开启 | 是否启用重要决策自动识别 |
-| enable\_alignment\_check | 开关 | 关闭 | 是否启用目标对齐偏差检测（消耗额外 token） |
-| alignment\_check\_threshold | 数字滑块 | 7 | 偏差分数超过此值时触发告警（0–10） |
-| file\_summary\_max\_chars | 数字输入 | 200 | 文件摘要最大字符数（每条） |
+| system\_llm\_provider | drop-down selection | anthropic | System-level LLM provider (anthropic/openai/deepseek) |
+| system\_llm\_model | drop-down selection | claude\-haiku\-4\-5 | specific model used for system-level calls |
+| system\_llm\_api\_key | Password input box | (required) | System-level LLM API Key, independent from OpenClaw Bot Key |
+| enable\_memory\_compression | switch | on | whether to enable RECENT\.md automatic digest compression |
+| enable\_decision\_detection | switch | on | whether to enable automatic identification of important decisions |
+| enable\_alignment\_check | switch | off | whether to enable target alignment deviation detection (consuming additional tokens) |
+| alignment\_check\_threshold | Numeric slider | 7 | Trigger an alarm when the deviation score exceeds this value (0–10) |
+| file\_summary\_max\_chars | Numeric input | 200 | Maximum number of characters for file summary (each) |
 
-数字输入
+digital input
 
 3000
 
-文件摘要生成时截取的最大字符数（防超长输入）
+The maximum number of characters intercepted when generating a file summary (to prevent over-long input)
 
-# __6  同步与异步的判断原则__
+# __6 Judgment principles of synchronization and asynchronousness__
 
-判断一个系统级 LLM 调用应同步还是异步，只需回答一个问题：
+To determine whether a system-level LLM call should be synchronous or asynchronous, answer just one question:
 
-__核心判断标准__
+__Core Judgment Criteria__
 
-用户是否需要等它完成，才能继续工作？
+Does the user need to wait for it to complete before continuing to work?
 
-是 → 同步（放在关键路径上）
+Yes → Synchronized (put on critical path)
 
-否 → 异步（进后台队列，不阻塞主流程）
+No → asynchronous (enter the background queue, do not block the main process)
 
-## __6\.1  调用分层__
+## __6\.1 Call layering__
 
-| 层级 | 包含哪些调用 | 执行方式 |
+| Level | Which calls are included | Execution method |
 |------|--------------|----------|
-| 关键路径层（同步，必须等待） | Context Store 四层记忆读取、附件 MD 内容加载 | Bot 响应前必须完成，直接阻塞等待 |
-| 后台维护层（异步，进队列） | RECENT\.md 压缩、文件 3 句话摘要、图片视觉描述、决策识别、目标对齐检测 | Bot 回复完成后投入 Redis 队列，后台 Worker 消费，失败不影响对话 |
+| Critical path layer (synchronization, must wait) | Context Store four-layer memory reading, attachment MD content loading | Bot must be completed before responding, directly blocked and waiting |
+| Backend maintenance layer (asynchronous, queued) | RECENT\.md compression, file 3-sentence summary, image visual description, decision recognition, target alignment detection | After the Bot reply is completed, it is put into the Redis queue and consumed by the background Worker. Failure does not affect the conversation |
 
-## __6\.2  文件状态机（附件处理的特殊情况）__
+## __6\.2 File state machine (special case of attachment processing)__
 
-文件附件涉及同步与异步的边界，需要明确的状态机来处理：
+File attachments involve the boundary between synchronous and asynchronous and require a clear state machine to handle:
 
-__文件状态流转：__
+__File status transfer:__
 
-上传中  →  转换中  →  已就绪  （正常路径）
+Uploading → Converting → Ready (normal path)
 
-                  →  转换失败  （异常路径，需人工处理或重试）
+                  → Conversion failed (abnormal path, needs manual processing or retry)
 
-Bot 收到含附件的消息时的处理规则：
+Processing rules for Bots when receiving messages containing attachments:
 
-- 文件状态为「已就绪」：正常加载 MD 内容，注入 Payload
-- 文件状态为「转换中」：Bot 回复「文件仍在处理中，请稍候片刻再提问」，不强行等待
-- 文件状态为「转换失败」：Bot 回复「该文件无法解析，请确认格式或重新上传」
+- The file status is "Ready": load MD content normally and inject Payload
+- The file status is "Converting": Bot replies "The file is still being processed, please wait for a while before asking again" and does not wait forcibly
+- The file status is "Conversion failed": Bot replies "The file cannot be parsed, please confirm the format or upload it again"
 
-__设计意图__
+__Design Intent__
 
-将文件转换设计为异步并引入状态机，而非让用户消息阻塞等待转换完成。
+Design file conversion to be asynchronous and introduce a state machine instead of letting user messages block waiting for the conversion to complete.
 
-这样即使用户上传了大文件，聊天界面始终保持流畅响应，不出现"卡住"的感觉。
+In this way, even if the user uploads a large file, the chat interface will always remain smooth and responsive without the feeling of being "stuck".
 
-__文档修订历史__
+__Document Revision History__
 
-| 版本 | 日期 | 说明 |
-|------|------|------|
-| v1\.0 | 2026\-03\-07 | 初稿，作为概要设计说明书 v2\.0 附件一发布 |
-| v1\.1 | 2026\-03\-07 | 新增第 6 节：同步与异步判断原则及文件状态机设计 |
-
+| Version | Date | Description ||------|------|------|
+| v1\.0 | 2026\-03\-07 | First draft, released as attachment 1 of the outline design specification v2\.0 |
+| v1\.1 | 2026\-03\-07 | New Section 6: Synchronization and asynchronous judgment principles and file state machine design |

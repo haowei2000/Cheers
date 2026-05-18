@@ -1,9 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import type { AgentBridgeSession } from "../types";
-import { AppIcon } from "./icons/AppIcon";
+import { AppIcon, type AppIconName } from "./icons/AppIcon";
 
 type ScopeType = "channel" | "dm" | "topic" | "task";
+type ScopeTone = ScopeType | "unknown";
+
+export type SessionScopeTarget = {
+  scopeType: string;
+  scopeId: string;
+};
+
+type ScopeMeta = {
+  tone: ScopeTone;
+  icon: AppIconName;
+  label: string;
+  detail: string;
+};
 
 function fmtTime(value?: string | null): string {
   if (!value) return "-";
@@ -14,12 +27,66 @@ function fmtTime(value?: string | null): string {
   }
 }
 
-function scopeLabel(type: string, id: string): string {
-  if (type === "channel") return `Channels · ${id}`;
-  if (type === "topic") return `Topics · ${id}`;
-  if (type === "task") return `Tasks · ${id}`;
-  if (type === "dm") return `DM · ${id}`;
-  return `${type} · ${id}`;
+function normalizeScope(type: string): ScopeTone {
+  if (type === "channel" || type === "dm" || type === "topic" || type === "task") return type;
+  return "unknown";
+}
+
+function scopeMeta(type: string): ScopeMeta {
+  const tone = normalizeScope(type);
+  if (tone === "channel") {
+    return {
+      tone,
+      icon: "channel",
+      label: "Main channel",
+      detail: "Shared channel context",
+    };
+  }
+  if (tone === "topic") {
+    return {
+      tone,
+      icon: "messageCircle",
+      label: "Topic",
+      detail: "Thread-level context",
+    };
+  }
+  if (tone === "task") {
+    return {
+      tone,
+      icon: "task",
+      label: "Task",
+      detail: "Background task context",
+    };
+  }
+  if (tone === "dm") {
+    return {
+      tone,
+      icon: "message",
+      label: "Bot DM",
+      detail: "Direct bot conversation",
+    };
+  }
+  return {
+    tone,
+    icon: "link",
+    label: type || "Scope",
+    detail: "Agent Bridge scope",
+  };
+}
+
+function scopeMapLabel(type: string): string {
+  const tone = normalizeScope(type);
+  if (tone === "channel") return "Channel";
+  if (tone === "topic") return "Topic";
+  if (tone === "task") return "Task";
+  if (tone === "dm") return "DM";
+  return "Scope";
+}
+
+function shortId(value: string): string {
+  if (!value) return "-";
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 8)}...${value.slice(-6)}`;
 }
 
 function shortKey(value: string): string {
@@ -42,13 +109,15 @@ function statusTone(status: string): { background: string; color: string } {
 }
 
 function sessionScopeCounts(sessions: AgentBridgeSession[]): string {
-  const counts = sessions.reduce<Record<string, number>>((acc, s) => {
-    const key = s.current_scope_type || "unknown";
+  const counts = sessions.reduce<Record<ScopeTone, number>>((acc, s) => {
+    const key = normalizeScope(s.current_scope_type || "unknown");
     acc[key] = (acc[key] || 0) + 1;
     return acc;
-  }, {});
-  return Object.entries(counts)
-    .map(([key, count]) => `${key}:${count}`)
+  }, {} as Record<ScopeTone, number>);
+  const order: ScopeTone[] = ["channel", "topic", "task", "dm", "unknown"];
+  return order
+    .filter((key) => counts[key])
+    .map((key) => `${scopeMeta(key).label}:${counts[key]}`)
     .join(" · ");
 }
 
@@ -57,65 +126,104 @@ async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value);
 }
 
+function SessionRefreshAction({
+  canRefresh,
+  onRefresh,
+  refreshing,
+}: {
+  canRefresh: boolean;
+  onRefresh?: () => void;
+  refreshing: boolean;
+}) {
+  if (!onRefresh) return null;
+  const disabled = refreshing || !canRefresh;
+  return (
+    <button
+      type="button"
+      className="an-sp-refresh"
+      onClick={onRefresh}
+      disabled={disabled}
+      title={canRefresh ? "Refresh this session scope" : "Only administrators can refresh sessions"}
+      aria-label={canRefresh ? "Refresh this session scope" : "Only administrators can refresh sessions"}
+    >
+      <AppIcon name={canRefresh ? "refresh" : "shieldCheck"} className={refreshing ? "animate-spin" : ""} />
+      <span>{canRefresh ? "Refresh" : "Admin only"}</span>
+    </button>
+  );
+}
+
+function SessionPanelHeader({
+  title,
+  scopeType,
+  sessions,
+  loading,
+  canRefresh,
+  onRefresh,
+  refreshing,
+}: {
+  title: string;
+  scopeType: ScopeType;
+  sessions: AgentBridgeSession[];
+  loading: boolean;
+  canRefresh: boolean;
+  onRefresh?: () => void;
+  refreshing: boolean;
+}) {
+  const countLabel = loading ? "..." : String(sessions.length);
+
+  return (
+    <div className="an-sp-head">
+      <div className="an-sp-head-main">
+        <span className="an-sp-head-icon" data-scope={scopeType}>
+          <AppIcon name={scopeMeta(scopeType).icon} />
+        </span>
+        <div className="an-sp-head-copy">
+          <div className="an-sp-title">{title}</div>
+        </div>
+        <span className="an-sp-count" title={loading ? "Loading sessions" : `${sessions.length} active sessions`}>
+          {countLabel}
+        </span>
+      </div>
+      <SessionRefreshAction canRefresh={canRefresh} onRefresh={onRefresh} refreshing={refreshing} />
+    </div>
+  );
+}
+
 function SessionCard({ session }: { session: AgentBridgeSession }) {
   const [expanded, setExpanded] = useState(false);
   const tone = statusTone(session.status);
   const bindings = session.bindings || [];
-  const visibleBindings = expanded ? bindings : bindings.slice(0, 4);
+  const visibleBindings = expanded ? bindings : bindings.slice(0, 5);
+  const meta = scopeMeta(session.current_scope_type);
 
   return (
-    <div
-      className="rounded-md border text-xs"
-      style={{ borderColor: "var(--border)", background: "var(--bg-0)", overflow: "hidden" }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) auto",
-          gap: 10,
-          padding: "10px 12px",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--surface)",
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div className="font-semibold truncate" style={{ color: "var(--fg-1)" }}>
-            {scopeLabel(session.current_scope_type, session.current_scope_id)}
-          </div>
-          <div className="mt-1 font-mono truncate" style={{ color: "var(--fg-3)" }} title={session.session_id}>
-            session:{session.session_id}
+    <article className="an-sp-card">
+      <div className="an-sp-card-top">
+        <div className="an-sp-scope" data-scope={meta.tone}>
+          <span className="an-sp-scope-icon">
+            <AppIcon name={meta.icon} />
+          </span>
+          <div className="an-sp-scope-copy">
+            <div className="an-sp-scope-label">{meta.label}</div>
+            <div className="an-sp-scope-detail">
+              <span>{meta.detail}</span>
+              <span className="an-sp-dot" />
+              <span title={session.current_scope_id}>{shortId(session.current_scope_id)}</span>
+            </div>
           </div>
         </div>
         <span
-          className="rounded px-2 py-0.5 whitespace-nowrap"
-          style={{ alignSelf: "start", background: tone.background, color: tone.color }}
+          className="an-sp-status"
+          style={{ background: tone.background, color: tone.color }}
         >
           {statusLabel(session.status)}
         </span>
       </div>
 
-      <div style={{ padding: "10px 12px", display: "grid", gap: 10 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) auto",
-            gap: 8,
-            alignItems: "start",
-          }}
-        >
-          <div
-            className="font-mono"
-            style={{
-              color: "var(--fg-2)",
-              background: "var(--surface-soft)",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              padding: "7px 8px",
-              lineHeight: 1.45,
-              overflowWrap: "anywhere",
-            }}
-            title={session.provider_session_key}
-          >
+      <div className="an-sp-card-body">
+        <div className="an-sp-key-row">
+          <div className="an-sp-key" title={shortKey(session.provider_session_key)}>
+            <span>Provider key</span>
             {expanded ? session.provider_session_key : shortKey(session.provider_session_key)}
           </div>
           <button
@@ -123,57 +231,63 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
             onClick={() => void copyText(session.provider_session_key)}
             title="Copy provider session key"
             aria-label="Copy provider session key"
-            style={{
-              width: 30,
-              height: 30,
-              display: "inline-grid",
-              placeItems: "center",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              background: "var(--bg-0)",
-              color: "var(--fg-2)",
-              cursor: "pointer",
-            }}
+            className="an-sp-copy"
           >
-            <AppIcon name="copy" style={{ width: 15, height: 15 }} />
+            <AppIcon name="copy" />
           </button>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: "6px 12px",
-            color: "var(--fg-2)",
-          }}
-        >
-          <div>Provider:{session.provider} / {session.provider_agent_id}</div>
-          <div>Account:{session.provider_account_id}</div>
-          <div>Create:{fmtTime(session.created_at)}</div>
-          <div>Last used: {fmtTime(session.last_used_at)}</div>
-        </div>
+        <dl className="an-sp-meta-grid">
+          <div>
+            <dt>Session</dt>
+            <dd title={session.session_id}>{shortId(session.session_id)}</dd>
+          </div>
+          <div>
+            <dt>Provider</dt>
+            <dd title={`${session.provider} / ${session.provider_agent_id}`}>
+              {session.provider} / {shortId(session.provider_agent_id)}
+            </dd>
+          </div>
+          <div>
+            <dt>Provider session</dt>
+            <dd title={session.provider_session_id || ""}>
+              {session.provider_session_id ? shortId(session.provider_session_id) : "-"}
+            </dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd>{fmtTime(session.created_at)}</dd>
+          </div>
+          <div>
+            <dt>Last used</dt>
+            <dd>{fmtTime(session.last_used_at)}</dd>
+          </div>
+        </dl>
 
         {bindings.length > 0 && (
-          <div style={{ display: "grid", gap: 6 }}>
-            <div className="an-rc-sub" style={{ marginTop: 0 }}>
-              Bindings · {bindings.length}
+          <div className="an-sp-bindings">
+            <div className="an-sp-section-label">
+              Scope bindings · {bindings.length}
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <div className="an-sp-binding-list">
               {visibleBindings.map((b) => (
                 <span
                   key={b.binding_id}
-                  className="rounded border px-1.5 py-0.5 font-mono"
-                  style={{
-                    borderColor: b.detached_at ? "var(--red)" : "var(--border)",
-                    color: b.detached_at ? "var(--red)" : "var(--fg-3)",
-                    maxWidth: "100%",
-                    overflowWrap: "anywhere",
-                  }}
-                  title={b.scope_id}
+                  className="an-sp-binding"
+                  data-scope={normalizeScope(b.scope_type)}
+                  data-detached={b.detached_at ? "1" : "0"}
+                  title={`${b.role} · ${b.scope_type} · ${b.scope_id}`}
                 >
-                  {b.role}:{b.scope_type}:{b.scope_id}
+                  <AppIcon name={scopeMeta(b.scope_type).icon} />
+                  <span>{scopeMeta(b.scope_type).label}</span>
+                  <span className="an-sp-binding-id">{shortId(b.scope_id)}</span>
                 </span>
               ))}
+              {!expanded && bindings.length > visibleBindings.length && (
+                <span className="an-sp-binding an-sp-binding-more">
+                  +{bindings.length - visibleBindings.length}
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -181,35 +295,162 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          style={{
-            justifySelf: "start",
-            border: 0,
-            background: "transparent",
-            color: "var(--accent)",
-            padding: 0,
-            fontSize: 12,
-            fontFamily: "inherit",
-            cursor: "pointer",
-          }}
+          className="an-sp-details"
         >
           {expanded ? "Collapse details" : "Expand details"}
         </button>
       </div>
+    </article>
+  );
+}
+
+type RelationScope = {
+  scopeType: string;
+  scopeId: string;
+};
+
+function activeSessionScope(session: AgentBridgeSession): RelationScope {
+  const scopeType = session.current_scope_type || "unknown";
+  const scopeId = session.current_scope_id || "";
+  return {
+    scopeType,
+    scopeId,
+  };
+}
+
+function statusKey(status: string): string {
+  if (status === "active" || status === "closed" || status === "task_owned") return status;
+  return "unknown";
+}
+
+function SessionRelationMap({
+  sessions,
+  onOpenScope,
+}: {
+  sessions: AgentBridgeSession[];
+  onOpenScope?: (target: SessionScopeTarget) => void;
+}) {
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const selectedSession = sessions.find((session) => session.session_id === selectedSessionId) || null;
+
+  useEffect(() => {
+    if (selectedSessionId && !selectedSession) {
+      setSelectedSessionId(null);
+    }
+  }, [selectedSession, selectedSessionId]);
+
+  return (
+    <div className="an-sp-map">
+      <div className="an-sp-map-canvas" aria-label="Session scope relation map">
+        {sessions.map((session, index) => {
+          const scope = activeSessionScope(session);
+          const meta = scopeMeta(scope.scopeType);
+          const selected = selectedSessionId === session.session_id;
+          const canOpenTarget = Boolean(onOpenScope && scope.scopeId);
+          return (
+            <div
+              key={session.session_id}
+              className={`an-sp-map-row ${selected ? "is-selected" : ""}`}
+            >
+              <button
+                type="button"
+                className="an-sp-session-node"
+                data-status={statusKey(session.status)}
+                onClick={() => setSelectedSessionId((value) => (value === session.session_id ? null : session.session_id))}
+                aria-expanded={selected}
+                title="Show session details"
+              >
+                <span className="an-sp-session-dot" />
+                <span>S{index + 1}</span>
+              </button>
+              <span className="an-sp-map-link" aria-hidden="true" />
+              <button
+                type="button"
+                className="an-sp-object-node"
+                data-scope={meta.tone}
+                disabled={!canOpenTarget}
+                onClick={() => onOpenScope?.({ scopeType: scope.scopeType, scopeId: scope.scopeId })}
+                title={canOpenTarget ? `Open ${scopeMapLabel(scope.scopeType)} · ${scope.scopeId}` : `${scopeMapLabel(scope.scopeType)} · ${scope.scopeId}`}
+              >
+                <AppIcon name={meta.icon} />
+                <span>{scopeMapLabel(scope.scopeType)}</span>
+                {scope.scopeId && <span className="an-sp-object-id">{shortId(scope.scopeId)}</span>}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {selectedSession && (
+        <div className="an-sp-map-details">
+          <SessionCard session={selectedSession} />
+        </div>
+      )}
     </div>
   );
 }
 
-export function SessionList({ sessions }: { sessions: AgentBridgeSession[] }) {
+export function SessionList({
+  sessions,
+  view = "cards",
+  onOpenScope,
+}: {
+  sessions: AgentBridgeSession[];
+  view?: "cards" | "map";
+  onOpenScope?: (target: SessionScopeTarget) => void;
+}) {
   if (sessions.length === 0) {
-    return (
-      <div className="text-xs" style={{ color: "var(--fg-3)" }}>
-        No Agent Bridge sessions.
-      </div>
-    );
+    return <div className="an-sp-empty">No Agent Bridge sessions.</div>;
+  }
+  if (view === "map") {
+    return <SessionRelationMap sessions={sessions} onOpenScope={onOpenScope} />;
   }
   return (
-    <div className="grid gap-2">
+    <div className="an-sp-list">
       {sessions.map((s) => <SessionCard key={s.session_id} session={s} />)}
+    </div>
+  );
+}
+
+function SessionPanelContent({
+  title,
+  scopeType,
+  sessions,
+  loading,
+  error,
+  canRefresh,
+  onRefresh,
+  refreshing,
+  onOpenScope,
+}: {
+  title: string;
+  scopeType: ScopeType;
+  sessions: AgentBridgeSession[];
+  loading: boolean;
+  error: string | null;
+  canRefresh: boolean;
+  onRefresh?: () => void;
+  refreshing: boolean;
+  onOpenScope?: (target: SessionScopeTarget) => void;
+}) {
+  return (
+    <div className="an-session-panel">
+      <SessionPanelHeader
+        title={title}
+        scopeType={scopeType}
+        sessions={sessions}
+        loading={loading}
+        canRefresh={canRefresh}
+        onRefresh={onRefresh}
+        refreshing={refreshing}
+      />
+      <div className="an-session-panel-body">
+        {error ? (
+          <div className="an-sp-error">{error}</div>
+        ) : (
+          <SessionList sessions={sessions} view="map" onOpenScope={onOpenScope} />
+        )}
+      </div>
     </div>
   );
 }
@@ -224,6 +465,8 @@ export function SessionScopePanel({
   variant = "block",
   onRefresh,
   refreshing = false,
+  canRefresh = false,
+  onOpenScope,
 }: {
   scopeType: ScopeType;
   scopeId: string;
@@ -234,17 +477,33 @@ export function SessionScopePanel({
   variant?: "block" | "toolbar";
   onRefresh?: () => void;
   refreshing?: boolean;
+  canRefresh?: boolean;
+  onOpenScope?: (target: SessionScopeTarget) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(variant === "block");
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<AgentBridgeSession[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const sessionScopeKey = `${scopeType}:${scopeId}:${channelId}:${botId ?? ""}`;
+  const shouldLoadSessions = variant === "block" || open;
+  const isCurrentScopeLoaded = loadedScopeKey === sessionScopeKey;
+  const visibleSessions = isCurrentScopeLoaded ? sessions : [];
+  const visibleLoading =
+    loading || (shouldLoadSessions && !isCurrentScopeLoaded && !error);
 
   useEffect(() => {
     let active = true;
     if (!scopeId || !channelId) {
       setSessions([]);
+      setLoadedScopeKey(null);
+      setLoading(false);
+      return;
+    }
+    if (!shouldLoadSessions) {
+      setLoading(false);
+      setError(null);
       return;
     }
     const params = new URLSearchParams({
@@ -255,16 +514,20 @@ export function SessionScopePanel({
     if (botId) params.set("bot_id", botId);
     setLoading(true);
     setError(null);
+    setSessions([]);
+    setLoadedScopeKey(null);
     apiFetch(`/agent-bridge/sessions/scope?${params.toString()}`)
       .then((r) => r.json())
       .then((d) => {
         if (!active) return;
         setSessions(Array.isArray(d?.data) ? d.data : []);
+        setLoadedScopeKey(sessionScopeKey);
       })
       .catch((e: unknown) => {
         if (!active) return;
         setError((e as Error).message || "Failed to load sessions");
         setSessions([]);
+        setLoadedScopeKey(sessionScopeKey);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -272,7 +535,7 @@ export function SessionScopePanel({
     return () => {
       active = false;
     };
-  }, [botId, channelId, refreshKey, scopeId, scopeType]);
+  }, [botId, channelId, refreshKey, scopeId, scopeType, sessionScopeKey, shouldLoadSessions]);
 
   useEffect(() => {
     if (variant !== "toolbar" || !open) return;
@@ -285,44 +548,44 @@ export function SessionScopePanel({
     return () => document.removeEventListener("mousedown", handler);
   }, [open, variant]);
 
+  const handleOpenScope = (target: SessionScopeTarget) => {
+    onOpenScope?.(target);
+    if (variant === "toolbar") setOpen(false);
+  };
+
   if (variant === "toolbar") {
-    const summary = loading ? "..." : String(sessions.length);
+    const summary = visibleLoading
+      ? "..."
+      : isCurrentScopeLoaded
+        ? String(visibleSessions.length)
+        : "-";
     return (
-      <div className={`an-session-control ${onRefresh ? "has-refresh" : ""}`} ref={wrapRef}>
+      <div className="an-session-control" ref={wrapRef}>
         <button
           type="button"
           className={`an-topics-btn an-session-btn ${open ? "on" : ""}`}
           onClick={() => setOpen((v) => !v)}
           title={title}
-          aria-label={`${title},${loading ? "Loading" : `${sessions.length} active sessions`}`}
+          aria-label={`${title},${visibleLoading ? "Loading" : isCurrentScopeLoaded ? `${visibleSessions.length} active sessions` : "not loaded"}`}
           aria-expanded={open}
         >
           <AppIcon name="link" />
           <span className="hidden sm:inline">Session</span>
           <span className="an-tb-n">{summary}</span>
         </button>
-        {onRefresh && (
-          <button
-            type="button"
-            className="an-session-refresh-btn"
-            onClick={onRefresh}
-            disabled={refreshing}
-            title="Refresh DM sessions"
-            aria-label="Refresh DM sessions"
-          >
-            <AppIcon name="refresh" className={refreshing ? "animate-spin" : ""} />
-          </button>
-        )}
         {open && (
           <div className="an-topics-pop an-session-pop">
-            <div className="an-hd">{title}</div>
-            <div className="an-session-pop-body">
-              {error ? (
-                <div className="text-xs" style={{ color: "var(--red)" }}>{error}</div>
-              ) : (
-                <SessionList sessions={sessions} />
-              )}
-            </div>
+            <SessionPanelContent
+              title={title}
+              scopeType={scopeType}
+              sessions={visibleSessions}
+              loading={visibleLoading}
+              error={error}
+              canRefresh={canRefresh}
+              onRefresh={onRefresh}
+              refreshing={refreshing}
+              onOpenScope={handleOpenScope}
+            />
           </div>
         )}
       </div>
@@ -330,27 +593,31 @@ export function SessionScopePanel({
   }
 
   return (
-    <div className="border-b px-4 py-2" style={{ borderColor: "var(--border)", background: "var(--bg-0)" }}>
+    <div className="an-session-block">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 text-left"
+        className="an-session-block-toggle"
       >
-        <span className="text-xs font-semibold" style={{ color: "var(--fg-2)" }}>
+        <span>
           {title}
         </span>
-        <span className="text-xs" style={{ color: "var(--fg-3)" }}>
-          {loading ? "Loading" : `${sessions.length} active sessions`} · {open ? "Collapse" : "Expand"}
+        <span>
+          {visibleLoading ? "Loading" : `${visibleSessions.length} active sessions`} · {open ? "Collapse" : "Expand"}
         </span>
       </button>
       {open && (
-        <div className="mt-2">
-          {error ? (
-            <div className="text-xs" style={{ color: "var(--red)" }}>{error}</div>
-          ) : (
-            <SessionList sessions={sessions} />
-          )}
-        </div>
+        <SessionPanelContent
+          title={title}
+          scopeType={scopeType}
+          sessions={visibleSessions}
+          loading={visibleLoading}
+          error={error}
+          canRefresh={canRefresh}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+          onOpenScope={handleOpenScope}
+        />
       )}
     </div>
   );
