@@ -1,7 +1,7 @@
 import type { Message } from "../types";
 
 export const MAX_LOADED_MESSAGES = 800;
-export const INITIAL_MESSAGE_PAGE_SIZE = 30;
+export const INITIAL_MESSAGE_PAGE_SIZE = 20;
 export const OLDER_MESSAGE_PAGE_SIZE = 60;
 export const VIRTUAL_MESSAGE_ESTIMATED_HEIGHT = 118;
 

@@ -7,6 +7,7 @@ import { refreshChannels, refreshDMs, refreshWorkspaces } from "../../../lib/ref
 import type { Channel, DM, Workspace } from "../../../types";
 
 const BUILTIN_HELPER_BOT_ID = "bot-helper-001";
+const MARK_READ_DELAY_MS = 250;
 
 interface UseWorkspaceDirectoryOptions {
   routeWorkspaceId: string;
@@ -383,13 +384,14 @@ export function useWorkspaceDirectory({
 
   useEffect(() => {
     if (!selectedId || !authToken) return;
+    const targetChannelId = selectedId;
     setChannels((prev) =>
       prev.some(
         (channel) =>
-          channel.channel_id === selectedId && (channel.unread_count ?? 0) > 0,
+          channel.channel_id === targetChannelId && (channel.unread_count ?? 0) > 0,
       )
         ? prev.map((channel) =>
-            channel.channel_id === selectedId
+            channel.channel_id === targetChannelId
               ? { ...channel, unread_count: 0 }
               : channel,
           )
@@ -397,19 +399,25 @@ export function useWorkspaceDirectory({
     );
     setDMs((prev) =>
       prev.some(
-        (dm) => dm.channel_id === selectedId && (dm.unread_count ?? 0) > 0,
+        (dm) => dm.channel_id === targetChannelId && (dm.unread_count ?? 0) > 0,
       )
         ? prev.map((dm) =>
-            dm.channel_id === selectedId ? { ...dm, unread_count: 0 } : dm,
+            dm.channel_id === targetChannelId ? { ...dm, unread_count: 0 } : dm,
           )
         : prev,
     );
-    apiFetch(`/channels/${selectedId}/read`, {
-      method: "POST",
-      token: authToken,
-    }).catch(() => {
-      /* ignore; the next list refresh re-syncs unread counts */
-    });
+
+    const timer = setTimeout(() => {
+      if (selectedIdRef.current !== targetChannelId) return;
+      apiFetch(`/channels/${targetChannelId}/read`, {
+        method: "POST",
+        token: authToken,
+      }).catch(() => {
+        /* ignore; the next list refresh re-syncs unread counts */
+      });
+    }, MARK_READ_DELAY_MS);
+
+    return () => clearTimeout(timer);
   }, [authToken, selectedId]);
 
   return {

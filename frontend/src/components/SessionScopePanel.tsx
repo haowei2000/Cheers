@@ -484,12 +484,26 @@ export function SessionScopePanel({
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<AgentBridgeSession[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loadedScopeKey, setLoadedScopeKey] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const sessionScopeKey = `${scopeType}:${scopeId}:${channelId}:${botId ?? ""}`;
+  const shouldLoadSessions = variant === "block" || open;
+  const isCurrentScopeLoaded = loadedScopeKey === sessionScopeKey;
+  const visibleSessions = isCurrentScopeLoaded ? sessions : [];
+  const visibleLoading =
+    loading || (shouldLoadSessions && !isCurrentScopeLoaded && !error);
 
   useEffect(() => {
     let active = true;
     if (!scopeId || !channelId) {
       setSessions([]);
+      setLoadedScopeKey(null);
+      setLoading(false);
+      return;
+    }
+    if (!shouldLoadSessions) {
+      setLoading(false);
+      setError(null);
       return;
     }
     const params = new URLSearchParams({
@@ -500,16 +514,20 @@ export function SessionScopePanel({
     if (botId) params.set("bot_id", botId);
     setLoading(true);
     setError(null);
+    setSessions([]);
+    setLoadedScopeKey(null);
     apiFetch(`/agent-bridge/sessions/scope?${params.toString()}`)
       .then((r) => r.json())
       .then((d) => {
         if (!active) return;
         setSessions(Array.isArray(d?.data) ? d.data : []);
+        setLoadedScopeKey(sessionScopeKey);
       })
       .catch((e: unknown) => {
         if (!active) return;
         setError((e as Error).message || "Failed to load sessions");
         setSessions([]);
+        setLoadedScopeKey(sessionScopeKey);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -517,7 +535,7 @@ export function SessionScopePanel({
     return () => {
       active = false;
     };
-  }, [botId, channelId, refreshKey, scopeId, scopeType]);
+  }, [botId, channelId, refreshKey, scopeId, scopeType, sessionScopeKey, shouldLoadSessions]);
 
   useEffect(() => {
     if (variant !== "toolbar" || !open) return;
@@ -536,7 +554,11 @@ export function SessionScopePanel({
   };
 
   if (variant === "toolbar") {
-    const summary = loading ? "..." : String(sessions.length);
+    const summary = visibleLoading
+      ? "..."
+      : isCurrentScopeLoaded
+        ? String(visibleSessions.length)
+        : "-";
     return (
       <div className="an-session-control" ref={wrapRef}>
         <button
@@ -544,7 +566,7 @@ export function SessionScopePanel({
           className={`an-topics-btn an-session-btn ${open ? "on" : ""}`}
           onClick={() => setOpen((v) => !v)}
           title={title}
-          aria-label={`${title},${loading ? "Loading" : `${sessions.length} active sessions`}`}
+          aria-label={`${title},${visibleLoading ? "Loading" : isCurrentScopeLoaded ? `${visibleSessions.length} active sessions` : "not loaded"}`}
           aria-expanded={open}
         >
           <AppIcon name="link" />
@@ -556,8 +578,8 @@ export function SessionScopePanel({
             <SessionPanelContent
               title={title}
               scopeType={scopeType}
-              sessions={sessions}
-              loading={loading}
+              sessions={visibleSessions}
+              loading={visibleLoading}
               error={error}
               canRefresh={canRefresh}
               onRefresh={onRefresh}
@@ -581,15 +603,15 @@ export function SessionScopePanel({
           {title}
         </span>
         <span>
-          {loading ? "Loading" : `${sessions.length} active sessions`} · {open ? "Collapse" : "Expand"}
+          {visibleLoading ? "Loading" : `${visibleSessions.length} active sessions`} · {open ? "Collapse" : "Expand"}
         </span>
       </button>
       {open && (
         <SessionPanelContent
           title={title}
           scopeType={scopeType}
-          sessions={sessions}
-          loading={loading}
+          sessions={visibleSessions}
+          loading={visibleLoading}
           error={error}
           canRefresh={canRefresh}
           onRefresh={onRefresh}

@@ -30,6 +30,8 @@ type ParticipantCacheEntry = {
 };
 
 const PARTICIPANT_CACHE_REVALIDATE_MS = 15_000;
+const PARTICIPANT_FETCH_DELAY_MS = 120;
+const PARTICIPANT_REVALIDATE_DELAY_MS = 400;
 
 function mapBots(items: MemberPayload[]): ChannelBot[] {
   return items
@@ -91,6 +93,7 @@ export function useChannelParticipants({
     }
     const targetChannelId = selectedId;
     const controller = new AbortController();
+    let fetchTimer: ReturnType<typeof setTimeout> | null = null;
     const cached = participantCacheRef.current[targetChannelId];
     if (cached) {
       setChannelBots(cached.bots);
@@ -103,45 +106,55 @@ export function useChannelParticipants({
       setChannelUsers([]);
     }
 
-    authFetch(`${API}/channels/${targetChannelId}/members?with_username=1`, {
-      signal: controller.signal,
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (
-          controller.signal.aborted ||
-          selectedIdRef.current !== targetChannelId
-        ) {
-          return;
-        }
-        if (data.data) {
-          const bots = mapBots(data.data);
-          const users = mapUsers(data.data);
-          participantCacheRef.current[targetChannelId] = {
-            bots,
-            users,
-            receivedAt: Date.now(),
-          };
-          setChannelBots(bots);
-          setChannelUsers(users);
-        } else {
-          participantCacheRef.current[targetChannelId] = {
-            bots: [],
-            users: [],
-            receivedAt: Date.now(),
-          };
+    const fetchMembers = () => {
+      authFetch(`${API}/channels/${targetChannelId}/members?with_username=1`, {
+        signal: controller.signal,
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (
+            controller.signal.aborted ||
+            selectedIdRef.current !== targetChannelId
+          ) {
+            return;
+          }
+          if (data.data) {
+            const bots = mapBots(data.data);
+            const users = mapUsers(data.data);
+            participantCacheRef.current[targetChannelId] = {
+              bots,
+              users,
+              receivedAt: Date.now(),
+            };
+            setChannelBots(bots);
+            setChannelUsers(users);
+          } else {
+            participantCacheRef.current[targetChannelId] = {
+              bots: [],
+              users: [],
+              receivedAt: Date.now(),
+            };
+            setChannelBots([]);
+            setChannelUsers([]);
+          }
+        })
+        .catch((error) => {
+          if ((error as { name?: string }).name === "AbortError") return;
+          if (selectedIdRef.current !== targetChannelId) return;
           setChannelBots([]);
           setChannelUsers([]);
-        }
-      })
-      .catch((error) => {
-        if ((error as { name?: string }).name === "AbortError") return;
-        if (selectedIdRef.current !== targetChannelId) return;
-        setChannelBots([]);
-        setChannelUsers([]);
-      });
+        });
+    };
 
-    return () => controller.abort();
+    fetchTimer = setTimeout(
+      fetchMembers,
+      cached ? PARTICIPANT_REVALIDATE_DELAY_MS : PARTICIPANT_FETCH_DELAY_MS,
+    );
+
+    return () => {
+      if (fetchTimer) clearTimeout(fetchTimer);
+      controller.abort();
+    };
   }, [authFetch, selectedId, selectedIdRef]);
 
   useEffect(() => {
