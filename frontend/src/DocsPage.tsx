@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
@@ -9,6 +9,32 @@ const API = "/api";  // Docs endpoints are provided by manual_routes and omit /v
 
 type DocFile = { name: string; stem: string; size: number; category?: string };
 const PREFERRED_DOC_STEMS = ["help/README"];
+
+function docRawUrl(stem: string): string {
+  const encodedStem = stem
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  return `${API}/docs/raw/${encodedStem}`;
+}
+
+async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    /* handled below */
+  }
+  if (!response.ok) {
+    const detail =
+      body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
+        ? body.detail
+        : fallbackMessage;
+    throw new Error(detail);
+  }
+  return body as T;
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -112,8 +138,12 @@ export default function DocsPage() {
   const [content, setContent] = useState("");
   const [editContent, setEditContent] = useState("");
   const [mode, setMode] = useState<"preview" | "edit">("preview");
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState("");
+  const [contentError, setContentError] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [contentReloadKey, setContentReloadKey] = useState(0);
   const [search, setSearch] = useState("");
   const [tocOpen, setTocOpen] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -123,15 +153,27 @@ export default function DocsPage() {
     return files.filter((file) => file.category !== "develop");
   }, [files]);
 
+  const loadDocs = useCallback(async () => {
+    setListLoading(true);
+    setListError("");
+    try {
+      const response = await fetch(`${API}/docs`);
+      const data = await readJson<{ files?: DocFile[] }>(response, "Failed to load docs list");
+      setFiles(Array.isArray(data.files) ? data.files : []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load docs list";
+      setListError(message);
+      setFiles([]);
+      toast.error("Failed to load docs list");
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
+
   // Load file list
   useEffect(() => {
-    fetch(`${API}/docs`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.files) setFiles(d.files);
-      })
-      .catch(() => toast.error("Failed to load docs list"));
-  }, []);
+    void loadDocs();
+  }, [loadDocs]);
 
   useEffect(() => {
     if (!files.length) return;
@@ -170,30 +212,43 @@ export default function DocsPage() {
   // Load file content
   useEffect(() => {
     if (!selected) return;
+    let cancelled = false;
     setLoading(true);
+    setContentError("");
     setContent("");
     setEditContent("");
-    fetch(`${API}/docs/raw/${encodeURIComponent(selected.stem)}`)
-      .then((r) => r.json())
+    fetch(docRawUrl(selected.stem))
+      .then((r) => readJson<{ content?: string }>(r, "Failed to load file"))
       .then((d) => {
+        if (cancelled) return;
         setContent(d.content ?? "");
         setEditContent(d.content ?? "");
       })
-      .catch(() => toast.error("Failed to load file"))
-      .finally(() => setLoading(false));
-  }, [selected]);
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Failed to load file";
+        setContentError(message);
+        toast.error("Failed to load file");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, contentReloadKey]);
 
   const handleSave = async () => {
     if (!selected) return;
     setSaving(true);
     try {
-      const r = await fetch(`${API}/docs/raw/${encodeURIComponent(selected.stem)}`, {
+      const r = await fetch(docRawUrl(selected.stem), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: editContent }),
       });
-      const d = await r.json();
-      if (d.status === "success") {
+      const d = await readJson<{ status?: string }>(r, "Save failed");
+      if (!d.status || d.status === "ok" || d.status === "success") {
         setContent(editContent);
         toast.success("Saved");
         setMode("preview");
@@ -253,7 +308,10 @@ export default function DocsPage() {
 
           {/* File list */}
           <div className="flex-1 overflow-y-auto py-1">
-            {filtered.length === 0 && (
+            {listLoading && (
+              <p className="an-type-meta px-4 py-3">Loading docs...</p>
+            )}
+            {!listLoading && filtered.length === 0 && (
               <p className="an-type-meta px-4 py-3">No files found.</p>
             )}
             {filtered.map((f) => {
@@ -302,8 +360,33 @@ export default function DocsPage() {
                 <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--fg-3)]">
                   <AppIcon name="file" className="h-7 w-7" />
                 </div>
-                <p className="an-type-body font-medium">Select a document</p>
-                <p className="an-type-meta mt-1">Select a user guide from the sidebar to read.</p>
+                <p className="an-type-body font-medium">
+                  {listLoading
+                    ? "Loading documents"
+                    : listError
+                      ? "Docs failed to load"
+                      : readableFiles.length === 0
+                        ? "No user documents found"
+                        : "Select a document"}
+                </p>
+                <p className="an-type-meta mt-1">
+                  {listLoading
+                    ? "Fetching the documentation index..."
+                    : listError
+                      ? listError
+                      : readableFiles.length === 0
+                        ? "The backend returned an empty docs list. Check that docs/ is mounted or packaged with the backend."
+                        : "Select a user guide from the sidebar to read."}
+                </p>
+                {(listError || (!listLoading && readableFiles.length === 0)) && (
+                  <button
+                    type="button"
+                    onClick={() => void loadDocs()}
+                    className="an-btn an-btn-primary an-btn-sm mt-4"
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -384,6 +467,21 @@ export default function DocsPage() {
                 {loading ? (
                   <div className="an-type-meta flex flex-1 items-center justify-center">
                     Loading...
+                  </div>
+                ) : contentError ? (
+                  <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+                    <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--fg-3)]">
+                      <AppIcon name="file" className="h-7 w-7" />
+                    </div>
+                    <p className="an-type-body font-medium">Document failed to load</p>
+                    <p className="an-type-meta mt-1">{contentError}</p>
+                    <button
+                      type="button"
+                      onClick={() => setContentReloadKey((value) => value + 1)}
+                      className="an-btn an-btn-primary an-btn-sm mt-4"
+                    >
+                      Retry
+                    </button>
                   </div>
                 ) : mode === "edit" ? (
                   /* Edit mode */
