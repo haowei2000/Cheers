@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import { LazyPanelFallback } from "../../../components/app/LazyPanelFallback";
+import { AppIcon } from "../../../components/icons/AppIcon";
 import { SessionScopePanel } from "../../../components/SessionScopePanel";
 import type { SessionScopeTarget } from "../../../components/SessionScopePanel";
 import type {
@@ -150,9 +151,10 @@ export function ChatTopicOverlay({
         </Suspense>
       ) : (
         <div className="an-topic-page">
-          <div className="an-tpp-top">
+          <div className="an-head an-tpp-top">
             <button type="button" className="an-tpp-back" onClick={onBack}>
-              ← Back to channel
+              <AppIcon name="arrowLeft" className="w-4 h-4" />
+              <span>Channel</span>
             </button>
             <div className="an-tpp-meta">
               <div className="an-tpp-crumbs">
@@ -160,10 +162,15 @@ export function ChatTopicOverlay({
                 <span className="an-sep">›</span>
                 <span>Topics</span>
               </div>
-              <div className="an-tpp-title">
-                {pageTopicError ||
-                  (pageTopicLoading ? "Loading topic messages" : "Topic message not found")}
-              </div>
+              <h1 className="an-title an-tpp-title">
+                <span className="an-hash">
+                  <AppIcon name="messageCircle" />
+                </span>
+                <span>
+                  {pageTopicError ||
+                    (pageTopicLoading ? "Loading topic messages" : "Topic message not found")}
+                </span>
+              </h1>
             </div>
           </div>
         </div>
