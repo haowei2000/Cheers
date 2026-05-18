@@ -5,6 +5,7 @@ import type {
   PointerEvent,
   ReactNode,
   RefObject,
+  WheelEvent,
 } from "react";
 import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
@@ -346,6 +347,20 @@ export function MessageComposer({
     }
   };
 
+  const handleTemplateWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const scroller = event.currentTarget;
+    if (scroller.scrollWidth <= scroller.clientWidth) return;
+
+    const delta =
+      Math.abs(event.deltaX) > Math.abs(event.deltaY)
+        ? event.deltaX
+        : event.deltaY;
+    if (delta === 0) return;
+
+    scroller.scrollLeft += delta;
+    event.preventDefault();
+  };
+
   const removePendingFile = (index: number, previewUrl: string | null) => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     onRemovePendingFile?.(index);
@@ -520,6 +535,7 @@ export function MessageComposer({
               <div
                 className="an-composer-template-scroll"
                 aria-label="Prompt templates"
+                onWheel={handleTemplateWheel}
               >
                 {promptTemplatesLoading ? (
                   <span className="an-composer-template-state">Loading...</span>
