@@ -49,8 +49,10 @@ services:
       - CONTEXT_DB_MIGRATION_TARGET=${CONTEXT_DB_MIGRATION_TARGET:-head}
       - ALLOW_DB_DOWNGRADE=${ALLOW_DB_DOWNGRADE:-0}
       - SEED_DATA=${SEED_DATA:-1}
+      - AGENTNEXUS_DOCS_DIR=/app/docs
     volumes:
       - ./data/backend:/app/data
+      - ./docs:/app/docs:ro
       - ./release:/app/release:ro
     depends_on:
       postgres:

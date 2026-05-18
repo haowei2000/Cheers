@@ -8,6 +8,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from app.docs_paths import resolve_docs_dir
 from app.features.bot_runtime.adapters.base import AgentPayload, BotAdapter
 from app.features.bot_runtime.pipeline.adapter_events import Delta, Final
 from app.services.admin.settings_store import get_provider_for_scope
@@ -17,10 +18,7 @@ logger = logging.getLogger("app.features.bot_runtime.adapters.help_bot")
 HISTORY_MSG_COUNT = 20
 HISTORY_MSG_MAX_CHARS = 500
 
-# Project root path from this adapter module.
-_BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
-# docs/help lives under the project root.
-_DOCS_DIR = _BACKEND_ROOT / "docs" / "help"
+_DOCS_DIR = resolve_docs_dir(Path(__file__)) / "help"
 
 # Cache loaded documentation content.
 _cached_docs: str | None = None
