@@ -26,7 +26,8 @@ import {
   type MessageRenderItem,
 } from "../messages/renderModel";
 
-const CHANNEL_CACHE_REVALIDATE_MS = 5_000;
+const ANCHORED_MESSAGE_CACHE_REVALIDATE_MS = 5_000;
+const LATEST_PRELOAD_CACHE_REVALIDATE_MS = 1_500;
 const JUMP_TO_BOTTOM_BOTTOM_GAP = 240;
 const JUMP_TO_BOTTOM_SCROLL_DISTANCE = 140;
 const JUMP_TO_BOTTOM_SETTLE_FRAMES = 12;
@@ -107,16 +108,6 @@ function cacheEntryToWindowState(
     hasMoreAfter: entry.hasMoreAfter,
     loading,
     anchorId: entry.anchorId,
-  };
-}
-
-function windowStateToCacheEntry(state: ChannelWindowState): ChannelMessageCacheEntry {
-  return {
-    store: state.store,
-    hasMore: state.hasMore,
-    hasMoreAfter: state.hasMoreAfter,
-    receivedAt: Date.now(),
-    anchorId: state.anchorId,
   };
 }
 
@@ -401,7 +392,8 @@ export function useChannelMessages({
       const cached = channelMessageCacheRef.current[channelId];
       if (
         !channelId ||
-        cached?.anchorId === null ||
+        (cached?.anchorId === null &&
+          Date.now() - cached.receivedAt < LATEST_PRELOAD_CACHE_REVALIDATE_MS) ||
         preloadRequestsRef.current[requestKey]
       ) {
         return;
@@ -507,7 +499,9 @@ export function useChannelMessages({
     const requestedAnchorId = pendingAnchorId || null;
     setFocusedMsgId(requestedAnchorId);
     const requestKey = fetchKey(targetChannelId, requestedAnchorId);
-    const cached = channelMessageCacheRef.current[targetChannelId];
+    const cached = requestedAnchorId
+      ? channelMessageCacheRef.current[targetChannelId]
+      : null;
     const cachedMatchesAnchor =
       cached &&
       (requestedAnchorId
@@ -526,7 +520,7 @@ export function useChannelMessages({
     suppressInitialScrollEventsRef.current = true;
     setRestoringInitialScroll(Boolean(requestedAnchorId));
     setJumpToBottomVisible(false);
-    if (cached && cachedMatchesAnchor) {
+    if (requestedAnchorId && cached && cachedMatchesAnchor) {
       setWindowState(cacheEntryToWindowState(targetChannelId, cached));
       if (cached.store.ids.length === 0) {
         suppressInitialScrollEventsRef.current = false;
@@ -543,7 +537,12 @@ export function useChannelMessages({
       });
     }
 
-    if (cached && cachedMatchesAnchor && Date.now() - cached.receivedAt < CHANNEL_CACHE_REVALIDATE_MS) {
+    if (
+      requestedAnchorId &&
+      cached &&
+      cachedMatchesAnchor &&
+      Date.now() - cached.receivedAt < ANCHORED_MESSAGE_CACHE_REVALIDATE_MS
+    ) {
       return () => controller.abort();
     }
 
@@ -573,18 +572,9 @@ export function useChannelMessages({
         channelMessageCacheRef.current[targetChannelId] = entry;
         setWindowState((prev) => {
           if (prev.channelId !== targetChannelId) return prev;
-          const prevMessages = storeToMessages(prev.store);
-          const store =
-            prevMessages.length === 0
-              ? entry.store
-              : messagesToStore(
-                  trimToRecentMessages(
-                    mergeMessagesChronologically(prevMessages, storeToMessages(entry.store)),
-                  ),
-                );
           return {
             channelId: targetChannelId,
-            store,
+            store: entry.store,
             hasMore: entry.hasMore,
             hasMoreAfter: entry.hasMoreAfter,
             loading: false,
@@ -626,11 +616,6 @@ export function useChannelMessages({
     setRestoringInitialScroll,
     setJumpToBottomVisible,
   ]);
-
-  useEffect(() => {
-    if (!selectedId || windowState.channelId !== selectedId || windowState.loading) return;
-    channelMessageCacheRef.current[selectedId] = windowStateToCacheEntry(windowState);
-  }, [selectedId, windowState]);
 
   const loadMoreMessages = useCallback(async () => {
     if (!selectedId || !hasMore || loadingMore) return;
