@@ -205,22 +205,22 @@ async def test_delete_message_soft_deletes_and_clears_payload(
 ) -> None:
     """Deleting a message keeps a tombstone and removes sensitive payload."""
     user_id = "a0000000-0000-0000-0000-000000000099"
-    ws = Workspace(workspace_id="f1000000-0000-0000-0000-000000000003", name="W3")
+    ws = Workspace(workspace_id="f1000000-0000-0000-0000-000000000203", name="W203")
     ch = Channel(
-        channel_id="e1000000-0000-0000-0000-000000000003",
+        channel_id="e1000000-0000-0000-0000-000000000203",
         workspace_id=ws.workspace_id,
         name="delete-message",
         type="public",
     )
     msg = Message(
-        msg_id="delete-message-soft-001",
+        msg_id="delete-message-soft-203",
         channel_id=ch.channel_id,
         sender_id=user_id,
         sender_type="user",
         content="sensitive text",
-        file_ids=["file-delete-message-001"],
-        mention_bot_ids=["bot-delete-message-001"],
-        mention_user_ids=["user-delete-message-001"],
+        file_ids=["file-delete-message-203"],
+        mention_bot_ids=["bot-delete-message-203"],
+        mention_user_ids=["user-delete-message-203"],
         is_secret=True,
         secret_encrypted="ciphertext",
         secret_token="secret-token",
