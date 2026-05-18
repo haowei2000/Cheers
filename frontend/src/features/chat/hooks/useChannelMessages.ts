@@ -4,8 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type { AuthFetch } from "../../../api/client";
 import { API } from "../../../lib/app-config";
-import { isClarifyReplyUserMessage } from "../../../lib/helper";
-import { buildTopicTree, isMsgReply, mergeMessagesChronologically } from "../../../lib/message";
+import { buildTopicTree, mergeMessagesChronologically } from "../../../lib/message";
 import {
   INITIAL_MESSAGE_PAGE_SIZE,
   MAX_LOADED_MESSAGES,
@@ -22,6 +21,10 @@ import {
   type MessageStore,
 } from "../../../lib/message-store";
 import type { Message } from "../../../types";
+import {
+  buildChatRenderModel,
+  type MessageRenderItem,
+} from "../messages/renderModel";
 
 const CHANNEL_CACHE_REVALIDATE_MS = 5_000;
 const JUMP_TO_BOTTOM_BOTTOM_GAP = 240;
@@ -36,6 +39,7 @@ interface UseChannelMessagesOptions {
   selectedIdRef: MutableRefObject<string | null>;
   pendingScrollMsgIdRef: MutableRefObject<string | null>;
   pageTopicMessages: Message[];
+  expandedTopics: Set<string>;
   setExpandedTopics: Dispatch<SetStateAction<Set<string>>>;
 }
 
@@ -164,7 +168,7 @@ function findVisibleMessageAnchor(container: HTMLElement | null): ChannelScrollP
 function findVirtualVisibleMessageAnchor(
   container: HTMLElement | null,
   virtualItems: VirtualItem[],
-  topicRoots: Message[],
+  renderItems: MessageRenderItem[],
 ): ChannelScrollPosition | null {
   if (!container || virtualItems.length === 0) return null;
   const scrollTop = container.scrollTop;
@@ -176,13 +180,14 @@ function findVirtualVisibleMessageAnchor(
 
   for (const item of virtualItems) {
     if (item.end < viewportTop || item.start > viewportBottom) continue;
-    const message = topicRoots[item.index];
-    if (!message) continue;
+    const renderItem = renderItems[item.index];
+    const msgId = renderItem?.msgId ?? renderItem?.rootId;
+    if (!msgId) continue;
     const distance = Math.abs(item.start - targetY);
     if (distance < bestDistance) {
       bestDistance = distance;
       best = {
-        msgId: message.msg_id,
+        msgId,
         offsetTop: item.start - scrollTop,
       };
     }
@@ -244,6 +249,7 @@ export function useChannelMessages({
   selectedIdRef,
   pendingScrollMsgIdRef,
   pageTopicMessages,
+  expandedTopics,
   setExpandedTopics,
 }: UseChannelMessagesOptions) {
   const [windowState, setWindowState] = useState<ChannelWindowState>(() =>
@@ -309,6 +315,7 @@ export function useChannelMessages({
   );
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingNewer, setLoadingNewer] = useState(false);
+  const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [restoringInitialScroll, setRestoringInitialScrollState] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
@@ -326,7 +333,7 @@ export function useChannelMessages({
   const restoringInitialScrollRef = useRef(false);
   const suppressInitialScrollEventsRef = useRef(false);
   const initialScrollTargetRef = useRef<InitialScrollTarget | null>(null);
-  const latestTopicRootsRef = useRef<Message[]>([]);
+  const latestRenderItemsRef = useRef<MessageRenderItem[]>([]);
   const latestVirtualItemsRef = useRef<VirtualItem[]>([]);
 
   const setRestoringInitialScroll = useCallback((value: boolean) => {
@@ -427,6 +434,7 @@ export function useChannelMessages({
       if (messageStore.byId[msgId]) return true;
 
       const targetChannelId = selectedId;
+      setFocusedMsgId(msgId);
       suppressInitialScrollEventsRef.current = true;
       setRestoringInitialScroll(true);
       setJumpToBottomVisible(false);
@@ -484,6 +492,7 @@ export function useChannelMessages({
     if (!selectedId) {
       cancelJumpToBottomRaf();
       setWindowState(emptyChannelWindowState());
+      setFocusedMsgId(null);
       suppressInitialScrollEventsRef.current = false;
       setRestoringInitialScroll(false);
       setJumpToBottomVisible(false);
@@ -496,6 +505,7 @@ export function useChannelMessages({
       pendingScrollMsgIdRef.current = null;
     }
     const requestedAnchorId = pendingAnchorId || null;
+    setFocusedMsgId(requestedAnchorId);
     const requestKey = fetchKey(targetChannelId, requestedAnchorId);
     const cached = channelMessageCacheRef.current[targetChannelId];
     const cachedMatchesAnchor =
@@ -642,7 +652,7 @@ export function useChannelMessages({
       findVirtualVisibleMessageAnchor(
         container,
         latestVirtualItemsRef.current,
-        latestTopicRootsRef.current,
+        latestRenderItemsRef.current,
       ) ?? findVisibleMessageAnchor(container);
     try {
       const response = await authFetch(
@@ -840,73 +850,65 @@ export function useChannelMessages({
     }, 100);
   }, [loading, messages, pendingScrollMsgIdRef]);
 
+  const {
+    topicRoots,
+    topicRepliesOf,
+    rootIdOf,
+    msgById,
+    clarifyAnsweredParentIds,
+    renderItems,
+  } = useMemo(
+    () => buildChatRenderModel(messages, isDmSelected, expandedTopics, focusedMsgId),
+    [expandedTopics, focusedMsgId, isDmSelected, messages],
+  );
+
   useEffect(() => {
-    const msgIdSet = new Set(messages.map((message) => message.msg_id));
-    const rootIdCache = new Map<string, string>();
-    function getRootId(msgId: string): string {
-      if (rootIdCache.has(msgId)) return rootIdCache.get(msgId)!;
-      const message = messages.find((item) => item.msg_id === msgId);
-      if (!message || !isMsgReply(message, msgIdSet) || !message.in_reply_to_msg_id) {
-        rootIdCache.set(msgId, msgId);
-        return msgId;
-      }
-      const rootId = getRootId(message.in_reply_to_msg_id);
-      rootIdCache.set(msgId, rootId);
-      return rootId;
-    }
     const toExpand = messages
-      .filter((message) => isMsgReply(message, msgIdSet) && message._streaming)
-      .map((message) => getRootId(message.msg_id));
-    if (toExpand.length > 0) {
-      setExpandedTopics((prev) => new Set([...prev, ...toExpand]));
-    }
-  }, [messages, setExpandedTopics]);
-
-  const { topicRoots, topicRepliesOf } = useMemo(
-    () => buildTopicTree(messages, isDmSelected),
-    [isDmSelected, messages],
-  );
-
-  const msgById = useMemo(
-    () => new Map(messages.map((message) => [message.msg_id, message])),
-    [messages],
-  );
-
-  const clarifyAnsweredParentIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const message of messages) {
-      if (
-        message.in_reply_to_msg_id &&
-        isClarifyReplyUserMessage(message.content)
-      ) {
-        ids.add(message.in_reply_to_msg_id);
+      .filter((message) => message._streaming && rootIdOf(message.msg_id) !== message.msg_id)
+      .map((message) => rootIdOf(message.msg_id))
+      .filter((rootId): rootId is string => Boolean(rootId));
+    if (toExpand.length === 0) return;
+    setExpandedTopics((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const rootId of toExpand) {
+        if (next.has(rootId)) continue;
+        next.add(rootId);
+        changed = true;
       }
-    }
-    return ids;
-  }, [messages]);
+      return changed ? next : prev;
+    });
+  }, [messages, rootIdOf, setExpandedTopics]);
 
   const rowVirtualizer = useVirtualizer({
-    count: topicRoots.length,
+    count: renderItems.length,
     getScrollElement: () => messagesContainerRef.current,
-    estimateSize: () => VIRTUAL_MESSAGE_ESTIMATED_HEIGHT,
+    estimateSize: (index) => {
+      const item = renderItems[index];
+      if (!item) return VIRTUAL_MESSAGE_ESTIMATED_HEIGHT;
+      if (item.kind === "day-divider") return 42;
+      if (item.kind === "topic-chip") return item.expanded ? 92 : 78;
+      if (item.kind === "topic-reply" || item.kind === "inline-reply") return 94;
+      return VIRTUAL_MESSAGE_ESTIMATED_HEIGHT;
+    },
     overscan: VIRTUAL_MESSAGE_OVERSCAN_ROWS,
     isScrollingResetDelay: 120,
     useAnimationFrameWithResizeObserver: true,
-    getItemKey: (index) => topicRoots[index]?.msg_id ?? index,
+    getItemKey: (index) => renderItems[index]?.key ?? index,
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
 
   useEffect(() => {
-    latestTopicRootsRef.current = topicRoots;
+    latestRenderItemsRef.current = renderItems;
     latestVirtualItemsRef.current = virtualItems;
-  }, [topicRoots, virtualItems]);
+  }, [renderItems, virtualItems]);
 
   useEffect(() => {
     if (
       loading ||
       restoringInitialScrollRef.current ||
       suppressInitialScrollEventsRef.current ||
-      topicRoots.length === 0 ||
+      renderItems.length === 0 ||
       virtualItems.length === 0
     ) {
       return;
@@ -926,7 +928,7 @@ export function useChannelMessages({
       return;
     }
     if (
-      lastIndex >= topicRoots.length - 3 &&
+      lastIndex >= renderItems.length - 3 &&
       bottomGap <= PAGINATION_EDGE_PX &&
       hasMoreNewer &&
       !loadingNewer
@@ -941,7 +943,7 @@ export function useChannelMessages({
     loading,
     loadingMore,
     loadingNewer,
-    topicRoots.length,
+    renderItems.length,
     virtualItems,
   ]);
 
@@ -952,15 +954,15 @@ export function useChannelMessages({
     downwardScrollDistanceRef.current = 0;
     setJumpToBottomVisible(false);
     stickToBottomRef.current = true;
-    if (topicRoots.length > 0) {
-      rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
+    if (renderItems.length > 0) {
+      rowVirtualizer.scrollToIndex(renderItems.length - 1, { align: "end" });
     }
 
     const settleToBottom = (remainingFrames: number) => {
       const nextContainer = messagesContainerRef.current;
       if (!nextContainer) return;
-      if (topicRoots.length > 0) {
-        rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
+      if (renderItems.length > 0) {
+        rowVirtualizer.scrollToIndex(renderItems.length - 1, { align: "end" });
       }
       nextContainer.scrollTop = Math.max(
         0,
@@ -985,11 +987,11 @@ export function useChannelMessages({
     jumpToBottomRafRef.current = requestAnimationFrame(() =>
       settleToBottom(JUMP_TO_BOTTOM_SETTLE_FRAMES),
     );
-  }, [cancelJumpToBottomRaf, rowVirtualizer, setJumpToBottomVisible, topicRoots.length]);
+  }, [cancelJumpToBottomRaf, renderItems.length, rowVirtualizer, setJumpToBottomVisible]);
 
   useLayoutEffect(() => {
     if (!messagesContainerRef.current || isLoadingOlderRef.current) return;
-    if (!selectedId || topicRoots.length === 0) return;
+    if (!selectedId || renderItems.length === 0) return;
     const container = messagesContainerRef.current;
     const channelChanged = lastAutoScrollChannelRef.current !== selectedId;
     lastAutoScrollChannelRef.current = selectedId;
@@ -1005,8 +1007,8 @@ export function useChannelMessages({
     if (channelChanged && initialTarget?.channelId === selectedId) {
       initialScrollTargetRef.current = null;
       if (initialTarget.align !== "bottom" && initialTarget.msgId) {
-        const targetIndex = topicRoots.findIndex(
-          (message) => message.msg_id === initialTarget.msgId,
+        const targetIndex = renderItems.findIndex(
+          (item) => item.msgId === initialTarget.msgId || item.rootId === initialTarget.msgId,
         );
         if (targetIndex >= 0) {
           rowVirtualizer.scrollToIndex(targetIndex, {
@@ -1038,7 +1040,7 @@ export function useChannelMessages({
     }
     if (!channelChanged && !stickToBottomRef.current) return;
 
-    rowVirtualizer.scrollToIndex(topicRoots.length - 1, { align: "end" });
+    rowVirtualizer.scrollToIndex(renderItems.length - 1, { align: "end" });
     container.scrollTop = container.scrollHeight;
     stickToBottomRef.current = true;
     setJumpToBottomVisible(false);
@@ -1052,8 +1054,8 @@ export function useChannelMessages({
     selectedIdRef,
     setRestoringInitialScroll,
     setJumpToBottomVisible,
-    topicRoots,
-    topicRoots.length,
+    renderItems,
+    renderItems.length,
   ]);
 
   const pageTopicSourceMessages = useMemo(
@@ -1078,6 +1080,7 @@ export function useChannelMessages({
     handleMessagesScroll,
     topicRoots,
     topicRepliesOf,
+    renderItems,
     msgById,
     clarifyAnsweredParentIds,
     rowVirtualizer,
