@@ -32,7 +32,6 @@ const STICK_TO_BOTTOM_GAP = 160;
 interface UseChannelMessagesOptions {
   selectedId: string | null;
   isDmSelected: boolean;
-  currentUserId: string | null;
   authFetch: AuthFetch;
   selectedIdRef: MutableRefObject<string | null>;
   pendingScrollMsgIdRef: MutableRefObject<string | null>;
@@ -51,7 +50,6 @@ type ChannelMessageCacheEntry = {
 type ChannelScrollPosition = {
   msgId: string;
   offsetTop: number;
-  savedAt?: number;
 };
 
 type InitialScrollTarget = {
@@ -61,70 +59,12 @@ type InitialScrollTarget = {
   offsetTop?: number;
 };
 
-const CHANNEL_POSITION_STORAGE_PREFIX = "agentnexus.channel-position.v2";
-const LEGACY_CHANNEL_POSITION_STORAGE_PREFIX = "agentnexus.channel-position.v1";
 const DEFAULT_ANCHOR_OFFSET_TOP = 96;
 const READING_ANCHOR_VIEWPORT_RATIO = 0.42;
 const INITIAL_SCROLL_SETTLE_FRAMES = 2;
 const EXPLICIT_SCROLL_SETTLE_FRAMES = 3;
 const PREPEND_SCROLL_SETTLE_FRAMES = 2;
 const PAGINATION_EDGE_PX = VIRTUAL_MESSAGE_ESTIMATED_HEIGHT * 2;
-const POSITION_SAVE_DEBOUNCE_MS = 180;
-const POSITION_SAVE_MIN_INTERVAL_MS = 500;
-
-function positionStorageKey(prefix: string, userId: string, channelId: string): string {
-  return `${prefix}:${userId}:${channelId}`;
-}
-
-function readSavedChannelPosition(userId: string | null, channelId: string): ChannelScrollPosition | null {
-  if (!userId) return null;
-  try {
-    const raw =
-      localStorage.getItem(positionStorageKey(CHANNEL_POSITION_STORAGE_PREFIX, userId, channelId)) ??
-      localStorage.getItem(positionStorageKey(LEGACY_CHANNEL_POSITION_STORAGE_PREFIX, userId, channelId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as {
-      msg_id?: unknown;
-      offset_top?: unknown;
-      saved_at?: unknown;
-    };
-    if (typeof parsed.msg_id !== "string" || !parsed.msg_id) return null;
-    const offsetTop =
-      typeof parsed.offset_top === "number" && Number.isFinite(parsed.offset_top)
-        ? parsed.offset_top
-        : DEFAULT_ANCHOR_OFFSET_TOP;
-    return {
-      msgId: parsed.msg_id,
-      offsetTop: Math.max(0, offsetTop),
-      savedAt:
-        typeof parsed.saved_at === "number" && Number.isFinite(parsed.saved_at)
-          ? parsed.saved_at
-          : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeSavedChannelPosition(
-  userId: string | null,
-  channelId: string,
-  position: ChannelScrollPosition,
-): void {
-  if (!userId || !channelId || !position.msgId) return;
-  try {
-    localStorage.setItem(
-      positionStorageKey(CHANNEL_POSITION_STORAGE_PREFIX, userId, channelId),
-      JSON.stringify({
-        msg_id: position.msgId,
-        offset_top: Math.max(0, Math.round(position.offsetTop)),
-        saved_at: Date.now(),
-      }),
-    );
-  } catch {
-    /* localStorage can be unavailable in private or constrained contexts. */
-  }
-}
 
 function fetchKey(channelId: string, anchorId: string | null): string {
   return `${channelId}:${anchorId || "bottom"}`;
@@ -254,7 +194,6 @@ function settleMessageAnchor(
 export function useChannelMessages({
   selectedId,
   isDmSelected,
-  currentUserId,
   authFetch,
   selectedIdRef,
   pendingScrollMsgIdRef,
@@ -290,20 +229,14 @@ export function useChannelMessages({
   const channelMessageCacheRef = useRef<Partial<Record<string, ChannelMessageCacheEntry>>>({});
   const preloadRequestsRef = useRef<Partial<Record<string, Promise<ChannelMessageCacheEntry | null>>>>({});
   const cacheGenerationRef = useRef(0);
+  const currentWindowAnchorIdRef = useRef<string | null>(null);
   const showJumpToBottomRef = useRef(false);
   const lastScrollTopRef = useRef(0);
-  const lastSavedPositionRef = useRef<{
-    channelId: string;
-    msgId: string;
-    offsetTop: number;
-    savedAt: number;
-  } | null>(null);
   const downwardScrollDistanceRef = useRef(0);
   const jumpToBottomRafRef = useRef<number | null>(null);
   const restoringInitialScrollRef = useRef(false);
   const suppressInitialScrollEventsRef = useRef(false);
   const initialScrollTargetRef = useRef<InitialScrollTarget | null>(null);
-  const positionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestTopicRootsRef = useRef<Message[]>([]);
   const latestVirtualItemsRef = useRef<VirtualItem[]>([]);
 
@@ -323,12 +256,6 @@ export function useChannelMessages({
     if (jumpToBottomRafRef.current === null) return;
     cancelAnimationFrame(jumpToBottomRafRef.current);
     jumpToBottomRafRef.current = null;
-  }, []);
-
-  const cancelPositionSaveTimer = useCallback(() => {
-    if (positionSaveTimerRef.current === null) return;
-    clearTimeout(positionSaveTimerRef.current);
-    positionSaveTimerRef.current = null;
   }, []);
 
   const fetchInitialMessages = useCallback(
@@ -373,12 +300,12 @@ export function useChannelMessages({
 
   const preloadChannelMessages = useCallback(
     (channelId: string) => {
-      const anchorId = readSavedChannelPosition(currentUserId, channelId)?.msgId ?? null;
+      const anchorId = null;
       const requestKey = fetchKey(channelId, anchorId);
+      const cached = channelMessageCacheRef.current[channelId];
       if (
         !channelId ||
-        channelMessageCacheRef.current[channelId]?.store.byId[anchorId || ""] ||
-        (!anchorId && channelMessageCacheRef.current[channelId]) ||
+        cached?.anchorId === null ||
         preloadRequestsRef.current[requestKey]
       ) {
         return;
@@ -402,7 +329,57 @@ export function useChannelMessages({
         });
       preloadRequestsRef.current[requestKey] = request;
     },
-    [currentUserId, fetchInitialMessages],
+    [fetchInitialMessages],
+  );
+
+  const ensureMessageLoaded = useCallback(
+    async (msgId: string): Promise<boolean> => {
+      if (!selectedId || !msgId) return false;
+      if (messageStore.byId[msgId]) return true;
+
+      const targetChannelId = selectedId;
+      suppressInitialScrollEventsRef.current = true;
+      setRestoringInitialScroll(true);
+      setJumpToBottomVisible(false);
+
+      try {
+        const entry = await fetchInitialMessages(targetChannelId, msgId);
+        if (selectedIdRef.current !== targetChannelId) return false;
+
+        initialScrollTargetRef.current = {
+          channelId: targetChannelId,
+          msgId: entry.anchorId,
+          align: entry.anchorId ? "center" : "bottom",
+        };
+        lastAutoScrollChannelRef.current = null;
+        stickToBottomRef.current = !entry.anchorId;
+        currentWindowAnchorIdRef.current = entry.anchorId;
+        channelMessageCacheRef.current[targetChannelId] = entry;
+        setMessageStore(entry.store);
+        setHasMore(entry.hasMore);
+        setHasMoreNewer(entry.hasMoreAfter);
+        if (entry.store.ids.length === 0) {
+          suppressInitialScrollEventsRef.current = false;
+          setRestoringInitialScroll(false);
+        }
+        return Boolean(entry.anchorId);
+      } catch (error) {
+        console.error(error);
+        if (selectedIdRef.current === targetChannelId) {
+          suppressInitialScrollEventsRef.current = false;
+          setRestoringInitialScroll(false);
+        }
+        return false;
+      }
+    },
+    [
+      fetchInitialMessages,
+      messageStore.byId,
+      selectedId,
+      selectedIdRef,
+      setJumpToBottomVisible,
+      setRestoringInitialScroll,
+    ],
   );
 
   useEffect(() => {
@@ -414,14 +391,14 @@ export function useChannelMessages({
   useEffect(() => {
     return () => {
       cancelJumpToBottomRaf();
-      cancelPositionSaveTimer();
     };
-  }, [cancelJumpToBottomRaf, cancelPositionSaveTimer]);
+  }, [cancelJumpToBottomRaf]);
 
   useLayoutEffect(() => {
     if (!selectedId) {
       cancelJumpToBottomRaf();
       setMessageStore(emptyMessageStore());
+      currentWindowAnchorIdRef.current = null;
       setHasMore(true);
       setHasMoreNewer(false);
       setLoading(false);
@@ -436,29 +413,29 @@ export function useChannelMessages({
     if (pendingAnchorId) {
       pendingScrollMsgIdRef.current = null;
     }
-    const savedPosition = pendingAnchorId
-      ? null
-      : readSavedChannelPosition(currentUserId, targetChannelId);
-    const savedAnchorId = pendingAnchorId || savedPosition?.msgId || null;
-    const requestKey = fetchKey(targetChannelId, savedAnchorId);
+    const requestedAnchorId = pendingAnchorId || null;
+    const requestKey = fetchKey(targetChannelId, requestedAnchorId);
     const cached = channelMessageCacheRef.current[targetChannelId];
-    const cachedMatchesAnchor = cached && (!savedAnchorId || cached.store.byId[savedAnchorId]);
-    stickToBottomRef.current = !savedAnchorId;
+    const cachedMatchesAnchor =
+      cached &&
+      (requestedAnchorId
+        ? cached.anchorId === requestedAnchorId && cached.store.byId[requestedAnchorId]
+        : cached.anchorId === null);
+    stickToBottomRef.current = !requestedAnchorId;
     initialScrollTargetRef.current = {
       channelId: targetChannelId,
-      msgId: savedAnchorId,
-      align: pendingAnchorId ? "center" : savedAnchorId ? "offset" : "bottom",
-      offsetTop: savedPosition?.offsetTop,
+      msgId: requestedAnchorId,
+      align: requestedAnchorId ? "center" : "bottom",
     };
     lastAutoScrollChannelRef.current = null;
     lastScrollTopRef.current = 0;
     downwardScrollDistanceRef.current = 0;
-    lastSavedPositionRef.current = null;
     cancelJumpToBottomRaf();
     suppressInitialScrollEventsRef.current = true;
-    setRestoringInitialScroll(Boolean(pendingAnchorId));
+    setRestoringInitialScroll(Boolean(requestedAnchorId));
     setJumpToBottomVisible(false);
     if (cached && cachedMatchesAnchor) {
+      currentWindowAnchorIdRef.current = cached.anchorId;
       setMessageStore(cached.store);
       setHasMore(cached.hasMore);
       setHasMoreNewer(cached.hasMoreAfter);
@@ -469,6 +446,7 @@ export function useChannelMessages({
       }
     } else {
       setMessageStore(emptyMessageStore());
+      currentWindowAnchorIdRef.current = null;
       setHasMore(true);
       setHasMoreNewer(false);
       setLoading(true);
@@ -480,7 +458,7 @@ export function useChannelMessages({
 
     const request =
       preloadRequestsRef.current[requestKey] ??
-      fetchInitialMessages(targetChannelId, savedAnchorId, controller.signal);
+      fetchInitialMessages(targetChannelId, requestedAnchorId, controller.signal);
 
     request
       .then((entry) => {
@@ -498,13 +476,10 @@ export function useChannelMessages({
         initialScrollTargetRef.current = {
           channelId: targetChannelId,
           msgId: entry.anchorId,
-          align: pendingAnchorId ? "center" : entry.anchorId ? "offset" : "bottom",
-          offsetTop:
-            entry.anchorId && entry.anchorId === savedPosition?.msgId
-              ? savedPosition.offsetTop
-              : undefined,
+          align: requestedAnchorId && entry.anchorId ? "center" : "bottom",
         };
         stickToBottomRef.current = !entry.anchorId;
+        currentWindowAnchorIdRef.current = entry.anchorId;
         channelMessageCacheRef.current[targetChannelId] = entry;
         setMessageStore((prev) => {
           const prevMessages = storeToMessages(prev);
@@ -541,7 +516,6 @@ export function useChannelMessages({
     return () => controller.abort();
   }, [
     cancelJumpToBottomRaf,
-    currentUserId,
     fetchInitialMessages,
     pendingScrollMsgIdRef,
     selectedId,
@@ -557,74 +531,9 @@ export function useChannelMessages({
       hasMore,
       hasMoreAfter: hasMoreNewer,
       receivedAt: Date.now(),
-      anchorId: readSavedChannelPosition(currentUserId, selectedId)?.msgId ?? null,
+      anchorId: currentWindowAnchorIdRef.current,
     };
-  }, [currentUserId, hasMore, hasMoreNewer, loading, messageStore, selectedId]);
-
-  const persistCurrentChannelPosition = useCallback(
-    (channelId: string | null = selectedId, force = false) => {
-      if (!channelId || !currentUserId) return;
-      const now = Date.now();
-      const lastSaved = lastSavedPositionRef.current;
-      if (
-        !force &&
-        lastSaved?.channelId === channelId &&
-        now - lastSaved.savedAt < POSITION_SAVE_MIN_INTERVAL_MS
-      ) {
-        return;
-      }
-      const position =
-        findVirtualVisibleMessageAnchor(
-          messagesContainerRef.current,
-          latestVirtualItemsRef.current,
-          latestTopicRootsRef.current,
-        ) ?? findVisibleMessageAnchor(messagesContainerRef.current);
-      if (!position) return;
-      if (
-        !force &&
-        lastSaved?.channelId === channelId &&
-        lastSaved.msgId === position.msgId &&
-        Math.abs(lastSaved.offsetTop - position.offsetTop) < 2
-      ) {
-        return;
-      }
-      writeSavedChannelPosition(currentUserId, channelId, position);
-      lastSavedPositionRef.current = {
-        channelId,
-        msgId: position.msgId,
-        offsetTop: position.offsetTop,
-        savedAt: now,
-      };
-    },
-    [currentUserId, selectedId],
-  );
-
-  const schedulePersistCurrentChannelPosition = useCallback(
-    (channelId: string | null = selectedId) => {
-      if (!channelId || !currentUserId) return;
-      cancelPositionSaveTimer();
-      positionSaveTimerRef.current = setTimeout(() => {
-        positionSaveTimerRef.current = null;
-        persistCurrentChannelPosition(channelId, false);
-      }, POSITION_SAVE_DEBOUNCE_MS);
-    },
-    [cancelPositionSaveTimer, currentUserId, persistCurrentChannelPosition, selectedId],
-  );
-
-  useEffect(() => {
-    return () => {
-      cancelPositionSaveTimer();
-      persistCurrentChannelPosition(selectedId, true);
-    };
-  }, [cancelPositionSaveTimer, persistCurrentChannelPosition, selectedId]);
-
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      persistCurrentChannelPosition(selectedId, true);
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [persistCurrentChannelPosition, selectedId]);
+  }, [hasMore, hasMoreNewer, loading, messageStore, selectedId]);
 
   const loadMoreMessages = useCallback(async () => {
     if (!selectedId || !hasMore || loadingMore) return;
@@ -780,13 +689,8 @@ export function useChannelMessages({
         setJumpToBottomVisible(false);
       }
 
-      schedulePersistCurrentChannelPosition(selectedId);
     },
-    [
-      schedulePersistCurrentChannelPosition,
-      selectedId,
-      setJumpToBottomVisible,
-    ],
+    [setJumpToBottomVisible],
   );
 
   useEffect(() => {
@@ -995,11 +899,6 @@ export function useChannelMessages({
       suppressInitialScrollEventsRef.current = false;
       lastScrollTopRef.current = container.scrollTop;
       setRestoringInitialScroll(false);
-      requestAnimationFrame(() => {
-        if (selectedIdRef.current === selectedId) {
-          persistCurrentChannelPosition(selectedId, true);
-        }
-      });
     };
 
     if (channelChanged && initialTarget?.channelId === selectedId) {
@@ -1044,14 +943,9 @@ export function useChannelMessages({
     setJumpToBottomVisible(false);
     if (channelChanged) {
       finishInitialPlacement();
-    } else {
-      requestAnimationFrame(() => {
-        persistCurrentChannelPosition(selectedId, true);
-      });
     }
   }, [
     messages,
-    persistCurrentChannelPosition,
     rowVirtualizer,
     selectedId,
     selectedIdRef,
@@ -1092,5 +986,6 @@ export function useChannelMessages({
     pageTopicSourceMessages,
     pageTopicRepliesOf,
     preloadChannelMessages,
+    ensureMessageLoaded,
   };
 }
