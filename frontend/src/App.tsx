@@ -499,6 +499,7 @@ export default function App() {
     handleMessagesScroll,
     topicRoots,
     topicRepliesOf,
+    renderItems,
     msgById,
     clarifyAnsweredParentIds,
     rowVirtualizer,
@@ -508,14 +509,15 @@ export default function App() {
     pageTopicSourceMessages,
     pageTopicRepliesOf,
     preloadChannelMessages,
+    ensureMessageLoaded,
   } = useChannelMessages({
     selectedId,
     isDmSelected,
-    currentUserId,
     authFetch,
     selectedIdRef,
     pendingScrollMsgIdRef,
     pageTopicMessages,
+    expandedTopics,
     setExpandedTopics,
   });
   const [processingBots, setProcessingBots] = useState<Record<string, string>>(
@@ -524,12 +526,30 @@ export default function App() {
 
   const [qcOpen, setQcOpen] = useState(false);
 
+  const handleMessageNavigate = useCallback(
+    (channelId: string, msgId?: string) => {
+      const workspaceId = getWorkspaceIdForChannel(channelId);
+      if (workspaceId) setSelectedWorkspaceId(workspaceId);
+      if (msgId) {
+        if (selectedIdRef.current === channelId) {
+          void ensureMessageLoaded(msgId);
+        } else {
+          pendingScrollMsgIdRef.current = msgId;
+        }
+      }
+      setSelectedId(channelId);
+    },
+    [
+      ensureMessageLoaded,
+      getWorkspaceIdForChannel,
+      selectedIdRef,
+      setSelectedId,
+      setSelectedWorkspaceId,
+    ],
+  );
 
   const handleNotifNavigate = (channelId: string, msgId?: string) => {
-    const workspaceId = getWorkspaceIdForChannel(channelId);
-    if (workspaceId) setSelectedWorkspaceId(workspaceId);
-    setSelectedId(channelId);
-    if (msgId) pendingScrollMsgIdRef.current = msgId;
+    handleMessageNavigate(channelId, msgId);
     setNotifPanelOpen(false);
   };
 
@@ -1329,6 +1349,7 @@ export default function App() {
             onOpenFilePreview={openFilePreview}
             onOpenPersonalFileMain={openPersonalFileInMain}
             onPreloadChannel={preloadChannelMessages}
+            onOpenMessage={handleMessageNavigate}
           />
         }
       >
@@ -1471,8 +1492,7 @@ export default function App() {
                 currentUser,
                 currentUserId,
                 authToken,
-                topicRoots,
-                topicRepliesOf,
+                renderItems,
                 virtualItems,
                 rowVirtualizer,
                 showJumpToBottom,
@@ -1481,12 +1501,10 @@ export default function App() {
                 botByUsername,
                 coordinatorBot,
                 userById,
-                msgById,
                 revealedSecrets,
                 secretTokens,
                 clarifyAnsweredParentIds,
                 pendingClarifyReplyMsgId,
-                expandedTopics,
                 collapsedMessages,
                 processingBots,
                 secretMode,
