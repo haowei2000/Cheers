@@ -1,5 +1,6 @@
 import {
   memo,
+  useCallback,
   useMemo,
   type Dispatch,
   type ReactNode,
@@ -143,6 +144,8 @@ type RowActionProps = {
   renderMemoryLoadButton: (message: Message) => ReactNode;
   renderForwardActionButtons?: ChatMessageListProps["renderForwardActionButtons"];
   showReply: boolean;
+  canDelete: boolean;
+  onDeleteMessage: (message: Message) => void;
 };
 
 const RowActions = memo(function RowActions({
@@ -158,7 +161,11 @@ const RowActions = memo(function RowActions({
   renderMemoryLoadButton,
   renderForwardActionButtons,
   showReply,
+  canDelete,
+  onDeleteMessage,
 }: RowActionProps) {
+  if (message.is_deleted) return null;
+
   return (
     <div className={`${actionVisibilityClass} an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
       <button
@@ -187,6 +194,16 @@ const RowActions = memo(function RowActions({
           className="an-chat-action"
         >
           <AppIcon name="reply" className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {canDelete && (
+        <button
+          type="button"
+          title="Delete message"
+          onClick={() => onDeleteMessage(message)}
+          className="an-chat-action"
+        >
+          <AppIcon name="trash" className="w-3.5 h-3.5" />
         </button>
       )}
     </div>
@@ -266,6 +283,14 @@ function MessageBody({
   compact = false,
 }: MessageBodyProps) {
   const message = vm.message;
+  if (message.is_deleted) {
+    return (
+      <span className="an-chat-meta" style={{ fontStyle: "italic" }}>
+        {vm.bodyContent}
+      </span>
+    );
+  }
+
   const secretSecsLeft =
     message.is_secret && !vm.secretRevealedContent && message.created_at
       ? getSecretSecondsLeft(message.created_at)
@@ -360,6 +385,8 @@ type MessageRowProps = {
   collapsedMessages: Set<string>;
   renderForwardActionButtons?: ChatMessageListProps["renderForwardActionButtons"];
   forwardSelectionMode: boolean;
+  canDelete: boolean;
+  onDeleteMessage: (message: Message) => void;
 };
 
 const MessageRow = memo(function MessageRow({
@@ -391,6 +418,8 @@ const MessageRow = memo(function MessageRow({
   collapsedMessages,
   renderForwardActionButtons,
   forwardSelectionMode,
+  canDelete,
+  onDeleteMessage,
 }: MessageRowProps) {
   const message = vm.message;
   const isTopicReply = item.kind === "topic-reply";
@@ -433,7 +462,7 @@ const MessageRow = memo(function MessageRow({
               <AppIcon name={collapsed ? "chevronDown" : "chevronUp"} className="w-3 h-3" />
             </button>
           </div>
-          {!collapsed && renderFileAttachments(message)}
+          {!collapsed && !message.is_deleted && renderFileAttachments(message)}
           {!collapsed && (
             <div className={`an-chat-bubble topic-reply ${vm.isOwn ? "own" : "other"}`}>
               <MessageBody
@@ -468,6 +497,8 @@ const MessageRow = memo(function MessageRow({
           renderMemoryLoadButton={renderMemoryLoadButton}
           renderForwardActionButtons={renderForwardActionButtons}
           showReply={showReply}
+          canDelete={canDelete}
+          onDeleteMessage={onDeleteMessage}
         />
       </div>
     );
@@ -489,7 +520,7 @@ const MessageRow = memo(function MessageRow({
               {message.content_data.title as string}
             </div>
           ) : null}
-          {renderFileAttachments(message, true)}
+          {!message.is_deleted && renderFileAttachments(message, true)}
           <div className="an-chat-bubble own">
             <MessageBody
               vm={vm}
@@ -521,6 +552,8 @@ const MessageRow = memo(function MessageRow({
           renderMemoryLoadButton={renderMemoryLoadButton}
           renderForwardActionButtons={renderForwardActionButtons}
           showReply={showReply}
+          canDelete={canDelete}
+          onDeleteMessage={onDeleteMessage}
         />
       </div>
     );
@@ -542,7 +575,7 @@ const MessageRow = memo(function MessageRow({
           {message.content_data?.title ? (
             <div className="an-chat-title mb-1">{message.content_data.title as string}</div>
           ) : null}
-          {renderFileAttachments(message)}
+          {!message.is_deleted && renderFileAttachments(message)}
           <div className="an-chat-bubble other">
             <MessageBody
               vm={vm}
@@ -574,6 +607,8 @@ const MessageRow = memo(function MessageRow({
           renderMemoryLoadButton={renderMemoryLoadButton}
           renderForwardActionButtons={renderForwardActionButtons}
           showReply={showReply}
+          canDelete={canDelete}
+          onDeleteMessage={onDeleteMessage}
         />
       </div>
     );
@@ -602,7 +637,7 @@ const MessageRow = memo(function MessageRow({
           {message.content_data?.title ? (
             <div className="an-chat-title mb-1">{message.content_data.title as string}</div>
           ) : null}
-          {renderFileAttachments(message)}
+          {!message.is_deleted && renderFileAttachments(message)}
           <div className="an-chat-body">
             <MessageBody
               vm={vm}
@@ -634,6 +669,8 @@ const MessageRow = memo(function MessageRow({
           renderMemoryLoadButton={renderMemoryLoadButton}
           renderForwardActionButtons={renderForwardActionButtons}
           showReply={showReply}
+          canDelete={canDelete}
+          onDeleteMessage={onDeleteMessage}
         />
       </div>
     </div>
@@ -705,13 +742,18 @@ const AnnouncementRow = memo(function AnnouncementRow({
   message,
   userById,
   currentUserId,
+  canDelete,
+  onDeleteMessage,
 }: {
   message: Message;
   userById: Map<string, ChannelUser>;
   currentUserId: string | null;
+  canDelete: boolean;
+  onDeleteMessage: (message: Message) => void;
 }) {
   const cd = (message.content_data ?? {}) as Record<string, unknown>;
-  const title = typeof cd.title === "string" ? cd.title : null;
+  const isDeleted = Boolean(message.is_deleted);
+  const title = !isDeleted && typeof cd.title === "string" ? cd.title : null;
   const pinnedById = typeof cd.pinned_by === "string" ? cd.pinned_by : null;
   const pinnedUser = pinnedById
     ? pinnedById === currentUserId
@@ -729,13 +771,29 @@ const AnnouncementRow = memo(function AnnouncementRow({
         <div className="an-ann-ico" aria-hidden="true">!</div>
         <div className="an-ann-tag">Announcement · Announcement</div>
         {title && <div className="an-ann-title">{title}</div>}
-        <div className="an-ann-body">{message.content}</div>
+        <div className="an-ann-body">
+          {isDeleted ? "This announcement was deleted." : message.content}
+        </div>
         <div className="an-ann-foot">
           <span>By {pinnedLabel} pinned</span>
           {message.created_at && (
             <>
               <span>·</span>
               <span>{formatChatTime(message.created_at)}</span>
+            </>
+          )}
+          {canDelete && !isDeleted && (
+            <>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={() => onDeleteMessage(message)}
+                className="an-chat-mini-action"
+                title="Delete announcement"
+                aria-label="Delete announcement"
+              >
+                <AppIcon name="trash" className="w-3 h-3" />
+              </button>
             </>
           )}
         </div>
@@ -937,6 +995,8 @@ const TopicChipRow = memo(function TopicChipRow({
   userById,
   setPageTopicId,
   toggleTopic,
+  canDelete,
+  onDeleteMessage,
 }: {
   item: Extract<MessageRenderItem, { kind: "topic-chip" }>;
   botById: Map<string, ChannelBot>;
@@ -945,10 +1005,15 @@ const TopicChipRow = memo(function TopicChipRow({
   userById: Map<string, ChannelUser>;
   setPageTopicId: Dispatch<SetStateAction<string | null>>;
   toggleTopic: (rootId: string) => void;
+  canDelete: boolean;
+  onDeleteMessage: (message: Message) => void;
 }) {
   const root = item.message;
+  const isDeleted = Boolean(root.is_deleted);
   const titleSummary =
-    (root.content_data?.title as string | undefined) ||
+    (isDeleted
+      ? "This topic was deleted."
+      : (root.content_data?.title as string | undefined)) ||
     root.content.replace(/\s+/g, " ").trim().slice(0, 90) ||
     "(No title)";
   type Participant = {
@@ -1051,6 +1116,17 @@ const TopicChipRow = memo(function TopicChipRow({
         >
           Open ›
         </button>
+        {canDelete && !isDeleted && (
+          <button
+            type="button"
+            onClick={() => onDeleteMessage(root)}
+            className="an-chat-action"
+            title="Delete topic"
+            aria-label="Delete topic"
+          >
+            <AppIcon name="trash" className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1150,6 +1226,55 @@ function ChatMessageListBase({
   forwardSelectionMode = false,
   renderForwardActionButtons,
 }: ChatMessageListProps) {
+  const canDeleteMessage = useCallback(
+    (message: Message) =>
+      Boolean(
+        selectedId &&
+          !message.is_deleted &&
+          (currentUser?.role === "system_admin" ||
+            selectedChannel?.can_manage ||
+            (message.sender_type === "user" && message.sender_id === currentUserId)),
+      ),
+    [currentUser?.role, currentUserId, selectedChannel?.can_manage, selectedId],
+  );
+
+  const deleteMessage = useCallback(
+    async (message: Message) => {
+      if (!selectedId || message.is_deleted) return;
+      if (!confirm("Delete this message?")) return;
+      try {
+        const response = await apiFetch(
+          `/channels/${selectedId}/messages/${message.msg_id}`,
+          { method: "DELETE", token: authToken },
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.status === "error") {
+          throw new Error(payload?.message || payload?.detail || "Delete failed");
+        }
+        const updated = payload?.data as Message | undefined;
+        setMessageStore((prev) =>
+          patchMessage(prev, message.msg_id, (current) => ({
+            ...current,
+            ...(updated || {}),
+            content: updated?.content ?? "",
+            content_data: updated?.content_data ?? current.content_data,
+            file_ids: updated?.file_ids ?? [],
+            files: updated?.files ?? [],
+            is_deleted: true,
+            deleted_at: updated?.deleted_at ?? new Date().toISOString(),
+            deleted_by: updated?.deleted_by ?? currentUserId,
+            _streaming: false,
+            _bot_status: undefined,
+          })),
+        );
+        toast.success("Message deleted");
+      } catch (error: unknown) {
+        toast.error((error as Error).message || "Delete failed");
+      }
+    },
+    [authToken, currentUserId, selectedId, setMessageStore],
+  );
+
   const viewModels = useMemo(() => {
     const byId = new Map<string, MessageViewModel>();
     for (const item of renderItems) {
@@ -1195,13 +1320,15 @@ function ChatMessageListBase({
           userById={userById}
           setPageTopicId={setPageTopicId}
           toggleTopic={toggleTopic}
+          canDelete={canDeleteMessage(item.message)}
+          onDeleteMessage={deleteMessage}
         />
       );
     }
 
     const message = item.message;
     if (item.kind === "message") {
-      if (message.msg_type === "routing") {
+      if (!message.is_deleted && message.msg_type === "routing") {
         return (
           <RoutingRow
             message={message}
@@ -1210,7 +1337,7 @@ function ChatMessageListBase({
           />
         );
       }
-      if (message.msg_type === "friend_request") {
+      if (!message.is_deleted && message.msg_type === "friend_request") {
         return (
           <FriendRequestRow
             message={message}
@@ -1221,7 +1348,7 @@ function ChatMessageListBase({
           />
         );
       }
-      if (message.msg_type === "permission") {
+      if (!message.is_deleted && message.msg_type === "permission") {
         return (
           <PermissionRow
             message={message}
@@ -1238,6 +1365,8 @@ function ChatMessageListBase({
             message={message}
             userById={userById}
             currentUserId={currentUserId}
+            canDelete={canDeleteMessage(message)}
+            onDeleteMessage={deleteMessage}
           />
         );
       }
@@ -1275,6 +1404,8 @@ function ChatMessageListBase({
         collapsedMessages={collapsedMessages}
         renderForwardActionButtons={renderForwardActionButtons}
         forwardSelectionMode={forwardSelectionMode}
+        canDelete={canDeleteMessage(message)}
+        onDeleteMessage={deleteMessage}
       />
     );
   };

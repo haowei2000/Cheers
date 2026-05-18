@@ -201,3 +201,20 @@ async def change_password(
     return APIResponse.ok(None, message="密码已更新")
 
 
+@router.delete("/users/me", response_model=APIResponse[None])
+async def delete_my_account(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    try:
+        from app.api.v1.avatars.routes import _get_avatar_storage
+        from app.services.avatar_service import AvatarService
+
+        await AvatarService(session, _get_avatar_storage()).delete_user_avatar(current_user)
+    except Exception:
+        # Account deactivation must not be blocked by an already-missing avatar
+        # object or by deployments without avatar storage enabled.
+        pass
+    await AuthService(session).deactivate_account(current_user)
+    return APIResponse.ok(None, message="账号已停用")
+

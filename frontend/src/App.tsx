@@ -409,6 +409,7 @@ export default function App() {
     [],
   );
   const [forwardSubmitting, setForwardSubmitting] = useState(false);
+  const [fileLibraryRefreshNonce, setFileLibraryRefreshNonce] = useState(0);
   const openForwardFile = useCallback((file: FileInfo) => {
     setForwardModalState({
       mode: "single",
@@ -1374,6 +1375,7 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenFilePreview={openFilePreview}
             onOpenPersonalFileMain={openPersonalFileInMain}
+            fileLibraryRefreshKey={fileLibraryRefreshNonce}
             onPreloadChannel={preloadChannelMessages}
             onOpenMessage={handleMessageNavigate}
           />
@@ -1423,7 +1425,16 @@ export default function App() {
                   contentType={mainFilePreviewPanel.contentType}
                   sizeBytes={mainFilePreviewPanel.sizeBytes}
                   subtitle={mainFilePreviewPanel.channelLabel}
+                  fileId={mainFilePreviewPanel.fileId}
+                  channelId={mainFilePreviewPanel.channelId}
+                  scopeType={mainFilePreviewPanel.scopeType}
+                  scopeId={mainFilePreviewPanel.scopeId}
+                  source={mainFilePreviewPanel.source}
                   variant="main"
+                  onDeleted={() => {
+                    setMainFilePreviewPanel(null);
+                    setFileLibraryRefreshNonce((value) => value + 1);
+                  }}
                   onClose={() => {
                     setMainFilePreviewPanel(null);
                     setSelectedId(null);
@@ -1653,6 +1664,7 @@ export default function App() {
             onMemoryTabChange={setMemoryTab}
             currentUserId={currentUserId}
             onFilePreview={openFilePreview}
+            onFileDeleted={() => setFileLibraryRefreshNonce((value) => value + 1)}
             onCloseMemory={() => setMemoryTab(null)}
             filePreviewPanel={filePreviewPanel}
             filePreviewWidth={filePreviewWidth}

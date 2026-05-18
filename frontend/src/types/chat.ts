@@ -57,6 +57,12 @@ export type FileInfo = {
   size_bytes?: number;
   status?: string;
   expires_at?: string | null;
+  channel_id?: string | null;
+  channel_label?: string | null;
+  scope_type?: string | null;
+  scope_id?: string | null;
+  summary_3lines?: string | null;
+  created_at?: string | null;
 };
 
 export type BotTraceEvent = {
@@ -129,6 +135,9 @@ export type Message = {
   files?: FileInfo[];
   is_secret?: boolean;
   secret_token?: string;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   /** True when the bot reply was finalized mid-stream (cancel/error).
    *  Renders a canceled / interrupted badge. */
   is_partial?: boolean;

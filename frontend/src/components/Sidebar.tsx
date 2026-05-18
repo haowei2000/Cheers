@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 import type { Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
@@ -53,6 +59,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenFilePreview?: (file: FileInfo) => void;
   onOpenPersonalFileMain?: (file: FileInfo) => void;
+  fileLibraryRefreshKey?: number;
   onPreloadChannel?: (channelId: string) => void;
   onOpenMessage?: (channelId: string, msgId: string) => void;
 }
@@ -68,6 +75,8 @@ type PersonalFileItem = FileInfo & {
   channel_label?: string | null;
   created_at?: string | null;
   summary_3lines?: string | null;
+  scope_type?: string | null;
+  scope_id?: string | null;
 };
 type ProjectTaskItem =
   | { kind: "dm"; key: string; dm: DM; botLabel: string; label: string; createdAt: number }
@@ -106,6 +115,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenFilePreview,
   onOpenPersonalFileMain,
+  fileLibraryRefreshKey = 0,
   onPreloadChannel,
   onOpenMessage,
 }: SidebarProps) {
@@ -335,7 +345,45 @@ export function Sidebar({
     return () => {
       active = false;
     };
-  }, [authToken, isPersonalWorkspace]);
+  }, [authToken, fileLibraryRefreshKey, isPersonalWorkspace]);
+
+  const deletePersonalFile = async (
+    file: PersonalFileItem,
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+    if (!confirm(`Delete ${file.original_filename || file.file_id}?`)) return;
+    try {
+      const params = new URLSearchParams();
+      if (file.channel_id) {
+        params.set("channel_id", file.channel_id);
+      } else if (file.scope_type && file.scope_id) {
+        params.set("scope_type", file.scope_type);
+        params.set("scope_id", file.scope_id);
+      }
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      const response = await apiFetch(
+        `/files/${encodeURIComponent(file.file_id)}${suffix}`,
+        { method: "DELETE", token: authToken },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.status === "error") {
+        throw new Error(payload?.message || payload?.detail || "Delete failed");
+      }
+      setPersonalFiles((files) =>
+        files.filter(
+          (item) =>
+            !(
+              item.file_id === file.file_id &&
+              (item.channel_id || "") === (file.channel_id || "")
+            ),
+        ),
+      );
+      toast.success("File deleted");
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Delete failed");
+    }
+  };
 
   const selectWorkspace = (workspaceId: string) => {
     setSelectedWorkspaceId(workspaceId);
@@ -1068,6 +1116,16 @@ export function Sidebar({
               <span className="an-name">
                 {file.original_filename || file.file_id}
               </span>
+            </button>
+            <button
+              type="button"
+              onClick={(event) => void deletePersonalFile(file, event)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+              style={{ color: "var(--fg-3)" }}
+              title="Delete file"
+              aria-label="Delete file"
+            >
+              <AppIcon name="trash" className="w-3 h-3" />
             </button>
           </li>
         ))}

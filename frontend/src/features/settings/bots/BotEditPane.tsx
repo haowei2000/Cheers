@@ -25,6 +25,11 @@ import type { BotConnectionTestResult, BotRow, BotScope, ModelItem, TemplateItem
 
 type BotSettingsTab = "profile" | "runtime" | "status";
 
+function isManagedBotAvatarUrl(value: string): boolean {
+  return value.startsWith("/api/v1/avatars/bots/") ||
+    value.includes("/api/v1/avatars/bots/");
+}
+
 export function BotEditPane({
   bot,
   authToken,
@@ -147,6 +152,29 @@ export function BotEditPane({
     } finally {
       setAvatarUploading(false);
       if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
+
+  const clearBotAvatar = async () => {
+    if (!avatarUrl) return;
+    if (!isManagedBotAvatarUrl(avatarUrl)) {
+      setAvatarUrl("");
+      return;
+    }
+    try {
+      const res = await apiFetch(`/avatars/bots/${bot.bot_id}`, {
+        method: "DELETE",
+        token: authToken,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.status === "error") {
+        throw new Error(data?.message || data?.detail || "Avatar clear failed");
+      }
+      setAvatarUrl("");
+      toast.success("Bot avatar cleared");
+      onUpdated();
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Avatar clear failed");
     }
   };
 
@@ -433,7 +461,7 @@ export function BotEditPane({
               {avatarUrl && (
                 <button
                   type="button"
-                  onClick={() => setAvatarUrl("")}
+                  onClick={() => void clearBotAvatar()}
                   className="an-btn an-btn-sm"
                 >
                   Clear

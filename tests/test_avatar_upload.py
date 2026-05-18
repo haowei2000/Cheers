@@ -99,6 +99,9 @@ class FakeStorage(StorageProvider):
         self.objects[(scope, file_id)] = (data, content_type)
         return self.resolve_file_id(file_id, scope=scope)
 
+    async def delete_object(self, file_id: str, *, scope: str = "uploads") -> None:
+        self.objects.pop((scope, file_id), None)
+
     def create_presigned_get_url(
         self,
         file_id: str,
@@ -139,6 +142,14 @@ async def test_user_avatar_upload_stores_in_storage_and_serves_stable_url(
     assert image_resp.status_code == 200
     assert image_resp.headers["content-type"].startswith("image/png")
     assert image_resp.content == PNG_1X1
+
+    delete_resp = await client.delete("/api/v1/avatars/users/me")
+    assert delete_resp.status_code == 200
+    assert delete_resp.json()["data"]["avatar_url"] is None
+    assert ("avatars", f"avatar-user-{TEST_USER_ID}") not in fake_avatar_storage.objects
+
+    missing_resp = await client.get(avatar_url)
+    assert missing_resp.status_code == 404
 
 
 @pytest.mark.asyncio

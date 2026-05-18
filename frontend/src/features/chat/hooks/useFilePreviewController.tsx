@@ -9,14 +9,18 @@ export type FilePreviewPanelState = {
   contentType?: string | null;
   sizeBytes?: number | null;
   fileId?: string;
-  channelId?: string;
-  channelLabel?: string;
+  channelId?: string | null;
+  channelLabel?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
   source?: "message" | "memory" | "personal";
 };
 
 type FileWithChannelMeta = FileInfo & {
-  channel_id?: string;
-  channel_label?: string;
+  channel_id?: string | null;
+  channel_label?: string | null;
+  scope_type?: string | null;
+  scope_id?: string | null;
 };
 
 export function useFilePreviewController({
@@ -45,6 +49,8 @@ export function useFilePreviewController({
       fileId: file.file_id,
       channelId: file.channel_id,
       channelLabel: file.channel_label,
+      scopeType: file.scope_type,
+      scopeId: file.scope_id,
       source,
     });
 

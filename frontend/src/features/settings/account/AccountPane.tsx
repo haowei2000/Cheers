@@ -54,6 +54,11 @@ function AvatarPreview({
   );
 }
 
+function isManagedAvatarUrl(value: string, kindPlural: "users" | "bots" | "workspaces"): boolean {
+  return value.startsWith(`/api/v1/avatars/${kindPlural}/`) ||
+    value.includes(`/api/v1/avatars/${kindPlural}/`);
+}
+
 // ── Profile pane (display name + bio + password) ──────────────────────────
 
 function ProfilePane({
@@ -143,6 +148,33 @@ function ProfilePane({
     } finally {
       setAvatarUploading(false);
       if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
+
+  const clearProfileAvatar = async () => {
+    if (!avatarUrl) return;
+    if (!isManagedAvatarUrl(avatarUrl, "users")) {
+      setAvatarUrl("");
+      return;
+    }
+    try {
+      const res = await apiFetch("/avatars/users/me", {
+        method: "DELETE",
+        token: authToken,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.status === "error") {
+        throw new Error(data?.message || data?.detail || "Avatar clear failed");
+      }
+      setAvatarUrl("");
+      onProfileUpdated({
+        display_name: displayName || currentUser.display_name,
+        bio,
+        avatar_url: null,
+      });
+      toast.success("Avatar cleared");
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Avatar clear failed");
     }
   };
 
@@ -293,7 +325,7 @@ function ProfilePane({
                   {avatarUrl && (
                     <button
                       type="button"
-                      onClick={() => setAvatarUrl("")}
+                      onClick={() => void clearProfileAvatar()}
                       className="an-btn an-btn-sm"
                     >
                       Clear
@@ -606,6 +638,33 @@ export function AccountPane({
   onProfileUpdated: (data: { display_name: string; bio?: string | null; avatar_url?: string | null }) => void;
   onLogout: () => void;
 }) {
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  const deleteAccount = async () => {
+    if (!currentUser || deletingAccount) return;
+    const typed = prompt(
+      `Type "${currentUser.username}" to deactivate this account. This removes profile data, friendships, keychain items, and avatar storage.`,
+    );
+    if (typed !== currentUser.username) return;
+    setDeletingAccount(true);
+    try {
+      const res = await apiFetch("/auth/users/me", {
+        method: "DELETE",
+        token: authToken,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.status === "error") {
+        throw new Error(data?.message || data?.detail || "Account deletion failed");
+      }
+      toast.success("Account deactivated");
+      onLogout();
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Account deletion failed");
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
   if (!currentUser) {
     return (
       <div className="an-pane">
@@ -630,10 +689,26 @@ export function AccountPane({
         style={{ justifyContent: "space-between", marginTop: 12, flexShrink: 0 }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="an-rc-title" style={{ color: "var(--red)" }}>Sign outSign in</div>
+          <div className="an-rc-title" style={{ color: "var(--red)" }}>Sign out</div>
           <div className="an-rc-sub">Clear the local token and return to sign-in.</div>
         </div>
-        <DangerButton onClick={onLogout}>Sign outSign in</DangerButton>
+        <DangerButton onClick={onLogout}>Sign out</DangerButton>
+      </div>
+      <div
+        className="an-row-card"
+        style={{ justifyContent: "space-between", marginTop: 12, flexShrink: 0 }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="an-rc-title" style={{ color: "var(--red)" }}>
+            Delete account
+          </div>
+          <div className="an-rc-sub">
+            Deactivate this user and remove owned profile, friendship, keychain, and avatar data.
+          </div>
+        </div>
+        <DangerButton onClick={() => void deleteAccount()} disabled={deletingAccount}>
+          {deletingAccount ? "Deleting..." : "Delete account"}
+        </DangerButton>
       </div>
     </div>
   );

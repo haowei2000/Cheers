@@ -18,4 +18,8 @@ export type ChannelFilePreview = {
   original_filename?: string | null;
   content_type?: string | null;
   size_bytes?: number | null;
+  channel_id?: string | null;
+  channel_label?: string | null;
+  scope_type?: string | null;
+  scope_id?: string | null;
 };

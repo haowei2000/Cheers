@@ -157,6 +157,8 @@ class User(Base):
     bio: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="member")
     avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -258,6 +260,9 @@ class Message(Base):
     secret_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     secret_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     is_partial: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0", default=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="messages")
 
