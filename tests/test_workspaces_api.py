@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace, WorkspaceMembership
 from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
+from app.services.channel_service import parse_personal_project_channel_purpose
 from app.services.workspace_service import WorkspaceService
 
 
@@ -76,6 +77,92 @@ async def test_personal_workspace_bootstraps_helper_dm(
     assert messages[0].sender_id == HELPER_BOT_ID
     assert "natural language" in messages[0].content
     assert "Docs" in messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_personal_project_supports_channel_and_bot_dm_tasks(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Personal Project task groups can contain private channels and bot DMs."""
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000031",
+        username="project_bot",
+        display_name="Project Bot",
+        status="online",
+        scope="everyone",
+    )
+    db_session.add(bot)
+    await db_session.commit()
+
+    ws_resp = await client.get("/api/v1/workspaces")
+    assert ws_resp.status_code == 200
+    personal_ws = next(w for w in ws_resp.json()["data"] if w["kind"] == "personal")
+
+    channel_resp = await client.post(
+        "/api/v1/channels",
+        json={
+            "workspace_id": personal_ws["workspace_id"],
+            "name": "Spec Review",
+            "type": "private",
+            "allow_member_invites": False,
+            "allow_bot_adds": True,
+            "project_id": "project-alpha",
+            "project_title": "Alpha Project",
+            "task_title": "Spec Review",
+        },
+    )
+    assert channel_resp.status_code == 200
+    channel_data = channel_resp.json()["data"]
+    assert channel_data["type"] == "private"
+    assert channel_data["project_id"] == "project-alpha"
+    assert channel_data["project_title"] == "Alpha Project"
+    assert channel_data["task_title"] == "Spec Review"
+    assert channel_data["project_task_type"] == "channel"
+    assert channel_data["allow_member_invites"] is False
+    assert channel_data["allow_bot_adds"] is True
+
+    channel_row = await db_session.get(Channel, channel_data["channel_id"])
+    assert channel_row is not None
+    assert parse_personal_project_channel_purpose(channel_row.purpose) == {
+        "project_id": "project-alpha",
+        "project_title": "Alpha Project",
+        "task_title": "Spec Review",
+        "project_task_type": "channel",
+    }
+
+    listed_channels = await client.get(f"/api/v1/channels/by-workspace/{personal_ws['workspace_id']}")
+    assert listed_channels.status_code == 200
+    listed_project = next(
+        row for row in listed_channels.json()["data"] if row["channel_id"] == channel_data["channel_id"]
+    )
+    assert listed_project["project_task_type"] == "channel"
+    assert listed_project["project_title"] == "Alpha Project"
+
+    dm_resp = await client.post(
+        "/api/v1/dms",
+        json={
+            "workspace_id": personal_ws["workspace_id"],
+            "member_id": bot.bot_id,
+            "member_type": "bot",
+            "create_new": True,
+            "title": "Bot Research",
+            "project_id": "project-alpha",
+            "project_title": "Alpha Project",
+            "chat_title": "Bot Research",
+        },
+    )
+    assert dm_resp.status_code == 200
+    dm_data = dm_resp.json()["data"]
+    assert dm_data["project_id"] == "project-alpha"
+    assert dm_data["project_title"] == "Alpha Project"
+    assert dm_data["chat_title"] == "Bot Research"
+
+    dm_list = await client.get("/api/v1/dms")
+    assert dm_list.status_code == 200
+    listed_dm = next(row for row in dm_list.json()["data"] if row["channel_id"] == dm_data["channel_id"])
+    assert listed_dm["project_id"] == "project-alpha"
+    assert listed_dm["chat_title"] == "Bot Research"
 
 
 @pytest.mark.asyncio

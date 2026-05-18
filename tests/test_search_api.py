@@ -15,6 +15,7 @@ from app.db.models import (
     Channel,
     ChannelMembership,
     FileRecord,
+    FileScopeLink,
     Friendship,
     Message,
     TodoItem,
@@ -300,7 +301,8 @@ async def test_global_nav_file_search_respects_membership_and_scopes(db_session:
     )
     second_file = FileRecord(
         file_id="sr-file-second",
-        channel_id=second_ch.channel_id,
+        channel_id=None,
+        workspace_id=visible_ws.workspace_id,
         uploader_id=user.user_id,
         original_path="/tmp/sr-file-second.docx",
         original_filename="second-file.docx",
@@ -312,7 +314,7 @@ async def test_global_nav_file_search_respects_membership_and_scopes(db_session:
     hidden_file = FileRecord(
         file_id="sr-file-hidden",
         channel_id=hidden_ch.channel_id,
-        uploader_id=user.user_id,
+        uploader_id="sr-file-hidden-uploader",
         original_path="/tmp/sr-file-hidden.pdf",
         original_filename="needle-hidden.pdf",
         content_type="application/pdf",
@@ -333,6 +335,13 @@ async def test_global_nav_file_search_respects_membership_and_scopes(db_session:
         first_file,
         second_file,
         hidden_file,
+        FileScopeLink(
+            file_id=second_file.file_id,
+            scope_type="channel",
+            scope_id=second_ch.channel_id,
+            workspace_id=visible_ws.workspace_id,
+            created_by=user.user_id,
+        ),
     ])
     await db_session.flush()
 

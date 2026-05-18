@@ -64,11 +64,14 @@ type PersonalAddDialogState = {
   projectTitle: string;
 } | null;
 type PersonalFileItem = FileInfo & {
-  channel_id: string;
-  channel_label: string;
+  channel_id?: string | null;
+  channel_label?: string | null;
   created_at?: string | null;
   summary_3lines?: string | null;
 };
+type ProjectTaskItem =
+  | { kind: "dm"; key: string; dm: DM; botLabel: string; label: string; createdAt: number }
+  | { kind: "channel"; key: string; channel: Channel; label: string; createdAt: number };
 
 const wsColor = (id: string) => {
   let h = 0;
@@ -107,8 +110,16 @@ export function Sidebar({
   onOpenMessage,
 }: SidebarProps) {
   const currentWs = workspaces.find((w) => w.workspace_id === selectedWorkspaceId);
-  const currentWsLabel = currentWs ? currentWs.name : "All workspaces";
-  const currentWsLetter = currentWs ? currentWs.name.slice(0, 1).toUpperCase() : "A";
+  const currentWsLabel = currentWs
+    ? currentWs.kind === "personal"
+      ? "Personal"
+      : currentWs.name
+    : "All spaces";
+  const currentWsLetter = currentWs
+    ? currentWs.kind === "personal"
+      ? "P"
+      : [...currentWs.name.trim()].slice(0, 2).join("").toUpperCase() || "?"
+    : "∗";
   const currentWsAccent = currentWs ? wsColor(currentWs.workspace_id) : "var(--accent)";
   const currentWsAvatarUrl = currentWs?.avatar_url || (!currentWs ? ALL_WORKSPACES_AVATAR : "");
   const [searchWorkspaceId, setSearchWorkspaceId] = useState(selectedWorkspaceId);
@@ -119,8 +130,10 @@ export function Sidebar({
     ? workspaces.find((w) => w.workspace_id === searchWorkspaceId)
     : null;
   const searchScopeName = searchWorkspaceId
-    ? searchWorkspace?.name || "Current workspace"
-    : "All workspaces";
+    ? searchWorkspace?.kind === "personal"
+      ? "Personal"
+      : searchWorkspace?.name || "Current workspace"
+    : "All spaces";
   const searchScopeLabel = searchWorkspaceId ? searchScopeName : "All spaces";
   const searchScopeTitle = searchWorkspaceId
     ? `Channel and message scope: ${searchScopeName}; members and bots are searched globally`
@@ -186,6 +199,8 @@ export function Sidebar({
   const [personalAddDialog, setPersonalAddDialog] =
     useState<PersonalAddDialogState>(null);
   const [projectDraftTitle, setProjectDraftTitle] = useState("");
+  const [projectTaskKind, setProjectTaskKind] = useState<"bot" | "channel">("bot");
+  const [channelTaskDraftTitle, setChannelTaskDraftTitle] = useState("");
   const [personalFiles, setPersonalFiles] = useState<PersonalFileItem[]>([]);
   const [personalFilesLoading, setPersonalFilesLoading] = useState(false);
 
@@ -215,27 +230,21 @@ export function Sidebar({
   );
 
   const projectGroups = useMemo(() => {
-    const sorted = visiblePersonalDms
-      .filter((dm) => dm.counterparty.member_type === "bot")
-      .sort((a, b) => {
-        const aProject = a.project_title || "Project 1";
-        const bProject = b.project_title || "Project 1";
-        const projectOrder = aProject.localeCompare(bProject, "zh-Hans-CN");
-        if (projectOrder !== 0) return projectOrder;
-        const at = a.created_at ? Date.parse(a.created_at) : 0;
-        const bt = b.created_at ? Date.parse(b.created_at) : 0;
-        return at - bt;
-      });
     const groups = new Map<
       string,
       {
         projectId: string;
         projectTitle: string;
-        chats: { dm: DM; botLabel: string; chatLabel: string }[];
+        tasks: ProjectTaskItem[];
       }
     >();
     const counts = new Map<string, number>();
-    for (const dm of sorted) {
+    const ensureGroup = (projectId: string, projectTitle: string) => {
+      const group = groups.get(projectId) || { projectId, projectTitle, tasks: [] };
+      groups.set(projectId, group);
+      return group;
+    };
+    for (const dm of visiblePersonalDms.filter((item) => item.counterparty.member_type === "bot")) {
       const cp = dm.counterparty;
       const botLabel = cp.display_name || cp.username || "Bot";
       const projectId = dm.project_id || "personal-project-default";
@@ -243,70 +252,73 @@ export function Sidebar({
       const next = (counts.get(projectId) || 0) + 1;
       counts.set(projectId, next);
       const chatLabel = dm.chat_title?.trim() || dm.title?.trim() || `Chat ${next}`;
-      const group =
-        groups.get(projectId) ||
-        { projectId, projectTitle, chats: [] };
-      group.chats.push({ dm, botLabel, chatLabel });
-      groups.set(projectId, group);
+      ensureGroup(projectId, projectTitle).tasks.push({
+        kind: "dm",
+        key: dm.channel_id,
+        dm,
+        botLabel,
+        label: `${botLabel} · ${chatLabel}`,
+        createdAt: dm.created_at ? Date.parse(dm.created_at) : 0,
+      });
     }
-    return [...groups.values()];
-  }, [visiblePersonalDms]);
+    for (const channel of channels) {
+      if (
+        channel.workspace_id !== selectedWorkspaceId ||
+        channel.project_task_type !== "channel" ||
+        !channel.project_id
+      ) {
+        continue;
+      }
+      const projectTitle = channel.project_title || "Project 1";
+      ensureGroup(channel.project_id, projectTitle).tasks.push({
+        kind: "channel",
+        key: channel.channel_id,
+        channel,
+        label: channel.task_title || channel.name || "Channel",
+        createdAt: 0,
+      });
+    }
+    return [...groups.values()]
+      .sort((a, b) => a.projectTitle.localeCompare(b.projectTitle, "zh-Hans-CN"))
+      .map((group) => ({
+        ...group,
+        tasks: group.tasks.sort((a, b) => a.createdAt - b.createdAt || a.label.localeCompare(b.label, "zh-Hans-CN")),
+      }));
+  }, [channels, selectedWorkspaceId, visiblePersonalDms]);
 
   const nextProjectTitle = () => `Project ${projectGroups.length + 1}`;
 
   const nextProjectChatTitle = (projectId: string) => {
     const count =
-      projectGroups.find((group) => group.projectId === projectId)?.chats.length ?? 0;
+      projectGroups.find((group) => group.projectId === projectId)?.tasks.length ?? 0;
     return `Chat ${count + 1}`;
   };
 
-  const personalFileChannelKey = useMemo(
-    () =>
-      visiblePersonalDms
-        .map((dm) => dm.channel_id)
-        .sort()
-        .join("|"),
-    [visiblePersonalDms],
-  );
+  const nextProjectTaskTitle = (projectId: string) => {
+    const count =
+      projectGroups.find((group) => group.projectId === projectId)?.tasks.length ?? 0;
+    return `Task ${count + 1}`;
+  };
 
   useEffect(() => {
-    if (!isPersonalWorkspace || visiblePersonalDms.length === 0) {
+    if (!isPersonalWorkspace) {
       setPersonalFiles([]);
       setPersonalFilesLoading(false);
       return;
     }
     let active = true;
     setPersonalFilesLoading(true);
-    Promise.all(
-      visiblePersonalDms.map(async (dm) => {
-        const cp = dm.counterparty;
-        const channelLabel =
-          dm.title ||
-          cp.display_name ||
-          cp.username ||
-          (cp.member_type === "bot" ? "Bot Chat" : "DMs");
-        try {
-          const response = await apiFetch(`/files/by-channel/${dm.channel_id}`, {
-            token: authToken,
-          });
-          if (!response.ok) return [];
-          const payload = await response.json();
-          const files = Array.isArray(payload?.data) ? payload.data : [];
-          return files.map((file: FileInfo & { created_at?: string | null; summary_3lines?: string | null }) => ({
-            ...file,
-            channel_id: dm.channel_id,
-            channel_label: channelLabel,
-          }));
-        } catch {
-          return [];
-        }
-      }),
-    )
-      .then((groups) => {
+    apiFetch("/files/library", { token: authToken })
+      .then((response) => (response.ok ? response.json() : { data: [] }))
+      .then((payload) => {
         if (!active) return;
+        const files: PersonalFileItem[] = Array.isArray(payload?.data) ? payload.data : [];
         setPersonalFiles(
-          groups
-            .flat()
+          files
+            .map((file: PersonalFileItem) => ({
+              ...file,
+              channel_label: file.channel_label || "Files",
+            }))
             .sort((a, b) => {
               const at = a.created_at ? Date.parse(a.created_at) : 0;
               const bt = b.created_at ? Date.parse(b.created_at) : 0;
@@ -314,13 +326,16 @@ export function Sidebar({
             }),
         );
       })
+      .catch(() => {
+        if (active) setPersonalFiles([]);
+      })
       .finally(() => {
         if (active) setPersonalFilesLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [authToken, isPersonalWorkspace, personalFileChannelKey, visiblePersonalDms]);
+  }, [authToken, isPersonalWorkspace]);
 
   const selectWorkspace = (workspaceId: string) => {
     setSelectedWorkspaceId(workspaceId);
@@ -331,7 +346,7 @@ export function Sidebar({
   const workspaceInitials = (workspace: Workspace) => {
     if (workspace.kind === "personal") return "P";
     const trimmed = workspace.name.trim();
-    return [...trimmed].slice(0, 4).join("").toUpperCase() || "?";
+    return [...trimmed].slice(0, 2).join("").toUpperCase() || "?";
   };
 
   const openChannelHit = (channelId: string) => {
@@ -407,6 +422,8 @@ export function Sidebar({
         : `project-${Date.now()}`);
     const projectTitle = project?.projectTitle || nextProjectTitle();
     setProjectDraftTitle(projectTitle);
+    setProjectTaskKind("bot");
+    setChannelTaskDraftTitle(nextProjectTaskTitle(projectId));
     setPersonalAddDialog({
       kind,
       projectId,
@@ -478,6 +495,52 @@ export function Sidebar({
     }
   };
 
+  const createProjectChannelTask = async () => {
+    if (!personalAddDialog || personalAddDialog.kind === "dm") return;
+    if (!dmWorkspaceId) {
+      toast.error("Select Personal first");
+      return;
+    }
+    const projectTitle =
+      personalAddDialog.kind === "project"
+        ? projectDraftTitle.trim() || personalAddDialog.projectTitle
+        : personalAddDialog.projectTitle;
+    const taskTitle =
+      channelTaskDraftTitle.trim() || nextProjectTaskTitle(personalAddDialog.projectId);
+    try {
+      const response = await apiFetch("/channels", {
+        method: "POST",
+        token: authToken,
+        body: {
+          workspace_id: dmWorkspaceId,
+          name: taskTitle,
+          type: "private",
+          allow_member_invites: false,
+          allow_bot_adds: true,
+          project_id: personalAddDialog.projectId,
+          project_title: projectTitle,
+          task_title: taskTitle,
+        },
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.detail || payload?.message || "Create channel task failed");
+      }
+      const channel = payload.data as Channel;
+      setChannels((prev) =>
+        prev.some((item) => item.channel_id === channel.channel_id)
+          ? prev.map((item) => (item.channel_id === channel.channel_id ? channel : item))
+          : [...prev, channel],
+      );
+      setSelectedId(channel.channel_id);
+      setPersonalAddDialog(null);
+      resetSearch();
+      if (isMobile) setSidebarOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create channel task");
+    }
+  };
+
   const handleSearchSelect = (selection: SearchSelection) => {
     if (selection.type === "workspace") {
       setSelectedWorkspaceId(selection.item.workspace_id);
@@ -529,7 +592,7 @@ export function Sidebar({
     <aside
       className={`an-rail flex flex-col flex-shrink-0 ${isMobile ? "fixed inset-y-0 left-0 z-[60] shadow-2xl transition-transform duration-300 ease-in-out" : "relative"}`}
       style={{
-        width: isMobile ? "min(88vw, 320px)" : leftWidth,
+        width: isMobile ? "min(85vw, 360px)" : leftWidth,
         transform:
           isMobile && !sidebarOpen ? "translateX(-100%)" : "translateX(0)",
         minHeight: 0,
@@ -603,6 +666,18 @@ export function Sidebar({
           >
             {currentWsLabel}
           </span>
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              title="Close navigation"
+              aria-label="Close navigation"
+              className="w-7 h-7 flex items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-soft)]"
+              style={{ color: "var(--fg-3)" }}
+            >
+              <AppIcon name="close" className="w-4 h-4" />
+            </button>
+          )}
           {selectedWorkspaceId && (
             <Tooltip content="Set workspace icon">
               <button
@@ -763,7 +838,11 @@ export function Sidebar({
       </div>
       <ul className="px-2 py-1">
         {channels
-          .filter((c) => !selectedWorkspaceId || c.workspace_id === selectedWorkspaceId)
+          .filter(
+            (c) =>
+              (!selectedWorkspaceId || c.workspace_id === selectedWorkspaceId) &&
+              c.project_task_type !== "channel",
+          )
           .map((c) => {
             const isActive = selectedId === c.channel_id;
             const ws = !selectedWorkspaceId && c.workspace_id
@@ -967,7 +1046,7 @@ export function Sidebar({
           </li>
         )}
         {personalFiles.map((file) => (
-          <li key={`${file.channel_id}:${file.file_id}`} className="group relative">
+          <li key={`${file.channel_id || "library"}:${file.file_id}`} className="group relative">
             <button
               type="button"
               className="an-rail-row w-full"
@@ -1020,49 +1099,55 @@ export function Sidebar({
               <button
                 type="button"
                 className="an-project-add"
-                title={`Add a bot chat to ${project.projectTitle}`}
-                aria-label={`Add a bot chat to ${project.projectTitle}`}
+                title={`Add a task to ${project.projectTitle}`}
+                aria-label={`Add a task to ${project.projectTitle}`}
                 onClick={() => openPersonalAddDialog("projectChat", project)}
               >
                 <AppIcon name="plus" />
               </button>
             </div>
             <ul className="an-project-chats">
-              {project.chats.map(({ dm, botLabel, chatLabel }) => {
-                const isActive = selectedId === dm.channel_id;
-                const cp = dm.counterparty;
-                const label = `${botLabel} · ${chatLabel}`;
+              {project.tasks.map((task) => {
+                const channelId = task.kind === "dm" ? task.dm.channel_id : task.channel.channel_id;
+                const isActive = selectedId === channelId;
+                const cp = task.kind === "dm" ? task.dm.counterparty : null;
+                const label = task.label;
                 return (
                   <li
-                    key={dm.channel_id}
+                    key={task.key}
                     className="group relative"
                     onClick={() => isMobile && setSidebarOpen(false)}
                   >
                     <button
                       type="button"
-                      onClick={() => setSelectedId(dm.channel_id)}
-                      onFocus={() => onPreloadChannel?.(dm.channel_id)}
-                      onPointerEnter={() => onPreloadChannel?.(dm.channel_id)}
+                      onClick={() => setSelectedId(channelId)}
+                      onFocus={() => onPreloadChannel?.(channelId)}
+                      onPointerEnter={() => onPreloadChannel?.(channelId)}
                       className={`an-rail-row an-project-chat-row w-full ${
                         isActive ? "active" : ""
                       } pr-7`}
-                      title={cp.username ? `${label} · @${cp.username}` : label}
+                      title={cp?.username ? `${label} · @${cp.username}` : label}
                     >
                       <span className="an-sigil">
-                        <MemberAvatar
-                          avatarUrl={cp.avatar_url}
-                          kind="bot"
-                          label={botLabel}
-                          size={16}
-                        />
+                        {task.kind === "dm" ? (
+                          <MemberAvatar
+                            avatarUrl={cp?.avatar_url}
+                            kind="bot"
+                            label={task.botLabel}
+                            size={16}
+                          />
+                        ) : (
+                          <AppIcon name="channel" />
+                        )}
                       </span>
                       <span className="an-name">{label}</span>
-                      {!isActive && (dm.unread_count ?? 0) > 0 && (
+                      {!isActive &&
+                        ((task.kind === "dm" ? task.dm.unread_count : task.channel.unread_count) ?? 0) > 0 && (
                         <span className="an-rail-tags">
                           <span className="an-unread">
-                            {(dm.unread_count ?? 0) > 99
+                            {((task.kind === "dm" ? task.dm.unread_count : task.channel.unread_count) ?? 0) > 99
                               ? "99+"
-                              : dm.unread_count}
+                              : (task.kind === "dm" ? task.dm.unread_count : task.channel.unread_count)}
                           </span>
                         </span>
                       )}
@@ -1076,20 +1161,35 @@ export function Sidebar({
                         if (!currentUser) return;
                         if (
                           !confirm(
-                            `Remove "${label}"? It will reappear when the bot messages again.`,
+                            task.kind === "dm"
+                              ? `Remove "${label}"? It will reappear when the bot messages again.`
+                              : `Delete channel task "${label}"?`,
                           )
                         )
                           return;
-                        apiFetch(
-                          `/channels/${dm.channel_id}/members/${currentUser.user_id}`,
-                          { method: "DELETE", token: authToken },
-                        )
+                        const request =
+                          task.kind === "dm"
+                            ? apiFetch(
+                                `/channels/${task.dm.channel_id}/members/${currentUser.user_id}`,
+                                { method: "DELETE", token: authToken },
+                              )
+                            : apiFetch(`/channels/${task.channel.channel_id}`, {
+                                method: "DELETE",
+                                token: authToken,
+                              });
+                        request
                           .then((r) => {
                             if (!r.ok) throw new Error("leave failed");
-                            setDMs?.((prev) =>
-                              prev.filter((x) => x.channel_id !== dm.channel_id),
-                            );
-                            if (selectedId === dm.channel_id) {
+                            if (task.kind === "dm") {
+                              setDMs?.((prev) =>
+                                prev.filter((x) => x.channel_id !== task.dm.channel_id),
+                              );
+                            } else {
+                              setChannels((prev) =>
+                                prev.filter((x) => x.channel_id !== task.channel.channel_id),
+                              );
+                            }
+                            if (selectedId === channelId) {
                               setSelectedId(null);
                             }
                           })
@@ -1194,8 +1294,8 @@ export function Sidebar({
         personalAddDialog?.kind === "dm"
           ? "Search members and create DMs."
           : personalAddDialog?.kind === "project"
-            ? "Name the project, then choose the first bot chat."
-            : `Add a bot chat to ${personalAddDialog?.projectTitle || "Project"}.`
+            ? "Name the project, then choose the first task."
+            : `Add a task to ${personalAddDialog?.projectTitle || "Project"}.`
       }
     >
       {personalAddDialog?.kind === "project" && (
@@ -1206,29 +1306,75 @@ export function Sidebar({
           <input
             value={projectDraftTitle}
             onChange={(event) => setProjectDraftTitle(event.target.value)}
-            className="w-full rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{
-              borderColor: "var(--border)",
-              background: "var(--bg-0)",
-              color: "var(--fg-1)",
-            }}
+            className="an-input"
             maxLength={80}
           />
         </label>
       )}
-      <SearchPicker
-        key={`${personalAddDialog?.kind || "none"}:${personalAddDialog?.projectId || ""}`}
-        context="global_nav"
-        token={authToken}
-        workspaceId={searchWorkspaceId || undefined}
-        types={personalAddDialog?.kind === "dm" ? ["users"] : ["bots"]}
-        placeholder={personalAddDialog?.kind === "dm" ? "Search members" : "Search bots"}
-        modal
-        autoFocus
-        emptyText={personalAddDialog?.kind === "dm" ? "No members available to add" : "No bots available to add"}
-        actionLabel={personalAddDialog?.kind === "dm" ? "DMs" : "Add"}
-        onSelect={handlePersonalAddSelect}
-      />
+      {personalAddDialog?.kind !== "dm" && (
+        <div className="an-tabs mb-3" role="tablist" aria-label="Task type">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={projectTaskKind === "bot"}
+            className={`an-tab ${projectTaskKind === "bot" ? "on" : ""}`}
+            onClick={() => setProjectTaskKind("bot")}
+          >
+            Bot DM
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={projectTaskKind === "channel"}
+            className={`an-tab ${projectTaskKind === "channel" ? "on" : ""}`}
+            onClick={() => setProjectTaskKind("channel")}
+          >
+            Channel
+          </button>
+        </div>
+      )}
+      {personalAddDialog?.kind !== "dm" && projectTaskKind === "channel" ? (
+        <div className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium" style={{ color: "var(--fg-2)" }}>
+              Task Name
+            </span>
+            <input
+              value={channelTaskDraftTitle}
+              onChange={(event) => setChannelTaskDraftTitle(event.target.value)}
+              className="an-input"
+              maxLength={80}
+              autoFocus
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className="an-btn an-btn-ghost"
+              onClick={() => setPersonalAddDialog(null)}
+            >
+              Cancel
+            </button>
+            <button type="button" className="an-btn an-btn-primary" onClick={createProjectChannelTask}>
+              Create
+            </button>
+          </div>
+        </div>
+      ) : (
+        <SearchPicker
+          key={`${personalAddDialog?.kind || "none"}:${personalAddDialog?.projectId || ""}:${projectTaskKind}`}
+          context="global_nav"
+          token={authToken}
+          workspaceId={searchWorkspaceId || undefined}
+          types={personalAddDialog?.kind === "dm" ? ["users"] : ["bots"]}
+          placeholder={personalAddDialog?.kind === "dm" ? "Search members" : "Search bots"}
+          modal
+          autoFocus
+          emptyText={personalAddDialog?.kind === "dm" ? "No members available to add" : "No bots available to add"}
+          actionLabel={personalAddDialog?.kind === "dm" ? "DMs" : "Add"}
+          onSelect={handlePersonalAddSelect}
+        />
+      )}
     </Modal>
     </>
   );

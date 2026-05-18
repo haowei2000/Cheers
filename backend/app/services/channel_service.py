@@ -20,6 +20,7 @@ from app.db.models import (
     ChannelMembership,
     ChannelProfile,
     FileRecord,
+    FileScopeLink,
     Friendship,
     HistoryPage,
     MemoryEntry,
@@ -48,6 +49,7 @@ CHANNEL_TYPE_ALIASES = {
     "dm": "dm",
 }
 PERSONAL_PROJECT_PURPOSE_KIND = "personal_project_chat"
+PERSONAL_PROJECT_CHANNEL_PURPOSE_KIND = "personal_project_channel"
 
 
 def _clean_short_text(value: str | None, fallback: str | None = None) -> str | None:
@@ -75,6 +77,24 @@ def _personal_project_purpose(
     )
 
 
+def _personal_project_channel_purpose(
+    *,
+    project_id: str,
+    project_title: str,
+    task_title: str,
+) -> str:
+    return json.dumps(
+        {
+            "kind": PERSONAL_PROJECT_CHANNEL_PURPOSE_KIND,
+            "project_id": project_id,
+            "project_title": project_title,
+            "task_title": task_title,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
 def _parse_personal_project_purpose(value: str | None) -> dict[str, str | None]:
     if not value:
         return {"project_id": None, "project_title": None, "chat_title": None}
@@ -96,6 +116,38 @@ def _parse_personal_project_purpose(value: str | None) -> dict[str, str | None]:
         "project_id": _clean_short_text(payload.get("project_id")),
         "project_title": _clean_short_text(payload.get("project_title")),
         "chat_title": _clean_short_text(payload.get("chat_title")),
+    }
+
+
+def parse_personal_project_channel_purpose(value: str | None) -> dict[str, str | None]:
+    if not value:
+        return {
+            "project_id": None,
+            "project_title": None,
+            "task_title": None,
+            "project_task_type": None,
+        }
+    try:
+        payload = json.loads(value)
+    except (TypeError, ValueError):
+        return {
+            "project_id": None,
+            "project_title": None,
+            "task_title": None,
+            "project_task_type": None,
+        }
+    if not isinstance(payload, dict) or payload.get("kind") != PERSONAL_PROJECT_CHANNEL_PURPOSE_KIND:
+        return {
+            "project_id": None,
+            "project_title": None,
+            "task_title": None,
+            "project_task_type": None,
+        }
+    return {
+        "project_id": _clean_short_text(payload.get("project_id")),
+        "project_title": _clean_short_text(payload.get("project_title")),
+        "task_title": _clean_short_text(payload.get("task_title")),
+        "project_task_type": "channel",
     }
 
 
@@ -359,6 +411,9 @@ class ChannelService:
         allow_member_invites: bool | None = None,
         allow_bot_adds: bool | None = None,
         creator: User | None = None,
+        project_id: str | None = None,
+        project_title: str | None = None,
+        task_title: str | None = None,
     ) -> Channel:
         ws = await self.ws_repo.get_by_id(workspace_id)
         if not ws:
@@ -370,6 +425,21 @@ class ChannelService:
             raise ForbiddenError("您不是该工作空间的成员")
 
         type = normalize_channel_type(type)
+        has_project_meta = any(
+            _clean_short_text(value) for value in (project_id, project_title, task_title)
+        )
+        if has_project_meta:
+            if ws.kind != "personal" or type != "private":
+                raise BadRequestError("个人 Project task 只能创建在 Personal workspace 的 private channel 中")
+            resolved_project_id = _clean_short_text(project_id) or f"project:{uuid4()}"
+            resolved_project_title = _clean_short_text(project_title) or "Project"
+            resolved_task_title = _clean_short_text(task_title) or _clean_short_text(name) or "Task"
+            purpose = _personal_project_channel_purpose(
+                project_id=resolved_project_id,
+                project_title=resolved_project_title,
+                task_title=resolved_task_title,
+            )
+            name = resolved_task_title
         ch = await self.repo.create(
             workspace_id=workspace_id,
             name=name,
@@ -492,7 +562,15 @@ class ChannelService:
             delete(ChannelUnreadCount).where(ChannelUnreadCount.channel_id == channel_id)
         )
 
-        # Cascade-delete memberships, messages, and file records.
+        # Cascade-delete memberships and messages. Files are library objects;
+        # remove only the deleted channel's scope links and legacy origin
+        # pointer so physical file records remain available elsewhere.
+        await self.session.execute(
+            delete(FileScopeLink).where(
+                FileScopeLink.scope_type.in_(("channel", "dm")),
+                FileScopeLink.scope_id == channel_id,
+            )
+        )
         for membership in await self.repo.list_memberships(channel_id):
             await self.session.delete(membership)
         msgs = await self.session.execute(select(Message).where(Message.channel_id == channel_id))
@@ -500,7 +578,7 @@ class ChannelService:
             await self.session.delete(msg)
         files = await self.session.execute(select(FileRecord).where(FileRecord.channel_id == channel_id))
         for f in files.scalars().all():
-            await self.session.delete(f)
+            f.channel_id = None
         await self.repo.delete(ch)
 
     # ---- Membership ----

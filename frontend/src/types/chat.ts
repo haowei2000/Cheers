@@ -16,6 +16,10 @@ export type Channel = {
   auto_assist?: boolean;
   allow_member_invites?: boolean;
   allow_bot_adds?: boolean;
+  project_id?: string | null;
+  project_title?: string | null;
+  task_title?: string | null;
+  project_task_type?: "channel" | string | null;
   my_role?: string | null;
   can_manage?: boolean;
   can_invite_members?: boolean;

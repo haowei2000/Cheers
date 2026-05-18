@@ -29,18 +29,15 @@ async def check_files_in_channel(
     if not file_ids:
         return None
     rows = (await session.execute(
-        select(FileRecord.file_id, FileRecord.channel_id).where(
+        select(FileRecord.file_id).where(
             FileRecord.file_id.in_(file_ids),
             active_file_filter(),
         )
     )).all()
-    found = {fid: cid for fid, cid in rows}
+    found = {fid for (fid,) in rows}
     missing = [f for f in file_ids if f not in found]
     if missing:
         return ("file_not_found", f"file_ids 不存在: {missing}")
-    cross = [f for f in file_ids if found[f] != channel_id]
-    if cross:
-        return ("file_cross_channel", f"file_ids 不属于目标频道 {channel_id}: {cross}")
     return None
 
 

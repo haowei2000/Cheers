@@ -139,7 +139,9 @@ async def _require_file_access(
     rec: FileRecord,
     current_user: User,
 ) -> None:
-    await ChannelService(session).require_channel_member(rec.channel_id, current_user)
+    from app.services.file_scope_service import FileScopeService
+
+    await FileScopeService(session).require_user_access(rec, current_user)
 
 
 async def _load_file_body(rec: FileRecord) -> bytes:
@@ -239,21 +241,19 @@ async def list_channel_files(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     """List channel files."""
-    from sqlalchemy import asc
     await ChannelService(session).require_channel_member(channel_id, current_user)
-    result = await session.execute(
-        select(FileRecord)
-        .where(
-            FileRecord.channel_id == channel_id,
-            FileRecord.content_type.notlike("image/%"),
-            active_file_filter(),
-        )
-        .order_by(asc(FileRecord.created_at))
-    )
-    records = result.scalars().all()
+    from app.services.file_scope_service import FileScopeService
+
+    records = [
+        record
+        for record in await FileScopeService(session).list_for_channel(channel_id)
+        if not (record.content_type or "").lower().startswith("image/")
+    ]
+    records.sort(key=lambda record: record.created_at)
     return APIResponse.ok([
         {
             "file_id": r.file_id,
+            "channel_id": channel_id,
             "original_filename": r.original_filename,
             "content_type": r.content_type,
             "size_bytes": r.size_bytes,
@@ -266,6 +266,34 @@ async def list_channel_files(
     ])
 
 
+@router.get("/library", response_model=APIResponse[list])
+async def list_file_library(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Return files visible to the current user across their file library."""
+    from app.services.file_scope_service import FileScopeService
+
+    items = await FileScopeService(session).list_library_for_user(current_user)
+    return APIResponse.ok([
+        {
+            "file_id": item.record.file_id,
+            "channel_id": item.channel_id,
+            "channel_label": item.channel_name,
+            "scope_type": item.scope_type,
+            "scope_id": item.scope_id,
+            "original_filename": item.record.original_filename,
+            "content_type": item.record.content_type,
+            "size_bytes": item.record.size_bytes,
+            "status": item.record.status,
+            "summary_3lines": item.record.summary_3lines,
+            "created_at": item.record.created_at.isoformat() if item.record.created_at else None,
+            "expires_at": item.record.expires_at.isoformat() if item.record.expires_at else None,
+        }
+        for item in items
+    ])
+
+
 @router.get("/{file_id}/status", response_model=APIResponse[dict])
 async def file_status(
     file_id: str,
@@ -273,16 +301,11 @@ async def file_status(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
-    await ChannelService(session).require_channel_member(channel_id, current_user)
-    result = await session.execute(
-        select(FileRecord).where(
-            FileRecord.file_id == file_id,
-            FileRecord.channel_id == channel_id,
-            active_file_filter(),
-        )
-    )
-    rec = result.scalar_one_or_none()
-    if not rec:
+    channel = await ChannelService(session).require_channel_member_or_manager(channel_id, current_user)
+    rec = await _load_active_file_or_404(session, file_id)
+    from app.services.file_scope_service import FileScopeService
+
+    if not await FileScopeService(session).file_linked_to_channel(file_id=file_id, channel=channel):
         raise NotFoundError("file not found")
     return APIResponse.ok({
         "file_id": rec.file_id,

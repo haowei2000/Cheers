@@ -149,6 +149,11 @@ export default function App() {
   const [promptTemplates, setPromptTemplates] = useState<ComposerPromptTemplateOption[]>([]);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(false);
   const [selectedPromptTemplateId, setSelectedPromptTemplateId] = useState<string | null>(null);
+  const selectedPromptTemplateIdRef = useRef<string | null>(null);
+  const setPromptTemplateOverrideId = useCallback((templateId: string | null) => {
+    selectedPromptTemplateIdRef.current = templateId;
+    setSelectedPromptTemplateId(templateId);
+  }, []);
   const [pageTopicId, setPageTopicId] = useState<string | null>(
     () => chatUrlState.topicId,
   );
@@ -165,7 +170,7 @@ export default function App() {
   useEffect(() => {
     if (!authToken) {
       setPromptTemplates([]);
-      setSelectedPromptTemplateId(null);
+      setPromptTemplateOverrideId(null);
       return;
     }
     let active = true;
@@ -174,10 +179,23 @@ export default function App() {
       .then((response) => response.json())
       .then((data) => {
         if (!active) return;
-        setPromptTemplates(Array.isArray(data?.data) ? data.data : []);
+        const templates: ComposerPromptTemplateOption[] = Array.isArray(data?.data)
+          ? data.data
+          : [];
+        setPromptTemplates(templates);
+        const selectedId = selectedPromptTemplateIdRef.current;
+        if (
+          selectedId &&
+          !templates.some((template) => template.template_id === selectedId)
+        ) {
+          setPromptTemplateOverrideId(null);
+        }
       })
       .catch(() => {
-        if (active) setPromptTemplates([]);
+        if (active) {
+          setPromptTemplates([]);
+          setPromptTemplateOverrideId(null);
+        }
       })
       .finally(() => {
         if (active) setPromptTemplatesLoading(false);
@@ -185,7 +203,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [authToken]);
+  }, [authToken, setPromptTemplateOverrideId]);
   const {
     channels,
     setChannels,
@@ -245,6 +263,7 @@ export default function App() {
   }, [currentUser?.role, selectedChannel?.can_manage, selectedChannel?.my_role]);
   const selectionResetReadyRef = useRef(false);
   useEffect(() => {
+    setPromptTemplateOverrideId(null);
     if (selectionResetReadyRef.current) {
       setTaskPageOpen(false);
       setPageTaskMsgId(null);
@@ -257,7 +276,7 @@ export default function App() {
       setMsgKind("normal");
       setComposerTitle("");
     }
-  }, [isDmSelected, selectedId]);
+  }, [isDmSelected, selectedId, setPromptTemplateOverrideId]);
   const [memoryDetailMessage, setMemoryDetailMessage] = useState<Message | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   // memoryTab drives the 4-tab cluster in the channel header + the drawer.
@@ -662,7 +681,8 @@ export default function App() {
   const send = (draftValue?: string) => {
     const rawContent =
       draftValue ?? inputDraftRef.current ?? inputRef.current?.value ?? input;
-    if (!selectedId || (!rawContent.trim() && pendingFileIds.length === 0)) return;
+    const textContent = rawContent.trim();
+    if (!selectedId || ((!textContent || textContent === "@") && pendingFileIds.length === 0)) return;
     if (!currentUserId) {
       setLoginModalOpen(true);
       toast.error("Sign in before sending messages");
@@ -673,7 +693,7 @@ export default function App() {
       return;
     }
     const targetChannelId = selectedId;
-    const content = rawContent.trim();
+    const content = textContent;
     // Reply context is conveyed by `in_reply_to_msg_id` (rendered as a chip).
     // We intentionally do NOT prepend a markdown blockquote of the parent
     // message: that would duplicate what the chip already shows AND pollute
@@ -697,11 +717,15 @@ export default function App() {
     };
     if (replyingTo && !isDmSelected) body.in_reply_to_msg_id = replyingTo.msg_id;
     const titleTrim = composerTitle.trim() || null;
-    const selectedPromptTemplate = selectedPromptTemplateId
+    const selectedPromptTemplateIdForSend = selectedPromptTemplateIdRef.current;
+    const selectedPromptTemplate = selectedPromptTemplateIdForSend
       ? promptTemplates.find(
-          (template) => template.template_id === selectedPromptTemplateId,
+          (template) => template.template_id === selectedPromptTemplateIdForSend,
         )
       : null;
+    if (selectedPromptTemplateIdForSend && !selectedPromptTemplate) {
+      setPromptTemplateOverrideId(null);
+    }
     if (effectiveKind === "announcement") {
       body.content_data = {
         pinned_by: currentUserId,
@@ -718,7 +742,7 @@ export default function App() {
       };
     }
     resetComposerAfterSend();
-    setSelectedPromptTemplateId(null);
+    setPromptTemplateOverrideId(null);
     clearPendingFiles();
     authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
@@ -1564,7 +1588,7 @@ export default function App() {
                 onSend: send,
                 canSend: pendingFileIds.length > 0,
                 canSendPredicate: (value) =>
-                  Boolean(value.trim() || pendingFileIds.length > 0),
+                  Boolean((value.trim() && value.trim() !== "@") || pendingFileIds.length > 0),
                 disabled: isSystemDm,
                 placeholder: isSystemDm
                   ? "Friend notification conversations handle requests and cannot send messages directly..."
@@ -1601,7 +1625,7 @@ export default function App() {
                 promptTemplates,
                 promptTemplatesLoading,
                 selectedPromptTemplateId,
-                onPromptTemplateChange: setSelectedPromptTemplateId,
+                onPromptTemplateChange: setPromptTemplateOverrideId,
               }}
               setMemoryTab={setMemoryTab}
               setPageTopicId={setPageTopicId}
