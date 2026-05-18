@@ -15,7 +15,7 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 @router.get("", response_model=APIResponse[SearchResults])
 async def global_search(
-    q: str = Query("", description="query, 1+ chars; empty -> no hits"),
+    q: str = Query("", description="query; empty returns candidates for create/invite contexts"),
     context: str = Query("global_nav", description="workflow context for server-side filtering"),
     limit: int = Query(5, ge=1, le=20),
     workspace_id: str | None = Query(None),

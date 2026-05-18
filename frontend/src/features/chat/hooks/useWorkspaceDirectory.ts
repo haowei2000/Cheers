@@ -9,6 +9,16 @@ import type { Channel, DM, Workspace } from "../../../types";
 const BUILTIN_HELPER_BOT_ID = "bot-helper-001";
 const MARK_READ_DELAY_MS = 250;
 
+type CreateWorkspaceOptions = {
+  initialMemberIds?: string[];
+};
+
+type CreateChannelOptions = {
+  type?: "public" | "private";
+  initialUserIds?: string[];
+  initialBotIds?: string[];
+};
+
 interface UseWorkspaceDirectoryOptions {
   routeWorkspaceId: string;
   routeChannelId: string | null;
@@ -174,7 +184,7 @@ export function useWorkspaceDirectory({
     setWorkspaces([]);
   }, []);
 
-  const handleCreateWorkspace = useCallback(() => {
+  const handleCreateWorkspace = useCallback((options: CreateWorkspaceOptions = {}) => {
     if (!newWorkspaceName.trim()) {
       toast.error("Enter a workspace name");
       return;
@@ -184,6 +194,7 @@ export function useWorkspaceDirectory({
       body: JSON.stringify({
         name: newWorkspaceName.trim(),
         avatar_url: newWorkspaceAvatarUrl.trim() || null,
+        initial_member_ids: options.initialMemberIds ?? [],
       }),
     })
       .then((response) => response.json())
@@ -236,7 +247,7 @@ export function useWorkspaceDirectory({
     inviteWorkspaceMember(inviteWsIdentifier);
   }, [inviteWorkspaceMember, inviteWsIdentifier]);
 
-  const handleCreateChannel = useCallback(() => {
+  const handleCreateChannel = useCallback((options: CreateChannelOptions = {}) => {
     if (!newChannelName.trim()) {
       toast.error("Enter a channel name");
       return;
@@ -250,8 +261,10 @@ export function useWorkspaceDirectory({
       body: JSON.stringify({
         workspace_id: selectedWorkspaceId,
         name: newChannelName.trim(),
-        type: "public",
+        type: options.type ?? "public",
         purpose: "",
+        initial_user_ids: options.initialUserIds ?? [],
+        initial_bot_ids: options.initialBotIds ?? [],
       }),
     })
       .then((response) => response.json())

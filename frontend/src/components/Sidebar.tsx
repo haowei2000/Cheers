@@ -1422,13 +1422,14 @@ export function Sidebar({
       ) : (
         <SearchPicker
           key={`${personalAddDialog?.kind || "none"}:${personalAddDialog?.projectId || ""}:${projectTaskKind}`}
-          context="global_nav"
+          context="dm_start"
           token={authToken}
           workspaceId={searchWorkspaceId || undefined}
           types={personalAddDialog?.kind === "dm" ? ["users"] : ["bots"]}
-          placeholder={personalAddDialog?.kind === "dm" ? "Search members" : "Search bots"}
+          placeholder={personalAddDialog?.kind === "dm" ? "Search or choose members" : "Search or choose bots"}
           modal
           autoFocus
+          showInitialResults
           emptyText={personalAddDialog?.kind === "dm" ? "No members available to add" : "No bots available to add"}
           actionLabel={personalAddDialog?.kind === "dm" ? "DMs" : "Add"}
           onSelect={handlePersonalAddSelect}
