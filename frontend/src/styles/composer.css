@@ -227,6 +227,149 @@
   color: var(--green);
 }
 
+/* ── Comfortable-density prompt template strip ───────────────────────────── */
+.an-composer-template-banner {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  max-width: 920px;
+  margin: 0 auto 6px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--accent-muted) 52%, transparent), transparent),
+    var(--bg-1);
+  box-shadow:
+    0 1px 0 color-mix(in oklab, var(--fg-1) 7%, transparent) inset,
+    0 6px 18px color-mix(in oklab, var(--shadow) 72%, transparent);
+}
+.an-composer-template-scroll {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+  padding-bottom: 1px;
+}
+.an-composer-template-card {
+  flex: 0 0 auto;
+  width: clamp(150px, 22vw, 220px);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid color-mix(in oklab, var(--border) 88%, var(--accent));
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--bg-1) 92%, var(--accent-muted));
+  color: var(--fg-2);
+  font-family: inherit;
+  text-align: left;
+  padding: 7px 9px;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--motion-fast);
+}
+.an-composer-template-card:hover {
+  border-color: color-mix(in oklab, var(--accent) 46%, var(--border));
+  background: var(--surface-soft);
+  color: var(--fg-1);
+}
+.an-composer-template-card.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+.an-composer-template-card-mark {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--bg-0);
+  color: inherit;
+  border: 1px solid color-mix(in oklab, currentColor 20%, var(--border));
+}
+.an-composer-template-card-slash {
+  font-size: 17px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+}
+.an-composer-template-card-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.an-composer-template-card-name,
+.an-composer-template-card-desc {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.an-composer-template-card-name {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.15;
+}
+.an-composer-template-card-desc,
+.an-composer-template-state {
+  color: var(--fg-3);
+  font-size: 11px;
+  line-height: 1.2;
+}
+.an-composer-template-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+.an-composer-template-clear {
+  width: 34px;
+  flex: 0 0 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-0);
+  color: var(--fg-3);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast),
+    color var(--motion-fast);
+}
+.an-composer-template-clear:hover {
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--border));
+  background: var(--surface-soft);
+  color: var(--accent);
+}
+.an-composer-template-trigger,
+.an-composer-template-menu {
+  display: none;
+}
+html[data-density="compact"] .an-composer-template-banner {
+  display: none;
+}
+html[data-density="compact"] .an-composer-template-trigger,
+html[data-density="compact"] .an-composer-template-menu {
+  display: block;
+}
+html:not([data-density="compact"]) .an-composer-template-chip {
+  display: none;
+}
+
 /* ── Textarea (shared) ────────────────────────────────────────────────────── */
 .an-composer-textarea {
   width: 100%;
@@ -379,6 +522,14 @@
   .an-msgkind-switcher {
     max-width: none;
     margin: 0 4px 6px;
+  }
+  .an-composer-template-banner {
+    max-width: none;
+    margin: 0 4px 6px;
+    padding: 5px;
+  }
+  .an-composer-template-card {
+    width: min(72vw, 220px);
   }
   .an-composer {
     max-width: none;
