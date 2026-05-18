@@ -28,6 +28,12 @@ def test_find_help_openclaw() -> None:
     assert "OpenClaw" in content or "bot" in content.lower()
 
 
+def test_find_help_english_locale() -> None:
+    content = find_help("how do I create a project?", locale="en")
+    assert content is not None
+    assert "workspace" in content.lower()
+
+
 def test_find_help_no_match_returns_none() -> None:
     """Covers test find help no match returns none behavior."""
     assert find_help("随便说点什么xyz") is None

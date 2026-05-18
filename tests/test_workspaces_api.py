@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace, WorkspaceMembership
 from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
+from app.services.workspace_service import WorkspaceService
 
 
 @pytest.mark.asyncio
@@ -73,8 +74,47 @@ async def test_personal_workspace_bootstraps_helper_dm(
     ).scalars().all()
     assert len(messages) == 1
     assert messages[0].sender_id == HELPER_BOT_ID
-    assert "自然语言" in messages[0].content
+    assert "natural language" in messages[0].content
     assert "Docs" in messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_personal_workspace_helper_dm_uses_chinese_locale(
+    db_session: AsyncSession,
+) -> None:
+    await db_session.merge(
+        BotAccount(
+            bot_id=HELPER_BOT_ID,
+            username="Coordinator",
+            display_name="协作助手",
+            status="online",
+            scope="everyone",
+        )
+    )
+    user = User(
+        user_id="a0000000-0000-0000-0000-000000000188",
+        username="zh_locale_user",
+        password_hash="x",
+        display_name="中文用户",
+        role="user",
+    )
+    await db_session.merge(user)
+    await db_session.commit()
+
+    workspace = await WorkspaceService(db_session).ensure_personal_workspace(user, locale="zh-CN")
+    await db_session.commit()
+    messages = (
+        await db_session.execute(
+            select(Message)
+            .join(Channel, Channel.channel_id == Message.channel_id)
+            .where(
+                Channel.workspace_id == workspace.workspace_id,
+                Message.sender_id == HELPER_BOT_ID,
+            )
+        )
+    ).scalars().all()
+    assert len(messages) == 1
+    assert "自然语言" in messages[0].content
 
 
 @pytest.mark.asyncio

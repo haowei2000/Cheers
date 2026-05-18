@@ -220,6 +220,18 @@ def test_payload_groups_message_context_and_runtime() -> None:
     assert payload.runtime.placeholder_msg_id == "bot-msg-1"
 
 
+def test_payload_carries_normalized_locale() -> None:
+    ctx = _make_ctx(locale="zh-Hans")
+    payload = build_payload(
+        ctx, bot_id="bot-a", bot_msg=_FakeBotMsg(),
+        capabilities=Capabilities.regular(),
+    )
+
+    assert payload.runtime.locale == "zh-CN"
+    assert payload.message.extra["locale"] == "zh-CN"
+    assert payload.trigger_message["locale"] == "zh-CN"
+
+
 # ── shared invariants ────────────────────────────────────────────────
 
 

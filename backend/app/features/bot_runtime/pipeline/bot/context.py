@@ -36,6 +36,7 @@ class BotRunContext:
     user_secrets: dict[str, str] = field(default_factory=dict)
     sender_name: str = ""
     channel_name: str = ""
+    locale: str = "en"
     channel: Channel | None = None
 
     # ── filled by BotWorkflowBuilder route planning ─────────────────────

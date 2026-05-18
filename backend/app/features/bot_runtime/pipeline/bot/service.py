@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.localization import locale_from_content_data
 from app.core.log_context import bind_context
 from app.db.models import Message
 from app.features.bot_runtime.adapters.base import BotAdapter
@@ -40,6 +41,7 @@ async def run_bot_pipeline(
         adapter_factory=adapter_factory,
         broadcast_processing=broadcast_processing,
         root_task_id=str(uuid.uuid4()),
+        locale=locale_from_content_data(trigger_msg.content_data),
     )
     ctx.writer = BotMessageWriter(ctx)
 

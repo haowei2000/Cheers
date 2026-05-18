@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
+from app.core.localization import locale_from_headers
 from app.core.responses import APIResponse
 from app.db.models import User
 from app.services.workspace_service import WorkspaceService
@@ -41,11 +42,12 @@ class InviteMemberBody(BaseModel):
 
 @router.get("", response_model=APIResponse[list[WorkspaceOut]])
 async def list_workspaces(
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = WorkspaceService(session)
-    workspaces = await svc.list_for_user(current_user)
+    workspaces = await svc.list_for_user(current_user, locale=locale_from_headers(request.headers))
     return APIResponse.ok([WorkspaceOut.model_validate(w) for w in workspaces])
 
 

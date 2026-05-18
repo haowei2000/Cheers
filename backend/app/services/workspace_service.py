@@ -5,7 +5,9 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.core.builtin_defaults import all_helper_onboarding_messages, helper_onboarding_message
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
+from app.core.localization import normalize_locale
 from app.db.models import BotAccount, Channel, ChannelMembership, Message, User, Workspace, WorkspaceMembership
 from app.features.bot_runtime.builtin_ids import HELPER_BOT_ID
 from app.repositories.user_repo import UserRepository
@@ -16,13 +18,6 @@ PERSONAL_WORKSPACE_KIND = "personal"
 TEAM_WORKSPACE_KIND = "team"
 WORKSPACE_CHANNEL_TYPES = ("public", "workspace")
 WORKSPACE_MEMBER_ROLES = {"owner", "admin", "member"}
-HELPER_ONBOARDING_MESSAGE = (
-    "你好，我是 AgentNexus 内置协作助手 @Coordinator。\n\n"
-    "你可以直接用自然语言问我如何使用系统，例如：如何创建工作空间、"
-    "邀请成员、上传文件、@ Bot、查看项目记忆、阅读 Docs，"
-    "或接入 Agent Bridge / OpenClaw。\n\n"
-    "如果你不确定下一步怎么做，可以直接告诉我你的目标，我会把操作步骤拆给你。"
-)
 
 
 class WorkspaceService:
@@ -65,10 +60,10 @@ class WorkspaceService:
             raise NotFoundError("workspace not found")
         return ws
 
-    async def list_for_user(self, user: User) -> list[Workspace]:
+    async def list_for_user(self, user: User, locale: str | None = None) -> list[Workspace]:
         # Make sure every user has a personal workspace the first time
         # they're observed. This is where DMs land.
-        await self.ensure_personal_workspace(user)
+        await self.ensure_personal_workspace(user, locale=locale)
         return await self.repo.list_for_user(user.user_id)
 
     async def get_personal_workspace(self, user: User) -> Workspace | None:
@@ -87,21 +82,22 @@ class WorkspaceService:
         )
         return rows.scalar_one_or_none()
 
-    async def ensure_personal_workspace(self, user: User) -> Workspace:
+    async def ensure_personal_workspace(self, user: User, locale: str | None = None) -> Workspace:
         """Idempotent: return (creating if necessary) the caller's personal
         workspace. Owner role; the name is simply "Personal" — the UI can
         decorate it however it wants."""
+        locale = normalize_locale(locale)
         existing = await self.get_personal_workspace(user)
         if existing:
-            await self._ensure_personal_helper_dm(user, existing)
+            await self._ensure_personal_helper_dm(user, existing, locale=locale)
             return existing
         ws = await self.repo.create("Personal", kind=PERSONAL_WORKSPACE_KIND)
         await self.repo.add_member(ws.workspace_id, user.user_id, role="owner")
         await self.session.flush()
-        await self._ensure_personal_helper_dm(user, ws)
+        await self._ensure_personal_helper_dm(user, ws, locale=locale)
         return ws
 
-    async def _ensure_personal_helper_dm(self, user: User, workspace: Workspace) -> None:
+    async def _ensure_personal_helper_dm(self, user: User, workspace: Workspace, *, locale: str | None = None) -> None:
         helper_exists = (
             await self.session.execute(
                 select(BotAccount.bot_id).where(BotAccount.bot_id == HELPER_BOT_ID)
@@ -160,6 +156,7 @@ class WorkspaceService:
             )
             await self.session.flush()
 
+        opening_content = helper_onboarding_message(locale)
         opening_exists = (
             await self.session.execute(
                 select(Message.msg_id)
@@ -167,7 +164,7 @@ class WorkspaceService:
                     Message.channel_id == channel.channel_id,
                     Message.sender_id == HELPER_BOT_ID,
                     Message.sender_type == "bot",
-                    Message.content == HELPER_ONBOARDING_MESSAGE,
+                    Message.content.in_(all_helper_onboarding_messages()),
                 )
                 .limit(1)
             )
@@ -180,7 +177,7 @@ class WorkspaceService:
                 channel_id=channel.channel_id,
                 sender_id=HELPER_BOT_ID,
                 sender_type="bot",
-                content=HELPER_ONBOARDING_MESSAGE,
+                content=opening_content,
             )
         )
         await self.session.flush()

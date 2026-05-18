@@ -469,7 +469,7 @@ async def test_dm_message_normalizes_topics_but_preserves_replies(
     assert reply is not None
     assert reply.msg_type == "reply"
     assert reply.in_reply_to_msg_id == parent.msg_id
-    assert reply.content_data is None
+    assert reply.content_data == {"locale": "en"}
 
 
 @pytest.mark.asyncio

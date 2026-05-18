@@ -1,3 +1,5 @@
+import { DEFAULT_LANGUAGE, LANGUAGE_STORAGE_KEY, normalizeLanguage, type AppLanguage } from "../i18n/catalog";
+
 export const API_BASE = "/api/v1";
 
 const WS_PROTO = location.protocol === "https:" ? "wss" : "ws";
@@ -27,6 +29,22 @@ export function getAuthToken(): string | null {
   return null;
 }
 
+export function getAppLanguage(): AppLanguage {
+  try {
+    return normalizeLanguage(localStorage.getItem(LANGUAGE_STORAGE_KEY));
+  } catch {
+    return DEFAULT_LANGUAGE;
+  }
+}
+
+export function appLanguageHeaders(): Record<string, string> {
+  const language = getAppLanguage();
+  return {
+    "Accept-Language": language,
+    "X-AgentNexus-Language": language,
+  };
+}
+
 export interface RequestOptions extends Omit<RequestInit, "body" | "headers"> {
   body?: unknown;
   headers?: Record<string, string>;
@@ -48,7 +66,7 @@ export async function apiFetch(path: string, options: RequestOptions = {}): Prom
   const { body, headers = {}, auth = true, token, ...rest } = options;
   const url = resolveUrl(path);
 
-  const finalHeaders: Record<string, string> = { ...headers };
+  const finalHeaders: Record<string, string> = { ...appLanguageHeaders(), ...headers };
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   if (body !== undefined && !isFormData && !finalHeaders["Content-Type"]) {
     finalHeaders["Content-Type"] = "application/json";
@@ -107,6 +125,7 @@ export function makeAuthFetch(token: string | null): AuthFetch {
       ...options,
       headers: {
         "Content-Type": "application/json",
+        ...appLanguageHeaders(),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.headers as Record<string, string> | undefined),
       },

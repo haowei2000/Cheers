@@ -175,13 +175,13 @@ function TemplateForm({
   onDeleted?: () => void;
 }) {
   const [name, setName] = useState(existing?.name || "");
+  const [description, setDescription] = useState(existing?.description || "");
+  const [systemPrompt, setSystemPrompt] = useState(existing?.system_prompt || "You are a helpful assistant.");
   const [userTemplate, setUserTemplate] = useState(existing?.user_template || DEFAULT_USER_TEMPLATE);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const isEdit = !!existing;
   const isBuiltin = !!existing?.is_builtin;
-  const preservedSystemPrompt = existing?.system_prompt || "";
-  const preservedDescription = existing?.description || "";
   const userTplRef = useRef<HTMLTextAreaElement | null>(null);
   const [varDropdownOpen, setVarDropdownOpen] = useState(false);
   const [varFilter, setVarFilter] = useState("");
@@ -195,15 +195,15 @@ function TemplateForm({
       const tpl = userTemplate.trim() || DEFAULT_USER_TEMPLATE;
       const body = {
         name: name.trim(),
-        description: preservedDescription || null,
-        system_prompt: preservedSystemPrompt.trim() || "You are a helpful assistant.",
+        description: description.trim() || null,
+        system_prompt: systemPrompt.trim() || "You are a helpful assistant.",
         user_template: tpl,
         variables: extractTemplateVars(tpl),
       };
       const res = await apiFetch(
         isEdit ? `/templates/${existing!.template_id}` : "/templates",
         {
-          method: isEdit ? "PUT" : "POST",
+          method: isEdit ? "PATCH" : "POST",
           token: authToken,
           body,
         },
@@ -280,11 +280,30 @@ function TemplateForm({
             <Field label="Name">
               <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} disabled={isBuiltin} />
             </Field>
+            <Field label="Description">
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                className={`${inputCls} resize-none`}
+                disabled={isBuiltin}
+              />
+            </Field>
           </div>
         )}
 
         {settingsTab === "template" && (
           <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <Field label="System prompt">
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                rows={8}
+                className={`${inputCls} resize-none`}
+                disabled={isBuiltin}
+                style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)" }}
+              />
+            </Field>
             <Field label="User template (type {{ to show variables)">
               <div style={{ position: "relative" }}>
                 <textarea

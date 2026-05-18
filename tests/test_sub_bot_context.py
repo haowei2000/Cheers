@@ -79,6 +79,7 @@ async def test_call_bot_passes_memory_context():
     tool_ctx = {
         "channel_id": "test-channel-001",
         "memory": memory_context,
+        "locale": "zh-CN",
         "_run_ctx": run_ctx,
     }
 
