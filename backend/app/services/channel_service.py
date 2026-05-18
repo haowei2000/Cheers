@@ -414,6 +414,8 @@ class ChannelService:
         project_id: str | None = None,
         project_title: str | None = None,
         task_title: str | None = None,
+        initial_user_ids: list[str] | None = None,
+        initial_bot_ids: list[str] | None = None,
     ) -> Channel:
         ws = await self.ws_repo.get_by_id(workspace_id)
         if not ws:
@@ -481,6 +483,13 @@ class ChannelService:
             creator_membership = await self.repo.get_membership(ch.channel_id, creator.user_id)
             if creator_membership and creator_membership.member_type == "user":
                 creator_membership.role = "owner"
+
+        for user_id in dict.fromkeys(initial_user_ids or []):
+            if user_id == creator.user_id:
+                continue
+            await self.add_member(ch.channel_id, user_id, "user", creator)
+        for bot_id in dict.fromkeys(initial_bot_ids or []):
+            await self.add_member(ch.channel_id, bot_id, "bot", creator)
 
         return ch
 
