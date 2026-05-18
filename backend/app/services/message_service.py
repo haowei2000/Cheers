@@ -109,12 +109,20 @@ class MessageService:
         # Validate that each file belongs to this channel and has a usable status.
         if file_ids:
             records = await self.file_repo.get_many_by_ids(file_ids)
+            from app.services.file_scope_service import FileScopeService
+
+            scope_service = FileScopeService(self.session)
+            sender_user = None
+            if sender_type == "user":
+                from app.db.models import User
+
+                sender_user = await self.session.get(User, sender_id)
             for fid in file_ids:
                 rec = records.get(fid)
                 if not rec:
                     raise BadRequestError(f"file {fid} not found")
-                if rec.channel_id != channel_id:
-                    raise BadRequestError(f"file {fid} does not belong to this channel")
+                if sender_user is not None and not await scope_service.user_can_access(rec, sender_user):
+                    raise BadRequestError(f"file {fid} is not accessible")
 
         # Secret-message handling.
         if is_secret:
@@ -143,6 +151,14 @@ class MessageService:
             await self.session.flush()
 
         records = await self.file_repo.get_many_by_ids(file_ids)
+        if file_ids:
+            from app.services.file_scope_service import FileScopeService
+
+            await FileScopeService(self.session).link_files_to_channel(
+                file_ids=file_ids,
+                channel_id=channel_id,
+                created_by=sender_id if sender_type == "user" else None,
+            )
         file_map = {
             fid: MessageFileDTO(
                 file_id=rec.file_id,

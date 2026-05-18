@@ -246,6 +246,10 @@ class ChannelInResponse(BaseModel):
     auto_assist: bool = False
     allow_member_invites: bool = True
     allow_bot_adds: bool = True
+    project_id: str | None = None
+    project_title: str | None = None
+    task_title: str | None = None
+    project_task_type: str | None = None
     my_role: str | None = None
     can_manage: bool = False
     can_invite_members: bool = False

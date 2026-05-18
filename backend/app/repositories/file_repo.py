@@ -35,12 +35,9 @@ class FileRepository:
         return {r.file_id: r for r in result.scalars().all()}
 
     async def list_by_channel(self, channel_id: str) -> list[FileRecord]:
-        result = await self.session.execute(
-            select(FileRecord)
-            .where(FileRecord.channel_id == channel_id, active_file_filter())
-            .order_by(FileRecord.created_at.desc())
-        )
-        return list(result.scalars().all())
+        from app.services.file_scope_service import FileScopeService
+
+        return await FileScopeService(self.session).list_for_channel(channel_id)
 
     async def create(
         self,
@@ -48,6 +45,7 @@ class FileRepository:
         uploader_id: str,
         original_path: str,
         *,
+        workspace_id: str | None = None,
         original_filename: str | None = None,
         content_type: str | None = None,
         size_bytes: int | None = None,
@@ -57,6 +55,7 @@ class FileRepository:
     ) -> FileRecord:
         record = FileRecord(
             channel_id=channel_id,
+            workspace_id=workspace_id,
             uploader_id=uploader_id,
             original_path=original_path,
             original_filename=original_filename,

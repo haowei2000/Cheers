@@ -418,8 +418,9 @@ Args:
             return "错误：content 不能为空"
 
         from app.config import settings
-        from app.db.models import FileRecord
+        from app.db.models import Channel, FileRecord
         from app.services.file_retention import file_expires_at
+        from app.services.file_scope_service import FileScopeService
 
         file_id = str(uuid.uuid4())
         channel_id = ctx["channel_id"]
@@ -436,9 +437,13 @@ Args:
         original_filename = f"{safe_name}.md"
         now = datetime.now(timezone.utc)
 
+        db_session = ctx.get("_db_session")
+        channel = await db_session.get(Channel, channel_id) if db_session else None
+
         record = FileRecord(
             file_id=file_id,
             channel_id=channel_id,
+            workspace_id=channel.workspace_id if channel else None,
             uploader_id=ctx.get("sender_id") or "system",
             original_path=str(md_path),
             original_filename=original_filename,
@@ -450,15 +455,26 @@ Args:
             converted_at=now,
             expires_at=file_expires_at(now),
         )
-        db_session = ctx.get("_db_session")
         if db_session:
             db_session.add(record)
             await db_session.flush()
+            if channel:
+                await FileScopeService(db_session).link_file_to_channel(
+                    record, channel, created_by=ctx.get("sender_id") or "system"
+                )
         else:
             from app.db.session import async_session_factory
 
             async with async_session_factory() as s:
+                channel = await s.get(Channel, channel_id)
+                if channel:
+                    record.workspace_id = channel.workspace_id
                 s.add(record)
+                await s.flush()
+                if channel:
+                    await FileScopeService(s).link_file_to_channel(
+                        record, channel, created_by=ctx.get("sender_id") or "system"
+                    )
                 await s.commit()
 
         preview_url = f"/api/v1/files/{file_id}/preview"

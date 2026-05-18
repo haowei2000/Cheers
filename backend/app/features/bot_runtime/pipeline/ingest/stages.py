@@ -24,7 +24,7 @@ from app.application.chat.message_assembler import MessageAssembler
 from app.config import settings
 from app.contracts.messages import MessageFileDTO
 from app.core.exceptions import AppError, BadRequestError, NotFoundError
-from app.db.models import Channel, ChannelMembership, FileRecord, Message
+from app.db.models import Channel, ChannelMembership, FileRecord, Message, User
 from app.db.session import async_session_factory
 from app.features.bot_runtime.pipeline.bot.topic_context import (
     MSG_TYPE_NORMAL,
@@ -97,8 +97,11 @@ class ValidateStage(Stage[IngestContext]):
 
         if ctx.file_ids:
             try:
+                user = None
+                if ctx.sender_type == "user" and ctx.sender_id:
+                    user = await ctx.session.get(User, ctx.sender_id)
                 await FilePipelineService().validate_message_files(
-                    ctx.session, channel_id=ctx.channel_id, file_ids=ctx.file_ids,
+                    ctx.session, channel_id=ctx.channel_id, file_ids=ctx.file_ids, user=user,
                 )
             except FileFlowError as exc:
                 raise BadRequestError(exc.detail)
@@ -179,6 +182,15 @@ class PersistStage(Stage[IngestContext]):
             await ctx.session.flush()
 
         ctx.msg = msg
+
+        if ctx.file_ids:
+            from app.services.file_scope_service import FileScopeService
+
+            await FileScopeService(ctx.session).link_files_to_channel(
+                file_ids=ctx.file_ids,
+                channel_id=ctx.channel_id,
+                created_by=ctx.sender_id if ctx.sender_type == "user" else None,
+            )
 
         # Pre-load FileRecord rows for the response payload so EmitStage
         # doesn't need to re-query.

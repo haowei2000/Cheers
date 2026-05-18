@@ -18,6 +18,7 @@ from app.db.models import (
     Channel,
     ChannelMembership,
     FileRecord,
+    FileScopeLink,
     Message,
     PromptTemplate,
     User,
@@ -687,7 +688,7 @@ async def test_create_message_with_file_metadata(client: AsyncClient, db_session
 
 
 @pytest.mark.asyncio
-async def test_forward_single_message_to_channel_clones_attachments(
+async def test_forward_single_message_to_channel_links_attachments(
     client: AsyncClient,
     db_session: AsyncSession,
     tmp_path,
@@ -746,14 +747,24 @@ async def test_forward_single_message_to_channel_clones_attachments(
     assert "转发自" in forwarded["content"]
     assert "source text" in forwarded["content"]
     assert len(forwarded["file_ids"]) == 1
-    assert forwarded["file_ids"][0] != record.file_id
+    assert forwarded["file_ids"][0] == record.file_id
 
-    clone = await db_session.get(FileRecord, forwarded["file_ids"][0])
-    assert clone is not None
-    assert clone.channel_id == target_ch.channel_id
-    assert clone.uploader_id == "a0000000-0000-0000-0000-000000000099"
-    assert clone.original_path == record.original_path
-    assert clone.original_filename == record.original_filename
+    linked_record = await db_session.get(FileRecord, forwarded["file_ids"][0])
+    assert linked_record is not None
+    assert linked_record.channel_id == source_ch.channel_id
+    assert linked_record.uploader_id == record.uploader_id
+    assert linked_record.original_path == record.original_path
+    assert linked_record.original_filename == record.original_filename
+    target_link = (
+        await db_session.execute(
+            select(FileScopeLink).where(
+                FileScopeLink.file_id == record.file_id,
+                FileScopeLink.scope_type == "channel",
+                FileScopeLink.scope_id == target_ch.channel_id,
+            )
+        )
+    ).scalar_one_or_none()
+    assert target_link is not None
 
 
 @pytest.mark.asyncio
@@ -916,10 +927,21 @@ async def test_forward_single_file_without_message(
     forwarded = resp.json()["data"]["messages"][0]
     assert forwarded["content"] == "转发文件：only-file.txt"
     assert len(forwarded["file_ids"]) == 1
-    clone = await db_session.get(FileRecord, forwarded["file_ids"][0])
-    assert clone is not None
-    assert clone.channel_id == target_ch.channel_id
-    assert clone.original_path == record.original_path
+    assert forwarded["file_ids"][0] == record.file_id
+    linked_record = await db_session.get(FileRecord, forwarded["file_ids"][0])
+    assert linked_record is not None
+    assert linked_record.channel_id == source_ch.channel_id
+    assert linked_record.original_path == record.original_path
+    target_link = (
+        await db_session.execute(
+            select(FileScopeLink).where(
+                FileScopeLink.file_id == record.file_id,
+                FileScopeLink.scope_type == "channel",
+                FileScopeLink.scope_id == target_ch.channel_id,
+            )
+        )
+    ).scalar_one_or_none()
+    assert target_link is not None
 
 
 @pytest.mark.asyncio
@@ -960,6 +982,79 @@ async def test_forward_secret_message_is_rejected(
     )
 
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_file_library_returns_personal_and_channel_scope_links(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000090", name="W90")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000090",
+        workspace_id=ws.workspace_id,
+        name="library-channel",
+        type="public",
+    )
+    personal_file = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000090",
+        channel_id=None,
+        workspace_id=ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path="/tmp/personal-library.txt",
+        original_filename="personal-library.txt",
+        content_type="text/plain",
+        size_bytes=10,
+        status="ready",
+    )
+    channel_file = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000091",
+        channel_id=None,
+        workspace_id=ws.workspace_id,
+        uploader_id="a0000000-0000-0000-0000-000000000091",
+        original_path="/tmp/channel-library.txt",
+        original_filename="channel-library.txt",
+        content_type="text/plain",
+        size_bytes=20,
+        status="ready",
+    )
+    db_session.add_all([
+        ws,
+        ch,
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=current_user_id,
+            member_type="user",
+        ),
+        personal_file,
+        channel_file,
+        FileScopeLink(
+            file_id=personal_file.file_id,
+            scope_type="personal",
+            scope_id=current_user_id,
+            workspace_id=ws.workspace_id,
+            created_by=current_user_id,
+        ),
+        FileScopeLink(
+            file_id=channel_file.file_id,
+            scope_type="channel",
+            scope_id=ch.channel_id,
+            workspace_id=ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.get("/api/v1/files/library")
+
+    assert resp.status_code == 200
+    by_id = {item["file_id"]: item for item in resp.json()["data"]}
+    assert by_id[personal_file.file_id]["scope_type"] == "personal"
+    assert by_id[personal_file.file_id]["channel_id"] is None
+    assert by_id[channel_file.file_id]["scope_type"] == "channel"
+    assert by_id[channel_file.file_id]["channel_id"] == ch.channel_id
+    assert by_id[channel_file.file_id]["channel_label"] == ch.name
 
 
 @pytest.mark.asyncio

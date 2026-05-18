@@ -286,8 +286,11 @@ async def _load_forward_sources(
         if missing:
             raise NotFoundError(f"file not found: {missing[0]}")
         files = [by_id[file_id] for file_id in file_ids]
+        from app.services.file_scope_service import FileScopeService
+
+        scope_service = FileScopeService(session)
         for rec in files:
-            await ChannelService(session).require_channel_member(rec.channel_id, current_user)
+            await scope_service.require_user_access(rec, current_user)
 
     return messages, files
 
@@ -320,35 +323,26 @@ def _dedupe_file_records(records: list[FileRecord]) -> list[FileRecord]:
     return out
 
 
-async def _clone_files_to_channel(
+async def _link_files_to_channel(
     session: AsyncSession,
     *,
     records: list[FileRecord],
     target_channel_id: str,
     current_user: User,
 ) -> list[str]:
-    cloned_ids: list[str] = []
+    linked_ids: list[str] = []
+    from app.services.file_scope_service import FileScopeService
+
+    scope_service = FileScopeService(session)
     for rec in records:
-        clone = FileRecord(
+        await scope_service.require_user_access(rec, current_user)
+        await scope_service.link_files_to_channel(
+            file_ids=[rec.file_id],
             channel_id=target_channel_id,
-            uploader_id=current_user.user_id,
-            original_path=rec.original_path,
-            object_key=rec.object_key,
-            storage_bucket=rec.storage_bucket,
-            original_filename=rec.original_filename,
-            content_type=rec.content_type,
-            size_bytes=rec.size_bytes,
-            md_path=rec.md_path,
-            status=rec.status,
-            summary_3lines=rec.summary_3lines,
-            last_error=rec.last_error,
-            uploaded_at=rec.uploaded_at,
-            converted_at=rec.converted_at,
+            created_by=current_user.user_id,
         )
-        session.add(clone)
-        await session.flush()
-        cloned_ids.append(clone.file_id)
-    return cloned_ids
+        linked_ids.append(rec.file_id)
+    return linked_ids
 
 
 async def _sender_labels(
@@ -457,7 +451,7 @@ async def forward_messages(
                 session,
                 list(source.file_ids or []),
             )
-            cloned_file_ids = await _clone_files_to_channel(
+            linked_file_ids = await _link_files_to_channel(
                 session,
                 records=_dedupe_file_records(attached_records + source_files),
                 target_channel_id=channel_id,
@@ -472,10 +466,10 @@ async def forward_messages(
                     sender_label=sender_labels.get((source.sender_type, source.sender_id), "未知发送者"),
                     channel_label=channel_labels.get(source.channel_id, "未知会话"),
                 ),
-                file_ids=cloned_file_ids,
+                file_ids=linked_file_ids,
             )
         else:
-            cloned_file_ids = await _clone_files_to_channel(
+            linked_file_ids = await _link_files_to_channel(
                 session,
                 records=source_files,
                 target_channel_id=channel_id,
@@ -491,11 +485,11 @@ async def forward_messages(
                 channel_id=channel_id,
                 current_user=current_user,
                 content=content,
-                file_ids=cloned_file_ids,
+                file_ids=linked_file_ids,
             )
         created.append(payload.to_wire())
     else:
-        root_files = await _clone_files_to_channel(
+        root_files = await _link_files_to_channel(
             session,
             records=source_files,
             target_channel_id=channel_id,
@@ -524,7 +518,7 @@ async def forward_messages(
                 session,
                 list(source.file_ids or []),
             )
-            cloned_file_ids = await _clone_files_to_channel(
+            linked_file_ids = await _link_files_to_channel(
                 session,
                 records=attached_records,
                 target_channel_id=channel_id,
@@ -539,7 +533,7 @@ async def forward_messages(
                     sender_label=sender_labels.get((source.sender_type, source.sender_id), "未知发送者"),
                     channel_label=channel_labels.get(source.channel_id, "未知会话"),
                 ),
-                file_ids=cloned_file_ids,
+                file_ids=linked_file_ids,
                 msg_type="reply",
                 in_reply_to_msg_id=root_payload.msg_id,
             )

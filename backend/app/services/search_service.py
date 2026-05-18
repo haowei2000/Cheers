@@ -26,6 +26,7 @@ from app.db.models import (
     Channel,
     ChannelMembership,
     FileRecord,
+    FileScopeLink,
     Friendship,
     Message,
     TodoItem,
@@ -596,13 +597,69 @@ class SearchService:
         workspace_id: str | None = None,
         channel_id: str | None = None,
     ) -> list[SearchFileHit]:
+        link_channel = aliased(Channel)
+        link_membership = aliased(ChannelMembership)
+        legacy_channel = aliased(Channel)
+        legacy_membership = aliased(ChannelMembership)
+        workspace_membership = aliased(WorkspaceMembership)
+        task = aliased(AgentTask)
+        task_channel = aliased(Channel)
+        task_membership = aliased(ChannelMembership)
         stmt = (
-            select(FileRecord, Channel)
-            .join(Channel, Channel.channel_id == FileRecord.channel_id)
-            .join(ChannelMembership, ChannelMembership.channel_id == FileRecord.channel_id)
+            select(FileRecord, link_channel, task_channel, legacy_channel)
+            .outerjoin(FileScopeLink, FileScopeLink.file_id == FileRecord.file_id)
+            .outerjoin(
+                link_channel,
+                and_(
+                    link_channel.channel_id == FileScopeLink.scope_id,
+                    FileScopeLink.scope_type.in_(("channel", "dm")),
+                ),
+            )
+            .outerjoin(
+                link_membership,
+                and_(
+                    link_membership.channel_id == link_channel.channel_id,
+                    link_membership.member_id == current_user.user_id,
+                    link_membership.member_type == "user",
+                ),
+            )
+            .outerjoin(legacy_channel, legacy_channel.channel_id == FileRecord.channel_id)
+            .outerjoin(
+                legacy_membership,
+                and_(
+                    legacy_membership.channel_id == legacy_channel.channel_id,
+                    legacy_membership.member_id == current_user.user_id,
+                    legacy_membership.member_type == "user",
+                ),
+            )
+            .outerjoin(
+                workspace_membership,
+                and_(
+                    FileScopeLink.scope_type == "workspace",
+                    or_(
+                        FileScopeLink.scope_id == workspace_membership.workspace_id,
+                        FileScopeLink.workspace_id == workspace_membership.workspace_id,
+                    ),
+                    workspace_membership.user_id == current_user.user_id,
+                ),
+            )
+            .outerjoin(
+                task,
+                and_(
+                    FileScopeLink.scope_type == "task",
+                    FileScopeLink.scope_id == task.task_id,
+                ),
+            )
+            .outerjoin(task_channel, task_channel.channel_id == task.channel_id)
+            .outerjoin(
+                task_membership,
+                and_(
+                    task_membership.channel_id == task.channel_id,
+                    task_membership.member_id == current_user.user_id,
+                    task_membership.member_type == "user",
+                ),
+            )
             .where(
-                ChannelMembership.member_id == current_user.user_id,
-                ChannelMembership.member_type == "user",
                 or_(
                     FileRecord.file_id.ilike(self._pattern(q)),
                     FileRecord.original_filename.ilike(self._pattern(q)),
@@ -610,26 +667,59 @@ class SearchService:
                     FileRecord.status.ilike(self._pattern(q)),
                     FileRecord.summary_3lines.ilike(self._pattern(q)),
                 ),
+                or_(
+                    FileRecord.uploader_id == current_user.user_id,
+                    and_(
+                        FileScopeLink.scope_type == "personal",
+                        FileScopeLink.scope_id == current_user.user_id,
+                    ),
+                    link_membership.member_id.is_not(None),
+                    legacy_membership.member_id.is_not(None),
+                    workspace_membership.user_id.is_not(None),
+                    task_membership.member_id.is_not(None),
+                ),
             )
         )
         if workspace_id:
-            stmt = stmt.where(Channel.workspace_id == workspace_id)
+            stmt = stmt.where(
+                or_(
+                    FileRecord.workspace_id == workspace_id,
+                    FileScopeLink.workspace_id == workspace_id,
+                    link_channel.workspace_id == workspace_id,
+                    task_channel.workspace_id == workspace_id,
+                    legacy_channel.workspace_id == workspace_id,
+                )
+            )
         if channel_id:
-            stmt = stmt.where(FileRecord.channel_id == channel_id)
+            stmt = stmt.where(
+                or_(
+                    FileRecord.channel_id == channel_id,
+                    and_(
+                        FileScopeLink.scope_type.in_(("channel", "dm")),
+                        FileScopeLink.scope_id == channel_id,
+                    ),
+                    task.channel_id == channel_id,
+                )
+            )
         rows = (
             await self.session.execute(stmt.order_by(FileRecord.created_at.desc()).limit(limit))
         ).all()
         hits: list[SearchFileHit] = []
+        seen: set[str] = set()
         q_lower = q.lower()
-        for rec, channel in rows:
+        for rec, linked_channel, linked_task_channel, legacy in rows:
+            if rec.file_id in seen:
+                continue
+            seen.add(rec.file_id)
+            channel = linked_channel or linked_task_channel or legacy
             filename = rec.original_filename or rec.file_id
             summary = rec.summary_3lines or ""
             snippet_source = summary if q_lower in summary.lower() else filename
             hits.append(
                 SearchFileHit(
                     file_id=rec.file_id,
-                    channel_id=rec.channel_id,
-                    channel_name=channel.name,
+                    channel_id=channel.channel_id if channel else (rec.channel_id or ""),
+                    channel_name=channel.name if channel else "Files",
                     original_filename=rec.original_filename,
                     content_type=rec.content_type,
                     size_bytes=rec.size_bytes,

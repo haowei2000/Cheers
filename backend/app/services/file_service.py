@@ -39,10 +39,16 @@ class FileService:
     ) -> dict:
         """Request presign."""
         from app.services.file_processor.service import FilePipelineService
+        from app.services.file_scope_service import FileScopeService
+
         await ChannelService(self.session).require_can_send_message(channel_id, uploader)
+        channel = await self.channel_repo.get_by_id(channel_id)
+        if not channel:
+            raise NotFoundError("channel not found")
         pipeline = FilePipelineService()
         record, reservation, metadata = pipeline.create_presigned_upload(
             channel_id=channel_id,
+            workspace_id=channel.workspace_id,
             uploader_id=uploader.user_id,
             filename=filename,
             content_type=content_type,
@@ -50,6 +56,7 @@ class FileService:
         )
         self.session.add(record)
         await self.session.flush()
+        await FileScopeService(self.session).ensure_personal_link(record)
         await pipeline.write_upload_metadata(reservation.file_id, metadata)
         return {
             "file_id": reservation.file_id,
@@ -84,11 +91,26 @@ class FileService:
         rec.status = "uploaded"
         rec.uploaded_at = datetime.utcnow()
         rec.expires_at = rec.expires_at or file_expires_at(rec.uploaded_at)
+        scope_service = None
+        if rec.channel_id:
+            from app.services.file_scope_service import FileScopeService
+
+            scope_service = FileScopeService(self.session)
+            channel = await self.channel_repo.get_by_id(rec.channel_id)
+            if channel:
+                await scope_service.link_file_to_channel(rec, channel, created_by=uploader.user_id)
+        if scope_service is None:
+            from app.services.file_scope_service import FileScopeService
+
+            scope_service = FileScopeService(self.session)
+        await scope_service.ensure_personal_link(rec)
         await self.session.flush()
         return rec
 
     async def get_download_url(self, file_id: str, user: User) -> str:
         """Get download url."""
         rec = await self.get_or_404(file_id)
-        await ChannelService(self.session).require_channel_member(rec.channel_id, user)
+        from app.services.file_scope_service import FileScopeService
+
+        await FileScopeService(self.session).require_user_access(rec, user)
         return f"/api/v1/files/{rec.file_id}/download"

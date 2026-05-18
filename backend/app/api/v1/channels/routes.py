@@ -23,6 +23,9 @@ class ChannelCreateBody(BaseModel):
     purpose: str | None = None
     allow_member_invites: bool | None = None
     allow_bot_adds: bool | None = None
+    project_id: str | None = None
+    project_title: str | None = None
+    task_title: str | None = None
 
 
 class ChannelUpdateBody(BaseModel):
@@ -62,7 +65,14 @@ async def _channel_response(
     current_user: User,
     unread_count: int | None = None,
 ) -> ChannelInResponse:
+    from app.services.channel_service import parse_personal_project_channel_purpose
+
     item = ChannelInResponse.model_validate(channel)
+    project_meta = parse_personal_project_channel_purpose(channel.purpose)
+    item.project_id = project_meta.get("project_id")
+    item.project_title = project_meta.get("project_title")
+    item.task_title = project_meta.get("task_title")
+    item.project_task_type = project_meta.get("project_task_type")
     item.unread_count = unread_count
     perms = await svc.channel_permission_summary(channel, current_user)
     item.my_role = perms["my_role"]
@@ -157,6 +167,9 @@ async def create_channel(
         allow_member_invites=body.allow_member_invites,
         allow_bot_adds=body.allow_bot_adds,
         creator=current_user,
+        project_id=body.project_id,
+        project_title=body.project_title,
+        task_title=body.task_title,
     )
     return APIResponse.ok(await _channel_response(svc, ch, current_user))
 
