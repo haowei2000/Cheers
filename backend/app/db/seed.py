@@ -5,7 +5,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.prompt_templates import DEFAULT_TEMPLATE_VARIABLES, DEFAULT_USER_TEMPLATE
+from app.core.builtin_defaults import (
+    builtin_prompt_templates,
+    coordinator_bot_defaults,
+    seed_workspace_defaults,
+)
+from app.core.localization import localized, normalize_locale
 from app.db.models import (
     BotAccount,
     Channel,
@@ -24,10 +29,36 @@ WORKSPACE_ID = "ws-default-001"
 CHANNEL_ID = "ch-seed-001"
 ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
 
-TEMPLATE_GENERAL_ID = "template-general-001"
-TEMPLATE_CODE_REVIEW_ID = "template-codereview-001"
-TEMPLATE_CREATIVE_ID = "template-creative-001"
 REMOVED_HELP_BOT_IDS = ("bot-guide-001", "bot-guide-helper-001")
+
+
+def _seed_locale() -> str:
+    return normalize_locale(settings.app_default_locale)
+
+
+def _assign_if_changed(obj, field: str, value) -> bool:
+    if getattr(obj, field) == value:
+        return False
+    setattr(obj, field, value)
+    return True
+
+
+def _configured_admin_display_name(locale: str) -> str:
+    if settings.admin_display_name in {"System Administrator", "系统管理员"}:
+        return seed_workspace_defaults(locale)["admin_display_name"]
+    return settings.admin_display_name
+
+
+async def _template_name_available(session: AsyncSession, template_id: str, name: str) -> bool:
+    existing = (
+        await session.execute(
+            select(PromptTemplate).where(
+                PromptTemplate.name == name,
+                PromptTemplate.template_id != template_id,
+            )
+        )
+    ).scalar_one_or_none()
+    return existing is None
 
 
 async def _remove_removed_help_bots(session: AsyncSession) -> bool:
@@ -46,34 +77,32 @@ async def _remove_removed_help_bots(session: AsyncSession) -> bool:
 
 async def _seed_helper_bot(session: AsyncSession) -> bool:
     """Seed helper bot."""
+    defaults = coordinator_bot_defaults(_seed_locale())
     r = await session.execute(select(BotAccount).where(BotAccount.bot_id == HELPER_BOT_ID))
     existing = r.scalar_one_or_none()
     if existing is not None:
+        did_write = False
         if existing.username in ("引导", "channel bot", "guide-helper", "Helper", "coordinator"):
             existing.username = "Coordinator"
-        existing.display_name = "协作助手"
-        existing.scope = "everyone"
+            did_write = True
+        did_write |= _assign_if_changed(existing, "display_name", defaults["display_name"])
+        did_write |= _assign_if_changed(existing, "description", defaults["description"])
+        did_write |= _assign_if_changed(existing, "intro", defaults["intro"])
+        did_write |= _assign_if_changed(existing, "scope", "everyone")
         await session.flush()
-        return False
+        return did_write
 
     session.add(
         BotAccount(
             bot_id=HELPER_BOT_ID,
             username="Coordinator",
-            display_name="协作助手",
-            description=(
-                "系统内置协作助手（Coordinator），集使用帮助、项目助手、记忆管理三合一。"
-                "可回答系统使用问题、结合项目记忆回答业务问题、"
-                "读写四层项目记忆、并在需要时建议路由到专业 Bot。"
-            ),
+            display_name=defaults["display_name"],
+            description=defaults["description"],
             model_id=None,
             template_id=None,
             status="online",
             scope="everyone",
-            intro=(
-                '{"capabilities":["系统帮助","项目问答","记忆读写","澄清弹窗","Bot路由建议"],'
-                '"description":"内置协作助手，@Coordinator 即可使用"}'
-            ),
+            intro=defaults["intro"],
         )
     )
     return True
@@ -83,62 +112,33 @@ async def _seed_templates(session: AsyncSession) -> bool:
     """Seed templates."""
     did_write = False
 
-    r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_GENERAL_ID))
-    general_template = r.scalar_one_or_none()
-    if general_template is None:
-        session.add(
-            PromptTemplate(
-                template_id=TEMPLATE_GENERAL_ID,
-                name="通用助手",
-                description="通用的 AI 助手，适合回答各种问题",
-                system_prompt="你是一个有用的 AI 助手。请简洁、专业地回答用户问题。",
-                user_template=DEFAULT_USER_TEMPLATE,
-                variables=DEFAULT_TEMPLATE_VARIABLES,
-                is_builtin=True,
+    for template_text in builtin_prompt_templates(_seed_locale()):
+        r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == template_text.template_id))
+        template = r.scalar_one_or_none()
+        if template is None:
+            name = template_text.name
+            if not await _template_name_available(session, template_text.template_id, name):
+                name = f"{template_text.name} (built-in)"
+            session.add(
+                PromptTemplate(
+                    template_id=template_text.template_id,
+                    name=name,
+                    description=template_text.description,
+                    system_prompt=template_text.system_prompt,
+                    user_template=template_text.user_template,
+                    variables=template_text.variables,
+                    is_builtin=True,
+                )
             )
-        )
-        did_write = True
-    elif general_template.is_builtin and general_template.user_template == "{{message}}":
-        general_template.user_template = DEFAULT_USER_TEMPLATE
-        general_template.variables = DEFAULT_TEMPLATE_VARIABLES
-        did_write = True
-
-    r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_CODE_REVIEW_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(
-            PromptTemplate(
-                template_id=TEMPLATE_CODE_REVIEW_ID,
-                name="代码审查",
-                description="专业的代码审查助手，发现潜在问题和优化点",
-                system_prompt="""你是一个专业的代码审查助手。请审查用户提供的代码，关注以下方面：
-1. 潜在的 Bug 和错误处理
-2. 代码风格和可读性
-3. 性能优化建议
-4. 安全漏洞
-5. 最佳实践
-
-请用中文回复，使用 Markdown 格式，结构清晰。""",
-                user_template="请审查以下代码：\n\n```\n{{message}}\n```\n\n请给出详细的审查意见，包括问题和改进建议。",
-                variables=["message"],
-                is_builtin=True,
-            )
-        )
-        did_write = True
-
-    r = await session.execute(select(PromptTemplate).where(PromptTemplate.template_id == TEMPLATE_CREATIVE_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(
-            PromptTemplate(
-                template_id=TEMPLATE_CREATIVE_ID,
-                name="创意写作",
-                description="富有创意的写作助手，帮助撰写和润色文字",
-                system_prompt="你是一个富有创意的写作助手。请用生动、有趣的语言帮助用户撰写和润色文字。",
-                user_template="请帮我完善以下内容：\n\n{{message}}",
-                variables=["message"],
-                is_builtin=True,
-            )
-        )
-        did_write = True
+            did_write = True
+            continue
+        if template.is_builtin:
+            if await _template_name_available(session, template.template_id, template_text.name):
+                did_write |= _assign_if_changed(template, "name", template_text.name)
+            did_write |= _assign_if_changed(template, "description", template_text.description)
+            did_write |= _assign_if_changed(template, "system_prompt", template_text.system_prompt)
+            did_write |= _assign_if_changed(template, "user_template", template_text.user_template)
+            did_write |= _assign_if_changed(template, "variables", template_text.variables)
 
     return did_write
 
@@ -146,44 +146,56 @@ async def _seed_templates(session: AsyncSession) -> bool:
 async def _seed_workspace_and_users(session: AsyncSession) -> bool:
     """Seed workspace and users."""
     did_write = False
+    locale = _seed_locale()
+    defaults = seed_workspace_defaults(locale)
 
     r = await session.execute(select(Workspace).where(Workspace.workspace_id == WORKSPACE_ID))
-    if r.scalar_one_or_none() is None:
-        session.add(Workspace(workspace_id=WORKSPACE_ID, name="默认空间"))
+    workspace = r.scalar_one_or_none()
+    if workspace is None:
+        session.add(Workspace(workspace_id=WORKSPACE_ID, name=defaults["workspace_name"]))
         did_write = True
+    elif workspace.name in {"默认空间", "Default", "Default Workspace"}:
+        did_write |= _assign_if_changed(workspace, "name", defaults["workspace_name"])
 
     r = await session.execute(select(Channel).where(Channel.channel_id == CHANNEL_ID))
-    if r.scalar_one_or_none() is None:
+    channel = r.scalar_one_or_none()
+    if channel is None:
         session.add(
             Channel(
                 channel_id=CHANNEL_ID,
                 workspace_id=WORKSPACE_ID,
-                name="通用",
+                name=defaults["channel_name"],
                 type="public",
-                purpose="默认频道",
+                purpose=defaults["channel_purpose"],
             )
         )
         did_write = True
+    else:
+        if channel.name in {"通用", "General"}:
+            did_write |= _assign_if_changed(channel, "name", defaults["channel_name"])
+        if channel.purpose in {"默认频道", "Default channel"}:
+            did_write |= _assign_if_changed(channel, "purpose", defaults["channel_purpose"])
 
     r = await session.execute(select(User).where(User.user_id == ADMIN_USER_ID))
     existing_admin = r.scalar_one_or_none()
+    admin_display_name = _configured_admin_display_name(locale)
     if existing_admin is None:
         session.add(
             User(
                 user_id=ADMIN_USER_ID,
                 username=settings.admin_username,
                 password_hash=hash_password(settings.admin_password),
-                display_name=settings.admin_display_name,
+                display_name=admin_display_name,
                 role="system_admin",
             )
         )
         did_write = True
     else:
-        existing_admin.username = settings.admin_username
-        existing_admin.display_name = settings.admin_display_name
+        did_write |= _assign_if_changed(existing_admin, "username", settings.admin_username)
+        did_write |= _assign_if_changed(existing_admin, "display_name", admin_display_name)
         if not verify_password(settings.admin_password, existing_admin.password_hash):
             existing_admin.password_hash = hash_password(settings.admin_password)
-        did_write = True
+            did_write = True
 
     r = await session.execute(
         select(WorkspaceMembership).where(
@@ -319,8 +331,9 @@ async def _sync_admin_credentials(session: AsyncSession) -> None:
     admin = r.scalar_one_or_none()
     if admin is None:
         return
+    locale = _seed_locale()
     admin.username = settings.admin_username
-    admin.display_name = settings.admin_display_name
+    admin.display_name = _configured_admin_display_name(locale)
     if not verify_password(settings.admin_password, admin.password_hash):
         admin.password_hash = hash_password(settings.admin_password)
 
@@ -330,6 +343,7 @@ async def ensure_builtin_bot() -> None:
     async with async_session_factory() as session:
         try:
             await _remove_removed_help_bots(session)
+            await _seed_templates(session)
             await _seed_helper_bot(session)
             await _sync_admin_credentials(session)
 
@@ -348,6 +362,6 @@ if __name__ == "__main__":
         "Seed done.\n"
         f"  Workspace: {WORKSPACE_ID}\n"
         f"  Channel: {CHANNEL_ID}\n"
-        f"  Templates: 通用助手, 代码审查, 创意写作\n"
-        f"  Bots: @Coordinator（内置协作助手）"
+        f"  Templates: {', '.join(t.name for t in builtin_prompt_templates(_seed_locale()))}\n"
+        f"  Bots: @Coordinator ({localized(_seed_locale(), en='built-in collaboration assistant', zh='内置协作助手')})"
     )

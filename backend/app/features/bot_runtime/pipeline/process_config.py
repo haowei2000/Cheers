@@ -21,6 +21,7 @@ class BotRuntime:
     user_secrets: dict[str, str] = field(default_factory=dict)
     sender_name: str = ""
     channel_name: str = ""
+    locale: str = "en"
     event_bus: Any = None  # EventBus (typed Any to avoid circular import)
     cancel_event: Any = None  # asyncio.Event; set when the user cancels this bot reply
 

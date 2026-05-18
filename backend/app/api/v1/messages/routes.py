@@ -6,7 +6,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from app.application.chat.message_assembler import MessageAssembler
 from app.contracts.messages import MessageDTO
 from app.core.dependencies import get_current_user
 from app.core.exceptions import BadRequestError, NotFoundError
+from app.core.localization import locale_from_headers, with_content_locale
 from app.core.responses import APIResponse
 from app.core.schemas import (
     ForwardMessageRequest,
@@ -225,6 +226,7 @@ async def _handle_send_message(
     channel_id: str,
     body: MessageCreate,
     current_user: User,
+    locale: str | None = None,
     background_tasks: BackgroundTasks | None = None,
 ) -> tuple[MessageDTO, str | None]:
     """Handle send message."""
@@ -232,6 +234,7 @@ async def _handle_send_message(
     raw_content_data = getattr(body, "content_data", None)
     if hasattr(raw_content_data, "model_dump"):
         raw_content_data = raw_content_data.model_dump(exclude_none=True) or None
+    raw_content_data = with_content_locale(raw_content_data, locale)
 
     ctx = IngestContext(
         channel_id=channel_id,
@@ -597,6 +600,7 @@ async def send_message(
     channel_id: str,
     body: MessageCreate,
     background_tasks: BackgroundTasks,
+    request: Request,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
@@ -605,6 +609,7 @@ async def send_message(
         channel_id=channel_id,
         body=body,
         current_user=current_user,
+        locale=locale_from_headers(request.headers),
         background_tasks=background_tasks,
     )
     response_data = d.to_wire()
@@ -617,6 +622,7 @@ async def send_message(
 async def send_message_stream(
     channel_id: str,
     body: MessageStreamCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Send message stream."""
@@ -650,6 +656,7 @@ async def send_message_stream(
                     content=body.content,
                     file_ids=normalized_file_ids,
                     mention_bot_ids=body.mention_bot_ids or [],
+                    content_data=with_content_locale(None, locale_from_headers(request.headers)),
                 )
                 try:
                     await run_message_workflow(ctx, bot_trigger="inline")

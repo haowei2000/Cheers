@@ -139,9 +139,10 @@ class Settings(BaseSettings):
     log_json: bool = False
 
     # Seed data: initial administrator account.
+    app_default_locale: str = "en"
     admin_username: str = "admin"
     admin_password: str = "change-me-admin-password"
-    admin_display_name: str = "系统管理员"
+    admin_display_name: str = "System Administrator"
 
     # ===== Agent Bridge =====
     agent_bridge_enabled: bool = True

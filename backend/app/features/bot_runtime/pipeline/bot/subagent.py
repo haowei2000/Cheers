@@ -34,6 +34,7 @@ import time
 from typing import TYPE_CHECKING
 
 from app.config import settings
+from app.core.localization import normalize_locale
 from app.db.models import Message
 from app.db.session import async_session_factory
 from app.features.bot_runtime.adapters.base import (
@@ -115,6 +116,11 @@ def build_payload(
         message.msg_id = ctx.trigger_msg.msg_id
     if capabilities.include_msg_type:
         message.msg_type = ctx.trigger_msg.msg_type
+    locale = getattr(ctx, "locale", None)
+    if not isinstance(locale, str):
+        locale = "en"
+    locale = normalize_locale(locale)
+    message.extra["locale"] = locale
 
     # Token streaming flows through execute's Delta events directly;
     # _stream_token in process_config is no longer consumed by any adapter.
@@ -126,6 +132,7 @@ def build_payload(
         user_secrets=dict(ctx.user_secrets),
         sender_name=ctx.sender_name,
         channel_name=ctx.channel_name,
+        locale=locale,
         event_bus=ctx.bus,
         db_session=ctx.session,
         skip_system_prompt=skip_system_prompt,

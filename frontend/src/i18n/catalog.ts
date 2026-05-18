@@ -108,8 +108,11 @@ export const EN_TO_ZH: Record<string, string> = {
   "Project": "项目",
   "Personal": "个人",
   "Default": "默认空间",
+  "Default Workspace": "默认空间",
   "General": "通用",
+  "Default channel": "默认频道",
   "System administrator": "系统管理员",
+  "System Administrator": "系统管理员",
   "No content": "暂无内容",
   "No files": "暂无文件",
   "No records": "暂无记录",
@@ -196,6 +199,16 @@ export const EN_TO_ZH: Record<string, string> = {
   "General assistant": "通用助手",
   "Code review": "代码审查",
   "Creative writing": "创意写作",
+  "Collaboration Assistant": "协作助手",
+  "A general AI assistant for answering a wide range of questions": "通用的 AI 助手，适合回答各种问题",
+  "A code review assistant that finds potential issues and improvements": "专业的代码审查助手，发现潜在问题和优化点",
+  "A creative writing assistant that helps draft and polish text": "富有创意的写作助手，帮助撰写和润色文字",
+  "Built-in Coordinator assistant. Mention @Coordinator to use it.": "内置协作助手，@Coordinator 即可使用",
+  "System help": "系统帮助",
+  "Project Q&A": "项目问答",
+  "Memory read/write": "记忆读写",
+  "Clarification dialog": "澄清弹窗",
+  "Bot routing suggestions": "Bot路由建议",
   "Manage your bots. Click a card to view details or edit.": "管理你的 Bot。点击卡片查看详情或编辑。",
   "New bot": "新建 Bot",
   "Create a new channel bot": "创建一个新的频道 Bot",
@@ -618,6 +631,26 @@ export const EN_TEXT_PATTERNS: Array<[RegExp, (match: RegExpMatchArray) => strin
   [/^(.+) updated$/, (match) => `${translateToChinese(match[1])}已更新`],
 ];
 
+export const ZH_TO_EN: Record<string, string> = {
+  "默认空间": "Default Workspace",
+  "默认频道": "Default channel",
+  "通用": "General",
+  "系统管理员": "System Administrator",
+  "协作助手": "Collaboration Assistant",
+  "通用助手": "General assistant",
+  "代码审查": "Code review",
+  "创意写作": "Creative writing",
+  "通用的 AI 助手，适合回答各种问题": "A general AI assistant for answering a wide range of questions",
+  "专业的代码审查助手，发现潜在问题和优化点": "A code review assistant that finds potential issues and improvements",
+  "富有创意的写作助手，帮助撰写和润色文字": "A creative writing assistant that helps draft and polish text",
+  "内置协作助手，@Coordinator 即可使用": "Built-in Coordinator assistant. Mention @Coordinator to use it.",
+  "系统帮助": "System help",
+  "项目问答": "Project Q&A",
+  "记忆读写": "Memory read/write",
+  "澄清弹窗": "Clarification dialog",
+  "Bot路由建议": "Bot routing suggestions",
+};
+
 export function translateToChinese(value: string): string {
   const text = value.trim();
   if (!text) return value;
@@ -627,6 +660,14 @@ export function translateToChinese(value: string): string {
     const match = text.match(pattern);
     if (match) return preserveOuterWhitespace(value, handler(match));
   }
+  return value;
+}
+
+export function translateToEnglish(value: string): string {
+  const text = value.trim();
+  if (!text) return value;
+  const exact = ZH_TO_EN[text];
+  if (exact) return preserveOuterWhitespace(value, exact);
   return value;
 }
 
