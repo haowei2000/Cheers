@@ -331,7 +331,7 @@ export function useWorkspaceDirectory({
           const message = JSON.parse(event.data);
           if (message.type === "channel_new_message" && message.data) {
             const channelId = message.data.channel_id as string | undefined;
-            if (!channelId || channelId === selectedId) return;
+            if (!channelId || channelId === selectedIdRef.current) return;
             setChannels((prev) =>
               prev.map((channel) =>
                 channel.channel_id === channelId
@@ -379,7 +379,7 @@ export function useWorkspaceDirectory({
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) ws.close();
     };
-  }, [authToken, currentUserId, selectedId]);
+  }, [authToken, currentUserId]);
 
   useEffect(() => {
     if (!selectedId || !authToken) return;

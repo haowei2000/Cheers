@@ -47,6 +47,15 @@ type ChannelMessageCacheEntry = {
   anchorId: string | null;
 };
 
+type ChannelWindowState = {
+  channelId: string | null;
+  store: MessageStore;
+  hasMore: boolean;
+  hasMoreAfter: boolean;
+  loading: boolean;
+  anchorId: string | null;
+};
+
 type ChannelScrollPosition = {
   msgId: string;
   offsetTop: number;
@@ -65,9 +74,46 @@ const INITIAL_SCROLL_SETTLE_FRAMES = 2;
 const EXPLICIT_SCROLL_SETTLE_FRAMES = 3;
 const PREPEND_SCROLL_SETTLE_FRAMES = 2;
 const PAGINATION_EDGE_PX = VIRTUAL_MESSAGE_ESTIMATED_HEIGHT * 2;
+const EMPTY_MESSAGE_STORE = emptyMessageStore();
 
 function fetchKey(channelId: string, anchorId: string | null): string {
   return `${channelId}:${anchorId || "bottom"}`;
+}
+
+function emptyChannelWindowState(): ChannelWindowState {
+  return {
+    channelId: null,
+    store: emptyMessageStore(),
+    hasMore: true,
+    hasMoreAfter: false,
+    loading: false,
+    anchorId: null,
+  };
+}
+
+function cacheEntryToWindowState(
+  channelId: string,
+  entry: ChannelMessageCacheEntry,
+  loading = false,
+): ChannelWindowState {
+  return {
+    channelId,
+    store: entry.store,
+    hasMore: entry.hasMore,
+    hasMoreAfter: entry.hasMoreAfter,
+    loading,
+    anchorId: entry.anchorId,
+  };
+}
+
+function windowStateToCacheEntry(state: ChannelWindowState): ChannelMessageCacheEntry {
+  return {
+    store: state.store,
+    hasMore: state.hasMore,
+    hasMoreAfter: state.hasMoreAfter,
+    receivedAt: Date.now(),
+    anchorId: state.anchorId,
+  };
 }
 
 function messageAnchorNodes(container: HTMLElement): HTMLElement[] {
@@ -200,23 +246,67 @@ export function useChannelMessages({
   pageTopicMessages,
   setExpandedTopics,
 }: UseChannelMessagesOptions) {
-  const [messageStore, setMessageStore] = useState<MessageStore>(() =>
-    emptyMessageStore(),
+  const [windowState, setWindowState] = useState<ChannelWindowState>(() =>
+    emptyChannelWindowState(),
   );
+  const messageStore =
+    selectedId && windowState.channelId === selectedId
+      ? windowState.store
+      : EMPTY_MESSAGE_STORE;
   const messages = useMemo(() => storeToMessages(messageStore), [messageStore]);
-  const setMessages = useCallback(
-    (next: Message[] | ((prev: Message[]) => Message[])) => {
-      setMessageStore((prevStore) => {
-        if (typeof next !== "function") return messagesToStore(next);
-        const prevMessages = storeToMessages(prevStore);
-        return messagesToStore(next(prevMessages));
+  const loading = selectedId
+    ? windowState.channelId !== selectedId || windowState.loading
+    : false;
+  const hasMore =
+    selectedId && windowState.channelId === selectedId
+      ? windowState.hasMore
+      : true;
+  const hasMoreNewer =
+    selectedId && windowState.channelId === selectedId
+      ? windowState.hasMoreAfter
+      : false;
+  const setMessageStore = useCallback(
+    (next: SetStateAction<MessageStore>) => {
+      setWindowState((prev) => {
+        if (!selectedId || prev.channelId !== selectedId) return prev;
+        const nextStore =
+          typeof next === "function"
+            ? (next as (prev: MessageStore) => MessageStore)(prev.store)
+            : next;
+        return {
+          ...prev,
+          store: nextStore,
+        };
       });
     },
-    [],
+    [selectedId],
   );
-  const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [hasMoreNewer, setHasMoreNewer] = useState(false);
+  const setMessages = useCallback(
+    (next: Message[] | ((prev: Message[]) => Message[])) => {
+      setWindowState((prevState) => {
+        if (!selectedId || prevState.channelId !== selectedId) {
+          if (typeof next === "function") return prevState;
+          return {
+            ...prevState,
+            channelId: selectedId,
+            store: messagesToStore(next),
+          };
+        }
+        if (typeof next !== "function") {
+          return {
+            ...prevState,
+            store: messagesToStore(next),
+          };
+        }
+        const prevMessages = storeToMessages(prevState.store);
+        return {
+          ...prevState,
+          store: messagesToStore(next(prevMessages)),
+        };
+      });
+    },
+    [selectedId],
+  );
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingNewer, setLoadingNewer] = useState(false);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
@@ -229,7 +319,6 @@ export function useChannelMessages({
   const channelMessageCacheRef = useRef<Partial<Record<string, ChannelMessageCacheEntry>>>({});
   const preloadRequestsRef = useRef<Partial<Record<string, Promise<ChannelMessageCacheEntry | null>>>>({});
   const cacheGenerationRef = useRef(0);
-  const currentWindowAnchorIdRef = useRef<string | null>(null);
   const showJumpToBottomRef = useRef(false);
   const lastScrollTopRef = useRef(0);
   const downwardScrollDistanceRef = useRef(0);
@@ -353,11 +442,8 @@ export function useChannelMessages({
         };
         lastAutoScrollChannelRef.current = null;
         stickToBottomRef.current = !entry.anchorId;
-        currentWindowAnchorIdRef.current = entry.anchorId;
         channelMessageCacheRef.current[targetChannelId] = entry;
-        setMessageStore(entry.store);
-        setHasMore(entry.hasMore);
-        setHasMoreNewer(entry.hasMoreAfter);
+        setWindowState(cacheEntryToWindowState(targetChannelId, entry));
         if (entry.store.ids.length === 0) {
           suppressInitialScrollEventsRef.current = false;
           setRestoringInitialScroll(false);
@@ -394,14 +480,10 @@ export function useChannelMessages({
     };
   }, [cancelJumpToBottomRaf]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!selectedId) {
       cancelJumpToBottomRaf();
-      setMessageStore(emptyMessageStore());
-      currentWindowAnchorIdRef.current = null;
-      setHasMore(true);
-      setHasMoreNewer(false);
-      setLoading(false);
+      setWindowState(emptyChannelWindowState());
       suppressInitialScrollEventsRef.current = false;
       setRestoringInitialScroll(false);
       setJumpToBottomVisible(false);
@@ -435,21 +517,20 @@ export function useChannelMessages({
     setRestoringInitialScroll(Boolean(requestedAnchorId));
     setJumpToBottomVisible(false);
     if (cached && cachedMatchesAnchor) {
-      currentWindowAnchorIdRef.current = cached.anchorId;
-      setMessageStore(cached.store);
-      setHasMore(cached.hasMore);
-      setHasMoreNewer(cached.hasMoreAfter);
-      setLoading(false);
+      setWindowState(cacheEntryToWindowState(targetChannelId, cached));
       if (cached.store.ids.length === 0) {
         suppressInitialScrollEventsRef.current = false;
         setRestoringInitialScroll(false);
       }
     } else {
-      setMessageStore(emptyMessageStore());
-      currentWindowAnchorIdRef.current = null;
-      setHasMore(true);
-      setHasMoreNewer(false);
-      setLoading(true);
+      setWindowState({
+        channelId: targetChannelId,
+        store: emptyMessageStore(),
+        hasMore: true,
+        hasMoreAfter: false,
+        loading: true,
+        anchorId: null,
+      });
     }
 
     if (cached && cachedMatchesAnchor && Date.now() - cached.receivedAt < CHANNEL_CACHE_REVALIDATE_MS) {
@@ -479,19 +560,27 @@ export function useChannelMessages({
           align: requestedAnchorId && entry.anchorId ? "center" : "bottom",
         };
         stickToBottomRef.current = !entry.anchorId;
-        currentWindowAnchorIdRef.current = entry.anchorId;
         channelMessageCacheRef.current[targetChannelId] = entry;
-        setMessageStore((prev) => {
-          const prevMessages = storeToMessages(prev);
-          if (prevMessages.length === 0) return entry.store;
-          return messagesToStore(
-            trimToRecentMessages(
-              mergeMessagesChronologically(prevMessages, storeToMessages(entry.store)),
-            ),
-          );
+        setWindowState((prev) => {
+          if (prev.channelId !== targetChannelId) return prev;
+          const prevMessages = storeToMessages(prev.store);
+          const store =
+            prevMessages.length === 0
+              ? entry.store
+              : messagesToStore(
+                  trimToRecentMessages(
+                    mergeMessagesChronologically(prevMessages, storeToMessages(entry.store)),
+                  ),
+                );
+          return {
+            channelId: targetChannelId,
+            store,
+            hasMore: entry.hasMore,
+            hasMoreAfter: entry.hasMoreAfter,
+            loading: false,
+            anchorId: entry.anchorId,
+          };
         });
-        setHasMore(entry.hasMore);
-        setHasMoreNewer(entry.hasMoreAfter);
         if (entry.store.ids.length === 0) {
           suppressInitialScrollEventsRef.current = false;
           setRestoringInitialScroll(false);
@@ -509,7 +598,11 @@ export function useChannelMessages({
           !controller.signal.aborted &&
           selectedIdRef.current === targetChannelId
         ) {
-          setLoading(false);
+          setWindowState((prev) =>
+            prev.channelId === targetChannelId
+              ? { ...prev, loading: false }
+              : prev,
+          );
         }
       });
 
@@ -525,20 +618,17 @@ export function useChannelMessages({
   ]);
 
   useEffect(() => {
-    if (!selectedId || loading) return;
-    channelMessageCacheRef.current[selectedId] = {
-      store: messageStore,
-      hasMore,
-      hasMoreAfter: hasMoreNewer,
-      receivedAt: Date.now(),
-      anchorId: currentWindowAnchorIdRef.current,
-    };
-  }, [hasMore, hasMoreNewer, loading, messageStore, selectedId]);
+    if (!selectedId || windowState.channelId !== selectedId || windowState.loading) return;
+    channelMessageCacheRef.current[selectedId] = windowStateToCacheEntry(windowState);
+  }, [selectedId, windowState]);
 
   const loadMoreMessages = useCallback(async () => {
     if (!selectedId || !hasMore || loadingMore) return;
     if (messages.length >= MAX_LOADED_MESSAGES) {
-      setHasMore(false);
+      const targetChannelId = selectedId;
+      setWindowState((prev) =>
+        prev.channelId === targetChannelId ? { ...prev, hasMore: false } : prev,
+      );
       return;
     }
     const targetChannelId = selectedId;
@@ -561,7 +651,9 @@ export function useChannelMessages({
       const data = await response.json();
       const older = data.data || [];
       if (older.length === 0) {
-        setHasMore(false);
+        setWindowState((prev) =>
+          prev.channelId === targetChannelId ? { ...prev, hasMore: false } : prev,
+        );
         isLoadingOlderRef.current = false;
         return;
       }
@@ -571,20 +663,24 @@ export function useChannelMessages({
       }
       const hitWindowCap =
         messages.length + older.length >= MAX_LOADED_MESSAGES;
-      setHasMore(
+      const nextHasMore =
         !hitWindowCap &&
-          Boolean(
-            data.meta?.has_more_before ??
-              data.meta?.has_more ??
-              older.length >= OLDER_MESSAGE_PAGE_SIZE,
+        Boolean(
+          data.meta?.has_more_before ??
+            data.meta?.has_more ??
+            older.length >= OLDER_MESSAGE_PAGE_SIZE,
+        );
+      setWindowState((prev) => {
+        if (prev.channelId !== targetChannelId) return prev;
+        return {
+          ...prev,
+          hasMore: nextHasMore,
+          store: trimMessageStoreToRecent(
+            messagesToStore([...older, ...storeToMessages(prev.store)]),
+            MAX_LOADED_MESSAGES,
           ),
-      );
-      setMessageStore((prev) =>
-        trimMessageStoreToRecent(
-          messagesToStore([...older, ...storeToMessages(prev)]),
-          MAX_LOADED_MESSAGES,
-        ),
-      );
+        };
+      });
       requestAnimationFrame(() => {
         if (container) {
           const heightDelta = container.scrollHeight - prevScrollHeight;
@@ -634,23 +730,28 @@ export function useChannelMessages({
       const data = await response.json();
       const newer = data.data || [];
       if (newer.length === 0) {
-        setHasMoreNewer(false);
+        setWindowState((prev) =>
+          prev.channelId === targetChannelId ? { ...prev, hasMoreAfter: false } : prev,
+        );
         return;
       }
       if (selectedIdRef.current !== targetChannelId) return;
-      setHasMoreNewer(
-        Boolean(
-          data.meta?.has_more_after ??
-            data.meta?.has_more ??
-            newer.length >= OLDER_MESSAGE_PAGE_SIZE,
-        ),
+      const nextHasMoreAfter = Boolean(
+        data.meta?.has_more_after ??
+          data.meta?.has_more ??
+          newer.length >= OLDER_MESSAGE_PAGE_SIZE,
       );
-      setMessageStore((prev) =>
-        trimMessageStoreToRecent(
-          messagesToStore([...storeToMessages(prev), ...newer]),
-          MAX_LOADED_MESSAGES,
-        ),
-      );
+      setWindowState((prev) => {
+        if (prev.channelId !== targetChannelId) return prev;
+        return {
+          ...prev,
+          hasMoreAfter: nextHasMoreAfter,
+          store: trimMessageStoreToRecent(
+            messagesToStore([...storeToMessages(prev.store), ...newer]),
+            MAX_LOADED_MESSAGES,
+          ),
+        };
+      });
     } catch (error) {
       console.error(error);
     } finally {
