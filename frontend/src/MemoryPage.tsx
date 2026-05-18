@@ -128,7 +128,7 @@ const LAYER_META: Record<
 	    readonly: true,
 	  },
 	  TODO: {
-	    label: "Todo items",
+	    label: "Todos",
 	    desc: "Channel task list",
 	    icon: ico("checkCircle"),
 	    color: "text-[var(--red)]",
@@ -794,7 +794,7 @@ export default function MemoryPage({
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                 handleTodoCreate();
 	            }}
-	            placeholder="NewTasks..."
+	            placeholder="New task..."
 	            className="an-textarea resize-none"
 	          />
 	          <div className="flex items-center gap-2">

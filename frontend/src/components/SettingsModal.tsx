@@ -97,6 +97,7 @@ export function SettingsModal({
   const [route, setRoute] = useState<SettingsRoute>("bots");
   const [density, setDensityState] = useState<Density>(() => getStoredDensity());
   const [bots, setBots] = useState<BotRow[]>([]);
+  const [botsLoading, setBotsLoading] = useState(false);
   const canManageBuiltinBots = currentUser?.role === "system_admin";
   const visibleBots = bots.filter(
     (b) =>
@@ -115,10 +116,12 @@ export function SettingsModal({
   }, [open, onClose]);
 
   const reloadBots = () => {
+    setBotsLoading(true);
     apiFetch("/bots", { token: authToken })
       .then((r) => r.json())
       .then((d) => setBots(Array.isArray(d?.data) ? d.data : []))
-      .catch(() => setBots([]));
+      .catch(() => setBots([]))
+      .finally(() => setBotsLoading(false));
   };
 
   useEffect(() => {
@@ -137,7 +140,7 @@ export function SettingsModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Settings · Settings"
+      title="Settings"
       maxWidth="max-w-4xl"
       panelClassName="overflow-hidden"
     >
@@ -171,6 +174,7 @@ export function SettingsModal({
           {route === "bots" && (
             <BotListSubPane
               bots={visibleBots}
+              loading={botsLoading}
               authToken={authToken}
               onChanged={reloadBots}
             />

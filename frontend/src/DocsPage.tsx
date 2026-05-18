@@ -8,6 +8,7 @@ import { AppIcon } from "./components/icons/AppIcon";
 const API = "/api";  // Docs endpoints are provided by manual_routes and omit /v1.
 
 type DocFile = { name: string; stem: string; size: number; category?: string };
+type DocsIndexStatus = "loading" | "ready" | "empty" | "error";
 const PREFERRED_DOC_STEMS = ["help/README"];
 
 function docRawUrl(stem: string): string {
@@ -134,12 +135,12 @@ export default function DocsPage() {
   }, []);
 
   const [files, setFiles] = useState<DocFile[]>([]);
+  const [docsStatus, setDocsStatus] = useState<DocsIndexStatus>("loading");
+  const [docsError, setDocsError] = useState("");
   const [selected, setSelected] = useState<DocFile | null>(null);
   const [content, setContent] = useState("");
   const [editContent, setEditContent] = useState("");
   const [mode, setMode] = useState<"preview" | "edit">("preview");
-  const [listLoading, setListLoading] = useState(true);
-  const [listError, setListError] = useState("");
   const [contentError, setContentError] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -153,27 +154,103 @@ export default function DocsPage() {
     return files.filter((file) => file.category !== "develop");
   }, [files]);
 
-  const loadDocs = useCallback(async () => {
-    setListLoading(true);
-    setListError("");
-    try {
-      const response = await fetch(`${API}/docs`);
-      const data = await readJson<{ files?: DocFile[] }>(response, "Failed to load docs list");
-      setFiles(Array.isArray(data.files) ? data.files : []);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load docs list";
-      setListError(message);
-      setFiles([]);
-      toast.error("Failed to load docs list");
-    } finally {
-      setListLoading(false);
-    }
+  const loadDocs = useCallback(() => {
+    setDocsStatus("loading");
+    setDocsError("");
+    setFiles([]);
+    setSelected(null);
+    fetch(`${API}/docs`)
+      .then(async (r) => {
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          throw new Error(payload.detail || payload.message || "Failed to load docs list");
+        }
+        return payload;
+      })
+      .then((d) => {
+        const nextFiles = Array.isArray(d.files) ? d.files : [];
+        const helpDocs = nextFiles.filter((file: DocFile) => file.category === "help");
+        const userDocs = helpDocs.length > 0
+          ? helpDocs
+          : nextFiles.filter((file: DocFile) => file.category !== "develop");
+        setFiles(nextFiles);
+        setDocsStatus(userDocs.length > 0 ? "ready" : "empty");
+      })
+      .catch((error: unknown) => {
+        const message = (error as Error).message || "Failed to load docs list";
+        setDocsError(message);
+        setFiles([]);
+        setSelected(null);
+        setContent("");
+        setEditContent("");
+        setDocsStatus("error");
+      });
   }, []);
 
   // Load file list
   useEffect(() => {
-    void loadDocs();
+    loadDocs();
   }, [loadDocs]);
+
+  useEffect(() => {
+    if (docsStatus === "error" || docsStatus === "empty") {
+      setSelected(null);
+    }
+  }, [docsStatus]);
+
+  useEffect(() => {
+    if (!selected) return;
+    if (!readableFiles.some((file) => file.stem === selected.stem)) {
+      setSelected(null);
+    }
+  }, [readableFiles, selected]);
+
+  const renderDocsMainEmptyState = () => {
+    if (docsStatus === "loading") {
+      return (
+        <>
+          <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--fg-3)]">
+            <AppIcon name="file" className="h-7 w-7" />
+          </div>
+          <p className="an-type-body font-medium">Loading documents...</p>
+        </>
+      );
+    }
+    if (docsStatus === "error") {
+      return (
+        <>
+          <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--red)]">
+            <AppIcon name="file" className="h-7 w-7" />
+          </div>
+          <p className="an-type-body font-medium">Could not load documents</p>
+          <p className="an-type-meta mt-1">{docsError || "The documentation index is unavailable."}</p>
+          <button type="button" onClick={loadDocs} className="an-btn an-btn-primary mt-4">
+            Retry
+          </button>
+        </>
+      );
+    }
+    if (docsStatus === "empty") {
+      return (
+        <>
+          <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--fg-3)]">
+            <AppIcon name="file" className="h-7 w-7" />
+          </div>
+          <p className="an-type-body font-medium">No user docs available</p>
+          <p className="an-type-meta mt-1">There are no readable user documents yet.</p>
+        </>
+      );
+    }
+    return (
+      <>
+        <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--fg-3)]">
+          <AppIcon name="file" className="h-7 w-7" />
+        </div>
+        <p className="an-type-body font-medium">Select a document</p>
+        <p className="an-type-meta mt-1">Select a user guide from the sidebar to read.</p>
+      </>
+    );
+  };
 
   useEffect(() => {
     if (!files.length) return;
@@ -197,6 +274,7 @@ export default function DocsPage() {
   }, [canEdit, mode]);
 
   useEffect(() => {
+    if (!selected && docsStatus === "loading") return;
     const current = urlParams.get("file");
     const next = selected?.stem ?? null;
     if (current === next) return;
@@ -207,7 +285,7 @@ export default function DocsPage() {
       params.delete("file");
     }
     setUrlParams(params, { replace: true });
-  }, [selected?.stem, setUrlParams, urlParams]);
+  }, [docsStatus, selected, selected?.stem, setUrlParams, urlParams]);
 
   // Load file content
   useEffect(() => {
@@ -308,11 +386,21 @@ export default function DocsPage() {
 
           {/* File list */}
           <div className="flex-1 overflow-y-auto py-1">
-            {listLoading && (
-              <p className="an-type-meta px-4 py-3">Loading docs...</p>
+            {docsStatus === "loading" && (
+              <p className="an-type-meta px-4 py-3">Loading documents...</p>
             )}
-            {!listLoading && filtered.length === 0 && (
-              <p className="an-type-meta px-4 py-3">No files found.</p>
+            {docsStatus === "error" && (
+              <div className="px-4 py-3">
+                <p className="an-type-meta text-[var(--red)]">{docsError || "Failed to load documents."}</p>
+              </div>
+            )}
+            {docsStatus === "empty" && (
+              <p className="an-type-meta px-4 py-3">No user docs available.</p>
+            )}
+            {docsStatus === "ready" && filtered.length === 0 && (
+              <p className="an-type-meta px-4 py-3">
+                {search.trim() ? "No matching docs." : "No user docs available."}
+              </p>
             )}
             {filtered.map((f) => {
               const basename = f.stem.includes("/") ? f.stem.split("/").pop()! : f.stem;
@@ -343,7 +431,13 @@ export default function DocsPage() {
 
           {/* Footer */}
           <div className="border-t border-[var(--border)] px-4 py-2">
-            <p className="an-type-meta">{readableFiles.length} files</p>
+            <p className="an-type-meta">
+              {docsStatus === "loading"
+                ? "Loading"
+                : docsStatus === "error"
+                  ? "Unavailable"
+                  : `${readableFiles.length} files`}
+            </p>
           </div>
         </aside>
 
@@ -356,38 +450,7 @@ export default function DocsPage() {
                   Browse files
                 </button>
               )}
-              <div>
-                <div className="mb-3 inline-grid h-14 w-14 place-items-center rounded-lg bg-[var(--surface-soft)] text-[var(--fg-3)]">
-                  <AppIcon name="file" className="h-7 w-7" />
-                </div>
-                <p className="an-type-body font-medium">
-                  {listLoading
-                    ? "Loading documents"
-                    : listError
-                      ? "Docs failed to load"
-                      : readableFiles.length === 0
-                        ? "No user documents found"
-                        : "Select a document"}
-                </p>
-                <p className="an-type-meta mt-1">
-                  {listLoading
-                    ? "Fetching the documentation index..."
-                    : listError
-                      ? listError
-                      : readableFiles.length === 0
-                        ? "The backend returned an empty docs list. Check that docs/ is mounted or packaged with the backend."
-                        : "Select a user guide from the sidebar to read."}
-                </p>
-                {(listError || (!listLoading && readableFiles.length === 0)) && (
-                  <button
-                    type="button"
-                    onClick={() => void loadDocs()}
-                    className="an-btn an-btn-primary an-btn-sm mt-4"
-                  >
-                    Retry
-                  </button>
-                )}
-              </div>
+              <div>{renderDocsMainEmptyState()}</div>
             </div>
           ) : (
             <>

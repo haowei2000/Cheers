@@ -14,6 +14,16 @@ import { MembersView } from "../features/memory/views/MembersView";
 import { ProjectView } from "../features/memory/views/ProjectView";
 
 const API = "/api/v1";
+const PANEL_TITLE_BY_LAYER: Record<string, string> = {
+  PROJECT: "Project memory",
+  ANCHOR: "Project memory",
+  PROGRESS: "Project progress",
+  DECISIONS: "Decisions",
+  FILES_INDEX: "Files",
+  MEMBERS: "Members",
+  TODO: "Todos",
+  RECENT: "Recent activity",
+};
 
 // ── Memory Panel (right sidebar) ─────────────────────────────────────────────
 //
@@ -105,7 +115,7 @@ export function MemoryPanel({
 
   const isProject = activeLayer === "PROJECT";
   const PROJECT_META = {
-    label: "Project · Project",
+    label: "Project memory",
     desc: "Core goals and progress (Anchor + Progress)",
     color: "blue",
     icon: "◆",
@@ -113,6 +123,8 @@ export function MemoryPanel({
     entryBased: false,
   };
   const meta = isProject ? PROJECT_META : LAYER_META[activeLayer];
+  const panelTitle = PANEL_TITLE_BY_LAYER[activeLayer] || meta.label || "Channel memory";
+  const toolbarLabel = activeLayer === "FILES_INDEX" ? "Reference index" : panelTitle;
   const isReadonly = !!meta.readonly;
   const isEntryBased = !!meta.entryBased;
   const canInviteFromMembers =
@@ -952,7 +964,7 @@ export function MemoryPanel({
       {/* Panel header */}
       <div className="an-memory-head flex-shrink-0">
         <div className="min-w-0">
-          <div className="an-t">Channel memory</div>
+          <div className="an-t">{panelTitle}</div>
           {channelName && <div className="an-sub">#{channelName}</div>}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
@@ -962,6 +974,7 @@ export function MemoryPanel({
             className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--surface-soft)] transition-colors"
             style={{ color: "var(--fg-3)", fontSize: 16, lineHeight: 1 }}
             title="Close"
+            aria-label="Close panel"
           >
             ✕
           </button>
@@ -1014,7 +1027,7 @@ export function MemoryPanel({
             className="text-xs font-semibold truncate"
             style={{ color: "var(--fg-2)" }}
           >
-            {meta.label}
+            {toolbarLabel}
           </span>
           {isEntryBased && entries.length > 0 && (
             <span
@@ -1124,7 +1137,7 @@ export function MemoryPanel({
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
                     handleTodoCreate();
                 }}
-                placeholder="NewTasks..."
+                placeholder="New task..."
                 className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:border-blue-400"
               />
               <div className="flex items-center gap-1.5">
@@ -1228,7 +1241,9 @@ export function MemoryPanel({
             <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-2 px-4 text-center">
               <span className="block w-8 h-8 opacity-30">{meta.icon}</span>
               <p className="text-xs font-medium text-gray-500">No files</p>
-              <p className="text-[11px] text-gray-400">{meta.desc}</p>
+              <p className="text-[11px] text-gray-400">
+                Current channel memory reference files appear here after upload.
+              </p>
             </div>
           ) : (
             <div className="flex h-full flex-col">

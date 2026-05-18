@@ -15,6 +15,8 @@ export function SearchScopeMenu({
   typeOptions = [],
   activeTypes = [],
   onTypeToggle,
+  onReset,
+  onClose,
 }: {
   options: ScopeOption[];
   value?: string;
@@ -22,6 +24,8 @@ export function SearchScopeMenu({
   typeOptions?: SearchTypeFilterOption[];
   activeTypes?: SearchResultType[];
   onTypeToggle?: (type: SearchResultType) => void;
+  onReset?: () => void;
+  onClose?: () => void;
 }) {
   const hasScopeOptions = options.length > 0;
   const hasTypeOptions = typeOptions.length > 0 && Boolean(onTypeToggle);
@@ -30,6 +34,30 @@ export function SearchScopeMenu({
 
   return (
     <div className="an-search-scope-pop" role="dialog" aria-label="Search settings">
+      <div className="an-search-settings-head">
+        <div>
+          <div className="an-search-settings-title">Search settings</div>
+          <div className="an-search-settings-sub">Scope and result types</div>
+        </div>
+        <div className="an-search-settings-actions">
+          {onReset && (
+            <button type="button" className="an-search-settings-action" onClick={onReset}>
+              Reset
+            </button>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              className="an-search-settings-close"
+              onClick={onClose}
+              aria-label="Close search settings"
+              title="Close search settings"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
       {hasScopeOptions && (
         <div className="an-search-settings-section" role="radiogroup" aria-label="Search scope">
           <div className="an-search-settings-heading">Scope</div>

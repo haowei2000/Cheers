@@ -141,7 +141,7 @@ class Settings(BaseSettings):
     # Seed data: initial administrator account.
     app_default_locale: str = "en"
     admin_username: str = "admin"
-    admin_password: str = "change-me-admin-password"
+    admin_password: str = ""
     admin_display_name: str = "System Administrator"
 
     # ===== Agent Bridge =====

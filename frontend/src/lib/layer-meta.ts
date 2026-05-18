@@ -61,7 +61,7 @@ export const LAYER_META: Record<string, LayerMeta> = {
     readonly: true,
   },
   TODO: {
-    label: "Todo items",
+    label: "Todos",
     desc: "Channel task list",
     color: "rose",
     icon: ico("checkCircle"),

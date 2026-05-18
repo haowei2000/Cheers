@@ -90,7 +90,7 @@ export function Modal({
             >
               <DialogPanel
                 className={cn(
-                  "w-full rounded-xl shadow-xl border",
+                  "an-dialog-panel w-full rounded-xl shadow-xl border",
                   maxWidth,
                   panelClassName,
                 )}

@@ -30,6 +30,26 @@ CHANNEL_ID = "ch-seed-001"
 ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
 
 REMOVED_HELP_BOT_IDS = ("bot-guide-001", "bot-guide-helper-001")
+INSECURE_ADMIN_PASSWORDS = {
+    "",
+    "admin",
+    "password",
+    "123456",
+    "12345678",
+    "change-me",
+    "change-me-admin-password",
+    "admin#Nexus2024",
+}
+
+
+def _validate_seed_admin_password() -> None:
+    """Reject empty or sample administrator passwords before creating seed data."""
+    candidate = (settings.admin_password or "").strip()
+    if candidate in INSECURE_ADMIN_PASSWORDS:
+        raise RuntimeError(
+            "ADMIN_PASSWORD must be set to a real, non-default password when SEED_DATA=1. "
+            "Update .env before starting AgentNexus in any shared or public environment."
+        )
 
 
 def _seed_locale() -> str:
@@ -145,6 +165,7 @@ async def _seed_templates(session: AsyncSession) -> bool:
 
 async def _seed_workspace_and_users(session: AsyncSession) -> bool:
     """Seed workspace and users."""
+    _validate_seed_admin_password()
     did_write = False
     locale = _seed_locale()
     defaults = seed_workspace_defaults(locale)
@@ -332,6 +353,11 @@ async def _sync_admin_credentials(session: AsyncSession) -> None:
     if admin is None:
         return
     locale = _seed_locale()
+    if not (settings.admin_password or "").strip():
+        admin.username = settings.admin_username
+        admin.display_name = _configured_admin_display_name(locale)
+        return
+    _validate_seed_admin_password()
     admin.username = settings.admin_username
     admin.display_name = _configured_admin_display_name(locale)
     if not verify_password(settings.admin_password, admin.password_hash):

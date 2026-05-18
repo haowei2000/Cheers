@@ -10,10 +10,12 @@ import type { BotRow } from "./types";
 
 export function BotListSubPane({
   bots,
+  loading = false,
   authToken,
   onChanged,
 }: {
   bots: BotRow[];
+  loading?: boolean;
   authToken: string | null;
   onChanged: () => void;
 }) {
@@ -67,16 +69,19 @@ export function BotListSubPane({
       <div className="an-pane-head">
         <div>
           <div className="an-pane-title">Bot</div>
-          <div className="an-pane-sub">{bots.length} manageable bots</div>
+          <div className="an-pane-sub">
+            {loading ? "Loading bots..." : `${bots.length} manageable bots`}
+          </div>
         </div>
         <Tooltip content="Refresh bot online status" placement="left">
           <button
             type="button"
             className="an-btn an-btn-icon"
             onClick={onChanged}
+            disabled={loading}
             aria-label="Refresh bot online status"
           >
-            <AppIcon name="refresh" />
+            <AppIcon name="refresh" className={loading ? "animate-spin" : ""} />
           </button>
         </Tooltip>
       </div>
@@ -107,7 +112,11 @@ export function BotListSubPane({
           </div>
           <AppIcon name="chevronRight" className="an-rc-chev" />
         </button>
-        {bots.length === 0 ? (
+        {loading ? (
+          <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
+            Loading bots...
+          </div>
+        ) : bots.length === 0 ? (
           <div className="an-row-card" style={{ justifyContent: "center", color: "var(--fg-3)" }}>
             No bots
           </div>
