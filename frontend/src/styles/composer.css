@@ -213,16 +213,24 @@
   min-height: 52px;
   font-size: 11.5px;
   font-weight: 600;
+  line-height: 1;
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-1);
   color: var(--fg-2);
   letter-spacing: var(--tracking-ui);
+  white-space: nowrap;
   transition:
     border-color var(--motion-fast),
     background var(--motion-fast),
     color var(--motion-fast);
+}
+.an-msgkind-label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .an-msgkind-label.is-secret {
   border-color: color-mix(in oklab, var(--orange) 40%, var(--border));
@@ -371,6 +379,117 @@ html[data-density="compact"] .an-composer-template-menu {
 }
 html:not([data-density="compact"]) .an-composer-template-chip {
   display: none;
+}
+
+/* ── Compact density: same controls, tighter footprint ───────────────────── */
+html[data-density="compact"] .an-composer-toprow {
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+html[data-density="compact"] .an-msgkind-switcher {
+  align-items: center;
+  gap: 6px;
+}
+html[data-density="compact"] .an-msgkind-arrowstack {
+  order: 2;
+  display: flex;
+  grid-template-rows: none;
+  gap: 4px;
+}
+html[data-density="compact"] .an-msgkind-label {
+  order: 1;
+  min-height: 30px;
+  max-width: min(42vw, 180px);
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 650;
+}
+html[data-density="compact"] .an-msgkind-arrow {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+html[data-density="compact"] .an-composer {
+  border-radius: 10px;
+  box-shadow:
+    0 1px 0 var(--border) inset,
+    0 6px 16px color-mix(in oklab, var(--shadow) 72%, transparent);
+}
+html[data-density="compact"] .an-composer:focus-within {
+  box-shadow:
+    0 1px 0 var(--border-focus) inset,
+    0 8px 20px color-mix(in oklab, var(--shadow) 78%, transparent);
+}
+html[data-density="compact"] .an-composer-resize {
+  height: 5px;
+}
+html[data-density="compact"] .an-composer-resize-grip {
+  width: 22px;
+  height: 2px;
+}
+html[data-density="compact"] .an-composer-kindhead {
+  gap: 8px;
+  padding: 6px 12px 5px;
+}
+html[data-density="compact"] .an-composer-kindhead-tag {
+  font-size: 9.5px;
+  padding: 2px 6px;
+}
+html[data-density="compact"] .an-composer-title {
+  font-size: 13px;
+  line-height: 1.35;
+}
+html[data-density="compact"] .an-composer-kindhead-hint {
+  font-size: 11px;
+  line-height: 1.35;
+}
+html[data-density="compact"] .an-composer-template-chip {
+  max-width: 180px;
+  padding: 3px 7px;
+  border-radius: 8px;
+  font-size: 10.5px;
+}
+html[data-density="compact"] .an-composer-textarea {
+  min-height: 34px;
+  max-height: 136px;
+  padding: 8px 12px 2px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+html[data-density="compact"] .an-composer-bar {
+  gap: 3px;
+  min-height: 36px;
+  padding: 4px 6px 6px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-hint {
+  font-size: 10.5px;
+  padding-left: 6px;
+}
+html[data-density="compact"] .an-composer-bar button {
+  font-size: 11.5px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-iconbtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-glyph {
+  font-size: 15px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-iconbtn.is-kbd {
+  min-width: 28px;
+  padding: 0 6px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-iconbtn.is-kbd .an-kbd-glyph {
+  font-size: 11px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-send {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font-size: 12px;
 }
 
 /* ── Textarea (shared) ────────────────────────────────────────────────────── */
@@ -650,6 +769,13 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
   }
   .an-composer-resize {
     height: 6px;
+  }
+  html[data-density="compact"] .an-composer-textarea,
+  html[data-density="compact"] .an-composer-title {
+    font-size: 16px;
+  }
+  html[data-density="compact"] .an-msgkind-label {
+    max-width: min(58vw, 180px);
   }
 }
 
