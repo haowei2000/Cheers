@@ -93,13 +93,7 @@ export function TopicComposer({
       keychainItems={keychainItems}
       onToggleKeychain={onToggleKeychain}
       onCloseKeychain={onCloseKeychain}
-      sendButtonLabel={busy ? "Sending..." : "Reply"}
-      normalHint={
-        <>
-          <kbd>@</kbd> mentions · <kbd>↵</kbd> Send · <kbd>⇧↵</kbd> line break ·
-          Replies here stay in this topic
-        </>
-      }
+      sendButtonLabel={busy ? "Sending..." : undefined}
     />
   );
 }

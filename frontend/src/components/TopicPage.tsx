@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import type { Channel, ChannelBot, ChannelUser, Message } from "../types";
+import { formatTs } from "../lib/message";
 import { stripThinkTags } from "../lib/think";
 import { ChatMessageRenderer } from "./ChatMessageRenderer";
 import { AvatarVisual } from "./AvatarVisual";
@@ -60,17 +61,6 @@ function resolveWho(
   if (m.sender_id === currentUserId) return "Me";
   const user = users.find((u) => u.member_id === m.sender_id);
   return user?.display_name || user?.username || "User";
-}
-
-function formatDateTime(iso: string | undefined): string {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString();
-  } catch {
-    return "";
-  }
 }
 
 export function TopicPage({
@@ -229,43 +219,15 @@ export function TopicPage({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
-              <span
-                className="font-semibold"
-                style={{
-                  fontSize: "var(--fs-chat-name)",
-                  lineHeight: 1.2,
-                  color: "var(--fg-1)",
-                }}
-              >
-                {label}
-              </span>
-              {isBot && (
-                <span
-                  style={{
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: "0.6px",
-                    padding: "1px 5px",
-                    borderRadius: 3,
-                    background: "var(--surface-soft)",
-                    color: "var(--fg-3)",
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  BOT
-                </span>
-              )}
+              <span className="an-chat-sender">{label}</span>
               {m.created_at && (
-                <span className="text-[11px]" style={{ color: "var(--fg-3)" }}>
-                  {formatDateTime(m.created_at)}
+                <span className="an-chat-meta">
+                  {formatTs(m.created_at)}
                 </span>
               )}
             </div>
             {msgTitle ? (
-              <div
-                className="text-[14px] font-semibold mb-1 leading-snug"
-                style={{ color: "var(--fg-1)" }}
-              >
+              <div className="an-chat-title mb-1">
                 {msgTitle}
               </div>
             ) : null}
@@ -288,14 +250,7 @@ export function TopicPage({
                 <span className="an-rq-snip">{previewMessage(directParent)}</span>
               </button>
             ) : null}
-            <div
-              style={{
-                fontSize: "var(--fs-chat-body)",
-                lineHeight: "var(--lh-chat-body)",
-                color: "var(--fg-1)",
-                wordWrap: "break-word",
-              }}
-            >
+            <div className="an-chat-body">
               <ChatMessageRenderer
                 attachments={renderAttachments?.(m)}
                 collapseKey={m.msg_id}
@@ -305,7 +260,7 @@ export function TopicPage({
               />
             </div>
           </div>
-          <div className={`${forwardSelectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"} focus-within:opacity-100 transition-opacity self-start flex items-center gap-1 flex-shrink-0`}>
+          <div className={`${forwardSelectionMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"} focus-within:opacity-100 transition-opacity an-msg-actions self-start flex items-center gap-1 flex-shrink-0`}>
             {onShowMessageDetails && hasMessageDetails?.(m) && (
               <button
                 type="button"
@@ -346,9 +301,10 @@ export function TopicPage({
 
   return (
     <div className="an-topic-page">
-      <div className="an-tpp-top">
+      <div className="an-head an-tpp-top">
         <button type="button" className="an-tpp-back" onClick={onBack}>
-          ← Back to channel
+          <AppIcon name="arrowLeft" className="w-4 h-4" />
+          <span>Channel</span>
         </button>
         <div className="an-tpp-meta">
           <div className="an-tpp-crumbs">
@@ -360,7 +316,12 @@ export function TopicPage({
             <span className="an-sep">›</span>
             <span>Topics</span>
           </div>
-          <div className="an-tpp-title">{title}</div>
+          <h1 className="an-title an-tpp-title">
+            <span className="an-hash">
+              <AppIcon name="messageCircle" />
+            </span>
+            <span>{title}</span>
+          </h1>
           <div className="an-tpp-sub">
             <span>
               {replies.length} replies
@@ -373,7 +334,7 @@ export function TopicPage({
             {rootMsg.created_at && (
               <>
                 <span className="an-d" />
-                <span>{formatDateTime(rootMsg.created_at)}</span>
+                <span>{formatTs(rootMsg.created_at)}</span>
               </>
             )}
           </div>
@@ -384,7 +345,7 @@ export function TopicPage({
           </div>
         )}
       </div>
-      <div className="an-tpp-body">
+      <div className="an-chat-scroll an-tpp-body">
         {renderTopicMessage(rootMsg)}
 
         <div className="an-tpp-divider">
@@ -392,44 +353,38 @@ export function TopicPage({
         </div>
 
         {replies.length === 0 ? (
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: 12,
-              color: "var(--fg-3)",
-              padding: "24px 8px",
-            }}
-          >
+          <div className="an-tpp-empty">
             No replies yet. Send the first one below.
           </div>
         ) : (
           replies.map((r) => renderTopicMessage(r))
         )}
       </div>
-      <div className="an-tpp-foot">
-        <div className="an-wrap">
-          <TopicComposer
-            placeholder={`Reply "${title}"...`}
-            channelBots={channelBots}
-            channelUsers={channelUsers}
-            currentUserId={currentUserId}
-            onSend={async (text) => {
-              await onSendReply(text, replyingTo?.msg_id ?? rootMsg.msg_id);
-              setReplyingTo(null);
-            }}
-            replyingTo={replyingTo}
-            onCancelReply={() => setReplyingTo(null)}
-            pendingFiles={pendingFiles}
-            onRemovePendingFile={onRemovePendingFile}
-            onUploadFile={onUploadFile}
-            keychainEnabled={keychainEnabled}
-            keychainOpen={keychainOpen}
-            keychainLoading={keychainLoading}
-            keychainItems={keychainItems}
-            onToggleKeychain={onToggleKeychain}
-            onCloseKeychain={onCloseKeychain}
-          />
-        </div>
+      <div
+        className="an-chat-composer-dock an-tpp-foot"
+        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+      >
+        <TopicComposer
+          placeholder={`Reply "${title}"...`}
+          channelBots={channelBots}
+          channelUsers={channelUsers}
+          currentUserId={currentUserId}
+          onSend={async (text) => {
+            await onSendReply(text, replyingTo?.msg_id ?? rootMsg.msg_id);
+            setReplyingTo(null);
+          }}
+          replyingTo={replyingTo}
+          onCancelReply={() => setReplyingTo(null)}
+          pendingFiles={pendingFiles}
+          onRemovePendingFile={onRemovePendingFile}
+          onUploadFile={onUploadFile}
+          keychainEnabled={keychainEnabled}
+          keychainOpen={keychainOpen}
+          keychainLoading={keychainLoading}
+          keychainItems={keychainItems}
+          onToggleKeychain={onToggleKeychain}
+          onCloseKeychain={onCloseKeychain}
+        />
       </div>
     </div>
   );
