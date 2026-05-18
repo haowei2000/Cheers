@@ -2,9 +2,9 @@ import { lazy, Suspense } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import NotificationPanel from "../../NotificationPanel";
 import { LoginModal } from "../LoginModal";
-import { CreateWorkspaceModal } from "../CreateWorkspaceModal";
+import { CreateWorkspaceModal, type CreateWorkspaceSubmitOptions } from "../CreateWorkspaceModal";
 import { InviteWorkspaceMemberModal } from "../InviteWorkspaceMemberModal";
-import { CreateChannelModal } from "../CreateChannelModal";
+import { CreateChannelModal, type CreateChannelSubmitOptions } from "../CreateChannelModal";
 import { OpenClawQcModal } from "../OpenClawQcModal";
 import { ChannelSettingsModal } from "../ChannelSettingsModal";
 import { HelpModal } from "../HelpModal";
@@ -61,7 +61,7 @@ interface AppModalsProps {
   setNewWorkspaceName: (value: string) => void;
   newWorkspaceAvatarUrl: string;
   setNewWorkspaceAvatarUrl: (value: string) => void;
-  onCreateWorkspace: () => void;
+  onCreateWorkspace: (options: CreateWorkspaceSubmitOptions) => void;
   onCloseCreateWorkspace: () => void;
   inviteWsMemberOpen: boolean;
   inviteWsIdentifier: string;
@@ -75,7 +75,7 @@ interface AppModalsProps {
   setSelectedWorkspaceId: Dispatch<SetStateAction<string>>;
   newChannelName: string;
   setNewChannelName: (value: string) => void;
-  onCreateChannel: () => void;
+  onCreateChannel: (options: CreateChannelSubmitOptions) => void;
   onCloseCreateChannel: () => void;
   addBotOpen: boolean;
   channelBots: ChannelBot[];
@@ -212,6 +212,7 @@ export function AppModals({
         open={createWsOpen}
         value={newWorkspaceName}
         onChange={setNewWorkspaceName}
+        authToken={authToken}
         avatarUrl={newWorkspaceAvatarUrl}
         onAvatarUrlChange={setNewWorkspaceAvatarUrl}
         onSubmit={onCreateWorkspace}
@@ -236,6 +237,7 @@ export function AppModals({
         onSelectWorkspace={setSelectedWorkspaceId}
         channelName={newChannelName}
         onChannelNameChange={setNewChannelName}
+        authToken={authToken}
         onSubmit={onCreateChannel}
         onClose={onCloseCreateChannel}
       />

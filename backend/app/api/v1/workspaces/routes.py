@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
@@ -28,6 +28,7 @@ class WorkspaceOut(BaseModel):
 class WorkspaceCreateBody(BaseModel):
     name: str
     avatar_url: str | None = None
+    initial_member_ids: list[str] = Field(default_factory=list)
 
 
 class WorkspaceUpdateBody(BaseModel):
@@ -58,7 +59,12 @@ async def create_workspace(
     session: AsyncSession = Depends(get_session),
 ) -> APIResponse:
     svc = WorkspaceService(session)
-    ws = await svc.create(body.name, creator=current_user, avatar_url=body.avatar_url)
+    ws = await svc.create(
+        body.name,
+        creator=current_user,
+        avatar_url=body.avatar_url,
+        initial_member_ids=body.initial_member_ids,
+    )
     return APIResponse.ok(WorkspaceOut.model_validate(ws))
 
 

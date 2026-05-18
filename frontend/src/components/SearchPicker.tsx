@@ -47,6 +47,7 @@ type SearchPickerProps = {
   modal?: boolean;
   wide?: boolean;
   autoFocus?: boolean;
+  showInitialResults?: boolean;
   emptyText?: string;
   actionLabel?: string | ((selection: SearchSelection) => string | null);
   scopeLabel?: string;
@@ -102,6 +103,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       modal = false,
       wide = false,
       autoFocus = false,
+      showInitialResults = false,
       emptyText = "No matches",
       actionLabel,
       scopeLabel,
@@ -188,7 +190,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
       const needle = q.trim();
       requestSeqRef.current += 1;
       const requestSeq = requestSeqRef.current;
-      if (!needle) {
+      if (!needle && !(showInitialResults && open)) {
         setResults(null);
         setBusy(false);
         return;
@@ -228,7 +230,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
         controller.abort();
         clearTimeout(timer);
       };
-    }, [q, context, limit, token, workspaceId, channelId, requestTypesKey]);
+    }, [q, context, limit, token, workspaceId, channelId, requestTypesKey, open, showInitialResults]);
 
     const groups = useMemo<SearchSelectionGroup[]>(() => {
       if (!results) return [];
