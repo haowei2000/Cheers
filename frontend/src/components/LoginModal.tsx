@@ -1,10 +1,12 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
+import { appLanguageHeaders } from "../api/client";
 import type { CurrentUser } from "../types";
 import { AppIcon } from "./icons/AppIcon";
 import { Modal } from "./Modal";
 
 const API = "/api/v1";
+const jsonHeaders = () => ({ "Content-Type": "application/json", ...appLanguageHeaders() });
 
 type AuthUser = Exclude<CurrentUser, null>;
 
@@ -35,7 +37,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     try {
       const res = await fetch(`${API}/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
@@ -76,7 +78,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     try {
       const res = await fetch(`${API}/auth/send-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({ email: email.trim(), purpose }),
       });
       const data = await res.json();
@@ -101,7 +103,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     try {
       const res = await fetch(`${API}/auth/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({
           username,
           email: regEmail.trim(),
@@ -114,7 +116,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
       if (!res.ok) throw new Error(data.detail || data.message || "Registration failed");
       const loginRes = await fetch(`${API}/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({ username, password }),
       });
       const loginData = await loginRes.json();
@@ -153,7 +155,7 @@ export function LoginModal({ open, currentUser, onClose, onSuccess }: LoginModal
     try {
       const res = await fetch(`${API}/auth/forgot-password`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(),
         body: JSON.stringify({
           email: forgotEmail.trim(),
           code: forgotCode,
