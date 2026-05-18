@@ -485,6 +485,7 @@ class SearchService:
     ) -> list[SearchUserHit]:
         stmt = select(User).where(
             User.user_id != current_user.user_id,
+            User.is_deleted == False,  # noqa: E712
             self._matches_id_or_text(q, User.user_id, User.username, User.display_name),
         )
 
@@ -576,6 +577,7 @@ class SearchService:
                 ChannelMembership.member_type == "user",
                 Message.content.ilike(self._pattern(q)),
                 Message.is_secret == False,  # noqa: E712
+                Message.is_deleted == False,  # noqa: E712
             )
         )
         if workspace_id:

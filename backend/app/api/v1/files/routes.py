@@ -222,6 +222,27 @@ async def confirm_upload(
     return APIResponse.ok(MessageFileInResponse.model_validate(rec).model_dump())
 
 
+@router.delete("/{file_id}", response_model=APIResponse[dict])
+async def delete_file(
+    file_id: str,
+    scope_type: str | None = Query(default=None),
+    scope_id: str | None = Query(default=None),
+    channel_id: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    from app.services.file_service import FileService
+
+    result = await FileService(session).delete_or_unlink(
+        file_id,
+        current_user,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        channel_id=channel_id,
+    )
+    return APIResponse.ok(result)
+
+
 @router.get("/{file_id}/url", response_model=APIResponse[dict])
 async def get_download_url(
     file_id: str,

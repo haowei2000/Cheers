@@ -1,10 +1,11 @@
 """File service module."""
 from __future__ import annotations
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import BadRequestError, NotFoundError
-from app.db.models import FileRecord, User
+from app.core.exceptions import AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.db.models import FileRecord, FileScopeLink, Message, User
 from app.repositories.channel_repo import ChannelRepository
 from app.repositories.file_repo import FileRepository
 from app.services.channel_service import ChannelService
@@ -114,3 +115,112 @@ class FileService:
 
         await FileScopeService(self.session).require_user_access(rec, user)
         return f"/api/v1/files/{rec.file_id}/download"
+
+    async def delete_or_unlink(
+        self,
+        file_id: str,
+        user: User,
+        *,
+        scope_type: str | None = None,
+        scope_id: str | None = None,
+        channel_id: str | None = None,
+    ) -> dict:
+        """Remove a file from a user-visible scope, hard-deleting when safe."""
+        from app.services.file_retention import FileRetentionService
+        from app.services.file_scope_service import channel_scope_type
+
+        rec = await self.get_or_404(file_id)
+        if channel_id:
+            channel = await self.channel_repo.get_by_id(channel_id)
+            if not channel:
+                raise NotFoundError("channel not found")
+            scope_type = channel_scope_type(channel)
+            scope_id = channel.channel_id
+        if not scope_type and not scope_id:
+            scope_type = "personal"
+            scope_id = user.user_id
+        if not scope_type or not scope_id:
+            raise BadRequestError("scope_type and scope_id are required")
+        if scope_type not in {"personal", "channel", "dm", "workspace", "task"}:
+            raise BadRequestError("invalid scope_type")
+
+        await self._require_delete_permission(rec, user, scope_type=scope_type, scope_id=scope_id)
+
+        if scope_type in {"channel", "dm"} and await self._file_referenced_by_channel_messages(
+            file_id, scope_id,
+        ):
+            raise ConflictError("文件仍被频道消息引用，请先删除相关消息")
+
+        link = (
+            await self.session.execute(
+                select(FileScopeLink).where(
+                    FileScopeLink.file_id == file_id,
+                    FileScopeLink.scope_type == scope_type,
+                    FileScopeLink.scope_id == scope_id,
+                )
+            )
+        ).scalar_one_or_none()
+        unlinked = False
+        if link:
+            await self.session.delete(link)
+            unlinked = True
+
+        if scope_type in {"channel", "dm"} and rec.channel_id == scope_id:
+            rec.channel_id = None
+            unlinked = True
+
+        await self.session.flush()
+        remaining_link_exists = (
+            await self.session.scalar(
+                select(FileScopeLink.link_id).where(FileScopeLink.file_id == file_id).limit(1)
+            )
+            is not None
+        )
+        referenced = await self._file_referenced_by_any_message(file_id)
+        if not remaining_link_exists and not referenced:
+            if not await FileRetentionService(self.session).delete_physical_assets(rec):
+                rec.last_error = "manual cleanup failed"
+                await self.session.flush()
+                raise AppError("failed to delete file assets")
+            await self.session.execute(delete(FileScopeLink).where(FileScopeLink.file_id == file_id))
+            await self.session.delete(rec)
+            await self.session.flush()
+            return {"deleted": True, "unlinked": unlinked}
+
+        self.session.add(rec)
+        await self.session.flush()
+        return {"deleted": False, "unlinked": unlinked}
+
+    async def _require_delete_permission(
+        self,
+        rec: FileRecord,
+        user: User,
+        *,
+        scope_type: str,
+        scope_id: str,
+    ) -> None:
+        from app.utils.permissions import is_admin
+
+        if is_admin(user) or rec.uploader_id == user.user_id:
+            return
+        if scope_type == "personal" and scope_id == user.user_id:
+            return
+        if scope_type in {"channel", "dm"}:
+            try:
+                await ChannelService(self.session).require_channel_admin(scope_id, user)
+                return
+            except ForbiddenError:
+                pass
+        raise ForbiddenError("无权删除该文件")
+
+    async def _file_referenced_by_channel_messages(self, file_id: str, channel_id: str) -> bool:
+        rows = (
+            await self.session.execute(
+                select(Message.file_ids).where(Message.channel_id == channel_id)
+            )
+        ).scalars().all()
+        return any(file_id in (file_ids or []) for file_ids in rows)
+
+    async def _file_referenced_by_any_message(self, file_id: str) -> bool:
+        rows = (await self.session.execute(select(Message.file_ids))).scalars().all()
+        return any(file_id in (file_ids or []) for file_ids in rows)

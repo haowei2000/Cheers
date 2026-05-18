@@ -1140,3 +1140,35 @@ async def test_bot_sessions_api_includes_closed_sessions_by_default(
     )
     assert active_resp.status_code == 200
     assert [row["session_id"] for row in active_resp.json()["data"]] == [active.session_id]
+
+
+@pytest.mark.asyncio
+async def test_close_bot_session_marks_session_closed_and_detaches_bindings(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    bot, channel = await _seed_bot_channel(db_session, suffix="api-close-001")
+    active = await resolve_dispatch_session(
+        db_session,
+        bot=bot,
+        channel_id=channel.channel_id,
+        trigger_message={"text": "hello close"},
+        task_id="task-api-close-active",
+        channel=channel,
+    )
+    await db_session.flush()
+
+    resp = await client.delete(f"/api/v1/bots/{bot.bot_id}/sessions/{active.session_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["session_id"] == active.session_id
+    assert data["status"] == SESSION_STATUS_CLOSED
+    assert data["metadata"]["closed_reason"] == "manual_close"
+
+    row = await db_session.get(AgentNexusSession, active.session_id)
+    assert row is not None
+    assert row.status == SESSION_STATUS_CLOSED
+    bindings = await _bindings(db_session, active.session_id)
+    assert bindings
+    assert all(binding.detached_at is not None for binding in bindings)

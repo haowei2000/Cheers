@@ -1060,6 +1060,7 @@ class ChannelService:
                     and_(Friendship.friend_id == user_id, Friendship.status == "accepted"),
                 ),
                 WorkspaceMembership.workspace_id == channel.workspace_id,
+                User.is_deleted == False,  # noqa: E712
                 User.user_id.notin_(member_ids) if member_ids else true(),
             )
         )

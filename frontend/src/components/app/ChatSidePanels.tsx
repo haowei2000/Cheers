@@ -17,6 +17,10 @@ type ChannelFilePreview = {
   original_filename?: string | null;
   content_type?: string | null;
   size_bytes?: number | null;
+  channel_id?: string | null;
+  channel_label?: string | null;
+  scope_type?: string | null;
+  scope_id?: string | null;
 };
 
 interface ChatSidePanelsProps {
@@ -31,6 +35,7 @@ interface ChatSidePanelsProps {
   memoryWidth: number;
   onCloseFilePreview: () => void;
   onCloseMemory: () => void;
+  onFileDeleted?: () => void;
   onFilePreview: (file: FileInfo) => void;
   onFilePreviewResize: (event: MouseEvent) => void;
   onMemoryResize: (event: MouseEvent) => void;
@@ -58,6 +63,7 @@ export function ChatSidePanels({
   memoryWidth,
   onCloseFilePreview,
   onCloseMemory,
+  onFileDeleted,
   onFilePreview,
   onFilePreviewResize,
   onMemoryResize,
@@ -95,6 +101,10 @@ export function ChatSidePanels({
                   original_filename: file.original_filename ?? undefined,
                   content_type: file.content_type ?? undefined,
                   size_bytes: file.size_bytes ?? undefined,
+                  channel_id: file.channel_id ?? selectedId,
+                  channel_label: file.channel_label ?? channelName,
+                  scope_type: file.scope_type ?? "channel",
+                  scope_id: file.scope_id ?? selectedId,
                 })
               }
               onClose={onCloseMemory}
@@ -123,6 +133,12 @@ export function ChatSidePanels({
               filename={filePreviewPanel.filename}
               contentType={filePreviewPanel.contentType}
               sizeBytes={filePreviewPanel.sizeBytes}
+              fileId={filePreviewPanel.fileId}
+              channelId={filePreviewPanel.channelId}
+              scopeType={filePreviewPanel.scopeType}
+              scopeId={filePreviewPanel.scopeId}
+              source={filePreviewPanel.source}
+              onDeleted={onFileDeleted}
               onClose={onCloseFilePreview}
             />
           </Suspense>

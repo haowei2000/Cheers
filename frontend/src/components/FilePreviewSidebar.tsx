@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { MessageMarkdown } from "../MessageMarkdown";
 import { apiFetch } from "../api/client";
 import {
@@ -54,6 +55,12 @@ export function FilePreviewPanel({
   contentType,
   sizeBytes,
   subtitle,
+  fileId,
+  channelId,
+  scopeType,
+  scopeId,
+  source,
+  onDeleted,
   onClose,
   variant = "side",
 }: {
@@ -62,12 +69,23 @@ export function FilePreviewPanel({
   contentType?: string | null;
   sizeBytes?: number | null;
   subtitle?: string | null;
+  fileId?: string;
+  channelId?: string | null;
+  scopeType?: string | null;
+  scopeId?: string | null;
+  source?: "message" | "memory" | "personal";
+  onDeleted?: () => void;
   onClose: () => void;
   variant?: "side" | "main";
 }) {
   const previewUrl = swapFileAction(url, "preview");
   const downloadUrl = swapFileAction(url, "download");
   const contentUrl = swapFileAction(url, "content");
+  const resolvedFileId = fileId || extractFileId(previewUrl);
+  const canDelete = Boolean(
+    resolvedFileId &&
+      (channelId || (scopeType && scopeId) || source === "personal"),
+  );
   const ext = (filename.split(".").pop() ?? "").toLowerCase();
   const normalizedType = (contentType ?? "").split(";", 1)[0].toLowerCase();
   const isImage =
@@ -122,6 +140,7 @@ export function FilePreviewPanel({
   const [kkLoading, setKkLoading] = useState(false);
   const [kkError, setKkError] = useState<string | null>(null);
   const [kkFallbackToText, setKkFallbackToText] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const shouldUseKkFileView = isKkFileViewDocument && !kkFallbackToText;
   const shouldLoadText =
     !shouldUseKkFileView &&
@@ -271,6 +290,37 @@ export function FilePreviewPanel({
     });
   };
 
+  const handleDelete = async () => {
+    if (!resolvedFileId || deleting) return;
+    if (!confirm(`Delete ${filename}?`)) return;
+    setDeleting(true);
+    try {
+      const params = new URLSearchParams();
+      if (channelId) {
+        params.set("channel_id", channelId);
+      } else if (scopeType && scopeId) {
+        params.set("scope_type", scopeType);
+        params.set("scope_id", scopeId);
+      }
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      const response = await apiFetch(
+        `/files/${encodeURIComponent(resolvedFileId)}${suffix}`,
+        { method: "DELETE" },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.status === "error") {
+        throw new Error(payload?.message || payload?.detail || "Delete failed");
+      }
+      toast.success("File deleted");
+      onDeleted?.();
+      onClose();
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const Root = variant === "main" ? "section" : "aside";
 
   return (
@@ -310,6 +360,19 @@ export function FilePreviewPanel({
               <AppIcon name="externalLink" />
             </button>
           </Tooltip>
+          {canDelete && (
+            <Tooltip content="Delete file" placement="bottom">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="an-file-preview-action"
+                aria-label="Delete file"
+              >
+                <AppIcon name="trash" />
+              </button>
+            </Tooltip>
+          )}
           <Tooltip content="ClosePreview" placement="bottom">
             <button
               type="button"
