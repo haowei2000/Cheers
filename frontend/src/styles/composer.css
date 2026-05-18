@@ -521,6 +521,84 @@ html:not([data-density="compact"]) .an-composer-template-chip {
   filter: brightness(0.95);
 }
 
+/* Compact density keeps the same controls but removes the oversized stacked
+ * feel from the composer: lower chrome, tighter hint row, smaller actions. */
+html[data-density="compact"] .an-chat-composer-dock {
+  padding-top: 6px !important;
+  padding-bottom: max(0.625rem, env(safe-area-inset-bottom)) !important;
+}
+html[data-density="compact"] .an-msgkind-switcher {
+  max-width: var(--chat-column-max);
+  justify-content: flex-start;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+html[data-density="compact"] .an-msgkind-arrow {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+html[data-density="compact"] .an-msgkind-label {
+  min-height: 22px;
+  padding: 2px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+html[data-density="compact"] .an-composer {
+  border-radius: 10px;
+  box-shadow: 0 1px 0 var(--border) inset, 0 4px 12px var(--shadow);
+}
+html[data-density="compact"] .an-composer:focus-within {
+  box-shadow:
+    0 1px 0 var(--border-focus) inset,
+    0 6px 16px var(--shadow);
+}
+html[data-density="compact"] .an-composer-resize {
+  height: 5px;
+}
+html[data-density="compact"] .an-composer-resize-grip {
+  width: 24px;
+  height: 2px;
+  opacity: 0.36;
+}
+html[data-density="compact"] .an-composer-kindhead {
+  gap: 8px;
+  padding: 5px 10px 4px;
+  border-bottom-style: solid;
+}
+html[data-density="compact"] .an-composer-kindhead-hint {
+  font-size: 10.5px;
+}
+html[data-density="compact"] .an-composer-title {
+  font-size: 12.5px;
+}
+html[data-density="compact"] .an-composer-textarea {
+  min-height: 32px;
+  max-height: 132px;
+  padding: 7px 10px 2px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+html[data-density="compact"] .an-composer-bar {
+  gap: 2px;
+  padding: 4px 6px 6px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-iconbtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-iconbtn.is-kbd {
+  min-width: 28px;
+  padding: 0 7px;
+}
+html[data-density="compact"] .an-composer-bar .an-composer-send {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 7px;
+}
+
 @media (max-width: 720px) {
   .an-composer-toprow {
     max-width: none;

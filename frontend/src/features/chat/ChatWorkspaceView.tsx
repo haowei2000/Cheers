@@ -217,7 +217,7 @@ export function ChatWorkspaceView({
           {forwardSelectionBar}
 
           <div
-            className="flex-shrink-0 px-3 sm:px-4 pb-4 pt-2"
+            className="an-chat-composer-dock flex-shrink-0 px-3 sm:px-4 pb-4 pt-2"
             style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
           >
             <MessageComposer {...composerProps} />
