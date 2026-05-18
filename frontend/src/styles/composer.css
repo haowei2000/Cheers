@@ -255,20 +255,20 @@
   scroll-snap-type: x proximity;
   padding-bottom: 1px;
 }
-.an-composer-template-card {
+.an-composer-template-item {
   flex: 0 0 auto;
-  width: clamp(150px, 22vw, 220px);
+  min-width: 132px;
+  max-width: 220px;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   border: 1px solid color-mix(in oklab, var(--border) 88%, var(--accent));
   border-radius: 8px;
   background: color-mix(in oklab, var(--bg-1) 92%, var(--accent-muted));
   color: var(--fg-2);
   font-family: inherit;
   text-align: left;
-  padding: 7px 9px;
+  padding: 8px 12px;
   cursor: pointer;
   scroll-snap-align: start;
   transition:
@@ -277,52 +277,36 @@
     color var(--motion-fast),
     transform var(--motion-fast);
 }
-.an-composer-template-card:hover {
+.an-composer-template-item:hover {
   border-color: color-mix(in oklab, var(--accent) 46%, var(--border));
   background: var(--surface-soft);
   color: var(--fg-1);
 }
-.an-composer-template-card.is-selected {
+.an-composer-template-item.is-selected {
   border-color: var(--accent);
   background: var(--accent-muted);
   color: var(--accent);
 }
-.an-composer-template-card-mark {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 7px;
-  background: var(--bg-0);
-  color: inherit;
-  border: 1px solid color-mix(in oklab, currentColor 20%, var(--border));
-}
-.an-composer-template-card-slash {
-  font-size: 17px;
-  font-weight: var(--fw-semibold);
-  line-height: 1;
-}
-.an-composer-template-card-text {
+.an-composer-template-item-text {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.an-composer-template-card-name,
-.an-composer-template-card-desc {
+.an-composer-template-item-name,
+.an-composer-template-item-desc {
   display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.an-composer-template-card-name {
+.an-composer-template-item-name {
   font-size: 12px;
   font-weight: 650;
   line-height: 1.15;
 }
-.an-composer-template-card-desc,
+.an-composer-template-item-desc,
 .an-composer-template-state {
   color: var(--fg-3);
   font-size: 11px;
@@ -528,8 +512,8 @@ html:not([data-density="compact"]) .an-composer-template-chip {
     margin: 0 4px 6px;
     padding: 5px;
   }
-  .an-composer-template-card {
-    width: min(72vw, 220px);
+  .an-composer-template-item {
+    max-width: min(72vw, 220px);
   }
   .an-composer {
     max-width: none;

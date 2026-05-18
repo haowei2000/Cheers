@@ -527,7 +527,7 @@ export function MessageComposer({
                     key={template.template_id}
                     type="button"
                     className={
-                      "an-composer-template-card" + (isSelected ? " is-selected" : "")
+                      "an-composer-template-item" + (isSelected ? " is-selected" : "")
                     }
                     onClick={() =>
                       onPromptTemplateChange?.(
@@ -541,19 +541,12 @@ export function MessageComposer({
                         : `Force template: ${template.name}`
                     }
                   >
-                    <span className="an-composer-template-card-mark">
-                      {isSelected ? (
-                        <AppIcon name="check" className="w-3.5 h-3.5" />
-                      ) : (
-                        <span className="an-composer-template-card-slash">/</span>
-                      )}
-                    </span>
-                    <span className="an-composer-template-card-text">
-                      <span className="an-composer-template-card-name">
+                    <span className="an-composer-template-item-text">
+                      <span className="an-composer-template-item-name">
                         {template.name}
                       </span>
                       {template.description && (
-                        <span className="an-composer-template-card-desc">
+                        <span className="an-composer-template-item-desc">
                           {template.description}
                         </span>
                       )}
