@@ -67,7 +67,10 @@ export function labelFor(selection: SearchSelection) {
 export function subFor(selection: SearchSelection) {
   const { type, item } = selection;
   if (type === "workspace") return item.kind === "personal" ? "Personal" : "Workspace";
-  if (type === "channel") return channelTypeText(item.type);
+  if (type === "channel") {
+    const workspaceName = item.workspace_name?.trim();
+    return `${channelTypeText(item.type)}${workspaceName ? ` · ${workspaceName}` : ""}`;
+  }
   if (type === "user") return item.display_name && item.display_name !== item.username ? `@${item.username}` : "";
   if (type === "bot") return `@${item.username} · ${botScopeText(item.scope)} · Owner: ${botOwnerText(item)}`;
   if (type === "file") {

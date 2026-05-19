@@ -625,8 +625,9 @@ class SearchService:
         workspace_id: str | None = None,
     ) -> list[SearchChannelHit]:
         stmt = (
-            select(Channel)
+            select(Channel, Workspace.name)
             .join(ChannelMembership, ChannelMembership.channel_id == Channel.channel_id)
+            .join(Workspace, Workspace.workspace_id == Channel.workspace_id)
             .where(
                 ChannelMembership.member_id == current_user.user_id,
                 ChannelMembership.member_type == "user",
@@ -636,17 +637,16 @@ class SearchService:
         )
         if workspace_id:
             stmt = stmt.where(Channel.workspace_id == workspace_id)
-        rows = (
-            await self.session.execute(stmt.order_by(Channel.created_at.desc()).limit(limit))
-        ).scalars().all()
+        rows = (await self.session.execute(stmt.order_by(Channel.created_at.desc()).limit(limit))).all()
         return [
             SearchChannelHit(
                 channel_id=c.channel_id,
                 name=c.name,
                 workspace_id=c.workspace_id,
+                workspace_name=workspace_name,
                 type=c.type,
             )
-            for c in rows
+            for c, workspace_name in rows
         ]
 
     async def _search_users(

@@ -1338,6 +1338,7 @@ export default function App() {
         open={Boolean(forwardModalState)}
         channels={channels}
         dms={dms}
+        workspaces={workspaces}
         token={authToken}
         workspaceId={forwardWorkspaceId}
         summary={forwardModalState?.summary || ""}

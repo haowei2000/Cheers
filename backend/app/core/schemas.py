@@ -301,6 +301,7 @@ class SearchChannelHit(BaseModel):
     channel_id: str
     name: str
     workspace_id: str
+    workspace_name: str | None = None
     type: str  # Actual values exclude "dm"; DMs are entered through people/bot search.
 
 
