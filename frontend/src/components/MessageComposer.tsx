@@ -149,6 +149,7 @@ export function MessageComposer({
   const [mentionFilter, setMentionFilter] = useState("");
   const [mentionTriggerRange, setMentionTriggerRange] =
     useState<ComposerTextRange | null>(null);
+  const [mentionTriggerLabel, setMentionTriggerLabel] = useState("");
   const [mentionPlacement, setMentionPlacement] = useState<"top" | "bottom">(
     "bottom",
   );
@@ -183,6 +184,7 @@ export function MessageComposer({
 
   useEffect(() => {
     setDraftValue(value);
+    if (!value.trim()) setMentionTriggerLabel("");
   }, [value, valueRevision]);
 
   const closeTemplateMenu = () => {
@@ -344,6 +346,7 @@ export function MessageComposer({
             end: pos,
           });
     replaceTextareaRange(range, insert);
+    setMentionTriggerLabel(item.display_name?.trim() || item.username);
     closeMentionMenu();
   };
 
@@ -377,6 +380,7 @@ export function MessageComposer({
     const pos = event.target.selectionStart ?? next.length;
     setDraftValue(next);
     onValueChange(next);
+    if (!next.trim()) setMentionTriggerLabel("");
     const lastAt = next.lastIndexOf("@", pos - 1);
     const lastSlash = next.lastIndexOf("/", pos - 1);
     const atFilter = lastAt === -1 ? null : next.slice(lastAt + 1, pos);
@@ -523,6 +527,7 @@ export function MessageComposer({
   };
 
   const promptTemplateTriggerLabel = selectedPromptTemplateName || "Skill";
+  const mentionButtonLabel = mentionTriggerLabel || "Agent";
 
   const selectKind = (nextKind: MessageComposerKind) => {
     onKindChange?.(nextKind);
@@ -724,7 +729,7 @@ export function MessageComposer({
                 aria-label="Choose agent or member"
               >
                 <span className="an-composer-glyph">@</span>
-                <span className="an-composer-trigger-label">Agent</span>
+                <span className="an-composer-trigger-label">{mentionButtonLabel}</span>
               </button>
 
               {onPromptTemplateChange && (
