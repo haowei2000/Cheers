@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, Channel, ChannelMembership, User
@@ -32,6 +32,8 @@ class ChannelRepository:
         )
         if not include_dms:
             q = q.where(Channel.type != "dm")
+        else:
+            q = q.where(or_(Channel.type != "dm", ChannelMembership.hidden_at.is_(None)))
         q = q.order_by(Channel.created_at)
         return list((await self.session.execute(q)).scalars().all())
 
@@ -49,6 +51,8 @@ class ChannelRepository:
         )
         if not include_dms:
             q = q.where(Channel.type != "dm")
+        else:
+            q = q.where(or_(Channel.type != "dm", ChannelMembership.hidden_at.is_(None)))
         q = q.order_by(Channel.created_at)
         return list((await self.session.execute(q)).scalars().all())
 
@@ -59,6 +63,7 @@ class ChannelRepository:
             .where(
                 ChannelMembership.member_id == user_id,
                 ChannelMembership.member_type == "user",
+                ChannelMembership.hidden_at.is_(None),
                 Channel.type == "dm",
             )
             .order_by(Channel.created_at)

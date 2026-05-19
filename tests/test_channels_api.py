@@ -185,6 +185,73 @@ async def test_create_dm_channel_does_not_auto_add_builtin_bots(db_session: Asyn
 
 
 @pytest.mark.asyncio
+async def test_dm_self_remove_hides_membership_and_reappears_on_message(
+    db_session: AsyncSession,
+) -> None:
+    """A user can remove a DM from their rail without deleting membership."""
+    ws = Workspace(workspace_id="dm-hide-ws-0001", name="DM Hide")
+    user = User(
+        user_id="dm-hide-user-0001",
+        username="dm_hide_user_0001",
+        password_hash="x",
+        role="member",
+    )
+    other = User(
+        user_id="dm-hide-user-0002",
+        username="dm_hide_user_0002",
+        password_hash="x",
+        role="member",
+    )
+    ch = Channel(
+        channel_id="dm-hide-ch-0001",
+        workspace_id=ws.workspace_id,
+        name=f"dm:{user.user_id}:{other.user_id}",
+        type="dm",
+    )
+    user_membership = ChannelMembership(
+        channel_id=ch.channel_id,
+        member_id=user.user_id,
+        member_type="user",
+    )
+    other_membership = ChannelMembership(
+        channel_id=ch.channel_id,
+        member_id=other.user_id,
+        member_type="user",
+    )
+    db_session.add_all([ws, user, other, ch, user_membership, other_membership])
+    await db_session.flush()
+
+    svc = ChannelService(db_session)
+    await svc.remove_member(ch.channel_id, user.user_id, user)
+
+    await db_session.refresh(user_membership)
+    assert user_membership.hidden_at is not None
+    assert await db_session.get(
+        ChannelMembership,
+        {"channel_id": ch.channel_id, "member_id": user.user_id},
+    )
+    assert await db_session.get(
+        ChannelMembership,
+        {"channel_id": ch.channel_id, "member_id": other.user_id},
+    )
+    assert await svc.list_dms_with_counterparty(user) == []
+
+    from app.services.unread_count_service import increment_unread_counts
+
+    await increment_unread_counts(
+        db_session,
+        channel_id=ch.channel_id,
+        user_ids=[user.user_id],
+    )
+    await db_session.refresh(user_membership)
+
+    assert user_membership.hidden_at is None
+    assert [row["channel_id"] for row in await svc.list_dms_with_counterparty(user)] == [
+        ch.channel_id
+    ]
+
+
+@pytest.mark.asyncio
 async def test_builtin_membership_sync_skips_dm_channels(db_session: AsyncSession) -> None:
     """Covers test builtin membership sync skips dm channels behavior."""
     ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000011", name="Sync Workspace")
