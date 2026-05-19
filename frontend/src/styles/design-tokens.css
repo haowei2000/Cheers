@@ -534,7 +534,7 @@
   right: 0;
   top: calc(100% + 6px);
   width: min(520px, calc(100vw - 32px));
-  max-height: min(620px, calc(100vh - 96px));
+  max-height: min(620px, calc(var(--an-viewport-height, 100dvh) - 96px));
   overflow: hidden;
 }
 .an-session-panel {
@@ -549,7 +549,7 @@
 .an-session-pop .an-session-panel {
   border: 0;
   border-radius: 10px;
-  max-height: min(620px, calc(100vh - 96px));
+  max-height: min(620px, calc(var(--an-viewport-height, 100dvh) - 96px));
 }
 .an-sp-head {
   display: flex;
@@ -2346,7 +2346,7 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   width: min(920px, 100%);
-  max-height: 80vh;
+  max-height: min(80vh, calc(var(--an-viewport-height, 100dvh) - 32px));
   display: flex;
   flex-direction: column;
   box-shadow: 0 30px 80px var(--shadow);
@@ -2386,7 +2386,7 @@
   min-height: 0;
   /* Fixed height keeps the settings modal stable across panes; the inner
    * pane scrolls its list rather than resizing the dialog. */
-  height: min(560px, calc(100vh - 200px));
+  height: min(560px, calc(var(--an-viewport-height, 100dvh) - 200px));
 }
 
 .an-settings-nav {
@@ -3836,7 +3836,7 @@ kbd {
   left: 0;
   top: calc(100% + 4px);
   width: min(280px, calc(100vw - 32px));
-  max-height: min(300px, 55vh);
+  max-height: min(300px, calc(var(--an-viewport-height, 100dvh) - 96px));
   overflow-y: auto;
   padding: 5px;
   border: 1px solid var(--border);
@@ -3987,7 +3987,7 @@ kbd {
   box-shadow: 0 12px 32px var(--shadow);
   padding: 4px;
   z-index: 30;
-  max-height: 60vh;
+  max-height: min(60vh, calc(var(--an-viewport-height, 100dvh) - 96px));
   overflow-y: auto;
 }
 .an-search.in-modal .an-search-pop {
@@ -4242,7 +4242,7 @@ kbd {
     right: 6px;
     z-index: 20;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--surface) 92%, transparent);
+    background: color-mix(in oklab, var(--bg-1) 92%, transparent);
     box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
   }
   .an-topic-chip {
@@ -4275,13 +4275,13 @@ kbd {
   }
   .an-modal {
     width: 100%;
-    max-height: 100dvh;
+    max-height: var(--an-viewport-height, 100dvh);
     border-radius: 0;
   }
   .an-modal-body {
     display: flex;
     flex-direction: column;
-    height: calc(100dvh - 58px);
+    height: calc(var(--an-viewport-height, 100dvh) - 58px);
   }
   .an-settings-nav {
     flex-direction: row;
@@ -4987,7 +4987,7 @@ kbd {
   right: 0;
   top: calc(100% + 6px);
   width: min(520px, calc(100vw - 32px));
-  max-height: min(620px, calc(100vh - 96px));
+  max-height: min(620px, calc(var(--an-viewport-height, 100dvh) - 96px));
   overflow: hidden;
 }
 .an-topics-pop .an-hd {
@@ -5609,7 +5609,7 @@ kbd {
   right: 0;
   top: calc(100% + 6px);
   width: min(320px, calc(100vw - 20px));
-  max-height: min(70vh, 520px);
+  max-height: min(520px, calc(var(--an-viewport-height, 100dvh) - 76px));
   overflow-y: auto;
   padding: 6px;
   border: 1px solid var(--border);
@@ -5650,8 +5650,84 @@ kbd {
   flex: 1 1 auto;
   justify-content: flex-start;
 }
+.an-app-shell {
+  width: 100%;
+  min-width: 0;
+}
+.an-mobile-side-panel,
+.an-mobile-backdrop {
+  top: var(--an-viewport-offset-top, 0px);
+  height: var(--an-viewport-height, 100dvh);
+  max-height: var(--an-viewport-height, 100dvh);
+}
+.an-mobile-side-panel {
+  min-height: 0;
+  overflow: hidden;
+  color: var(--fg-1);
+}
+.an-dialog-scroll {
+  height: var(--an-viewport-height, 100dvh);
+  max-height: var(--an-viewport-height, 100dvh);
+  overscroll-behavior: contain;
+}
+.an-dialog-positioner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--an-viewport-height, 100dvh);
+  padding-right: 1rem;
+  padding-left: 1rem;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.an-dialog-panel {
+  max-height: calc(var(--an-viewport-height, 100dvh) - max(2rem, env(safe-area-inset-top)) - max(2rem, env(safe-area-inset-bottom)));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.an-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.an-forward-selection-bar {
+  max-width: min(92vw, var(--chat-column-max));
+}
 
 @media (max-width: 720px) {
+  .an-app-shell {
+    height: var(--an-viewport-height, 100dvh);
+    max-height: var(--an-viewport-height, 100dvh);
+  }
+  .an-rail {
+    max-width: 100vw;
+  }
+  .an-rail-head {
+    padding: 12px 12px 10px;
+  }
+  .an-rail-scroll {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .an-rail-row {
+    min-height: 40px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .an-dialog-backdrop {
+    height: var(--an-viewport-height, 100dvh);
+  }
+  .an-dialog-positioner {
+    align-items: flex-end;
+    padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+  }
+  .an-dialog-panel {
+    max-height: calc(var(--an-viewport-height, 100dvh) - 20px);
+    border-radius: 14px;
+  }
+  .an-dialog-body {
+    padding: 14px !important;
+  }
   .an-dialog-panel {
     max-width: calc(100vw - 24px) !important;
   }
@@ -5666,12 +5742,49 @@ kbd {
     top: auto;
     bottom: calc(12px + env(safe-area-inset-bottom));
     width: auto;
-    max-height: min(72vh, 560px);
+    max-height: min(560px, calc(var(--an-viewport-height, 100dvh) - 96px));
     z-index: 90;
     border-radius: 14px;
   }
   .an-mobile-tools-pop .an-mem-cluster {
     max-width: none;
     overflow: hidden;
+  }
+  .an-mobile-tools-pop {
+    right: -2px;
+    width: min(340px, calc(100vw - 18px));
+    max-height: calc(var(--an-viewport-height, 100dvh) - 76px - env(safe-area-inset-top));
+  }
+  .an-mobile-settings-item {
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .an-chat-scroll {
+    min-height: 0;
+    touch-action: pan-y;
+    scroll-padding-bottom: calc(124px + env(safe-area-inset-bottom));
+  }
+  .an-chat-jump-bottom {
+    bottom: calc(7.25rem + env(safe-area-inset-bottom));
+  }
+  .an-chat-msg .an-msg-actions {
+    opacity: 0.94 !important;
+    background: color-mix(in oklab, var(--bg-1) 92%, transparent);
+    backdrop-filter: blur(10px);
+  }
+  .an-chat-action {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+  .an-forward-selection-bar {
+    left: 10px !important;
+    right: 10px;
+    bottom: calc(7.2rem + env(safe-area-inset-bottom)) !important;
+    max-width: none;
+    transform: none !important;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }

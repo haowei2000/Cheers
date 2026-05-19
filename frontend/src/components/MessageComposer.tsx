@@ -777,6 +777,7 @@ export function MessageComposer({
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             className="an-composer-textarea"
+            enterKeyHint="send"
             style={
               textareaHeight !== null
                 ? { height: textareaHeight, maxHeight: textareaHeight }
@@ -1057,7 +1058,7 @@ export function MessageComposer({
 
         {mentionOpen && matchedMentionItems.length > 0 && (
           <ul
-            className={`an-menu absolute left-0 right-0 ${placementClass}`}
+            className={`an-menu an-mention-menu absolute left-0 right-0 ${placementClass}`}
             style={{ maxHeight: 240, overflowY: "auto" }}
             role="listbox"
           >

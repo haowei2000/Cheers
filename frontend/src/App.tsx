@@ -1555,7 +1555,7 @@ export default function App() {
         }
       >
 
-        <div className="flex-1 flex min-w-0">
+        <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden">
           <ChannelMainFrame
             selectedId={selectedId}
             isDark={isDark}
@@ -1743,7 +1743,7 @@ export default function App() {
               }}
               forwardSelectionBar={
                 forwardSelectionMode ? (
-                  <div className="absolute bottom-24 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-1)] px-3 py-2 text-sm shadow-lg">
+                  <div className="an-forward-selection-bar absolute bottom-24 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-1)] px-3 py-2 text-sm shadow-lg">
                     <span className="whitespace-nowrap text-[var(--fg-2)]">
                       Selected {selectedForwardMsgIds.length} items
                     </span>

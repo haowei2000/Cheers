@@ -23,7 +23,7 @@
       /* Hide scrollbar for horizontal nav on admin page */
       .scrollbar-hide::-webkit-scrollbar { display: none; }
       .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-      /* Fix h-dvh on iOS — ensure body fills the full dynamic viewport */
+      /* Keep the root fillable while runtime visual-viewport variables settle. */
       html, body, #root { height: 100%; }
     </style>
   </head>

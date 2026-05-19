@@ -354,7 +354,10 @@ export default function DocsPage() {
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
   return (
-    <div className="an-token-page flex h-screen flex-col overflow-hidden font-sans">
+    <div
+      className="an-token-page flex flex-col overflow-hidden font-sans"
+      style={{ height: "var(--an-viewport-height, 100dvh)" }}
+    >
       <header className="flex flex-shrink-0 items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-1)] px-6 py-3">
         <Link to="/" className="an-btn an-btn-ghost an-btn-sm">
           <AppIcon name="arrowLeft" className="w-4 h-4" />

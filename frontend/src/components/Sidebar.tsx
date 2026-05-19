@@ -731,7 +731,9 @@ export function Sidebar({
     <aside
       className={`an-rail flex flex-col flex-shrink-0 ${isMobile ? "fixed inset-y-0 left-0 z-[60] shadow-2xl transition-transform duration-300 ease-in-out" : "relative"}`}
       style={{
-        width: isMobile ? "min(85vw, 360px)" : leftWidth,
+        width: isMobile ? "min(92vw, 380px)" : leftWidth,
+        height: isMobile ? "var(--an-viewport-height, 100dvh)" : undefined,
+        maxHeight: isMobile ? "var(--an-viewport-height, 100dvh)" : undefined,
         transform:
           isMobile && !sidebarOpen ? "translateX(-100%)" : "translateX(0)",
         minHeight: 0,
