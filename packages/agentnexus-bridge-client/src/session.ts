@@ -33,6 +33,7 @@ import type {
   SendAck,
   SendFrame,
   SessionUpdateFrame,
+  TerminalAck,
   TraceFrame,
   TriggerMessage,
 } from "./types.js";
@@ -123,6 +124,7 @@ export class BotSession {
   private heartbeatTimers: Array<NodeJS.Timeout | null> = [null, null];
   private inflight = new Map<string, { resolve: InflightResolver; timer: NodeJS.Timeout }>();
   private inflightUploads = new Map<string, { resolve: (ack: FileUploadAck) => void; timer: NodeJS.Timeout }>();
+  private inflightTerminals = new Map<string, { resolve: (ack: TerminalAck) => void; timer: NodeJS.Timeout }>();
   private stopped = false;
   private readyPromise: Promise<void>;
   private resolveReady!: () => void;
@@ -356,6 +358,16 @@ export class BotSession {
           }
           break;
         }
+        case "terminal_ack": {
+          const ack = frame as TerminalAck;
+          const entry = this.inflightTerminals.get(ack.client_msg_id);
+          if (entry) {
+            clearTimeout(entry.timer);
+            this.inflightTerminals.delete(ack.client_msg_id);
+            entry.resolve(ack);
+          }
+          break;
+        }
         case "resume_ack":
           // Phase D: replay has ended; following frames are live events.
           break;
@@ -410,9 +422,9 @@ export class BotSession {
   }
 
   // ============== streaming reply: delta / done / error ==================
-  // Fire-and-forget: the server does not send send_ack for these high-frequency,
-  // fault-tolerant frames. Push directly to data WS and return whether the WS is
-  // online and accepted the write.
+  // Delta remains fire-and-forget because it is high frequency. Terminal frames
+  // include client_msg_id and wait for terminal_ack so callers can tell whether
+  // the server accepted the finalization request.
 
   /** Push a single token / chunk into a streaming reply identified by `msgId`. */
   streamDelta(args: { msgId: string; seq: number; delta: string }): boolean {
@@ -429,22 +441,21 @@ export class BotSession {
   /** End of a streaming reply. Server flushes the buffer + broadcasts
    *  message_done. Optional `fileIds` attaches binary outputs uploaded
    *  during the stream (e.g. images / .md from sendMedia). */
-  streamDone(args: { msgId: string; fileIds?: string[] }): boolean {
-    if (!this.data.isOpen) return false;
-    const frame: DoneFrame = { type: "done", msg_id: args.msgId };
+  streamDone(args: { msgId: string; fileIds?: string[] }): Promise<SendResult> {
+    const frame: DoneFrame = { type: "done", client_msg_id: randomUUID(), msg_id: args.msgId };
     if (args.fileIds && args.fileIds.length > 0) frame.file_ids = args.fileIds;
-    return this.data.send(frame);
+    return this.sendTerminalFrame(frame);
   }
 
   /** Mid-stream error: server finalizes partial with the given message tag. */
-  streamError(args: { msgId: string; message: string }): boolean {
-    if (!this.data.isOpen) return false;
+  streamError(args: { msgId: string; message: string }): Promise<SendResult> {
     const frame: ErrorFrame = {
       type: "error",
+      client_msg_id: randomUUID(),
       msg_id: args.msgId,
       message: args.message,
     };
-    return this.data.send(frame);
+    return this.sendTerminalFrame(frame);
   }
 
   /** Best-effort runtime trace/progress event for a bot reply placeholder. */
@@ -568,6 +579,36 @@ export class BotSession {
     });
   }
 
+  private sendTerminalFrame<F extends DoneFrame | ErrorFrame>(frame: F): Promise<SendResult> {
+    if (!this.data.isOpen) {
+      return Promise.resolve({ ok: false, error: "data WS not connected", code: "ws_not_open" });
+    }
+    const clientMsgId = frame.client_msg_id ?? randomUUID();
+    frame.client_msg_id = clientMsgId;
+    return new Promise<SendResult>((resolve) => {
+      const timer = setTimeout(() => {
+        this.inflightTerminals.delete(clientMsgId);
+        resolve({ ok: false, error: "terminal_ack timeout", code: "ack_timeout" });
+      }, Math.min(this.sendAckTimeoutMs, 30_000));
+      this.inflightTerminals.set(clientMsgId, {
+        resolve: (ack) => {
+          if (ack.ok) {
+            resolve({ ok: true, messageId: ack.msg_id });
+          } else {
+            resolve({ ok: false, error: ack.error, code: ack.code });
+          }
+        },
+        timer,
+      });
+      const sent = this.data.send(frame);
+      if (!sent) {
+        clearTimeout(timer);
+        this.inflightTerminals.delete(clientMsgId);
+        resolve({ ok: false, error: "data WS send failed", code: "ws_send_failed" });
+      }
+    });
+  }
+
   private rejectAllInflight(reason: string): void {
     for (const [id, entry] of this.inflight) {
       clearTimeout(entry.timer);
@@ -585,6 +626,17 @@ export class BotSession {
       });
     }
     this.inflightUploads.clear();
+    for (const [id, entry] of this.inflightTerminals) {
+      clearTimeout(entry.timer);
+      entry.resolve({
+        type: "terminal_ack",
+        client_msg_id: id,
+        ok: false,
+        code: "session_closed",
+        error: reason,
+      });
+    }
+    this.inflightTerminals.clear();
   }
 
   // =================== heartbeat / close ===================

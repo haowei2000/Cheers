@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BotAccount, User
+from app.config import settings
 from app.services.auth.password_utils import hash_password
 
 
@@ -31,6 +32,24 @@ async def test_openclaw_discovery_exposes_docs_namespace(client: AsyncClient) ->
         "/release/openclaw-channel-agentnexus.tgz"
     )
     assert "openclaw plugins install" in data["plugin"]["install"]["openclaw"]
+
+
+@pytest.mark.asyncio
+async def test_agent_bridge_discovery_uses_public_base_url(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "public_base_url", "https://agentnexus.example.com/base")
+
+    resp = await client.get("/docs/agent-bridge/discovery")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["base_url"] == "https://agentnexus.example.com/base"
+    assert data["bridge"]["control_ws"] == "wss://agentnexus.example.com/base/ws/agent-bridge/control"
+    assert data["bridge"]["http"]["read_file"] == (
+        "https://agentnexus.example.com/base/api/v1/agent-bridge/files/{file_id}/content"
+    )
 
 
 @pytest.mark.asyncio
@@ -154,6 +173,7 @@ async def test_agent_bridge_register_accepts_acp_provider(
     agent_config = data["acp_connector_config"]["accounts"]["docs_acp_bot"]["agent"]
     assert agent_config["command"] == "codex-acp"
     assert agent_config["args"] == []
+    assert agent_config["promptTimeoutMs"] >= 180_000
 
     bot = (
         await db_session.execute(select(BotAccount).where(BotAccount.username == "docs_acp_bot"))

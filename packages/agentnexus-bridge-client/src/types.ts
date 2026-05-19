@@ -180,11 +180,31 @@ export interface FileUploadAckErr {
 
 export type FileUploadAck = FileUploadAckOk | FileUploadAckErr;
 
+export interface TerminalAckOk {
+  type: "terminal_ack";
+  client_msg_id: string;
+  ok: true;
+  msg_id: string;
+  queued?: boolean;
+  job_id?: string;
+}
+
+export interface TerminalAckErr {
+  type: "terminal_ack";
+  client_msg_id: string;
+  ok: false;
+  error: string;
+  code: string;
+}
+
+export type TerminalAck = TerminalAckOk | TerminalAckErr;
+
 export type DataInbound =
   | DataHello
   | MessageEvent
   | SendAck
   | FileUploadAck
+  | TerminalAck
   | ResumeAck
   | PongFrame
   | { type: "error"; detail?: string };
@@ -246,7 +266,7 @@ export interface SessionUpdateFrame {
   metadata?: Record<string, unknown>;
 }
 
-// ---- Streaming reply frames (client → server, fire-and-forget, no ack) ----
+// ---- Streaming reply frames (client → server) ----
 
 /** One token / chunk of a streaming bot reply. The server appends `delta`
  *  to the placeholder identified by `msg_id` and broadcasts a
@@ -268,6 +288,7 @@ export interface DeltaFrame {
  *  shows up as a single bot reply, not text + a separate media message. */
 export interface DoneFrame {
   type: "done";
+  client_msg_id?: string;
   msg_id: string;
   file_ids?: string[];
 }
@@ -276,6 +297,7 @@ export interface DoneFrame {
  *  `is_partial=true` and includes `message` in the message_done event. */
 export interface ErrorFrame {
   type: "error";
+  client_msg_id?: string;
   msg_id: string;
   message: string;
 }

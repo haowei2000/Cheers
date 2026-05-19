@@ -9,6 +9,7 @@ export interface StdioAgentConfig {
   cwd?: string;
   env?: Record<string, string>;
   requestTimeoutMs?: number;
+  promptTimeoutMs?: number;
   permissionMode?: PermissionMode;
   mcpServers?: unknown[];
   clientCapabilities?: Record<string, unknown>;

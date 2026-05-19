@@ -136,8 +136,30 @@ export class MockBridge {
     }
     if (stream !== "data") return;
     if (frame.type === "delta") this.receivedDeltas.push(frame);
-    if (frame.type === "done") this.receivedDones.push(frame);
-    if (frame.type === "error") this.receivedErrors.push(frame);
+    if (frame.type === "done") {
+      this.receivedDones.push(frame);
+      if (typeof frame.client_msg_id === "string") {
+        ws.send(JSON.stringify({
+          type: "terminal_ack",
+          client_msg_id: frame.client_msg_id,
+          ok: true,
+          msg_id: frame.msg_id,
+          queued: true,
+        }));
+      }
+    }
+    if (frame.type === "error") {
+      this.receivedErrors.push(frame);
+      if (typeof frame.client_msg_id === "string") {
+        ws.send(JSON.stringify({
+          type: "terminal_ack",
+          client_msg_id: frame.client_msg_id,
+          ok: true,
+          msg_id: frame.msg_id,
+          queued: true,
+        }));
+      }
+    }
     if (frame.type === "trace") this.receivedTraces.push(frame);
     if (frame.type === "file_upload") {
       this.receivedUploads.push(frame);
