@@ -99,6 +99,11 @@ type MentionItem = (ChannelBot | ChannelUser) & {
   kind: "bot" | "user";
 };
 
+type ComposerTextRange = {
+  start: number;
+  end: number;
+};
+
 export function MessageComposer({
   value,
   valueRevision = 0,
@@ -142,6 +147,8 @@ export function MessageComposer({
   const [draftValue, setDraftValue] = useState(value);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
+  const [mentionTriggerRange, setMentionTriggerRange] =
+    useState<ComposerTextRange | null>(null);
   const [mentionPlacement, setMentionPlacement] = useState<"top" | "bottom">(
     "bottom",
   );
@@ -182,6 +189,12 @@ export function MessageComposer({
     setTemplateMenuOpen(false);
     setTemplateFilter("");
     setTemplateTriggerRange(null);
+  };
+
+  const closeMentionMenu = () => {
+    setMentionOpen(false);
+    setMentionFilter("");
+    setMentionTriggerRange(null);
   };
 
   useEffect(() => {
@@ -284,25 +297,54 @@ export function MessageComposer({
     });
   };
 
-  const pickMention = (item: MentionItem) => {
+  const getTextareaSelectionRange = (): ComposerTextRange => {
     const el = inputRef.current;
     const currentValue = el?.value ?? draftValue;
-    const pos = el?.selectionStart ?? currentValue.length;
-    const lastAt = currentValue.lastIndexOf("@", pos - 1);
-    const insert = `@${item.username} `;
+    const start = el?.selectionStart ?? currentValue.length;
+    const end = el?.selectionEnd ?? start;
+    return {
+      start: Math.min(start, currentValue.length),
+      end: Math.min(Math.max(end, start), currentValue.length),
+    };
+  };
+
+  const replaceTextareaRange = (
+    range: ComposerTextRange,
+    replacement: string,
+  ) => {
+    const el = inputRef.current;
+    const currentValue = el?.value ?? draftValue;
+    const start = Math.min(range.start, currentValue.length);
+    const end = Math.min(Math.max(range.end, start), currentValue.length);
     const next =
-      lastAt === -1
-        ? currentValue.slice(0, pos) + insert + currentValue.slice(pos)
-        : currentValue.slice(0, lastAt) + insert + currentValue.slice(pos);
-    const caret = lastAt === -1 ? pos + insert.length : lastAt + insert.length;
+      currentValue.slice(0, start) + replacement + currentValue.slice(end);
+    const caret = start + replacement.length;
     setDraftValue(next);
     onValueChange(next);
-    setMentionOpen(false);
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       if (!el) return;
       el.focus();
       el.setSelectionRange(caret, caret);
-    }, 0);
+    });
+  };
+
+  const pickMention = (item: MentionItem) => {
+    const el = inputRef.current;
+    const currentValue = el?.value ?? draftValue;
+    const selection = getTextareaSelectionRange();
+    const pos = selection.end;
+    const lastAt = currentValue.lastIndexOf("@", pos - 1);
+    const insert = `@${item.username} `;
+    const range =
+      mentionTriggerRange ??
+      (lastAt === -1
+        ? selection
+        : {
+            start: lastAt,
+            end: pos,
+          });
+    replaceTextareaRange(range, insert);
+    closeMentionMenu();
   };
 
   const clearTemplateTriggerText = () => {
@@ -349,7 +391,7 @@ export function MessageComposer({
     if (slashIsActive && lastSlash > lastAt) {
       setActionMenuOpen(false);
       onCloseKeychain?.();
-      setMentionOpen(false);
+      closeMentionMenu();
       setTemplateFilter(slashFilter);
       setTemplateTriggerRange({ start: lastSlash, end: pos });
       setTemplateMenuOpen(true);
@@ -366,14 +408,15 @@ export function MessageComposer({
       );
       setMentionOpen(true);
       setMentionFilter(atFilter);
+      setMentionTriggerRange({ start: lastAt, end: pos });
       return;
     }
-    setMentionOpen(false);
+    closeMentionMenu();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (mentionOpen && event.key === "Escape") {
-      setMentionOpen(false);
+      closeMentionMenu();
       return;
     }
     if (templateMenuOpen && event.key === "Escape") {
@@ -453,9 +496,11 @@ export function MessageComposer({
     setMentionOpen((open) => {
       if (open) {
         setMentionFilter("");
+        setMentionTriggerRange(null);
         return false;
       }
       setMentionFilter("");
+      setMentionTriggerRange(getTextareaSelectionRange());
       setMentionPlacement("top");
       return true;
     });
@@ -464,7 +509,7 @@ export function MessageComposer({
   const handleTemplateButtonClick = () => {
     setActionMenuOpen(false);
     onCloseKeychain?.();
-    setMentionOpen(false);
+    closeMentionMenu();
     setTemplateFilter("");
     setTemplateTriggerRange(null);
     setTemplateMenuOpen((open) => !open);
@@ -472,10 +517,12 @@ export function MessageComposer({
 
   const handleActionButtonClick = () => {
     closeTemplateMenu();
-    setMentionOpen(false);
+    closeMentionMenu();
     onCloseKeychain?.();
     setActionMenuOpen((open) => !open);
   };
+
+  const promptTemplateTriggerLabel = selectedPromptTemplateName || "Skill";
 
   const selectKind = (nextKind: MessageComposerKind) => {
     onKindChange?.(nextKind);
@@ -634,15 +681,7 @@ export function MessageComposer({
               )}
               {displayKind === "normal" && (
                 <span className="an-composer-kindhead-hint">
-                  {normalHint ?? "@ mention bot · Tab switches type · Enter sends"}
-                </span>
-              )}
-              {selectedPromptTemplate && (
-                <span
-                  className="an-composer-template-chip"
-                  title={`This message forces template: ${selectedPromptTemplateName}`}
-                >
-                  / {selectedPromptTemplateName}
+                  {normalHint ?? "@ Agent · Tab switches type · Enter sends"}
                 </span>
               )}
             </div>
@@ -678,19 +717,21 @@ export function MessageComposer({
 
               <button
                 type="button"
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={handleMentionButtonClick}
                 className="an-composer-iconbtn is-named-trigger"
-                title="Mention members or bots"
-                aria-label="Mention members or bots"
+                title="Choose agent or member"
+                aria-label="Choose agent or member"
               >
                 <span className="an-composer-glyph">@</span>
-                <span className="an-composer-trigger-label">Agent/智能体</span>
+                <span className="an-composer-trigger-label">Agent</span>
               </button>
 
               {onPromptTemplateChange && (
                 <div ref={templateTriggerRef} className="an-composer-template-trigger relative">
                   <button
                     type="button"
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={handleTemplateButtonClick}
                     className={
                       "an-composer-iconbtn is-named-trigger" +
@@ -704,7 +745,7 @@ export function MessageComposer({
                     aria-label="Choose prompt template"
                   >
                     <span className="an-composer-glyph">/</span>
-                    <span className="an-composer-trigger-label">Skill/技能</span>
+                    <span className="an-composer-trigger-label">{promptTemplateTriggerLabel}</span>
                   </button>
                 </div>
               )}
@@ -874,14 +915,13 @@ export function MessageComposer({
               overflowY: "auto",
             }}
           >
-            <div className="an-menu-head">Skill/技能 · Force override for this message</div>
+            <div className="an-menu-head">Skill · Force override for this message</div>
             {selectedPromptTemplate && (
               <button
                 type="button"
                 className="an-menu-item"
-                onClick={() => {
-                  pickPromptTemplate(null);
-                }}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pickPromptTemplate(null)}
               >
                 <span className="an-mi-ico">
                   <AppIcon name="close" className="w-3.5 h-3.5" />
@@ -901,9 +941,8 @@ export function MessageComposer({
                   key={template.template_id}
                   type="button"
                   className="an-menu-item"
-                  onClick={() => {
-                    pickPromptTemplate(template.template_id);
-                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => pickPromptTemplate(template.template_id)}
                 >
                   <span className="an-mi-ico">
                     {template.template_id === selectedPromptTemplateId ? (
