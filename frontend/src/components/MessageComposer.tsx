@@ -104,16 +104,21 @@ type ComposerTextRange = {
   end: number;
 };
 
+type LeadingBotMentionMatch = ComposerTextRange & {
+  username: string;
+};
+
 const MENTION_NAME_BOUNDARY_RE = /^[a-zA-Z0-9_\-'\u4e00-\u9fff]$/;
 
-function findLeadingBotMentionRange(
+function findLeadingBotMentionMatch(
   value: string,
   botUsernames: string[],
-): ComposerTextRange | null {
+): LeadingBotMentionMatch | null {
   const names = [...new Set(botUsernames.filter(Boolean))].sort(
     (a, b) => b.length - a.length,
   );
   if (names.length === 0) return null;
+  const lowerValue = value.toLowerCase();
 
   let pos = 0;
   while (pos < value.length && (value[pos] === " " || value[pos] === "\t")) {
@@ -121,23 +126,33 @@ function findLeadingBotMentionRange(
   }
   const start = pos;
   let consumed = false;
+  let firstUsername = "";
 
   while (value[pos] === "@") {
     const name = names.find((candidate) => {
       const mention = `@${candidate}`;
-      if (!value.startsWith(mention, pos)) return false;
+      if (!lowerValue.startsWith(mention.toLowerCase(), pos)) return false;
       const nextChar = value[pos + mention.length];
       return !nextChar || !MENTION_NAME_BOUNDARY_RE.test(nextChar);
     });
-    if (!name) break;
-    pos += name.length + 1;
-    consumed = true;
+    if (name) {
+      if (!firstUsername) firstUsername = name;
+      pos += name.length + 1;
+      consumed = true;
+    } else if (consumed) {
+      pos += 1;
+      while (pos < value.length && MENTION_NAME_BOUNDARY_RE.test(value[pos])) {
+        pos += 1;
+      }
+    } else {
+      break;
+    }
     while (pos < value.length && (value[pos] === " " || value[pos] === "\t")) {
       pos += 1;
     }
   }
 
-  return consumed ? { start, end: pos } : null;
+  return consumed && firstUsername ? { start, end: pos, username: firstUsername } : null;
 }
 
 export function MessageComposer({
@@ -217,6 +232,21 @@ export function MessageComposer({
   );
   const selectedPromptTemplateName = promptTemplateDisplayName(selectedPromptTemplate);
   const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
+  const leadingBotMention = useMemo(
+    () =>
+      findLeadingBotMentionMatch(
+        draftValue,
+        channelBots.map((bot) => bot.username),
+      ),
+    [channelBots, draftValue],
+  );
+  const leadingBotMentionLabel = useMemo(() => {
+    if (!leadingBotMention) return "";
+    const bot = channelBots.find(
+      (item) => item.username.toLowerCase() === leadingBotMention.username.toLowerCase(),
+    );
+    return bot?.display_name?.trim() || bot?.username || leadingBotMention.username;
+  }, [channelBots, leadingBotMention]);
 
   useEffect(() => {
     setDraftValue(value);
@@ -375,7 +405,7 @@ export function MessageComposer({
     const insert = `@${item.username} `;
     const leadingBotMentionRange =
       item.kind === "bot"
-        ? findLeadingBotMentionRange(
+        ? findLeadingBotMentionMatch(
             currentValue,
             channelBots.map((bot) => bot.username),
           )
@@ -390,7 +420,9 @@ export function MessageComposer({
             end: pos,
           });
     replaceTextareaRange(range, insert);
-    setMentionTriggerLabel(item.display_name?.trim() || item.username);
+    setMentionTriggerLabel(
+      item.kind === "bot" ? "" : item.display_name?.trim() || item.username,
+    );
     closeMentionMenu();
   };
 
@@ -571,7 +603,8 @@ export function MessageComposer({
   };
 
   const promptTemplateTriggerLabel = selectedPromptTemplateName || "Skill";
-  const mentionButtonLabel = mentionTriggerLabel || "Agent";
+  const hasMentionButtonSelection = Boolean(leadingBotMentionLabel || mentionTriggerLabel);
+  const mentionButtonLabel = leadingBotMentionLabel || mentionTriggerLabel || "Agent";
 
   const selectKind = (nextKind: MessageComposerKind) => {
     onKindChange?.(nextKind);
@@ -773,7 +806,12 @@ export function MessageComposer({
                 aria-label="Choose agent or member"
               >
                 <span className="an-composer-glyph">@</span>
-                <span className="an-composer-trigger-label">{mentionButtonLabel}</span>
+                <span
+                  className="an-composer-trigger-label"
+                  data-i18n-skip={hasMentionButtonSelection ? "" : undefined}
+                >
+                  {mentionButtonLabel}
+                </span>
               </button>
 
               {onPromptTemplateChange && (
