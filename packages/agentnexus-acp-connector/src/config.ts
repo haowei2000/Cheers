@@ -96,6 +96,7 @@ async function normalizeAccount(id: string, raw: unknown, baseDir: string): Prom
       transport: "stdio",
       command: String(agent.command),
       args: Array.isArray(agent.args) ? agent.args.map(String) : [],
+      model: typeof agent.model === "string" && agent.model.trim() ? agent.model.trim() : undefined,
       cwd: await normalizeCwd(id, agent.cwd, baseDir),
       env: expandEnvMap(isObject(agent.env) ? Object.fromEntries(
         Object.entries(agent.env).map(([k, v]) => [k, String(v)]),

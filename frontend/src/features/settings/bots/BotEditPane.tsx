@@ -21,9 +21,30 @@ import {
   botScopeLabel,
   normalizeBotScope,
 } from "./BotShared";
-import type { BotConnectionTestResult, BotRow, BotScope, ModelItem, TemplateItem } from "./types";
+import type {
+  BotConnectionTestResult,
+  BotRow,
+  BotScope,
+  ConnectorPermissionMode,
+  ModelItem,
+  TemplateItem,
+} from "./types";
 
 type BotSettingsTab = "profile" | "runtime" | "status";
+
+function normalizeConnectorPermissionMode(value: unknown): ConnectorPermissionMode {
+  return value === "allow" || value === "cancel" || value === "reject" ? value : "reject";
+}
+
+function msToSeconds(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(5, Math.round(value / 1000))
+    : fallback;
+}
+
+function secondsToMs(value: number): number {
+  return Math.max(5, Math.round(value)) * 1000;
+}
 
 function isManagedBotAvatarUrl(value: string): boolean {
   return value.startsWith("/api/v1/avatars/bots/") ||
@@ -57,6 +78,20 @@ export function BotEditPane({
   const [modelId, setModelId] = useState(bot.model_id || "");
   const [templateId, setTemplateId] = useState(bot.template_id || "");
   const [botTab, setBotTab] = useState<BotSettingsTab>("profile");
+  const connectorControl = bot.binding_config?.connector_control;
+  const connectorSettings = connectorControl?.settings || {};
+  const [savingConnectorControl, setSavingConnectorControl] = useState(false);
+  const [connectorPermissionMode, setConnectorPermissionMode] = useState<ConnectorPermissionMode>(
+    normalizeConnectorPermissionMode(connectorSettings.permissionMode),
+  );
+  const [connectorPromptTimeoutSeconds, setConnectorPromptTimeoutSeconds] = useState(
+    msToSeconds(connectorSettings.promptTimeoutMs, 900),
+  );
+  const [connectorRequestTimeoutSeconds, setConnectorRequestTimeoutSeconds] = useState(
+    msToSeconds(connectorSettings.requestTimeoutMs, 120),
+  );
+  const [connectorCwd, setConnectorCwd] = useState(connectorSettings.cwd || "");
+  const [connectorModel, setConnectorModel] = useState(connectorSettings.model || "");
 
   useEffect(() => {
     setDisplayName(bot.display_name || "");
@@ -65,8 +100,23 @@ export function BotEditPane({
     setScope(normalizeBotScope(bot.scope));
     setModelId(bot.model_id || "");
     setTemplateId(bot.template_id || "");
+    const nextSettings = bot.binding_config?.connector_control?.settings || {};
+    setConnectorPermissionMode(normalizeConnectorPermissionMode(nextSettings.permissionMode));
+    setConnectorPromptTimeoutSeconds(msToSeconds(nextSettings.promptTimeoutMs, 900));
+    setConnectorRequestTimeoutSeconds(msToSeconds(nextSettings.requestTimeoutMs, 120));
+    setConnectorCwd(nextSettings.cwd || "");
+    setConnectorModel(nextSettings.model || "");
     setConnectionTest(null);
-  }, [bot.avatar_url, bot.bot_id, bot.description, bot.display_name, bot.model_id, bot.scope, bot.template_id]);
+  }, [
+    bot.avatar_url,
+    bot.binding_config,
+    bot.bot_id,
+    bot.description,
+    bot.display_name,
+    bot.model_id,
+    bot.scope,
+    bot.template_id,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -229,6 +279,36 @@ export function BotEditPane({
       toast.error(message);
     } finally {
       setTestingConnection(false);
+    }
+  };
+
+  const saveConnectorControl = async () => {
+    setSavingConnectorControl(true);
+    try {
+      const settings: Record<string, unknown> = {
+        permissionMode: connectorPermissionMode,
+        promptTimeoutMs: secondsToMs(connectorPromptTimeoutSeconds),
+        requestTimeoutMs: secondsToMs(connectorRequestTimeoutSeconds),
+      };
+      if (connectorCwd.trim()) settings.cwd = connectorCwd.trim();
+      if (connectorModel.trim()) settings.model = connectorModel.trim();
+      const res = await apiFetch(`/bots/${bot.bot_id}/connector-control`, {
+        method: "PUT",
+        token: authToken,
+        body: {
+          settings,
+        },
+      });
+      const data = await res.json();
+      if (data?.status !== "success") {
+        throw new Error(data?.message || data?.detail || "Save failed");
+      }
+      toast.success(data.data?.dispatched ? "Connector settings sent" : "Connector settings saved");
+      onUpdated();
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Save failed");
+    } finally {
+      setSavingConnectorControl(false);
     }
   };
 
@@ -410,6 +490,80 @@ export function BotEditPane({
             </div>
           )}
         </div>
+        {!isHttpBot && (
+          <div className="an-row-card" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div>
+                <div className="an-rc-title">Connector control</div>
+                <div className="an-rc-sub">Revision {connectorControl?.revision ?? "not set"}</div>
+              </div>
+              {connectorControl?.last_status && (
+                <span className={`an-chip ${connectorControl.last_status.ok ? "green" : "red"}`}>
+                  {connectorControl.last_status.ok ? "Applied" : "Rejected"}
+                </span>
+              )}
+            </div>
+            <Field label="Permission mode">
+              <select
+                value={connectorPermissionMode}
+                onChange={(e) => setConnectorPermissionMode(normalizeConnectorPermissionMode(e.target.value))}
+                className={inputCls}
+              >
+                <option value="reject">Reject</option>
+                <option value="allow">Allow</option>
+                <option value="cancel">Cancel</option>
+              </select>
+            </Field>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+              <Field label="Working directory">
+                <input
+                  value={connectorCwd}
+                  onChange={(e) => setConnectorCwd(e.target.value)}
+                  className={inputCls}
+                  placeholder="/tmp/agent-workspace"
+                />
+              </Field>
+              <Field label="Codex model">
+                <input
+                  value={connectorModel}
+                  onChange={(e) => setConnectorModel(e.target.value)}
+                  className={inputCls}
+                  placeholder="gpt-5.5"
+                />
+              </Field>
+              <Field label="Prompt timeout (seconds)">
+                <input
+                  type="number"
+                  min={5}
+                  max={3600}
+                  value={connectorPromptTimeoutSeconds}
+                  onChange={(e) => setConnectorPromptTimeoutSeconds(Number(e.target.value || 0))}
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Request timeout (seconds)">
+                <input
+                  type="number"
+                  min={5}
+                  max={3600}
+                  value={connectorRequestTimeoutSeconds}
+                  onChange={(e) => setConnectorRequestTimeoutSeconds(Number(e.target.value || 0))}
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            {connectorControl?.last_status?.rejected?.length ? (
+              <div className="an-inline-status" style={{ background: "var(--red-muted)", color: "var(--red)" }}>
+                {connectorControl.last_status.rejected.map((item) => `${item.field || "field"}: ${item.reason || "rejected"}`).join("; ")}
+              </div>
+            ) : null}
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <PrimaryButton onClick={() => void saveConnectorControl()} disabled={savingConnectorControl}>
+                {savingConnectorControl ? "Saving..." : "Save connector control"}
+              </PrimaryButton>
+            </div>
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <PrimaryButton onClick={() => void save()} disabled={saving}>
             {saving ? "Saving..." : "Save configuration"}
