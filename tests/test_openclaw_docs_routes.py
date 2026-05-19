@@ -28,7 +28,7 @@ async def test_openclaw_discovery_exposes_docs_namespace(client: AsyncClient) ->
     assert data["plugin"]["name"] == "@haowei0520/openclaw-channel-agentnexus"
     assert data["plugin"]["release_folder"] == "release"
     assert data["plugin"]["download_url"].endswith(
-        "/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz"
+        "/release/openclaw-channel-agentnexus.tgz"
     )
     assert "openclaw plugins install" in data["plugin"]["install"]["openclaw"]
 
@@ -45,7 +45,7 @@ async def test_openclaw_plugin_download_serves_release_file(
     plugin_file.write_bytes(b"plugin-bytes")
     monkeypatch.setattr(routes, "_PLUGIN_RELEASE_DIR", tmp_path)
 
-    resp = await client.get("/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz")
+    resp = await client.get("/release/openclaw-channel-agentnexus.tgz")
 
     assert resp.status_code == 200
     assert resp.content == b"plugin-bytes"
@@ -100,7 +100,7 @@ async def test_openclaw_register_creates_websocket_bot(
     assert data["bot"]["bot_token_prefix"] == token[:8]
     assert data["bridge"]["data_ws"].endswith("/ws/agent-bridge/data")
     assert data["plugin"]["download_url"].endswith(
-        "/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz"
+        "/release/openclaw-channel-agentnexus.tgz"
     )
     assert data["agent_bridge_config"]["channels"]["agentnexus"]["accounts"][0]["botToken"] == token
     assert data["agentnexus_auth"]["method"] == "account_password"

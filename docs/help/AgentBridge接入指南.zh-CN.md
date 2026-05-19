@@ -110,7 +110,7 @@ openclaw plugins install /tmp/haowei0520-openclaw-channel-agentnexus-0.2.4.tgz
 
 ```bash
 curl -L -o /tmp/openclaw-channel-agentnexus.tgz \
-  "$AGENTNEXUS_BASE_URL/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz"
+  "$AGENTNEXUS_BASE_URL/release/openclaw-channel-agentnexus.tgz"
 
 openclaw plugins install /tmp/openclaw-channel-agentnexus.tgz
 ```

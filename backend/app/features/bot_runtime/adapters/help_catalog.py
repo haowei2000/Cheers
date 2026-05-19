@@ -42,7 +42,7 @@ HELP_ENTRIES_ZH: Sequence[HelpEntry] = (
         "如何接入外部 Agent",
         "外部 Agent 可通过 `/docs/agent-bridge/discovery` 获取发现信息，通过 `/docs/agent-bridge/register` 注册为 Agent Bridge Bot。"
         "注册成功后会返回 bot_token、controlUrl、dataUrl 和 provider 配置片段。OpenClaw provider 插件包可从 "
-        "`/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz` 下载。",
+        "`/release/openclaw-channel-agentnexus.tgz` 下载。",
     ),
     HelpEntry(
         ("发消息", "聊天", "怎么发", "怎么@", "如何@", "at bot", "@"),
@@ -100,7 +100,7 @@ HELP_ENTRIES_EN: Sequence[HelpEntry] = (
     HelpEntry(
         ("agent bridge", "openclaw", "connect agent", "register bot", "external agent"),
         "How to Connect an External Agent",
-        "External Agents can read `/docs/agent-bridge/discovery`, then register through `/docs/agent-bridge/register` as Agent Bridge Bots. Registration returns bot_token, controlUrl, dataUrl, and a provider config snippet. The OpenClaw provider package is available at `/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz`.",
+        "External Agents can read `/docs/agent-bridge/discovery`, then register through `/docs/agent-bridge/register` as Agent Bridge Bots. Registration returns bot_token, controlUrl, dataUrl, and a provider config snippet. The OpenClaw provider package is available at `/release/openclaw-channel-agentnexus.tgz`.",
     ),
     HelpEntry(
         ("send message", "chat", "mention", "at bot", "@"),
