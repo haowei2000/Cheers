@@ -941,6 +941,7 @@ async def bridge_websocket(websocket: WebSocket) -> None:
 _WS_CLOSE_AUTH_FAIL = 4401        # Token missing, mismatched, or revoked.
 _WS_CLOSE_SUPERSEDED = 4402       # A newer connection for the same bot superseded this one.
 _WS_CLOSE_BOT_UNAVAILABLE = 4403  # Invalid binding_type or status != online.
+_CONNECTOR_CONTROL_KEY = "connector_control"
 
 
 def _extract_bearer_token(websocket: WebSocket) -> str | None:
@@ -949,6 +950,50 @@ def _extract_bearer_token(websocket: WebSocket) -> str | None:
     if auth.lower().startswith("bearer "):
         return auth[7:].strip() or None
     return websocket.query_params.get("token")
+
+
+def _connector_control_from_bot(bot: BotAccount) -> dict | None:
+    cfg = bot.binding_config if isinstance(bot.binding_config, dict) else {}
+    control = cfg.get(_CONNECTOR_CONTROL_KEY)
+    return control if isinstance(control, dict) else None
+
+
+async def _record_connector_config_status(bot_id: str, frame: dict) -> None:
+    """Persist connector-side config application status for Bot settings UI."""
+    from app.db.session import async_session_factory
+
+    status = {
+        "revision": frame.get("revision"),
+        "ok": frame.get("ok") is True,
+        "applied": frame.get("applied") if isinstance(frame.get("applied"), list) else [],
+        "rejected": frame.get("rejected") if isinstance(frame.get("rejected"), list) else [],
+        "error": frame.get("error") if isinstance(frame.get("error"), str) else None,
+        "reported_at": datetime.now(timezone.utc).isoformat(),
+    }
+    async with async_session_factory() as s:
+        bot = await s.get(BotAccount, bot_id)
+        if bot is None:
+            return
+        cfg = dict(bot.binding_config or {})
+        control = cfg.get(_CONNECTOR_CONTROL_KEY)
+        if not isinstance(control, dict):
+            control = {}
+        control = dict(control)
+        current_revision = control.get("revision")
+        incoming_revision = frame.get("revision")
+        if current_revision is not None and str(current_revision) != str(incoming_revision):
+            logger.info(
+                "control_ws: stale config_status ignored bot_id=%s current_revision=%s incoming_revision=%s",
+                bot_id,
+                current_revision,
+                incoming_revision,
+            )
+            return
+        control["last_status"] = status
+        cfg[_CONNECTOR_CONTROL_KEY] = control
+        bot.binding_config = cfg
+        s.add(bot)
+        await s.commit()
 
 
 @ws_router.websocket("/ws/agent-bridge/control")
@@ -993,6 +1038,7 @@ async def control_websocket(websocket: WebSocket) -> None:
         "connection_id": sess.connection_id,
         "session_id": sess.session_id,
         "memberships": memberships,
+        "connector_config": _connector_control_from_bot(bot),
     })
     logger.info(
         "control_ws: connected bot_id=%s connection_id=%s memberships=%d",
@@ -1016,6 +1062,14 @@ async def control_websocket(websocket: WebSocket) -> None:
                 logger.info(
                     "control_ws: ready bot_id=%s plugin_version=%s",
                     bot.bot_id, frame.get("plugin_version"),
+                )
+            elif ftype == "config_status":
+                await _record_connector_config_status(bot.bot_id, frame)
+                logger.info(
+                    "control_ws: config_status bot_id=%s revision=%s ok=%s",
+                    bot.bot_id,
+                    frame.get("revision"),
+                    frame.get("ok"),
                 )
             # Ignore other frame types.
     except WebSocketDisconnect:

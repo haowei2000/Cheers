@@ -21,6 +21,9 @@ import { ReconnectingClient } from "./reconnect.js";
 import type {
   AttachmentInfo,
   ChannelInfo,
+  ConfigStatusFrame,
+  ConfigUpdateInbound,
+  ConnectorControlConfig,
   ControlInbound,
   DataInbound,
   DeltaFrame,
@@ -90,6 +93,10 @@ export interface SessionEvents {
    *  done frame will not leave the frontend stuck; done is only useful for
    *  cleaner plugin logs. */
   onCancel?: (msgId: string, reason?: string) => void;
+  /** Server-side AgentNexus connector settings changed. Implementations should
+   *  validate and apply only fields they support, then optionally report status
+   *  with sendConfigStatus(). */
+  onConfigUpdate?: (update: ConfigUpdateInbound) => void | Promise<void>;
   onError?: (err: unknown) => void;
   onFatal?: (reason: string) => void;
   /** Control/data connection state changes for observability. */
@@ -247,6 +254,7 @@ export class BotSession {
             this.membership.byId.set(ch.channel_id, ch);
           }
           this.controlReady = true;
+          this.emitInitialConfig(frame.connector_config);
           this.maybeResolveReady();
           break;
         }
@@ -271,12 +279,36 @@ export class BotSession {
           }
           break;
         }
+        case "config_update": {
+          this.emitConfigUpdate(frame);
+          break;
+        }
         case "pong":
           break;
         default:
           // Unknown control frame — keep for forward compat
           break;
       }
+    } catch (err) {
+      this.events.onError?.(err);
+    }
+  }
+
+  private emitInitialConfig(config: ConnectorControlConfig | null | undefined): void {
+    if (!config || !isObject(config.settings)) return;
+    this.emitConfigUpdate({
+      type: "config_update",
+      revision: config.revision ?? null,
+      settings: config.settings,
+      updated_at: config.updated_at ?? null,
+    });
+  }
+
+  private emitConfigUpdate(update: ConfigUpdateInbound): void {
+    try {
+      void Promise.resolve(this.events.onConfigUpdate?.(update)).catch((err) => {
+        this.events.onError?.(err);
+      });
     } catch (err) {
       this.events.onError?.(err);
     }
@@ -470,6 +502,12 @@ export class BotSession {
     if (!this.data.isOpen) return false;
     const frame: SessionUpdateFrame = { type: "session_update", ...args };
     return this.data.send(frame);
+  }
+
+  /** Report whether a server-pushed connector config update was applied. */
+  sendConfigStatus(status: Omit<ConfigStatusFrame, "type">): boolean {
+    if (!this.control.isOpen) return false;
+    return this.control.send({ type: "config_status", ...status });
   }
 
   /** Proactively send a message to a channel, for example a scheduled reminder. */
