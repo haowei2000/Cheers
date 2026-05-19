@@ -1126,15 +1126,18 @@ async def test_forward_file_to_personal_space_deep_copies_attachment(
         size_bytes=file_path.stat().st_size,
         status="ready",
     )
+    db_session.add_all([team_ws, personal_ws, bot])
+    await db_session.flush()
+    db_session.add_all([source_ch, target_dm])
+    await db_session.flush()
     db_session.add_all([
-        team_ws,
-        personal_ws,
-        source_ch,
-        target_dm,
-        bot,
         ChannelMembership(channel_id=target_dm.channel_id, member_id=current_user_id, member_type="user"),
         ChannelMembership(channel_id=target_dm.channel_id, member_id=bot.bot_id, member_type="bot"),
-        record,
+    ])
+    await db_session.flush()
+    db_session.add(record)
+    await db_session.flush()
+    db_session.add(
         FileScopeLink(
             file_id=record.file_id,
             scope_type="channel",
@@ -1142,7 +1145,7 @@ async def test_forward_file_to_personal_space_deep_copies_attachment(
             workspace_id=team_ws.workspace_id,
             created_by=record.uploader_id,
         ),
-    ])
+    )
     await db_session.commit()
 
     resp = await client.post(
@@ -1274,18 +1277,25 @@ async def test_file_library_returns_only_personal_space_personal_links(
         size_bytes=30,
         status="ready",
     )
-    db_session.add_all([
-        personal_ws,
-        team_ws,
-        ch,
+    db_session.add_all([personal_ws, team_ws])
+    await db_session.flush()
+    db_session.add(ch)
+    await db_session.flush()
+    db_session.add(
         ChannelMembership(
             channel_id=ch.channel_id,
             member_id=current_user_id,
             member_type="user",
         ),
+    )
+    await db_session.flush()
+    db_session.add_all([
         personal_file,
         channel_file,
         team_personal_link_file,
+    ])
+    await db_session.flush()
+    db_session.add_all([
         FileScopeLink(
             file_id=personal_file.file_id,
             scope_type="personal",
@@ -1345,9 +1355,11 @@ async def test_delete_personal_file_removes_unreferenced_record(
         size_bytes=file_path.stat().st_size,
         status="ready",
     )
-    db_session.add_all([
-        ws,
-        record,
+    db_session.add(ws)
+    await db_session.flush()
+    db_session.add(record)
+    await db_session.flush()
+    db_session.add(
         FileScopeLink(
             file_id=record.file_id,
             scope_type="personal",
@@ -1355,7 +1367,7 @@ async def test_delete_personal_file_removes_unreferenced_record(
             workspace_id=ws.workspace_id,
             created_by=current_user_id,
         ),
-    ])
+    )
     await db_session.commit()
 
     resp = await client.delete(f"/api/v1/files/{record.file_id}")
@@ -1410,16 +1422,24 @@ async def test_delete_personal_file_hides_channel_message_attachment(
         content="with attachment",
         file_ids=[record.file_id],
     )
-    db_session.add_all([
-        ws,
-        ch,
+    db_session.add(ws)
+    await db_session.flush()
+    db_session.add(ch)
+    await db_session.flush()
+    db_session.add(
         ChannelMembership(
             channel_id=ch.channel_id,
             member_id=current_user_id,
             member_type="user",
         ),
+    )
+    await db_session.flush()
+    db_session.add_all([
         record,
         msg,
+    ])
+    await db_session.flush()
+    db_session.add_all([
         FileScopeLink(
             file_id=record.file_id,
             scope_type="personal",
