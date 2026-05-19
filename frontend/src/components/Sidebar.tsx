@@ -352,36 +352,28 @@ export function Sidebar({
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
     event.stopPropagation();
-    if (!confirm(`Delete ${file.original_filename || file.file_id}?`)) return;
+    const label = file.original_filename || file.file_id;
+    if (
+      !confirm(
+        `Remove "${label}" from Files? Messages that use it will keep their attachment.`,
+      )
+    )
+      return;
     try {
-      const params = new URLSearchParams();
-      if (file.channel_id) {
-        params.set("channel_id", file.channel_id);
-      } else if (file.scope_type && file.scope_id) {
-        params.set("scope_type", file.scope_type);
-        params.set("scope_id", file.scope_id);
-      }
-      const suffix = params.toString() ? `?${params.toString()}` : "";
       const response = await apiFetch(
-        `/files/${encodeURIComponent(file.file_id)}${suffix}`,
+        `/files/${encodeURIComponent(file.file_id)}`,
         { method: "DELETE", token: authToken },
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.status === "error") {
-        throw new Error(payload?.message || payload?.detail || "Delete failed");
+        throw new Error(payload?.message || payload?.detail || "Remove failed");
       }
       setPersonalFiles((files) =>
-        files.filter(
-          (item) =>
-            !(
-              item.file_id === file.file_id &&
-              (item.channel_id || "") === (file.channel_id || "")
-            ),
-        ),
+        files.filter((item) => item.file_id !== file.file_id),
       );
-      toast.success("File deleted");
+      toast.success("File removed");
     } catch (error: unknown) {
-      toast.error((error as Error).message || "Delete failed");
+      toast.error((error as Error).message || "Remove failed");
     }
   };
 
@@ -1101,7 +1093,7 @@ export function Sidebar({
           <li key={`${file.channel_id || "library"}:${file.file_id}`} className="group relative">
             <button
               type="button"
-              className="an-rail-row w-full"
+              className="an-rail-row w-full pr-7"
               title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
               onClick={() => {
                 setSelectedId(null);
@@ -1120,16 +1112,22 @@ export function Sidebar({
                 {file.original_filename || file.file_id}
               </span>
             </button>
-            <button
-              type="button"
-              onClick={(event) => void deletePersonalFile(file, event)}
-              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
-              style={{ color: "var(--fg-3)" }}
-              title="Delete file"
-              aria-label="Delete file"
+            <Tooltip
+              content="Remove from files"
+              placement="right"
+              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
             >
-              <AppIcon name="trash" className="w-3 h-3" />
-            </button>
+              <button
+                type="button"
+                onClick={(event) => void deletePersonalFile(file, event)}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                style={{ color: "var(--fg-3)" }}
+                title="Remove from files"
+                aria-label="Remove from files"
+              >
+                <AppIcon name="trash" className="w-3 h-3" />
+              </button>
+            </Tooltip>
           </li>
         ))}
       </ul>

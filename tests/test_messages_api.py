@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -1082,6 +1083,110 @@ async def test_forward_single_file_without_message(
 
 
 @pytest.mark.asyncio
+async def test_forward_file_to_personal_space_deep_copies_attachment(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    team_ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000280", name="W280")
+    personal_ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-000000000281",
+        name="Personal",
+        kind="personal",
+    )
+    source_ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000280",
+        workspace_id=team_ws.workspace_id,
+        name="file-source-team",
+        type="public",
+    )
+    target_dm = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000281",
+        workspace_id=personal_ws.workspace_id,
+        name="dm:test:personal-file-copy",
+        type="dm",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000281",
+        username="personal_file_bot",
+        display_name="Personal File Bot",
+        status="online",
+    )
+    file_path = tmp_path / "source-copy.txt"
+    file_path.write_text("deep copy body", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000280",
+        channel_id=source_ch.channel_id,
+        workspace_id=team_ws.workspace_id,
+        uploader_id="a0000000-0000-0000-0000-000000000280",
+        original_path=str(file_path),
+        original_filename="source-copy.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add_all([team_ws, personal_ws, bot])
+    await db_session.flush()
+    db_session.add_all([source_ch, target_dm])
+    await db_session.flush()
+    db_session.add_all([
+        ChannelMembership(channel_id=target_dm.channel_id, member_id=current_user_id, member_type="user"),
+        ChannelMembership(channel_id=target_dm.channel_id, member_id=bot.bot_id, member_type="bot"),
+    ])
+    await db_session.flush()
+    db_session.add(record)
+    await db_session.flush()
+    db_session.add(
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="channel",
+            scope_id=source_ch.channel_id,
+            workspace_id=team_ws.workspace_id,
+            created_by=record.uploader_id,
+        ),
+    )
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/channels/{target_dm.channel_id}/messages/forward",
+        json={
+            "source_file_ids": [record.file_id],
+            "mode": "single",
+        },
+    )
+
+    assert resp.status_code == 200
+    forwarded = resp.json()["data"]["messages"][0]
+    assert forwarded["file_ids"] != [record.file_id]
+    copied_file_id = forwarded["file_ids"][0]
+    copied = await db_session.get(FileRecord, copied_file_id)
+    assert copied is not None
+    assert copied.workspace_id == personal_ws.workspace_id
+    assert copied.channel_id == target_dm.channel_id
+    assert copied.uploader_id == current_user_id
+    assert copied.original_filename == record.original_filename
+    assert copied.original_path != record.original_path
+    assert Path(copied.original_path).read_text(encoding="utf-8") == "deep copy body"
+
+    links = (
+        await db_session.execute(
+            select(FileScopeLink).where(FileScopeLink.file_id == copied_file_id)
+        )
+    ).scalars().all()
+    assert {(link.scope_type, link.scope_id) for link in links} == {
+        ("personal", current_user_id),
+        ("dm", target_dm.channel_id),
+    }
+
+    library_resp = await client.get("/api/v1/files/library")
+    assert library_resp.status_code == 200
+    library_ids = {item["file_id"] for item in library_resp.json()["data"]}
+    assert copied_file_id in library_ids
+    assert record.file_id not in library_ids
+
+
+@pytest.mark.asyncio
 async def test_forward_secret_message_is_rejected(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1122,22 +1227,27 @@ async def test_forward_secret_message_is_rejected(
 
 
 @pytest.mark.asyncio
-async def test_file_library_returns_personal_and_channel_scope_links(
+async def test_file_library_returns_only_personal_space_personal_links(
     client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
     current_user_id = "a0000000-0000-0000-0000-000000000099"
-    ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000090", name="W90")
+    personal_ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-000000000290",
+        name="Personal",
+        kind="personal",
+    )
+    team_ws = Workspace(workspace_id="f0000000-0000-0000-0000-000000000291", name="W291")
     ch = Channel(
-        channel_id="e1000000-0000-0000-0000-000000000090",
-        workspace_id=ws.workspace_id,
+        channel_id="e1000000-0000-0000-0000-000000000290",
+        workspace_id=team_ws.workspace_id,
         name="library-channel",
         type="public",
     )
     personal_file = FileRecord(
-        file_id="f1000000-0000-0000-0000-000000000090",
+        file_id="f1000000-0000-0000-0000-000000000290",
         channel_id=None,
-        workspace_id=ws.workspace_id,
+        workspace_id=personal_ws.workspace_id,
         uploader_id=current_user_id,
         original_path="/tmp/personal-library.txt",
         original_filename="personal-library.txt",
@@ -1146,38 +1256,65 @@ async def test_file_library_returns_personal_and_channel_scope_links(
         status="ready",
     )
     channel_file = FileRecord(
-        file_id="f1000000-0000-0000-0000-000000000091",
-        channel_id=None,
-        workspace_id=ws.workspace_id,
-        uploader_id="a0000000-0000-0000-0000-000000000091",
+        file_id="f1000000-0000-0000-0000-000000000291",
+        channel_id=ch.channel_id,
+        workspace_id=team_ws.workspace_id,
+        uploader_id="a0000000-0000-0000-0000-000000000291",
         original_path="/tmp/channel-library.txt",
         original_filename="channel-library.txt",
         content_type="text/plain",
         size_bytes=20,
         status="ready",
     )
-    db_session.add_all([
-        ws,
-        ch,
+    team_personal_link_file = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000292",
+        channel_id=ch.channel_id,
+        workspace_id=team_ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path="/tmp/team-upload.txt",
+        original_filename="team-upload.txt",
+        content_type="text/plain",
+        size_bytes=30,
+        status="ready",
+    )
+    db_session.add_all([personal_ws, team_ws])
+    await db_session.flush()
+    db_session.add(ch)
+    await db_session.flush()
+    db_session.add(
         ChannelMembership(
             channel_id=ch.channel_id,
             member_id=current_user_id,
             member_type="user",
         ),
+    )
+    await db_session.flush()
+    db_session.add_all([
         personal_file,
         channel_file,
+        team_personal_link_file,
+    ])
+    await db_session.flush()
+    db_session.add_all([
         FileScopeLink(
             file_id=personal_file.file_id,
             scope_type="personal",
             scope_id=current_user_id,
-            workspace_id=ws.workspace_id,
+            workspace_id=personal_ws.workspace_id,
             created_by=current_user_id,
         ),
         FileScopeLink(
             file_id=channel_file.file_id,
             scope_type="channel",
             scope_id=ch.channel_id,
-            workspace_id=ws.workspace_id,
+            workspace_id=team_ws.workspace_id,
+            created_by=current_user_id,
+        ),
+        FileScopeLink(
+            file_id=team_personal_link_file.file_id,
+            scope_type="personal",
+            scope_id=current_user_id,
+            workspace_id=team_ws.workspace_id,
             created_by=current_user_id,
         ),
     ])
@@ -1189,9 +1326,160 @@ async def test_file_library_returns_personal_and_channel_scope_links(
     by_id = {item["file_id"]: item for item in resp.json()["data"]}
     assert by_id[personal_file.file_id]["scope_type"] == "personal"
     assert by_id[personal_file.file_id]["channel_id"] is None
-    assert by_id[channel_file.file_id]["scope_type"] == "channel"
-    assert by_id[channel_file.file_id]["channel_id"] == ch.channel_id
-    assert by_id[channel_file.file_id]["channel_label"] == ch.name
+    assert channel_file.file_id not in by_id
+    assert team_personal_link_file.file_id not in by_id
+
+
+@pytest.mark.asyncio
+async def test_delete_personal_file_removes_unreferenced_record(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-000000000294",
+        name="Personal",
+        kind="personal",
+    )
+    file_path = tmp_path / "private-delete.txt"
+    file_path.write_text("private", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000294",
+        channel_id=None,
+        workspace_id=ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path=str(file_path),
+        original_filename="private-delete.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    db_session.add(ws)
+    await db_session.flush()
+    db_session.add(record)
+    await db_session.flush()
+    db_session.add(
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="personal",
+            scope_id=current_user_id,
+            workspace_id=ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    )
+    await db_session.commit()
+
+    resp = await client.delete(f"/api/v1/files/{record.file_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["deleted"] is True
+    assert data["unlinked"] is True
+    assert not file_path.exists()
+    result = await db_session.execute(
+        select(FileRecord).where(FileRecord.file_id == record.file_id)
+    )
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_delete_personal_file_hides_channel_message_attachment(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tmp_path,
+) -> None:
+    current_user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(
+        workspace_id="f0000000-0000-0000-0000-000000000295",
+        name="Personal",
+        kind="personal",
+    )
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000295",
+        workspace_id=ws.workspace_id,
+        name="message-attachment-channel",
+        type="public",
+    )
+    file_path = tmp_path / "channel-attachment.txt"
+    file_path.write_text("channel attachment", encoding="utf-8")
+    record = FileRecord(
+        file_id="f1000000-0000-0000-0000-000000000295",
+        channel_id=ch.channel_id,
+        workspace_id=ws.workspace_id,
+        uploader_id=current_user_id,
+        original_path=str(file_path),
+        original_filename="channel-attachment.txt",
+        content_type="text/plain",
+        size_bytes=file_path.stat().st_size,
+        status="ready",
+    )
+    msg = Message(
+        msg_id="m1000000-0000-0000-0000-000000000295",
+        channel_id=ch.channel_id,
+        sender_id=current_user_id,
+        sender_type="user",
+        content="with attachment",
+        file_ids=[record.file_id],
+    )
+    db_session.add(ws)
+    await db_session.flush()
+    db_session.add(ch)
+    await db_session.flush()
+    db_session.add(
+        ChannelMembership(
+            channel_id=ch.channel_id,
+            member_id=current_user_id,
+            member_type="user",
+        ),
+    )
+    await db_session.flush()
+    db_session.add_all([
+        record,
+        msg,
+    ])
+    await db_session.flush()
+    db_session.add_all([
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="personal",
+            scope_id=current_user_id,
+            workspace_id=ws.workspace_id,
+            created_by=current_user_id,
+        ),
+        FileScopeLink(
+            file_id=record.file_id,
+            scope_type="channel",
+            scope_id=ch.channel_id,
+            workspace_id=ws.workspace_id,
+            created_by=current_user_id,
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.delete(f"/api/v1/files/{record.file_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["deleted"] is False
+    assert data["unlinked"] is True
+    assert file_path.exists()
+    assert await db_session.get(FileRecord, record.file_id) is not None
+
+    links = (
+        await db_session.execute(
+            select(FileScopeLink).where(FileScopeLink.file_id == record.file_id)
+        )
+    ).scalars().all()
+    assert {link.scope_type for link in links} == {"channel", "personal_hidden"}
+
+    library_resp = await client.get("/api/v1/files/library")
+    assert library_resp.status_code == 200
+    assert record.file_id not in {item["file_id"] for item in library_resp.json()["data"]}
+
+    channel_resp = await client.get(f"/api/v1/files/by-channel/{ch.channel_id}")
+    assert channel_resp.status_code == 200
+    assert record.file_id in {item["file_id"] for item in channel_resp.json()["data"]}
 
 
 @pytest.mark.asyncio

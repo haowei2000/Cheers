@@ -38,8 +38,9 @@ async def _seed_fixture(
     file_id: str,
     uploader_id: str,
     object_key: str | None = "uploads/12/34/dummy/source",
+    workspace_kind: str = "team",
 ) -> tuple[FileRecord, User]:
-    ws = Workspace(workspace_id=ws_id, name="WFix")
+    ws = Workspace(workspace_id=ws_id, name="WFix", kind=workspace_kind)
     ch = Channel(channel_id=ch_id, workspace_id=ws_id, name="chfix", type="public")
     user = User(
         user_id=uploader_id,
@@ -59,7 +60,11 @@ async def _seed_fixture(
         object_key=object_key,
         status="pending",
     )
-    db_session.add_all([ws, ch, user, rec])
+    db_session.add_all([ws, user])
+    await db_session.flush()
+    db_session.add(ch)
+    await db_session.flush()
+    db_session.add(rec)
     await db_session.commit()
     return rec, user
 
@@ -88,6 +93,35 @@ async def test_confirm_upload_marks_uploaded_when_object_exists(
     assert result.uploaded_at is not None
     assert result.last_error is None
     assert fake.head_calls == [(rec.file_id, "uploads")]
+    links = (
+        await db_session.execute(
+            select(FileScopeLink).where(FileScopeLink.file_id == rec.file_id)
+        )
+    ).scalars().all()
+    assert {(link.scope_type, link.scope_id) for link in links} == {
+        ("channel", rec.channel_id),
+    }
+
+
+@pytest.mark.asyncio
+async def test_confirm_upload_links_personal_library_for_personal_workspace(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rec, user = await _seed_fixture(
+        db_session,
+        ws_id="f0000000-0000-0000-0000-0000000000d1",
+        ch_id="e1000000-0000-0000-0000-0000000000d1",
+        file_id="aaaaaaaa-0000-0000-0000-0000000000d1",
+        uploader_id="a0000000-0000-0000-0000-0000000000d1",
+        workspace_kind="personal",
+    )
+
+    monkeypatch.setattr("app.services.storage.bootstrap.is_storage_enabled", lambda: True)
+    monkeypatch.setattr("app.services.storage.bootstrap.get_storage_service", lambda: _FakeStorageOk())
+
+    await FileService(db_session).confirm_upload(rec.file_id, user)
+
     links = (
         await db_session.execute(
             select(FileScopeLink).where(FileScopeLink.file_id == rec.file_id)
