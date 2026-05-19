@@ -30,6 +30,7 @@ from app.services.bot_service import BotService
 from app.services.channel_service import ChannelService
 
 router = APIRouter(prefix="/docs/agent-bridge", tags=["agent-bridge-docs"])
+release_router = APIRouter(tags=["agent-bridge-release"])
 
 _PLUGIN_PACKAGE_NAME = (
     os.getenv("OPENCLAW_PLUGIN_PACKAGE", "@haowei0520/openclaw-channel-agentnexus").strip()
@@ -437,6 +438,7 @@ async def agent_bridge_discovery(request: Request) -> APIResponse:
 
 
 @router.get("/release/{filename}")
+@release_router.get("/release/{filename}")
 async def download_agent_bridge_plugin(filename: str) -> FileResponse:
     """Download an OpenClaw plugin tarball from AgentNexus/release/."""
     path = _plugin_file_path(filename)

@@ -11,7 +11,7 @@ release/openclaw-channel-agentnexus.tgz
 The backend exposes it at:
 
 ```text
-/docs/agent-bridge/release/openclaw-channel-agentnexus.tgz
+/release/openclaw-channel-agentnexus.tgz
 ```
 
 For Docker Compose deployments, this folder is mounted read-only into the backend container at `/app/release`.

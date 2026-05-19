@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.agent_bridge_docs_routes import release_router as agent_bridge_release_router
 from app.agent_bridge_docs_routes import router as agent_bridge_docs_router
 from app.api.v1.agent_bridge.routes import ws_router as agent_bridge_ws_router
 from app.api.v1.router import v1_router
@@ -201,6 +202,7 @@ app.include_router(agent_bridge_ws_router)
 app.include_router(manual_router)
 app.include_router(public_router)
 app.include_router(agent_bridge_docs_router)
+app.include_router(agent_bridge_release_router)
 
 
 @app.get("/health")
