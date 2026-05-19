@@ -34,7 +34,6 @@ interface SidebarProps {
   currentUser: CurrentUser;
   authToken: string | null;
   beginnerMode: boolean;
-  suggestedTaskTitle?: string;
   onLoginClick: () => void;
 
   workspaces: Workspace[];
@@ -100,7 +99,6 @@ export function Sidebar({
   currentUser,
   authToken,
   beginnerMode,
-  suggestedTaskTitle = "",
   onLoginClick,
   workspaces,
   setWorkspaces,
@@ -346,9 +344,6 @@ export function Sidebar({
     return `Task ${count + 1}`;
   };
 
-  const defaultProjectTaskTitle = (projectId: string) =>
-    suggestedTaskTitle.trim() || nextProjectTaskTitle(projectId);
-
   const handlePersonalUploadClick = () => {
     if (!selectedId) {
       toast.error("Select a DM or task before uploading files");
@@ -525,13 +520,13 @@ export function Sidebar({
       void createProjectChannelTaskFrom({
         projectId,
         projectTitle,
-        taskTitle: defaultProjectTaskTitle(projectId),
+        taskTitle: nextProjectTaskTitle(projectId),
       });
       return;
     }
     setProjectDraftTitle(projectTitle);
     setProjectTaskKind(beginnerMode ? "channel" : "bot");
-    setChannelTaskDraftTitle(defaultProjectTaskTitle(projectId));
+    setChannelTaskDraftTitle(nextProjectTaskTitle(projectId));
     setPersonalAddDialog({
       kind,
       projectId,
@@ -677,7 +672,7 @@ export function Sidebar({
         ? projectDraftTitle.trim() || personalAddDialog.projectTitle
         : personalAddDialog.projectTitle;
     const taskTitle =
-      channelTaskDraftTitle.trim() || defaultProjectTaskTitle(personalAddDialog.projectId);
+      channelTaskDraftTitle.trim() || nextProjectTaskTitle(personalAddDialog.projectId);
     await createProjectChannelTaskFrom({
       projectId: personalAddDialog.projectId,
       projectTitle,

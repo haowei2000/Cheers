@@ -41,6 +41,7 @@ import {
 } from "./lib/message-window";
 import { upsertMessage } from "./lib/message-store";
 import type {
+  Channel,
   Message,
   ContextData,
   ClarifySchema,
@@ -70,6 +71,7 @@ const MainFilePreviewPanel = lazy(() =>
 );
 
 const TASK_TITLE_MAX_LENGTH = 80;
+const PERSONAL_PROJECT_CHANNEL_PURPOSE_KIND = "personal_project_channel";
 
 function normalizeTaskTitleText(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, TASK_TITLE_MAX_LENGTH);
@@ -85,8 +87,13 @@ function stripLeadingBotMentions(value: string, botUsernames: string[]): string 
     matched = false;
     for (const username of usernames) {
       const mention = `@${username}`;
-      if (text === mention) return "";
-      if (text.startsWith(`${mention} `) || text.startsWith(`${mention}\t`)) {
+      const lowerText = text.toLowerCase();
+      const lowerMention = mention.toLowerCase();
+      if (lowerText === lowerMention) return "";
+      if (
+        lowerText.startsWith(`${lowerMention} `) ||
+        lowerText.startsWith(`${lowerMention}\t`)
+      ) {
         text = text.slice(mention.length).trimStart();
         matched = true;
         break;
@@ -94,6 +101,23 @@ function stripLeadingBotMentions(value: string, botUsernames: string[]): string 
     }
   }
   return text;
+}
+
+function isDefaultTaskTitle(value: string | null | undefined): boolean {
+  return /^(?:task|任务)\s*\d+$/i.test((value || "").trim());
+}
+
+function personalProjectChannelPurpose(
+  channel: Channel,
+  taskTitle: string,
+): string | null {
+  if (!channel.project_id) return null;
+  return JSON.stringify({
+    kind: PERSONAL_PROJECT_CHANNEL_PURPOSE_KIND,
+    project_id: channel.project_id,
+    project_title: channel.project_title || "Project",
+    task_title: taskTitle,
+  });
 }
 
 export default function App() {
@@ -721,6 +745,35 @@ export default function App() {
       });
   };
 
+  const renameTaskChannelFromFirstUserMessage = useCallback(
+    async (channel: Channel, taskTitle: string) => {
+      const purpose = personalProjectChannelPurpose(channel, taskTitle);
+      if (!purpose) return;
+      try {
+        const response = await authFetch(`${API}/channels/${channel.channel_id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: taskTitle,
+            purpose,
+          }),
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || payload?.status === "error" || !payload?.data) {
+          throw new Error(payload?.detail || payload?.message || "Rename task failed");
+        }
+        const updated = payload.data as Channel;
+        setChannels((prev) =>
+          prev.map((item) =>
+            item.channel_id === updated.channel_id ? { ...item, ...updated } : item,
+          ),
+        );
+      } catch (error) {
+        console.warn("Failed to rename task from first user message", error);
+      }
+    },
+    [authFetch, setChannels],
+  );
+
   const send = (draftValue?: string) => {
     const rawContent =
       draftValue ?? inputDraftRef.current ?? inputRef.current?.value ?? input;
@@ -786,6 +839,33 @@ export default function App() {
         prompt_template_override_name: selectedPromptTemplate.name,
       };
     }
+    const firstUserMessageTaskTitle =
+      !isSecretSend && selectedChannel?.project_task_type === "channel"
+        ? normalizeTaskTitleText(
+            stripLeadingBotMentions(
+              content,
+              channelBots.map((bot) => bot.username),
+            ),
+          )
+        : "";
+    const shouldRenameTaskFromFirstUserMessage =
+      Boolean(
+        selectedChannel &&
+          selectedChannel.channel_id === targetChannelId &&
+          selectedChannel.project_task_type === "channel" &&
+          isDefaultTaskTitle(selectedChannel.task_title || selectedChannel.name) &&
+          firstUserMessageTaskTitle,
+      ) &&
+      !messages.some(
+        (message) => message.sender_type === "user" && !message.is_deleted,
+      );
+    const pendingTaskRename =
+      shouldRenameTaskFromFirstUserMessage && selectedChannel
+        ? {
+            channel: selectedChannel,
+            taskTitle: firstUserMessageTaskTitle,
+          }
+        : null;
     resetComposerAfterSend();
     setPromptTemplateOverrideId(null);
     clearPendingFiles();
@@ -810,6 +890,12 @@ export default function App() {
               [d.data.msg_id]: d.data.secret_token,
             }));
           }
+        }
+        if (d.data && pendingTaskRename) {
+          void renameTaskChannelFromFirstUserMessage(
+            pendingTaskRename.channel,
+            pendingTaskRename.taskTitle,
+          );
         }
       })
       .catch(console.error);
@@ -1030,18 +1116,6 @@ export default function App() {
       ),
     [channelBots],
   );
-  const suggestedTaskTitle = useMemo(() => {
-    const botUsernames = channelBots.map((bot) => bot.username);
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i];
-      if (message.sender_type !== "user" || message.is_deleted) continue;
-      const parsed = parseHelperPayload(message.content || "").text || message.content || "";
-      const withoutMentions = stripLeadingBotMentions(parsed, botUsernames);
-      const title = normalizeTaskTitleText(withoutMentions);
-      if (title) return title;
-    }
-    return "";
-  }, [channelBots, messages]);
   const userById = useMemo(
     () => new Map(channelUsers.map((user) => [user.member_id, user])),
     [channelUsers],
@@ -1414,7 +1488,6 @@ export default function App() {
             currentUser={currentUser}
             authToken={authToken}
             beginnerMode={beginnerMode}
-            suggestedTaskTitle={suggestedTaskTitle}
             onLoginClick={() => setLoginModalOpen(true)}
             workspaces={workspaces}
             setWorkspaces={setWorkspaces}
