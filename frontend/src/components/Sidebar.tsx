@@ -12,7 +12,7 @@ import { apiFetch } from "../api";
 import { makeBuiltinAvatarValue } from "../lib/avatar";
 import { refreshChannels, refreshDMs, refreshWorkspaces } from "../lib/refresh";
 import { AvatarVisual } from "./AvatarVisual";
-import { AppIcon } from "./icons/AppIcon";
+import { AppIcon, FileTypeIcon } from "./icons";
 import {
   SearchPicker,
   type SearchPickerHandle,
@@ -1230,7 +1230,12 @@ export function Sidebar({
               }}
             >
               <span className="an-sigil">
-                <AppIcon name="file" />
+                <FileTypeIcon
+                  contentType={file.content_type}
+                  filename={file.original_filename || file.file_id}
+                  size={14}
+                  title={file.original_filename || file.file_id}
+                />
               </span>
               <span className="an-name">
                 {file.original_filename || file.file_id}
