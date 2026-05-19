@@ -513,12 +513,15 @@ export function Sidebar({
   const handlePersonalAddSelect = (selection: SearchSelection) => {
     if (!personalAddDialog) return;
     if (personalAddDialog.kind === "dm") {
-      if (selection.type !== "user") {
-        toast.error("Select a member to start a DM");
+      if (selection.type !== "user" && selection.type !== "bot") {
+        toast.error("Select a member or bot to start a DM");
         return;
       }
       setPersonalAddDialog(null);
-      openDmWith(selection.item.user_id, "user");
+      openDmWith(
+        selection.type === "user" ? selection.item.user_id : selection.item.bot_id,
+        selection.type,
+      );
       return;
     }
     if (personalAddDialog.kind === "project" || personalAddDialog.kind === "projectChat") {
@@ -1425,13 +1428,13 @@ export function Sidebar({
           context="dm_start"
           token={authToken}
           workspaceId={searchWorkspaceId || undefined}
-          types={personalAddDialog?.kind === "dm" ? ["users"] : ["bots"]}
-          placeholder={personalAddDialog?.kind === "dm" ? "Search or choose members" : "Search or choose bots"}
+          types={personalAddDialog?.kind === "dm" ? ["users", "bots"] : ["bots"]}
+          placeholder={personalAddDialog?.kind === "dm" ? "Search or choose users and bots" : "Search or choose bots"}
           modal
           autoFocus
           showInitialResults
-          emptyText={personalAddDialog?.kind === "dm" ? "No members available to add" : "No bots available to add"}
-          actionLabel={personalAddDialog?.kind === "dm" ? "DMs" : "Add"}
+          emptyText={personalAddDialog?.kind === "dm" ? "No users or bots available to add" : "No bots available to add"}
+          actionLabel={personalAddDialog?.kind === "dm" ? "DM" : "Add"}
           onSelect={handlePersonalAddSelect}
         />
       )}

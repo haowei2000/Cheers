@@ -248,6 +248,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
 
     const hasHits = groups.length > 0;
     const firstHit = groups[0]?.items[0] as SearchSelection | undefined;
+    const shouldShowResults = open && (Boolean(q.trim()) || showInitialResults);
 
     const choose = (selection: SearchSelection) => {
       onSelect(selection);
@@ -407,7 +408,7 @@ export const SearchPicker = forwardRef<SearchPickerHandle, SearchPickerProps>(
             onClose={() => setSettingsOpen(false)}
           />
         )}
-        {open && q.trim() && (
+        {shouldShowResults && (
           <div className="an-search-pop" role="listbox">
             {!results && busy && <div className="an-search-empty">Searching...</div>}
             {results && !hasHits && !busy && (
