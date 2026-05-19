@@ -85,7 +85,7 @@ npm run dev
 
 ## Seed Data
 
-With `SEED_DATA=1`, the backend creates a default workspace, a test channel, an administrator, and the built-in Coordinator Bot. Open the test channel and send:
+With `SEED_DATA=1`, the backend creates a default workspace, a default channel, an administrator, one default prompt template, and the built-in Coordinator Bot. Open the default channel and send:
 
 ```text
 @Coordinator how do I use this?

@@ -163,9 +163,8 @@ docker compose up -d
 ```
 
 默认会写入种子数据：
-- 内置模型：Ollama (Llama 3.2)、OpenAI GPT-4o
-- 内置模板：通用助手、代码审查、创意写作
-- 内置 Bot：@助手、@代码审查
+- 内置模板：通用助手
+- 内置 Bot：@Coordinator
 
 如需关闭自动种子数据，设置环境变量 `SEED_DATA=0`。
 
@@ -411,7 +410,7 @@ GUIDE_LLM_MODEL=llama3.2
 | 字段 | 说明 |
 |------|------|
 | `template_id` | UUID |
-| `name` | 模板名称（如 "代码审查"） |
+| `name` | 模板名称（如 "通用助手"） |
 | `system_prompt` | 系统提示词 |
 | `user_template` | 用户消息模板，支持 `{{变量}}` 占位符 |
 | `variables` | 变量列表 |
@@ -459,9 +458,9 @@ POST /api/admin/models
 # 2. 先创建模板（如果还没有）
 POST /api/admin/templates
 {
-  "name": "代码审查",
-  "system_prompt": "你是一个专业的代码审查助手...",
-  "user_template": "请审查以下代码：\n```\n{{message}}\n```"
+  "name": "通用助手",
+  "system_prompt": "你是一个有用的 AI 助手。",
+  "user_template": "{{memory}}\n\n{{message}}"
 }
 
 # 3. 创建 Bot

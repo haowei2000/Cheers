@@ -91,7 +91,7 @@ cp .env.example .env
 docker compose up -d
 
 # 前端: http://localhost:80   API: http://localhost:8000
-# 默认会写入种子数据：默认工作空间、测试项目、内置协作助手（@Coordinator）。打开前端进入「测试项目」，输入 @Coordinator 怎么用 即可获取使用引导。
+# 默认会写入种子数据：默认工作空间、默认项目、一个默认提示词模板、内置协作助手（@Coordinator）。打开前端进入「默认项目」，输入 @Coordinator 怎么用 即可获取使用引导。
 # 若需手动初始化，可设环境变量 SEED_DATA=0 并见 docs/help/安装部署说明.md。
 ```
 
