@@ -147,6 +147,11 @@ export function MessageComposer({
   );
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const [templateFilter, setTemplateFilter] = useState("");
+  const [templateTriggerRange, setTemplateTriggerRange] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
   const [textareaHeight, setTextareaHeight] = useState<number | null>(null);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
   const actionTriggerRef = useRef<HTMLDivElement | null>(null);
@@ -167,10 +172,17 @@ export function MessageComposer({
     [promptTemplates, selectedPromptTemplateId],
   );
   const selectedPromptTemplateName = promptTemplateDisplayName(selectedPromptTemplate);
+  const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
 
   useEffect(() => {
     setDraftValue(value);
   }, [value, valueRevision]);
+
+  const closeTemplateMenu = () => {
+    setTemplateMenuOpen(false);
+    setTemplateFilter("");
+    setTemplateTriggerRange(null);
+  };
 
   useEffect(() => {
     if (!actionMenuOpen) return;
@@ -197,7 +209,7 @@ export function MessageComposer({
         templateMenuRef.current &&
         !templateMenuRef.current.contains(event.target as Node)
       ) {
-        setTemplateMenuOpen(false);
+        closeTemplateMenu();
       }
     };
     document.addEventListener("mousedown", handle);
@@ -239,6 +251,17 @@ export function MessageComposer({
         (item.display_name ?? "").toLowerCase().includes(filter),
     );
   }, [mentionFilter, mentionItems, mentionOpen]);
+
+  const matchedPromptTemplates = useMemo(() => {
+    if (!templateMenuOpen) return [];
+    const filter = templateFilter.trim().toLowerCase();
+    if (!filter) return promptTemplates;
+    return promptTemplates.filter((template) => {
+      const name = promptTemplateDisplayName(template).toLowerCase();
+      const description = (template.description ?? "").toLowerCase();
+      return name.includes(filter) || description.includes(filter);
+    });
+  }, [promptTemplates, templateFilter, templateMenuOpen]);
 
   const insertAtCursor = (snippet: string) => {
     const el = inputRef.current;
@@ -282,25 +305,68 @@ export function MessageComposer({
     }, 0);
   };
 
+  const clearTemplateTriggerText = () => {
+    if (!templateTriggerRange) return;
+    const el = inputRef.current;
+    const currentValue = el?.value ?? draftValue;
+    const start = Math.min(templateTriggerRange.start, currentValue.length);
+    const end = Math.min(
+      Math.max(templateTriggerRange.end, start),
+      currentValue.length,
+    );
+    const next = currentValue.slice(0, start) + currentValue.slice(end);
+    setDraftValue(next);
+    onValueChange(next);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(start, start);
+    });
+  };
+
+  const pickPromptTemplate = (templateId: string | null) => {
+    onPromptTemplateChange?.(templateId);
+    clearTemplateTriggerText();
+    closeTemplateMenu();
+  };
+
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const next = event.target.value;
     const pos = event.target.selectionStart ?? next.length;
     setDraftValue(next);
     onValueChange(next);
     const lastAt = next.lastIndexOf("@", pos - 1);
-    if (lastAt !== -1) {
-      const after = next.slice(lastAt + 1, pos);
-      if (!after.includes(" ") && !after.includes("\n")) {
-        const rect = event.target.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const spaceAbove = rect.top;
-        setMentionPlacement(
-          spaceBelow < 180 && spaceAbove > spaceBelow ? "top" : "bottom",
-        );
-        setMentionOpen(true);
-        setMentionFilter(after);
-        return;
-      }
+    const lastSlash = next.lastIndexOf("/", pos - 1);
+    const atFilter = lastAt === -1 ? null : next.slice(lastAt + 1, pos);
+    const slashFilter = lastSlash === -1 ? null : next.slice(lastSlash + 1, pos);
+    const atIsActive = atFilter !== null && !/\s/.test(atFilter);
+    const slashIsActive =
+      hasPromptTemplateControl &&
+      slashFilter !== null &&
+      !/\s/.test(slashFilter) &&
+      (lastSlash === 0 || /\s/.test(next.charAt(lastSlash - 1)));
+
+    if (slashIsActive && lastSlash > lastAt) {
+      setActionMenuOpen(false);
+      onCloseKeychain?.();
+      setMentionOpen(false);
+      setTemplateFilter(slashFilter);
+      setTemplateTriggerRange({ start: lastSlash, end: pos });
+      setTemplateMenuOpen(true);
+      return;
+    }
+
+    closeTemplateMenu();
+    if (atIsActive) {
+      const rect = event.target.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setMentionPlacement(
+        spaceBelow < 180 && spaceAbove > spaceBelow ? "top" : "bottom",
+      );
+      setMentionOpen(true);
+      setMentionFilter(atFilter);
+      return;
     }
     setMentionOpen(false);
   };
@@ -310,9 +376,14 @@ export function MessageComposer({
       setMentionOpen(false);
       return;
     }
+    if (templateMenuOpen && event.key === "Escape") {
+      closeTemplateMenu();
+      return;
+    }
     if (
       event.key === "Tab" &&
       !mentionOpen &&
+      !templateMenuOpen &&
       !replyingTo &&
       showKindSwitcher &&
       enableKindCycling &&
@@ -326,7 +397,8 @@ export function MessageComposer({
       event.key === "Enter" &&
       !event.shiftKey &&
       !event.nativeEvent.isComposing &&
-      !mentionOpen
+      !mentionOpen &&
+      !templateMenuOpen
     ) {
       event.preventDefault();
       if (effectiveCanSend) onSend(event.currentTarget.value);
@@ -375,23 +447,31 @@ export function MessageComposer({
 
   const handleMentionButtonClick = () => {
     setActionMenuOpen(false);
-    setTemplateMenuOpen(false);
+    closeTemplateMenu();
     onCloseKeychain?.();
     inputRef.current?.focus();
-    setMentionFilter("");
-    setMentionPlacement("top");
-    setMentionOpen(true);
+    setMentionOpen((open) => {
+      if (open) {
+        setMentionFilter("");
+        return false;
+      }
+      setMentionFilter("");
+      setMentionPlacement("top");
+      return true;
+    });
   };
 
   const handleTemplateButtonClick = () => {
     setActionMenuOpen(false);
     onCloseKeychain?.();
     setMentionOpen(false);
+    setTemplateFilter("");
+    setTemplateTriggerRange(null);
     setTemplateMenuOpen((open) => !open);
   };
 
   const handleActionButtonClick = () => {
-    setTemplateMenuOpen(false);
+    closeTemplateMenu();
     setMentionOpen(false);
     onCloseKeychain?.();
     setActionMenuOpen((open) => !open);
@@ -599,11 +679,12 @@ export function MessageComposer({
               <button
                 type="button"
                 onClick={handleMentionButtonClick}
-                className="an-composer-iconbtn"
+                className="an-composer-iconbtn is-named-trigger"
                 title="Mention members or bots"
                 aria-label="Mention members or bots"
               >
                 <span className="an-composer-glyph">@</span>
+                <span className="an-composer-trigger-label">Agent/智能体</span>
               </button>
 
               {onPromptTemplateChange && (
@@ -612,7 +693,7 @@ export function MessageComposer({
                     type="button"
                     onClick={handleTemplateButtonClick}
                     className={
-                      "an-composer-iconbtn" +
+                      "an-composer-iconbtn is-named-trigger" +
                       (templateMenuOpen || selectedPromptTemplate ? " is-active" : "")
                     }
                     title={
@@ -623,6 +704,7 @@ export function MessageComposer({
                     aria-label="Choose prompt template"
                   >
                     <span className="an-composer-glyph">/</span>
+                    <span className="an-composer-trigger-label">Skill/技能</span>
                   </button>
                 </div>
               )}
@@ -784,20 +866,21 @@ export function MessageComposer({
         {templateMenuOpen && (
           <div
             ref={templateMenuRef}
-            className={`${toolbarMenuClass} an-composer-template-menu`}
+            className={`${toolbarMenuClass} an-composer-template-menu is-open${
+              templateTriggerRange ? " is-keyboard-open" : ""
+            }`}
             style={{
               maxHeight: 300,
               overflowY: "auto",
             }}
           >
-            <div className="an-menu-head">Prompt template · Force override for this message</div>
+            <div className="an-menu-head">Skill/技能 · Force override for this message</div>
             {selectedPromptTemplate && (
               <button
                 type="button"
                 className="an-menu-item"
                 onClick={() => {
-                  onPromptTemplateChange?.(null);
-                  setTemplateMenuOpen(false);
+                  pickPromptTemplate(null);
                 }}
               >
                 <span className="an-mi-ico">
@@ -810,15 +893,16 @@ export function MessageComposer({
               <div className="an-menu-empty">Loading...</div>
             ) : promptTemplates.length === 0 ? (
               <div className="an-menu-empty">No templates available</div>
+            ) : matchedPromptTemplates.length === 0 ? (
+              <div className="an-menu-empty">No matching templates</div>
             ) : (
-              promptTemplates.map((template) => (
+              matchedPromptTemplates.map((template) => (
                 <button
                   key={template.template_id}
                   type="button"
                   className="an-menu-item"
                   onClick={() => {
-                    onPromptTemplateChange?.(template.template_id);
-                    setTemplateMenuOpen(false);
+                    pickPromptTemplate(template.template_id);
                   }}
                 >
                   <span className="an-mi-ico">
