@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ChannelMembership, ChannelUnreadCount, Message
@@ -20,6 +20,16 @@ async def increment_unread_counts(
         return
 
     now = datetime.now(timezone.utc)
+    await session.execute(
+        update(ChannelMembership)
+        .where(
+            ChannelMembership.channel_id == channel_id,
+            ChannelMembership.member_id.in_(unique_user_ids),
+            ChannelMembership.member_type == "user",
+            ChannelMembership.hidden_at.is_not(None),
+        )
+        .values(hidden_at=None)
+    )
     values = [
         {
             "channel_id": channel_id,

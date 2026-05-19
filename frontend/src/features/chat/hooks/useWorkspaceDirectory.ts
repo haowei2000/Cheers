@@ -43,6 +43,8 @@ export function useWorkspaceDirectory({
     useState<string>(routeWorkspaceId);
   const [selectedId, setSelectedId] = useState<string | null>(routeChannelId);
   const selectedIdRef = useRef<string | null>(null);
+  const channelsRef = useRef<Channel[]>([]);
+  const dmsRef = useRef<DM[]>([]);
   const didAutoSelectHelperDmRef = useRef(false);
 
   const [createWsOpen, setCreateWsOpen] = useState(false);
@@ -56,6 +58,14 @@ export function useWorkspaceDirectory({
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    channelsRef.current = channels;
+  }, [channels]);
+
+  useEffect(() => {
+    dmsRef.current = dms;
+  }, [dms]);
 
   useEffect(() => {
     setSelectedWorkspaceId((prev) =>
@@ -346,6 +356,15 @@ export function useWorkspaceDirectory({
           if (message.type === "channel_new_message" && message.data) {
             const channelId = message.data.channel_id as string | undefined;
             if (!channelId || channelId === selectedIdRef.current) return;
+            const knownChannel = channelsRef.current.some(
+              (channel) => channel.channel_id === channelId,
+            );
+            const knownDm = dmsRef.current.some((dm) => dm.channel_id === channelId);
+            if (!knownChannel && !knownDm) {
+              refreshChannels(setChannels, authToken ?? undefined);
+              refreshDMs(setDMs, authToken ?? undefined);
+              return;
+            }
             setChannels((prev) =>
               prev.map((channel) =>
                 channel.channel_id === channelId

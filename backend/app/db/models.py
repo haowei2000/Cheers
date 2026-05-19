@@ -198,6 +198,11 @@ class ChannelMembership(Base):
     last_read_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+    # Per-user rail visibility for DMs. Hidden memberships remain valid so the
+    # conversation can reappear when a new message arrives.
+    hidden_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     channel: Mapped["Channel"] = relationship("Channel", back_populates="memberships")
     prompt_template: Mapped[Optional["PromptTemplate"]] = relationship("PromptTemplate", lazy="joined")

@@ -250,6 +250,13 @@ class ChannelService:
                 .limit(1)
             )).scalar_one_or_none()
             if existing:
+                current_membership = await self.repo.get_membership(
+                    existing.channel_id,
+                    current_user.user_id,
+                )
+                if current_membership and current_membership.hidden_at is not None:
+                    current_membership.hidden_at = None
+                    await self.session.flush()
                 return existing
 
         if other_type == "bot":
@@ -626,6 +633,9 @@ class ChannelService:
         membership = await self.repo.get_membership(channel_id, user.user_id)
         if not membership or membership.member_type != "user":
             raise ForbiddenError("您不是该私信成员")
+        if membership.hidden_at is not None:
+            membership.hidden_at = None
+            await self.session.flush()
 
         members = await self.repo.list_memberships(channel_id)
         other = next(
@@ -941,6 +951,9 @@ class ChannelService:
 
     async def remove_member(self, channel_id: str, member_id: str, current_user: User) -> None:
         channel = await self.get_or_404(channel_id)
+        if channel.type == "dm" and member_id == current_user.user_id:
+            await self.hide_dm(channel_id, current_user)
+            return
         await self._require_channel_admin(channel, current_user)
         m = await self.repo.get_membership(channel_id, member_id)
         if not m:
@@ -962,6 +975,22 @@ class ChannelService:
             await emit_channel_left(
                 self.session, bot_id=member_id, channel_id=channel_id, reason=reason,
             )
+
+    async def hide_dm(self, channel_id: str, current_user: User) -> None:
+        channel = await self.get_or_404(channel_id)
+        if channel.type != "dm":
+            raise BadRequestError("channel is not a DM")
+        membership = await self.repo.get_membership(channel_id, current_user.user_id)
+        if not membership or membership.member_type != "user":
+            raise ForbiddenError("您不是该私信成员")
+        membership.hidden_at = datetime.now(timezone.utc)
+        await set_unread_count(
+            self.session,
+            channel_id=channel_id,
+            user_id=current_user.user_id,
+            unread_count=0,
+        )
+        await self.session.flush()
 
     async def update_member_template(
         self,
