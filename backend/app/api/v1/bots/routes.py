@@ -576,13 +576,21 @@ async def quick_connect_openclaw(
             user_template=DEFAULT_USER_TEMPLATE,
             variables=DEFAULT_TEMPLATE_VARIABLES,
             is_builtin=True,
+            scope="everyone",
         )
         session.add(template)
         await session.flush()
-    elif template.user_template == "{{message}}":
-        template.user_template = DEFAULT_USER_TEMPLATE
-        template.variables = DEFAULT_TEMPLATE_VARIABLES
-        await session.flush()
+    else:
+        template_changed = False
+        if template.user_template == "{{message}}":
+            template.user_template = DEFAULT_USER_TEMPLATE
+            template.variables = DEFAULT_TEMPLATE_VARIABLES
+            template_changed = True
+        if getattr(template, "scope", None) != "everyone":
+            template.scope = "everyone"
+            template_changed = True
+        if template_changed:
+            await session.flush()
 
     ai_model = AIModel(
         name=f"openclaw-{agent_id}",

@@ -25,7 +25,17 @@ Prompt templates apply to normal configurable Bots:
 | `user_template` | User message template. Supports `{{variable}}` placeholders. |
 | `variables` | Metadata list used by the UI. Runtime rendering does not trust this list as the source of truth. |
 | `is_builtin` | Built-in templates are seeded, localized for display, and read-only. |
+| `scope` | Template visibility: `private`, `friend`, or `everyone`. |
 | `created_by` | Owner user id. `NULL` means system/admin-created. |
+
+Template permissions match Bot visibility:
+
+- `private`: only the owner and admins can use the template.
+- `friend`: the owner, admins, and accepted friends of the owner can use the template.
+- `everyone`: any signed-in user can use the template.
+- Built-in and ownerless system templates are available to all users and are read-only.
+
+The same permission check is used by the template list/detail API, Bot template binding, channel Bot overrides, and single-message template overrides.
 
 Default user template:
 
@@ -125,11 +135,11 @@ Memory loading is template-aware. If the effective `user_template` contains `{{m
 1. Open **Settings**.
 2. Go to **Message templates**.
 3. Select **New template** or an existing non-built-in template.
-4. Fill in **Name**, **Description**, **System prompt**, and **User template**.
+4. Fill in **Name**, **Description**, **Visibility**, **System prompt**, and **User template**.
 5. In **User template**, type `{{` to open variable suggestions.
 6. Save.
 
-Built-in templates are read-only and cannot be edited or deleted.
+Built-in templates and shared templates you do not own are read-only in the settings UI.
 
 ### Bind A Template To A Bot
 
@@ -141,6 +151,7 @@ Built-in templates are read-only and cannot be edited or deleted.
 6. Save the Bot configuration.
 
 HTTP Bots must have both `model_id` and `template_id`. Agent Bridge Bots do not use `model_id` and may omit `template_id`.
+The selected template must be visible to the user creating or updating the Bot.
 
 ### Override A Bot Template In A Channel
 
@@ -150,6 +161,7 @@ HTTP Bots must have both `model_id` and `template_id`. Agent Bridge Bots do not 
 4. Select **Default (bot-owned)** to clear the override.
 
 Only the user who invited that Bot into the channel, or an admin, can edit that Bot membership's template override.
+The selected override template must also be visible to the user performing the update.
 
 ### Force A Template For One Message
 
@@ -167,6 +179,7 @@ The frontend writes this into `content_data`:
 ```
 
 The backend uses only `prompt_template_override_id` for execution.
+If the sender cannot use that template, the override is ignored and normal fallback priority is used.
 
 ## API Operations
 
@@ -179,7 +192,7 @@ curl -H "Authorization: Bearer <token>" \
   http://localhost:8000/api/v1/templates
 ```
 
-Regular users see built-in templates, system/admin-created templates, and templates they created. Admins see all templates.
+Regular users see built-in/system templates, their own templates, friend-scoped templates from accepted friends, and everyone-scoped templates. Admins see all templates.
 
 ### Create Template
 
@@ -192,7 +205,8 @@ curl -X POST http://localhost:8000/api/v1/templates \
     "description": "Answer with project memory and current channel context",
     "system_prompt": "You are a project analyst. Be concise and cite uncertainty.",
     "user_template": "{{memory}}\n\nChannel: {{channel_name}}\nSender: {{sender_name}}\n\nQuestion:\n{{message}}",
-    "variables": ["memory", "channel_name", "sender_name", "message"]
+    "variables": ["memory", "channel_name", "sender_name", "message"],
+    "scope": "friend"
   }'
 ```
 
@@ -202,7 +216,7 @@ curl -X POST http://localhost:8000/api/v1/templates \
 curl -X PATCH http://localhost:8000/api/v1/templates/<template_id> \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"user_template":"{{anchor}}\n\n{{message}}"}'
+  -d '{"user_template":"{{anchor}}\n\n{{message}}","scope":"everyone"}'
 ```
 
 Built-in templates cannot be updated. Non-admin users can update only their own templates.
@@ -214,7 +228,7 @@ curl -X DELETE http://localhost:8000/api/v1/templates/<template_id> \
   -H "Authorization: Bearer <token>"
 ```
 
-When a non-built-in template is deleted, Bots that referenced it are detached by setting `BotAccount.template_id = NULL`. Channel membership overrides are not currently detached by the template service, so deletion can fail while any `ChannelMembership.template_id` still references that template. Clear channel Bot overrides before deleting templates that may be in active use.
+When a non-built-in template is deleted, Bots and channel Bot overrides that referenced it are detached by setting `BotAccount.template_id = NULL` and `ChannelMembership.template_id = NULL`.
 
 ### Create HTTP Bot With Template
 
@@ -352,6 +366,7 @@ Recommended regression tests:
 ```bash
 cd backend
 pytest ../tests/test_template_vars.py ../tests/test_pipeline_context_load.py ../tests/test_bot_scope.py -q
+pytest ../tests/test_template_scope.py -q
 ```
 
 For end-to-end confidence, run the full integration suite against a Docker Compose stack as described in `AGENTS.md`.

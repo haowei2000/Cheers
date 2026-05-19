@@ -1,14 +1,50 @@
 """Admin service module."""
 from __future__ import annotations
 
+from typing import Literal, cast
+
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.core.prompt_templates import DEFAULT_USER_TEMPLATE
-from app.db.models import AIModel, BotAccount, PromptTemplate, User
+from app.db.models import AIModel, BotAccount, ChannelMembership, PromptTemplate, User
 from app.repositories.bot_repo import AIModelRepository, PromptTemplateRepository
-from app.utils.permissions import is_admin
+from app.utils.permissions import get_friend_ids, is_admin
+
+TEMPLATE_SCOPES = {"private", "friend", "everyone"}
+TemplateScope = Literal["private", "friend", "everyone"]
+
+
+def normalize_template_scope(scope: str | None) -> TemplateScope:
+    if scope in TEMPLATE_SCOPES:
+        return cast(TemplateScope, scope)
+    return "friend"
+
+
+def template_scope(template: PromptTemplate) -> TemplateScope:
+    return normalize_template_scope(getattr(template, "scope", None))
+
+
+def can_manage_template(template: PromptTemplate, current_user: User) -> bool:
+    if template.is_builtin:
+        return False
+    return template.created_by == current_user.user_id or is_admin(current_user)
+
+
+def can_use_template_with_friends(
+    template: PromptTemplate,
+    current_user: User,
+    friend_ids: set[str],
+) -> bool:
+    if template.is_builtin or template.created_by is None or can_manage_template(template, current_user):
+        return True
+    scope = template_scope(template)
+    if scope == "everyone":
+        return True
+    if scope == "friend" and template.created_by:
+        return template.created_by in friend_ids
+    return False
 
 
 class AIModelService:
@@ -105,24 +141,35 @@ class PromptTemplateService:
 
     async def list_visible(self, user: User) -> list[PromptTemplate]:
         """List visible."""
-        from sqlalchemy import or_
-        from sqlalchemy import select as sa_select
-
-        from app.utils.permissions import is_admin
         if is_admin(user):
             return await self.repo.list_all()
-        result = await self.session.execute(
-            sa_select(PromptTemplate)
-            .where(
-                or_(
-                    PromptTemplate.is_builtin.is_(True),
-                    PromptTemplate.created_by.is_(None),
-                    PromptTemplate.created_by == user.user_id,
-                )
-            )
-            .order_by(PromptTemplate.created_at)
-        )
-        return list(result.scalars().all())
+        friend_ids = await get_friend_ids(self.session, user.user_id)
+        templates = await self.repo.list_all()
+        return [
+            t for t in templates
+            if can_use_template_with_friends(t, user, friend_ids)
+        ]
+
+    async def can_use(self, template: PromptTemplate, user: User) -> bool:
+        if template.is_builtin or template.created_by is None or can_manage_template(template, user):
+            return True
+        friend_ids = await get_friend_ids(self.session, user.user_id)
+        return can_use_template_with_friends(template, user, friend_ids)
+
+    async def assert_can_use(
+        self,
+        template: PromptTemplate,
+        user: User,
+        message: str = "无权使用该提示词模板",
+    ) -> None:
+        if not await self.can_use(template, user):
+            raise ForbiddenError(message)
+
+    async def get_visible_or_404(self, template_id: str, user: User) -> PromptTemplate:
+        template = await self.get_or_404(template_id)
+        if not await self.can_use(template, user):
+            raise NotFoundError("template not found")
+        return template
 
     async def create(
         self,
@@ -131,6 +178,7 @@ class PromptTemplateService:
         user_template: str = DEFAULT_USER_TEMPLATE,
         description: str | None = None,
         variables: list | None = None,
+        scope: str | None = None,
         created_by: str | None = None,
     ) -> PromptTemplate:
         existing = await self.repo.get_by_name(name)
@@ -142,16 +190,15 @@ class PromptTemplateService:
             user_template=user_template,
             description=description,
             variables=variables or [],
+            scope=normalize_template_scope(scope),
             created_by=created_by,
         )
 
     def _check_owner(self, tmpl: PromptTemplate, user: User) -> None:
         """Check owner."""
-        from app.utils.permissions import is_admin
-        if is_admin(user):
+        if can_manage_template(tmpl, user):
             return
-        if tmpl.created_by != user.user_id:
-            raise ForbiddenError("只能修改自己创建的模板")
+        raise ForbiddenError("只能修改自己创建的模板")
 
     async def update(self, template_id: str, user: User | None = None, **kwargs) -> PromptTemplate:
         tmpl = await self.get_or_404(template_id)
@@ -159,6 +206,8 @@ class PromptTemplateService:
             raise BadRequestError("内置模板不可修改")
         if user is not None:
             self._check_owner(tmpl, user)
+        if "scope" in kwargs:
+            kwargs["scope"] = normalize_template_scope(kwargs["scope"])
         return await self.repo.update(tmpl, **kwargs)
 
     async def delete(self, template_id: str, user: User | None = None) -> None:
@@ -170,5 +219,8 @@ class PromptTemplateService:
         # Detach bots that reference this template before deleting
         await self.session.execute(
             update(BotAccount).where(BotAccount.template_id == template_id).values(template_id=None)
+        )
+        await self.session.execute(
+            update(ChannelMembership).where(ChannelMembership.template_id == template_id).values(template_id=None)
         )
         await self.repo.delete(tmpl)

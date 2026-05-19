@@ -55,6 +55,7 @@ class PromptTemplate(Base):
     user_template: Mapped[str] = mapped_column(Text, nullable=False, default=DEFAULT_USER_TEMPLATE)  # User-message template.
     variables: Mapped[list] = mapped_column(JSON, nullable=True, default=list)  # Variable list, for example ["message"].
     is_builtin: Mapped[bool] = mapped_column(default=False)  # Built-in templates cannot be deleted.
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default="friend", default="friend")
     created_by: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("users.user_id"), nullable=True, default=None
     )  # Template creator; empty means system/admin-created.
