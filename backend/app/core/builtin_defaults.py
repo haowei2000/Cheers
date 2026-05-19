@@ -8,8 +8,10 @@ from app.core.localization import localized, normalize_locale
 from app.core.prompt_templates import DEFAULT_TEMPLATE_VARIABLES, DEFAULT_USER_TEMPLATE
 
 TEMPLATE_GENERAL_ID = "template-general-001"
-TEMPLATE_CODE_REVIEW_ID = "template-codereview-001"
-TEMPLATE_CREATIVE_ID = "template-creative-001"
+RETIRED_BUILTIN_TEMPLATE_IDS = (
+    "template-codereview-001",
+    "template-creative-001",
+)
 
 
 @dataclass(frozen=True)
@@ -111,72 +113,10 @@ def _general_template(locale: str | None) -> BuiltinPromptTemplateText:
     )
 
 
-def _code_review_template(locale: str | None) -> BuiltinPromptTemplateText:
-    return BuiltinPromptTemplateText(
-        template_id=TEMPLATE_CODE_REVIEW_ID,
-        name=localized(locale, en="Code review", zh="代码审查"),
-        description=localized(
-            locale,
-            en="A code review assistant that finds potential issues and improvements",
-            zh="专业的代码审查助手，发现潜在问题和优化点",
-        ),
-        system_prompt=localized(
-            locale,
-            en="""You are a professional code review assistant. Review the user's code with attention to:
-1. Potential bugs and error handling
-2. Code style and readability
-3. Performance improvements
-4. Security vulnerabilities
-5. Best practices
-
-Reply in the user's language by default, use Markdown, and keep the structure clear.""",
-            zh="""你是一个专业的代码审查助手。请审查用户提供的代码，关注以下方面：
-1. 潜在的 Bug 和错误处理
-2. 代码风格和可读性
-3. 性能优化建议
-4. 安全漏洞
-5. 最佳实践
-
-请默认使用用户的语言回复，使用 Markdown 格式，结构清晰。""",
-        ),
-        user_template=localized(
-            locale,
-            en="Please review the following code:\n\n```\n{{message}}\n```\n\nGive detailed review feedback, including issues and improvement suggestions.",
-            zh="请审查以下代码：\n\n```\n{{message}}\n```\n\n请给出详细的审查意见，包括问题和改进建议。",
-        ),
-        variables=["message"],
-    )
-
-
-def _creative_template(locale: str | None) -> BuiltinPromptTemplateText:
-    return BuiltinPromptTemplateText(
-        template_id=TEMPLATE_CREATIVE_ID,
-        name=localized(locale, en="Creative writing", zh="创意写作"),
-        description=localized(
-            locale,
-            en="A creative writing assistant that helps draft and polish text",
-            zh="富有创意的写作助手，帮助撰写和润色文字",
-        ),
-        system_prompt=localized(
-            locale,
-            en="You are a creative writing assistant. Help users draft and polish text with vivid, engaging language.",
-            zh="你是一个富有创意的写作助手。请用生动、有趣的语言帮助用户撰写和润色文字。",
-        ),
-        user_template=localized(
-            locale,
-            en="Please improve the following content:\n\n{{message}}",
-            zh="请帮我完善以下内容：\n\n{{message}}",
-        ),
-        variables=["message"],
-    )
-
-
 def builtin_prompt_templates(locale: str | None = None) -> tuple[BuiltinPromptTemplateText, ...]:
     locale = normalize_locale(locale)
     return (
         _general_template(locale),
-        _code_review_template(locale),
-        _creative_template(locale),
     )
 
 

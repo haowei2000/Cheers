@@ -1,11 +1,13 @@
-"""Seed data for workspaces, prompt templates, Bots, and test users."""
+"""Seed data for workspaces, prompt templates, Bots, and the administrator."""
 import asyncio
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.builtin_defaults import (
+    RETIRED_BUILTIN_TEMPLATE_IDS,
+    TEMPLATE_GENERAL_ID,
     builtin_prompt_templates,
     coordinator_bot_defaults,
     seed_workspace_defaults,
@@ -29,7 +31,22 @@ WORKSPACE_ID = "ws-default-001"
 CHANNEL_ID = "ch-seed-001"
 ADMIN_USER_ID = "admin-0000-0000-0000-000000000001"
 
-REMOVED_HELP_BOT_IDS = ("bot-guide-001", "bot-guide-helper-001")
+REMOVED_SEEDED_BOT_IDS = (
+    "bot-guide-001",
+    "bot-guide-helper-001",
+    "bot-test-001",
+    "bot-test-helper-001",
+)
+REMOVED_SEEDED_BOT_NAMES = (
+    "testbot",
+    "test-bot",
+    "TestBot",
+    "Test Bot",
+    "测试Bot",
+    "测试 Bot",
+    "测试机器人",
+    "测试助手",
+)
 INSECURE_ADMIN_PASSWORDS = {
     "",
     "admin",
@@ -81,15 +98,57 @@ async def _template_name_available(session: AsyncSession, template_id: str, name
     return existing is None
 
 
-async def _remove_removed_help_bots(session: AsyncSession) -> bool:
-    """Remove removed help bots."""
+async def _remove_retired_builtin_templates(session: AsyncSession) -> bool:
+    """Remove built-in templates that are no longer part of the default set."""
+    if not RETIRED_BUILTIN_TEMPLATE_IDS:
+        return False
+
     did_write = False
     result = await session.execute(
-        delete(ChannelMembership).where(ChannelMembership.member_id.in_(REMOVED_HELP_BOT_IDS))
+        update(BotAccount)
+        .where(BotAccount.template_id.in_(RETIRED_BUILTIN_TEMPLATE_IDS))
+        .values(template_id=TEMPLATE_GENERAL_ID)
     )
     did_write = did_write or bool(getattr(result, "rowcount", 0))
     result = await session.execute(
-        delete(BotAccount).where(BotAccount.bot_id.in_(REMOVED_HELP_BOT_IDS))
+        update(ChannelMembership)
+        .where(ChannelMembership.template_id.in_(RETIRED_BUILTIN_TEMPLATE_IDS))
+        .values(template_id=TEMPLATE_GENERAL_ID)
+    )
+    did_write = did_write or bool(getattr(result, "rowcount", 0))
+    result = await session.execute(
+        delete(PromptTemplate).where(
+            PromptTemplate.template_id.in_(RETIRED_BUILTIN_TEMPLATE_IDS),
+            PromptTemplate.is_builtin.is_(True),
+        )
+    )
+    did_write = did_write or bool(getattr(result, "rowcount", 0))
+    return did_write
+
+
+async def _remove_removed_seeded_bots(session: AsyncSession) -> bool:
+    """Remove stale seeded guide/test bots."""
+    did_write = False
+    legacy_bot_ids = set(REMOVED_SEEDED_BOT_IDS)
+    result = await session.execute(
+        select(BotAccount.bot_id).where(
+            BotAccount.created_by.is_(None),
+            ~BotAccount.bot_id.in_(BUILTIN_BOT_IDS),
+            or_(
+                BotAccount.username.in_(REMOVED_SEEDED_BOT_NAMES),
+                BotAccount.display_name.in_(REMOVED_SEEDED_BOT_NAMES),
+            ),
+        )
+    )
+    legacy_bot_ids.update(result.scalars().all())
+    if not legacy_bot_ids:
+        return False
+    result = await session.execute(
+        delete(ChannelMembership).where(ChannelMembership.member_id.in_(legacy_bot_ids))
+    )
+    did_write = did_write or bool(getattr(result, "rowcount", 0))
+    result = await session.execute(
+        delete(BotAccount).where(BotAccount.bot_id.in_(legacy_bot_ids))
     )
     did_write = did_write or bool(getattr(result, "rowcount", 0))
     return did_write
@@ -327,7 +386,8 @@ async def seed(session: AsyncSession) -> bool:
     did_write = False
 
     did_write |= await _seed_templates(session)
-    did_write |= await _remove_removed_help_bots(session)
+    did_write |= await _remove_retired_builtin_templates(session)
+    did_write |= await _remove_removed_seeded_bots(session)
     did_write |= await _seed_helper_bot(session)
     did_write |= await _seed_workspace_and_users(session)
     did_write |= await _seed_memberships(session)
@@ -368,8 +428,9 @@ async def ensure_builtin_bot() -> None:
     """Ensure builtin bot."""
     async with async_session_factory() as session:
         try:
-            await _remove_removed_help_bots(session)
             await _seed_templates(session)
+            await _remove_retired_builtin_templates(session)
+            await _remove_removed_seeded_bots(session)
             await _seed_helper_bot(session)
             await _sync_admin_credentials(session)
 

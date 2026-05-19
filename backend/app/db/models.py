@@ -49,7 +49,7 @@ class PromptTemplate(Base):
     __tablename__ = "prompt_templates"
 
     template_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
-    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # Template name, for example "Code review".
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # Template name, for example "General assistant".
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Description.
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)  # System prompt.
     user_template: Mapped[str] = mapped_column(Text, nullable=False, default=DEFAULT_USER_TEMPLATE)  # User-message template.
