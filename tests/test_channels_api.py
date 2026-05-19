@@ -105,6 +105,57 @@ async def test_create_private_channel_only_adds_creator(
 
 
 @pytest.mark.asyncio
+async def test_create_channel_adds_initial_users_and_bots(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000323", name="Initial Channel WS")
+    user = User(
+        user_id="a0000000-0000-0000-0000-000000000423",
+        username="channel_initial_member",
+        password_hash="x",
+    )
+    bot = BotAccount(
+        bot_id="b1000000-0000-0000-0000-000000000523",
+        username="channel_initial_bot",
+        display_name="Channel Initial Bot",
+        status="online",
+        scope="everyone",
+    )
+    db_session.add_all([
+        ws,
+        user,
+        bot,
+        WorkspaceMembership(
+            workspace_id=ws.workspace_id,
+            user_id=user.user_id,
+            role="member",
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/v1/channels",
+        json={
+            "workspace_id": ws.workspace_id,
+            "name": "initial-private",
+            "type": "private",
+            "initial_user_ids": [user.user_id],
+            "initial_bot_ids": [bot.bot_id],
+        },
+    )
+
+    assert resp.status_code == 200
+    channel_id = resp.json()["data"]["channel_id"]
+    rows = (await db_session.execute(
+        select(ChannelMembership).where(ChannelMembership.channel_id == channel_id)
+    )).scalars().all()
+    member_keys = {(row.member_id, row.member_type) for row in rows}
+    assert (user.user_id, "user") in member_keys
+    assert (bot.bot_id, "bot") in member_keys
+
+
+@pytest.mark.asyncio
 async def test_create_dm_channel_does_not_auto_add_builtin_bots(db_session: AsyncSession) -> None:
     """Covers test create dm channel does not auto add builtin bots behavior."""
     ws = Workspace(workspace_id="a0000000-0000-0000-0000-000000000010", name="DM Workspace")

@@ -51,13 +51,16 @@ class MessageDTO(BaseModel):
     created_at: str | None = None
     is_secret: bool = False
     is_partial: bool = False
+    is_deleted: bool = False
+    deleted_at: str | None = None
+    deleted_by: str | None = None
 
     @field_validator("file_ids", "mention_bot_ids", "mention_user_ids", mode="before")
     @classmethod
     def _normalize_lists(cls, value: Any) -> list[str]:
         return _string_list(value)
 
-    @field_validator("created_at", mode="before")
+    @field_validator("created_at", "deleted_at", mode="before")
     @classmethod
     def _normalize_created_at(cls, value: Any) -> str | None:
         if value is None:
@@ -78,6 +81,9 @@ class MessageUpdateDTO(BaseModel):
     file_ids: list[str] | None = None
     files: list[MessageFileDTO] | None = None
     is_partial: bool | None = None
+    is_deleted: bool | None = None
+    deleted_at: str | None = None
+    deleted_by: str | None = None
     error: str | None = None
     content_data: dict[str, Any] | None = None
     clear_content_data: bool = False

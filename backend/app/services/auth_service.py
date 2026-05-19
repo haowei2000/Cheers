@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import re
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, UnauthorizedError
-from app.db.models import EmailCode, User
+from app.db.models import EmailCode, Friendship, KeychainItem, User
 from app.repositories.user_repo import UserRepository
 from app.services.auth.jwt_utils import create_access_token
 from app.services.auth.password_utils import hash_password as _hash_password
@@ -125,7 +126,7 @@ class AuthService:
             )
         )
         user = result.scalar_one_or_none()
-        if not user or not _verify_password(password, user.password_hash):
+        if not user or getattr(user, "is_deleted", False) or not _verify_password(password, user.password_hash):
             raise UnauthorizedError("用户名/邮箱或密码错误")
         token = create_access_token(user.user_id, user.role)
         return user, token
@@ -179,3 +180,34 @@ class AuthService:
             target = await self.user_repo.get_by_id(user.user_id) or user
             return await self.user_repo.update(target, **updates)
         return user
+
+    async def deactivate_account(self, user: User) -> User:
+        """Deactivate an account while preserving message ownership references."""
+        target = await self.user_repo.get_by_id(user.user_id) or user
+        if getattr(target, "is_deleted", False):
+            return target
+
+        now = datetime.now(timezone.utc)
+        if target.email:
+            await self.session.execute(delete(EmailCode).where(EmailCode.email == target.email))
+        await self.session.execute(delete(KeychainItem).where(KeychainItem.owner_id == target.user_id))
+        await self.session.execute(
+            delete(Friendship).where(
+                or_(
+                    Friendship.user_id == target.user_id,
+                    Friendship.friend_id == target.user_id,
+                )
+            )
+        )
+
+        target.username = f"deleted-{target.user_id[:8]}-{int(now.timestamp())}"
+        target.email = None
+        target.password_hash = _hash_password(secrets.token_urlsafe(32))
+        target.display_name = "Deleted user"
+        target.bio = None
+        target.avatar_url = None
+        target.is_deleted = True
+        target.deleted_at = now
+        self.session.add(target)
+        await self.session.flush()
+        return target

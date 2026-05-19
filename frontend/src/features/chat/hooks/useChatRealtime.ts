@@ -218,6 +218,32 @@ export function useChatRealtime({
           } else if (msg.type === "message_stream" && msg.data) {
             const { msg_id, delta } = msg.data;
             queueStreamDelta(msg_id, delta);
+          } else if (msg.type === "message_deleted" && msg.data) {
+            flushStreamDeltaBuffer();
+            const incoming = msg.data as Message;
+            if (!incoming.msg_id) return;
+            setMessageStore((prev) => {
+              if (!prev.byId[incoming.msg_id]) {
+                return upsertMessage(
+                  prev,
+                  { ...incoming, _streaming: false },
+                  MAX_LOADED_MESSAGES,
+                );
+              }
+              return patchMessage(prev, incoming.msg_id, (m) => ({
+                ...m,
+                ...incoming,
+                content: incoming.content ?? "",
+                content_data: incoming.content_data ?? m.content_data,
+                file_ids: incoming.file_ids ?? [],
+                files: incoming.files ?? [],
+                is_deleted: true,
+                deleted_at: incoming.deleted_at ?? m.deleted_at,
+                deleted_by: incoming.deleted_by ?? m.deleted_by,
+                _streaming: false,
+                _bot_status: undefined,
+              }));
+            });
           } else if (msg.type === "bot_trace" && msg.data) {
             const trace = msg.data as BotTraceEvent;
             if (!trace.msg_id) return;

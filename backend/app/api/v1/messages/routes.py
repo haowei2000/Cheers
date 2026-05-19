@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import StreamingResponse
@@ -30,13 +31,14 @@ from app.features.bot_runtime.pipeline.bot.adapter_resolver import get_adapter_f
 from app.features.bot_runtime.pipeline.bot.queue import enqueue_bot_pipeline_job
 from app.features.bot_runtime.pipeline.bot.service import run_bot_pipeline
 from app.features.bot_runtime.pipeline.bus import EventBus, WSEventBus, make_event_bus
-from app.features.bot_runtime.pipeline.events import BotProcessing
+from app.features.bot_runtime.pipeline.events import BotProcessing, MessageDeleted
 from app.features.bot_runtime.pipeline.ingest import IngestContext
 from app.features.bot_runtime.pipeline.workflow import resolve_bot_enqueue_decision, run_message_workflow
 from app.services.channel_service import ChannelService
 from app.services.message_service import MessageService
 from app.services.realtime_broker import get_realtime_broker
 from app.utils.crypto import decrypt_value
+from app.utils.permissions import is_admin
 
 logger = logging.getLogger("app.api.v1.messages")
 
@@ -793,6 +795,68 @@ async def cancel_streaming_message(
         return APIResponse.ok(_serialize(msg, {}))
     # Race: registry had it but cancel raced with done. Return current msg.
     await session.refresh(msg)
+    return APIResponse.ok(_serialize(msg, {}))
+
+
+@router.delete("/{msg_id}", response_model=APIResponse[dict])
+async def delete_message(
+    channel_id: str,
+    msg_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    """Soft-delete a message and broadcast a tombstone update."""
+    from app.core.exceptions import ForbiddenError
+
+    channel_service = ChannelService(session)
+    await channel_service.require_channel_member(channel_id, current_user)
+    msg = (
+        await session.execute(
+            select(Message)
+            .where(Message.channel_id == channel_id, Message.msg_id == msg_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if not msg:
+        raise NotFoundError("message not found")
+
+    is_sender = msg.sender_type == "user" and msg.sender_id == current_user.user_id
+    is_channel_admin = False
+    try:
+        await channel_service.require_channel_admin(channel_id, current_user)
+        is_channel_admin = True
+    except ForbiddenError:
+        pass
+    if msg.sender_type == "system" and not is_admin(current_user):
+        raise ForbiddenError("系统消息不能删除")
+    if not (is_sender or is_channel_admin or is_admin(current_user)):
+        raise ForbiddenError("无权删除该消息")
+
+    if not msg.is_deleted:
+        now = datetime.now(timezone.utc)
+        msg.is_deleted = True
+        msg.deleted_at = now
+        msg.deleted_by = current_user.user_id
+        msg.content = ""
+        msg.file_ids = []
+        msg.mention_bot_ids = []
+        msg.mention_user_ids = []
+        msg.secret_encrypted = None
+        msg.secret_token = None
+        msg.content_data = {
+            "deleted": True,
+            "deleted_by": current_user.user_id,
+            "deleted_at": now.isoformat(),
+        }
+        session.add(msg)
+        await session.commit()
+        await session.refresh(msg)
+
+        payload = MessageAssembler.assemble(msg, {})
+        await WSEventBus(channel_id).publish(MessageDeleted(data=payload))
+        _schedule_history_update(channel_id)
+        return APIResponse.ok(payload.to_wire())
+
     return APIResponse.ok(_serialize(msg, {}))
 
 

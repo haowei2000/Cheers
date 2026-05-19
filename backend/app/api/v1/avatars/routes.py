@@ -82,6 +82,35 @@ async def upload_workspace_avatar(
     return APIResponse.ok(result)
 
 
+@router.delete("/users/me", response_model=APIResponse[dict])
+async def delete_my_avatar(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = AvatarService(session, _get_avatar_storage())
+    return APIResponse.ok(await svc.delete_user_avatar(current_user))
+
+
+@router.delete("/bots/{bot_id}", response_model=APIResponse[dict])
+async def delete_bot_avatar(
+    bot_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = AvatarService(session, _get_avatar_storage())
+    return APIResponse.ok(await svc.delete_bot_avatar(bot_id, current_user))
+
+
+@router.delete("/workspaces/{workspace_id}", response_model=APIResponse[dict])
+async def delete_workspace_avatar(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = AvatarService(session, _get_avatar_storage())
+    return APIResponse.ok(await svc.delete_workspace_avatar(workspace_id, current_user))
+
+
 @router.get("/users/{user_id}")
 async def get_user_avatar(
     user_id: str,

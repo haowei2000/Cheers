@@ -80,6 +80,37 @@ async def test_personal_workspace_bootstraps_helper_dm(
 
 
 @pytest.mark.asyncio
+async def test_create_workspace_invites_initial_members(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    invited = User(
+        user_id="a0000000-0000-0000-0000-000000000221",
+        username="workspace_initial_member",
+        password_hash="x",
+    )
+    db_session.add(invited)
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/v1/workspaces",
+        json={
+            "name": "Initial Members",
+            "initial_member_ids": [invited.user_id],
+        },
+    )
+
+    assert resp.status_code == 200
+    workspace_id = resp.json()["data"]["workspace_id"]
+    membership = await db_session.get(
+        WorkspaceMembership,
+        {"workspace_id": workspace_id, "user_id": invited.user_id},
+    )
+    assert membership is not None
+    assert membership.role == "member"
+
+
+@pytest.mark.asyncio
 async def test_personal_project_supports_channel_and_bot_dm_tasks(
     client: AsyncClient,
     db_session: AsyncSession,

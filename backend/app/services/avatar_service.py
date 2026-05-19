@@ -171,6 +171,46 @@ class AvatarService:
             raise NotFoundError("avatar not found")
         return await self._get_avatar("workspace", workspace_id)
 
+    async def delete_user_avatar(self, user: User) -> dict:
+        target = await self.user_repo.get_by_id(user.user_id) or user
+        await self._delete_managed_avatar_if_current(
+            kind="user",
+            kind_plural="users",
+            entity_id=target.user_id,
+            avatar_url=target.avatar_url,
+        )
+        await self.user_repo.update(target, avatar_url=None)
+        return {"avatar_url": None}
+
+    async def delete_bot_avatar(self, bot_id: str, current_user: User) -> dict:
+        bot = await self.bot_service.get_or_404(bot_id)
+        if not can_manage_bot(bot, current_user):
+            raise ForbiddenError("无权修改该 Bot 的头像")
+        await self._delete_managed_avatar_if_current(
+            kind="bot",
+            kind_plural="bots",
+            entity_id=bot.bot_id,
+            avatar_url=bot.avatar_url,
+        )
+        bot.avatar_url = None
+        self.session.add(bot)
+        await self.session.flush()
+        return {"avatar_url": None}
+
+    async def delete_workspace_avatar(self, workspace_id: str, current_user: User) -> dict:
+        workspace = await self.workspace_service.get_or_404(workspace_id)
+        await self.workspace_service.ensure_can_manage(workspace_id, current_user)
+        await self._delete_managed_avatar_if_current(
+            kind="workspace",
+            kind_plural="workspaces",
+            entity_id=workspace.workspace_id,
+            avatar_url=workspace.avatar_url,
+        )
+        workspace.avatar_url = None
+        self.session.add(workspace)
+        await self.session.flush()
+        return {"avatar_url": None}
+
     async def _get_avatar(self, kind: str, entity_id: str) -> StorageObject:
         try:
             return await self.storage.get_object(
@@ -179,3 +219,19 @@ class AvatarService:
             )
         except StorageObjectNotFoundError:
             raise NotFoundError("avatar not found")
+
+    async def _delete_managed_avatar_if_current(
+        self,
+        *,
+        kind: str,
+        kind_plural: str,
+        entity_id: str,
+        avatar_url: str | None,
+    ) -> None:
+        expected = _route_path(kind_plural, entity_id)
+        if not (avatar_url or "").startswith(expected):
+            return
+        try:
+            await self.storage.delete_object(_avatar_file_id(kind, entity_id), scope=AVATAR_SCOPE)
+        except StorageObjectNotFoundError:
+            return

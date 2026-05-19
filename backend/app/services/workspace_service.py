@@ -42,7 +42,13 @@ class WorkspaceService:
         if not membership:
             raise ForbiddenError("您不是该工作空间的成员")
 
-    async def create(self, name: str, creator: User, avatar_url: str | None = None) -> Workspace:
+    async def create(
+        self,
+        name: str,
+        creator: User,
+        avatar_url: str | None = None,
+        initial_member_ids: list[str] | None = None,
+    ) -> Workspace:
         name = name.strip()
         if not name:
             raise BadRequestError("name 不能为空")
@@ -52,6 +58,10 @@ class WorkspaceService:
             self.session.add(ws)
             await self.session.flush()
         await self.repo.add_member(ws.workspace_id, creator.user_id, role="owner")
+        for user_id in dict.fromkeys(initial_member_ids or []):
+            if user_id == creator.user_id:
+                continue
+            await self.invite_member(ws.workspace_id, user_id, "member", creator)
         return ws
 
     async def get_or_404(self, workspace_id: str) -> Workspace:

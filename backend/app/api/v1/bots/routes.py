@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_user, get_session
 from app.core.exceptions import BadRequestError, ForbiddenError
@@ -23,8 +24,9 @@ from app.core.schemas import (
     BotUpdate,
     OpenClawQuickConnect,
 )
-from app.db.models import AIModel, BotAccount, PromptTemplate, User, gen_uuid
+from app.db.models import AgentNexusSession, AIModel, BotAccount, PromptTemplate, User, gen_uuid
 from app.features.agent_bridge.registry import bot_session_registry
+from app.features.agent_bridge.session_map import SESSION_STATUS_CLOSED
 from app.features.agent_bridge.session_queries import (
     list_sessions_for_bot,
     serialize_session,
@@ -459,6 +461,56 @@ async def list_bot_sessions(
         raise ForbiddenError("无权查看该 Bot 的 session")
     sessions = await list_sessions_for_bot(session, bot_id=bot_id, include_closed=include_closed)
     return APIResponse.ok([serialize_session(row) for row in sessions])
+
+
+@router.delete("/{bot_id}/sessions/{session_id}", response_model=APIResponse[dict])
+async def close_bot_session(
+    bot_id: str,
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> APIResponse:
+    svc = BotService(session)
+    bot = await svc.get_or_404(bot_id)
+    if not can_manage_bot(bot, current_user):
+        raise ForbiddenError("无权关闭该 Bot 的 session")
+    row = (
+        await session.execute(
+            select(AgentNexusSession)
+            .where(
+                AgentNexusSession.bot_id == bot_id,
+                AgentNexusSession.session_id == session_id,
+            )
+            .options(
+                selectinload(AgentNexusSession.bindings),
+                selectinload(AgentNexusSession.bot),
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if not row:
+        from app.core.exceptions import NotFoundError
+
+        raise NotFoundError("session not found")
+
+    now = datetime.now(timezone.utc)
+    metadata = dict(row.session_metadata or {})
+    metadata.update({
+        "closed_reason": "manual_close",
+        "closed_by": current_user.user_id,
+        "closed_at": now.isoformat(),
+    })
+    row.session_metadata = metadata
+    row.status = SESSION_STATUS_CLOSED
+    row.updated_at = now
+    for binding in row.bindings or []:
+        if binding.detached_at is None:
+            binding.detached_at = now
+            session.add(binding)
+    session.add(row)
+    await session.commit()
+    await session.refresh(row, attribute_names=["bindings", "bot"])
+    return APIResponse.ok(serialize_session(row))
 
 
 @router.post("/quick-connect", response_model=APIResponse[dict])

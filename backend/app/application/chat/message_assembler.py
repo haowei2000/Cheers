@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from app.contracts.messages import MessageDTO, MessageFileDTO, MessageUpdateDTO
@@ -11,13 +11,16 @@ from app.db.models import FileRecord, Message
 FileLike = FileRecord | MessageFileDTO | Mapping[str, Any]
 
 
-def _created_at_wire(message: Message) -> str | None:
-    created_at = message.created_at
-    if not created_at:
+def _datetime_wire(value: datetime | None) -> str | None:
+    if not value:
         return None
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    return created_at.isoformat()
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def _created_at_wire(message: Message) -> str | None:
+    return _datetime_wire(message.created_at)
 
 
 def message_file_dto(record: FileLike) -> MessageFileDTO:
@@ -57,6 +60,9 @@ class MessageAssembler:
             created_at=_created_at_wire(message),
             is_secret=bool(message.is_secret),
             is_partial=bool(message.is_partial),
+            is_deleted=bool(getattr(message, "is_deleted", False)),
+            deleted_at=_datetime_wire(getattr(message, "deleted_at", None)),
+            deleted_by=getattr(message, "deleted_by", None),
         )
 
     @staticmethod
@@ -83,12 +89,16 @@ class MessageAssembler:
             for fid in file_ids
             if fid in file_map
         ]
+        is_deleted = bool(getattr(message, "is_deleted", False))
         return MessageUpdateDTO(
             msg_id=message.msg_id,
             content=message.content,
             file_ids=file_ids,
             files=files,
             is_partial=is_partial,
+            is_deleted=True if is_deleted else None,
+            deleted_at=_datetime_wire(getattr(message, "deleted_at", None)) if is_deleted else None,
+            deleted_by=getattr(message, "deleted_by", None) if is_deleted else None,
             error=error,
             content_data=content_data,
             clear_content_data=clear_content_data,

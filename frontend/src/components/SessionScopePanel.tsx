@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { apiFetch } from "../api";
 import type { AgentBridgeSession } from "../types";
 import { AppIcon, type AppIconName } from "./icons/AppIcon";
@@ -189,7 +190,13 @@ function SessionPanelHeader({
   );
 }
 
-function SessionCard({ session }: { session: AgentBridgeSession }) {
+function SessionCard({
+  session,
+  onCloseSession,
+}: {
+  session: AgentBridgeSession;
+  onCloseSession?: (session: AgentBridgeSession) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const tone = statusTone(session.status);
   const bindings = session.bindings || [];
@@ -218,6 +225,17 @@ function SessionCard({ session }: { session: AgentBridgeSession }) {
         >
           {statusLabel(session.status)}
         </span>
+        {onCloseSession && session.status !== "closed" && (
+          <button
+            type="button"
+            onClick={() => onCloseSession(session)}
+            className="an-sp-copy"
+            title="Close session"
+            aria-label="Close session"
+          >
+            <AppIcon name="trash" />
+          </button>
+        )}
       </div>
 
       <div className="an-sp-card-body">
@@ -394,10 +412,12 @@ export function SessionList({
   sessions,
   view = "cards",
   onOpenScope,
+  onCloseSession,
 }: {
   sessions: AgentBridgeSession[];
   view?: "cards" | "map";
   onOpenScope?: (target: SessionScopeTarget) => void;
+  onCloseSession?: (session: AgentBridgeSession) => void;
 }) {
   if (sessions.length === 0) {
     return <div className="an-sp-empty">No Agent Bridge sessions</div>;
@@ -407,7 +427,13 @@ export function SessionList({
   }
   return (
     <div className="an-sp-list">
-      {sessions.map((s) => <SessionCard key={s.session_id} session={s} />)}
+      {sessions.map((s) => (
+        <SessionCard
+          key={s.session_id}
+          session={s}
+          onCloseSession={onCloseSession}
+        />
+      ))}
     </div>
   );
 }
@@ -656,6 +682,33 @@ export function BotSessionsPanel({
     };
   }, [authToken, botId, includeClosed, refreshNonce]);
 
+  const closeSession = async (session: AgentBridgeSession) => {
+    if (!confirm(`Close session ${shortId(session.session_id)}?`)) return;
+    try {
+      const response = await apiFetch(
+        `/bots/${botId}/sessions/${session.session_id}`,
+        { method: "DELETE", token: authToken },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.status === "error") {
+        throw new Error(payload?.message || payload?.detail || "Close failed");
+      }
+      const updated = payload?.data as AgentBridgeSession | undefined;
+      if (updated?.session_id) {
+        setSessions((items) =>
+          items.map((item) =>
+            item.session_id === updated.session_id ? updated : item,
+          ),
+        );
+      } else {
+        setRefreshNonce((value) => value + 1);
+      }
+      toast.success("Session closed");
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Close failed");
+    }
+  };
+
   const activeCount = sessions.filter((s) => s.status !== "closed").length;
   const closedCount = sessions.length - activeCount;
 
@@ -727,7 +780,7 @@ export function BotSessionsPanel({
       {error ? (
         <div className="an-rc-sub" style={{ color: "var(--red)" }}>{error}</div>
       ) : (
-        <SessionList sessions={sessions} />
+        <SessionList sessions={sessions} onCloseSession={closeSession} />
       )}
     </div>
   );

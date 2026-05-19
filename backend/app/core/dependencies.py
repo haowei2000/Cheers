@@ -60,6 +60,8 @@ async def get_current_user(
     user = await _resolve_user(token, db)
     if not user:
         raise UnauthorizedError("无效 Token")
+    if getattr(user, "is_deleted", False):
+        raise UnauthorizedError("账号已停用")
     return user
 
 
@@ -71,7 +73,10 @@ async def try_get_current_user(
         return None
     token = authorization.removeprefix("Bearer ").strip()
     try:
-        return await _resolve_user(token, db)
+        user = await _resolve_user(token, db)
+        if user and getattr(user, "is_deleted", False):
+            return None
+        return user
     except Exception:
         return None
 

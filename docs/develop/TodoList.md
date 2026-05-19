@@ -20,6 +20,10 @@ This is the English default edition prepared for the open-source documentation s
 - For implementation details, verify against the current code and the user/operations documentation first.
 - Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
+## Current Fix Items
+
+- [x] **UX-DEL-001** Restore deletion paths for user-created resources: files, messages/topics/announcements, avatar cleanup, and explicit Agent Bridge session/account deletion policy. See [Create/Delete Symmetry Fix Item](create-delete-symmetry-fix-item.md).
+
 ## Related Documentation
 
 - [Documentation Home](../help/README.md)

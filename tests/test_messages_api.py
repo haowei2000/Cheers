@@ -200,6 +200,59 @@ async def test_create_message_and_list(client: AsyncClient, db_session: AsyncSes
 
 
 @pytest.mark.asyncio
+async def test_delete_message_soft_deletes_and_clears_payload(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """Deleting a message keeps a tombstone and removes sensitive payload."""
+    user_id = "a0000000-0000-0000-0000-000000000099"
+    ws = Workspace(workspace_id="f1000000-0000-0000-0000-000000000203", name="W203")
+    ch = Channel(
+        channel_id="e1000000-0000-0000-0000-000000000203",
+        workspace_id=ws.workspace_id,
+        name="delete-message",
+        type="public",
+    )
+    msg = Message(
+        msg_id="delete-message-soft-203",
+        channel_id=ch.channel_id,
+        sender_id=user_id,
+        sender_type="user",
+        content="sensitive text",
+        file_ids=["file-delete-message-203"],
+        mention_bot_ids=["bot-delete-message-203"],
+        mention_user_ids=["user-delete-message-203"],
+        is_secret=True,
+        secret_encrypted="ciphertext",
+        secret_token="secret-token",
+        content_data={"title": "secret"},
+    )
+    db_session.add_all([ws, ch, msg])
+    await db_session.flush()
+
+    resp = await client.delete(f"/api/v1/channels/{ch.channel_id}/messages/{msg.msg_id}")
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["msg_id"] == msg.msg_id
+    assert data["is_deleted"] is True
+    assert data["deleted_by"] == user_id
+    assert data["content"] == ""
+    assert data["file_ids"] == []
+    assert data["mention_bot_ids"] == []
+    assert data["mention_user_ids"] == []
+
+    row = await db_session.get(Message, msg.msg_id)
+    assert row is not None
+    assert row.is_deleted is True
+    assert row.deleted_at is not None
+    assert row.content == ""
+    assert row.file_ids == []
+    assert row.secret_encrypted is None
+    assert row.secret_token is None
+
+
+@pytest.mark.asyncio
 async def test_list_messages_around_cursor(client: AsyncClient, db_session: AsyncSession) -> None:
     """Initial channel loads can request a small window around the saved cursor."""
     ws = Workspace(workspace_id="f2000000-0000-0000-0000-000000000172", name="W172")
@@ -1310,7 +1363,7 @@ async def test_delete_personal_file_removes_unreferenced_record(
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["deleted"] is True
-    assert data["removed_from_library"] is True
+    assert data["unlinked"] is True
     assert not file_path.exists()
     result = await db_session.execute(
         select(FileRecord).where(FileRecord.file_id == record.file_id)
@@ -1389,8 +1442,7 @@ async def test_delete_personal_file_hides_channel_message_attachment(
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["deleted"] is False
-    assert data["removed_from_library"] is True
-    assert data["message_reference_count"] == 1
+    assert data["unlinked"] is True
     assert file_path.exists()
     assert await db_session.get(FileRecord, record.file_id) is not None
 

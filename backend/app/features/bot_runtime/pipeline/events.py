@@ -42,6 +42,19 @@ class MessageCreated(Event):
 
 
 @dataclass(slots=True)
+class MessageDeleted(Event):
+    """An existing persisted message was soft-deleted and should render as a tombstone."""
+
+    data: MessageDTO
+
+    def to_ws_frame(self) -> dict:
+        return {"type": "message_deleted", "data": _wire_payload(self.data)}
+
+    def to_sse(self) -> tuple[str, dict] | None:
+        return None
+
+
+@dataclass(slots=True)
 class BotMessagePlaceholder(Event):
     """An empty bot message bubble was created; streaming deltas will follow."""
 

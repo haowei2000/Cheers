@@ -204,6 +204,45 @@ cd backend && pytest ../tests/test_web_tools.py -v  # web tools tests
 cd backend && pytest ../tests/test_adapters.py -v   # adapter tests
 ```
 
+### Integration Test Requirements (Mandatory)
+
+**Integration tests must pass against a fully running Docker Compose stack (frontend + backend). They must not rely solely on in-memory mocks or unit-level fixtures.**
+
+```bash
+# Start the full stack
+cp docker-compose.yml.template docker-compose.yml
+docker compose up -d --wait
+
+# Run integration tests against real services
+INTEGRATION_BASE_URL=http://localhost:8000 \
+  cd backend && pytest ../tests -m integration -v
+
+# Tear down after tests
+docker compose down
+```
+
+**Running multiple stacks in parallel** (for CI concurrency or multi-branch local testing):
+
+```bash
+# Stack A — ports 8010 / 8080
+COMPOSE_PROJECT_NAME=nexus_test_a BACKEND_HOST_PORT=8010 FRONTEND_HOST_PORT=8080 \
+  docker compose -p nexus_test_a up -d --wait
+
+# Stack B — ports 8011 / 8081
+COMPOSE_PROJECT_NAME=nexus_test_b BACKEND_HOST_PORT=8011 FRONTEND_HOST_PORT=8081 \
+  docker compose -p nexus_test_b up -d --wait
+
+# Each stack is isolated; clean up independently
+docker compose -p nexus_test_a down
+docker compose -p nexus_test_b down
+```
+
+Rules:
+- Each stack needs a unique `COMPOSE_PROJECT_NAME` and distinct host ports.
+- Integration tests read the target URL from `INTEGRATION_BASE_URL`; never hard-code a port.
+- Mark integration tests with `@pytest.mark.integration` so they can be skipped when no Docker environment is available.
+- Always `docker compose down` after the test run, including networks and anonymous volumes.
+
 ## Skills 配置
 
 ### Skills 目录

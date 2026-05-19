@@ -38,7 +38,7 @@ class FriendshipService:
 
         exact = await self.user_repo.get_by_id(q)
         users: list[User]
-        if exact and exact.user_id != current_user.user_id:
+        if exact and exact.user_id != current_user.user_id and not exact.is_deleted:
             users = [exact]
         else:
             pattern = f"%{q}%"
@@ -46,6 +46,7 @@ class FriendshipService:
                 select(User)
                 .where(
                     User.user_id != current_user.user_id,
+                    User.is_deleted == False,  # noqa: E712
                     or_(User.username.ilike(pattern), User.display_name.ilike(pattern)),
                 )
                 .order_by(User.display_name, User.username)

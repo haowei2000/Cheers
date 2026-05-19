@@ -140,6 +140,7 @@ async def compute_unread_counts(
             .where(
                 Message.channel_id.in_(channel_ids),
                 Message.sender_id != user_id,
+                Message.is_deleted == False,  # noqa: E712
                 or_(
                     ChannelMembership.last_read_at.is_(None),
                     Message.created_at > ChannelMembership.last_read_at,
@@ -201,4 +202,3 @@ async def unread_counts_for(
                 unread_count=count,
             )
     return result
-
