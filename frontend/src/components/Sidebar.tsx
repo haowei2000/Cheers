@@ -1049,7 +1049,7 @@ export function Sidebar({
                 onClick={() => openPersonalAddDialog("dm")}
               >
                 <span className="an-sigil">
-                  <AppIcon name="messageCircle" />
+                  <AppIcon name="plus" />
                 </span>
                 <span className="an-name">New DM</span>
               </button>
@@ -1249,7 +1249,7 @@ export function Sidebar({
             onClick={() => openPersonalAddDialog("project")}
           >
             <span className="an-sigil">
-              <AppIcon name="folder" />
+              <AppIcon name="plus" />
             </span>
             <span className="an-name">New Project</span>
           </button>
@@ -1276,7 +1276,7 @@ export function Sidebar({
                   onClick={() => openPersonalAddDialog("projectChat", project)}
                 >
                   <span className="an-sigil">
-                    <AppIcon name="task" />
+                    <AppIcon name="plus" />
                   </span>
                   <span className="an-name">New Task</span>
                 </button>
