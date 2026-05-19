@@ -1050,7 +1050,7 @@ export function Sidebar({
           <li key={`${file.channel_id || "library"}:${file.file_id}`} className="group relative">
             <button
               type="button"
-              className="an-rail-row w-full"
+              className="an-rail-row w-full pr-7"
               title={`${file.original_filename || file.file_id} · ${file.channel_label}`}
               onClick={() => {
                 setSelectedId(null);
@@ -1069,6 +1069,46 @@ export function Sidebar({
                 {file.original_filename || file.file_id}
               </span>
             </button>
+            <Tooltip
+              content="Remove from files"
+              placement="right"
+              className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <button
+                type="button"
+                title="Remove from files"
+                aria-label="Remove from files"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const label = file.original_filename || file.file_id;
+                  if (
+                    !confirm(
+                      `Remove "${label}" from Files? Messages that use it will keep their attachment.`,
+                    )
+                  )
+                    return;
+                  apiFetch(`/files/${encodeURIComponent(file.file_id)}`, {
+                    method: "DELETE",
+                    token: authToken,
+                  })
+                    .then(async (response) => {
+                      const payload = await response.json().catch(() => ({}));
+                      if (!response.ok || payload?.status === "error") {
+                        throw new Error(payload?.detail || payload?.message || "Remove failed");
+                      }
+                      setPersonalFiles((prev) =>
+                        prev.filter((item) => item.file_id !== file.file_id),
+                      );
+                      toast.success("File removed");
+                    })
+                    .catch((err) => toast.error(err?.message || "Remove failed"));
+                }}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
+                style={{ color: "var(--fg-3)" }}
+              >
+                <AppIcon name="trash" className="w-3 h-3" />
+              </button>
+            </Tooltip>
           </li>
         ))}
       </ul>
