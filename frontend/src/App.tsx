@@ -69,6 +69,33 @@ const MainFilePreviewPanel = lazy(() =>
   })),
 );
 
+const TASK_TITLE_MAX_LENGTH = 80;
+
+function normalizeTaskTitleText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, TASK_TITLE_MAX_LENGTH);
+}
+
+function stripLeadingBotMentions(value: string, botUsernames: string[]): string {
+  let text = value.trim();
+  const usernames = Array.from(new Set(botUsernames.filter(Boolean))).sort(
+    (a, b) => b.length - a.length,
+  );
+  let matched = true;
+  while (matched) {
+    matched = false;
+    for (const username of usernames) {
+      const mention = `@${username}`;
+      if (text === mention) return "";
+      if (text.startsWith(`${mention} `) || text.startsWith(`${mention}\t`)) {
+        text = text.slice(mention.length).trimStart();
+        matched = true;
+        break;
+      }
+    }
+  }
+  return text;
+}
+
 export default function App() {
   const { isDark, setTheme } = useTheme();
   const navigate = useNavigate();
@@ -1003,6 +1030,18 @@ export default function App() {
       ),
     [channelBots],
   );
+  const suggestedTaskTitle = useMemo(() => {
+    const botUsernames = channelBots.map((bot) => bot.username);
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.sender_type !== "user" || message.is_deleted) continue;
+      const parsed = parseHelperPayload(message.content || "").text || message.content || "";
+      const withoutMentions = stripLeadingBotMentions(parsed, botUsernames);
+      const title = normalizeTaskTitleText(withoutMentions);
+      if (title) return title;
+    }
+    return "";
+  }, [channelBots, messages]);
   const userById = useMemo(
     () => new Map(channelUsers.map((user) => [user.member_id, user])),
     [channelUsers],
@@ -1375,6 +1414,7 @@ export default function App() {
             currentUser={currentUser}
             authToken={authToken}
             beginnerMode={beginnerMode}
+            suggestedTaskTitle={suggestedTaskTitle}
             onLoginClick={() => setLoginModalOpen(true)}
             workspaces={workspaces}
             setWorkspaces={setWorkspaces}
