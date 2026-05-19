@@ -30,6 +30,7 @@ export class MockBridge {
   public receivedReplies: Array<Record<string, unknown>> = [];
   public receivedTraces: Array<Record<string, unknown>> = [];
   public receivedUploads: Array<Record<string, unknown>> = [];
+  public receivedConfigStatuses: Array<Record<string, unknown>> = [];
 
   constructor(private readonly botToken = "agb_test") {}
 
@@ -91,6 +92,19 @@ export class MockBridge {
     this.binaryFiles.set(fileId, file);
   }
 
+  pushConfigUpdate(frame: {
+    revision?: number | string | null;
+    settings?: Record<string, unknown>;
+    updated_at?: string | null;
+  }): void {
+    this.broadcast("control", {
+      type: "config_update",
+      revision: frame.revision ?? null,
+      settings: frame.settings ?? {},
+      updated_at: frame.updated_at ?? null,
+    });
+  }
+
   connectionsFor(stream: "control" | "data"): number {
     return Array.from(this.conns).filter((c) => c.stream === stream).length;
   }
@@ -132,6 +146,10 @@ export class MockBridge {
     const frame = JSON.parse(raw) as Record<string, unknown>;
     if (frame.type === "ping") {
       ws.send(JSON.stringify({ type: "pong" }));
+      return;
+    }
+    if (stream === "control" && frame.type === "config_status") {
+      this.receivedConfigStatuses.push(frame);
       return;
     }
     if (stream !== "data") return;

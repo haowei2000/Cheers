@@ -36,7 +36,7 @@ export class JsonRpcStdioPeer {
   private nextId = 1;
   private pending = new Map<JsonRpcId, Pending>();
   private closed = false;
-  private readonly requestTimeoutMs: number;
+  private requestTimeoutMs: number;
 
   constructor(private readonly opts: StdioPeerOptions) {
     this.requestTimeoutMs = opts.requestTimeoutMs ?? 120_000;
@@ -108,6 +108,10 @@ export class JsonRpcStdioPeer {
       this.pending.set(id, { resolve: (v) => resolve(v as T), reject, timer });
       this.write(frame);
     });
+  }
+
+  setRequestTimeoutMs(timeoutMs: number): void {
+    this.requestTimeoutMs = timeoutMs;
   }
 
   notify(method: string, params?: unknown): void {

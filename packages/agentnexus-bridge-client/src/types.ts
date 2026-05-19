@@ -22,6 +22,23 @@ export interface ChannelInfo {
   joined_at?: string | null;
 }
 
+export type ConnectorPermissionMode = "reject" | "allow" | "cancel";
+
+export interface ConnectorControlSettings {
+  permissionMode?: ConnectorPermissionMode;
+  requestTimeoutMs?: number;
+  promptTimeoutMs?: number;
+  cwd?: string;
+  model?: string;
+}
+
+export interface ConnectorControlConfig {
+  revision?: number | string | null;
+  settings?: ConnectorControlSettings;
+  updated_at?: string | null;
+  last_status?: Record<string, unknown> | null;
+}
+
 export interface ControlHello {
   type: "hello";
   bot_id: string;
@@ -30,6 +47,7 @@ export interface ControlHello {
   connection_id?: string;
   session_id: string;
   memberships: ChannelInfo[];
+  connector_config?: ConnectorControlConfig | null;
 }
 
 export interface ChannelJoinedEvent {
@@ -58,11 +76,19 @@ export interface CancelInbound {
   reason?: string;
 }
 
+export interface ConfigUpdateInbound {
+  type: "config_update";
+  revision?: number | string | null;
+  settings?: ConnectorControlSettings;
+  updated_at?: string | null;
+}
+
 export type ControlInbound =
   | ControlHello
   | ChannelJoinedEvent
   | ChannelLeftEvent
   | CancelInbound
+  | ConfigUpdateInbound
   | PongFrame
   | { type: "error"; detail?: string };
 
@@ -74,6 +100,15 @@ export interface PingFrame {
 export interface ReadyFrame {
   type: "ready";
   plugin_version?: string;
+}
+
+export interface ConfigStatusFrame {
+  type: "config_status";
+  revision?: number | string | null;
+  ok: boolean;
+  applied?: string[];
+  rejected?: Array<{ field: string; reason: string }>;
+  error?: string;
 }
 
 // ============ Data stream ============
