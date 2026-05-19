@@ -1040,6 +1040,45 @@ async def _send_send_ack_err(websocket: WebSocket, client_msg_id: str | None, co
     })
 
 
+async def _send_terminal_ack_err(
+    websocket: WebSocket,
+    client_msg_id: str | None,
+    code: str,
+    detail: str,
+) -> None:
+    if not client_msg_id:
+        await websocket.send_json({"type": "error", "code": code, "detail": detail})
+        return
+    await websocket.send_json({
+        "type": "terminal_ack",
+        "client_msg_id": client_msg_id,
+        "ok": False,
+        "error": detail,
+        "code": code,
+    })
+
+
+async def _send_terminal_ack_ok(
+    websocket: WebSocket,
+    client_msg_id: str | None,
+    *,
+    msg_id: str,
+    job_id: str | None = None,
+) -> None:
+    if not client_msg_id:
+        return
+    payload = {
+        "type": "terminal_ack",
+        "client_msg_id": client_msg_id,
+        "ok": True,
+        "msg_id": msg_id,
+        "queued": True,
+    }
+    if job_id:
+        payload["job_id"] = job_id
+    await websocket.send_json(payload)
+
+
 async def _handle_data_reply(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
@@ -1050,7 +1089,8 @@ async def _handle_data_reply(
         check_files_in_channel,
     )
 
-    client_msg_id = frame.get("client_msg_id")
+    raw_client_msg_id = frame.get("client_msg_id")
+    client_msg_id = raw_client_msg_id if isinstance(raw_client_msg_id, str) else None
     text = frame.get("text")
     if not isinstance(text, str):
         await _send_send_ack_err(websocket, client_msg_id, "invalid_text", "text 必须是字符串")
@@ -1270,13 +1310,15 @@ async def _handle_data_done(
     from app.features.agent_bridge.streams import stream_registry as _stream_registry
     from app.features.agent_bridge.validators import check_files_in_channel
 
+    raw_client_msg_id = frame.get("client_msg_id")
+    client_msg_id = raw_client_msg_id if isinstance(raw_client_msg_id, str) else None
     msg_id = frame.get("msg_id") or frame.get("reply_to_msg_id")
     if not isinstance(msg_id, str) or not msg_id:
-        await websocket.send_json({"type": "error", "detail": "done missing msg_id"})
+        await _send_terminal_ack_err(websocket, client_msg_id, "missing_msg_id", "done missing msg_id")
         return
     raw_file_ids = frame.get("file_ids") or []
     if not isinstance(raw_file_ids, list) or not all(isinstance(f, str) for f in raw_file_ids):
-        await websocket.send_json({"type": "error", "detail": "file_ids must be string[]"})
+        await _send_terminal_ack_err(websocket, client_msg_id, "invalid_file_ids", "file_ids must be string[]")
         return
     file_ids: list[str] = list(raw_file_ids)
     stream_snapshot: dict | None = None
@@ -1293,9 +1335,7 @@ async def _handle_data_done(
                     s, file_ids=file_ids, channel_id=state.channel_id,
                 )
                 if err:
-                    await websocket.send_json({
-                        "type": "error", "code": err[0], "detail": err[1],
-                    })
+                    await _send_terminal_ack_err(websocket, client_msg_id, err[0], err[1])
                     return
         state = await _stream_registry.get(msg_id)
         if state is not None and state.bot_id == bot.bot_id:
@@ -1313,24 +1353,27 @@ async def _handle_data_done(
     }
     if stream_snapshot:
         payload.update(stream_snapshot)
-    await enqueue_bot_event_job(
+    job_id = await enqueue_bot_event_job(
         AGENT_BRIDGE_STREAM_DONE,
         payload,
     )
     if stream_snapshot:
         await _stream_registry.pop(msg_id)
+    await _send_terminal_ack_ok(websocket, client_msg_id, msg_id=msg_id, job_id=job_id)
 
 
 async def _handle_data_error(
     websocket: WebSocket, bot: BotAccount, frame: dict,
 ) -> None:
     """Plugin reports a mid-stream error. Finalize partial with error tag."""
+    raw_client_msg_id = frame.get("client_msg_id")
+    client_msg_id = raw_client_msg_id if isinstance(raw_client_msg_id, str) else None
     msg_id = frame.get("msg_id") or frame.get("reply_to_msg_id")
     err_msg = frame.get("message") or frame.get("detail") or "plugin_error"
     if not isinstance(msg_id, str) or not msg_id:
-        await websocket.send_json({"type": "error", "detail": "error frame missing msg_id"})
+        await _send_terminal_ack_err(websocket, client_msg_id, "missing_msg_id", "error frame missing msg_id")
         return
-    await enqueue_bot_event_job(
+    job_id = await enqueue_bot_event_job(
         AGENT_BRIDGE_STREAM_ERROR,
         {
             "msg_id": msg_id,
@@ -1338,6 +1381,7 @@ async def _handle_data_error(
             "error": str(err_msg),
         },
     )
+    await _send_terminal_ack_ok(websocket, client_msg_id, msg_id=msg_id, job_id=job_id)
 
 
 async def _handle_data_send(

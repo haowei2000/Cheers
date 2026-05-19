@@ -111,7 +111,7 @@ export class AcpStdioAgent {
     return this.peer.request<{ stopReason?: string }>("session/prompt", {
       sessionId,
       prompt,
-    });
+    }, this.config.promptTimeoutMs ?? this.config.requestTimeoutMs ?? 900_000);
   }
 
   cancel(sessionId: string): void {

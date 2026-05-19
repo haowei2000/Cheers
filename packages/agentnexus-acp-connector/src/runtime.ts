@@ -307,7 +307,8 @@ function deriveHttpBase(wsUrl: string): string {
   try {
     const url = new URL(wsUrl);
     const protocol = url.protocol === "wss:" ? "https:" : "http:";
-    return `${protocol}//${url.host}`;
+    const prefix = url.pathname.replace(/\/ws\/agent-bridge\/(?:control|data)\/?$/, "").replace(/\/$/, "");
+    return `${protocol}//${url.host}${prefix}`;
   } catch {
     return "";
   }
@@ -628,7 +629,16 @@ export class AcpBridgeAccount {
         message: result.stopReason ?? "end_turn",
       });
       if (message.event.placeholder_msg_id) {
-        this.bridge.streamDone({ msgId, fileIds: ctx.fileIds });
+        const ack = await this.bridge.streamDone({ msgId, fileIds: ctx.fileIds });
+        if (!ack.ok) {
+          this.logger.warn(
+            "acp account=%s stream done not acknowledged msg_id=%s code=%s error=%s",
+            this.accountId,
+            msgId,
+            ack.code,
+            ack.error,
+          );
+        }
       } else {
         await this.bridge.reply({
           source: message,
@@ -639,7 +649,16 @@ export class AcpBridgeAccount {
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       if (message.event.placeholder_msg_id) {
-        this.bridge.streamError({ msgId, message: detail });
+        const ack = await this.bridge.streamError({ msgId, message: detail });
+        if (!ack.ok) {
+          this.logger.warn(
+            "acp account=%s stream error not acknowledged msg_id=%s code=%s error=%s",
+            this.accountId,
+            msgId,
+            ack.code,
+            ack.error,
+          );
+        }
       } else {
         await this.bridge.reply({ source: message, text: `ACP agent error: ${detail}` });
       }
