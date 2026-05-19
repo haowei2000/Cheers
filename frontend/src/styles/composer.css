@@ -590,6 +590,7 @@ html[data-density="compact"] .an-composer-bar .an-composer-send {
 html:not([data-density="compact"]) .an-composer-bar .an-composer-iconbtn.is-named-trigger {
   width: auto;
   min-width: 82px;
+  max-width: min(180px, 34vw);
   padding: 0 12px;
   gap: 6px;
 }
