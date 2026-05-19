@@ -1045,13 +1045,13 @@ export function Sidebar({
               <button
                 type="button"
                 className="an-rail-row an-rail-action-row w-full"
-                title="Start DM"
+                title="New DM"
                 onClick={() => openPersonalAddDialog("dm")}
               >
                 <span className="an-sigil">
                   <AppIcon name="messageCircle" />
                 </span>
-                <span className="an-name">New Item</span>
+                <span className="an-name">New DM</span>
               </button>
             </li>
             {directDms.length === 0 && (
@@ -1245,13 +1245,13 @@ export function Sidebar({
           <button
             type="button"
             className="an-rail-row an-rail-action-row w-full"
-            title="Create project"
+            title="New Project"
             onClick={() => openPersonalAddDialog("project")}
           >
             <span className="an-sigil">
               <AppIcon name="folder" />
             </span>
-            <span className="an-name">New Item</span>
+            <span className="an-name">New Project</span>
           </button>
         </li>
         {projectGroups.length === 0 && (
@@ -1272,13 +1272,13 @@ export function Sidebar({
                 <button
                   type="button"
                   className="an-rail-row an-rail-action-row an-project-chat-row w-full"
-                  title="Create task"
+                  title="New Task"
                   onClick={() => openPersonalAddDialog("projectChat", project)}
                 >
                   <span className="an-sigil">
                     <AppIcon name="task" />
                   </span>
-                  <span className="an-name">New Item</span>
+                  <span className="an-name">New Task</span>
                 </button>
               </li>
               {project.tasks.map((task) => {
