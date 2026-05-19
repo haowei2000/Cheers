@@ -460,6 +460,15 @@ export default function App() {
       setTaskPageOpen,
     ],
   );
+  const uploadPersonalFiles = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        await uploadFileObject(file);
+      }
+      setFileLibraryRefreshNonce((value) => value + 1);
+    },
+    [uploadFileObject],
+  );
   useEffect(() => {
     if (selectedId) setMainFilePreviewPanel(null);
   }, [selectedId, setMainFilePreviewPanel]);
@@ -1375,6 +1384,7 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenFilePreview={openFilePreview}
             onOpenPersonalFileMain={openPersonalFileInMain}
+            onUploadPersonalFiles={uploadPersonalFiles}
             fileLibraryRefreshKey={fileLibraryRefreshNonce}
             onPreloadChannel={preloadChannelMessages}
             onOpenMessage={handleMessageNavigate}
