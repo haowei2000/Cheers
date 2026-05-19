@@ -34,6 +34,7 @@ interface SidebarProps {
   currentUser: CurrentUser;
   authToken: string | null;
   beginnerMode: boolean;
+  suggestedTaskTitle?: string;
   onLoginClick: () => void;
 
   workspaces: Workspace[];
@@ -99,6 +100,7 @@ export function Sidebar({
   currentUser,
   authToken,
   beginnerMode,
+  suggestedTaskTitle = "",
   onLoginClick,
   workspaces,
   setWorkspaces,
@@ -344,6 +346,9 @@ export function Sidebar({
     return `Task ${count + 1}`;
   };
 
+  const defaultProjectTaskTitle = (projectId: string) =>
+    suggestedTaskTitle.trim() || nextProjectTaskTitle(projectId);
+
   const handlePersonalUploadClick = () => {
     if (!selectedId) {
       toast.error("Select a DM or task before uploading files");
@@ -520,13 +525,13 @@ export function Sidebar({
       void createProjectChannelTaskFrom({
         projectId,
         projectTitle,
-        taskTitle: nextProjectTaskTitle(projectId),
+        taskTitle: defaultProjectTaskTitle(projectId),
       });
       return;
     }
     setProjectDraftTitle(projectTitle);
     setProjectTaskKind(beginnerMode ? "channel" : "bot");
-    setChannelTaskDraftTitle(nextProjectTaskTitle(projectId));
+    setChannelTaskDraftTitle(defaultProjectTaskTitle(projectId));
     setPersonalAddDialog({
       kind,
       projectId,
@@ -672,7 +677,7 @@ export function Sidebar({
         ? projectDraftTitle.trim() || personalAddDialog.projectTitle
         : personalAddDialog.projectTitle;
     const taskTitle =
-      channelTaskDraftTitle.trim() || nextProjectTaskTitle(personalAddDialog.projectId);
+      channelTaskDraftTitle.trim() || defaultProjectTaskTitle(personalAddDialog.projectId);
     await createProjectChannelTaskFrom({
       projectId: personalAddDialog.projectId,
       projectTitle,
@@ -1552,18 +1557,20 @@ export function Sidebar({
       )}
       {personalAddDialog?.kind !== "dm" && (beginnerMode || projectTaskKind === "channel") ? (
         <div className="space-y-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium" style={{ color: "var(--fg-2)" }}>
-              Task Name
-            </span>
-            <input
-              value={channelTaskDraftTitle}
-              onChange={(event) => setChannelTaskDraftTitle(event.target.value)}
-              className="an-input"
-              maxLength={80}
-              autoFocus
-            />
-          </label>
+          {!beginnerMode && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium" style={{ color: "var(--fg-2)" }}>
+                Task Name
+              </span>
+              <input
+                value={channelTaskDraftTitle}
+                onChange={(event) => setChannelTaskDraftTitle(event.target.value)}
+                className="an-input"
+                maxLength={80}
+                autoFocus
+              />
+            </label>
+          )}
           <div className="flex justify-end gap-2">
             <button
               type="button"
