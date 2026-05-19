@@ -60,7 +60,11 @@ async def _seed_fixture(
         object_key=object_key,
         status="pending",
     )
-    db_session.add_all([ws, ch, user, rec])
+    db_session.add_all([ws, user])
+    await db_session.flush()
+    db_session.add(ch)
+    await db_session.flush()
+    db_session.add(rec)
     await db_session.commit()
     return rec, user
 
