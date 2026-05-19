@@ -1020,13 +1020,13 @@ class ChannelService:
             )).scalar_one_or_none()
             if not tmpl:
                 raise NotFoundError("提示词模板不存在")
-            if (
-                not is_admin(current_user)
-                and not tmpl.is_builtin
-                and tmpl.created_by is not None
-                and tmpl.created_by != current_user.user_id
-            ):
-                raise ForbiddenError("只能使用自己可见的提示词模板")
+            from app.services.admin_service import PromptTemplateService
+
+            await PromptTemplateService(self.session).assert_can_use(
+                tmpl,
+                current_user,
+                "只能使用自己可见的提示词模板",
+            )
 
         m.template_id = template_id
         await self.session.flush()

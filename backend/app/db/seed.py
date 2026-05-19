@@ -207,11 +207,13 @@ async def _seed_templates(session: AsyncSession) -> bool:
                     user_template=template_text.user_template,
                     variables=template_text.variables,
                     is_builtin=True,
+                    scope="everyone",
                 )
             )
             did_write = True
             continue
         if template.is_builtin:
+            did_write |= _assign_if_changed(template, "scope", "everyone")
             if await _template_name_available(session, template.template_id, template_text.name):
                 did_write |= _assign_if_changed(template, "name", template_text.name)
             did_write |= _assign_if_changed(template, "description", template_text.description)

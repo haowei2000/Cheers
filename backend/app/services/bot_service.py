@@ -135,12 +135,26 @@ class BotService:
         template = await self.template_repo.get_by_id(template_id)
         if not template:
             raise BadRequestError("指定的提示词模板不存在")
+        from app.services.admin_service import PromptTemplateService
+
+        await PromptTemplateService(self.session).assert_can_use(
+            template,
+            current_user,
+            "无权使用该提示词模板",
+        )
         return model, template
 
-    async def _validate_template(self, template_id: str) -> None:
+    async def _validate_template(self, template_id: str, current_user: User) -> None:
         template = await self.template_repo.get_by_id(template_id)
         if not template:
             raise BadRequestError("指定的提示词模板不存在")
+        from app.services.admin_service import PromptTemplateService
+
+        await PromptTemplateService(self.session).assert_can_use(
+            template,
+            current_user,
+            "无权使用该提示词模板",
+        )
 
     async def create(
         self,
@@ -180,7 +194,7 @@ class BotService:
             # They can still use PromptTemplate to render task text sent to the plugin.
             model_id = None
             if template_id:
-                await self._validate_template(template_id)
+                await self._validate_template(template_id, current_user)
         else:
             raise BadRequestError(f"未知的 binding_type: {binding_type}")
 
@@ -261,7 +275,7 @@ class BotService:
                 next_model_id, next_template_id, current_user
             )
         elif next_binding_type == "agent_bridge" and "template_id" in kwargs and kwargs["template_id"]:
-            await self._validate_template(kwargs["template_id"])
+            await self._validate_template(kwargs["template_id"], current_user)
 
         return await self.repo.update(bot, **kwargs)
 

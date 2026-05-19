@@ -62,6 +62,10 @@ class PromptTemplateCreate(BaseModel):
     system_prompt: str = Field(..., min_length=1, description="System prompt")
     user_template: str = Field(default=DEFAULT_USER_TEMPLATE, description="User message template using {{variable}} placeholders")
     variables: list[str] = Field(default=DEFAULT_TEMPLATE_VARIABLES, description="Template variable list")
+    scope: Literal["private", "friend", "everyone"] = Field(
+        default="friend",
+        description="Template visibility: private=self only, friend=self and friends, everyone=all signed-in users",
+    )
 
 
 class PromptTemplateUpdate(BaseModel):
@@ -71,6 +75,13 @@ class PromptTemplateUpdate(BaseModel):
     system_prompt: str | None = Field(default=None, min_length=1)
     user_template: str | None = Field(default=None)
     variables: list[str] | None = Field(default=None)
+    scope: Literal["private", "friend", "everyone"] | None = Field(default=None)
+
+
+class PromptTemplateOwnerInResponse(BaseModel):
+    user_id: str
+    username: str
+    display_name: str | None = None
 
 
 class PromptTemplateInResponse(BaseModel):
@@ -84,7 +95,10 @@ class PromptTemplateInResponse(BaseModel):
     user_template: str
     variables: list[str]
     is_builtin: bool
+    scope: Literal["private", "friend", "everyone"] = "friend"
     created_by: str | None = None
+    owner: PromptTemplateOwnerInResponse | None = None
+    can_manage: bool = False
     created_at: datetime | None = None
 
 
