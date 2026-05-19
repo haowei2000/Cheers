@@ -2079,15 +2079,18 @@
 .an-rail-row:hover { background: var(--surface-soft); color: var(--fg-1); }
 .an-rail-row.active { background: var(--accent-muted); color: var(--fg-1); }
 .an-rail-action-row {
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--fg-3);
+  font-weight: 500;
 }
 .an-rail-row.an-rail-action-row .an-sigil {
-  color: var(--accent);
+  color: var(--fg-3);
 }
 .an-rail-action-row:hover {
-  background: var(--accent-muted);
-  color: var(--accent);
+  background: var(--surface-soft);
+  color: var(--fg-2);
+}
+.an-rail-row.an-rail-action-row:hover .an-sigil {
+  color: var(--fg-2);
 }
 .an-rail-row .an-sigil {
   width: 14px;
