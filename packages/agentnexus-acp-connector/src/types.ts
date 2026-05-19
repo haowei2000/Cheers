@@ -2,10 +2,19 @@ import type { SessionConfig } from "@haowei0520/bridge-client";
 
 export type PermissionMode = "reject" | "allow" | "cancel";
 
+export interface RemoteConnectorSettings {
+  permissionMode?: PermissionMode;
+  requestTimeoutMs?: number;
+  promptTimeoutMs?: number;
+  cwd?: string;
+  model?: string;
+}
+
 export interface StdioAgentConfig {
   transport: "stdio";
   command: string;
   args?: string[];
+  model?: string;
   cwd?: string;
   env?: Record<string, string>;
   requestTimeoutMs?: number;

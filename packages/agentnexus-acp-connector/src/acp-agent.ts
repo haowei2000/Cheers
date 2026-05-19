@@ -5,6 +5,7 @@ import type {
   ContentBlock,
   Logger,
   PermissionMode,
+  RemoteConnectorSettings,
   StdioAgentConfig,
 } from "./types.js";
 
@@ -37,12 +38,16 @@ export class AcpStdioAgent {
     private readonly config: StdioAgentConfig,
     private readonly logger: Logger,
   ) {
-    this.peer = new JsonRpcStdioPeer({
-      command: config.command,
-      args: config.args ?? [],
-      cwd: config.cwd,
-      env: config.env,
-      requestTimeoutMs: config.requestTimeoutMs,
+    this.peer = this.createPeer();
+  }
+
+  private createPeer(): JsonRpcStdioPeer {
+    return new JsonRpcStdioPeer({
+      command: this.config.command,
+      args: this.config.args ?? [],
+      cwd: this.config.cwd,
+      env: this.config.env,
+      requestTimeoutMs: this.config.requestTimeoutMs,
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, params) => this.handleRequest(method, params),
       onStderr: (line) => this.logger.info("[acp:%s stderr] %s", this.accountId, line),
@@ -79,10 +84,38 @@ export class AcpStdioAgent {
 
   async stop(): Promise<void> {
     await this.peer.stop();
+    this.initialized = false;
+    this.initializeResponse = null;
+  }
+
+  async restart(): Promise<void> {
+    await this.peer.stop();
+    this.peer = this.createPeer();
+    this.initialized = false;
+    this.initializeResponse = null;
+    await this.start();
   }
 
   supportsLoadSession(): boolean {
     return Boolean(this.initializeResponse?.agentCapabilities?.loadSession);
+  }
+
+  updateRuntimeSettings(settings: RemoteConnectorSettings): string[] {
+    const applied: string[] = [];
+    if (settings.permissionMode) {
+      this.config.permissionMode = settings.permissionMode;
+      applied.push("permissionMode");
+    }
+    if (typeof settings.requestTimeoutMs === "number") {
+      this.config.requestTimeoutMs = settings.requestTimeoutMs;
+      this.peer.setRequestTimeoutMs(settings.requestTimeoutMs);
+      applied.push("requestTimeoutMs");
+    }
+    if (typeof settings.promptTimeoutMs === "number") {
+      this.config.promptTimeoutMs = settings.promptTimeoutMs;
+      applied.push("promptTimeoutMs");
+    }
+    return applied;
   }
 
   onSessionUpdate(handler: SessionUpdateHandler): () => void {

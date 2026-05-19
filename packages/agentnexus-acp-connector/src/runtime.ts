@@ -2,11 +2,11 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { BotSession, type AttachmentInfo, type InboundMessage } from "@haowei0520/bridge-client";
+import { BotSession, type AttachmentInfo, type ConfigUpdateInbound, type InboundMessage } from "@haowei0520/bridge-client";
 
 import { AcpStdioAgent } from "./acp-agent.js";
 import { SessionStateStore } from "./state.js";
-import type { AccountConfig, AcpSessionUpdate, ContentBlock, Logger } from "./types.js";
+import type { AccountConfig, AcpSessionUpdate, ContentBlock, Logger, PermissionMode, RemoteConnectorSettings } from "./types.js";
 
 interface ExtractedFile {
   key: string;
@@ -53,6 +53,16 @@ interface RunContext {
   seenFileKeys: Set<string>;
   pendingFileUploads: Promise<void>[];
 }
+
+interface SettingsApplyResult {
+  applied: string[];
+  rejected: Array<{ field: string; reason: string }>;
+  settings: RemoteConnectorSettings;
+}
+
+const REMOTE_TIMEOUT_MIN_MS = 5_000;
+const REMOTE_TIMEOUT_MAX_MS = 3_600_000;
+const REMOTE_MODEL_MAX_LENGTH = 128;
 
 function textOfContent(content: unknown): string {
   if (Array.isArray(content)) return content.map(textOfContent).filter(Boolean).join("");
@@ -318,6 +328,111 @@ function isImageAttachment(attachment: AttachmentInfo): boolean {
   return String(attachment.content_type || "").toLowerCase().startsWith("image/");
 }
 
+function isPermissionMode(value: unknown): value is PermissionMode {
+  return value === "reject" || value === "allow" || value === "cancel";
+}
+
+function pickTimeoutMs(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  if (rounded < REMOTE_TIMEOUT_MIN_MS || rounded > REMOTE_TIMEOUT_MAX_MS) return null;
+  return rounded;
+}
+
+function isCodexAcpCommand(command: string): boolean {
+  const base = path.basename(command).toLowerCase();
+  return base === "codex-acp" || base === "codex-acp.exe";
+}
+
+function codexModelConfigArg(model: string): string {
+  return `model=${JSON.stringify(model)}`;
+}
+
+function withCodexModelArg(args: string[] | undefined, model: string): string[] {
+  const next: string[] = [];
+  const current = args ?? [];
+  for (let i = 0; i < current.length; i += 1) {
+    const arg = current[i];
+    const following = current[i + 1];
+    if ((arg === "-c" || arg === "--config") && typeof following === "string" && following.startsWith("model=")) {
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--config=model=")) {
+      continue;
+    }
+    next.push(arg);
+  }
+  next.push("-c", codexModelConfigArg(model));
+  return next;
+}
+
+async function normalizeRemoteSettings(input: unknown, currentCwd: string | undefined): Promise<SettingsApplyResult> {
+  const rejected: SettingsApplyResult["rejected"] = [];
+  const settings: RemoteConnectorSettings = {};
+  if (!input || typeof input !== "object") {
+    return {
+      applied: [],
+      rejected: [{ field: "settings", reason: "settings must be an object" }],
+      settings,
+    };
+  }
+  const raw = input as Record<string, unknown>;
+  if ("permissionMode" in raw) {
+    if (isPermissionMode(raw.permissionMode)) {
+      settings.permissionMode = raw.permissionMode;
+    } else {
+      rejected.push({ field: "permissionMode", reason: "must be reject, allow, or cancel" });
+    }
+  }
+  for (const field of ["requestTimeoutMs", "promptTimeoutMs"] as const) {
+    if (!(field in raw)) continue;
+    const timeoutMs = pickTimeoutMs(raw[field]);
+    if (timeoutMs === null) {
+      rejected.push({
+        field,
+        reason: `must be between ${REMOTE_TIMEOUT_MIN_MS} and ${REMOTE_TIMEOUT_MAX_MS} ms`,
+      });
+    } else {
+      settings[field] = timeoutMs;
+    }
+  }
+  if ("cwd" in raw) {
+    if (typeof raw.cwd !== "string" || !raw.cwd.trim()) {
+      rejected.push({ field: "cwd", reason: "must be a non-empty string" });
+    } else {
+      const base = currentCwd ?? process.cwd();
+      const resolved = path.isAbsolute(raw.cwd.trim())
+        ? path.resolve(raw.cwd.trim())
+        : path.resolve(base, raw.cwd.trim());
+      try {
+        const info = await stat(resolved);
+        if (!info.isDirectory()) {
+          rejected.push({ field: "cwd", reason: `not a directory: ${resolved}` });
+        } else {
+          settings.cwd = resolved;
+        }
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        rejected.push({ field: "cwd", reason: `cannot access directory: ${detail}` });
+      }
+    }
+  }
+  if ("model" in raw) {
+    if (typeof raw.model !== "string" || !raw.model.trim()) {
+      rejected.push({ field: "model", reason: "must be a non-empty string" });
+    } else {
+      const model = raw.model.trim();
+      if (model.length > REMOTE_MODEL_MAX_LENGTH || /[\r\n\t]/.test(model)) {
+        rejected.push({ field: "model", reason: `must be a single-line string up to ${REMOTE_MODEL_MAX_LENGTH} characters` });
+      } else {
+        settings.model = model;
+      }
+    }
+  }
+  return { applied: [], rejected, settings };
+}
+
 function attachmentUri(attachment: AttachmentInfo): string {
   const id = attachment.file_id || "unknown";
   const name = attachment.filename ? `/${encodeURIComponent(attachment.filename)}` : "";
@@ -500,6 +615,7 @@ export class AcpBridgeAccount {
         onReady: () => this.logger.info("bridge account=%s ready", this.accountId),
         onMessage: (message) => this.enqueueMessage(message),
         onCancel: (msgId, reason) => this.handleCancel(msgId, reason),
+        onConfigUpdate: (update) => this.handleConfigUpdate(update),
         onFatal: (reason) => this.logger.error("bridge account=%s fatal: %s", this.accountId, reason),
         onError: (err) => this.logger.error("bridge account=%s error: %s", this.accountId, String(err)),
         onConnectionChange: (stream, state) => this.logger.info(
@@ -674,6 +790,97 @@ export class AcpBridgeAccount {
     if (!ctx) return;
     this.logger.warn("acp account=%s cancelling session=%s reason=%s", this.accountId, ctx.acpSessionId, reason ?? "");
     this.agent.cancel(ctx.acpSessionId);
+  }
+
+  private async handleConfigUpdate(update: ConfigUpdateInbound): Promise<void> {
+    const normalized = await normalizeRemoteSettings(update.settings, this.config.agent.cwd);
+    const applied = this.agent.updateRuntimeSettings(normalized.settings);
+    normalized.applied = applied;
+    const restartSettings: RemoteConnectorSettings = {};
+    const restartFields: string[] = [];
+    if (normalized.settings.cwd) {
+      restartSettings.cwd = normalized.settings.cwd;
+      restartFields.push("cwd");
+    }
+    if (normalized.settings.model) {
+      if (isCodexAcpCommand(this.config.agent.command)) {
+        restartSettings.model = normalized.settings.model;
+        restartFields.push("model");
+      } else {
+        normalized.rejected.push({
+          field: "model",
+          reason: "model switching is only supported for codex-acp",
+        });
+      }
+    }
+    if (restartFields.length > 0) {
+      if (this.activeRunsByMsg.size > 0) {
+        for (const field of restartFields) {
+          normalized.rejected.push({ field, reason: "cannot restart ACP agent while a prompt is running" });
+        }
+      } else {
+        const previous = {
+          args: [...(this.config.agent.args ?? [])],
+          cwd: this.config.agent.cwd,
+          model: this.config.agent.model,
+        };
+        try {
+          if (restartSettings.cwd) this.config.agent.cwd = restartSettings.cwd;
+          if (restartSettings.model) {
+            this.config.agent.model = restartSettings.model;
+            this.config.agent.args = withCodexModelArg(this.config.agent.args, restartSettings.model);
+          }
+          await this.agent.restart();
+          this.activeProviderSessions.clear();
+          applied.push(...restartFields);
+          this.logger.info(
+            "acp account=%s restarted agent for connector config revision=%s fields=%s",
+            this.accountId,
+            update.revision ?? "",
+            restartFields.join(","),
+          );
+        } catch (err) {
+          this.config.agent.args = previous.args;
+          this.config.agent.cwd = previous.cwd;
+          this.config.agent.model = previous.model;
+          try {
+            await this.agent.restart();
+          } catch (rollbackErr) {
+            this.logger.error(
+              "acp account=%s rollback restart failed after config update error: %s",
+              this.accountId,
+              String(rollbackErr),
+            );
+          }
+          normalized.rejected.push({
+            field: restartFields.join(","),
+            reason: `ACP agent restart failed: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
+      }
+    }
+    if (applied.length > 0) {
+      this.logger.info(
+        "acp account=%s applied connector config revision=%s fields=%s",
+        this.accountId,
+        update.revision ?? "",
+        applied.join(","),
+      );
+    }
+    if (normalized.rejected.length > 0) {
+      this.logger.warn(
+        "acp account=%s rejected connector config revision=%s fields=%s",
+        this.accountId,
+        update.revision ?? "",
+        normalized.rejected.map((item) => item.field).join(","),
+      );
+    }
+    this.bridge.sendConfigStatus({
+      revision: update.revision ?? null,
+      ok: normalized.rejected.length === 0,
+      applied,
+      rejected: normalized.rejected,
+    });
   }
 
   private async handleAcpUpdate(notification: AcpSessionUpdate): Promise<void> {

@@ -1,5 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +73,102 @@ describe("ConnectorRuntime", () => {
     expect(bridge.receivedTraces.some((t) => t.phase === "prompt_finished")).toBe(true);
     const state = JSON.parse(await readFile(statePath, "utf8"));
     expect(state.sessions["codex-main"]["agentnexus:channel:C1"].acpSessionId).toMatch(/^fake-/);
+    await runtime.stop();
+  });
+
+  it("applies remote connector control updates from AgentNexus", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [fakeAgent],
+            cwd: tmp,
+            permissionMode: "reject",
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushConfigUpdate({
+      revision: 7,
+      settings: {
+        permissionMode: "allow",
+        promptTimeoutMs: 60_000,
+        requestTimeoutMs: 30_000,
+      },
+    });
+
+    await waitFor(() => bridge.receivedConfigStatuses.length === 1);
+    expect(bridge.receivedConfigStatuses[0]).toMatchObject({
+      type: "config_status",
+      revision: 7,
+      ok: true,
+      applied: ["permissionMode", "requestTimeoutMs", "promptTimeoutMs"],
+      rejected: [],
+    });
+    await runtime.stop();
+  });
+
+  it("restarts codex-acp when remote cwd or model changes", async () => {
+    const statePath = path.join(tmp, "state.json");
+    const workspace = path.join(tmp, "next-workspace");
+    await mkdir(workspace);
+    const codexAcp = path.join(tmp, "codex-acp");
+    await writeFile(
+      codexAcp,
+      `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeAgent)} "$@"\n`,
+      "utf8",
+    );
+    await chmod(codexAcp, 0o755);
+    const runtime = new ConnectorRuntime(
+      {
+        "codex-main": {
+          botToken: "agb_test",
+          controlUrl: bridge.controlUrl,
+          dataUrl: bridge.dataUrl,
+          advanced: { reconnectBaseMs: 20, reconnectMaxMs: 100, heartbeatIntervalMs: 60_000, sendAckTimeoutMs: 1000 },
+          agent: {
+            transport: "stdio",
+            command: codexAcp,
+            args: [],
+            cwd: tmp,
+          },
+        },
+      },
+      new SessionStateStore(statePath),
+      console,
+    );
+    await runtime.start();
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
+
+    bridge.pushConfigUpdate({
+      revision: 8,
+      settings: {
+        cwd: workspace,
+        model: "gpt-5.5",
+      },
+    });
+
+    await waitFor(() => bridge.receivedConfigStatuses.length === 1);
+    expect(bridge.receivedConfigStatuses[0]).toMatchObject({
+      type: "config_status",
+      revision: 8,
+      ok: true,
+      applied: ["cwd", "model"],
+      rejected: [],
+    });
+    await waitFor(() => bridge.connectionsFor("control") === 1 && bridge.connectionsFor("data") === 1);
     await runtime.stop();
   });
 

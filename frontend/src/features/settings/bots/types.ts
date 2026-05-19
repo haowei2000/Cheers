@@ -1,4 +1,27 @@
 export type BotScope = "private" | "friend" | "everyone";
+export type ConnectorPermissionMode = "reject" | "allow" | "cancel";
+
+export type ConnectorControlSettings = {
+  permissionMode?: ConnectorPermissionMode;
+  requestTimeoutMs?: number;
+  promptTimeoutMs?: number;
+  cwd?: string;
+  model?: string;
+};
+
+export type ConnectorControlConfig = {
+  revision?: number | string | null;
+  settings?: ConnectorControlSettings | null;
+  updated_at?: string | null;
+  last_status?: {
+    revision?: number | string | null;
+    ok?: boolean;
+    applied?: string[];
+    rejected?: Array<{ field?: string; reason?: string }>;
+    error?: string | null;
+    reported_at?: string | null;
+  } | null;
+};
 
 export type BotRow = {
   bot_id: string;
@@ -12,6 +35,10 @@ export type BotRow = {
   is_online?: boolean;
   control_connected?: boolean | null;
   data_connected?: boolean | null;
+  binding_config?: {
+    connector_control?: ConnectorControlConfig | null;
+    [key: string]: unknown;
+  } | null;
   model_id?: string | null;
   template_id?: string | null;
   model_name?: string | null;
