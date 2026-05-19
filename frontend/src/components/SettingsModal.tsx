@@ -23,6 +23,8 @@ interface SettingsModalProps {
   onClose: () => void;
   isDark: boolean;
   setTheme: (t: "light" | "dark") => void;
+  beginnerMode: boolean;
+  setBeginnerMode: (enabled: boolean) => void;
   authToken: string | null;
   currentUser: CurrentUser;
   onProfileUpdated: (data: { display_name: string; bio?: string | null; avatar_url?: string | null }) => void;
@@ -88,6 +90,8 @@ export function SettingsModal({
   onClose,
   isDark,
   setTheme,
+  beginnerMode,
+  setBeginnerMode,
   authToken,
   currentUser,
   onProfileUpdated,
@@ -205,6 +209,8 @@ export function SettingsModal({
               setTheme={setTheme}
               density={density}
               setDensity={changeDensity}
+              beginnerMode={beginnerMode}
+              setBeginnerMode={setBeginnerMode}
             />
           )}
           {route === "bulletin" && (

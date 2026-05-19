@@ -104,6 +104,42 @@ type ComposerTextRange = {
   end: number;
 };
 
+const MENTION_NAME_BOUNDARY_RE = /^[a-zA-Z0-9_\-'\u4e00-\u9fff]$/;
+
+function findLeadingBotMentionRange(
+  value: string,
+  botUsernames: string[],
+): ComposerTextRange | null {
+  const names = [...new Set(botUsernames.filter(Boolean))].sort(
+    (a, b) => b.length - a.length,
+  );
+  if (names.length === 0) return null;
+
+  let pos = 0;
+  while (pos < value.length && (value[pos] === " " || value[pos] === "\t")) {
+    pos += 1;
+  }
+  const start = pos;
+  let consumed = false;
+
+  while (value[pos] === "@") {
+    const name = names.find((candidate) => {
+      const mention = `@${candidate}`;
+      if (!value.startsWith(mention, pos)) return false;
+      const nextChar = value[pos + mention.length];
+      return !nextChar || !MENTION_NAME_BOUNDARY_RE.test(nextChar);
+    });
+    if (!name) break;
+    pos += name.length + 1;
+    consumed = true;
+    while (pos < value.length && (value[pos] === " " || value[pos] === "\t")) {
+      pos += 1;
+    }
+  }
+
+  return consumed ? { start, end: pos } : null;
+}
+
 export function MessageComposer({
   value,
   valueRevision = 0,
@@ -337,7 +373,15 @@ export function MessageComposer({
     const pos = selection.end;
     const lastAt = currentValue.lastIndexOf("@", pos - 1);
     const insert = `@${item.username} `;
+    const leadingBotMentionRange =
+      item.kind === "bot"
+        ? findLeadingBotMentionRange(
+            currentValue,
+            channelBots.map((bot) => bot.username),
+          )
+        : null;
     const range =
+      leadingBotMentionRange ??
       mentionTriggerRange ??
       (lastAt === -1
         ? selection

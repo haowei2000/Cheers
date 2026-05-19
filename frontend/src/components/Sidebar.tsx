@@ -8,7 +8,7 @@ import {
 } from "react";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
-import type { Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
+import type { BotItem, Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
 import { apiFetch } from "../api";
 import { USER_DOCS_URL } from "../lib/app-config";
 import { makeBuiltinAvatarValue } from "../lib/avatar";
@@ -35,6 +35,7 @@ interface SidebarProps {
 
   currentUser: CurrentUser;
   authToken: string | null;
+  beginnerMode: boolean;
   onLoginClick: () => void;
 
   workspaces: Workspace[];
@@ -99,6 +100,7 @@ export function Sidebar({
   onLeftResize,
   currentUser,
   authToken,
+  beginnerMode,
   onLoginClick,
   workspaces,
   setWorkspaces,
@@ -215,6 +217,7 @@ export function Sidebar({
   const [projectDraftTitle, setProjectDraftTitle] = useState("");
   const [projectTaskKind, setProjectTaskKind] = useState<"bot" | "channel">("bot");
   const [channelTaskDraftTitle, setChannelTaskDraftTitle] = useState("");
+  const [creatingProjectChannelTask, setCreatingProjectChannelTask] = useState(false);
   const [personalFiles, setPersonalFiles] = useState<PersonalFileItem[]>([]);
   const [personalFilesLoading, setPersonalFilesLoading] = useState(false);
   const [collapsedPersonalSections, setCollapsedPersonalSections] = useState<
@@ -515,8 +518,16 @@ export function Sidebar({
         ? crypto.randomUUID()
         : `project-${Date.now()}`);
     const projectTitle = project?.projectTitle || nextProjectTitle();
+    if (beginnerMode && kind === "projectChat") {
+      void createProjectChannelTaskFrom({
+        projectId,
+        projectTitle,
+        taskTitle: nextProjectTaskTitle(projectId),
+      });
+      return;
+    }
     setProjectDraftTitle(projectTitle);
-    setProjectTaskKind("bot");
+    setProjectTaskKind(beginnerMode ? "channel" : "bot");
     setChannelTaskDraftTitle(nextProjectTaskTitle(projectId));
     setPersonalAddDialog({
       kind,
@@ -592,19 +603,33 @@ export function Sidebar({
     }
   };
 
-  const createProjectChannelTask = async () => {
-    if (!personalAddDialog || personalAddDialog.kind === "dm") return;
+  const loadVisibleBotIds = async (): Promise<string[]> => {
+    const response = await apiFetch("/bots", { token: authToken });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.status === "error") {
+      throw new Error(payload?.detail || payload?.message || "Failed to load bots");
+    }
+    const bots: BotItem[] = Array.isArray(payload?.data) ? payload.data : [];
+    return bots.map((bot) => bot.bot_id).filter(Boolean);
+  };
+
+  const createProjectChannelTaskFrom = async ({
+    projectId,
+    projectTitle,
+    taskTitle,
+  }: {
+    projectId: string;
+    projectTitle: string;
+    taskTitle: string;
+  }) => {
     if (!dmWorkspaceId) {
       toast.error("Select Personal first");
       return;
     }
-    const projectTitle =
-      personalAddDialog.kind === "project"
-        ? projectDraftTitle.trim() || personalAddDialog.projectTitle
-        : personalAddDialog.projectTitle;
-    const taskTitle =
-      channelTaskDraftTitle.trim() || nextProjectTaskTitle(personalAddDialog.projectId);
+    if (creatingProjectChannelTask) return;
+    setCreatingProjectChannelTask(true);
     try {
+      const initialBotIds = beginnerMode ? await loadVisibleBotIds() : [];
       const response = await apiFetch("/channels", {
         method: "POST",
         token: authToken,
@@ -614,9 +639,10 @@ export function Sidebar({
           type: "private",
           allow_member_invites: false,
           allow_bot_adds: true,
-          project_id: personalAddDialog.projectId,
+          project_id: projectId,
           project_title: projectTitle,
           task_title: taskTitle,
+          initial_bot_ids: initialBotIds,
         },
       });
       const payload = await response.json().catch(() => null);
@@ -633,9 +659,27 @@ export function Sidebar({
       setPersonalAddDialog(null);
       resetSearch();
       if (isMobile) setSidebarOpen(false);
+      toast.success("Task channel created");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to create channel task");
+    } finally {
+      setCreatingProjectChannelTask(false);
     }
+  };
+
+  const createProjectChannelTask = async () => {
+    if (!personalAddDialog || personalAddDialog.kind === "dm") return;
+    const projectTitle =
+      personalAddDialog.kind === "project"
+        ? projectDraftTitle.trim() || personalAddDialog.projectTitle
+        : personalAddDialog.projectTitle;
+    const taskTitle =
+      channelTaskDraftTitle.trim() || nextProjectTaskTitle(personalAddDialog.projectId);
+    await createProjectChannelTaskFrom({
+      projectId: personalAddDialog.projectId,
+      projectTitle,
+      taskTitle,
+    });
   };
 
   const handleSearchSelect = (selection: SearchSelection) => {
@@ -1273,6 +1317,7 @@ export function Sidebar({
                   type="button"
                   className="an-rail-row an-rail-action-row an-project-chat-row w-full"
                   title="New Task"
+                  disabled={beginnerMode && creatingProjectChannelTask}
                   onClick={() => openPersonalAddDialog("projectChat", project)}
                 >
                   <span className="an-sigil">
@@ -1472,14 +1517,20 @@ export function Sidebar({
           ? "Start DM"
           : personalAddDialog?.kind === "project"
             ? "Create Project"
-            : "Add Bot Chat"
+            : beginnerMode
+              ? "New Task"
+              : "Add Bot Chat"
       }
       description={
         personalAddDialog?.kind === "dm"
           ? "Search members and create DMs."
           : personalAddDialog?.kind === "project"
-            ? "Name the project, then choose the first task."
-            : `Add a task to ${personalAddDialog?.projectTitle || "Project"}.`
+            ? beginnerMode
+              ? "Name the project. A private task channel will include every bot you can use."
+              : "Name the project, then choose the first task."
+            : beginnerMode
+              ? `Create a private task channel in ${personalAddDialog?.projectTitle || "Project"}.`
+              : `Add a task to ${personalAddDialog?.projectTitle || "Project"}.`
       }
     >
       {personalAddDialog?.kind === "project" && (
@@ -1495,7 +1546,7 @@ export function Sidebar({
           />
         </label>
       )}
-      {personalAddDialog?.kind !== "dm" && (
+      {personalAddDialog?.kind !== "dm" && !beginnerMode && (
         <div className="an-tabs mb-3" role="tablist" aria-label="Task type">
           <button
             type="button"
@@ -1517,7 +1568,7 @@ export function Sidebar({
           </button>
         </div>
       )}
-      {personalAddDialog?.kind !== "dm" && projectTaskKind === "channel" ? (
+      {personalAddDialog?.kind !== "dm" && (beginnerMode || projectTaskKind === "channel") ? (
         <div className="space-y-3">
           <label className="block">
             <span className="mb-1 block text-xs font-medium" style={{ color: "var(--fg-2)" }}>
@@ -1539,8 +1590,13 @@ export function Sidebar({
             >
               Cancel
             </button>
-            <button type="button" className="an-btn an-btn-primary" onClick={createProjectChannelTask}>
-              Create
+            <button
+              type="button"
+              className="an-btn an-btn-primary"
+              disabled={creatingProjectChannelTask}
+              onClick={createProjectChannelTask}
+            >
+              {creatingProjectChannelTask ? "Creating..." : "Create"}
             </button>
           </div>
         </div>
