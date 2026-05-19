@@ -8,6 +8,7 @@ import { AppearancePane } from "../features/settings/appearance/AppearancePane";
 import { BulletinPane } from "../features/settings/bulletin/BulletinPane";
 import { BotListSubPane } from "../features/settings/bots/BotListSubPane";
 import type { BotRow } from "../features/settings/bots/types";
+import { DocsPane } from "../features/settings/docs/DocsPane";
 import { FriendsPane } from "../features/settings/friends/FriendsPane";
 import { ModelListSubPane } from "../features/settings/models/ModelListSubPane";
 import { TemplateListSubPane } from "../features/settings/templates/TemplateListSubPane";
@@ -40,6 +41,7 @@ type SettingsRoute =
   | "friends"
   | "keychain"
   | "appearance"
+  | "docs"
   | "bulletin";
 
 type SettingsNavItem = {
@@ -75,6 +77,7 @@ const SETTINGS_NAV: SettingsNavGroup[] = [
     label: "Interface",
     items: [
       { id: "appearance", icon: "palette", label: "Appearance", hint: "Topics and density" },
+      { id: "docs", icon: "note", label: "Docs", hint: "Manuals and API" },
     ],
   },
   {
@@ -213,6 +216,7 @@ export function SettingsModal({
               setBeginnerMode={setBeginnerMode}
             />
           )}
+          {route === "docs" && <DocsPane />}
           {route === "bulletin" && (
             <BulletinPane
               authToken={authToken}
