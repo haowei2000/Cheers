@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 import type { Channel, DM, Workspace, CurrentUser, FileInfo } from "../types";
@@ -53,6 +59,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenFilePreview?: (file: FileInfo) => void;
   onOpenPersonalFileMain?: (file: FileInfo) => void;
+  fileLibraryRefreshKey?: number;
   onPreloadChannel?: (channelId: string) => void;
   onOpenMessage?: (channelId: string, msgId: string) => void;
 }
@@ -68,6 +75,8 @@ type PersonalFileItem = FileInfo & {
   channel_label?: string | null;
   created_at?: string | null;
   summary_3lines?: string | null;
+  scope_type?: string | null;
+  scope_id?: string | null;
 };
 type ProjectTaskItem =
   | { kind: "dm"; key: string; dm: DM; botLabel: string; label: string; createdAt: number }
@@ -106,6 +115,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenFilePreview,
   onOpenPersonalFileMain,
+  fileLibraryRefreshKey = 0,
   onPreloadChannel,
   onOpenMessage,
 }: SidebarProps) {
@@ -335,7 +345,37 @@ export function Sidebar({
     return () => {
       active = false;
     };
-  }, [authToken, isPersonalWorkspace]);
+  }, [authToken, fileLibraryRefreshKey, isPersonalWorkspace]);
+
+  const deletePersonalFile = async (
+    file: PersonalFileItem,
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+    const label = file.original_filename || file.file_id;
+    if (
+      !confirm(
+        `Remove "${label}" from Files? Messages that use it will keep their attachment.`,
+      )
+    )
+      return;
+    try {
+      const response = await apiFetch(
+        `/files/${encodeURIComponent(file.file_id)}`,
+        { method: "DELETE", token: authToken },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.status === "error") {
+        throw new Error(payload?.message || payload?.detail || "Remove failed");
+      }
+      setPersonalFiles((files) =>
+        files.filter((item) => item.file_id !== file.file_id),
+      );
+      toast.success("File removed");
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Remove failed");
+    }
+  };
 
   const selectWorkspace = (workspaceId: string) => {
     setSelectedWorkspaceId(workspaceId);
@@ -465,12 +505,15 @@ export function Sidebar({
   const handlePersonalAddSelect = (selection: SearchSelection) => {
     if (!personalAddDialog) return;
     if (personalAddDialog.kind === "dm") {
-      if (selection.type !== "user") {
-        toast.error("Select a member to start a DM");
+      if (selection.type !== "user" && selection.type !== "bot") {
+        toast.error("Select a member or bot to start a DM");
         return;
       }
       setPersonalAddDialog(null);
-      openDmWith(selection.item.user_id, "user");
+      openDmWith(
+        selection.type === "user" ? selection.item.user_id : selection.item.bot_id,
+        selection.type,
+      );
       return;
     }
     if (personalAddDialog.kind === "project" || personalAddDialog.kind === "projectChat") {
@@ -1076,35 +1119,11 @@ export function Sidebar({
             >
               <button
                 type="button"
-                title="Remove from files"
-                aria-label="Remove from files"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const label = file.original_filename || file.file_id;
-                  if (
-                    !confirm(
-                      `Remove "${label}" from Files? Messages that use it will keep their attachment.`,
-                    )
-                  )
-                    return;
-                  apiFetch(`/files/${encodeURIComponent(file.file_id)}`, {
-                    method: "DELETE",
-                    token: authToken,
-                  })
-                    .then(async (response) => {
-                      const payload = await response.json().catch(() => ({}));
-                      if (!response.ok || payload?.status === "error") {
-                        throw new Error(payload?.detail || payload?.message || "Remove failed");
-                      }
-                      setPersonalFiles((prev) =>
-                        prev.filter((item) => item.file_id !== file.file_id),
-                      );
-                      toast.success("File removed");
-                    })
-                    .catch((err) => toast.error(err?.message || "Remove failed"));
-                }}
+                onClick={(event) => void deletePersonalFile(file, event)}
                 className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--surface-hover)]"
                 style={{ color: "var(--fg-3)" }}
+                title="Remove from files"
+                aria-label="Remove from files"
               >
                 <AppIcon name="trash" className="w-3 h-3" />
               </button>
@@ -1404,15 +1423,16 @@ export function Sidebar({
       ) : (
         <SearchPicker
           key={`${personalAddDialog?.kind || "none"}:${personalAddDialog?.projectId || ""}:${projectTaskKind}`}
-          context="global_nav"
+          context="dm_start"
           token={authToken}
           workspaceId={searchWorkspaceId || undefined}
-          types={personalAddDialog?.kind === "dm" ? ["users"] : ["bots"]}
-          placeholder={personalAddDialog?.kind === "dm" ? "Search members" : "Search bots"}
+          types={personalAddDialog?.kind === "dm" ? ["users", "bots"] : ["bots"]}
+          placeholder={personalAddDialog?.kind === "dm" ? "Search or choose users and bots" : "Search or choose bots"}
           modal
           autoFocus
-          emptyText={personalAddDialog?.kind === "dm" ? "No members available to add" : "No bots available to add"}
-          actionLabel={personalAddDialog?.kind === "dm" ? "DMs" : "Add"}
+          showInitialResults
+          emptyText={personalAddDialog?.kind === "dm" ? "No users or bots available to add" : "No bots available to add"}
+          actionLabel={personalAddDialog?.kind === "dm" ? "DM" : "Add"}
           onSelect={handlePersonalAddSelect}
         />
       )}

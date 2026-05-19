@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import toast from "react-hot-toast";
 import { MessageMarkdown } from "../MessageMarkdown";
 import type { MemberItem, TodoItem, MemoryEntryItem } from "../types";
@@ -258,6 +258,34 @@ export function MemoryPanel({
       .then((d) => setChannelFiles(d.data || []))
       .catch(() => {})
       .finally(() => setChannelFilesLoading(false));
+  };
+
+  const handleChannelFileDelete = async (
+    file: { file_id: string; original_filename?: string | null },
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+    if (!confirm(`Delete ${file.original_filename || file.file_id}?`)) return;
+    const token = getStoredToken();
+    try {
+      const res = await fetch(
+        `${API}/files/${encodeURIComponent(file.file_id)}?channel_id=${encodeURIComponent(channelId)}`,
+        {
+          method: "DELETE",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
+      );
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload?.status === "error") {
+        throw new Error(payload?.message || payload?.detail || "Delete failed");
+      }
+      setChannelFiles((files) =>
+        files.filter((item) => item.file_id !== file.file_id),
+      );
+      toast.success("File deleted");
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Delete failed");
+    }
   };
 
   useEffect(() => {
@@ -1263,6 +1291,10 @@ export function MemoryPanel({
                       original_filename: selection.item.original_filename,
                       content_type: selection.item.content_type,
                       size_bytes: selection.item.size_bytes,
+                      channel_id: channelId,
+                      channel_label: channelName,
+                      scope_type: "channel",
+                      scope_id: channelId,
                     });
                   }}
                 />
@@ -1291,12 +1323,26 @@ export function MemoryPanel({
                     key={f.file_id}
                     role={onFilePreview ? "button" : undefined}
                     tabIndex={onFilePreview ? 0 : undefined}
-                    onClick={() => onFilePreview?.(f)}
+                    onClick={() =>
+                      onFilePreview?.({
+                        ...f,
+                        channel_id: channelId,
+                        channel_label: channelName,
+                        scope_type: "channel",
+                        scope_id: channelId,
+                      })
+                    }
                     onKeyDown={(event) => {
                       if (!onFilePreview) return;
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        onFilePreview(f);
+                        onFilePreview({
+                          ...f,
+                          channel_id: channelId,
+                          channel_label: channelName,
+                          scope_type: "channel",
+                          scope_id: channelId,
+                        });
                       }
                     }}
                     className={`flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 transition-colors ${
@@ -1335,6 +1381,15 @@ export function MemoryPanel({
                     >
                       <AppIcon name="download" className="w-4 h-4" />
                     </a>
+                    <button
+                      type="button"
+                      onClick={(event) => void handleChannelFileDelete(f, event)}
+                      className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors flex-shrink-0"
+                      title="Delete file"
+                      aria-label="Delete file"
+                    >
+                      <AppIcon name="trash" className="w-4 h-4" />
+                    </button>
                   </div>
                 );
                 })}

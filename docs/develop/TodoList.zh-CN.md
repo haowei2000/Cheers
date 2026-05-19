@@ -50,6 +50,10 @@
 - ChromaDB 大文件检索（可选，未实现）
 - **附件三**：Task 生命周期与确认节点、Critique Loop、自主错误恢复、Task DAG（可选）
 
+## 近期修复事项
+
+- [x] **UX-DEL-001** 补齐用户创建资源的删除路径：文件、消息/话题/公告、头像清理，并明确 Agent Bridge 会话和账号删除策略。详见 [创建/删除对称性修复事项](create-delete-symmetry-fix-item.zh-CN.md)。
+
 ---
 
 ## 门户阶段一：门户基础（不涉及公共平台）

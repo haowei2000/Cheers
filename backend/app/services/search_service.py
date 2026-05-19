@@ -41,7 +41,9 @@ SearchContext = Literal[
     "global_nav",
     "add_friend",
     "dm_start",
+    "workspace_create",
     "workspace_invite",
+    "channel_create",
     "channel_invite",
     "channel_invite_user",
     "channel_invite_bot",
@@ -54,13 +56,24 @@ _VALID_CONTEXTS = {
     "global_nav",
     "add_friend",
     "dm_start",
+    "workspace_create",
     "workspace_invite",
+    "channel_create",
     "channel_invite",
     "channel_invite_user",
     "channel_invite_bot",
     "file_lookup",
     "todo_lookup",
     "task_monitor",
+}
+_EMPTY_QUERY_CANDIDATE_CONTEXTS = {
+    "dm_start",
+    "workspace_create",
+    "workspace_invite",
+    "channel_create",
+    "channel_invite",
+    "channel_invite_user",
+    "channel_invite_bot",
 }
 
 SearchResultType = Literal[
@@ -109,8 +122,24 @@ class SearchService:
         requested_types = self._parse_types(types)
 
         empty = SearchResults(q=q, context=context)
-        if not q:
+        if not q and context not in _EMPTY_QUERY_CANDIDATE_CONTEXTS:
             return empty
+
+        if context == "workspace_create":
+            selected = self._selected_types(requested_types, {"users"})
+            return SearchResults(
+                q=q,
+                context=context,
+                users=(
+                    await self._search_users(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                    )
+                    if "users" in selected
+                    else []
+                ),
+            )
 
         if context == "workspace_invite":
             await self._require_workspace(workspace_id, current_user)
@@ -127,6 +156,34 @@ class SearchService:
                         exclude_workspace_members=True,
                     )
                     if "users" in selected
+                    else []
+                ),
+            )
+
+        if context == "channel_create":
+            await self._require_workspace(workspace_id, current_user)
+            selected = self._selected_types(requested_types, {"users", "bots"})
+            return SearchResults(
+                q=q,
+                context=context,
+                users=(
+                    await self._search_users(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                        workspace_id=workspace_id,
+                        only_workspace_members=True,
+                    )
+                    if "users" in selected
+                    else []
+                ),
+                bots=(
+                    await self._search_bots(
+                        q,
+                        current_user=current_user,
+                        limit=limit,
+                    )
+                    if "bots" in selected
                     else []
                 ),
             )
@@ -481,10 +538,12 @@ class SearchService:
         channel_id: str | None = None,
         exclude_friend_ids: bool = False,
         exclude_workspace_members: bool = False,
+        only_workspace_members: bool = False,
         exclude_channel_members: bool = False,
     ) -> list[SearchUserHit]:
         stmt = select(User).where(
             User.user_id != current_user.user_id,
+            User.is_deleted == False,  # noqa: E712
             self._matches_id_or_text(q, User.user_id, User.username, User.display_name),
         )
 
@@ -497,6 +556,13 @@ class SearchService:
             member_ids = await self._workspace_member_ids(workspace_id)
             if member_ids:
                 stmt = stmt.where(User.user_id.notin_(member_ids))
+
+        if only_workspace_members and workspace_id:
+            member_ids = await self._workspace_member_ids(workspace_id)
+            if member_ids:
+                stmt = stmt.where(User.user_id.in_(member_ids))
+            else:
+                return []
 
         if exclude_channel_members and channel_id:
             member_ids = await self._channel_member_ids(channel_id, member_type="user")
@@ -576,6 +642,7 @@ class SearchService:
                 ChannelMembership.member_type == "user",
                 Message.content.ilike(self._pattern(q)),
                 Message.is_secret == False,  # noqa: E712
+                Message.is_deleted == False,  # noqa: E712
             )
         )
         if workspace_id:

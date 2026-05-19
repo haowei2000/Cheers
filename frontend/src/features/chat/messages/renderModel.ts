@@ -101,6 +101,7 @@ export interface MessageViewModel {
 }
 
 const ROOT_ONLY_KINDS = new Set(["routing", "permission", "announcement"]);
+const DELETED_MESSAGE_TEXT = "This message was deleted.";
 
 function compareMessagesByCreatedAt(a: Message, b: Message): number {
   const parsedATime = a.created_at ? Date.parse(a.created_at) : 0;
@@ -319,10 +320,13 @@ export function createMessageViewModel({
   pendingClarifyReplyMsgId: string | null;
   formatTime: (iso: string | undefined, compact?: boolean) => string;
 }): MessageViewModel {
+  const isDeleted = Boolean(message.is_deleted);
   const effectiveContent = message.is_secret
     ? (revealedContent ?? message.content)
     : message.content;
-  const { text, clarify } = parseHelperPayload(effectiveContent);
+  const { text, clarify } = isDeleted
+    ? { text: DELETED_MESSAGE_TEXT, clarify: undefined }
+    : parseHelperPayload(effectiveContent);
   const isOwn =
     message.sender_type === "user" && message.sender_id === currentUserId;
   const senderBot =
@@ -338,7 +342,9 @@ export function createMessageViewModel({
       : isOwn
         ? currentUser?.display_name || currentUser?.username || "Me"
         : senderUser?.display_name || senderUser?.username || "User");
-  const displayBase = isClarifyReplyUserMessage(effectiveContent)
+  const displayBase = isDeleted
+    ? DELETED_MESSAGE_TEXT
+    : isClarifyReplyUserMessage(effectiveContent)
     ? effectiveContent
         .replace(
           /^@(?:Helper|Coordinator|channel bot|\u5f15\u5bfc)\s*(?:Clarification answer|\u6f84\u6e05\u56de\u7b54)[\uFF1A:]\s*/i,
@@ -355,7 +361,7 @@ export function createMessageViewModel({
     Boolean(clarify) && clarifyAnsweredParentIds.has(message.msg_id);
   const clarifyWaiting = pendingClarifyReplyMsgId === message.msg_id;
   const clarifyStatus =
-    clarify && message.sender_type === "bot"
+    !isDeleted && clarify && message.sender_type === "bot"
       ? clarifyWaiting
         ? "waiting"
         : clarifyAnswered
@@ -373,7 +379,7 @@ export function createMessageViewModel({
     avatarUrl: isOwn ? currentUser?.avatar_url : senderUser?.avatar_url,
     initials: (isOwn ? "Me" : senderLabel.slice(0, 2).toUpperCase()) || "U",
     time: formatTime(message.created_at),
-    effectiveContent,
+    effectiveContent: isDeleted ? DELETED_MESSAGE_TEXT : effectiveContent,
     text,
     displayContent,
     bodyContent: quote?.rest ?? displayContent,

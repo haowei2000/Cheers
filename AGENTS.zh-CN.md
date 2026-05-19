@@ -241,6 +241,56 @@ alembic downgrade -1
 
 ## Testing Instructions
 
+### 集成测试要求（强制）
+
+**集成测试必须在完整的前后端 Docker Compose 环境中通过，不得仅依赖内存 Mock 或单元级 Fixture。**
+
+#### 标准集成测试流程
+
+```bash
+# 1. 启动完整前后端服务栈
+cp docker-compose.yml.template docker-compose.yml
+docker compose up -d --wait
+
+# 2. 运行集成测试（指向真实服务）
+INTEGRATION_BASE_URL=http://localhost:8000 \
+  cd backend && pytest ../tests -m integration -v
+
+# 3. 测试完毕后清理
+docker compose down
+```
+
+#### 运行多套 Docker Compose 服务栈
+
+当需要并行隔离多套环境（如 CI 并发、本地多分支测试）时，通过 `COMPOSE_PROJECT_NAME` 和端口偏移区分：
+
+```bash
+# 启动第一套（默认，端口 8000/80）
+COMPOSE_PROJECT_NAME=nexus_test_a \
+  BACKEND_HOST_PORT=8010 \
+  FRONTEND_HOST_PORT=8080 \
+  docker compose -p nexus_test_a up -d --wait
+
+# 启动第二套（端口 8011/8081）
+COMPOSE_PROJECT_NAME=nexus_test_b \
+  BACKEND_HOST_PORT=8011 \
+  FRONTEND_HOST_PORT=8081 \
+  docker compose -p nexus_test_b up -d --wait
+
+# 对第一套运行集成测试
+INTEGRATION_BASE_URL=http://localhost:8010 \
+  cd backend && pytest ../tests -m integration -v
+
+# 各套独立关闭，互不干扰
+docker compose -p nexus_test_a down
+docker compose -p nexus_test_b down
+```
+
+关键规则：
+- 每套栈必须设置不同的 `COMPOSE_PROJECT_NAME` 和宿主机端口，避免资源冲突。
+- 集成测试通过 `INTEGRATION_BASE_URL` 环境变量指定目标服务地址，不硬编码端口。
+- 测试结束后必须 `docker compose down` 清理，包括网络和匿名 Volume。
+
 ### 测试结构
 
 ```
@@ -260,16 +310,18 @@ tests/
 
 ### 关键 Fixtures（conftest.py）
 
-- `db_engine`: 内存 SQLite 引擎
+- `db_engine`: 内存 SQLite 引擎（单元测试用）
 - `db_session`: 每个测试独立的异步会话
-- `client`: 覆盖依赖的 FastAPI 测试客户端
+- `client`: 覆盖依赖的 FastAPI 测试客户端（单元测试用）
+- 集成测试使用 `INTEGRATION_BASE_URL` 指向真实运行的 Docker Compose 服务
 
 ### 编写测试的注意事项
 
 1. **使用异步测试**: 所有测试函数使用 `async def`
 2. **数据库隔离**: 每个测试使用独立的事务，结束后回滚
-3. **Mock 外部服务**: Bot 测试使用 Mock，避免真实调用
+3. **Mock 外部服务**: 单元测试中 Bot 使用 Mock，集成测试必须对接真实服务
 4. **UUID 固定**: 测试中使用固定 UUID 便于断言
+5. **集成测试标记**: 集成测试必须用 `@pytest.mark.integration` 标记，以便在无 Docker 环境时跳过
 
 ## Configuration
 

@@ -5,7 +5,6 @@ import type {
   PointerEvent,
   ReactNode,
   RefObject,
-  WheelEvent,
 } from "react";
 import { parseHelperPayload } from "../lib/helper";
 import type { ChannelBot, ChannelUser, Message } from "../types";
@@ -146,14 +145,13 @@ export function MessageComposer({
   const [mentionPlacement, setMentionPlacement] = useState<"top" | "bottom">(
     "bottom",
   );
-  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState<number | null>(null);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
-  const keychainTriggerRef = useRef<HTMLDivElement | null>(null);
+  const actionTriggerRef = useRef<HTMLDivElement | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const keychainMenuRef = useRef<HTMLDivElement | null>(null);
-  const uploadTriggerRef = useRef<HTMLDivElement | null>(null);
-  const uploadMenuRef = useRef<HTMLDivElement | null>(null);
   const templateTriggerRef = useRef<HTMLDivElement | null>(null);
   const templateMenuRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -175,20 +173,20 @@ export function MessageComposer({
   }, [value, valueRevision]);
 
   useEffect(() => {
-    if (!uploadMenuOpen) return;
+    if (!actionMenuOpen) return;
     const handle = (event: MouseEvent) => {
       if (
-        uploadTriggerRef.current &&
-        !uploadTriggerRef.current.contains(event.target as Node) &&
-        uploadMenuRef.current &&
-        !uploadMenuRef.current.contains(event.target as Node)
+        actionTriggerRef.current &&
+        !actionTriggerRef.current.contains(event.target as Node) &&
+        actionMenuRef.current &&
+        !actionMenuRef.current.contains(event.target as Node)
       ) {
-        setUploadMenuOpen(false);
+        setActionMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
-  }, [uploadMenuOpen]);
+  }, [actionMenuOpen]);
 
   useEffect(() => {
     if (!templateMenuOpen) return;
@@ -210,8 +208,10 @@ export function MessageComposer({
     if (!keychainOpen) return;
     const handle = (event: MouseEvent) => {
       if (
-        keychainTriggerRef.current &&
-        !keychainTriggerRef.current.contains(event.target as Node) &&
+        (!actionTriggerRef.current ||
+          !actionTriggerRef.current.contains(event.target as Node)) &&
+        (!actionMenuRef.current ||
+          !actionMenuRef.current.contains(event.target as Node)) &&
         keychainMenuRef.current &&
         !keychainMenuRef.current.contains(event.target as Node)
       ) {
@@ -357,20 +357,6 @@ export function MessageComposer({
     }
   };
 
-  const handleTemplateWheel = (event: WheelEvent<HTMLDivElement>) => {
-    const scroller = event.currentTarget;
-    if (scroller.scrollWidth <= scroller.clientWidth) return;
-
-    const delta =
-      Math.abs(event.deltaX) > Math.abs(event.deltaY)
-        ? event.deltaX
-        : event.deltaY;
-    if (delta === 0) return;
-
-    scroller.scrollLeft += delta;
-    event.preventDefault();
-  };
-
   const removePendingFile = (index: number, previewUrl: string | null) => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     onRemovePendingFile?.(index);
@@ -384,9 +370,37 @@ export function MessageComposer({
   const placementClass =
     mentionPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1";
   const toolbarMenuClass = "an-menu absolute left-0 right-0 bottom-full mb-1";
-  const hasPromptTemplateControl = Boolean(onPromptTemplateChange);
   const shouldShowKindSwitcher =
     showKindSwitcher && !replyingTo && !normalOnly;
+
+  const handleMentionButtonClick = () => {
+    setActionMenuOpen(false);
+    setTemplateMenuOpen(false);
+    onCloseKeychain?.();
+    inputRef.current?.focus();
+    setMentionFilter("");
+    setMentionPlacement("top");
+    setMentionOpen(true);
+  };
+
+  const handleTemplateButtonClick = () => {
+    setActionMenuOpen(false);
+    onCloseKeychain?.();
+    setMentionOpen(false);
+    setTemplateMenuOpen((open) => !open);
+  };
+
+  const handleActionButtonClick = () => {
+    setTemplateMenuOpen(false);
+    setMentionOpen(false);
+    onCloseKeychain?.();
+    setActionMenuOpen((open) => !open);
+  };
+
+  const selectKind = (nextKind: MessageComposerKind) => {
+    onKindChange?.(nextKind);
+    setActionMenuOpen(false);
+  };
 
   return (
     <>
@@ -489,121 +503,6 @@ export function MessageComposer({
         </div>
       )}
 
-      {(shouldShowKindSwitcher || hasPromptTemplateControl) && (
-        <div className="an-composer-toprow">
-          {shouldShowKindSwitcher && (
-            <div className="an-msgkind-switcher">
-              <div className="an-msgkind-arrowstack">
-                <button
-                  type="button"
-                  onClick={() => onCycleKind?.(-1)}
-                  className="an-msgkind-arrow"
-                  title="Previous message type (Shift+Tab)"
-                  aria-label="Previous message type"
-                >
-                  <AppIcon name="chevronUp" className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onCycleKind?.(1)}
-                  className="an-msgkind-arrow"
-                  title="Next message type (Tab)"
-                  aria-label="Next message type"
-                >
-                  <AppIcon name="chevronDown" className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <span
-                className={
-                  "an-msgkind-label inline-flex items-center gap-1.5" +
-                  (displayKind === "secret"
-                    ? " is-secret"
-                    : displayKind === "announcement"
-                      ? " is-announcement"
-                      : displayKind === "topic"
-                        ? " is-topic"
-                        : "")
-                }
-                title="Tab switches type · Shift+Tab reverses"
-              >
-                {displayKind === "secret" ? (
-                  <AppIcon name="lock" className="w-3.5 h-3.5" />
-                ) : displayKind === "announcement" ? (
-                  <AppIcon name="announcement" className="w-3.5 h-3.5" />
-                ) : displayKind === "topic" ? (
-                  <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
-                ) : (
-                  <AppIcon name="message" className="w-3.5 h-3.5" />
-                )}
-                {MESSAGE_COMPOSER_KIND_LABEL[displayKind]}
-              </span>
-            </div>
-          )}
-
-          {hasPromptTemplateControl && (
-            <div className="an-composer-template-banner">
-              <div
-                className="an-composer-template-scroll"
-                aria-label="Prompt templates"
-                onWheel={handleTemplateWheel}
-              >
-                {promptTemplatesLoading ? (
-                  <span className="an-composer-template-state">Loading...</span>
-                ) : promptTemplates.length === 0 ? (
-                  <span className="an-composer-template-state">No templates available</span>
-                ) : (
-                  promptTemplates.map((template) => {
-                    const isSelected = template.template_id === selectedPromptTemplateId;
-                    return (
-                      <button
-                        key={template.template_id}
-                        type="button"
-                        className={
-                          "an-composer-template-item" + (isSelected ? " is-selected" : "")
-                        }
-                        onClick={() =>
-                          onPromptTemplateChange?.(
-                            isSelected ? null : template.template_id,
-                          )
-                        }
-                        aria-pressed={isSelected}
-                        title={
-                          isSelected
-                            ? `Clear template override: ${template.name}`
-                            : `Force template: ${template.name}`
-                        }
-                      >
-                        <span className="an-composer-template-item-text">
-                          <span className="an-composer-template-item-name">
-                            {template.name}
-                          </span>
-                          {template.description && (
-                            <span className="an-composer-template-item-desc">
-                              {template.description}
-                            </span>
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-              {selectedPromptTemplate && (
-                <button
-                  type="button"
-                  className="an-composer-template-clear"
-                  onClick={() => onPromptTemplateChange?.(null)}
-                  title="Clear template override"
-                  aria-label="Clear prompt template override"
-                >
-                  <AppIcon name="close" className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="relative">
         <div
           className={
@@ -687,53 +586,31 @@ export function MessageComposer({
 
           <div className="an-composer-bar">
             <div className="flex items-center gap-1">
-              {keychainEnabled && (
-                <div ref={keychainTriggerRef} className="relative">
-                  <button
-                    type="button"
-                    onClick={onToggleKeychain}
-                    className={
-                      "an-composer-iconbtn" + (keychainOpen ? " is-active" : "")
-                    }
-                    title="Insert keychain secret"
-                    aria-label="Insert keychain secret"
-                  >
-                    <AppIcon name="key" className="w-4 h-4" />
-                  </button>
-                </div>
+              {onUploadFile && (
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.md,.html,.htm,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.wps,.et,.dps,.ofd,.rtf,.csv,.zip,.rar,.7z,.tar,.gz,.bz2,.xz,.dwg,.dxf,.epub,.pdf,.png,.jpg,.jpeg,.webp,.gif"
+                  className="hidden"
+                  onChange={onUploadFile}
+                />
               )}
 
-              {onUploadFile && (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".txt,.md,.html,.htm,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.wps,.et,.dps,.ofd,.rtf,.csv,.zip,.rar,.7z,.tar,.gz,.bz2,.xz,.dwg,.dxf,.epub,.pdf,.png,.jpg,.jpeg,.webp,.gif"
-                    className="hidden"
-                    onChange={onUploadFile}
-                  />
-                  <div ref={uploadTriggerRef} className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setUploadMenuOpen((open) => !open)}
-                      className={
-                        "an-composer-iconbtn" +
-                        (uploadMenuOpen ? " is-active" : "")
-                      }
-                      title="Upload files and images"
-                      aria-label="Upload files and images"
-                    >
-                      <AppIcon name="plus" className="w-[18px] h-[18px]" />
-                    </button>
-                  </div>
-                </>
-              )}
+              <button
+                type="button"
+                onClick={handleMentionButtonClick}
+                className="an-composer-iconbtn"
+                title="Mention members or bots"
+                aria-label="Mention members or bots"
+              >
+                <span className="an-composer-glyph">@</span>
+              </button>
 
               {onPromptTemplateChange && (
                 <div ref={templateTriggerRef} className="an-composer-template-trigger relative">
                   <button
                     type="button"
-                    onClick={() => setTemplateMenuOpen((open) => !open)}
+                    onClick={handleTemplateButtonClick}
                     className={
                       "an-composer-iconbtn" +
                       (templateMenuOpen || selectedPromptTemplate ? " is-active" : "")
@@ -750,56 +627,21 @@ export function MessageComposer({
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  inputRef.current?.focus();
-                  setMentionFilter("");
-                  setMentionPlacement("top");
-                  setMentionOpen(true);
-                }}
-                className="an-composer-iconbtn"
-                title="Mention members or bots"
-                aria-label="Mention members or bots"
-              >
-                <span className="an-composer-glyph">@</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => insertAtCursor("\n")}
-                className="an-composer-iconbtn is-kbd"
-                title="Insert line break (Shift+Enter)"
-                aria-label="Insert line break"
-              >
-                <span className="an-kbd-glyph">⇧↵</span>
-              </button>
-              {!normalOnly &&
-                (displayKind === "normal" || displayKind === "secret") && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onKindChange?.(
-                        displayKind === "secret" ? "normal" : "secret",
-                      )
-                    }
-                    title={
-                      displayKind === "secret"
-                        ? "Disable encrypted mode"
-                        : "Enable encrypted mode (only bots can read the original)"
-                    }
-                    className={
-                      "an-composer-iconbtn" +
-                      (displayKind === "secret" ? " is-secret-on" : "")
-                    }
-                    aria-label={
-                      displayKind === "secret"
-                        ? "Disable encrypted mode"
-                        : "Enable encrypted mode"
-                    }
-                  >
-                    <AppIcon name="lock" className="w-4 h-4" />
-                  </button>
-                )}
+              <div ref={actionTriggerRef} className="relative">
+                <button
+                  type="button"
+                  onClick={handleActionButtonClick}
+                  className={
+                    "an-composer-iconbtn" +
+                    (actionMenuOpen || keychainOpen ? " is-active" : "")
+                  }
+                  title="More composer actions"
+                  aria-label="More composer actions"
+                  aria-expanded={actionMenuOpen}
+                >
+                  <AppIcon name="more" className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <button
@@ -853,24 +695,89 @@ export function MessageComposer({
           </div>
         )}
 
-        {uploadMenuOpen && (
-          <div
-            ref={uploadMenuRef}
-            className={toolbarMenuClass}
-          >
+        {actionMenuOpen && (
+          <div ref={actionMenuRef} className={toolbarMenuClass}>
+            <div className="an-menu-head">Composer actions</div>
+            {keychainEnabled && (
+              <button
+                type="button"
+                className={"an-menu-item" + (keychainOpen ? " on" : "")}
+                onClick={() => {
+                  setActionMenuOpen(false);
+                  onToggleKeychain?.();
+                }}
+              >
+                <span className="an-mi-ico">
+                  <AppIcon name="key" className="w-3.5 h-3.5" />
+                </span>
+                <span>Insert keychain secret</span>
+              </button>
+            )}
+            {onUploadFile && (
+              <button
+                type="button"
+                className="an-menu-item"
+                onClick={() => {
+                  setActionMenuOpen(false);
+                  fileInputRef.current?.click();
+                }}
+              >
+                <span className="an-mi-ico">
+                  <AppIcon name="attachment" className="w-3.5 h-3.5" />
+                </span>
+                <span>Upload files and images</span>
+              </button>
+            )}
             <button
               type="button"
               className="an-menu-item"
               onClick={() => {
-                setUploadMenuOpen(false);
-                fileInputRef.current?.click();
+                insertAtCursor("\n");
+                setActionMenuOpen(false);
               }}
             >
               <span className="an-mi-ico">
-                <AppIcon name="link" className="w-4 h-4" />
+                <span className="an-kbd-glyph">⇧↵</span>
               </span>
-              <span>Upload files and images</span>
+              <span>Insert line break</span>
             </button>
+
+            {shouldShowKindSwitcher && (
+              <>
+                <div className="an-menu-sep" />
+                <div className="an-menu-head">Message type</div>
+                {MESSAGE_COMPOSER_KIND_ORDER.map((kindOption) => (
+                  <button
+                    key={kindOption}
+                    type="button"
+                    className={
+                      "an-menu-item an-composer-kind-option" +
+                      (kindOption === displayKind ? " on" : "")
+                    }
+                    onClick={() => selectKind(kindOption)}
+                    disabled={!onKindChange}
+                  >
+                    <span className="an-mi-ico">
+                      {kindOption === "secret" ? (
+                        <AppIcon name="lock" className="w-3.5 h-3.5" />
+                      ) : kindOption === "announcement" ? (
+                        <AppIcon name="announcement" className="w-3.5 h-3.5" />
+                      ) : kindOption === "topic" ? (
+                        <AppIcon name="messageCircle" className="w-3.5 h-3.5" />
+                      ) : (
+                        <AppIcon name="message" className="w-3.5 h-3.5" />
+                      )}
+                    </span>
+                    <span>{MESSAGE_COMPOSER_KIND_LABEL[kindOption]}</span>
+                    {kindOption === displayKind && (
+                      <span className="an-mi-ck">
+                        <AppIcon name="check" className="w-3.5 h-3.5" />
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         )}
 

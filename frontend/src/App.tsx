@@ -409,6 +409,7 @@ export default function App() {
     [],
   );
   const [forwardSubmitting, setForwardSubmitting] = useState(false);
+  const [fileLibraryRefreshNonce, setFileLibraryRefreshNonce] = useState(0);
   const openForwardFile = useCallback((file: FileInfo) => {
     setForwardModalState({
       mode: "single",
@@ -698,14 +699,16 @@ export default function App() {
     // We intentionally do NOT prepend a markdown blockquote of the parent
     // message: that would duplicate what the chip already shows AND pollute
     // bot adapters' user-message text.
-    const isSecretSend = secretMode;
+    const isSecretSend = msgKind === "secret";
     // Resolve msg_type: a pending reply-to always wins; otherwise use the
     // user's current msgKind pick from the composer switcher.
-    const effectiveKind: typeof msgKind | "reply" = isDmSelected
+    const effectiveKind = isDmSelected
       ? "normal"
       : replyingTo
         ? "reply"
-        : msgKind;
+        : msgKind === "secret"
+          ? "normal"
+          : msgKind;
     const body: Record<string, unknown> = {
       content,
       sender_id: currentUserId,
@@ -1372,6 +1375,7 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenFilePreview={openFilePreview}
             onOpenPersonalFileMain={openPersonalFileInMain}
+            fileLibraryRefreshKey={fileLibraryRefreshNonce}
             onPreloadChannel={preloadChannelMessages}
             onOpenMessage={handleMessageNavigate}
           />
@@ -1421,7 +1425,16 @@ export default function App() {
                   contentType={mainFilePreviewPanel.contentType}
                   sizeBytes={mainFilePreviewPanel.sizeBytes}
                   subtitle={mainFilePreviewPanel.channelLabel}
+                  fileId={mainFilePreviewPanel.fileId}
+                  channelId={mainFilePreviewPanel.channelId}
+                  scopeType={mainFilePreviewPanel.scopeType}
+                  scopeId={mainFilePreviewPanel.scopeId}
+                  source={mainFilePreviewPanel.source}
                   variant="main"
+                  onDeleted={() => {
+                    setMainFilePreviewPanel(null);
+                    setFileLibraryRefreshNonce((value) => value + 1);
+                  }}
                   onClose={() => {
                     setMainFilePreviewPanel(null);
                     setSelectedId(null);
@@ -1592,7 +1605,7 @@ export default function App() {
                 disabled: isSystemDm,
                 placeholder: isSystemDm
                   ? "Friend notification conversations handle requests and cannot send messages directly..."
-                  : secretMode
+                  : msgKind === "secret"
                     ? "Enter encrypted content (only bots can read the original)..."
                     : isDmSelected
                       ? `Message ${activeDm?.counterparty.display_name || activeDm?.counterparty.username || "DM"}...`
@@ -1651,6 +1664,7 @@ export default function App() {
             onMemoryTabChange={setMemoryTab}
             currentUserId={currentUserId}
             onFilePreview={openFilePreview}
+            onFileDeleted={() => setFileLibraryRefreshNonce((value) => value + 1)}
             onCloseMemory={() => setMemoryTab(null)}
             filePreviewPanel={filePreviewPanel}
             filePreviewWidth={filePreviewWidth}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   MESSAGE_COMPOSER_KIND_ORDER,
   type MessageComposerKind,
@@ -17,7 +17,7 @@ export function useComposerController() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const secretInputRef = useRef<HTMLInputElement | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const [secretMode, setSecretMode] = useState(false);
+  const secretMode = msgKind === "secret";
 
   const setComposerInput = useCallback((value: string) => {
     inputDraftRef.current = value;
@@ -40,14 +40,8 @@ export function useComposerController() {
     });
   }, []);
 
-  useEffect(() => {
-    if (msgKind === "secret" && !secretMode) setSecretMode(true);
-    if (msgKind !== "secret" && secretMode) setSecretMode(false);
-  }, [msgKind, secretMode]);
-
   const resetComposerAfterSend = useCallback(() => {
     setComposerInput("");
-    setSecretMode(false);
     setMsgKind("normal");
     setComposerTitle("");
     setReplyingTo(null);

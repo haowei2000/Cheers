@@ -84,6 +84,7 @@ class FileRetentionService:
         return deleted_count
 
     async def delete_physical_assets(self, record: FileRecord) -> bool:
+        """Delete all physical objects for a single file record."""
         return await self._delete_physical_assets(record)
 
     async def _delete_physical_assets(self, record: FileRecord) -> bool:

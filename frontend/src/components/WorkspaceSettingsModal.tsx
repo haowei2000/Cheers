@@ -32,6 +32,11 @@ function WorkspaceAvatarPreview({
   );
 }
 
+function isManagedWorkspaceAvatarUrl(value: string): boolean {
+  return value.startsWith("/api/v1/avatars/workspaces/") ||
+    value.includes("/api/v1/avatars/workspaces/");
+}
+
 export function WorkspaceSettingsModal({
   open,
   workspace,
@@ -109,6 +114,29 @@ export function WorkspaceSettingsModal({
     }
   };
 
+  const clearWorkspaceAvatar = async () => {
+    if (!workspace || !avatarUrl) return;
+    if (!isManagedWorkspaceAvatarUrl(avatarUrl)) {
+      setAvatarUrl("");
+      return;
+    }
+    try {
+      const res = await apiFetch(`/avatars/workspaces/${workspace.workspace_id}`, {
+        method: "DELETE",
+        token: authToken,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.status === "error") {
+        throw new Error(data?.message || data?.detail || "Avatar clear failed");
+      }
+      setAvatarUrl("");
+      onSaved({ ...workspace, avatar_url: null });
+      toast.success("Workspace avatar cleared");
+    } catch (e: unknown) {
+      toast.error((e as Error).message || "Avatar clear failed");
+    }
+  };
+
   return (
     <Modal
       open={open && !!workspace}
@@ -181,7 +209,7 @@ export function WorkspaceSettingsModal({
           {avatarUrl && (
             <button
               type="button"
-              onClick={() => setAvatarUrl("")}
+              onClick={() => void clearWorkspaceAvatar()}
               className="an-btn an-btn-ghost mt-2"
             >
               Clear icon

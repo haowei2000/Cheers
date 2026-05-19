@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_session
@@ -26,6 +26,8 @@ class ChannelCreateBody(BaseModel):
     project_id: str | None = None
     project_title: str | None = None
     task_title: str | None = None
+    initial_user_ids: list[str] = Field(default_factory=list)
+    initial_bot_ids: list[str] = Field(default_factory=list)
 
 
 class ChannelUpdateBody(BaseModel):
@@ -170,6 +172,8 @@ async def create_channel(
         project_id=body.project_id,
         project_title=body.project_title,
         task_title=body.task_title,
+        initial_user_ids=body.initial_user_ids,
+        initial_bot_ids=body.initial_bot_ids,
     )
     return APIResponse.ok(await _channel_response(svc, ch, current_user))
 
