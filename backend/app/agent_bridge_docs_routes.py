@@ -132,7 +132,7 @@ def _bridge_urls(request: Request) -> dict[str, Any]:
 
 
 def _plugin_download_url(request: Request) -> str:
-    return f"{_http_base(request)}/docs/agent-bridge/release/{_PLUGIN_FILE_NAME}"
+    return f"{_http_base(request)}/release/{_PLUGIN_FILE_NAME}"
 
 
 def _plugin_file_path(filename: str) -> Path:
