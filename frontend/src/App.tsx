@@ -47,6 +47,7 @@ import type {
   ClarifySchema,
   ClarifyAnswers,
   FileInfo,
+  ChannelBot,
 } from "./types";
 import { OTHER_CHOICE_ID } from "./types";
 
@@ -63,6 +64,37 @@ type ComposerPromptTemplateOption = {
   description?: string | null;
   is_builtin?: boolean;
 };
+
+function preservedBotMentionPrefix(content: string, bots: ChannelBot[]): string {
+  const names = [...new Set(bots.map((bot) => bot.username).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  if (names.length === 0) return "";
+
+  const text = content.trimStart();
+  const picked: string[] = [];
+  const seen = new Set<string>();
+  let index = 0;
+
+  while (text.charAt(index) === "@") {
+    const afterAt = text.slice(index + 1);
+    const name = names.find((candidate) => {
+      if (!afterAt.startsWith(candidate)) return false;
+      const boundary = afterAt.charAt(candidate.length);
+      return !boundary || boundary === "@" || /\s/.test(boundary);
+    });
+    if (!name) break;
+    if (!seen.has(name)) {
+      seen.add(name);
+      picked.push(name);
+    }
+    index += 1 + name.length;
+    while (/\s/.test(text.charAt(index))) index += 1;
+  }
+
+  return picked.length > 0
+    ? `${picked.map((name) => `@${name}`).join(" ")} `
+    : "";
+}
 
 const MainFilePreviewPanel = lazy(() =>
   import("./components/FilePreviewSidebar").then((module) => ({
@@ -866,8 +898,9 @@ export default function App() {
             taskTitle: firstUserMessageTaskTitle,
           }
         : null;
-    resetComposerAfterSend();
-    setPromptTemplateOverrideId(null);
+    resetComposerAfterSend({
+      nextInput: preservedBotMentionPrefix(content, channelBots),
+    });
     clearPendingFiles();
     authFetch(`${API}/channels/${targetChannelId}/messages`, {
       method: "POST",
