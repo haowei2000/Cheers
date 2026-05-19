@@ -21,6 +21,24 @@ This is the English default edition prepared for the open-source documentation s
 - For implementation details, verify against the current code and the user/operations documentation first.
 - Historical design notes may describe planned features; when in doubt, treat README, `docs/help/`, and the current code as authoritative.
 
+## Integration Test Requirements (Mandatory)
+
+Integration tests **must** pass against a fully running Docker Compose stack (frontend + backend). In-memory mocks or unit-level fixtures alone are insufficient for integration coverage.
+
+```bash
+# Start the full stack
+cp docker-compose.yml.template docker-compose.yml
+docker compose up -d --wait
+
+# Run integration tests
+INTEGRATION_BASE_URL=http://localhost:8000 \
+  cd backend && pytest ../tests -m integration -v
+
+docker compose down
+```
+
+**Multiple stacks** can run in parallel by setting a unique `COMPOSE_PROJECT_NAME` and distinct host ports per stack (see `AGENTS.zh-CN.md` for the full example). Integration tests must read the target URL from `INTEGRATION_BASE_URL`; never hard-code a port. Tag all integration tests with `@pytest.mark.integration`.
+
 ## Related Documentation
 
 - [Documentation Home](../help/README.md)
