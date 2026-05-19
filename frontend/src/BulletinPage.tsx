@@ -173,7 +173,10 @@ export default function BulletinPage() {
     authToken && (issue.creator_id === currentUserId || isAdmin);
 
   return (
-    <div className="an-token-page flex min-h-screen flex-col">
+    <div
+      className="an-token-page flex flex-col"
+      style={{ minHeight: "var(--an-viewport-height, 100dvh)" }}
+    >
       {/* Header */}
       <header className="flex items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-1)] px-6 py-3">
         <Link to="/" className="an-btn an-btn-ghost an-btn-sm">

@@ -76,10 +76,14 @@ export function ChatSidePanels({
         <div
           className={
             isMobile
-              ? "fixed inset-0 z-[70] flex bg-white"
+              ? "an-mobile-side-panel fixed inset-0 z-[70] flex"
               : "relative flex-shrink-0 flex"
           }
-          style={{ width: isMobile ? "100%" : memoryWidth }}
+          style={{
+            width: isMobile ? "100%" : memoryWidth,
+            height: isMobile ? "var(--an-viewport-height, 100dvh)" : undefined,
+            background: "var(--bg-1)",
+          }}
         >
           {!isMobile && (
             <div
@@ -116,10 +120,14 @@ export function ChatSidePanels({
         <div
           className={
             isMobile
-              ? "fixed inset-0 z-[70] flex bg-white"
+              ? "an-mobile-side-panel fixed inset-0 z-[70] flex"
               : "relative flex-shrink-0 flex"
           }
-          style={{ width: isMobile ? "100%" : filePreviewWidth }}
+          style={{
+            width: isMobile ? "100%" : filePreviewWidth,
+            height: isMobile ? "var(--an-viewport-height, 100dvh)" : undefined,
+            background: "var(--bg-1)",
+          }}
         >
           {!isMobile && (
             <div

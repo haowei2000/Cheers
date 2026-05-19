@@ -322,6 +322,21 @@ export function ChannelHeader({
                   )}
                 </div>
               )}
+              {!activeDm && channel && (
+                <button
+                  type="button"
+                  className="an-menu-item an-mobile-settings-item"
+                  onClick={() => {
+                    setToolsOpen(false);
+                    onOpenChannelSettings();
+                  }}
+                >
+                  <span className="an-mi-ico">
+                    <AppIcon name="settings" className="w-3.5 h-3.5" />
+                  </span>
+                  <span>Channel settings</span>
+                </button>
+              )}
               {sessionAction && <div className="an-mobile-session-action">{sessionAction}</div>}
             </div>
           )}

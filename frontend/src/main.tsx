@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { Toaster } from "react-hot-toast";
 import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { DomI18nBridge, LanguageProvider } from "./i18n";
+import { useMobileViewport } from "./hooks/useMobileViewport";
 import "./styles/design-tokens.css";
 import "./styles/composer.css";
 import "./index.css";
@@ -13,16 +14,25 @@ const BulletinPage = lazy(() => import("./BulletinPage"));
 
 function RouteFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--bg-0)] text-sm text-[var(--fg-3)]">
+    <div
+      className="flex items-center justify-center bg-[var(--bg-0)] text-sm text-[var(--fg-3)]"
+      style={{ minHeight: "var(--an-viewport-height, 100dvh)" }}
+    >
       Loading...
     </div>
   );
+}
+
+function ViewportController() {
+  useMobileViewport();
+  return null;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <LanguageProvider>
       <BrowserRouter>
+        <ViewportController />
         <Toaster position="top-center" />
         <DomI18nBridge />
         <Suspense fallback={<RouteFallback />}>
