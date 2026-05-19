@@ -29,6 +29,7 @@ interface UseChatRealtimeOptions {
   setContextData: Dispatch<SetStateAction<ContextData>>;
   setMessageStore: Dispatch<SetStateAction<MessageStore>>;
   setProcessingBots: Dispatch<SetStateAction<Record<string, string>>>;
+  onFileLibraryChanged?: () => void;
   reportClientError: (
     method: string,
     url: string,
@@ -43,6 +44,7 @@ export function useChatRealtime({
   setContextData,
   setMessageStore,
   setProcessingBots,
+  onFileLibraryChanged,
   reportClientError,
 }: UseChatRealtimeOptions) {
   const streamDeltaBufferRef = useRef<Record<string, PendingStreamDelta>>({});
@@ -165,6 +167,10 @@ export function useChatRealtime({
               }));
             }
           } else if (msg.type === "message" && msg.data) {
+            const incoming = msg.data as Message;
+            const incomingHasFiles =
+              (Array.isArray(incoming.files) && incoming.files.length > 0) ||
+              (Array.isArray(incoming.file_ids) && incoming.file_ids.length > 0);
             // Bot placeholder arrived → clear the per-bot thinking indicator.
             if (msg.data.sender_type === "bot" && msg.data.sender_id) {
               setProcessingBots((prev) => {
@@ -175,7 +181,6 @@ export function useChatRealtime({
               });
             }
             setMessageStore((prev) => {
-              const incoming = msg.data as Message;
               const id = incoming.msg_id;
               if (id && prev.byId[id]) {
                 // Already present — merge post-hoc updates (e.g. permission
@@ -205,6 +210,9 @@ export function useChatRealtime({
                   : incoming;
               return upsertMessage(prev, entry, MAX_LOADED_MESSAGES);
             });
+            if (incomingHasFiles) {
+              onFileLibraryChanged?.();
+            }
             if (
               msg.data.sender_type === "bot" &&
               typeof msg.data.content === "string" &&
@@ -260,6 +268,9 @@ export function useChatRealtime({
             );
           } else if (msg.type === "message_done" && msg.data) {
             const { msg_id, content, files, file_ids, is_partial, error } = msg.data;
+            const doneHasFiles =
+              (Array.isArray(files) && files.length > 0) ||
+              (Array.isArray(file_ids) && file_ids.length > 0);
             flushStreamDeltaBuffer();
             const hasContentData = Object.prototype.hasOwnProperty.call(
               msg.data,
@@ -342,6 +353,9 @@ export function useChatRealtime({
                 };
               }),
             );
+            if (doneHasFiles) {
+              onFileLibraryChanged?.();
+            }
             if (
               typeof content === "string" &&
               content.includes("Updated memory layer")
@@ -389,6 +403,16 @@ export function useChatRealtime({
       streamDeltaBufferRef.current = {};
       if (ws) ws.close();
     };
-  }, [selectedId, reportClientError, flushStreamDeltaBuffer, queueStreamDelta]);
+  }, [
+    authFetch,
+    flushStreamDeltaBuffer,
+    onFileLibraryChanged,
+    queueStreamDelta,
+    reportClientError,
+    selectedId,
+    setContextData,
+    setMessageStore,
+    setProcessingBots,
+  ]);
 
 }

@@ -718,12 +718,19 @@ export default function App() {
     }
   }, [selectedId, setReplyingTo]);
 
+  const refreshFileLibraryForCurrentSpace = useCallback(() => {
+    if (isPersonalWorkspace) {
+      setFileLibraryRefreshNonce((value) => value + 1);
+    }
+  }, [isPersonalWorkspace]);
+
   useChatRealtime({
     selectedId,
     authFetch,
     setContextData,
     setMessageStore,
     setProcessingBots,
+    onFileLibraryChanged: refreshFileLibraryForCurrentSpace,
     reportClientError,
   });
 
